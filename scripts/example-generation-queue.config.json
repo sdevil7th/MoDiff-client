@@ -1,0 +1,1186 @@
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "maxAttempts": 2,
+    "timeoutMs": 2700000
+  },
+  "jobs": [
+    {
+      "id": "qwen-low-vram-product-concept",
+      "description": "Capture two locked runs and stage the canonical Qwen product example for quality review.",
+      "priority": 10,
+      "runner": "gallery",
+      "templates": ["qwen_low_vram_product_concept"],
+      "args": ["--runs", "2", "--timeout-ms", "900000"]
+    },
+    {
+      "id": "qwen-low-vram-text-rendering",
+      "description": "Capture two locked runs and stage the Qwen typography example for quality review.",
+      "priority": 20,
+      "runner": "gallery",
+      "templates": ["qwen_low_vram_text_rendering"],
+      "args": ["--runs", "2", "--timeout-ms", "900000"]
+    },
+    {
+      "id": "qwen-low-vram-poster-layout",
+      "description": "Capture two locked runs and stage the Qwen poster-layout example for quality review.",
+      "priority": 30,
+      "runner": "gallery",
+      "templates": ["qwen_low_vram_poster_layout"],
+      "args": ["--runs", "2", "--timeout-ms", "900000"]
+    },
+    {
+      "id": "qwen-control-image-layout",
+      "description": "Capture the installed Qwen ControlNet Union carton-layout case with a byte-locked deterministic control image.",
+      "priority": 40,
+      "runner": "gallery",
+      "templates": ["qwen_control_image_layout"],
+      "args": [
+        "--runs",
+        "2",
+        "--control-image",
+        "public/template-gallery/inputs/qwen-carton-layout-control.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-control-image-layout-v2",
+      "description": "One bounded ControlNet capture after VAE leaf-level offload and absolute input-path remediation; preserve the exhausted v1 history.",
+      "priority": 45,
+      "maxAttempts": 1,
+      "runner": "gallery",
+      "templates": ["qwen_control_image_layout"],
+      "args": [
+        "--runs",
+        "2",
+        "--control-image",
+        "public/template-gallery/inputs/qwen-carton-layout-control.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "z-image-quick-concept",
+      "description": "Capture two installed Z-Image Turbo concept runs and stage them for provenance and visual review.",
+      "priority": 50,
+      "runner": "gallery",
+      "templates": ["z_image_quick_concept"],
+      "args": ["--runs", "2", "--timeout-ms", "900000"]
+    },
+    {
+      "id": "ace-step-text-to-audio",
+      "description": "Capture two installed ACE-Step text-to-music runs and stage decoded-audio proof plus listening review.",
+      "priority": 60,
+      "runner": "gallery",
+      "templates": ["ace_step_text_to_audio"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "ace-step-text-to-audio-v2",
+      "description": "One bounded post-runner-fix ACE-Step capture; preserve the exhausted v1 history instead of bypassing its cap.",
+      "priority": 65,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["ace_step_text_to_audio"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "ace-step-text-to-audio-v3",
+      "description": "One bounded ACE-Step capture after normalizing the numeric BPM contract at the backend boundary.",
+      "priority": 66,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["ace_step_text_to_audio"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "ace-step-text-to-audio-v4",
+      "description": "One bounded ACE-Step capture after teaching node-cache equality to handle nested NumPy audio arrays before PIL-like values.",
+      "priority": 67,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["ace_step_text_to_audio"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "wan-vace-cinematic-text-to-video",
+      "description": "Capture the first staged Wan VACE text-to-video example after the public model install validates.",
+      "priority": 900,
+      "initialStatus": "blocked_model",
+      "initialReason": "Wan VACE 1.3B app-managed download and cache validation are in progress.",
+      "runner": "gallery",
+      "templates": ["wan_vace_cinematic_text_to_video"],
+      "args": ["--runs", "2", "--timeout-ms", "14400000"]
+    },
+    {
+      "id": "wan-vace-cinematic-text-to-video-v2",
+      "description": "One bounded post-cache-fix Wan VACE capture; preserve the exhausted v1 history instead of bypassing its cap.",
+      "priority": 901,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "runner": "gallery",
+      "templates": ["wan_vace_cinematic_text_to_video"],
+      "args": ["--runs", "2", "--timeout-ms", "14400000"]
+    },
+    {
+      "id": "wan-vace-animate-product-still",
+      "description": "Capture two default-prompt product-animation runs with the approved AsterMist still locked into input provenance.",
+      "priority": 902,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "runner": "gallery",
+      "templates": ["wan_vace_animate_product_still"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "public/template-gallery/qwen_product_mockup.webp",
+        "--timeout-ms",
+        "28800000"
+      ]
+    },
+    {
+      "id": "wan-vace-video-color-grade",
+      "description": "Capture two default-prompt color-grade runs using the reviewed Wan train clip as a byte-locked source video.",
+      "priority": 903,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "runner": "gallery",
+      "templates": ["wan_vace_video_color_grade"],
+      "args": [
+        "--runs",
+        "2",
+        "--source-video",
+        "public/template-gallery/wan_vace_cinematic_text_to_video.mp4",
+        "--timeout-ms",
+        "28800000"
+      ]
+    },
+    {
+      "id": "wan-vace-outpaint-reframe",
+      "description": "Capture two default-prompt video-outpaint runs using the center-preserved source canvas and boundary-only mask.",
+      "priority": 904,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "runner": "gallery",
+      "templates": ["wan_vace_outpaint_reframe"],
+      "args": [
+        "--runs",
+        "2",
+        "--source-video",
+        "public/template-gallery/inputs/wan-industrial-outpaint-source.mp4",
+        "--mask-video",
+        "public/template-gallery/inputs/wan-industrial-outpaint-mask.mp4",
+        "--timeout-ms",
+        "28800000"
+      ]
+    },
+    {
+      "id": "ace-step-text-to-audio-v5",
+      "description": "One bounded ACE capture after NumPy audio arrays receive a dedicated node-cache equality path before PIL-like objects.",
+      "priority": 110,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["ace_step_text_to_audio"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "install-qwen-image-edit-4bit",
+      "description": "Install the Apache-2.0 Diffusers-compatible 4-bit Qwen Image Edit artifact through the app for the 16 GiB edit family.",
+      "priority": 120,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": ["node", "scripts/template-gallery-runner.mjs", "--install-model", "ovedrive/qwen-image-edit-4bit"]
+    },
+    {
+      "id": "repair-flux-schnell",
+      "description": "Repair the incomplete FLUX.1-schnell snapshot through the app before its four-step gallery run.",
+      "priority": 130,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": [
+        "node",
+        "scripts/template-gallery-runner.mjs",
+        "--install-model",
+        "black-forest-labs/FLUX.1-schnell",
+        "--repair-model"
+      ]
+    },
+    {
+      "id": "install-qwen-edit-plus",
+      "description": "Install Qwen Image Edit 2511 through the app for the five multi-reference recipes.",
+      "priority": 140,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": ["node", "scripts/template-gallery-runner.mjs", "--install-model", "Qwen/Qwen-Image-Edit-2511"]
+    },
+    {
+      "id": "install-qwen-layered",
+      "description": "Install Qwen Image Layered through the app for both layer-decomposition recipes.",
+      "priority": 150,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": ["node", "scripts/template-gallery-runner.mjs", "--install-model", "Qwen/Qwen-Image-Layered"]
+    },
+    {
+      "id": "install-flux-dev-fp8",
+      "description": "Install the app-selected lower-memory FLUX.1-dev FP8 artifact.",
+      "priority": 160,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": ["node", "scripts/template-gallery-runner.mjs", "--install-model", "black-forest-labs/FLUX.1-dev-FP8"]
+    },
+    {
+      "id": "install-flux-kontext-nvfp4",
+      "description": "Install the app-selected lower-memory FLUX Kontext NVFP4 artifact.",
+      "priority": 170,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": [
+        "node",
+        "scripts/template-gallery-runner.mjs",
+        "--install-model",
+        "black-forest-labs/FLUX.1-Kontext-dev-NVFP4"
+      ]
+    },
+    {
+      "id": "install-flux-fill",
+      "description": "Install FLUX Fill through the app for on-load-quantized inpaint coverage.",
+      "priority": 180,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": ["node", "scripts/template-gallery-runner.mjs", "--install-model", "black-forest-labs/FLUX.1-Fill-dev"]
+    },
+    {
+      "id": "install-flux-canny",
+      "description": "Install FLUX Canny through the app for on-load-quantized control coverage.",
+      "priority": 190,
+      "maxAttempts": 1,
+      "timeoutMs": 43200000,
+      "command": [
+        "node",
+        "scripts/template-gallery-runner.mjs",
+        "--install-model",
+        "black-forest-labs/FLUX.1-Canny-dev"
+      ]
+    },
+    {
+      "id": "source-qwen-edit-morning-cafe",
+      "description": "Generate the neutral locked cafe source plate for the edit-strength template; hold it for visual review.",
+      "priority": 200,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "qwen-edit-morning-cafe-source"]
+    },
+    {
+      "id": "source-qwen-edit-morning-cafe-v2",
+      "description": "One bounded cafe source regeneration after strengthening the dry-window and dry-exterior weather lock rejected by v1 review.",
+      "priority": 199,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "qwen-edit-morning-cafe-source"]
+    },
+    {
+      "id": "source-qwen-layered-coastal-singer",
+      "description": "Generate the layer-friendly coastal singer plate shared by both layered recipes; hold it for review.",
+      "priority": 210,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "qwen-layered-coastal-singer-source"]
+    },
+    {
+      "id": "source-wan-gallery-subject-front",
+      "description": "Generate the immutable front identity and wardrobe plate for Wan reference-motion proof.",
+      "priority": 905,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": [
+        "node",
+        "scripts/template-gallery-source-runner.mjs",
+        "--asset",
+        "wan-gallery-subject-front-reference"
+      ]
+    },
+    {
+      "id": "source-wan-gallery-subject-profile",
+      "description": "Use Qwen Edit on the approved front plate to derive the matching profile identity plate.",
+      "priority": 906,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["source-wan-gallery-subject-front", "install-qwen-image-edit-4bit"],
+      "command": [
+        "node",
+        "scripts/template-gallery-source-runner.mjs",
+        "--asset",
+        "wan-gallery-subject-profile-reference"
+      ]
+    },
+    {
+      "id": "source-qwen-inpaint-desk",
+      "description": "Generate the stable architect-desk source plate with one isolated maskable clock.",
+      "priority": 240,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "qwen-inpaint-desk-source"]
+    },
+    {
+      "id": "source-qwen-logo-mark",
+      "description": "Generate the clean geometry-locked logo mark for material-transfer proof.",
+      "priority": 250,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "qwen-logo-mark-source"]
+    },
+    {
+      "id": "source-z-brushed-enamel-material",
+      "description": "Generate the shared cobalt-enamel and champagne-aluminum material reference.",
+      "priority": 260,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": [
+        "node",
+        "scripts/template-gallery-source-runner.mjs",
+        "--asset",
+        "z-brushed-enamel-material-reference"
+      ]
+    },
+    {
+      "id": "source-z-harbor-grayscale-control",
+      "description": "Generate the strict grayscale harbor structure plate for the Wan control-video recipe.",
+      "priority": 270,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "z-harbor-grayscale-control-still"]
+    },
+    {
+      "id": "source-wan-toolbox-courier-video",
+      "description": "Generate the tracked red-toolbox courier source clip for masked Wan replacement; hold it for review.",
+      "priority": 907,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "wan-toolbox-courier-source-video"]
+    },
+    {
+      "id": "source-flux-coastal-pavilion-control",
+      "description": "Generate the wide geometry-first coastal pavilion source for FLUX Canny; hold it for review.",
+      "priority": 285,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": [
+        "node",
+        "scripts/template-gallery-source-runner.mjs",
+        "--asset",
+        "flux-coastal-pavilion-control-source"
+      ]
+    },
+    {
+      "id": "prepare-qwen-desk-mask",
+      "description": "Create a byte-locked rounded mask around the reviewed desk clock; coordinates are tied to the source prompt layout.",
+      "priority": 290,
+      "maxAttempts": 1,
+      "dependsOn": ["source-qwen-inpaint-desk"],
+      "command": [
+        "node",
+        "scripts/template-gallery-input-tools.mjs",
+        "rect-mask-image",
+        "--input",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-source.webp",
+        "--output",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-mask.png",
+        "--left",
+        "0.61",
+        "--top",
+        "0.35",
+        "--right",
+        "0.86",
+        "--bottom",
+        "0.72"
+      ]
+    },
+    {
+      "id": "prepare-wan-harbor-control-video",
+      "description": "Turn the reviewed grayscale harbor still into a deterministic 81-frame structural control clip.",
+      "priority": 908,
+      "maxAttempts": 1,
+      "dependsOn": ["source-z-harbor-grayscale-control"],
+      "command": [
+        "node",
+        "scripts/template-gallery-input-tools.mjs",
+        "harbor-control-video",
+        "--input",
+        "artifacts/template-gallery/source-assets/z-harbor-grayscale-control-still.webp",
+        "--output",
+        "artifacts/template-gallery/source-assets/z-harbor-grayscale-control-video.mp4"
+      ]
+    },
+    {
+      "id": "prepare-wan-toolbox-mask-video",
+      "description": "Derive and expand a tracked white-generate mask from the reviewed red-toolbox source clip.",
+      "priority": 909,
+      "maxAttempts": 1,
+      "dependsOn": ["source-wan-toolbox-courier-video"],
+      "command": [
+        "node",
+        "scripts/template-gallery-input-tools.mjs",
+        "red-object-mask-video",
+        "--input",
+        "artifacts/template-gallery/source-assets/wan-toolbox-courier-source-video.mp4",
+        "--output",
+        "artifacts/template-gallery/source-assets/wan-toolbox-courier-mask-video.mp4"
+      ]
+    },
+    {
+      "id": "prepare-flux-coastal-pavilion-canny",
+      "description": "Derive a deterministic edge map only after the coastal pavilion source passes review.",
+      "priority": 315,
+      "maxAttempts": 1,
+      "dependsOn": ["source-flux-coastal-pavilion-control"],
+      "command": [
+        "node",
+        "scripts/template-gallery-input-tools.mjs",
+        "canny-control-image",
+        "--input",
+        "artifacts/template-gallery/source-assets/flux-coastal-pavilion-control-source.webp",
+        "--output",
+        "artifacts/template-gallery/source-assets/flux-coastal-pavilion-canny-control.png"
+      ]
+    },
+    {
+      "id": "z-image-lora-style-v1",
+      "description": "Capture the pinned Z-Image realism-adapter style study twice with immutable graph settings.",
+      "priority": 115,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["z_image_lora_style"],
+      "args": ["--runs", "2", "--allow-non-exact", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "z-image-lora-style-v2",
+      "description": "One bounded LoRA capture after locking expert modular mode so the base ModelsLoader exists before the adapter block is attached.",
+      "priority": 114,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["z_image_lora_style"],
+      "args": ["--runs", "2", "--allow-non-exact", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "fast-lora-v1",
+      "description": "Capture the pinned lower-scale Z-Image realism-adapter helmet contact sheet twice.",
+      "priority": 116,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["fast_lora"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "qwen-upscale-finish-v1",
+      "description": "Capture Qwen generation plus the pinned Real-ESRGAN x4plus net-2x finishing block twice.",
+      "priority": 117,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["qwen_upscale_finish"],
+      "args": ["--runs", "2", "--allow-non-exact", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "qwen-packaging-dieline-v1",
+      "description": "Capture the packaging recipe with the byte-locked carton dieline after the ControlNet placement fix.",
+      "priority": 330,
+      "maxAttempts": 1,
+      "dependsOn": ["qwen-control-image-layout-v3"],
+      "runner": "gallery",
+      "templates": ["qwen_packaging_dieline"],
+      "args": [
+        "--runs",
+        "2",
+        "--control-image",
+        "public/template-gallery/inputs/qwen-carton-layout-control.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-control-image-layout-v3",
+      "description": "One bounded control capture after standalone AutoModelLoader components inherit explicit device and group-offload policy.",
+      "priority": 118,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "runner": "gallery",
+      "templates": ["qwen_control_image_layout"],
+      "args": [
+        "--runs",
+        "2",
+        "--control-image",
+        "public/template-gallery/inputs/qwen-carton-layout-control.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-character-angles-v1",
+      "description": "Create the character turnaround from the reviewed immutable identity plate.",
+      "priority": 340,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-wan-gallery-subject-front"],
+      "runner": "gallery",
+      "templates": ["qwen_character_angles"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/wan-gallery-subject-front-reference.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-tile-extract-v1",
+      "description": "Extract and up-res one locked tile from the approved Z cinematic contact sheet.",
+      "priority": 341,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit"],
+      "runner": "gallery",
+      "templates": ["qwen_tile_extract"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "public/template-gallery/z_image_cinematic_contact_sheet.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-outpaint-aspect-v1",
+      "description": "Run the automatic aspect-outpaint graph twice from the approved AsterMist product plate.",
+      "priority": 342,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit"],
+      "runner": "gallery",
+      "templates": ["qwen_outpaint_aspect_template"],
+      "args": [
+        "--runs",
+        "2",
+        "--allow-non-exact",
+        "--reference-image",
+        "public/template-gallery/qwen_product_mockup.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-inpaint-object-replace-v1",
+      "description": "Replace only the reviewed desk clock using the derived byte-locked mask.",
+      "priority": 343,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "prepare-qwen-desk-mask"],
+      "runner": "gallery",
+      "templates": ["qwen_inpaint_object_replace"],
+      "args": [
+        "--runs",
+        "2",
+        "--allow-non-exact",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-source.webp",
+        "--mask-image",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-mask.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-character-edit-v1",
+      "description": "Apply the default identity-preserving character edit to the reviewed subject plate.",
+      "priority": 344,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-wan-gallery-subject-front"],
+      "runner": "gallery",
+      "templates": ["character_edit"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/wan-gallery-subject-front-reference.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-edit-strength-sweep-v1",
+      "description": "Capture the default strength-sweep starting point from the reviewed neutral cafe plate.",
+      "priority": 119,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-qwen-edit-morning-cafe-v2"],
+      "runner": "gallery",
+      "templates": ["qwen_edit_strength_sweep"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-edit-morning-cafe-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-edit-strength-sweep-v2",
+      "description": "One bounded two-run strength-sweep capture after routing model loads to the configured E: cache and adding backend terminal-receipt polling to the gallery runner.",
+      "priority": 119.5,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-qwen-edit-morning-cafe-v2"],
+      "runner": "gallery",
+      "templates": ["qwen_edit_strength_sweep"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-edit-morning-cafe-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-edit-strength-sweep-v3",
+      "description": "Two bounded strength-sweep captures after replaying raw task-correlated update_value frames when the frontend output store misses a reconnect race.",
+      "priority": 119.75,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-qwen-edit-morning-cafe-v2"],
+      "runner": "gallery",
+      "templates": ["qwen_edit_strength_sweep"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-edit-morning-cafe-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-edit-strength-sweep-v4",
+      "description": "Two bounded strength-sweep captures with a backend-cache output fallback that retains the run context and provenance when preview update association is missed.",
+      "priority": 119.875,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-qwen-edit-morning-cafe-v2"],
+      "runner": "gallery",
+      "templates": ["qwen_edit_strength_sweep"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-edit-morning-cafe-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-edit-strength-sweep-v5",
+      "description": "Final bounded two-run capture accepting explicitly labeled 100% backend terminal receipts when websocket completion frames are missed after output recovery.",
+      "priority": 119.9375,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-qwen-edit-morning-cafe-v2"],
+      "runner": "gallery",
+      "templates": ["qwen_edit_strength_sweep"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-edit-morning-cafe-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-inpaint-mask-draft-v1",
+      "description": "Capture the second direct inpaint recipe against the same reviewed desk and mask contract.",
+      "priority": 346,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "prepare-qwen-desk-mask"],
+      "runner": "gallery",
+      "templates": ["qwen_inpaint_mask_draft"],
+      "args": [
+        "--runs",
+        "2",
+        "--allow-non-exact",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-source.webp",
+        "--mask-image",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-mask.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-outpaint-draft-v1",
+      "description": "Capture the second automatic outpaint graph from the reviewed coastal portrait plate.",
+      "priority": 347,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-image-edit-4bit", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["qwen_outpaint_draft"],
+      "args": [
+        "--runs",
+        "2",
+        "--allow-non-exact",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-product-ad-composite-v1",
+      "description": "Combine the approved ad-layout and AsterMist product references with the untouched default prompt.",
+      "priority": 350,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-edit-plus"],
+      "runner": "gallery",
+      "templates": ["qwen_product_ad_composite"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "public/template-gallery/qwen_poster_logo_text.webp,public/template-gallery/qwen_product_mockup.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-product-relight-v1",
+      "description": "Relight the approved product into the approved glasshouse scene reference.",
+      "priority": 351,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-edit-plus"],
+      "runner": "gallery",
+      "templates": ["qwen_product_relight"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "public/template-gallery/high_quality.webp,public/template-gallery/qwen_product_mockup.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-logo-texture-v1",
+      "description": "Transfer the reviewed enamel/aluminum material onto the reviewed geometry-locked mark.",
+      "priority": 352,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-edit-plus", "source-qwen-logo-mark", "source-z-brushed-enamel-material"],
+      "runner": "gallery",
+      "templates": ["qwen_logo_texture"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-logo-mark-source.webp,artifacts/template-gallery/source-assets/z-brushed-enamel-material-reference.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-reference-fusion-v1",
+      "description": "Fuse the approved product subject with the reviewed enamel/aluminum material language.",
+      "priority": 353,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-edit-plus", "source-z-brushed-enamel-material"],
+      "runner": "gallery",
+      "templates": ["reference_fusion"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "public/template-gallery/qwen_product_mockup.webp,artifacts/template-gallery/source-assets/z-brushed-enamel-material-reference.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-multi-reference-product-v1",
+      "description": "Combine approved product geometry, reviewed material, and approved glasshouse style references.",
+      "priority": 354,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-edit-plus", "source-z-brushed-enamel-material"],
+      "runner": "gallery",
+      "templates": ["qwen_multi_reference_product"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "public/template-gallery/qwen_product_mockup.webp,artifacts/template-gallery/source-assets/z-brushed-enamel-material-reference.webp,public/template-gallery/high_quality.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layered-portrait-v1",
+      "description": "Decompose the reviewed coastal singer source with the detailed layered-portrait recipe.",
+      "priority": 360,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["qwen_layered_portrait"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layered-portrait-v2",
+      "description": "One bounded layered-portrait capture after routing every Hugging Face consumer through MoDiff's configured cache; preserve the interrupted v1 receipt.",
+      "priority": 360.5,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["qwen_layered_portrait"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layered-portrait-v3",
+      "description": "One bounded layered-portrait capture after the graph shape consumes the backend-selected Qwen low-VRAM quantization bundle instead of emitting an unquantized loader.",
+      "priority": 360.75,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["qwen_layered_portrait"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layered-portrait-v4",
+      "description": "One bounded layered-portrait capture after normalizing the source plate to the RGBA input contract required by Qwen Layered's four-channel VAE.",
+      "priority": 360.875,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["qwen_layered_portrait"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layered-portrait-v5",
+      "description": "One bounded layered-portrait capture after preserving the wrapped transformer forward signature, root denoiser failures, and structured Modular Diffusers step progress.",
+      "priority": 360.9375,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["qwen_layered_portrait"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layered-portrait-v6",
+      "description": "Two bounded 640-path performance/quality probes using the verified 4-bit bundle with RAM-backed group offload and 10 steps after SSD offload exceeded eight minutes per step.",
+      "priority": 360.96875,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["qwen_layered_portrait"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--resource-mode",
+        "expert",
+        "--quantization-mode",
+        "bnb_4bit",
+        "--offload-mode",
+        "group_cpu",
+        "--steps",
+        "10",
+        "--width",
+        "640",
+        "--height",
+        "640",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layer-decomposition-v1",
+      "description": "Decompose the same reviewed singer source with the general layer-decomposition recipe.",
+      "priority": 361,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["layer_decomposition"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "qwen-layer-decomposition-v2",
+      "description": "One bounded general layer-decomposition capture after complete configured snapshots take precedence over orphaned partials in fallback caches.",
+      "priority": 361.5,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-qwen-layered", "source-qwen-layered-coastal-singer"],
+      "runner": "gallery",
+      "templates": ["layer_decomposition"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "wan-vace-masked-object-replace-v1",
+      "description": "Replace the tracked toolbox across the reviewed source clip using its derived white-generate mask.",
+      "priority": 910,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "dependsOn": ["prepare-wan-toolbox-mask-video"],
+      "runner": "gallery",
+      "templates": ["wan_vace_masked_object_replace"],
+      "args": [
+        "--runs",
+        "2",
+        "--source-video",
+        "artifacts/template-gallery/source-assets/wan-toolbox-courier-source-video.mp4",
+        "--mask-video",
+        "artifacts/template-gallery/source-assets/wan-toolbox-courier-mask-video.mp4",
+        "--timeout-ms",
+        "28800000"
+      ]
+    },
+    {
+      "id": "wan-vace-reference-motion-v1",
+      "description": "Animate the same approved subject from front and profile identity plates.",
+      "priority": 911,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "dependsOn": ["source-wan-gallery-subject-front", "source-wan-gallery-subject-profile"],
+      "runner": "gallery",
+      "templates": ["wan_vace_reference_motion"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/wan-gallery-subject-front-reference.webp,artifacts/template-gallery/source-assets/wan-gallery-subject-profile-reference.webp",
+        "--timeout-ms",
+        "28800000"
+      ]
+    },
+    {
+      "id": "wan-vace-grayscale-control-v1",
+      "description": "Generate the harbor clip from the reviewed deterministic grayscale structure video.",
+      "priority": 912,
+      "maxAttempts": 1,
+      "timeoutMs": 30000000,
+      "dependsOn": ["prepare-wan-harbor-control-video"],
+      "runner": "gallery",
+      "templates": ["wan_vace_grayscale_control"],
+      "args": [
+        "--runs",
+        "2",
+        "--control-video",
+        "artifacts/template-gallery/source-assets/z-harbor-grayscale-control-video.mp4",
+        "--timeout-ms",
+        "28800000"
+      ]
+    },
+    {
+      "id": "ace-step-audio-variation-v1",
+      "description": "Create two locked ACE cover/variation outputs from the approved text-to-audio gallery source.",
+      "priority": 380,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["ace-step-text-to-audio-v5"],
+      "runner": "gallery",
+      "templates": ["ace_step_audio_variation"],
+      "args": [
+        "--runs",
+        "2",
+        "--source-audio",
+        "public/template-gallery/ace_step_text_to_audio.wav",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "ace-step-audio-continuation-v1",
+      "description": "Continue the approved ACE source twice using the untouched continuation settings.",
+      "priority": 381,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["ace-step-text-to-audio-v5"],
+      "runner": "gallery",
+      "templates": ["ace_step_audio_continuation"],
+      "args": [
+        "--runs",
+        "2",
+        "--source-audio",
+        "public/template-gallery/ace_step_text_to_audio.wav",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "ace-step-audio-repaint-v1",
+      "description": "Repaint the selected default interval of the approved ACE source twice.",
+      "priority": 382,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["ace-step-text-to-audio-v5"],
+      "runner": "gallery",
+      "templates": ["ace_step_audio_repaint"],
+      "args": [
+        "--runs",
+        "2",
+        "--source-audio",
+        "public/template-gallery/ace_step_text_to_audio.wav",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "flux-schnell-text-to-image-v1",
+      "description": "Capture two four-step FLUX Schnell outputs after the app repair proves the snapshot complete.",
+      "priority": 390,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["repair-flux-schnell"],
+      "runner": "gallery",
+      "templates": ["flux_schnell_text_to_image"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "flux-dev-expert-text-to-image-v1",
+      "description": "Capture two FLUX Dev outputs through the app-selected FP8 artifact.",
+      "priority": 391,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-flux-dev-fp8"],
+      "runner": "gallery",
+      "templates": ["flux_dev_expert_text_to_image"],
+      "args": ["--runs", "2", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "flux-kontext-edit-v1",
+      "description": "Apply the default Kontext edit to the approved glasshouse source image.",
+      "priority": 392,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-flux-kontext-nvfp4"],
+      "runner": "gallery",
+      "templates": ["flux_kontext_edit"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "public/template-gallery/high_quality.webp",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "flux-fill-inpaint-v1",
+      "description": "Run FLUX Fill twice against the reviewed desk and byte-locked clock mask.",
+      "priority": 393,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-flux-fill", "prepare-qwen-desk-mask"],
+      "runner": "gallery",
+      "templates": ["flux_fill_inpaint"],
+      "args": [
+        "--runs",
+        "2",
+        "--reference-image",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-source.webp",
+        "--mask-image",
+        "artifacts/template-gallery/source-assets/qwen-inpaint-desk-mask.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    },
+    {
+      "id": "flux-control-canny-v1",
+      "description": "Run FLUX Canny twice with the deterministic edge map derived from the approved product plate.",
+      "priority": 394,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "dependsOn": ["install-flux-canny", "prepare-flux-coastal-pavilion-canny"],
+      "runner": "gallery",
+      "templates": ["flux_control_canny"],
+      "args": [
+        "--runs",
+        "2",
+        "--control-image",
+        "artifacts/template-gallery/source-assets/flux-coastal-pavilion-canny-control.png",
+        "--timeout-ms",
+        "1800000"
+      ]
+    }
+  ]
+}

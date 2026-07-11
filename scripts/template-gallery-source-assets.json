@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "qwen-edit-morning-cafe-source",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "qwen-edit-morning-cafe-source.webp",
+      "downstreamTemplates": ["qwen_edit_strength_sweep"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: photograph one quiet contemporary cafe in clear late-morning daylight, before any mood or material transformation. Weather lock: the day is dry; both window panes are optically clean and completely dry, the exterior pavement is dry, and there are zero raindrops, water streaks, condensation, wet reflections, umbrellas, or storm cues anywhere. Composition: locked wide 28 mm interior view from seated eye height, three walnut tables forming a readable diagonal, six pale-oak chairs in fixed positions, a long service counter on frame left, two tall dry street windows on frame right, one centered aisle, and a visible rear bookcase. Lighting: soft neutral window key, restrained practical pendants, clean shadow detail, natural white balance, and an even editorial exposure. Preservation landmarks: keep table corners, chair backs, window mullions, counter edge, ceiling beams, floor seams, and vanishing lines crisp and unoccluded so a later edit can prove that geometry stayed fixed. Finish: realistic hospitality photography, fine material texture, moderate depth of field, no people, no night lighting, no blue velvet, no brass pools, no text, and no surreal decoration.",
+      "negativePrompt": "rain, raindrops on glass, water streaks, wet window, wet street, window condensation, storm, umbrella, night scene, blue velvet, brass lamps, moved furniture, warped room geometry, fisheye distortion, duplicate chairs, people, clutter, signage, text, blown windows, crushed shadows, soft focus"
+    },
+    {
+      "id": "qwen-layered-coastal-singer-source",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "qwen-layered-coastal-singer-source.webp",
+      "downstreamTemplates": ["qwen_layered_portrait", "layer_decomposition"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: create a finished cinematic medium portrait designed for later layer decomposition. Subject: one female singer in her early thirties with an oval face, warm brown skin, shoulder-length windblown black hair with one narrow copper streak, a reflective silver jacket over a charcoal top, and one vintage black microphone held at chest height. Pose and crop: waist-up three-quarter stance on the right third, face turned slightly toward camera, both hands readable, hair flyaways separated against the sky, and generous clean space on the left. Environment: windswept rocky coast at warm late afternoon, sparkling ocean, one distant tall ship, soft haze, and a few defocused amber stage-like practical lights integrated behind the subject. Layer-friendly finish: distinct foreground silhouette, separated hair edge, readable jacket panels, microphone, ocean, sky, ship, haze, and typography-safe negative space; realistic skin, cinematic 50 mm lens, subtle grain, no text.",
+      "negativePrompt": "extra people, extra microphone, merged hair and sky, cropped head, hidden hands, plastic skin, jagged silhouette, busy background, duplicate ship, warped jacket, text, logo, watermark, low detail"
+    },
+    {
+      "id": "wan-gallery-subject-front-reference",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "wan-gallery-subject-front-reference.webp",
+      "downstreamTemplates": ["wan_vace_reference_motion"],
+      "timeoutMs": 1800000,
+      "prompt": "Reference identity plate: one South Asian woman, age thirty-four, oval face, warm medium-brown skin, dark almond eyes, straight chin-length black bob with a narrow copper streak over the left temple, and one small silver hoop in each ear. Wardrobe lock: knee-length forest-green wool coat with three matte-black buttons, burnt-orange scarf tucked once at the collar, charcoal trousers, black ankle boots, and no other accessories. View: clean full-body front three-quarter stance, neutral calm expression, arms relaxed, both shoes visible, centered against a simple pale-gray stone gallery wall with soft overcast skylight. Camera: chest-height 50 mm portrait lens, natural proportions, crisp fabric weave and face detail, restrained floor reflection, even color, no motion, no text. This is an immutable identity and wardrobe reference, not a stylized fashion redesign.",
+      "negativePrompt": "different person, multiple people, long hair, missing copper streak, different coat color, extra jewelry, bag, hat, cropped feet, exaggerated pose, fisheye distortion, text, watermark, soft face"
+    },
+    {
+      "id": "wan-gallery-subject-profile-reference",
+      "template": "character_edit",
+      "mediaType": "image",
+      "stagedFilename": "wan-gallery-subject-profile-reference.webp",
+      "referenceImages": ["artifacts/template-gallery/source-assets/wan-gallery-subject-front-reference.webp"],
+      "downstreamTemplates": ["wan_vace_reference_motion"],
+      "timeoutMs": 1800000,
+      "prompt": "Edit the supplied front reference into a second immutable identity plate without redesigning the person or wardrobe. Preserve exactly: the same South Asian woman, age thirty-four, oval face, warm medium-brown skin, dark almond eye, straight chin-length black bob with the narrow copper streak over the left temple, small silver hoop earrings, forest-green wool coat with three matte-black buttons, burnt-orange scarf, charcoal trousers, and black ankle boots. Change only pose and view: clean full-body left-facing side profile in a natural mid-step pose, both arms and both shoes readable, centered against the same pale-gray stone gallery wall and soft overcast skylight. Keep chest-height 50 mm perspective, natural proportions, crisp coat silhouette and fabric weave, restrained floor reflection, no motion blur, and no text.",
+      "negativePrompt": "different identity, multiple people, long hair, missing copper streak, different wardrobe, extra jewelry, bag, hat, cropped feet, front view, exaggerated stride, fisheye distortion, text, watermark, soft face"
+    },
+    {
+      "id": "qwen-inpaint-desk-source",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "qwen-inpaint-desk-source.webp",
+      "downstreamTemplates": ["qwen_inpaint_object_replace", "qwen_inpaint_mask_draft"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: photograph one refined architect's desk with a clearly maskable hero object and stable surrounding detail. Scene: warm walnut tabletop viewed from a slightly elevated 50 mm camera, one compact matte-black rectangular alarm clock centered on the right third, closed sketchbook and mechanical pencil on the left, one ceramic cup near the rear edge, and a softly defocused studio wall behind. Object contract: the clock is isolated, fully visible, grounded, approximately twenty percent of frame width, with a clean silhouette and empty margin around it; no hands or overlapping props cross its boundary. Lighting: cool window key from upper left, warm practical fill from rear right, realistic contact shadow and faint tabletop reflection, crisp wood grain, controlled exposure. Keep every non-clock object visually distinctive for later unmasked-pixel comparison. No lamp, no people, no readable text, no logo.",
+      "negativePrompt": "lamp, person, hand, overlapping object, clutter, multiple clocks, floating clock, warped tabletop, extreme perspective, text, logo, watermark, blown highlights, crushed shadows, soft focus"
+    },
+    {
+      "id": "qwen-logo-mark-source",
+      "template": "qwen_text_rendering",
+      "mediaType": "image",
+      "stagedFilename": "qwen-logo-mark-source.webp",
+      "downstreamTemplates": ["qwen_logo_texture"],
+      "timeoutMs": 1800000,
+      "prompt": "Create one clean vector-like brand-mark source plate on a pure warm-white background. Mark geometry: a bold centered black modular letter M built from four equal-width vertical stems and two precise forty-five-degree inner joins, with generous negative counters, perfectly symmetrical baseline, sharp corners, and no texture. Layout: the mark fills sixty percent of the square canvas with equal margins and no surrounding frame. Output only the single black M symbol; no words, captions, mockup surface, lighting effects, shadows, gradients, extra icons, or watermark. Edges must be crisp enough for a later material-transfer edit to preserve the exact silhouette.",
+      "negativePrompt": "words, caption, extra letters, multiple marks, serif, rounded corners, texture, shadow, gradient, perspective mockup, colored background, low contrast, warped symmetry, watermark"
+    },
+    {
+      "id": "z-brushed-enamel-material-reference",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-brushed-enamel-material-reference.webp",
+      "downstreamTemplates": ["qwen_logo_texture", "reference_fusion", "qwen_multi_reference_product"],
+      "timeoutMs": 1800000,
+      "prompt": "Material-reference objective: one square macro photograph containing a disciplined premium surface language for later reference transfer, not a finished product. Show a large continuous panel of deep cobalt vitreous enamel inset into brushed champagne aluminum, with a narrow polished bevel between materials, fine directional metal grain, tiny realistic enamel depth, and one soft diagonal studio highlight. Camera is perpendicular to the surface with a 100 mm macro lens; keep scale, grain direction, bevel construction, and reflectivity unambiguous across the frame. Neutral dark studio surroundings may reflect subtly at the edges. No object silhouette, logo, letters, fasteners, seams beyond the single bevel, decorative pattern, hands, or watermark.",
+      "negativePrompt": "finished product, logo, text, letters, busy pattern, rust, scratches, fingerprints, bolts, multiple panels, warped perspective, plastic material, flat lighting, blown reflection, low detail"
+    },
+    {
+      "id": "z-harbor-grayscale-control-still",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-harbor-grayscale-control-still.webp",
+      "downstreamTemplates": ["wan_vace_grayscale_control"],
+      "timeoutMs": 1800000,
+      "prompt": "Control-frame objective: create a strict grayscale cinematic structure plate for a later controlled harbor video. Use only neutral gray values with no color and no photographic texture. Composition: wide 16:9 harbor viewed from a low quay, one large fishing boat occupying the middle-right, one smaller boat on the distant left, a strong wet-concrete dock plane across the lower third, three clearly separated walking human silhouettes moving left to right, coiled rope shapes near the foreground edge, vertical masts, a low horizon, pale mist, and a thin bright sunrise band. Geometry must be crisp and readable: stable boat count, clean silhouettes, distinct depth layers, strong edges, open water lanes, and clear negative space around figures. Render as a polished high-resolution grayscale depth/edge guide with smooth tonal separation; no text, logos, color, grain, or decorative detail.",
+      "negativePrompt": "color, text, logo, photographic texture, noisy grain, extra boats, extra foreground figures, broken silhouettes, merged people, cluttered dock, warped horizon, cartoon outlines, low contrast, watermark"
+    },
+    {
+      "id": "flux-coastal-pavilion-control-source",
+      "template": "z_image_cinematic_contact_sheet",
+      "mediaType": "image",
+      "stagedFilename": "flux-coastal-pavilion-control-source.webp",
+      "downstreamTemplates": ["flux_control_canny"],
+      "timeoutMs": 1800000,
+      "prompt": "Control-source objective: create one clean wide architectural visualization whose geometry can be converted into a strict Canny edge map for a later coastal-pavilion render. Architecture: one compact single-story research pavilion on a low dune, long shallow asymmetrical roofline, board-formed concrete service core on the left, transparent glazed working hall on the right, six evenly spaced dark mullions, one recessed entrance, three broad exterior steps, a thin accessible ramp and railing, and a shallow rectangular reflecting pool in the foreground. Composition and geometry: fixed 32 mm eye-level view from front-left, strong two-point perspective, entire building visible with clear margins, low horizon, uncluttered facade divisions, crisp openings, readable stair and pool edges, sparse dune grass kept away from structural contours, and only one tiny distant person. Lighting: soft late-afternoon overcast with a warm horizon break, enough tonal separation for edge detection, realistic materials, no fog obscuring geometry, no text, labels, vehicles, trees crossing the facade, or decorative clutter.",
+      "negativePrompt": "curved dome, bottle, product, close crop, extra building, extra floor, busy vegetation, trees crossing edges, crowd, cars, warped roofline, hidden stairs, flat elevation, fisheye, text, labels, logo, watermark, soft focus"
+    },
+    {
+      "id": "wan-toolbox-courier-source-video",
+      "template": "wan_vace_cinematic_text_to_video",
+      "mediaType": "video",
+      "stagedFilename": "wan-toolbox-courier-source-video.mp4",
+      "downstreamTemplates": ["wan_vace_masked_object_replace"],
+      "timeoutMs": 28800000,
+      "prompt": "Source-video objective: one continuous five-second live-action shot designed for a later tracked-object replacement. Subject: one warehouse courier in a charcoal work jacket and dark trousers walks left to right while carrying a single bright-red rectangular steel toolbox in the right hand. Toolbox contract: low rectangular body, black folding handle, two silver latches, fully visible for most frames, consistent size, no logo, and no other red objects nearby. Timeline: open on a medium-wide side view as the courier lifts the toolbox from a waist-high concrete bench, takes four grounded steps across a wet industrial service corridor, then sets it on a second bench. Camera: stabilized chest-height 50 mm parallel dolly, constant speed, no cuts, stable corridor geometry. Lighting: cool skylight, sparse warm practicals, realistic floor reflection, contact shadows, hand occlusion, cloth inertia, and natural motion blur. Preserve a clean margin around the moving toolbox for mask tracking; no other people, no text, no camera shake.",
+      "negativePrompt": "multiple people, multiple toolboxes, changing toolbox shape, hidden toolbox, red clothing, logo, text, floating object, broken grip, sliding feet, pose reset, camera cut, jitter, flicker, warped corridor, exposure pumping, low detail"
+    }
+  ]
+}

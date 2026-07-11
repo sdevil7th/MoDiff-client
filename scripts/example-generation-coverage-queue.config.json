@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "campaignMode": "coverage_reviewed",
+  "defaults": {
+    "maxAttempts": 2,
+    "timeoutMs": 7200000
+  },
+  "jobs": [
+    {
+      "id": "review-existing-ace-step-text-to-audio",
+      "description": "Do not regenerate: the locked ACE-Step pilot output must receive a complete listening and parity review.",
+      "priority": 10,
+      "initialStatus": "blocked_external",
+      "initialReason": "A valid locked output already exists and must be reviewed before another run.",
+      "campaignMode": "coverage_reviewed",
+      "requiresReviewBeforeRun": true,
+      "recipeLockHash": "sha256:recipe-lock-v1:3cf79dcb43796a607cc1a8d40f11f7fa256394381683b62f209b07fed0da6315",
+      "runner": "gallery",
+      "templates": ["ace_step_text_to_audio"],
+      "args": ["--reviewed", "--runs", "1", "--timeout-ms", "1800000"]
+    },
+    {
+      "id": "review-existing-wan-vace-cinematic-text-to-video",
+      "description": "Do not regenerate: the locked Wan pilot output must receive complete playback, frame and parity review.",
+      "priority": 90,
+      "initialStatus": "blocked_external",
+      "initialReason": "A valid locked output already exists and must be reviewed before another run.",
+      "campaignMode": "coverage_reviewed",
+      "requiresReviewBeforeRun": true,
+      "recipeLockHash": "sha256:recipe-lock-v1:c45c12b137fe2fb535a0cfbda30bd8a29d102aefc3175b7bf4f906aab7ad6d66",
+      "runner": "gallery",
+      "templates": ["wan_vace_cinematic_text_to_video"],
+      "args": ["--reviewed", "--runs", "1", "--timeout-ms", "7200000"]
+    },
+    {
+      "id": "review-existing-wan-vace-animate-product-still",
+      "description": "Do not regenerate or publish before the Wan family pilot; retain the existing locked output for later review.",
+      "priority": 100,
+      "initialStatus": "blocked_external",
+      "initialReason": "The family pilot is unpublished and a valid locked output already exists.",
+      "campaignMode": "coverage_reviewed",
+      "requiresReviewBeforeRun": true,
+      "recipeLockHash": "sha256:recipe-lock-v1:ab1c9cfdb09f725a69eb2101bc7965641ab327038a2c7459b4bdffc4b5c1b6fd",
+      "runner": "gallery",
+      "templates": ["wan_vace_animate_product_still"],
+      "args": [
+        "--reviewed",
+        "--runs",
+        "1",
+        "--reference-image",
+        "public/template-gallery/qwen_product_mockup.webp",
+        "--timeout-ms",
+        "7200000"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+/*
+ * Global and third-party styling only.
+ * Component visuals belong in src/theme tokens, src/ui primitives, or local component classes.
+ */
+
+* {
+  scrollbar-color: rgba(255, 255, 255, 0.25) rgba(0, 0, 0, 0);
+  scrollbar-width: auto;
+}
+
+.clear-fix::after {
+  content: '';
+  display: table;
+  clear: both;
+}
+
+.crisp-image {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.modiff-generated-image {
+  image-rendering: auto;
+}
+
+.modiff-hidden {
+  display: none !important;
+}
+
+.modiff-disabled {
+  opacity: 0.35 !important;
+  pointer-events: none !important;
+}
+
+.modiff-resize-handle-active {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+@keyframes modiff-progress-indeterminate {
+  0% {
+    transform: translateX(-140%);
+  }
+
+  100% {
+    transform: translateX(520%);
+  }
+}

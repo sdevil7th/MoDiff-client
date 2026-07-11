@@ -1,0 +1,7 @@
+artifacts/
+dist/
+node_modules/
+output/
+playwright-report/
+public/template-gallery/
+test-results/

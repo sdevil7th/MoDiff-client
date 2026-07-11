@@ -1,0 +1,52 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Source Sans Pro', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --color-hf-yellow: #ffd21e;
+  --color-hf-orange: #ff9d00;
+  --color-hf-gray: #6b7280;
+  --color-modiff-bg: #0b0f19;
+  --color-modiff-surface: #101623;
+  --color-modiff-panel: #141c2e;
+  --color-modiff-muted: #6a7282;
+  --color-modiff-text: #f9fafb;
+  --color-modiff-border: #1e2939;
+  --color-modiff-blue: #3080ff;
+  --color-modiff-red: #fb2c36;
+  --color-modiff-green: #00baa7;
+
+  --radius-modiff-compact: 4px;
+  --radius-modiff-panel: 6px;
+  --shadow-modiff-node: 0 10px 24px rgb(0 0 0 / 35%);
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    font-family: var(--font-sans);
+    background: var(--color-modiff-bg);
+    color: var(--color-modiff-text);
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background: var(--color-modiff-bg);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  select option,
+  select optgroup {
+    background: var(--color-modiff-bg);
+    color: var(--color-modiff-text);
+  }
+}

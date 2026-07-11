@@ -1,0 +1,191 @@
+import type { NodeData } from '../stores/useNodeStore';
+
+export type NodeCatalogVisibility = 'essential' | 'advanced' | 'legacy' | 'internal';
+
+export type NodeSurfaceCategory =
+  | 'Load'
+  | 'Generate'
+  | 'Edit'
+  | 'Condition'
+  | 'Adapters'
+  | 'Preview'
+  | 'Export'
+  | 'Audio'
+  | 'Image'
+  | 'Video'
+  | 'Text'
+  | 'Utility';
+
+export type NodeRuntimeKind = 'diffusers' | 'diffusers_accelerated' | 'legacy_external' | 'unsupported';
+
+export type NodeCatalogEntry = {
+  key: string;
+  dragKey: string;
+  label: string;
+  description?: string;
+  surfaceCategory: NodeSurfaceCategory;
+  visibility: NodeCatalogVisibility;
+  runtimeKind: NodeRuntimeKind;
+  isDiffusersBacked: boolean;
+  acceleratorStrategy?: string;
+  legacyReason?: string;
+  node: NodeData;
+};
+
+const SURFACE_CATEGORY_ORDER: NodeSurfaceCategory[] = [
+  'Load',
+  'Generate',
+  'Edit',
+  'Condition',
+  'Adapters',
+  'Preview',
+  'Export',
+  'Audio',
+  'Image',
+  'Video',
+  'Text',
+  'Utility',
+];
+
+const MODEL_SPECIFIC_MODULES = new Set(['modules.QwenImage', 'modules.WanVACE']);
+
+const ESSENTIAL_NODE_KEYS = new Set([
+  'modules.DiffusersImage.LoadPipeline',
+  'modules.DiffusersAudio.LoadPipeline',
+  'modules.DiffusersImage.Generate',
+  'modules.DiffusersImage.Edit',
+  'modules.DiffusersImage.Inpaint',
+  'modules.DiffusersImage.ControlGenerate',
+  'modules.DiffusersImage.LoadAdapter',
+  'modules.DiffusersAudio.Generate',
+  'modules.Audio.Load',
+  'modules.Audio.Export',
+  'modules.Image.Load',
+  'modules.Image.Preview',
+  'modules.Video.Load',
+  'modules.Video.Export',
+  'modules.Text.Display',
+]);
+
+const FACADE_LABELS: Record<string, string> = {
+  'modules.DiffusersImage.LoadPipeline': 'Load pipeline',
+  'modules.DiffusersAudio.LoadPipeline': 'Load pipeline',
+  'modules.DiffusersImage.Generate': 'Generate image',
+  'modules.DiffusersImage.Edit': 'Edit image',
+  'modules.DiffusersImage.Inpaint': 'Inpaint',
+  'modules.DiffusersImage.ControlGenerate': 'Generate image',
+  'modules.DiffusersImage.LoadAdapter': 'Load adapter',
+  'modules.DiffusersAudio.Generate': 'Generate audio',
+  'modules.Audio.Load': 'Load audio',
+  'modules.Audio.Export': 'Export',
+  'modules.Image.Load': 'Load image',
+  'modules.Image.Preview': 'Preview',
+  'modules.Video.Load': 'Load video',
+  'modules.Video.Export': 'Export',
+  'modules.Text.Display': 'Preview text',
+  'modules.ModularDiffusers.ModelsLoader': 'Load model',
+};
+
+function nodeKey(node: NodeData) {
+  return `${node.module}.${node.action}`;
+}
+
+function textIncludesAny(text: string, values: string[]) {
+  const lower = text.toLowerCase();
+  return values.some((value) => lower.includes(value));
+}
+
+function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
+  const text = `${key} ${node.category} ${node.label}`.toLowerCase();
+  if (textIncludesAny(text, ['export', 'save'])) return 'Export';
+  if (textIncludesAny(text, ['preview', 'display'])) return 'Preview';
+  if (textIncludesAny(text, ['loadpipeline', 'modelsloader', 'loader', 'load model', 'load'])) return 'Load';
+  if (textIncludesAny(text, ['generate', 'sampler', 'denoise', 'decode', 'pipeline'])) return 'Generate';
+  if (textIncludesAny(text, ['inpaint', 'outpaint', 'edit', 'mask', 'color'])) return 'Edit';
+  if (textIncludesAny(text, ['control', 'conditioning', 'encode', 'embedding', 'prompt'])) return 'Condition';
+  if (textIncludesAny(text, ['adapter', 'lora'])) return 'Adapters';
+  if (textIncludesAny(text, ['audio', 'ace'])) return 'Audio';
+  if (textIncludesAny(text, ['video', 'wan'])) return 'Video';
+  if (textIncludesAny(text, ['image', 'preview'])) return 'Image';
+  if (textIncludesAny(text, ['text'])) return 'Text';
+  return 'Utility';
+}
+
+function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
+  if (node.type === 'group') return 'internal';
+  if (key.startsWith('modules.Experiments.')) return 'legacy';
+  if (textIncludesAny(`${key} ${node.label}`, ['nunchaku', 'sd3', 'deprecated'])) return 'legacy';
+  if (ESSENTIAL_NODE_KEYS.has(key)) return 'essential';
+  if (MODEL_SPECIFIC_MODULES.has(node.module)) return 'advanced';
+  if (node.module === 'modules.ModularDiffusers') return 'advanced';
+  if (node.module === 'modules.ModelArtifact') return 'advanced';
+  if (node.module.startsWith('custom.')) return 'advanced';
+  return 'advanced';
+}
+
+function runtimeKindForNode(node: NodeData, key: string): NodeRuntimeKind {
+  const text = `${key} ${node.label}`.toLowerCase();
+  if (textIncludesAny(text, ['nunchaku'])) return 'diffusers_accelerated';
+  if (key.startsWith('modules.Experiments.')) return 'legacy_external';
+  if (textIncludesAny(text, ['sd3'])) return 'legacy_external';
+  return 'diffusers';
+}
+
+function normalizeCatalogLabel(node: NodeData, key: string) {
+  if (FACADE_LABELS[key]) return FACADE_LABELS[key];
+  const text = `${key} ${node.category} ${node.label}`.toLowerCase();
+  if (textIncludesAny(text, ['loadpipeline'])) return 'Load pipeline';
+  if (textIncludesAny(text, ['export', 'save'])) return 'Export';
+  if (textIncludesAny(text, ['preview', 'display']))
+    return textIncludesAny(text, ['text']) ? 'Preview text' : 'Preview';
+  if (textIncludesAny(text, ['inpaint', 'outpaint', 'edit'])) return 'Edit image';
+  if (textIncludesAny(text, ['generate'])) {
+    if (textIncludesAny(text, ['audio', 'ace'])) return 'Generate audio';
+    if (textIncludesAny(text, ['video', 'wan'])) return 'Generate video';
+    return 'Generate image';
+  }
+  return node.label || `${node.module}.${node.action}`;
+}
+
+export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCatalogEntry {
+  const runtimeKind = runtimeKindForNode(node, key);
+  const visibility = visibilityForNode(node, key);
+  const isDiffusersBacked = runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated';
+  const legacyReason =
+    visibility === 'legacy'
+      ? 'Compatibility or experiment node. Hidden from Essentials.'
+      : MODEL_SPECIFIC_MODULES.has(node.module) || node.module === 'modules.ModularDiffusers'
+        ? 'Backend strategy node. Studio routes normal workflows through profiles.'
+        : undefined;
+
+  return {
+    key,
+    dragKey: key,
+    label: normalizeCatalogLabel(node, key),
+    description: node.description,
+    surfaceCategory: categoryFromNode(node, key),
+    visibility,
+    runtimeKind,
+    isDiffusersBacked,
+    acceleratorStrategy: runtimeKind === 'diffusers_accelerated' ? 'accelerated Diffusers strategy' : undefined,
+    legacyReason,
+    node,
+  };
+}
+
+export function nodeCatalogEntries(nodes: Record<string, NodeData>) {
+  const entries = Object.entries(nodes).map(([key, node]) => getNodeCatalogEntry(node, key));
+  const seenFacadeIds = new Set<string>();
+
+  return entries.filter((entry) => {
+    if (entry.visibility !== 'essential') return true;
+    const facadeId = entry.key;
+    if (seenFacadeIds.has(facadeId)) return false;
+    seenFacadeIds.add(facadeId);
+    return true;
+  });
+}
+
+export function compareNodeSurfaceCategories(left: NodeSurfaceCategory, right: NodeSurfaceCategory) {
+  return SURFACE_CATEGORY_ORDER.indexOf(left) - SURFACE_CATEGORY_ORDER.indexOf(right) || left.localeCompare(right);
+}
