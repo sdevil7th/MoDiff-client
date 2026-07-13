@@ -175,6 +175,102 @@ test('parallel discovery keeps loading active until every endpoint settles', asy
   assert.equal(nodesStoreModule.useNodesStore.getState().isLoading, false);
 });
 
+test('runtime discovery normalizes legacy and managed runtime payloads', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ready: true,
+      packages: {
+        torch: {
+          version: '2.test',
+          cuda_available: true,
+          cuda_device_name: 'Legacy CUDA',
+          cuda_device_total_memory: 16 * 1024 ** 3,
+          cuda_memory_free_bytes: 12 * 1024 ** 3,
+        },
+      },
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+
+  let status = nodesStoreModule.useNodesStore.getState().runtimeStatus;
+  assert.equal(status.ready, true);
+  assert.equal(status.runtimeEnvironment.profileVerified, false);
+  assert.equal(status.runtimeEnvironment.executionReady, true);
+  assert.equal(status.runtimeEnvironment.defaultDevice, 'cuda:0');
+  assert.deepEqual(
+    status.runtimeEnvironment.devices.map(({ backend, device }) => ({ backend, device })),
+    [
+      { backend: 'cuda', device: 'cuda:0' },
+      { backend: 'cpu', device: 'cpu:0' },
+    ],
+  );
+
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ready: true,
+      packages: { torch: { version: '2.9.1+rocm7.2', cuda_available: true } },
+      hardware: {
+        schema_version: 1,
+        default_device: 'cuda:0',
+        devices: [
+          {
+            type: 'cuda',
+            device: 'cuda:0',
+            name: 'AMD Radeon',
+            vram_total: 16 * 1024 ** 3,
+            vram_free: 10 * 1024 ** 3,
+          },
+          { type: 'cpu', device: 'cpu:0', name: 'CPU' },
+        ],
+      },
+      runtime_profile: {
+        requested: 'amd-rocm-linux',
+        installed: 'amd-rocm-linux',
+        status: 'setup-required',
+        execution_ready: false,
+        support_tier: 'experimental',
+        repair_command: 'python -m modiff.install --accelerator amd --repair',
+        issues: [null, { message: 42 }, { code: 'reboot-required', severity: 'warning', message: 'Restart the host.' }],
+        installation: {
+          status: 'blocked',
+          current_phase: 'system-preparation',
+          completed_phases: ['detect', 42],
+          reboot_required: true,
+          resume_command: './install.sh --resume',
+          steps: [
+            'invalid',
+            {
+              id: 'gpu-groups',
+              title: 'Add GPU groups',
+              phase: 'system-preparation',
+              status: 'pending',
+              requires_admin: true,
+              requires_reboot: true,
+              command: 'sudo usermod -a -G video,render "$USER"',
+            },
+          ],
+        },
+      },
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+
+  status = nodesStoreModule.useNodesStore.getState().runtimeStatus;
+  const environment = status.runtimeEnvironment;
+  assert.equal(environment.profileVerified, true);
+  assert.equal(environment.executionReady, false);
+  assert.equal(environment.supportTier, 'experimental');
+  assert.equal(environment.devices[0].backend, 'rocm');
+  assert.equal(environment.devices[0].vendor, 'amd');
+  assert.equal(environment.devices[0].memoryTotal, 16 * 1024 ** 3);
+  assert.deepEqual(environment.issues, [
+    { code: 'reboot-required', severity: 'warning', message: 'Restart the host.' },
+  ]);
+  assert.equal(environment.installation.status, 'blocked');
+  assert.deepEqual(environment.installation.completedPhases, ['detect']);
+  assert.equal(environment.installation.steps.length, 1);
+  assert.equal(environment.installation.steps[0].requiresAdmin, true);
+  assert.equal(environment.installation.resumeCommand, './install.sh --resume');
+});
+
 test('one discovery failure does not suppress successful sibling endpoints', async () => {
   globalThis.fetch = async (url) =>
     String(url).includes('hf_cache')

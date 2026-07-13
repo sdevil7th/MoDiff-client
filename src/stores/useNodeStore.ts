@@ -8,6 +8,7 @@ import {
   isHfDownloadActive,
   isHfDownloadComplete,
 } from '../studio/modelInstall';
+import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
 import type { RunReadinessIssue, StudioModelProfile } from '../studio/types';
 import type { ModiffFieldStyle, ModiffNodeStyle } from '../theme';
 import { enqueueSnackbar } from '../ui/snackbar';
@@ -243,6 +244,7 @@ export type RuntimePackageStatus = {
 
 export type RuntimeStatus = {
   ready?: boolean;
+  runtimeEnvironment: RuntimeEnvironment;
   server?: {
     host?: string;
     port?: number;
@@ -469,7 +471,11 @@ function parseArrayResponse(value: unknown, label: string) {
 }
 
 function parseRuntimeStatus(value: unknown) {
-  return payloadRecord(value, 'The runtime status response is invalid.') as RuntimeStatus;
+  const payload = payloadRecord(value, 'The runtime status response is invalid.');
+  return {
+    ...payload,
+    runtimeEnvironment: parseRuntimeEnvironment(payload),
+  } as RuntimeStatus;
 }
 
 function parseModelCacheDiagnostics(value: unknown) {
