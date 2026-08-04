@@ -1,14 +1,52 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { canonicalJsonHash } from './canonical-json.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const SCRIPT = join(ROOT, 'scripts', 'template-qualification.mjs');
+
+function writeBackendFixture(directory) {
+  const backendDirectory = join(directory, 'backend');
+  const graphPath = 'studio/qwen-image-modular-pipeline/text-to-image.json';
+  const graph = {
+    nodes: [
+      {
+        id: 'qwen-loader',
+        data: {
+          module: 'diffusers',
+          action: 'QwenImagePipelineLoader',
+        },
+      },
+    ],
+    edges: [],
+  };
+  const graphFile = join(backendDirectory, 'data', 'graphs', ...graphPath.split('/'));
+  mkdirSync(resolve(graphFile, '..'), { recursive: true });
+  writeFileSync(graphFile, `${JSON.stringify(graph, null, 2)}\n`);
+  const manifest = {
+    schemaVersion: 1,
+    workflows: [
+      {
+        id: 'QwenImageModularPipeline:text_to_image',
+        modelType: 'QwenImageModularPipeline',
+        mode: 'text_to_image',
+        sourceTemplateId: 'qwen_low_vram_product_concept',
+        graphPath,
+        graphHash: canonicalJsonHash(graph),
+      },
+    ],
+  };
+  const manifestPath = join(backendDirectory, 'data', 'workflow-library-manifest.json');
+  mkdirSync(resolve(manifestPath, '..'), { recursive: true });
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return backendDirectory;
+}
 
 async function fixture() {
   const runtime = await loadTemplateRuntime(ROOT);
@@ -55,6 +93,7 @@ test('locked v2 template proofs become immutable execution receipts', async () =
   const provenancePath = join(directory, 'proof.json');
   const registryPath = join(directory, 'registry.json');
   const retainedDirectory = join(directory, 'retained');
+  const backendDirectory = writeBackendFixture(directory);
   writeFileSync(provenancePath, `${JSON.stringify(await fixture(), null, 2)}\n`);
 
   const result = spawnSync(process.execPath, [SCRIPT], {
@@ -62,6 +101,7 @@ test('locked v2 template proofs become immutable execution receipts', async () =
     encoding: 'utf8',
     env: {
       ...process.env,
+      MODIFF_BACKEND_DIR: backendDirectory,
       MODIFF_TEMPLATE_PROVENANCE: provenancePath,
       MODIFF_TEMPLATE_RECEIPT_REGISTRY: registryPath,
       MODIFF_TEMPLATE_PROVENANCE_DIR: retainedDirectory,
@@ -86,6 +126,7 @@ test('stale template locks are rejected before a receipt is written', async () =
   const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-stale-'));
   const provenancePath = join(directory, 'proof.json');
   const registryPath = join(directory, 'registry.json');
+  const backendDirectory = writeBackendFixture(directory);
   const provenance = await fixture();
   provenance.template.catalogTemplateLockHash = 'tpl_stale';
   writeFileSync(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
@@ -95,6 +136,7 @@ test('stale template locks are rejected before a receipt is written', async () =
     encoding: 'utf8',
     env: {
       ...process.env,
+      MODIFF_BACKEND_DIR: backendDirectory,
       MODIFF_TEMPLATE_PROVENANCE: provenancePath,
       MODIFF_TEMPLATE_RECEIPT_REGISTRY: registryPath,
       MODIFF_TEMPLATE_PROVENANCE_DIR: join(directory, 'retained'),
@@ -109,6 +151,7 @@ test('template proofs with output dimensions that violate the locked contract ar
   const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-output-contract-'));
   const provenancePath = join(directory, 'proof.json');
   const registryPath = join(directory, 'registry.json');
+  const backendDirectory = writeBackendFixture(directory);
   const provenance = await fixture();
   provenance.output.items[0].width += 16;
   writeFileSync(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
@@ -118,6 +161,7 @@ test('template proofs with output dimensions that violate the locked contract ar
     encoding: 'utf8',
     env: {
       ...process.env,
+      MODIFF_BACKEND_DIR: backendDirectory,
       MODIFF_TEMPLATE_PROVENANCE: provenancePath,
       MODIFF_TEMPLATE_RECEIPT_REGISTRY: registryPath,
       MODIFF_TEMPLATE_PROVENANCE_DIR: join(directory, 'retained'),
