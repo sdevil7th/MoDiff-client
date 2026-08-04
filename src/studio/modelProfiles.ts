@@ -56,11 +56,11 @@ export const QWEN_DIRECT_OFFLOAD_SUPPORT = {
   emergency: 'group_disk' as const,
 };
 export const QWEN_QUANTIZATION_NODE_KEY = 'modules.ModularDiffusers.QuantizationConfigNode';
-export const QWEN_T2I_PIPELINE_NODE_KEY = 'modules.QwenImage.LoadPipeline';
-export const QWEN_T2I_GENERATE_NODE_KEY = 'modules.QwenImage.Generate';
-export const QWEN_INPAINT_PIPELINE_NODE_KEY = 'modules.QwenImage.LoadInpaintPipeline';
-export const QWEN_OUTPAINT_CANVAS_NODE_KEY = 'modules.QwenImage.OutpaintCanvas';
-export const QWEN_INPAINT_GENERATE_NODE_KEY = 'modules.QwenImage.Inpaint';
+export const QWEN_T2I_PIPELINE_NODE_KEY = 'modules.DiffusersImage.LoadPipeline';
+export const QWEN_T2I_GENERATE_NODE_KEY = 'modules.DiffusersImage.Generate';
+export const QWEN_INPAINT_PIPELINE_NODE_KEY = 'modules.DiffusersImage.LoadPipeline';
+export const QWEN_OUTPAINT_CANVAS_NODE_KEY = 'modules.DiffusersImage.OutpaintCanvas';
+export const QWEN_INPAINT_GENERATE_NODE_KEY = 'modules.DiffusersImage.Inpaint';
 export const ACE_STEP_REPO = 'ACE-Step/acestep-v15-xl-turbo-diffusers';
 export const FLUX_SCHNELL_REPO = 'black-forest-labs/FLUX.1-schnell';
 export const FLUX_DEV_REPO = 'black-forest-labs/FLUX.1-dev';
@@ -70,6 +70,7 @@ export const FLUX_FILL_REPO = 'black-forest-labs/FLUX.1-Fill-dev';
 export const FLUX_DEPTH_REPO = 'black-forest-labs/FLUX.1-Depth-dev';
 export const FLUX_CANNY_REPO = 'black-forest-labs/FLUX.1-Canny-dev';
 export const FLUX_REDUX_REPO = 'black-forest-labs/FLUX.1-Redux-dev';
+export const FLUX2_KLEIN_REPO = 'black-forest-labs/FLUX.2-klein-4B';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 
@@ -86,7 +87,7 @@ export const QWEN_IMAGE_EDIT_INPAINT_CONTRACT: StudioInpaintContractStatus = {
   available: true,
   status: 'supported',
   reason:
-    'Direct Diffusers Qwen Image Edit inpaint is available through modules.QwenImage.LoadInpaintPipeline -> modules.QwenImage.Inpaint with source image and mask_image inputs. Outpaint uses modules.QwenImage.OutpaintCanvas to build the expanded canvas and boundary mask before the same inpaint node.',
+    'Qwen Image Edit inpaint uses the generic Diffusers image loader and inpaint nodes with source image and mask_image inputs. Outpaint uses the model-neutral Outpaint Canvas node before the same inpaint node.',
   source: QWEN_INPAINT_GENERATE_NODE_KEY,
   checkedInputs: {
     loader: ['model_id', 'dtype', 'device', 'auto_offload', 'offload_mode', 'quant_config'],
@@ -139,6 +140,10 @@ export const STUDIO_MODEL_LABELS: Record<StudioModelType, string> = {
   QwenImageEditPlusModularPipeline: 'Qwen-Image-Edit-2511',
   QwenImageLayeredModularPipeline: 'Qwen-Image-Layered',
   WanVACEPipeline: 'Wan VACE 1.3B',
+  WanVideoPipeline: 'Wan 2.1 T2V 1.3B',
+  WanImageToVideoPipeline: 'Wan 2.2 I2V A14B',
+  WanTI2VPipeline: 'Wan 2.2 TI2V 5B',
+  LTXVideoPipeline: 'LTX-Video',
   AceStepAudioPipeline: 'ACE-Step Audio',
   FluxSchnellPipeline: 'FLUX.1-schnell',
   FluxDevPipeline: 'FLUX.1-dev',
@@ -148,6 +153,7 @@ export const STUDIO_MODEL_LABELS: Record<StudioModelType, string> = {
   FluxDepthPipeline: 'FLUX.1-Depth-dev',
   FluxCannyPipeline: 'FLUX.1-Canny-dev',
   FluxReduxPipeline: 'FLUX.1-Redux-dev',
+  Flux2KleinPipeline: 'FLUX.2-klein-4B',
 };
 
 export const STUDIO_MODE_LABELS: Record<StudioMode, string> = {
@@ -198,7 +204,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
 
 type StudioModelSurfaceMetadata = Pick<
   StudioModelProfile,
-  'surfaceCategory' | 'runtimeKind' | 'isDiffusersBacked' | 'acceleratorStrategy' | 'legacyReason'
+  'surfaceCategory' | 'runtimeKind' | 'isDiffusersBacked' | 'acceleratorStrategy' | 'specializedReason'
 >;
 
 const DIFFUSERS_IMAGE_MODEL: StudioModelSurfaceMetadata = {
@@ -239,6 +245,24 @@ const DIFFUSERS_UTILITY_MODEL: StudioModelSurfaceMetadata = {
 
 export const WAN_VACE_REPO = 'Wan-AI/Wan2.1-VACE-1.3B-diffusers';
 export const WAN_VACE_REVISION = 'ec4d2cb062b548996b179d493fdd05340de702a1';
+export const WAN_T2V_1_3B_REPO = 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers';
+export const WAN_22_I2V_A14B_REPO = 'Wan-AI/Wan2.2-I2V-A14B-Diffusers';
+export const WAN_22_TI2V_5B_REPO = 'Wan-AI/Wan2.2-TI2V-5B-Diffusers';
+export const LTX_VIDEO_REPO = 'Lightricks/LTX-Video-0.9.8-13B-distilled';
+
+export const LTX_VIDEO_MODES: StudioMode[] = [
+  'text_to_video',
+  'image_to_video',
+  'video_to_video',
+  'reference_to_video',
+];
+
+export const WAN_VACE_MODES: StudioMode[] = ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'];
+
+export const WAN_VIDEO_MODES: StudioMode[] = ['text_to_video', 'video_to_video', 'video_color_edit'];
+
+export const WAN_22_I2V_MODES: StudioMode[] = ['image_to_video'];
+export const WAN_22_TI2V_MODES: StudioMode[] = ['text_to_video'];
 
 export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'text_to_video',
@@ -267,6 +291,7 @@ export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = [
   'FluxDepthPipeline',
   'FluxCannyPipeline',
   'FluxReduxPipeline',
+  'Flux2KleinPipeline',
 ];
 
 export function normalizeStudioOffloadMode(value: unknown): StudioFormState['offloadMode'] {
@@ -325,10 +350,11 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     defaultRepo: 'Tongyi-MAI/Z-Image-Turbo',
     artifactLabel: 'Diffusers repo',
     defaultDtype: 'bfloat16',
-    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    defaultSize: { width: 640, height: 640, aspectRatio: '1:1' },
     recommendedSteps: 8,
     recommendedGuidance: 1,
     guidanceLabel: 'Guidance',
+    supportsNegativePrompt: false,
     supportsImageInput: false,
     supportsMask: true,
     supportsMultiImage: false,
@@ -347,7 +373,6 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     ...DIFFUSERS_IMAGE_MODEL,
     defaultRepo: QWEN_IMAGE_2512_REPO,
     artifactLabel: 'bfloat16 Diffusers repo',
-    alternateArtifact: 'qwen_image_2512_fp8_e4m3fn.safetensors',
     defaultDtype: 'bfloat16',
     defaultSize: { width: 1328, height: 1328, aspectRatio: '1:1' },
     recommendedSteps: 50,
@@ -428,7 +453,6 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     ...DIFFUSERS_IMAGE_EDIT_MODEL,
     defaultRepo: 'Qwen/Qwen-Image-Edit-2511',
     artifactLabel: 'bfloat16 Diffusers repo',
-    alternateArtifact: 'qwen_image_edit_2511_bf16.safetensors',
     defaultDtype: 'bfloat16',
     defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
     recommendedSteps: 40,
@@ -465,9 +489,8 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     ...DIFFUSERS_UTILITY_MODEL,
     defaultRepo: 'Qwen/Qwen-Image-Layered',
     artifactLabel: 'bfloat16 Diffusers repo',
-    alternateArtifact: 'qwen_image_layered_bf16.safetensors',
     defaultDtype: 'bfloat16',
-    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    defaultSize: { width: 640, height: 640, aspectRatio: '1:1' },
     recommendedSteps: 50,
     recommendedGuidance: 4,
     guidanceLabel: 'Guidance',
@@ -497,12 +520,12 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     artifactLabel: 'Diffusers repo',
     defaultDtype: 'bfloat16',
     defaultSize: { width: 832, height: 480, aspectRatio: '16:9' },
-    recommendedSteps: 30,
+    recommendedSteps: 50,
     recommendedGuidance: 5,
     guidanceLabel: 'Guidance',
-    supportsImageInput: true,
+    supportsImageInput: false,
     supportsMask: true,
-    supportsMultiImage: true,
+    supportsMultiImage: false,
     supportsControlImage: true,
     supportsLayers: false,
     supportsLora: true,
@@ -510,20 +533,12 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     supportsVideoMask: true,
     outputKind: 'video',
     recommendedFrames: 81,
-    recommendedFps: 16,
+    recommendedFps: 15,
     conditioningScale: 1,
     offloadSupport: DIRECT_OFFLOAD_SUPPORT,
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram, steps: 24 },
-    modes: VIDEO_STUDIO_MODES,
+    modes: WAN_VACE_MODES,
     modeRequirements: {
-      image_to_video: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires at least one starting/reference image.',
-      },
-      video_to_video: {
-        requiredVideos: ['sourceVideo'],
-        note: 'Requires one source video.',
-      },
       video_inpaint: {
         requiredVideos: ['sourceVideo', 'maskVideo'],
         note: 'Requires source and mask videos with matching frame counts.',
@@ -532,17 +547,174 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
         requiredVideos: ['sourceVideo', 'maskVideo'],
         note: 'Requires source video plus a boundary/generation mask video.',
       },
-      reference_to_video: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one or more reference images.',
-      },
       control_to_video: {
         requiredVideos: ['controlVideo'],
         note: 'Requires a prepared control video.',
       },
-      video_color_edit: {
+    },
+  },
+  WanVideoPipeline: {
+    modelType: 'WanVideoPipeline',
+    label: STUDIO_MODEL_LABELS.WanVideoPipeline,
+    displayName: 'Wan2.1-T2V-1.3B-Diffusers',
+    family: 'Wan Video',
+    ...DIFFUSERS_VIDEO_MODEL,
+    defaultRepo: WAN_T2V_1_3B_REPO,
+    artifactLabel: 'Diffusers repo',
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 832, height: 480, aspectRatio: '16:9' },
+    recommendedSteps: 50,
+    recommendedGuidance: 6,
+    guidanceLabel: 'Guidance',
+    supportsImageInput: false,
+    supportsMask: false,
+    supportsMultiImage: false,
+    supportsControlImage: false,
+    supportsLayers: false,
+    supportsLora: true,
+    supportsVideoInput: true,
+    supportsVideoMask: false,
+    outputKind: 'video',
+    recommendedFrames: 81,
+    recommendedFps: 16,
+    offloadSupport: DIRECT_OFFLOAD_SUPPORT,
+    lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram, steps: 24 },
+    modes: WAN_VIDEO_MODES,
+    modeRequirements: {
+      video_to_video: { requiredVideos: ['sourceVideo'], note: 'Requires one source video.' },
+      video_color_edit: { requiredVideos: ['sourceVideo'], note: 'Requires one source video.' },
+    },
+  },
+  WanImageToVideoPipeline: {
+    modelType: 'WanImageToVideoPipeline',
+    label: STUDIO_MODEL_LABELS.WanImageToVideoPipeline,
+    displayName: 'Wan2.2-I2V-A14B-Diffusers',
+    family: 'Wan Video',
+    ...DIFFUSERS_VIDEO_MODEL,
+    catalogVisibility: 'default',
+    defaultRepo: WAN_22_I2V_A14B_REPO,
+    artifactLabel: 'Diffusers repo',
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 832, height: 480, aspectRatio: '16:9' },
+    recommendedSteps: 40,
+    recommendedGuidance: 3.5,
+    guidanceLabel: 'High-noise guidance',
+    supportsImageInput: true,
+    supportsMask: false,
+    supportsMultiImage: true,
+    supportsControlImage: false,
+    supportsLayers: false,
+    supportsLora: false,
+    supportsVideoInput: false,
+    supportsVideoMask: false,
+    outputKind: 'video',
+    recommendedFrames: 81,
+    recommendedFps: 16,
+    offloadSupport: DIRECT_OFFLOAD_SUPPORT,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 40,
+      width: 832,
+      height: 480,
+      numFrames: 81,
+    },
+    modes: WAN_22_I2V_MODES,
+    modeRequirements: {
+      image_to_video: {
+        requiredImages: ['referenceImages'],
+        note: 'Upload one opening keyframe per planned shot, in story order.',
+      },
+    },
+  },
+  WanTI2VPipeline: {
+    modelType: 'WanTI2VPipeline',
+    label: STUDIO_MODEL_LABELS.WanTI2VPipeline,
+    displayName: 'Wan2.2-TI2V-5B-Diffusers',
+    family: 'Wan Video',
+    ...DIFFUSERS_VIDEO_MODEL,
+    catalogVisibility: 'default',
+    defaultRepo: WAN_22_TI2V_5B_REPO,
+    artifactLabel: 'Diffusers repo',
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 1280, height: 704, aspectRatio: '16:9' },
+    recommendedSteps: 50,
+    recommendedGuidance: 5,
+    guidanceLabel: 'Guidance',
+    supportsImageInput: false,
+    supportsMask: false,
+    supportsMultiImage: false,
+    supportsControlImage: false,
+    supportsLayers: false,
+    supportsLora: true,
+    supportsVideoInput: false,
+    supportsVideoMask: false,
+    outputKind: 'video',
+    recommendedFrames: 121,
+    recommendedFps: 24,
+    offloadSupport: DIRECT_OFFLOAD_SUPPORT,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 50,
+      width: 1280,
+      height: 704,
+      numFrames: 121,
+    },
+    modes: WAN_22_TI2V_MODES,
+    modeRequirements: {},
+  },
+  LTXVideoPipeline: {
+    modelType: 'LTXVideoPipeline',
+    label: STUDIO_MODEL_LABELS.LTXVideoPipeline,
+    displayName: 'LTX-Video Diffusers',
+    family: 'LTX Video',
+    ...DIFFUSERS_VIDEO_MODEL,
+    catalogVisibility: 'default',
+    defaultRepo: LTX_VIDEO_REPO,
+    artifactLabel: 'Diffusers repo',
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 704, height: 480, aspectRatio: 'custom' },
+    recommendedSteps: 8,
+    recommendedGuidance: 1,
+    guidanceLabel: 'Guidance',
+    supportsImageInput: true,
+    supportsMask: false,
+    supportsMultiImage: true,
+    supportsControlImage: false,
+    supportsLayers: false,
+    supportsLora: true,
+    supportsVideoInput: true,
+    supportsVideoMask: false,
+    outputKind: 'video',
+    recommendedFrames: 97,
+    recommendedFps: 25,
+    conditioningScale: 1,
+    offloadSupport: DIRECT_OFFLOAD_SUPPORT,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 8,
+      width: 704,
+      height: 480,
+      numFrames: 65,
+    },
+    modes: LTX_VIDEO_MODES,
+    modeRequirements: {
+      image_to_video: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one starting image.',
+      },
+      video_to_video: {
         requiredVideos: ['sourceVideo'],
         note: 'Requires one source video.',
+      },
+      reference_to_video: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one or more frame references.',
       },
     },
   },
@@ -568,7 +740,7 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     supportsAudioInput: true,
     outputKind: 'audio',
     recommendedDuration: 30,
-    recommendedSampleRate: 44100,
+    recommendedSampleRate: 48000,
     offloadSupport: DIRECT_OFFLOAD_SUPPORT,
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram, steps: 8 },
     modes: AUDIO_STUDIO_MODES,
@@ -710,10 +882,6 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
         requiredImages: ['referenceImages'],
         note: 'Requires one source image for Kontext editing.',
       },
-      multi_image_reference_edit: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one or more source/reference images.',
-      },
     },
   },
   FluxFillPipeline: {
@@ -827,8 +995,8 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     artifactLabel: 'Diffusers repo',
     defaultDtype: 'bfloat16',
     defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
-    recommendedSteps: 28,
-    recommendedGuidance: 3.5,
+    recommendedSteps: 50,
+    recommendedGuidance: 2.5,
     guidanceLabel: 'Guidance',
     supportsImageInput: true,
     supportsMask: false,
@@ -836,6 +1004,16 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
     supportsControlImage: false,
     supportsLayers: false,
     supportsLora: true,
+    additionalRequirements: [
+      {
+        id: 'flux-redux-base',
+        label: 'FLUX.1-dev base pipeline',
+        repo: FLUX_DEV_REPO,
+        kind: 'base',
+        requiredForModes: ['edit_image', 'multi_image_reference_edit'],
+        description: 'Redux supplies reference embeddings to the app-installed FLUX.1-dev base pipeline.',
+      },
+    ],
     offloadSupport: DIRECT_OFFLOAD_SUPPORT,
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.emergency, steps: 24 },
     modes: ['edit_image', 'multi_image_reference_edit'],
@@ -846,7 +1024,48 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
       },
       multi_image_reference_edit: {
         requiredImages: ['referenceImages'],
-        note: 'Requires one or more source/reference images.',
+        note: 'Uses Diffusers Redux weighted multi-reference conditioning; compatible visual references work best.',
+      },
+    },
+  },
+  Flux2KleinPipeline: {
+    modelType: 'Flux2KleinPipeline',
+    label: STUDIO_MODEL_LABELS.Flux2KleinPipeline,
+    displayName: 'FLUX.2-klein-4B',
+    family: 'FLUX Image',
+    ...DIFFUSERS_IMAGE_EDIT_MODEL,
+    catalogVisibility: 'default',
+    defaultRepo: FLUX2_KLEIN_REPO,
+    artifactLabel: 'Diffusers repo',
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps: 4,
+    recommendedGuidance: 1,
+    guidanceLabel: 'Guidance',
+    supportsImageInput: true,
+    supportsMask: false,
+    supportsMultiImage: true,
+    supportsControlImage: false,
+    supportsLayers: false,
+    supportsLora: true,
+    offloadSupport: DIRECT_OFFLOAD_SUPPORT,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 4,
+      width: 768,
+      height: 768,
+    },
+    modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    modeRequirements: {
+      edit_image: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one source/reference image.',
+      },
+      multi_image_reference_edit: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires two or more reference images.',
       },
     },
   },
@@ -879,9 +1098,10 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'QwenImageModularPipeline',
     supportedModes: ['text_to_image', 'control_image'],
     autoStatus: 'auto_ready',
-    minimum: 'CUDA accelerator, 10 GB or more VRAM, 24 GB system RAM for prequantized text-to-image.',
+    minimum:
+      'A 16 GB-class CUDA candidate requires a complete compatible prequantized artifact and a successful live Auto proof for that machine.',
     recommended:
-      '16 GB or more VRAM with the Diffusers-compatible prequantized Qwen artifact; official BF16 native requires much larger headroom.',
+      'Use the physically qualified native BF16 recipe on a 64 GB-class high-memory host. Do not treat the lower-memory candidate as qualified without a matching hardware receipt.',
     qualityDefaults:
       '1024x1024, 50 steps, true CFG 4 for constrained hardware; native 1328 only when requirements match.',
     artifacts: [QWEN_IMAGE_2512_REPO, QWEN_IMAGE_2512_PREQUANTIZED_REPO],
@@ -892,9 +1112,10 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'QwenImageEditModularPipeline',
     supportedModes: ['edit_image', 'inpaint', 'outpaint'],
     autoStatus: 'auto_ready',
-    minimum: 'CUDA accelerator with 16 GB VRAM and 24 GB system RAM for the Diffusers-compatible 4-bit edit artifact.',
+    minimum:
+      'A 16 GB-class CUDA candidate requires the complete compatible 4-bit edit artifact and a successful live Auto proof for that machine.',
     recommended:
-      'Use the prequantized edit artifact on 16 GB hardware; reserve official BF16 for 24-32 GB VRAM systems.',
+      'Use the physically qualified official BF16 recipe on a 64 GB-class high-memory host. Use constrained prequantized/offloaded candidates only after matching real-hardware qualification.',
     qualityDefaults: '1024x1024, 40 steps, true CFG 4.',
     artifacts: ['Qwen/Qwen-Image-Edit', QWEN_IMAGE_EDIT_PREQUANTIZED_REPO],
     notes: 'Auto prefers the Apache-2.0 prequantized Diffusers edit artifact on constrained CUDA hardware.',
@@ -902,34 +1123,84 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   QwenImageEditPlusModularPipeline: {
     modelType: 'QwenImageEditPlusModularPipeline',
     supportedModes: ['edit_image', 'multi_image_reference_edit', 'inpaint'],
-    autoStatus: 'manual_only',
-    minimum: 'Expert only until the Modular/Diffusers execution contract is validated.',
-    recommended: 'Define a direct or strict modular recipe before enabling Auto.',
+    autoStatus: 'auto_ready',
+    minimum:
+      'ROCm or CUDA accelerator with enough usable accelerator/unified memory for the selected validated recipe; the qualified native BF16 path requires 64 GB-class memory.',
+    recommended:
+      'Use the qualified native BF16 recipe on a 64 GB-class high-memory host. Use lower-memory quantized/offloaded candidates only when live Auto planning validates them for that machine.',
     qualityDefaults: 'Model card defaults: 40 steps, true CFG 4, guidance 1 where applicable.',
     artifacts: ['Qwen/Qwen-Image-Edit-2511'],
-    notes: 'Do not expose as Auto-ready without a model requirements update.',
-    manualOnlyReason: QWEN_IMAGE_EDIT_PLUS_INPAINT_CONTRACT.reason,
+    notes:
+      'The high-memory ROCm modular Auto path is physically qualified. Other platform and constrained-memory recipes remain unqualified until backed by matching real-hardware receipts.',
   },
   QwenImageLayeredModularPipeline: {
     modelType: 'QwenImageLayeredModularPipeline',
     supportedModes: ['layer_decomposition'],
-    autoStatus: 'manual_only',
-    minimum: 'Expert only until layered outputs are validated against a resource recipe.',
-    recommended: 'Define per-layer resolution, memory, and decode requirements before enabling Auto.',
-    qualityDefaults: 'Layered model defaults: 4 layers, 50 steps, true CFG 4.',
+    autoStatus: 'auto_ready',
+    minimum:
+      'The physically qualified native BF16 path requires a 64 GB-class high-memory ROCm host. Other platforms require their own validated recipe and matching hardware receipt.',
+    recommended:
+      'Use the qualified 640px, three-layer native BF16 recipe on a 64 GB-class high-memory host. Use constrained quantized/offloaded candidates only after matching real-hardware qualification.',
+    qualityDefaults: 'Qualified template: 640px source, 3 layers, 30 steps, true CFG 4.',
     artifacts: ['Qwen/Qwen-Image-Layered'],
-    notes: 'Specialized output contract; Auto should not guess.',
-    manualOnlyReason: 'Layered generation needs a validated per-layer Auto recipe.',
+    notes:
+      'The high-memory ROCm modular Auto path and three-output layered contract are physically qualified. Other platform and constrained-memory recipes remain unqualified until backed by matching real-hardware receipts.',
   },
   WanVACEPipeline: {
     modelType: 'WanVACEPipeline',
-    supportedModes: VIDEO_STUDIO_MODES,
+    supportedModes: WAN_VACE_MODES,
     autoStatus: 'auto_ready',
     minimum: 'CUDA accelerator with enough memory for 1.3B Wan VACE plus CPU/system-memory offload.',
     recommended: '12 GB or more VRAM, 32 GB system RAM, 20 GB or more free disk for emergency offload.',
     qualityDefaults: '832x480, 49 frames, 24 steps for constrained hardware; 81 frames/30 steps when resources fit.',
     artifacts: [WAN_VACE_REPO],
     notes: 'Video recipes are slower and use visible retry/fallback only after the user starts Run.',
+  },
+  WanVideoPipeline: {
+    modelType: 'WanVideoPipeline',
+    supportedModes: WAN_VIDEO_MODES,
+    autoStatus: 'auto_ready',
+    minimum: 'CUDA or ROCm accelerator with enough memory for Wan 2.1 T2V 1.3B plus CPU/system-memory offload.',
+    recommended: '12 GB or more VRAM, 32 GB system RAM, and 30 GB free disk.',
+    qualityDefaults: '832x480, 81 frames at 15 fps, 50 steps, guidance 5, and native flash attention.',
+    artifacts: [WAN_T2V_1_3B_REPO],
+    notes:
+      'WanPipeline text-to-video is mechanically qualified on Radeon 8060S at about 49 minutes for a 5.4-second shot; human visual review remains pending.',
+  },
+  WanImageToVideoPipeline: {
+    modelType: 'WanImageToVideoPipeline',
+    supportedModes: WAN_22_I2V_MODES,
+    autoStatus: 'auto_ready',
+    minimum:
+      'ROCm or CUDA accelerator with model offload, about 64 GB of usable accelerator/system memory, and INT8 dual-transformer quantization.',
+    recommended: '80 GB or more unified/accelerator memory and 140 GB free disk for the full local artifact.',
+    qualityDefaults: '832x480, 81 frames at 16 fps, 40 steps, guidance 3.5 for both denoising experts.',
+    artifacts: [WAN_22_I2V_A14B_REPO],
+    notes:
+      'The quality workflow quantizes both denoising experts to Quanto INT8 weight-only and retains each five-second segment before FFmpeg composition.',
+  },
+  WanTI2VPipeline: {
+    modelType: 'WanTI2VPipeline',
+    supportedModes: WAN_22_TI2V_MODES,
+    autoStatus: 'auto_ready',
+    minimum: 'CUDA or ROCm accelerator with 24 GB usable accelerator memory and model offload.',
+    recommended: '40 GB or more accelerator/unified memory and 45 GB free disk for resident BF16 execution.',
+    qualityDefaults:
+      'Official Diffusers model-card recipe: 1280x704, 121 frames at 24 fps, 50 UniPC steps, guidance 5, flow shift 8.',
+    artifacts: [WAN_22_TI2V_5B_REPO],
+    notes:
+      'Uses the official dense Wan 2.2 5B high-compression model and exposes a locked per-run scheduler flow shift while preserving the quality-first Diffusers step count.',
+  },
+  LTXVideoPipeline: {
+    modelType: 'LTXVideoPipeline',
+    supportedModes: LTX_VIDEO_MODES,
+    autoStatus: 'auto_ready',
+    minimum: 'CUDA or ROCm accelerator with 12 GB or more VRAM, 32 GB system RAM, and model CPU offload.',
+    recommended: '24 GB or more VRAM, bfloat16, 704x480, and 97 frames for the first qualified workflow.',
+    qualityDefaults: '704x480, 97 frames at 25 fps, 40 steps, guidance 3.',
+    artifacts: [LTX_VIDEO_REPO],
+    notes:
+      'Uses generic Diffusers video nodes. Mask and control modes remain excluded until their adapter contracts are qualified.',
   },
   AceStepAudioPipeline: {
     modelType: 'AceStepAudioPipeline',
@@ -962,7 +1233,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
       'Official bfloat16 is guarded on 16 GB VRAM; Auto should prefer a quantized/lower-memory artifact when available.',
     recommended:
       '24 GB or more VRAM for native bfloat16, or an FP8 artifact with CPU/SSD offload on constrained machines.',
-    qualityDefaults: '1024x1024, 24-28 steps, guidance 3.5.',
+    qualityDefaults: '1024x1024, 50 steps, guidance 2.5 for the official Redux quality recipe.',
     artifacts: [FLUX_DEV_REPO, FLUX_DEV_FP8_REPO],
     notes: 'Auto install should target the quantized artifact on 16 GB VRAM when native bfloat16 is not safe.',
   },
@@ -979,7 +1250,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   FluxKontextPipeline: {
     modelType: 'FluxKontextPipeline',
-    supportedModes: ['edit_image', 'multi_image_reference_edit'],
+    supportedModes: ['edit_image'],
     autoStatus: 'manual_only',
     minimum: 'Expert only unless a validated NVFP4/FP8 artifact and image-edit pipeline support are installed.',
     recommended: '24 GB or more VRAM or a proven quantized artifact with image input support.',
@@ -1025,12 +1296,24 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'FluxReduxPipeline',
     supportedModes: ['edit_image', 'multi_image_reference_edit'],
     autoStatus: 'manual_only',
-    minimum: 'Expert only until Redux adapter/reference behavior is validated.',
+    minimum: 'Expert only; Redux requires its pinned FLUX Dev base and substantial memory.',
     recommended: '24 GB or more VRAM or a proven quantized artifact.',
     qualityDefaults: '1024x1024, 24-28 steps, guidance 3.5.',
     artifacts: [FLUX_REDUX_REPO],
-    notes: 'Requires adapter/reference-image handling through generic Diffusers nodes.',
-    manualOnlyReason: 'FLUX Redux needs validated adapter/reference support before Auto is enabled.',
+    notes:
+      'Single-reference variation is qualified. A bounded, compatible multi-reference visual-blend proof awaits maintainer approval; Redux does not promise role-separated geometry or material preservation.',
+    manualOnlyReason:
+      'FLUX Redux remains Expert-only because it loads the Redux prior with a pinned FLUX Dev base; the staged multi-reference visual-blend contract remains hidden until its generated asset is approved.',
+  },
+  Flux2KleinPipeline: {
+    modelType: 'Flux2KleinPipeline',
+    supportedModes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    autoStatus: 'auto_ready',
+    minimum: '13 GB VRAM or model CPU offload.',
+    recommended: '20 GB VRAM and 32 GB system RAM.',
+    qualityDefaults: '1024x1024, 4 steps, guidance 1.',
+    artifacts: [FLUX2_KLEIN_REPO],
+    notes: 'Qualified through the generic Diffusers image façade with zero, one, and two reference images.',
   },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 

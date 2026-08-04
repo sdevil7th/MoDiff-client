@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 1;
-export const LIVE_PROOF_PROVENANCE_FORMAT = 'modiff.live-proof.provenance.v1';
+export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
+export const LIVE_PROOF_PROVENANCE_FORMAT = 'modiff.live-proof.provenance.v2';
 export const CANONICAL_GRAPH_SCHEMA_VERSION = 1;
 
 const RUNTIME_TORCH_FIELDS = [
@@ -29,6 +29,7 @@ const EXECUTION_PLAN_FIELDS = [
   'modelRepo',
   'resolvedModelRepo',
   'resolvedArtifact',
+  'modelDependencies',
   'executionPath',
   'pipelineClass',
   'dtype',
@@ -38,6 +39,12 @@ const EXECUTION_PLAN_FIELDS = [
   'quantizedComponents',
   'autoOffload',
   'offloadMode',
+  'deviceMap',
+  'attentionBackend',
+  'regionalCompile',
+  'denoiserCache',
+  'channelsLast',
+  'layerwiseCasting',
   'autoResourceCandidateId',
   'resourceRetryAttempt',
 ];
@@ -72,6 +79,72 @@ export function stableStringify(value) {
 export function sha256Value(prefix, value) {
   const digest = createHash('sha256').update(stableStringify(value)).digest('hex');
   return `sha256:${prefix}:${digest}`;
+}
+
+function outputCollectionItemIdentity(item) {
+  return {
+    index: item.index,
+    mediaType: item.mediaType,
+    width: item.width,
+    height: item.height,
+    frames: item.frames,
+    durationSeconds: item.durationSeconds,
+    sampleRate: item.sampleRate,
+    channels: item.channels,
+    decodedSha256: item.decodedSha256,
+    ...(item.decodedAudioSha256 ? { decodedAudioSha256: item.decodedAudioSha256 } : {}),
+    ...(item.audiovisualSha256 ? { audiovisualSha256: item.audiovisualSha256 } : {}),
+  };
+}
+
+export function repairDuplicateOutputItems(provenance, executedOutput) {
+  const backendItems = executedOutput?.backendProvenance?.mediaItems ?? executedOutput?.mediaItems ?? [];
+  const uniqueItems = [];
+  const seenEncodedHashes = new Set();
+  for (const item of provenance?.output?.items ?? []) {
+    if (!item?.encodedSha256 || seenEncodedHashes.has(item.encodedSha256)) continue;
+    seenEncodedHashes.add(item.encodedSha256);
+    uniqueItems.push(item);
+  }
+  if (uniqueItems.length !== backendItems.length) {
+    throw new Error(
+      `Cannot repair output collection: ${uniqueItems.length} unique captured item(s) do not match ${backendItems.length} backend item(s).`,
+    );
+  }
+  const items = uniqueItems.map((item, index) => ({
+    ...item,
+    index,
+    backendMediaHash: backendItems[index]?.mediaHash ?? null,
+  }));
+  const collectionPayload = items.map(outputCollectionItemIdentity);
+  const output = {
+    ...provenance.output,
+    count: items.length,
+    collectionHash: sha256Value('decoded-output-collection-v1', collectionPayload),
+    backendCollectionHash: executedOutput?.mediaCollectionHash ?? null,
+    items,
+  };
+  const proofLock = {
+    format: provenance.format,
+    templateRevisionHash: provenance.template?.revisionHash,
+    resolvedTemplateLockHash: provenance.template?.resolvedTemplateLockHash,
+    graphHash: provenance.graph?.hash,
+    executionPlanHash: provenance.graph?.executionPlanHash,
+    modelRevision: provenance.model?.modelRevision,
+    modelFingerprint: provenance.model?.fingerprint,
+    modelSetHash: provenance.models?.hash,
+    inputArtifactsHash: provenance.inputArtifactsHash,
+    runtimeFingerprint: provenance.runtime?.lockFingerprint,
+    backendSourceFingerprint: provenance.runtime?.backendSource?.fingerprint,
+    backendContractFingerprint: provenance.runtime?.backendContract?.fingerprint,
+    deterministicFingerprint: provenance.runtime?.deterministic?.fingerprint,
+    outputCollectionHash: output.collectionHash,
+  };
+  return {
+    ...provenance,
+    proofLockHash: sha256Value('live-proof-lock-v1', proofLock),
+    output,
+  };
 }
 
 function nodeEntries(apiGraph) {
@@ -196,6 +269,36 @@ export function executionPlanIdentity(apiGraph) {
   };
 }
 
+function executionReceiptIdentity(executionReceipt, executionPlan) {
+  const measurement = executionReceipt?.runtimeMeasurement;
+  const hints = executionReceipt?.runtimeHints;
+  const peakMemoryBytes =
+    measurement?.peakAllocatedBytes ??
+    measurement?.peakReservedBytes ??
+    measurement?.driverAllocatedBytes ??
+    measurement?.processRssBytes ??
+    null;
+  const manualResourceCandidateId =
+    executionPlan?.modelType && executionPlan?.dtype
+      ? `manual-resource-v1:${[
+          executionPlan.modelType,
+          executionPlan.dtype,
+          executionPlan.offloadMode ?? 'none',
+          executionPlan.quantizationMode ?? 'none',
+        ].join('|')}`
+      : null;
+  return {
+    resourceCandidateId:
+      hints?.autoResourceCandidateId ?? executionPlan?.autoResourceCandidateId ?? manualResourceCandidateId,
+    elapsedSeconds:
+      Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
+        ? measurement.elapsedSeconds
+        : null,
+    peakMemoryBytes: Number.isFinite(peakMemoryBytes) && peakMemoryBytes > 0 ? Math.trunc(peakMemoryBytes) : null,
+    measurement: measurement && typeof measurement === 'object' ? orderedValue(measurement) : null,
+  };
+}
+
 export function resolvedModelReposFromOutput(output) {
   const graph = output?.apiGraphSnapshot;
   const loaderRepos = nodeEntries(graph).flatMap(([, node]) => {
@@ -224,7 +327,12 @@ export function resolvedModelReposFromOutput(output) {
     output?.provenance?.resourcePlan?.resolvedArtifact,
     output?.repo,
   ].filter((value) => typeof value === 'string' && value.trim());
-  return [...new Set(loaderRepos.length > 0 ? loaderRepos : fallbacks)];
+  const dependencyRepos = Array.isArray(graph?.runtimeHints?.modelDependencies)
+    ? graph.runtimeHints.modelDependencies
+        .map((dependency) => dependency?.repo)
+        .filter((value) => typeof value === 'string' && value.trim())
+    : [];
+  return [...new Set([...(loaderRepos.length > 0 ? loaderRepos : fallbacks), ...dependencyRepos])];
 }
 
 export function resolvedModelRepoFromOutput(output) {
@@ -286,7 +394,7 @@ function inputArtifactsIdentity(inputArtifacts = []) {
   };
 }
 
-export function normalizeBackendRuntime(runtimeFingerprint) {
+export function normalizeBackendRuntime(runtimeFingerprint, deterministicMode = null) {
   if (!runtimeFingerprint || typeof runtimeFingerprint !== 'object') {
     return {
       reportedFingerprint: typeof runtimeFingerprint === 'string' ? runtimeFingerprint : null,
@@ -301,6 +409,16 @@ export function normalizeBackendRuntime(runtimeFingerprint) {
       runtimeFingerprint.torch[field],
     ]),
   );
+  const applied = deterministicMode?.settings ?? {};
+  if (deterministicMode?.enabled) {
+    if (typeof applied.cudnn_benchmark === 'boolean') torch.cudnn_benchmark = applied.cudnn_benchmark;
+    if (typeof applied.cudnn_deterministic === 'boolean') {
+      torch.cudnn_deterministic = applied.cudnn_deterministic;
+    }
+    if (typeof applied.torch_deterministic_algorithms === 'boolean') {
+      torch.deterministic_algorithms = applied.torch_deterministic_algorithms;
+    }
+  }
   const payload = orderedValue({
     packages: runtimeFingerprint.packages ?? {},
     torch,
@@ -312,6 +430,20 @@ export function normalizeBackendRuntime(runtimeFingerprint) {
     lockFingerprint: sha256Value('stable-runtime-v1', payload),
     payload,
   };
+}
+
+export function runtimeLockFromProvenance(provenance) {
+  const deterministic = provenance?.runtime?.deterministic?.settings;
+  return normalizeBackendRuntime(
+    {
+      fingerprint: provenance?.runtime?.reportedFingerprint,
+      packages: provenance?.runtime?.payload?.packages,
+      torch: provenance?.runtime?.payload?.torch,
+      work_dir: provenance?.runtime?.payload?.workDir,
+      data_dir: provenance?.runtime?.payload?.dataDir,
+    },
+    deterministic,
+  ).lockFingerprint;
 }
 
 function normalizedContractParam(param) {
@@ -442,22 +574,13 @@ function outputIdentity(outputAnalysis, executedOutput) {
       byteSize: analysis.byteSize ?? null,
       encodedSha256: analysis.encodedSha256 ?? null,
       decodedSha256: analysis.decodedSha256 ?? analysis.hash ?? null,
+      hasAudio: analysis.hasAudio ?? null,
+      decodedAudioSha256: analysis.embeddedAudio?.hash ?? analysis.decodedAudioHash ?? null,
+      audiovisualSha256: analysis.audiovisualMediaHash ?? null,
       backendMediaHash: backendItems[index]?.mediaHash ?? (index === 0 ? (executedOutput?.mediaHash ?? null) : null),
     };
   });
-  const collectionPayload = items.map(
-    ({ index, mediaType, width, height, frames, durationSeconds, sampleRate, channels, decodedSha256 }) => ({
-      index,
-      mediaType,
-      width,
-      height,
-      frames,
-      durationSeconds,
-      sampleRate,
-      channels,
-      decodedSha256,
-    }),
-  );
+  const collectionPayload = items.map(outputCollectionItemIdentity);
   return {
     count: items.length,
     collectionHash: sha256Value('decoded-output-collection-v1', collectionPayload),
@@ -487,9 +610,42 @@ export function validateRunProvenance(provenance) {
       blockers.push(`${field} is not pinned.`);
     }
   }
+  if (Number(provenance?.schemaVersion) >= 2) {
+    if (!provenance?.execution?.resourceCandidateId) {
+      blockers.push('execution.resourceCandidateId is missing.');
+    }
+    if (!Number.isFinite(provenance?.execution?.elapsedSeconds) || provenance.execution.elapsedSeconds < 0) {
+      blockers.push('execution.elapsedSeconds is invalid.');
+    }
+    if (!Number.isInteger(provenance?.execution?.peakMemoryBytes) || provenance.execution.peakMemoryBytes <= 0) {
+      blockers.push('execution.peakMemoryBytes is invalid.');
+    }
+  }
   if ((provenance?.output?.items?.length ?? 0) === 0) blockers.push('output.items is empty.');
+  const expectedOutput = provenance?.template?.expectedOutput;
+  const primaryOutput = provenance?.output?.items?.[0];
+  if (expectedOutput && primaryOutput) {
+    for (const field of ['width', 'height', 'frames']) {
+      if (
+        Number.isInteger(expectedOutput[field]) &&
+        expectedOutput[field] > 0 &&
+        primaryOutput[field] !== expectedOutput[field]
+      ) {
+        blockers.push(
+          `output.items.0.${field} does not match the template contract: expected ${expectedOutput[field]}, got ${String(primaryOutput[field])}.`,
+        );
+      }
+    }
+    if (expectedOutput.requiresAudio === true && primaryOutput.hasAudio !== true) {
+      blockers.push('output.items.0.hasAudio does not match the template contract: audio is required.');
+    }
+  }
   for (const [index, item] of (provenance?.output?.items ?? []).entries()) {
     if (!item.decodedSha256) blockers.push(`output.items.${index}.decodedSha256 is missing.`);
+    if (item.mediaType === 'video' && item.hasAudio === true) {
+      if (!item.decodedAudioSha256) blockers.push(`output.items.${index}.decodedAudioSha256 is missing.`);
+      if (!item.audiovisualSha256) blockers.push(`output.items.${index}.audiovisualSha256 is missing.`);
+    }
     if (item.mediaType === 'audio') {
       if (!Number.isInteger(item.sampleRate) || item.sampleRate <= 0) {
         blockers.push(`output.items.${index}.sampleRate is invalid.`);
@@ -534,12 +690,15 @@ export function createRunProvenance({
   backendSource,
   outputAnalysis,
   executedOutput,
+  executionReceipt,
   taskId,
+  expectedOutput,
   capturedAt = new Date().toISOString(),
 }) {
   const graph = canonicalGraphIdentity(apiGraph);
   const executionPlan = executionPlanIdentity(apiGraph);
-  const runtime = normalizeBackendRuntime(runtimeFingerprint);
+  const execution = executionReceiptIdentity(executionReceipt, executionPlan.plan);
+  const runtime = normalizeBackendRuntime(runtimeFingerprint, deterministicMode);
   const backendContract = backendContractIdentity(nodesPayload, graph.canonicalGraph);
   const deterministic = deterministicIdentity(deterministicMode);
   const modelSet = modelSetIdentity(modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean));
@@ -597,6 +756,8 @@ export function createRunProvenance({
     templateLockHash: template.resolvedTemplateLockHash,
     templateRevisionHash: template.revisionHash,
     mediaHash: firstOutput.decodedSha256 ?? null,
+    decodedAudioHash: firstOutput.decodedAudioSha256 ?? null,
+    audiovisualMediaHash: firstOutput.audiovisualSha256 ?? null,
     mediaType: firstOutput.mediaType ?? null,
     width: firstOutput.width ?? null,
     height: firstOutput.height ?? null,
@@ -604,12 +765,24 @@ export function createRunProvenance({
     durationSeconds: firstOutput.durationSeconds ?? null,
     sampleRate: firstOutput.sampleRate ?? null,
     channels: firstOutput.channels ?? null,
-    template,
+    template: {
+      ...template,
+      expectedOutput:
+        expectedOutput && typeof expectedOutput === 'object'
+          ? {
+              ...(Number.isInteger(expectedOutput.width) ? { width: expectedOutput.width } : {}),
+              ...(Number.isInteger(expectedOutput.height) ? { height: expectedOutput.height } : {}),
+              ...(Number.isInteger(expectedOutput.frames) ? { frames: expectedOutput.frames } : {}),
+              ...(expectedOutput.requiresAudio === true ? { requiresAudio: true } : {}),
+            }
+          : null,
+    },
     graph: {
       ...graph,
       executionPlanHash: executionPlan.hash,
       executionPlan: executionPlan.plan,
     },
+    execution,
     model: compatibilityModel ?? null,
     models: modelSet,
     inputs,
@@ -649,7 +822,6 @@ export function compareRunProvenance(baseline, candidate) {
     'models.hash',
     'inputs.count',
     'inputs.hash',
-    'runtime.lockFingerprint',
     'runtime.backendSource.fingerprint',
     'runtime.backendContract.fingerprint',
     'runtime.deterministic.fingerprint',
@@ -661,6 +833,12 @@ export function compareRunProvenance(baseline, candidate) {
     const mediaType =
       baseline?.output?.items?.[index]?.mediaType ?? candidate?.output?.items?.[index]?.mediaType ?? 'image';
     fields.push(`output.items.${index}.decodedSha256`);
+    if (baseline?.output?.items?.[index]?.decodedAudioSha256 || candidate?.output?.items?.[index]?.decodedAudioSha256) {
+      fields.push(`output.items.${index}.decodedAudioSha256`);
+    }
+    if (baseline?.output?.items?.[index]?.audiovisualSha256 || candidate?.output?.items?.[index]?.audiovisualSha256) {
+      fields.push(`output.items.${index}.audiovisualSha256`);
+    }
     if (mediaType === 'audio') {
       fields.push(
         `output.items.${index}.sampleRate`,
@@ -684,12 +862,21 @@ export function compareRunProvenance(baseline, candidate) {
     const actual = valueAt(candidate, field);
     return stableStringify(expected) === stableStringify(actual) ? [] : [{ field, expected, actual }];
   });
+  const baselineRuntimeLock = runtimeLockFromProvenance(baseline);
+  const candidateRuntimeLock = runtimeLockFromProvenance(candidate);
+  if (baselineRuntimeLock !== candidateRuntimeLock) {
+    mismatches.push({
+      field: 'runtime.lockFingerprint',
+      expected: baselineRuntimeLock,
+      actual: candidateRuntimeLock,
+    });
+  }
   const baselineBlockers = validateRunProvenance(baseline);
   const candidateBlockers = validateRunProvenance(candidate);
   return {
     matches: mismatches.length === 0,
     candidateExact: mismatches.length === 0 && baselineBlockers.length === 0 && candidateBlockers.length === 0,
-    comparedFields: fields.length,
+    comparedFields: fields.length + 1,
     mismatches,
     baselineBlockers,
     candidateBlockers,

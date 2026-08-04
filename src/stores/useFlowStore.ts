@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { NodeData, NodeParams, type NodeParamSignal } from './useNodeStore';
@@ -5,6 +7,7 @@ import { Node, Edge, OnNodesChange, OnEdgesChange, NodeChange, EdgeChange, Conne
 
 import type { ApiGraphExport } from '../types/api';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
+import { arrangeGraphNodes } from '../workflow/graphLayout';
 import {
   handleConnect,
   handleEdgesChange,
@@ -20,6 +23,7 @@ import {
   duplicateFlowNode,
   getFlowNodeParamValues,
   groupFlowNodes,
+  loopFlowNodes,
   readNodeParam,
   removeFlowEdges,
   removeFlowNodes,
@@ -29,6 +33,7 @@ import {
   resetFlowStatus,
   setFlowEdgesType,
   setFlowNodeCached,
+  setFlowNodeLoopParent,
   setFlowNodeSize,
   setFlowNodeUiState,
   setFlowViewport,
@@ -39,9 +44,19 @@ import {
   writeNodeParam,
 } from './flowNodeMutations';
 import { deepEqual } from '../utils/deepEqual';
-import { expandUserBlockGraph } from '../studio/userBlocks';
+import {
+  collapseUserBlockInstance,
+  configureUserBlockInstance,
+  expandUserBlockGraph,
+  expandUserBlockInstance,
+  fitUserBlockInstance,
+  isUserBlockExpandedInstance,
+  USER_BLOCK_COLLAPSED_HEIGHT,
+  USER_BLOCK_COLLAPSED_WIDTH,
+} from '../studio/userBlocks';
 import { useUserBlockStore } from './useUserBlockStore';
 import { replaceFlowGraph, type FlowGraphReplacement, type FlowGraphReplacementOptions } from './flowGraphMutations';
+import { decorateConnectionEdges } from '../theme/connectionTypes';
 
 export type CustomNodeType = Node<NodeData, NodeData['type']>;
 export interface CustomConnection extends Connection {
@@ -52,6 +67,10 @@ export type ReplaceGraphOptions = FlowGraphReplacementOptions & {
   historyLabel?: string;
 };
 
+export type ArrangeGraphOptions = {
+  history?: boolean;
+};
+
 export type FlowStore = {
   nodes: CustomNodeType[];
   edges: Edge[];
@@ -60,6 +79,7 @@ export type FlowStore = {
   historyPast: FlowHistorySnapshot[];
   historyFuture: FlowHistorySnapshot[];
   historyTransaction: FlowHistoryTransaction | null;
+  layoutRevision: number;
 
   // events
   onNodesChange: OnNodesChange<CustomNodeType>;
@@ -74,6 +94,12 @@ export type FlowStore = {
   replaceGraph: (replacement: FlowGraphReplacement, options?: ReplaceGraphOptions) => void;
   getParam: <K extends keyof NodeParams>(id: string, param: string, key: K) => NodeParams[K] | null;
   setParam: <K extends keyof NodeParams = 'value'>(id: string, param: string, value: NodeParams[K], key?: K) => void;
+  setParamWithHistory: <K extends keyof NodeParams = 'value'>(
+    id: string,
+    param: string,
+    value: NodeParams[K],
+    key?: K,
+  ) => void;
   setNodeSize: (id: string, width: number, height: number) => void;
   getNodeParamsValues: (id: string) => Record<string, unknown>;
   replaceNodeParams: (id: string, params: Record<string, NodeParams>) => void;
@@ -87,6 +113,21 @@ export type FlowStore = {
   updateSignalValues: (edges: Edge | Edge[]) => void;
   getSignalValue: (id: string, param: string) => NodeParamSignal['value'] | undefined;
   groupNodes: (ids: string[]) => void;
+  loopNodes: (ids: string[]) => void;
+  setNodeLoopParent: (nodeId: string, loopId: string | null) => void;
+  toggleUserBlockExpanded: (id: string) => void;
+  fitUserBlockToChildren: (id: string) => void;
+  configureUserBlock: (
+    id: string,
+    changes: {
+      name: string;
+      inputLabels: Record<string, string>;
+      outputLabels: Record<string, string>;
+      exposedParamIds: Set<string>;
+    },
+  ) => void;
+  arrangeGraph: (options?: ArrangeGraphOptions) => Promise<void>;
+  refreshConnectionVisuals: () => void;
   ungroupNodes: (id: string) => void;
   setViewport: (viewport: Viewport) => void;
   setNodeCached: (
@@ -101,15 +142,19 @@ export type FlowStore = {
     id: string,
     progress: number,
     metadata?: Partial<
-      Pick<NodeData, 'activeTaskId' | 'attemptIndex' | 'executionStatus' | 'executionPhase' | 'progressMessage'>
+      Pick<
+        NodeData,
+        'activeTaskId' | 'attemptIndex' | 'executionStatus' | 'executionPhase' | 'progressMessage' | 'executionProgress'
+      >
     >,
   ) => void;
-  resetExecutionProgress: () => void;
+  resetExecutionProgress: (taskId?: string | null) => void;
   resetStatus: (cachedIds: string | string[]) => void;
   withHistory: (label: string, mutation: () => void) => void;
   beginHistoryTransaction: (label: string) => void;
   commitHistoryTransaction: () => void;
   cancelHistoryTransaction: () => void;
+  resetHistory: () => void;
   undo: () => void;
   redo: () => void;
   toObject: () => {
@@ -133,6 +178,7 @@ type FlowHistoryTransaction = {
 };
 
 const FLOW_STORAGE_KEY = 'modiff.flow';
+const FLOW_STORAGE_VERSION = 1;
 const FLOW_HISTORY_LIMIT = 50;
 migrateLocalStorageKey('reactflow', FLOW_STORAGE_KEY);
 
@@ -140,7 +186,70 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function durableFlowNodeSnapshot(node: CustomNodeType) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isFinitePosition(value: unknown) {
+  return (
+    isRecord(value) &&
+    typeof value.x === 'number' &&
+    Number.isFinite(value.x) &&
+    typeof value.y === 'number' &&
+    Number.isFinite(value.y)
+  );
+}
+
+function isPersistedFlowNode(value: unknown): value is CustomNodeType {
+  if (!isRecord(value) || typeof value.id !== 'string' || !value.id || !isFinitePosition(value.position)) return false;
+  if (!isRecord(value.data) || !isRecord(value.data.params)) return false;
+  return (
+    Object.values(value.data.params).every(isRecord) &&
+    typeof value.data.type === 'string' &&
+    typeof value.data.module === 'string' &&
+    typeof value.data.action === 'string' &&
+    typeof value.data.label === 'string'
+  );
+}
+
+function isPersistedFlowEdge(value: unknown): value is Edge {
+  return Boolean(
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    value.id &&
+    typeof value.source === 'string' &&
+    value.source &&
+    typeof value.target === 'string' &&
+    value.target,
+  );
+}
+
+function persistedViewport(value: unknown): Viewport {
+  if (!isRecord(value)) return { x: 0, y: 0, zoom: 1 };
+  const x = typeof value.x === 'number' && Number.isFinite(value.x) ? value.x : 0;
+  const y = typeof value.y === 'number' && Number.isFinite(value.y) ? value.y : 0;
+  const zoom = typeof value.zoom === 'number' && Number.isFinite(value.zoom) && value.zoom > 0 ? value.zoom : 1;
+  return { x, y, zoom };
+}
+
+export function normalizePersistedFlowState(value: unknown): FlowHistorySnapshot {
+  const record = isRecord(value) ? value : {};
+  const nodes = (Array.isArray(record.nodes) ? record.nodes : [])
+    .filter(isPersistedFlowNode)
+    .map(durableFlowNodeSnapshot);
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = (Array.isArray(record.edges) ? record.edges : [])
+    .filter(isPersistedFlowEdge)
+    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    .map((edge) => cloneJson(edge));
+  return {
+    nodes,
+    edges,
+    viewport: persistedViewport(record.viewport),
+  };
+}
+
+export function durableFlowNodeSnapshot(node: CustomNodeType) {
   const snapshot = cloneJson(node);
   delete snapshot.selected;
   delete snapshot.dragging;
@@ -152,11 +261,15 @@ function durableFlowNodeSnapshot(node: CustomNodeType) {
   delete snapshot.data.executionStatus;
   delete snapshot.data.executionPhase;
   delete snapshot.data.progressMessage;
+  delete snapshot.data.executionProgress;
   delete snapshot.data.executionTime;
   delete snapshot.data.memoryUsage;
   snapshot.data.uiState = snapshot.data.uiState
     ? {
         collapsed: snapshot.data.uiState.collapsed,
+        blockExpanded: snapshot.data.uiState.blockExpanded,
+        blockCollapsedWidth: snapshot.data.uiState.blockCollapsedWidth,
+        blockCollapsedHeight: snapshot.data.uiState.blockCollapsedHeight,
         disabled: snapshot.data.uiState.disabled,
       }
     : undefined;
@@ -213,6 +326,7 @@ export const useFlowStore = create<FlowStore>()(
       historyPast: [],
       historyFuture: [],
       historyTransaction: null,
+      layoutRevision: 0,
 
       onNodesChange: async (changes: NodeChange<CustomNodeType>[]) => {
         const applyChanges = () => {
@@ -274,6 +388,20 @@ export const useFlowStore = create<FlowStore>()(
       },
       setParam: <K extends keyof NodeParams = 'value'>(id: string, param: string, value: NodeParams[K], key?: K) => {
         writeNodeParam(id, param, value, key, set);
+        if (key === 'type') {
+          get().refreshConnectionVisuals();
+        }
+      },
+      setParamWithHistory: <K extends keyof NodeParams = 'value'>(
+        id: string,
+        param: string,
+        value: NodeParams[K],
+        key?: K,
+      ) => {
+        get().withHistory('Edit node parameter', () => writeNodeParam(id, param, value, key, set));
+        if (key === 'type') {
+          get().refreshConnectionVisuals();
+        }
       },
       setNodeSize: (id: string, width: number, height: number) => {
         get().withHistory('Resize node', () => setFlowNodeSize(id, width, height, set));
@@ -283,6 +411,7 @@ export const useFlowStore = create<FlowStore>()(
       },
       replaceNodeParams: (id: string, params: Record<string, NodeParams>) => {
         replaceFlowNodeParams(id, params, set, get);
+        get().refreshConnectionVisuals();
       },
       setNodeUiState: (id, uiState) => {
         setFlowNodeUiState(id, uiState, set);
@@ -301,6 +430,38 @@ export const useFlowStore = create<FlowStore>()(
         get().withHistory('Toggle node collapse', () => toggleFlowNodeCollapsed(id, get));
       },
       resetNodeSize: (id) => {
+        const node = get().nodes.find((item) => item.id === id);
+        if (node?.data.type === 'block') {
+          get().withHistory(node.data.uiState?.blockExpanded ? 'Fit block to contents' : 'Reset block size', () => {
+            if (node.data.uiState?.blockExpanded) {
+              set((state) => {
+                const graph = fitUserBlockInstance(state, id);
+                return graph === state ? state : { nodes: graph.nodes };
+              });
+              return;
+            }
+            set((state) => ({
+              nodes: state.nodes.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      width: USER_BLOCK_COLLAPSED_WIDTH,
+                      height: USER_BLOCK_COLLAPSED_HEIGHT,
+                      data: {
+                        ...item.data,
+                        uiState: {
+                          ...item.data.uiState,
+                          blockCollapsedWidth: USER_BLOCK_COLLAPSED_WIDTH,
+                          blockCollapsedHeight: USER_BLOCK_COLLAPSED_HEIGHT,
+                        },
+                      },
+                    }
+                  : item,
+              ),
+            }));
+          });
+          return;
+        }
         get().withHistory('Reset node size', () => resetFlowNodeSize(id, set));
       },
       setAllEdgesType: (edgeType: 'default' | 'smoothstep') => {
@@ -308,6 +469,70 @@ export const useFlowStore = create<FlowStore>()(
       },
       groupNodes: (ids: string[]) => {
         get().withHistory('Group nodes', () => groupFlowNodes(ids, set));
+      },
+      loopNodes: (ids: string[]) => {
+        get().withHistory('Create loop', () => loopFlowNodes(ids, set));
+      },
+      setNodeLoopParent: (nodeId, loopId) => {
+        get().withHistory(loopId ? 'Move node into loop' : 'Move node out of loop', () =>
+          setFlowNodeLoopParent(nodeId, loopId, set),
+        );
+      },
+      toggleUserBlockExpanded: (id) => {
+        get().withHistory('Toggle block expansion', () => {
+          set((state) => {
+            const block = state.nodes.find((node) => node.id === id && node.data.type === 'block');
+            if (!block) return state;
+            const graph = isUserBlockExpandedInstance(state, id)
+              ? collapseUserBlockInstance(state, id, useUserBlockStore.getState().blocks)
+              : expandUserBlockInstance(state, id, useUserBlockStore.getState().blocks);
+            return graph === state
+              ? state
+              : {
+                  nodes: graph.nodes,
+                  edges: decorateConnectionEdges(graph.nodes, graph.edges),
+                };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
+      fitUserBlockToChildren: (id) => {
+        set((state) => {
+          const graph = fitUserBlockInstance(state, id);
+          return graph === state ? state : { nodes: graph.nodes };
+        });
+      },
+      configureUserBlock: (id, changes) => {
+        get().withHistory('Configure block', () => {
+          set((state) => {
+            const graph = configureUserBlockInstance(state, id, useUserBlockStore.getState().blocks, changes);
+            return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };
+          });
+          get().updateHandleConnectionStatus();
+        });
+      },
+      arrangeGraph: async (options = {}) => {
+        const applyLayout = () => {
+          set((state) => {
+            const arranged = arrangeGraphNodes(state.nodes, state.edges);
+            return {
+              nodes: arranged,
+              layoutRevision: state.layoutRevision + 1,
+            };
+          });
+        };
+        if (options.history === false) {
+          applyLayout();
+        } else {
+          get().withHistory('Arrange graph', applyLayout);
+        }
+      },
+      refreshConnectionVisuals: () => {
+        set((state) => {
+          const edges = decorateConnectionEdges(state.nodes, state.edges);
+          return edges === state.edges ? state : { edges };
+        });
       },
       ungroupNodes: (id: string) => {
         get().withHistory('Ungroup nodes', () => ungroupFlowNodes(id, set));
@@ -343,8 +568,8 @@ export const useFlowStore = create<FlowStore>()(
       updateProgress: (id: string, progress: number, metadata) => {
         updateFlowNodeProgress(id, progress, metadata, set);
       },
-      resetExecutionProgress: () => {
-        resetFlowExecutionProgress(set);
+      resetExecutionProgress: (taskId) => {
+        resetFlowExecutionProgress(set, taskId);
       },
       resetStatus: (cachedIds: string | string[]) => {
         resetFlowStatus(cachedIds, set, get);
@@ -433,6 +658,9 @@ export const useFlowStore = create<FlowStore>()(
       cancelHistoryTransaction: () => {
         set({ historyTransaction: null });
       },
+      resetHistory: () => {
+        set({ historyPast: [], historyFuture: [], historyTransaction: null });
+      },
       undo: () => {
         const past = get().historyPast;
         const previous = past[past.length - 1];
@@ -486,21 +714,25 @@ export const useFlowStore = create<FlowStore>()(
         get().updateSignalValues(get().edges);
       },
       toObject: () => {
-        return {
-          nodes: get().nodes,
-          edges: get().edges,
-          viewport: get().viewport,
-        };
+        return snapshotFlowState(get());
       },
     }),
     {
       name: FLOW_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        nodes: state.nodes,
-        edges: state.edges,
-        viewport: state.viewport,
+      version: FLOW_STORAGE_VERSION,
+      migrate: (persisted) => normalizePersistedFlowState(persisted),
+      merge: (persisted, current) => ({
+        ...current,
+        ...normalizePersistedFlowState(persisted),
+        historyPast: [],
+        historyFuture: [],
+        historyTransaction: null,
       }),
+      partialize: (state) => snapshotFlowState(state),
+      onRehydrateStorage: () => (state) => {
+        state?.resetExecutionProgress();
+      },
     },
   ),
 );

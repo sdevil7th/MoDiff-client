@@ -1,20 +1,107 @@
-import { defineConfig, mergeConfig, UserConfig } from 'vite';
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
+import { defineConfig, loadEnv, mergeConfig, type Plugin, type UserConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import {
+  resolveTemplateAssetViteContract,
+  serializeTemplateAssetSource,
+  type TemplateAssetSourceContract,
+} from './scripts/template-asset-source-contract.ts';
 
 const backendProxyTarget = process.env.VITE_BACKEND_PROXY_TARGET || 'http://127.0.0.1:8088';
+const checkedInTemplateAssetSource = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, 'src/studio/templateAssetSource.json'), 'utf8'),
+);
+
+function templateAssetSourceIdentityPlugin(source: TemplateAssetSourceContract): Plugin {
+  return {
+    name: 'modiff-template-asset-source-identity',
+    apply: 'build',
+    buildStart() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'assets/template-asset-source.v1.json',
+        source: serializeTemplateAssetSource(source),
+      });
+    },
+  };
+}
+
+function shellPublicAssetsPlugin(): Plugin {
+  let emitBuildAssets = false;
+  const publicFiles = new Map([
+    ['THIRD_PARTY_LICENSES.txt', 'text/plain; charset=utf-8'],
+    ['favicon.ico', 'image/vnd.microsoft.icon'],
+    ['assets/modiff-icon.svg', 'image/svg+xml; charset=utf-8'],
+    ['assets/modiff-icon-64.png', 'image/png'],
+    ['assets/modiff-icon-128.png', 'image/png'],
+    ['assets/modiff-icon-256.png', 'image/png'],
+  ]);
+  return {
+    name: 'modiff-shell-public-assets',
+    configResolved(config) {
+      emitBuildAssets = config.command === 'build';
+    },
+    buildStart() {
+      if (!emitBuildAssets) return;
+      for (const fileName of publicFiles.keys()) {
+        this.emitFile({
+          type: 'asset',
+          fileName,
+          source: fs.readFileSync(path.resolve(__dirname, 'public', fileName)),
+        });
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+        const fileName = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+        const contentType = publicFiles.get(fileName);
+        if (!contentType) {
+          next();
+          return;
+        }
+        response.statusCode = 200;
+        response.setHeader('Content-Type', contentType);
+        response.setHeader('Cache-Control', 'no-cache');
+        response.end(fs.readFileSync(path.resolve(__dirname, 'public', fileName)));
+      });
+    },
+  };
+}
+
+function adjacentSupervisorTarget(backendTarget: string) {
+  try {
+    const url = new URL(backendTarget);
+    const backendPort = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+    url.protocol = 'http:';
+    url.port = String(backendPort + 1);
+    url.pathname = '';
+    url.search = '';
+    url.hash = '';
+    return url.origin;
+  } catch {
+    return backendTarget;
+  }
+}
+
+const supervisorControlTarget =
+  process.env.VITE_SUPERVISOR_CONTROL_ADDRESS || adjacentSupervisorTarget(backendProxyTarget);
 const backendProxyPaths = [
   '/ws',
   '/nodes',
+  '/hf_token',
   '/hf_cache',
   '/local_models',
   '/model_cache',
   '/runtime',
   '/health',
   '/model_capabilities',
+  '/media',
   '/auto_resource',
   '/studio_outputs',
   '/studio',
@@ -31,6 +118,7 @@ const backendProxyPaths = [
   '/listdir',
   '/listgraphs',
   '/queue',
+  '/runs',
   '/graph',
   '/stop',
   '/favicon.ico',
@@ -49,6 +137,15 @@ const backendProxy = Object.fromEntries(
 
 const baseConfig: UserConfig = {
   plugins: [react(), tailwindcss()],
+  // Keep the browser's process-external recovery endpoint aligned with the
+  // backend proxy even when the caller relies on MoDiff's default 8088 port.
+  // Without these build-time values, app.config could only see the Vite
+  // frontend origin and incorrectly poll 5174 instead of the supervisor on
+  // 8089 after a page refresh.
+  define: {
+    'import.meta.env.VITE_BACKEND_PROXY_TARGET': JSON.stringify(backendProxyTarget),
+    'import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS': JSON.stringify(supervisorControlTarget),
+  },
   server: {
     proxy: backendProxy,
     hmr: process.env.MODIFF_GALLERY_STABLE !== '1',
@@ -64,6 +161,19 @@ const baseConfig: UserConfig = {
     rollupOptions: {
       treeshake: true,
       output: {
+        manualChunks: (moduleId) => {
+          if (
+            moduleId.includes('/node_modules/@xyflow/') ||
+            moduleId.includes('/node_modules/react/') ||
+            moduleId.includes('/node_modules/react-dom/') ||
+            moduleId.includes('/node_modules/scheduler/') ||
+            moduleId.includes('/node_modules/@headlessui/') ||
+            moduleId.includes('/node_modules/@floating-ui/')
+          ) {
+            return 'graph-vendor';
+          }
+          return undefined;
+        },
         chunkFileNames: (chunkInfo) => {
           const customFieldPath = path.resolve(__dirname, 'src/custom-fields');
           if (chunkInfo.facadeModuleId?.startsWith(customFieldPath)) {
@@ -95,4 +205,34 @@ const loadLocalConfig = async () => {
 };
 const localConfig = await loadLocalConfig();
 
-export default defineConfig(mergeConfig(baseConfig, localConfig));
+export default defineConfig(({ mode }) => {
+  const templateAssetContract = resolveTemplateAssetViteContract(
+    checkedInTemplateAssetSource,
+    loadEnv(mode, __dirname, 'VITE_MODIFF_TEMPLATE_ASSET_'),
+    process.env,
+  );
+  const usesRemoteTemplateAssets = templateAssetContract.source.mode === 'huggingface';
+  const assetConfig: UserConfig = {
+    plugins: [
+      templateAssetSourceIdentityPlugin(templateAssetContract.source),
+      ...(usesRemoteTemplateAssets ? [shellPublicAssetsPlugin()] : []),
+    ],
+    // Remote Gallery builds must never duplicate the Dataset payload into dist
+    // (and later into the backend's web bundle). Offline/local builds explicitly
+    // opt back into Vite's normal public-directory copy.
+    publicDir: templateAssetContract.publicDir,
+    define: templateAssetContract.runtimeDefines,
+  };
+  const mergedConfig = mergeConfig(mergeConfig(baseConfig, assetConfig), localConfig);
+
+  // Workstation-local config remains extensible, but it cannot split the
+  // asset payload, emitted identity, and compiled runtime source apart.
+  return {
+    ...mergedConfig,
+    publicDir: templateAssetContract.publicDir,
+    define: {
+      ...mergedConfig.define,
+      ...templateAssetContract.runtimeDefines,
+    },
+  };
+});

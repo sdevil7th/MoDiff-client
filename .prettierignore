@@ -1,7 +1,10 @@
 artifacts/
+config/template-assets.v1.json
+.pytest_cache/
 dist/
 node_modules/
 output/
 playwright-report/
+playwright-report-*/
 public/template-gallery/
 test-results/

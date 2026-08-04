@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
+  backendSourceDriftBlocker,
   compareTemplateLock,
   isAttributedTaskComplete,
   pipeChildLogs,
@@ -20,6 +24,8 @@ import {
   resolvedModelReposFromOutput,
   selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('execution identity ignores admission-proof status while locking the actual resource plan', () => {
   const graph = {
@@ -94,6 +100,16 @@ test('template proof compares the applied form against every locked setting', ()
   });
 });
 
+test('live proof rejects missing or changing backend source identity', () => {
+  const stable = { fingerprint: 'sha256:backend-source:stable' };
+  assert.equal(backendSourceDriftBlocker(stable, stable), null);
+  assert.match(
+    backendSourceDriftBlocker(stable, { fingerprint: 'sha256:backend-source:changed' }),
+    /changed while the live proof was running/,
+  );
+  assert.match(backendSourceDriftBlocker(stable, null), /could not be captured/);
+});
+
 test('live proof waits for attributed media or graph completion after task completion', () => {
   assert.equal(isAttributedTaskComplete({ taskCompleted: true, graphCompleted: false, currentOutputCount: 0 }), false);
   assert.equal(isAttributedTaskComplete({ taskCompleted: true, graphCompleted: false, currentOutputCount: 1 }), true);
@@ -125,6 +141,13 @@ test('child stdout and stderr share one proof log without ending it prematurely'
   assert.match(captured, /stdout line/);
   assert.match(captured, /stderr line/);
   assert.match(captured, /\[backend\] exited code=1 signal=null/);
+});
+
+test('live proof owns a stable non-HMR frontend unless reuse is explicit', () => {
+  const source = readFileSync(resolve(ROOT, 'scripts', 'live-qwen-proof.mjs'), 'utf8');
+  assert.match(source, /MODIFF_LIVE_FRONTEND_PORT \|\| 5193/);
+  assert.match(source, /MODIFF_GALLERY_STABLE: '1'/);
+  assert.match(source, /MODIFF_LIVE_FRONTEND_REUSE === '1'/);
 });
 
 test('generation overrides are rejected unless smoke mode is explicit', () => {
@@ -179,7 +202,7 @@ function syntheticApiGraph(ids = ['loader-a', 'generate-a', 'preview-a']) {
     sid: 'ephemeral-session',
     nodes: {
       [loaderId]: {
-        module: 'modules.QwenImage',
+        module: 'modules.DiffusersImage',
         action: 'LoadPipeline',
         params: {
           model_id: { value: { source: 'hub', value: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit' } },
@@ -187,7 +210,7 @@ function syntheticApiGraph(ids = ['loader-a', 'generate-a', 'preview-a']) {
         },
       },
       [generateId]: {
-        module: 'modules.QwenImage',
+        module: 'modules.DiffusersImage',
         action: 'Generate',
         params: {
           pipeline: { sourceId: loaderId, sourceKey: 'pipeline' },
@@ -212,7 +235,8 @@ function syntheticApiGraph(ids = ['loader-a', 'generate-a', 'preview-a']) {
     runtimeHints: {
       modelType: 'QwenImageModularPipeline',
       resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
-      executionPath: 'direct-qwen-image',
+      executionPath: 'direct-diffusers-image',
+      autoResourceCandidateId: 'qwen-low-vram-bnb4-model-offload',
       dtype: 'bfloat16',
       offloadMode: 'model_cpu',
       cudaMemoryFreeBytes: 12,
@@ -245,8 +269,8 @@ function syntheticRuntime(freeBytes = 12) {
 
 const syntheticNodesPayload = {
   nodes: {
-    'modules.QwenImage.LoadPipeline': {
-      module: 'modules.QwenImage',
+    'modules.DiffusersImage.LoadPipeline': {
+      module: 'modules.DiffusersImage',
       action: 'LoadPipeline',
       type: 'custom',
       params: {
@@ -254,8 +278,8 @@ const syntheticNodesPayload = {
         dtype: { type: 'string', default: 'bfloat16' },
       },
     },
-    'modules.QwenImage.Generate': {
-      module: 'modules.QwenImage',
+    'modules.DiffusersImage.Generate': {
+      module: 'modules.DiffusersImage',
       action: 'Generate',
       type: 'custom',
       params: {
@@ -316,7 +340,17 @@ function syntheticProvenance(overrides = {}) {
       mediaCollectionHash: 'sha256:collection:test',
       mediaItems: [{ mediaHash: 'sha256:bytes:test' }],
     },
+    executionReceipt:
+      overrides.executionReceipt === undefined
+        ? {
+            runtimeMeasurement: {
+              elapsedSeconds: 12.5,
+              peakAllocatedBytes: 8_589_934_592,
+            },
+          }
+        : overrides.executionReceipt,
     taskId: overrides.taskId ?? 'task-a',
+    expectedOutput: overrides.expectedOutput ?? { width: 1024, height: 768 },
     capturedAt: overrides.capturedAt ?? '2026-07-10T00:00:00.000Z',
   });
 }
@@ -353,6 +387,28 @@ test('stable runtime lock excludes volatile free-memory observations', () => {
 
   assert.notEqual(left.reportedFingerprint, right.reportedFingerprint);
   assert.equal(left.lockFingerprint, right.lockFingerprint);
+});
+
+test('stable runtime lock uses applied deterministic settings over a stale hardware snapshot', () => {
+  const stale = syntheticRuntime(12);
+  stale.torch.cudnn_deterministic = false;
+  stale.torch.deterministic_algorithms = false;
+  const fresh = syntheticRuntime(12);
+  fresh.torch.cudnn_deterministic = true;
+  fresh.torch.deterministic_algorithms = true;
+  const deterministicMode = {
+    enabled: true,
+    settings: {
+      cudnn_benchmark: false,
+      cudnn_deterministic: true,
+      torch_deterministic_algorithms: true,
+    },
+  };
+
+  assert.equal(
+    normalizeBackendRuntime(stale, deterministicMode).lockFingerprint,
+    normalizeBackendRuntime(fresh, deterministicMode).lockFingerprint,
+  );
 });
 
 test('resolved model identity follows the graph artifact actually executed', () => {
@@ -395,6 +451,15 @@ test('multi-model graphs pin every executed loader and build an order-independen
     modelSetIdentity([controlIdentity, syntheticModel]),
   );
   assert.equal(modelSetIdentity([syntheticModel, controlIdentity]).count, 2);
+});
+
+test('composite pipeline dependencies are included in the executed model set', () => {
+  const graph = syntheticApiGraph();
+  graph.runtimeHints.modelDependencies = [{ id: 'redux-base', kind: 'base', repo: 'black-forest-labs/FLUX.1-dev' }];
+  assert.deepEqual(resolvedModelReposFromOutput({ apiGraphSnapshot: graph }), [
+    'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
+    'black-forest-labs/FLUX.1-dev',
+  ]);
 });
 
 test('duplicate provenance compares graph, runtime, model, template, and decoded output identity', () => {
@@ -451,6 +516,12 @@ test('audio provenance validates sample-domain identity without fake image dimen
         ],
       },
       executedOutput: { displayType: 'audio', mediaItems: [] },
+      executionReceipt: {
+        runtimeMeasurement: {
+          elapsedSeconds: 30,
+          peakAllocatedBytes: 4_294_967_296,
+        },
+      },
       taskId: 'task-audio',
     });
   };
@@ -486,4 +557,41 @@ test('duplicate provenance rejects changed deterministic input bytes', () => {
   );
   assert.equal(changed.candidateExact, false);
   assert.ok(changed.mismatches.some((item) => item.field === 'inputs.hash'));
+});
+
+test('qualification provenance records the applied candidate, duration, and peak memory', () => {
+  const provenance = syntheticProvenance();
+  assert.equal(provenance.schemaVersion, 2);
+  assert.equal(provenance.execution.resourceCandidateId, 'qwen-low-vram-bnb4-model-offload');
+  assert.equal(provenance.execution.elapsedSeconds, 12.5);
+  assert.equal(provenance.execution.peakMemoryBytes, 8_589_934_592);
+  assert.deepEqual(provenance.blockers, []);
+
+  const manualGraph = syntheticApiGraph();
+  delete manualGraph.runtimeHints.autoResourceCandidateId;
+  const manualProvenance = syntheticProvenance({ apiGraph: manualGraph });
+  assert.equal(
+    manualProvenance.execution.resourceCandidateId,
+    'manual-resource-v1:QwenImageModularPipeline|bfloat16|model_cpu|none',
+  );
+  assert.deepEqual(manualProvenance.blockers, []);
+
+  const missingMeasurement = syntheticProvenance({
+    executionReceipt: null,
+  });
+  assert.ok(missingMeasurement.blockers.some((item) => item.includes('execution.peakMemoryBytes')));
+});
+
+test('qualification provenance rejects output dimensions that violate the template contract', () => {
+  const provenance = syntheticProvenance({ width: 1328, height: 1328 });
+  assert.ok(
+    provenance.blockers.some((item) =>
+      item.includes('output.items.0.width does not match the template contract: expected 1024, got 1328'),
+    ),
+  );
+  assert.ok(
+    provenance.blockers.some((item) =>
+      item.includes('output.items.0.height does not match the template contract: expected 768, got 1328'),
+    ),
+  );
 });

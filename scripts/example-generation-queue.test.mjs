@@ -60,6 +60,103 @@ function commandJob(id, source, extra = {}) {
   };
 }
 
+test('masked VACE queue uses the staged amber-vessel source contract', () => {
+  const projectRoot = dirname(dirname(SCRIPT));
+  const config = validateConfig(
+    JSON.parse(readFileSync(join(projectRoot, 'scripts', 'example-generation-queue.config.json'), 'utf8')),
+  );
+  const sourceJob = config.jobs.find((job) => job.id === 'source-qwen-wan-amber-vessel-reference');
+  const maskedJob = config.jobs.find((job) => job.id === 'wan-vace-masked-object-replace-v1');
+  assert.ok(sourceJob);
+  assert.ok(maskedJob);
+  assert.deepEqual(sourceJob.command, [
+    'node',
+    'scripts/template-gallery-source-runner.mjs',
+    '--asset',
+    'qwen-wan-amber-vessel-reference',
+  ]);
+  assert.deepEqual(maskedJob.dependsOn, [sourceJob.id]);
+  assert.deepEqual(maskedJob.args.slice(0, 3), [
+    '--reviewed',
+    '--template-input-map',
+    'scripts/template-gallery-wan-inputs-v2.json',
+  ]);
+  assert.doesNotMatch(maskedJob.description, /harbor|pilot launch/i);
+
+  const sourceCatalog = JSON.parse(
+    readFileSync(join(projectRoot, 'scripts', 'template-gallery-source-assets.json'), 'utf8'),
+  );
+  const inputMap = JSON.parse(
+    readFileSync(join(projectRoot, 'scripts', 'template-gallery-wan-inputs-v2.json'), 'utf8'),
+  );
+  const amberSource = sourceCatalog.assets.find((asset) => asset.id === 'qwen-wan-amber-vessel-reference');
+  assert.ok(amberSource);
+  assert.equal(amberSource.stagedFilename, 'wan-amber-vessel-reference-v2.webp');
+  assert.deepEqual(amberSource.downstreamTemplates, ['wan_vace_masked_object_replace']);
+  assert.equal(
+    inputMap.wan_vace_masked_object_replace.referenceImages[0],
+    `artifacts/template-gallery/source-assets/${amberSource.stagedFilename}`,
+  );
+  assert.equal(
+    inputMap.wan_vace_masked_object_replace.sourceVideo,
+    'artifacts/template-gallery/source-assets/wan-glass-orbit-source-v2.mp4',
+  );
+  assert.equal(
+    inputMap.wan_vace_masked_object_replace.maskVideo,
+    'artifacts/template-gallery/source-assets/wan-glass-orbit-mask-v2.mp4',
+  );
+});
+
+test('FLUX Depth queue reuses the versioned control asset without a Transformers preprocessor', () => {
+  const projectRoot = dirname(dirname(SCRIPT));
+  const config = validateConfig(
+    JSON.parse(readFileSync(join(projectRoot, 'scripts', 'example-generation-queue.config.json'), 'utf8')),
+  );
+  const versionedControlPath = 'public/template-gallery/inputs/flux_depth_control.before.png';
+  const depthJobs = config.jobs.filter((job) => job.templates?.includes('flux_depth_control'));
+  assert.ok(depthJobs.length > 0);
+  for (const job of depthJobs) {
+    const controlIndex = job.args?.indexOf('--control-image') ?? -1;
+    assert.ok(controlIndex >= 0, `${job.id} must provide a reviewed control image`);
+    assert.equal(job.args[controlIndex + 1], versionedControlPath);
+    assert.deepEqual(job.dependsOn, ['install-flux-depth']);
+  }
+
+  const serializedConfig = JSON.stringify(config);
+  assert.doesNotMatch(serializedConfig, /Depth-Anything|depth-anything|depth-control-image/);
+  assert.equal(
+    config.jobs.some((job) => job.id === 'install-depth-anything-preprocessor'),
+    false,
+  );
+  assert.equal(
+    config.jobs.some((job) => job.id === 'prepare-flux-coastal-pavilion-depth'),
+    false,
+  );
+  assert.equal(
+    config.jobs.some((job) => job.id === 'prepare-flux-depth-boatyard-v2'),
+    false,
+  );
+  assert.equal(
+    config.jobs.some((job) => job.id === 'source-flux-depth-boatyard-v2'),
+    false,
+  );
+
+  const sourceCatalog = JSON.parse(
+    readFileSync(join(projectRoot, 'scripts', 'template-gallery-source-assets.json'), 'utf8'),
+  );
+  assert.equal(
+    sourceCatalog.assets.some((asset) => asset.id === 'flux-depth-boatyard-source-v2'),
+    false,
+  );
+  const assetManifest = JSON.parse(readFileSync(join(projectRoot, 'config', 'template-assets.v1.json'), 'utf8'));
+  const depthControl = assetManifest.assets.find(
+    (asset) => asset.path === 'template-gallery/inputs/flux_depth_control.before.png',
+  );
+  assert.ok(depthControl);
+  assert.match(depthControl.sha256, /^sha256:bytes:[a-f0-9]{64}$/);
+  assert.deepEqual(depthControl.purposes, ['runtime', 'tooling']);
+});
+
 test('config validation and selection enforce a bounded pending-job queue', () => {
   const config = validateConfig({
     schemaVersion: 1,

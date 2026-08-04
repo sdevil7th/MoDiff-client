@@ -1,8 +1,11 @@
 import type { Edge, NodeChange, Viewport } from '@xyflow/react';
 
 import { deleteNodeCache } from '../utils/serverActions';
+import { decorateConnectionEdges } from '../theme/connectionTypes';
+import { normalizeGenericModelLoaderParams } from '../studio/modelSelection';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
+import { useNodesStore } from './useNodeStore';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -22,6 +25,40 @@ export type FlowGraphReplacementOptions = {
 
 function toArray(value: string | string[]) {
   return Array.isArray(value) ? value : [value];
+}
+
+function withLiveUiFieldContracts(nodes: CustomNodeType[]) {
+  const registry = useNodesStore.getState().nodesRegistry;
+
+  return nodes.map((node) => {
+    const definition = registry[`${node.data.module}.${node.data.action}`];
+    const uiFields = Object.entries(definition?.params ?? {}).filter(([, param]) =>
+      String(param.display ?? '').startsWith('ui_'),
+    );
+
+    let changed = false;
+    const params = { ...node.data.params };
+    uiFields.forEach(([fieldKey, liveParam]) => {
+      const storedParam = params[fieldKey];
+      const mergedParam = storedParam ? { ...storedParam, ...liveParam } : { ...liveParam };
+      if (storedParam && Object.prototype.hasOwnProperty.call(storedParam, 'value')) {
+        mergedParam.value = storedParam.value;
+      }
+      if (storedParam && Object.prototype.hasOwnProperty.call(storedParam, 'artifacts')) {
+        mergedParam.artifacts = storedParam.artifacts;
+      }
+      params[fieldKey] = mergedParam;
+      changed = true;
+    });
+    const normalizedParams = normalizeGenericModelLoaderParams(
+      node.data.module,
+      node.data.action,
+      changed ? params : node.data.params,
+    );
+    return changed || normalizedParams !== node.data.params
+      ? { ...node, data: { ...node.data, params: normalizedParams } }
+      : node;
+  });
 }
 
 function collectNodeIdsWithDescendants(nodes: CustomNodeType[], requestedIds: string[]) {
@@ -92,12 +129,16 @@ export function replaceFlowGraph(
   get: FlowStoreGet,
 ) {
   const previousNodeIds = new Set(get().nodes.map((node) => node.id));
-  const nextNodeIds = new Set(replacement.nodes.map((node) => node.id));
+  const nodes = withLiveUiFieldContracts(replacement.nodes);
+  const nextNodeIds = new Set(nodes.map((node) => node.id));
   const removedNodeIds = [...previousNodeIds].filter((nodeId) => !nextNodeIds.has(nodeId));
-  const edges = replacement.edges.filter((edge) => nextNodeIds.has(edge.source) && nextNodeIds.has(edge.target));
+  const edges = decorateConnectionEdges(
+    nodes,
+    replacement.edges.filter((edge) => nextNodeIds.has(edge.source) && nextNodeIds.has(edge.target)),
+  );
 
   set({
-    nodes: replacement.nodes,
+    nodes,
     edges,
     viewport: replacement.viewport ?? get().viewport,
   });

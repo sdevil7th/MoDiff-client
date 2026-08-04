@@ -1,0 +1,46 @@
+/* Generated from src/theme/semanticTokens.json. Do not edit directly. */
+@theme {
+  --font-sans: 'Source Sans Pro', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --color-hf-yellow: #ffd21e;
+  --color-hf-orange: #ff9d00;
+  --color-modiff-bg: #0b0f19;
+  --color-modiff-surface: #101623;
+  --color-modiff-panel: #141c2e;
+  --color-modiff-text: #f9fafb;
+  --color-modiff-border: #1e2939;
+  --color-modiff-blue: #3080ff;
+  --color-modiff-red: #fb2c36;
+  --color-modiff-green: #00baa7;
+  --color-modiff-focus: #ffd21e;
+  --color-modiff-primary-pressed: #e68d00;
+  --color-modiff-warning: #ffb020;
+  --color-modiff-invalid: #fb2c36;
+  --color-modiff-disabled: #475569;
+  --color-modiff-subtle-text: #94a3b8;
+  --color-modiff-border-subtle: #334155;
+  --color-modiff-surface-hover: #1b263b;
+  --color-modiff-surface-pressed: #24324a;
+  --color-modiff-selected-surface: #2b2a16;
+  --color-modiff-on-accent: #0b0f19;
+  --color-modiff-on-danger: #ffffff;
+  --color-modiff-media-backdrop: #000000;
+  --color-modiff-overlay-text: #ffffff;
+  --color-modiff-dialog-backdrop: #000000;
+  --text-modiff-tiny: 0.6875rem;
+  --text-modiff-tiny--line-height: 0.875rem;
+  --text-modiff-label: 0.6875rem;
+  --text-modiff-label--line-height: 0.875rem;
+  --text-modiff-metadata: 0.75rem;
+  --text-modiff-metadata--line-height: 1rem;
+  --text-modiff-control: 0.875rem;
+  --text-modiff-control--line-height: 1.25rem;
+  --text-modiff-card-title: 1rem;
+  --text-modiff-card-title--line-height: 1.375rem;
+  --text-modiff-modal-title: 1.25rem;
+  --text-modiff-modal-title--line-height: 1.75rem;
+  --radius-modiff-compact: 4px;
+  --radius-modiff-panel: 6px;
+  --shadow-modiff-node: 0 10px 24px rgb(0 0 0 / 35%);
+  --shadow-modiff-panel: 0 12px 32px rgb(0 0 0 / 42%);
+}

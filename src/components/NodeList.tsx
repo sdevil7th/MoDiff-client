@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NodeData } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -15,14 +17,23 @@ import {
   Image,
   LayoutGrid,
   Maximize,
-  Search,
+  Trash2,
   Truck,
   Type,
   User,
   Webhook,
 } from 'lucide-react';
 import { cx } from '../utils/classNames';
-import { TreeButtonRow, TreeChildrenPanel, TreeStaticRow } from '../ui';
+import {
+  ModiffButton,
+  ModiffDialog,
+  ModiffPopover,
+  ModiffSearchInput,
+  ModiffTabs,
+  TreeButtonRow,
+  TreeChildrenPanel,
+} from '../ui';
+import { enqueueSnackbar } from '../ui/snackbar';
 import { createUserBlockNode, USER_BLOCK_DRAG_PREFIX } from '../studio/userBlocks';
 import type { UserBlockDefinition } from '../studio/types';
 import {
@@ -32,8 +43,9 @@ import {
   type NodeCatalogVisibility,
   type NodeSurfaceCategory,
 } from '../studio/nodeCatalog';
+import { createNodeFromRegistry } from '../workflow/nodeFactory';
 
-type NodeCatalogView = 'essential' | 'advanced' | 'legacy';
+type NodeCatalogView = 'essential' | 'advanced' | 'experimental';
 
 function NodeList() {
   const { nodesRegistry } = useNodesStore();
@@ -44,7 +56,13 @@ function NodeList() {
   const userBlocks = useUserBlockStore((state) => state.blocks);
   const userBlocksLoaded = useUserBlockStore((state) => state.loaded);
   const fetchUserBlocks = useUserBlockStore((state) => state.fetchBlocks);
+  const deleteUserBlock = useUserBlockStore((state) => state.deleteBlock);
   const [search, setSearch] = useState('');
+  const [blockContextMenu, setBlockContextMenu] = useState<{
+    anchor: { left: number; top: number };
+    block: UserBlockDefinition;
+  } | null>(null);
+  const [blockPendingDelete, setBlockPendingDelete] = useState<UserBlockDefinition | null>(null);
   const [catalogView, setCatalogView] = useState<NodeCatalogView>(
     studioViewMode === 'expert' ? 'advanced' : 'essential',
   );
@@ -67,6 +85,21 @@ function NodeList() {
     [addNode, nodeCount, viewport],
   );
 
+  const handleInsertNode = useCallback(
+    (key: string) => {
+      const node = createNodeFromRegistry(key, nodesRegistry, insertPositionForViewport(viewport, nodeCount));
+      if (!node) {
+        enqueueSnackbar(`Node ${key} is no longer available. Reload the node list and try again.`, {
+          variant: 'error',
+          autoHideDuration: 5000,
+        });
+        return;
+      }
+      addNode({ ...node, selected: true });
+    },
+    [addNode, nodeCount, nodesRegistry, viewport],
+  );
+
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-modiff-border bg-modiff-surface px-3 py-3">
@@ -77,46 +110,33 @@ function NodeList() {
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Nodes</h2>
-              <p className="truncate text-xs text-modiff-muted">{Object.keys(nodesRegistry).length} available</p>
+              <p className="truncate text-xs text-modiff-subtle-text">{Object.keys(nodesRegistry).length} available</p>
             </div>
           </div>
         </div>
       </header>
       <div className="p-2">
-        <label className="flex h-8 items-center gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text focus-within:border-hf-yellow">
-          <Search size={15} className="shrink-0 text-gray-400" />
-          <input
-            placeholder="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-500"
-          />
-        </label>
+        <ModiffSearchInput
+          aria-label="Search nodes"
+          placeholder="Search nodes"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          onClear={() => setSearch('')}
+        />
       </div>
       {expertMode ? (
-        <div className="mb-0.5 grid grid-cols-3 gap-0 border-y border-modiff-border bg-modiff-surface p-0.5">
-          <GroupByButton
-            active={catalogView === 'essential'}
-            onClick={() => setCatalogView('essential')}
-            testId="node-browser-view-essential"
-          >
-            Essentials
-          </GroupByButton>
-          <GroupByButton
-            active={catalogView === 'advanced'}
-            onClick={() => setCatalogView('advanced')}
-            testId="node-browser-view-advanced"
-          >
-            Advanced
-          </GroupByButton>
-          <GroupByButton
-            active={catalogView === 'legacy'}
-            onClick={() => setCatalogView('legacy')}
-            testId="node-browser-view-legacy"
-          >
-            Legacy
-          </GroupByButton>
-        </div>
+        <ModiffTabs
+          aria-label="Node catalog level"
+          className="mb-0.5 border-y border-modiff-border bg-modiff-surface p-0.5"
+          options={[
+            { value: 'essential', label: 'Essentials' },
+            { value: 'advanced', label: 'Advanced' },
+            { value: 'experimental', label: 'Experimental' },
+          ]}
+          value={catalogView}
+          onValueChange={setCatalogView}
+          size="dense"
+        />
       ) : null}
 
       <div className="min-h-0 flex-1 select-none overflow-y-auto p-1">
@@ -126,9 +146,63 @@ function NodeList() {
           view={expertMode ? catalogView : 'essential'}
           expertMode={expertMode}
           userBlocks={userBlocks}
+          onInsertNode={handleInsertNode}
           onInsertUserBlock={handleInsertUserBlock}
+          onOpenUserBlockMenu={(block, anchor) => setBlockContextMenu({ block, anchor })}
         />
       </div>
+      <ModiffPopover
+        open={Boolean(blockContextMenu)}
+        onClose={() => setBlockContextMenu(null)}
+        anchor={blockContextMenu?.anchor}
+        ariaLabel="Block actions"
+        role="menu"
+        gap={0}
+        panelClassName="w-52 p-1"
+        testId="user-block-context-menu"
+      >
+        <ModiffButton
+          fullWidth
+          align="left"
+          tone="danger"
+          icon={<Trash2 size={15} />}
+          onClick={() => {
+            setBlockPendingDelete(blockContextMenu?.block ?? null);
+            setBlockContextMenu(null);
+          }}
+        >
+          Delete from User Nodes
+        </ModiffButton>
+      </ModiffPopover>
+      <ModiffDialog
+        open={Boolean(blockPendingDelete)}
+        onClose={() => setBlockPendingDelete(null)}
+        title="Delete block definition?"
+        testId="delete-user-block-dialog"
+        panelClassName="max-w-md"
+        footer={
+          <>
+            <ModiffButton onClick={() => setBlockPendingDelete(null)}>Cancel</ModiffButton>
+            <ModiffButton
+              tone="danger"
+              onClick={() => {
+                const block = blockPendingDelete;
+                if (!block) return;
+                void deleteUserBlock(block.id)
+                  .then(() => setBlockPendingDelete(null))
+                  .catch(() => undefined);
+              }}
+              data-testid="confirm-delete-user-block"
+            >
+              Delete definition
+            </ModiffButton>
+          </>
+        }
+      >
+        <p className="text-sm text-modiff-text">
+          Existing workflow instances keep their embedded snapshot and continue to work.
+        </p>
+      </ModiffDialog>
     </div>
   );
 }
@@ -193,7 +267,7 @@ function entryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
   if (entry.visibility === 'internal') return false;
   if (view === 'essential') return entry.visibility === 'essential';
   if (view === 'advanced') return entry.visibility === 'essential' || entry.visibility === 'advanced';
-  return entry.visibility === 'legacy';
+  return entry.visibility === 'experimental';
 }
 
 function entryMatchesSearch(entry: NodeCatalogEntry, search: string) {
@@ -217,7 +291,7 @@ function entryMatchesSearch(entry: NodeCatalogEntry, search: string) {
 function visibilityLabel(visibility: NodeCatalogVisibility) {
   if (visibility === 'essential') return null;
   if (visibility === 'advanced') return 'Advanced';
-  if (visibility === 'legacy') return 'Legacy';
+  if (visibility === 'experimental') return 'Experimental';
   return 'Internal';
 }
 
@@ -231,14 +305,18 @@ function NodeGroupList({
   view,
   expertMode,
   userBlocks,
+  onInsertNode,
   onInsertUserBlock,
+  onOpenUserBlockMenu,
 }: {
   nodes: Record<string, NodeData>;
   search: string;
   view: NodeCatalogView;
   expertMode: boolean;
   userBlocks: UserBlockDefinition[];
+  onInsertNode: (key: string) => void;
   onInsertUserBlock: (block: UserBlockDefinition) => void;
+  onOpenUserBlockMenu: (block: UserBlockDefinition, anchor: { left: number; top: number }) => void;
 }) {
   const { activeNodeGroups, setActiveNodeGroups } = useSettingsStore();
 
@@ -280,7 +358,7 @@ function NodeGroupList({
           data-testid="node-group-User-Nodes"
           className={cx(
             'mb-1 rounded-modiff-compact border border-transparent transition-colors',
-            userBlocksOpen && 'border-modiff-border bg-white/[0.04]',
+            userBlocksOpen && 'border-modiff-border bg-modiff-surface-hover/40',
           )}
         >
           <TreeButtonRow
@@ -295,33 +373,29 @@ function NodeGroupList({
               <span className="min-w-0 truncate leading-none">User Nodes</span>
             </span>
             <span className="flex shrink-0 items-center gap-2">
-              <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-muted">
+              <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text">
                 {matchingUserBlocks.length}
               </span>
               <ChevronDown
                 size={16}
-                className={cx('text-gray-400 transition-transform', userBlocksOpen && 'rotate-180')}
+                className={cx('text-modiff-subtle-text transition-transform', userBlocksOpen && 'rotate-180')}
               />
             </span>
           </TreeButtonRow>
           {userBlocksOpen ? (
             <TreeChildrenPanel level={1}>
               {matchingUserBlocks.map((block) => (
-                <TreeStaticRow
+                <TreeButtonRow
                   key={block.id}
                   data-testid={`user-block-row-${normalizedTestId(block.id)}`}
                   draggable
                   level={1}
-                  role="button"
-                  tabIndex={0}
                   title="Add block"
-                  className="cursor-grab hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                  className="cursor-grab"
                   onClick={() => onInsertUserBlock(block)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onInsertUserBlock(block);
-                    }
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    onOpenUserBlockMenu(block, { left: event.clientX, top: event.clientY });
                   }}
                   onDragStart={(event) => {
                     event.dataTransfer.setData('text/plain', `${USER_BLOCK_DRAG_PREFIX}${block.id}`);
@@ -332,14 +406,14 @@ function NodeGroupList({
                     <Boxes size={15} />
                   </span>
                   <span className="min-w-0 flex-1 truncate">{block.name}</span>
-                </TreeStaticRow>
+                </TreeButtonRow>
               ))}
             </TreeChildrenPanel>
           ) : null}
         </div>
       ) : null}
       {orderedGroups.length === 0 && matchingUserBlocks.length === 0 ? (
-        <div className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-muted">
+        <div className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
           No nodes match this view.
         </div>
       ) : (
@@ -351,7 +425,7 @@ function NodeGroupList({
               data-testid={`node-group-${normalizedTestId(group)}`}
               className={cx(
                 'mb-1 rounded-modiff-compact border border-transparent transition-colors',
-                isOpen && 'border-modiff-border bg-white/[0.04]',
+                isOpen && 'border-modiff-border bg-modiff-surface-hover/40',
               )}
             >
               <TreeButtonRow
@@ -364,10 +438,13 @@ function NodeGroupList({
                   <span className="min-w-0 truncate leading-none">{group}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-muted">
+                  <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text">
                     {entries.length}
                   </span>
-                  <ChevronDown size={16} className={cx('text-gray-400 transition-transform', isOpen && 'rotate-180')} />
+                  <ChevronDown
+                    size={16}
+                    className={cx('text-modiff-subtle-text transition-transform', isOpen && 'rotate-180')}
+                  />
                 </span>
               </TreeButtonRow>
               {isOpen ? (
@@ -383,22 +460,25 @@ function NodeGroupList({
                         ? entry.node.label || `${entry.node.module}.${entry.node.action}`
                         : entry.label;
                       return (
-                        <TreeStaticRow
+                        <TreeButtonRow
                           key={entry.key}
                           data-testid={`node-row-${normalizedTestId(entry.key)}`}
+                          onClick={() => onInsertNode(entry.dragKey)}
                           onDragStart={(e) => {
                             e.dataTransfer.setData('text/plain', entry.dragKey);
                             e.dataTransfer.effectAllowed = 'move';
                           }}
                           draggable
                           level={1}
-                          title={entry.legacyReason || entry.description || `${entry.node.module}.${entry.node.action}`}
-                          className={cx(`category-${entry.node.category}`, 'cursor-grab hover:bg-white/10')}
+                          title={
+                            entry.specializedReason || entry.description || `${entry.node.module}.${entry.node.action}`
+                          }
+                          className={cx(`category-${entry.node.category}`, 'cursor-grab hover:bg-modiff-surface-hover')}
                         >
                           <span className="grid size-4 shrink-0 place-items-center text-hf-yellow">
                             {entry.runtimeKind === 'diffusers_accelerated' ? (
                               <Boxes size={15} />
-                            ) : entry.visibility === 'legacy' ? (
+                            ) : entry.visibility === 'experimental' ? (
                               <FlaskConical size={15} />
                             ) : (
                               getIcon(entry.surfaceCategory)
@@ -406,11 +486,11 @@ function NodeGroupList({
                           </span>
                           <span className="min-w-0 flex-1 truncate">{rowLabel}</span>
                           {visibilityLabel(entry.visibility) ? (
-                            <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-muted">
+                            <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text">
                               {visibilityLabel(entry.visibility)}
                             </span>
                           ) : null}
-                        </TreeStaticRow>
+                        </TreeButtonRow>
                       );
                     })}
                 </TreeChildrenPanel>
@@ -420,32 +500,6 @@ function NodeGroupList({
         })
       )}
     </>
-  );
-}
-
-function GroupByButton({
-  active,
-  children,
-  onClick,
-  testId,
-}: {
-  active: boolean;
-  children: string;
-  onClick: () => void;
-  testId: string;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      className={cx(
-        'h-8 rounded-modiff-compact text-sm font-semibold transition',
-        active ? 'bg-hf-yellow text-black' : 'text-gray-300 hover:bg-white/10 hover:text-white',
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }
 

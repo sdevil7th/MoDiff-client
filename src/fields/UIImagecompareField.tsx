@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import type { MouseEvent, SyntheticEvent, TouchEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import config from '../../app.config';
@@ -5,6 +7,7 @@ import { FieldProps } from '../components/NodeContent';
 import { FieldFrame } from '../ui/FieldFrame';
 import { ImageCompareFrame } from '../ui/ImageCompareFrame';
 import { PreviewMediaFrame } from '../ui/PreviewFrame';
+import { GraphControlButton } from '../ui/GraphControls';
 
 const EMPTY_IMAGE =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='512' height='512'><rect width='512' height='512' fill='black'/></svg>";
@@ -17,6 +20,7 @@ function imageToSource(image: unknown, dataType: string, mimeType: string) {
 }
 
 export default function UIImagecompareField(props: FieldProps) {
+  const compactPreview = props.fieldOptions?.compactPreview === true;
   const [sliderPosition, setSliderPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,12 +85,13 @@ export default function UIImagecompareField(props: FieldProps) {
       layoutStyle={props.style}
       className="nodrag flex flex-col items-center justify-center gap-2 px-4 py-1"
     >
-      <PreviewMediaFrame testId={`node-preview-compare-${props.nodeId}-${props.fieldKey}`}>
+      <PreviewMediaFrame compact={compactPreview} testId={`node-preview-compare-${props.nodeId}-${props.fieldKey}`}>
         <ImageCompareFrame
           ref={containerRef}
           imageFrom={imageFrom}
           imageTo={imageTo}
           sliderPosition={sliderPosition}
+          onSliderPositionChange={setSliderPosition}
           onError={handleOnError}
           onMouseMove={handleMouseMove}
           onMouseUp={endDrag}
@@ -96,15 +101,15 @@ export default function UIImagecompareField(props: FieldProps) {
           onTouchEnd={endDrag}
         />
       </PreviewMediaFrame>
-      <button
+      <GraphControlButton
         type="button"
-        className="whitespace-nowrap bg-modiff-panel px-3 py-1.5 text-xs font-semibold text-gray-200 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+        className="min-h-7 whitespace-nowrap bg-modiff-panel px-3 py-1.5 text-xs font-semibold text-modiff-text transition hover:bg-modiff-surface-hover hover:text-modiff-text"
         onClick={() => {
           setSliderPosition(sliderPosition < 50 && sliderPosition > 0 ? 0 : sliderPosition < 100 ? 100 : 0);
         }}
       >
         Toggle images
-      </button>
+      </GraphControlButton>
     </FieldFrame>
   );
 }

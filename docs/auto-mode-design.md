@@ -9,12 +9,14 @@ This document is the contributor contract for Auto and the corresponding Expert 
 Auto must:
 
 - Inspect the current task/model form, backend packages, runtime hardware, installed artifacts, artifact completeness, system memory, accelerator memory, and offload headroom.
+- Distinguish backend, vendor, architecture, and memory topology. Accessible shared/GTT/unified capacity must not be ranked as equivalent dedicated VRAM.
 - Select a concrete candidate with a resolved artifact and execution recipe.
 - Enable Run only when the selected candidate has a proof state accepted by the backend/client contract.
 - Apply the selected generation, dtype, quantization, device, and offload values to the visible graph.
 - Explain an install, repair, package, access, hardware, or support gap when no candidate is ready.
 - Keep retries finite, visible, and associated with the user-started run.
 - Record successful/failing recipe evidence so a known-bad candidate is not silently retried forever.
+- Bind optimization evidence to the complete recipe identity: model, artifact/revision, dtype, quantized components, device mapping, offload, attention backend, compile/cache settings, memory format, runtime profile, driver, and hardware.
 
 Auto must not:
 
@@ -22,6 +24,7 @@ Auto must not:
 - Mark a `planned`, schema-only, mocked-only, or incomplete candidate as runnable.
 - Treat a matching cache-directory name as artifact completeness.
 - Guess that one VRAM threshold is sufficient across model families, resolutions, frame counts, dtypes, and offload strategies.
+- Apply CUDA-only offload or optional-kernel behavior to MPS/XPU merely because the graph is otherwise portable.
 - Hide a kernel, out-of-memory, package, or model-access failure behind an indefinite spinner.
 - Change quality-sensitive settings merely to make a workflow fit unless that change belongs to a named, reviewed recipe.
 

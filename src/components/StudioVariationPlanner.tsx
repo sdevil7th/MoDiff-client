@@ -99,7 +99,7 @@ export function StudioVariationPlanner({
     <section>
       <SectionHeader title="Variation planner" />
       <div className="grid gap-2">
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-modiff-subtle-text">
           {exactEligible
             ? 'Current settings match the locked template. Any sweep below will become Modified.'
             : 'Current settings already differ from the locked template or no active template is selected.'}

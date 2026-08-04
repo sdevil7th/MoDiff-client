@@ -1,19 +1,20 @@
-import { AppWindow, CirclePlay, MoreHorizontal, Rocket, Settings2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, AppWindow, CirclePlay, MoreHorizontal, Rocket, Settings2, type LucideIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import type { WorkspacePanelTab } from '../studio/types';
-import { ModiffMenu, ModiffMenuItem } from '../ui';
-import { cx } from '../utils/classNames';
+import { ModiffMenu, ModiffMenuItem, ModiffTabs } from '../ui';
 import { handleHorizontalWheel } from '../utils/horizontalWheel';
 import ModelSetupPanel from './ModelSetupPanel';
 import RunQueuePanel from './RunQueuePanel';
 import StudioPanel from './StudioPanel';
 import AppModePanel from './AppModePanel';
+import CompatibilityPanel from './CompatibilityPanel';
 
 const tabs: { value: WorkspacePanelTab; label: string; Icon: LucideIcon }[] = [
   { value: 'studio', label: 'Studio', Icon: Rocket },
+  { value: 'compatibility', label: 'Compatibility', Icon: AlertTriangle },
   { value: 'queue', label: 'Queue', Icon: CirclePlay },
   { value: 'setup', label: 'Setup', Icon: Settings2 },
   { value: 'app', label: 'Run as app', Icon: AppWindow },
@@ -27,7 +28,13 @@ export default function WorkspacePanel() {
   const hasAppOutputNode = useFlowStore((state) =>
     state.nodes.some((node) => /preview|save|output|video|audio|image/i.test(`${node.data?.label ?? ''} ${node.id}`)),
   );
-  const primaryTabs = tabs.filter((tab) => tab.value === 'studio' || tab.value === 'queue' || tab.value === 'setup');
+  const primaryTabs = tabs.filter(
+    (tab) =>
+      tab.value === 'studio' ||
+      tab.value === 'queue' ||
+      tab.value === 'setup' ||
+      (tab.value === 'compatibility' && rightPanelTab === 'compatibility'),
+  );
   const overflowTabs =
     studioViewMode === 'expert'
       ? tabs.filter((tab) => tab.value === 'app' && (appModeConfigs.length > 0 || hasAppOutputNode))
@@ -45,34 +52,32 @@ export default function WorkspacePanel() {
   return (
     <div className="flex h-full flex-col" data-testid="workspace-panel">
       <div
-        role="tablist"
         aria-label="Workspace panels"
         className="flex min-h-[42px] flex-none overflow-x-auto overflow-y-hidden border-b border-modiff-border bg-modiff-bg"
         onWheel={handleHorizontalWheel}
       >
-        {visibleTabs.map((tab) => {
-          const selected = activeTab === tab.value;
-          const Icon = tab.Icon;
-
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              data-testid={`workspace-tab-${tab.value}`}
-              onClick={() => setRightPanelTab(tab.value)}
-              className={cx(
-                'inline-flex h-[42px] min-w-[72px] flex-none items-center justify-center gap-1.5 px-2 text-xs font-semibold transition-colors',
-                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-hf-yellow',
-                selected ? 'bg-modiff-panel text-hf-yellow' : 'text-gray-300 hover:bg-white/10 hover:text-white',
-              )}
-            >
-              <Icon size={15} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+        <ModiffTabs
+          aria-label="Workspace panels"
+          className="min-w-0 flex-1 flex-nowrap gap-0"
+          value={activeTab}
+          onValueChange={setRightPanelTab}
+          options={visibleTabs.map((tab) => {
+            const Icon = tab.Icon;
+            return {
+              value: tab.value,
+              id: `workspace-tab-${tab.value}`,
+              controls: `workspace-panel-${tab.value}`,
+              label: (
+                <>
+                  <Icon size={15} />
+                  <span>{tab.label}</span>
+                </>
+              ),
+              testId: `workspace-tab-${tab.value}`,
+              className: 'h-[42px] min-w-[72px] flex-none justify-center gap-1.5 rounded-none px-2 text-xs',
+            };
+          })}
+        />
         {overflowTabs.length > 0 && (
           <div className="flex h-[42px] flex-none items-center px-1" data-testid="workspace-tabs-more">
             <ModiffMenu
@@ -100,8 +105,25 @@ export default function WorkspacePanel() {
           </div>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      {visibleTabs
+        .filter((tab) => tab.value !== activeTab)
+        .map((tab) => (
+          <div
+            key={tab.value}
+            id={`workspace-panel-${tab.value}`}
+            role="tabpanel"
+            aria-labelledby={`workspace-tab-${tab.value}`}
+            hidden
+          />
+        ))}
+      <div
+        id={`workspace-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`workspace-tab-${activeTab}`}
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+      >
         {activeTab === 'studio' && <StudioPanel />}
+        {activeTab === 'compatibility' && <CompatibilityPanel />}
         {activeTab === 'queue' && <RunQueuePanel />}
         {activeTab === 'setup' && <ModelSetupPanel />}
         {activeTab === 'app' && <AppModePanel />}

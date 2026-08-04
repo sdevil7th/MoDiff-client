@@ -1,19 +1,58 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import config from '../../app.config';
 
-import { FileJson2, Folder, FolderOpen, LoaderCircle, RotateCcw, Search } from 'lucide-react';
-import { TreeButtonRow, TreeChildrenPanel, TreeStaticRow } from '../ui';
+import {
+  Copy,
+  Download,
+  FileJson2,
+  Folder,
+  FolderOpen,
+  LoaderCircle,
+  MoreHorizontal,
+  Pencil,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
+import {
+  ModiffIconButton,
+  ModiffInput,
+  ModiffMenuAction,
+  ModiffMenuRoot,
+  ModiffMenuSurface,
+  ModiffMenuTrigger,
+  ModiffSearchInput,
+  ModiffSelect,
+  TreeButtonRow,
+  TreeChildrenPanel,
+  TreeStaticRow,
+} from '../ui';
+import { GraphControlButton } from '../ui/GraphControls';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { createLatestRequestGate, formatRequestError, requestJson, RequestError } from '../utils/requestJson';
+import type { WorkflowTab } from '../studio/types';
+import {
+  backendWorkflowTab,
+  deleteWorkflowNow,
+  markWorkflowTabOpen,
+  saveWorkflowNow,
+} from '../studio/useWorkflowBackendSync';
 
 export interface GraphData {
   isDir: boolean;
   path: string;
   name: string;
   children?: GraphData[];
+  modelType?: string;
+  mode?: string;
+  mediaKind?: string;
+  supportTier?: string;
+  qualificationStatus?: string;
+  requiredArtifacts?: string[];
 }
 
 const graphListRequestGate = createLatestRequestGate<'graphs'>();
@@ -39,6 +78,14 @@ function parseGraphEntry(value: unknown, index: number): GraphData {
     path: value.path,
     name: value.name,
     children: value.children?.map(parseGraphEntry),
+    modelType: typeof value.modelType === 'string' ? value.modelType : undefined,
+    mode: typeof value.mode === 'string' ? value.mode : undefined,
+    mediaKind: typeof value.mediaKind === 'string' ? value.mediaKind : undefined,
+    supportTier: typeof value.supportTier === 'string' ? value.supportTier : undefined,
+    qualificationStatus: typeof value.qualificationStatus === 'string' ? value.qualificationStatus : undefined,
+    requiredArtifacts: Array.isArray(value.requiredArtifacts)
+      ? value.requiredArtifacts.filter((item): item is string => typeof item === 'string')
+      : undefined,
   };
 }
 
@@ -71,13 +118,27 @@ function workflowTestId(value: string) {
 function GraphList() {
   const [isLoading, setIsLoading] = useState(false);
   const [graphs, setGraphs] = useState<GraphData[]>([]);
+  const [savedWorkflows, setSavedWorkflows] = useState<WorkflowTab[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const [mediaFilter, setMediaFilter] = useState('all');
+  const [modelFilter, setModelFilter] = useState('all');
+  const [modeFilter, setModeFilter] = useState('all');
+  const [tierFilter, setTierFilter] = useState('all');
+  const [readinessFilter, setReadinessFilter] = useState('all');
   const edgeType = useSettingsStore((state) => state.edgeType);
   const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
+  const setAlertOpener = useSettingsStore((state) => state.setAlertOpener);
   const createWorkflowTab = useStudioStore((state) => state.createWorkflowTab);
+  const workflowTabs = useStudioStore((state) => state.workflowTabs);
+  const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const switchWorkflowTab = useStudioStore((state) => state.switchWorkflowTab);
+  const renameWorkflowTab = useStudioStore((state) => state.renameWorkflowTab);
+  const mergeBackendWorkflow = useStudioStore((state) => state.mergeBackendWorkflow);
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const fetchGraphs = useCallback(async () => {
     const ticket = graphListRequestGate.begin('graphs');
@@ -96,10 +157,21 @@ function GraphList() {
     }
   }, []);
 
+  const fetchSavedWorkflows = useCallback(async () => {
+    try {
+      const payload = await requestJson<unknown>(`${config.serverAddress}/workflows`);
+      const records = isRecord(payload) && Array.isArray(payload.workflows) ? payload.workflows : [];
+      setSavedWorkflows(records.map(backendWorkflowTab).filter((tab): tab is WorkflowTab => Boolean(tab)));
+    } catch (error) {
+      console.warn('Could not refresh My workflows.', error);
+    }
+  }, []);
+
   // Fetch graphs on component mount
   useEffect(() => {
     fetchGraphs();
-  }, [fetchGraphs]);
+    void fetchSavedWorkflows();
+  }, [fetchGraphs, fetchSavedWorkflows]);
 
   const toggleDir = (path: string) => {
     setExpanded((prev) => {
@@ -115,11 +187,7 @@ function GraphList() {
     [graphs, studioViewMode],
   );
 
-  const filteredGraphs = useMemo(() => {
-    if (!search) {
-      return visibleGraphs;
-    }
-
+  const allWorkflowFiles = useMemo(() => {
     const getAllFiles = (nodes: GraphData[]): GraphData[] => {
       const files: GraphData[] = [];
       const traverse = (node: GraphData) => {
@@ -135,9 +203,52 @@ function GraphList() {
       return files;
     };
 
-    const allFiles = getAllFiles(visibleGraphs);
-    return allFiles.filter((file) => file.name.toLowerCase().includes(search.toLowerCase()));
-  }, [search, visibleGraphs]);
+    return getAllFiles(visibleGraphs);
+  }, [visibleGraphs]);
+
+  const filterOptions = useMemo(
+    () => ({
+      media: [...new Set(allWorkflowFiles.map((file) => file.mediaKind).filter(Boolean))] as string[],
+      models: [...new Set(allWorkflowFiles.map((file) => file.modelType).filter(Boolean))] as string[],
+      modes: [...new Set(allWorkflowFiles.map((file) => file.mode).filter(Boolean))] as string[],
+    }),
+    [allWorkflowFiles],
+  );
+
+  const filtersActive =
+    search ||
+    mediaFilter !== 'all' ||
+    modelFilter !== 'all' ||
+    modeFilter !== 'all' ||
+    tierFilter !== 'all' ||
+    readinessFilter !== 'all';
+  const savedWorkflowRows = useMemo(() => {
+    const byId = new Map(savedWorkflows.map((tab) => [tab.id, tab]));
+    workflowTabs.forEach((tab) => byId.set(tab.id, tab));
+    return [...byId.values()].sort((left, right) => right.updatedAt - left.updatedAt);
+  }, [savedWorkflows, workflowTabs]);
+  const filteredGraphs = useMemo(() => {
+    if (!filtersActive) return visibleGraphs;
+    return allWorkflowFiles.filter(
+      (file) =>
+        file.name.toLowerCase().includes(search.toLowerCase()) &&
+        (mediaFilter === 'all' || file.mediaKind === mediaFilter) &&
+        (modelFilter === 'all' || file.modelType === modelFilter) &&
+        (modeFilter === 'all' || file.mode === modeFilter) &&
+        (tierFilter === 'all' || file.supportTier === tierFilter) &&
+        (readinessFilter === 'all' || file.qualificationStatus === readinessFilter),
+    );
+  }, [
+    allWorkflowFiles,
+    filtersActive,
+    mediaFilter,
+    modeFilter,
+    modelFilter,
+    readinessFilter,
+    search,
+    tierFilter,
+    visibleGraphs,
+  ]);
 
   const openWorkflow = useCallback(
     async (node: GraphData) => {
@@ -172,8 +283,81 @@ function GraphList() {
     [createWorkflowTab, edgeType, setRightPanelOpen, setRightPanelTab],
   );
 
+  const duplicateSavedWorkflow = (id: string) => {
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    const tab = savedWorkflowRows.find((item) => item.id === id);
+    if (!tab) return;
+    createWorkflowTab(`${tab.title} copy`, tab.snapshot, 'manual', tab.sourceLabel);
+    enqueueSnackbar('Workflow duplicated', { variant: 'success', autoHideDuration: 2200 });
+  };
+
+  const exportSavedWorkflow = (id: string) => {
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    const tab = savedWorkflowRows.find((item) => item.id === id);
+    if (!tab) return;
+    const blob = new Blob([JSON.stringify(tab.snapshot, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${tab.title.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'workflow'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const deleteSavedWorkflow = (id: string) => {
+    const tab = savedWorkflowRows.find((item) => item.id === id);
+    if (!tab) return;
+    setAlertOpener({
+      title: 'Delete workflow?',
+      message: `${tab.title}${tab.dirty ? ' has unsaved changes.' : ''} This removes it from My workflows.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        void deleteWorkflowNow(id)
+          .then(() => {
+            setSavedWorkflows((current) => current.filter((item) => item.id !== id));
+            enqueueSnackbar(`Deleted ${tab.title}`, { variant: 'success', autoHideDuration: 2200 });
+          })
+          .catch((error) => {
+            enqueueSnackbar(formatRequestError(error, `Could not delete ${tab.title}.`), {
+              variant: 'error',
+              autoHideDuration: 6000,
+            });
+          });
+        setAlertOpener(null);
+      },
+      onCancel: () => setAlertOpener(null),
+    });
+  };
+
+  const openSavedWorkflow = (tab: WorkflowTab) => {
+    markWorkflowTabOpen(tab.id);
+    if (!workflowTabs.some((item) => item.id === tab.id)) {
+      mergeBackendWorkflow(tab);
+    }
+    switchWorkflowTab(tab.id);
+  };
+
+  const renameSavedWorkflow = async (tab: WorkflowTab, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === tab.title) return;
+    if (workflowTabs.some((item) => item.id === tab.id)) {
+      renameWorkflowTab(tab.id, trimmed);
+      return;
+    }
+    try {
+      const saved = await saveWorkflowNow({ ...tab, title: trimmed, dirty: true }, { merge: false });
+      setSavedWorkflows((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, `Could not rename ${tab.title}.`), {
+        variant: 'error',
+        autoHideDuration: 6000,
+      });
+    }
+  };
+
   const renderDir = (node: GraphData, level = 0) => {
-    if (node.isDir && !search) {
+    if (node.isDir && !filtersActive) {
       const isOpen = expanded.has(node.path);
       const children = node.children || [];
       return (
@@ -204,14 +388,14 @@ function GraphList() {
         <TreeStaticRow
           key={node.path}
           data-testid={`workflow-file-${workflowTestId(node.path)}`}
-          level={search ? 0 : level}
-          className="group cursor-pointer hover:bg-white/10"
+          level={filtersActive ? 0 : level}
+          className="group cursor-pointer hover:bg-modiff-surface-hover"
           onDoubleClick={() => {
             void openWorkflow(node);
           }}
           title="Double-click to open workflow as a new tab"
         >
-          <FileJson2 size={15} className="shrink-0 text-gray-400 group-hover:text-hf-yellow" />
+          <FileJson2 size={15} className="shrink-0 text-modiff-subtle-text group-hover:text-hf-yellow" />
           <span
             draggable
             className="min-w-0 flex-1 cursor-grab truncate"
@@ -222,17 +406,21 @@ function GraphList() {
           >
             {node.name}
           </span>
-          <button
-            type="button"
-            className="grid size-6 shrink-0 place-items-center rounded-modiff-compact text-gray-400 opacity-0 transition hover:bg-white/10 hover:text-hf-yellow group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
-            title="Open workflow"
-            aria-label={`Open ${node.name}`}
+          {node.mediaKind ? (
+            <span className="text-modiff-tiny rounded bg-modiff-surface-hover/50 px-1.5 py-0.5 uppercase text-modiff-subtle-text">
+              {node.mediaKind}
+            </span>
+          ) : null}
+          <ModiffIconButton
+            size="compact"
+            className="text-modiff-subtle-text opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            label={`Open ${node.name}`}
             onClick={() => {
               void openWorkflow(node);
             }}
           >
             <FileJson2 size={14} />
-          </button>
+          </ModiffIconButton>
         </TreeStaticRow>
       );
     }
@@ -240,7 +428,7 @@ function GraphList() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <header className="border-b border-modiff-border bg-modiff-surface px-3 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -249,44 +437,150 @@ function GraphList() {
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Workflows</h2>
-              <p className="truncate text-xs text-modiff-muted">Saved and example graphs</p>
+              <p className="truncate text-xs text-modiff-subtle-text">Saved and example graphs</p>
             </div>
           </div>
         </div>
       </header>
       <div className="flex items-center gap-2 p-2">
-        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text focus-within:border-hf-yellow">
-          <Search size={15} className="shrink-0 text-gray-400" />
-          <input
-            placeholder="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-500"
-          />
-        </label>
-        <button
-          type="button"
-          title="Reload graphs"
+        <ModiffSearchInput
+          aria-label="Search workflows"
+          className="min-w-0 flex-1"
+          placeholder="Search workflows"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          onClear={() => setSearch('')}
+        />
+        <ModiffIconButton
+          label="Reload workflows"
           disabled={isLoading}
-          className="grid size-8 shrink-0 place-items-center rounded-modiff-compact text-hf-yellow transition hover:bg-white/10 hover:text-hf-orange disabled:pointer-events-none disabled:opacity-40"
+          className="text-hf-yellow hover:text-hf-orange"
           onClick={() => {
-            fetchGraphs();
+            void fetchGraphs();
+            void fetchSavedWorkflows();
             setExpanded(new Set());
             setSearch('');
+            setMediaFilter('all');
+            setModelFilter('all');
+            setModeFilter('all');
+            setTierFilter('all');
+            setReadinessFilter('all');
           }}
         >
           {isLoading ? <LoaderCircle size={18} className="animate-spin" /> : <RotateCcw size={17} />}
-        </button>
+        </ModiffIconButton>
+      </div>
+      <section className="min-w-0 overflow-hidden border-b border-modiff-border px-2 pb-2" data-testid="my-workflows">
+        <h3 className="text-modiff-label mb-1 px-1 font-semibold uppercase text-modiff-subtle-text">My workflows</h3>
+        <div className="grid gap-1">
+          {savedWorkflowRows.map((tab) => (
+            <div
+              key={tab.id}
+              className={`group flex min-h-8 min-w-0 items-center gap-1 overflow-hidden rounded-modiff-compact px-2 text-xs ${tab.id === activeWorkflowTabId ? 'bg-hf-yellow/10 text-hf-yellow' : 'text-modiff-text hover:bg-modiff-surface-hover/50'}`}
+              data-testid={`saved-workflow-${tab.id}`}
+            >
+              <FileJson2 size={14} className="shrink-0" />
+              {renamingTabId === tab.id ? (
+                <ModiffInput
+                  autoFocus
+                  value={renameValue}
+                  onChange={(event) => setRenameValue(event.target.value)}
+                  onBlur={() => {
+                    void renameSavedWorkflow(tab, renameValue);
+                    setRenamingTabId(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
+                    if (event.key === 'Escape') setRenamingTabId(null);
+                  }}
+                  controlSize="compact"
+                  className="nodrag nowheel min-w-0 flex-1 border-hf-yellow"
+                />
+              ) : (
+                <GraphControlButton
+                  type="button"
+                  className="min-h-7 min-w-0 flex-1 truncate text-left"
+                  onClick={() => openSavedWorkflow(tab)}
+                >
+                  {tab.dirty ? '* ' : ''}
+                  {tab.title}
+                </GraphControlButton>
+              )}
+              <ModiffMenuRoot className="shrink-0">
+                <ModiffMenuTrigger>
+                  <ModiffIconButton
+                    size="compact"
+                    label={`Actions for ${tab.title}`}
+                    className="text-modiff-subtle-text hover:text-hf-yellow"
+                  >
+                    <MoreHorizontal size={14} />
+                  </ModiffIconButton>
+                </ModiffMenuTrigger>
+                <ModiffMenuSurface anchor="bottom end" className="min-w-40">
+                  <ModiffMenuAction
+                    icon={<Pencil size={13} />}
+                    onClick={() => {
+                      setRenamingTabId(tab.id);
+                      setRenameValue(tab.title);
+                    }}
+                  >
+                    Rename
+                  </ModiffMenuAction>
+                  <ModiffMenuAction icon={<Copy size={13} />} onClick={() => duplicateSavedWorkflow(tab.id)}>
+                    Duplicate
+                  </ModiffMenuAction>
+                  <ModiffMenuAction icon={<Download size={13} />} onClick={() => exportSavedWorkflow(tab.id)}>
+                    Export
+                  </ModiffMenuAction>
+                  <ModiffMenuAction
+                    tone="danger"
+                    icon={<Trash2 size={13} />}
+                    onClick={() => deleteSavedWorkflow(tab.id)}
+                  >
+                    Delete
+                  </ModiffMenuAction>
+                </ModiffMenuSurface>
+              </ModiffMenuRoot>
+            </div>
+          ))}
+        </div>
+      </section>
+      <div className="grid grid-cols-2 gap-1 px-2 pb-2">
+        {[
+          ['Media', mediaFilter, setMediaFilter, filterOptions.media],
+          ['Model', modelFilter, setModelFilter, filterOptions.models],
+          ['Mode', modeFilter, setModeFilter, filterOptions.modes],
+          ['Tier', tierFilter, setTierFilter, ['supported', 'experimental']],
+          ['Readiness', readinessFilter, setReadinessFilter, ['graph-qualified', 'runtime-qualified', 'unqualified']],
+        ].map(([label, value, setter, options]) => (
+          <div key={String(label)} className="min-w-0 text-modiff-label uppercase text-modiff-subtle-text">
+            <span>{String(label)}</span>
+            <ModiffSelect
+              aria-label={`Filter workflows by ${String(label).toLowerCase()}`}
+              value={String(value)}
+              onValueChange={setter as (next: string) => void}
+              options={[
+                { value: 'all', label: 'All' },
+                ...(options as string[]).sort().map((option) => ({
+                  value: option,
+                  label: option.replace(/_/g, ' '),
+                })),
+              ]}
+              size="compact"
+              className="mt-0.5 w-full normal-case"
+            />
+          </div>
+        ))}
       </div>
 
       {isLoading ? (
-        <div className="text-center text-sm text-gray-400">Loading...</div>
+        <div className="text-center text-sm text-modiff-subtle-text">Loading...</div>
       ) : (
         <div className="select-none" data-testid="workflow-list">
           {filteredGraphs.length > 0 ? (
             filteredGraphs.map((item) => renderDir(item, 0))
           ) : (
-            <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-muted">
+            <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
               No saved, imported, or example workflows found.
             </div>
           )}

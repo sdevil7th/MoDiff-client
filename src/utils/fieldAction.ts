@@ -1,6 +1,9 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { FieldProps } from '../components/NodeContent';
 import { useFlowStore } from '../stores/useFlowStore';
 import { type NodeParamSignal, type NodeParams, useNodesStore } from '../stores/useNodeStore';
+import { captureWorkflowOperationContext } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { enqueueSnackbar } from '../ui/snackbar';
 import config from '../../app.config';
@@ -44,10 +47,12 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
   }
 
   if (Array.isArray(onEvent)) {
-    onEvent.forEach((evnt) => {
-      const newProps = { ...props, [event]: evnt };
-      void fieldAction(newProps, value, event);
-    });
+    await Promise.all(
+      onEvent.map((evnt) => {
+        const newProps = { ...props, [event]: evnt };
+        return fieldAction(newProps, value, event);
+      }),
+    );
     return;
   }
 
@@ -286,6 +291,7 @@ async function execAction(
   queue?: boolean,
 ) {
   const nodeValues = useFlowStore.getState().getNodeParamsValues(nodeId);
+  const workflowContext = captureWorkflowOperationContext();
 
   try {
     const sid = useWebsocketStore.getState().sid;
@@ -293,7 +299,18 @@ async function execAction(
     await requestJson(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node: nodeId, sid, module, action, fn, values: nodeValues, fieldKey, queue }),
+      body: JSON.stringify({
+        node: nodeId,
+        sid,
+        module,
+        action,
+        fn,
+        values: nodeValues,
+        fieldKey,
+        queue,
+        workflowTabId: workflowContext.workflowTabId,
+        workflowCanvasEpoch: workflowContext.canvasEpoch,
+      }),
       parse: (value) => {
         if (!isRecord(value)) throw new Error('The node action returned an invalid response.');
         if (value.error) {

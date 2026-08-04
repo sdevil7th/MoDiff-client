@@ -129,7 +129,7 @@ export function WorkflowArtifactRequirementRow({
           <div className="mt-1 flex flex-wrap gap-1">
             <StatusActionChip
               action="details"
-              className="min-h-6 px-2 py-0.5 text-xs"
+              className="min-h-7 px-2 py-0.5 text-xs"
               label={requirement.role}
               title={requirement.repo}
               tone="neutral"
@@ -137,7 +137,7 @@ export function WorkflowArtifactRequirementRow({
             {requirement.source === 'graph' ? (
               <StatusActionChip
                 action="details"
-                className="min-h-6 px-2 py-0.5 text-xs"
+                className="min-h-7 px-2 py-0.5 text-xs"
                 label="Graph"
                 title={requirement.nodeLabel ?? requirement.nodeId}
                 tone="neutral"
@@ -149,7 +149,7 @@ export function WorkflowArtifactRequirementRow({
           {rightSlot}
           <StatusActionChip
             action={chipAction(action)}
-            className="min-h-6 px-2 py-0.5 text-xs"
+            className="min-h-7 px-2 py-0.5 text-xs"
             disabled={disabled}
             label={compactActionLabel(action)}
             onClick={actionClick}

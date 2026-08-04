@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { FieldProps } from '../components/NodeContent';
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from '@xyflow/react';
@@ -353,7 +355,7 @@ export default function SplineField(props: FieldProps) {
 
   return (
     <FieldFrame dataKey={fieldKey} hidden={hidden} layoutStyle={style} className="nodrag">
-      <div className="truncate text-[13px] text-gray-400" title={label}>
+      <div className="text-modiff-control truncate text-modiff-subtle-text" title={label}>
         {label}
       </div>
       <div className="flex w-full flex-col items-center justify-between">

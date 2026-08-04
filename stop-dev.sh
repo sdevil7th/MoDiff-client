@@ -64,6 +64,7 @@ done
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 LOG_DIR="$SCRIPT_DIR/artifacts/dev-server-current"
 PID_FILE="$LOG_DIR/dev-pids.env"
+SUPERVISOR_PORT="$((BACKEND_PORT + 1))"
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_FOR_SCRIPT="python3"
@@ -104,7 +105,7 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 target_ports_csv() {
-  local ports=("$BACKEND_PORT")
+  local ports=("$BACKEND_PORT" "$SUPERVISOR_PORT")
   local port
   for ((port = FRONTEND_PORT; port < FRONTEND_PORT + FRONTEND_PORT_RANGE; port += 1)); do
     ports+=("$port")
@@ -295,7 +296,7 @@ is_modiff_dev_process() {
     return 0
   fi
 
-  if [[ "$port" -eq "$BACKEND_PORT" ]]; then
+  if [[ "$port" -eq "$BACKEND_PORT" || "$port" -eq "$SUPERVISOR_PORT" ]]; then
     if [[ "$cmdline" == *"main.py"* ]]; then
       if [[ -z "$BACKEND_PATH_RESOLVED" || "$cwd" == "$BACKEND_PATH_RESOLVED" || "$cmdline" == *"$BACKEND_PATH_RESOLVED"* ]]; then
         return 0
@@ -305,7 +306,10 @@ is_modiff_dev_process() {
   fi
 
   if (( port >= FRONTEND_PORT && port < FRONTEND_PORT + FRONTEND_PORT_RANGE )); then
-    if [[ "$name" == node* && "$cmdline" == *"vite"* && ( "$cwd" == "$FRONTEND_PATH" || "$cmdline" == *"$FRONTEND_PATH"* ) ]]; then
+    # Recent Node versions can expose the main thread as `MainThread` in
+    # /proc/<pid>/comm. The executable command and checkout path are the
+    # reliable identifiers for a Vite listener, not the thread name.
+    if [[ "$cmdline" == *"vite"* && ( "$cwd" == "$FRONTEND_PATH" || "$cmdline" == *"$FRONTEND_PATH"* ) ]]; then
       return 0
     fi
     if [[ "$cmdline" == *"npm"* && "$cmdline" == *"run dev"* && ( "$cwd" == "$FRONTEND_PATH" || "$cmdline" == *"$FRONTEND_PATH"* ) ]]; then
@@ -388,8 +392,24 @@ if [[ "$SKIP_GPU_CLEANUP" -eq 0 && "$backend_target_found" -eq 1 ]]; then
   invoke_gpu_cleanup
 fi
 
-stopped_pids=()
+# Stop the supervisor before its worker so it cannot respawn the backend while
+# shutdown is in progress.
+ordered_targets=()
 for line in "${targets[@]}"; do
+  IFS=$'\t' read -r port _ <<<"$line"
+  if [[ "$port" -eq "$SUPERVISOR_PORT" ]]; then
+    ordered_targets+=("$line")
+  fi
+done
+for line in "${targets[@]}"; do
+  IFS=$'\t' read -r port _ <<<"$line"
+  if [[ "$port" -ne "$SUPERVISOR_PORT" ]]; then
+    ordered_targets+=("$line")
+  fi
+done
+
+stopped_pids=()
+for line in "${ordered_targets[@]}"; do
   IFS=$'\t' read -r port pid name cmdline cwd <<<"$line"
   if [[ " ${stopped_pids[*]} " == *" $pid "* ]]; then
     continue
@@ -406,7 +426,7 @@ while IFS= read -r line; do
 done < <(scan_listeners)
 for line in "${current_listeners[@]}"; do
   IFS=$'\t' read -r port pid name cmdline cwd <<<"$line"
-  if [[ " ${stopped_pids[*]} " == *" $pid "* ]]; then
+  if is_modiff_dev_process "$port" "$pid" "$name" "$cmdline" "$cwd"; then
     remaining+=("$line")
   fi
 done

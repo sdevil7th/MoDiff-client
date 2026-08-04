@@ -3,13 +3,16 @@ import type {
   StudioTemplate,
   StudioTemplateExample,
   StudioTemplateId,
+  StudioTemplateInputBinding,
   StudioTemplateIntentGroup,
   StudioTemplateLockedSettings,
   StudioTemplateMediaSlot,
   StudioTemplatePredictability,
   StudioTemplateReadinessPolicy,
+  StudioTemplateWorkflowBlockSettings,
 } from './types';
 import {
+  DEFAULT_STUDIO_FORM,
   QWEN_CONTROLNET_REQUIREMENT,
   QWEN_IMAGE_EDIT_INPAINT_CONTRACT,
   QWEN_LOW_VRAM_OFFLOAD_MODE,
@@ -24,6 +27,265 @@ import {
   LAYER_PROMPT_GUIDE,
   VIDEO_PROMPT_GUIDE,
 } from './promptGuides';
+import { TEMPLATE_DEFAULT_INPUT_BINDINGS } from './generated/templateDefaultInputBindings';
+
+// Editorial card posters keep every runnable template visually complete while
+// model-generated video/audio evidence is still awaiting qualification. They
+// are browsing artwork only: they never set outputPath, verificationStatus, or
+// any proof/review field.
+const TEMPLATE_CARD_POSTERS: Readonly<Record<string, string>> = {
+  z_image_lora_style: '/template-gallery/z_image_lora_style.card-poster.webp',
+  fast_lora: '/template-gallery/fast_lora.card-poster.webp',
+  flux_dev_expert_text_to_image: '/template-gallery/flux_dev_expert_text_to_image.card-poster.webp',
+  flux_lora_cinematic_octane_3d: '/template-gallery/flux_lora_cinematic_octane_3d.card-poster.webp',
+  flux_lora_ghibli_story: '/template-gallery/flux_lora_ghibli_story.card-poster.webp',
+  flux_lora_oil_painting: '/template-gallery/flux_lora_oil_painting.card-poster.webp',
+  flux_lora_film_noir: '/template-gallery/flux_lora_film_noir.card-poster.webp',
+  flux_lora_retro_comic: '/template-gallery/flux_lora_retro_comic.card-poster.webp',
+  flux_lora_watercolor: '/template-gallery/flux_lora_watercolor.card-poster.webp',
+  flux_lora_paper_cutout: '/template-gallery/flux_lora_paper_cutout.card-poster.webp',
+  flux_lora_photoreal_documentary: '/template-gallery/flux_lora_photoreal_documentary.card-poster.webp',
+  wan_vace_cinematic_text_to_video: '/template-gallery/wan_vace_cinematic_text_to_video.card-poster.png',
+  wan_vace_direct_text_to_video: '/template-gallery/wan_vace_direct_text_to_video.card-poster.png',
+  ltx_video_text_to_video: '/template-gallery/ltx_video_text_to_video.card-poster.png',
+  ltx_video_video_to_video: '/template-gallery/ltx_video_video_to_video.card-poster.png',
+  ltx_video_multi_reference: '/template-gallery/ltx_video_multi_reference.card-poster.png',
+  wan_vace_video_color_grade: '/template-gallery/wan_vace_video_color_grade.card-poster.png',
+  wan_vace_masked_object_replace: '/template-gallery/wan_vace_masked_object_replace.poster.png',
+  wan_vace_outpaint_reframe: '/template-gallery/wan_vace_outpaint_reframe.card-poster.png',
+  wan_vace_grayscale_control: '/template-gallery/wan_vace_grayscale_control.card-poster.png',
+  ace_step_text_to_audio: '/template-gallery/ace_step_text_to_audio.card-poster.png',
+  ace_step_audio_variation: '/template-gallery/ace_step_audio_variation.card-poster.png',
+  ace_step_audio_repaint: '/template-gallery/ace_step_audio_repaint.card-poster.png',
+  ace_step_chinese_new_year_lora: '/template-gallery/ace_step_chinese_new_year_lora.card-poster.png',
+  ace_step_custom_lora: '/template-gallery/ace_step_custom_lora.card-poster.png',
+  wan_vace_video_to_video: '/template-gallery/wan_vace_video_to_video.card-poster.png',
+  ltx_video_long_showcase: '/template-gallery/ltx_video_long_showcase.card-poster.png',
+  wan_video_long_showcase: '/template-gallery/wan_video_long_showcase.card-poster.png',
+  wan_21_t2v_13b_seed_vault: '/template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png',
+  wan_22_ti2v_5b_seed_vault: '/template-gallery/wan_22_ti2v_5b_seed_vault.card-poster.png',
+  wan_22_i2v_seed_vault: '/template-gallery/wan_22_i2v_seed_vault.card-poster.png',
+  ltx_video_animated_story: '/template-gallery/ltx_video_animated_story.card-poster.png',
+  ace_step_lyric_music_video: '/template-gallery/ace_step_lyric_music_video.card-poster.png',
+};
+
+const QWEN_EDIT_RUNTIME_ESTIMATE =
+  'About 55-75 min cold on the qualified ROCm APU; about 24-28 min after the model is resident for 40-50 steps';
+const QWEN_EDIT_RUNTIME_AFTER_INPUT =
+  'About 55-75 min cold after inputs are prepared on the qualified ROCm APU; about 24-28 min after the model is resident';
+const QWEN_IMAGE_RUNTIME_ESTIMATE =
+  'About 45-50 min cold on the qualified ROCm APU; about 6-10 min after the model is resident for 40-50 steps';
+const QWEN_AUTO_RUNTIME_ESTIMATE =
+  'About 45-55 min cold on the qualified high-memory ROCm APU; about 7-10 min after the model is resident, longer with offload';
+const QWEN_CONTROL_RUNTIME_ESTIMATE =
+  'About 45-55 min cold on the qualified ROCm APU; about 4-6 min after the model is resident';
+const QWEN_EDIT_2511_LIGHTNING_RUNTIME_ESTIMATE =
+  'About 35-55 min cold on the qualified ROCm APU; about 3-5 min after the model is resident using the official four-step Lightning adapter';
+const QWEN_NATIVE_MEMORY_ESTIMATE =
+  '64 GB native BF16 on the qualified high-memory host; 16 GB-class prequantized/offloaded candidates require separate hardware qualification';
+const ACE_STEP_MEMORY_ESTIMATE = '16 GB direct; Auto offloads on smaller supported GPUs';
+const QWEN_EDIT_2511_LIGHTNING_LORA: NonNullable<StudioTemplateWorkflowBlockSettings['lora']> = {
+  model: {
+    source: 'hub',
+    value: 'lightx2v/Qwen-Image-Edit-2511-Lightning',
+    sha256: '22226e8d05d354bb356627d428809f5afd7819399b077238a2b70a82883a904f',
+    byteSize: 849608296,
+    license: 'Apache-2.0',
+  },
+  weightName: 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors',
+  scale: 1,
+  schedulerClass: 'FlowMatchEulerDiscreteScheduler',
+  schedulerConfig: {
+    base_image_seq_len: 256,
+    base_shift: 1.0986122886681098,
+    invert_sigmas: false,
+    max_image_seq_len: 8192,
+    max_shift: 1.0986122886681098,
+    num_train_timesteps: 1000,
+    shift: 1,
+    shift_terminal: null,
+    stochastic_sampling: false,
+    time_shift_type: 'exponential',
+    use_beta_sigmas: false,
+    use_dynamic_shifting: true,
+    use_exponential_sigmas: false,
+    use_karras_sigmas: false,
+  },
+};
+const FLUX_THEME_LORAS = {
+  cinematicOctane3d: {
+    model: {
+      source: 'hub' as const,
+      value: 'aixonlab/FLUX.1-dev-LoRA-Cinematic-Octane',
+      revision: '3ab70503ba8df37565d0212e2876ec48e35e7cb4',
+      sha256: 'cad317378978ba03438c9f00a4fa5ef0628c4a65937c69b8420feaee5e780f81',
+      byteSize: 171969432,
+      license: 'FLUX.1-dev non-commercial',
+    },
+    weightName: 'cinematic-octane.safetensors',
+    adapterName: 'cinematic_octane',
+    scale: 0.8,
+    additionalAdapters: [
+      {
+        model: {
+          source: 'hub' as const,
+          value: 'prithivMLmods/3D-Render-Flux-LoRA',
+          revision: '6b32a1624d3fdfab4d518223e8311731dd432cd8',
+          sha256: '64e2788c9d236a3e5f62323baa8853116e2a9c7df41cd2a048141eb22cd46d89',
+          byteSize: 612747200,
+          license: 'CreativeML OpenRAIL-M adapter; FLUX.1-dev base non-commercial',
+        },
+        weightName: '3D_Portrait.safetensors',
+        adapterName: 'render_3d',
+        scale: 0.18,
+      },
+    ],
+  },
+  ghibli: {
+    model: {
+      source: 'hub' as const,
+      value: 'alvarobartt/ghibli-characters-flux-lora',
+      revision: 'ed846114c71efc525e7f5a51e274dc976bb970a8',
+      sha256: '5216bd7eeb12bf6f18cd5d40cb090831796b28aca7446577d08c5a7e4a09dc63',
+      byteSize: 171969336,
+      license: 'flux-1-dev-non-commercial; personal-use-only',
+    },
+    weightName: 'ghibli-characters-flux-lora.safetensors',
+    adapterName: 'ghibli_style',
+    scale: 0.8,
+  },
+  oilPainting: {
+    model: {
+      source: 'hub' as const,
+      value: 'dtthanh/flux_oil_painting_lora',
+      revision: '1118ed195c7304ffc52a6cd42b41a520ef749cd9',
+      sha256: '6de4e6d451ad7690db7185cf84235bf9c15c80aaeb69793fb6647fab62bdd704',
+      byteSize: 38421064,
+      license: 'apache-2.0 adapter; FLUX.1-dev base non-commercial',
+    },
+    weightName: 'flux-oilpainting1.3-00001.safetensors',
+    adapterName: 'oil_painting',
+    scale: 0.85,
+  },
+  filmNoir: {
+    model: {
+      source: 'hub' as const,
+      value: 'dvyio/flux-lora-film-noir',
+      revision: '7a7ff13bbae807a2db6c2e4918f3e13bb1265e60',
+      sha256: '2970393ce5376e982a594808c1ff0a87f9cec5ddc0da2c094d2a4305d4079324',
+      byteSize: 172070512,
+      license: 'flux-1-dev-non-commercial',
+    },
+    weightName: '5ee2c3c6409f4618a134b883da64d04e_pytorch_lora_weights.safetensors',
+    adapterName: 'film_noir',
+    scale: 1,
+  },
+  retroComic: {
+    model: {
+      source: 'hub' as const,
+      value: 'renderartist/retrocomicflux',
+      revision: '46f73222df6c97c9f56c3bef42a11979ba5d5aeb',
+      sha256: 'af31beee9ea67955d36425f25624d2585fa31271680013e5c9731690aeb78f9d',
+      byteSize: 229879376,
+      license: 'creativeml-openrail-m adapter; FLUX.1-dev base non-commercial',
+    },
+    weightName: 'Retro_Comic_Flux_v2_renderartist.safetensors',
+    adapterName: 'retro_comic',
+    scale: 0.9,
+  },
+  watercolor: {
+    model: {
+      source: 'hub' as const,
+      value: 'SebastianBodza/Flux_Aquarell_Watercolor_v2',
+      revision: 'a565b2140a05f1eece244514f90d2e29b3b1d45d',
+      sha256: 'e63e44417df35456f425329ad4334143a8bc9fd10316345730ade434106b050e',
+      byteSize: 171969424,
+      license: 'flux-1-dev-non-commercial',
+    },
+    weightName: 'lora.safetensors',
+    adapterName: 'watercolor',
+    scale: 0.9,
+  },
+  paperCutout: {
+    model: {
+      source: 'hub' as const,
+      value: 'Norod78/Flux_1_Dev_LoRA_Paper-Cutout-Style',
+      revision: '5cdd7ac47ad1b99f705ac2a03a39d480d34abb5d',
+      sha256: '1863f382199698b8b756d98ecd8060698d5928ed30009cd16f0531f142e4057b',
+      byteSize: 171969408,
+      license: 'FLUX.1-dev terms',
+    },
+    weightName: 'Flux_1_Dev_LoRA_Paper-Cutout-Style.safetensors',
+    adapterName: 'paper_cutout',
+    scale: 0.9,
+  },
+  photoreal: {
+    model: {
+      source: 'hub' as const,
+      value: 'XLabs-AI/flux-RealismLora',
+      revision: '1965e17d2e745fcbf8f4004bdbdf603421ef37a8',
+      sha256: '0a83a924b822b70b5e458d27935ebfa7713edaee04ff9f194209525354031eca',
+      byteSize: 22431400,
+      license: 'flux-1-dev-non-commercial',
+    },
+    weightName: 'lora.safetensors',
+    adapterName: 'photoreal',
+    scale: 0.85,
+  },
+} satisfies Record<string, NonNullable<StudioTemplateWorkflowBlockSettings['lora']>>;
+const ACE_STEP_CNY_LORA: NonNullable<StudioTemplateWorkflowBlockSettings['lora']> = {
+  baseModel: {
+    source: 'hub',
+    value: 'Runware/acestep-v15-turbo-diffusers',
+    revision: 'be23effe449c5957947f3020fd63bee23c64abe4',
+  },
+  model: {
+    source: 'hub',
+    value: 'ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA',
+    revision: 'cb829a12775740c830a6d49795f16913065dc492',
+    sha256: '78650245c79cbfda7169eae34eb2ccb5f5e639b31a99da0a153a5bbd74194b0d',
+    byteSize: 88100000,
+    license: 'CreativeML OpenRAIL-M metadata; model card limits use to research/academic and prohibits commercial use',
+  },
+  weightName: 'adapter_model.safetensors',
+  adapterName: 'chinese_new_year',
+  scale: 0.5,
+};
+const ACE_STEP_CUSTOM_LORA: NonNullable<StudioTemplateWorkflowBlockSettings['lora']> = {
+  baseModel: {
+    source: 'hub',
+    value: 'Runware/acestep-v15-turbo-diffusers',
+  },
+  model: {
+    source: 'local',
+    value: 'loras/ace-step/my-style',
+  },
+  weightName: 'adapter_model.safetensors',
+  adapterName: 'my_style',
+  scale: 0.7,
+};
+const VIDEO_DELIVERY_UPSCALER: NonNullable<StudioTemplateWorkflowBlockSettings['upscaler']> = {
+  model: {
+    source: 'hub',
+    value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth',
+    revision: '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094',
+    sha256: '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb',
+    byteSize: 67061725,
+    license: 'bsd-3-clause',
+  },
+  downscale: 1,
+};
+const QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS = {
+  width: 1024,
+  height: 1024,
+  steps: 4,
+  guidanceScale: 1,
+  resourceMode: 'expert' as const,
+  dtype: 'bfloat16' as const,
+  quantizationMode: 'none' as const,
+  autoOffload: false,
+  offloadMode: 'none' as const,
+};
 
 export const STUDIO_PRESETS: StudioPreset[] = [
   {
@@ -95,9 +357,9 @@ export const STUDIO_PRESETS: StudioPreset[] = [
   {
     id: 'video_preview',
     label: 'Video preview',
-    description: 'Short 16fps Wan VACE run for quick motion checks.',
+    description: 'Short 16fps Wan run for quick motion checks.',
     compatibleModes: VIDEO_STUDIO_MODES,
-    compatibleModelTypes: ['WanVACEPipeline'],
+    compatibleModelTypes: ['WanVACEPipeline', 'WanVideoPipeline'],
     values: {
       width: 832,
       height: 480,
@@ -115,14 +377,14 @@ export const STUDIO_PRESETS: StudioPreset[] = [
   {
     id: 'video_balanced',
     label: 'Video balanced',
-    description: '16GB-safe default for Wan VACE 480p clips.',
+    description: '16GB-safe default for Wan 480p clips.',
     compatibleModes: VIDEO_STUDIO_MODES,
-    compatibleModelTypes: ['WanVACEPipeline'],
+    compatibleModelTypes: ['WanVACEPipeline', 'WanVideoPipeline'],
     values: {
       width: 832,
       height: 480,
       aspectRatio: '16:9',
-      numFrames: 81,
+      numFrames: 161,
       fps: 16,
       steps: 30,
       guidanceScale: 5,
@@ -133,16 +395,36 @@ export const STUDIO_PRESETS: StudioPreset[] = [
     },
   },
   {
+    id: 'ltx_video_balanced',
+    label: 'LTX balanced',
+    description: 'Official Diffusers LTX baseline with the 8n+1 frame contract.',
+    compatibleModes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+    compatibleModelTypes: ['LTXVideoPipeline'],
+    values: {
+      width: 704,
+      height: 480,
+      aspectRatio: 'custom',
+      numFrames: 161,
+      fps: 16,
+      steps: 8,
+      guidanceScale: 1,
+      conditioningScale: 1,
+      dtype: 'bfloat16',
+      autoOffload: true,
+      randomSeed: true,
+    },
+  },
+  {
     id: 'video_quality',
     label: 'Video quality',
-    description: 'More steps for final Wan VACE candidates.',
+    description: 'More steps for final Wan candidates.',
     compatibleModes: VIDEO_STUDIO_MODES,
-    compatibleModelTypes: ['WanVACEPipeline'],
+    compatibleModelTypes: ['WanVACEPipeline', 'WanVideoPipeline'],
     values: {
       width: 832,
       height: 480,
       aspectRatio: '16:9',
-      numFrames: 81,
+      numFrames: 161,
       fps: 16,
       steps: 50,
       guidanceScale: 5,
@@ -153,11 +435,74 @@ export const STUDIO_PRESETS: StudioPreset[] = [
     },
   },
   {
+    id: 'wan_i2v_quality',
+    label: 'Wan 2.2 I2V quality',
+    description: 'Official five-second Wan 2.2 A14B I2V dimensions and two-expert guidance.',
+    compatibleModes: ['image_to_video'],
+    compatibleModelTypes: ['WanImageToVideoPipeline'],
+    values: {
+      width: 832,
+      height: 480,
+      aspectRatio: '16:9',
+      numFrames: 81,
+      fps: 16,
+      steps: 40,
+      guidanceScale: 3.5,
+      guidanceScale2: 3.5,
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'model_cpu',
+      randomSeed: false,
+    },
+  },
+  {
+    id: 'wan_t2v_13b_quality',
+    label: 'Wan 2.1 T2V 1.3B qualified quality',
+    description: 'Mechanically qualified five-second 480p Wan 2.1 contract for constrained local hardware.',
+    compatibleModes: ['text_to_video'],
+    compatibleModelTypes: ['WanVideoPipeline'],
+    values: {
+      width: 832,
+      height: 480,
+      aspectRatio: '16:9',
+      numFrames: 81,
+      fps: 15,
+      steps: 50,
+      guidanceScale: 6,
+      shift: 8,
+      dtype: 'bfloat16',
+      autoOffload: false,
+      offloadMode: 'none',
+      randomSeed: false,
+    },
+  },
+  {
+    id: 'wan_ti2v_quality',
+    label: 'Wan 2.2 TI2V 5B Diffusers quality',
+    description: 'Official Diffusers five-second 720p/24fps Wan 2.2 TI2V 5B contract.',
+    compatibleModes: ['text_to_video'],
+    compatibleModelTypes: ['WanTI2VPipeline'],
+    values: {
+      width: 1280,
+      height: 704,
+      aspectRatio: '16:9',
+      numFrames: 121,
+      fps: 24,
+      steps: 50,
+      guidanceScale: 5,
+      shift: 8,
+      dtype: 'bfloat16',
+      autoOffload: false,
+      offloadMode: 'none',
+      randomSeed: false,
+    },
+  },
+  {
     id: 'video_low_vram',
     label: 'Video auto-safe',
-    description: 'Shorter Wan VACE settings while Auto chooses the local resource plan.',
+    description: 'Shorter Wan settings while Auto chooses the local resource plan.',
     compatibleModes: VIDEO_STUDIO_MODES,
-    compatibleModelTypes: ['WanVACEPipeline'],
+    compatibleModelTypes: ['WanVACEPipeline', 'WanVideoPipeline'],
     values: {
       width: 832,
       height: 480,
@@ -176,14 +521,14 @@ export const STUDIO_PRESETS: StudioPreset[] = [
   {
     id: 'portrait_video',
     label: 'Portrait video',
-    description: 'Vertical Wan VACE clip settings.',
+    description: 'Vertical Wan clip settings.',
     compatibleModes: VIDEO_STUDIO_MODES,
-    compatibleModelTypes: ['WanVACEPipeline'],
+    compatibleModelTypes: ['WanVACEPipeline', 'WanVideoPipeline'],
     values: {
       width: 480,
       height: 832,
       aspectRatio: '9:16',
-      numFrames: 81,
+      numFrames: 161,
       fps: 16,
       steps: 30,
       guidanceScale: 5,
@@ -197,16 +542,17 @@ export const STUDIO_PRESETS: StudioPreset[] = [
     label: 'Color preserve edit',
     description: 'Conservative source-video color edit with stronger conditioning.',
     compatibleModes: ['video_color_edit', 'video_to_video'],
-    compatibleModelTypes: ['WanVACEPipeline'],
+    compatibleModelTypes: ['WanVideoPipeline'],
     values: {
       width: 832,
       height: 480,
       aspectRatio: '16:9',
-      numFrames: 81,
+      numFrames: 161,
       fps: 16,
       steps: 30,
       guidanceScale: 4.5,
       conditioningScale: 1.25,
+      strength: 0.25,
       dtype: 'bfloat16',
       autoOffload: true,
       randomSeed: false,
@@ -415,6 +761,7 @@ function videoExample(
   seed: number,
   runtimeEstimate: string,
   settings: Partial<StudioTemplateLockedSettings> = {},
+  expectedOutput: Partial<NonNullable<StudioTemplateExample['expectedOutput']>> = {},
 ): StudioTemplateExample {
   return {
     mediaType: 'video',
@@ -424,7 +771,7 @@ function videoExample(
       width: 832,
       height: 480,
       randomSeed: false,
-      numFrames: 81,
+      numFrames: 161,
       fps: 16,
       conditioningScale: 1,
       guidanceScale2: 0,
@@ -438,10 +785,18 @@ function videoExample(
       height: settings.height ?? 480,
       frames: settings.numFrames ?? 81,
       durationSeconds: Number(((settings.numFrames ?? 81) / (settings.fps ?? 16)).toFixed(2)),
+      minimumMotionCoverage: 0.5,
+      minimumAdjacentMotionCoverage: 0.08,
+      minimumEndToEndMotionCoverage: 0.45,
+      minimumActiveMotionWindowRatio: 0.8,
+      minimumStrongMotionWindowRatio: 0.65,
+      maximumLowMotionFrameRatio: 0.2,
+      motionReviewProfile: 'global_camera',
+      ...expectedOutput,
     },
     modelRevision: 'pin-required',
     runtimeEstimate,
-    notes: 'Exact status requires two clean Wan VACE harness runs with matching decoded frame hashes.',
+    notes: 'Exact status requires clean app-run video proofs with matching decoded frame hashes and motion review.',
   };
 }
 
@@ -505,28 +860,26 @@ const CONTACT_SHEET_PROMPT = [
 ].join(' ');
 
 const PRODUCT_AD_PROMPT = [
-  'Objective: build a finished premium launch advertisement by combining two uploaded references into one optically coherent campaign image.',
-  'Source roles: Input 1 is the layout and art-direction reference; analyze and preserve its canvas ratio, focal hierarchy, hero-object position, camera height, lens perspective, key-light direction, palette, typography zones, grain, and graphic rhythm. Input 2 is the product identity reference; preserve its silhouette, exact proportions, label geometry, logo placement, materials, seams, controls, and recognizable small details.',
-  'Primary change: remove only the original hero object from Input 1 and place the Input 2 product at the same visual anchor. Do not blend the two objects or redesign the product.',
-  'Integration: match scale, horizon, vanishing lines, depth of field, occlusion, contact shadow, cast shadow softness, reflective color spill, highlight shape, atmosphere, and source noise so the replacement appears photographed on the same set.',
-  'Layout finish: reserve one concise headline zone, one short supporting-copy zone, and deliberate negative space without covering the product. If text is rendered, use only short high-contrast copy with clean alignment and consistent baseline spacing.',
-  'Output contract: one polished commercial poster with no collage seams, cutout halo, duplicated product, invented packaging, warped logo, or unrelated scene changes.',
+  'Create one premium magazine advertisement by combining the two supplied references. Input 1 defines the restrained editorial grid, generous warm-white margins and disciplined typography hierarchy. Input 2 defines the immutable ASTERMIST lavender sleep-spray bottle.',
+  'Build a believable bedside ritual context: place exactly one ASTERMIST bottle at normal cosmetic scale on a honed limestone nightstand beside one folded linen eye mask and a small dried-lavender stem. A softly blurred bed and dawn window belong to the same quiet room; every object rests on the same physical surface with coherent perspective, contact shadows and window light.',
+  'Preserve the bottle’s pale-lavender glass, liquid level, dip tube, satin-silver atomizer, clear cap and rectangular label. Keep both exact label lines readable: “ASTERMIST” and “LAVENDER SLEEP SPRAY”. Do not enlarge it into architecture, a sculpture or a surreal monument.',
+  'Use Input 1 only for layout discipline. Add exactly one clean headline in the upper negative space: “NIGHT RITUAL”. Include no other campaign copy. Use black editorial type, warm stone, muted lavender and natural blue dawn light with realistic glass refraction and premium photographic grain.',
+  'The output must read as one real-location commercial photograph, not a pasted packshot or fantasy composite: matching scale, lens, light direction, color spill, focus falloff and surface contact, with no collage edge, halo, floating product, unrelated scenery or arbitrary object replacement.',
 ].join(' ');
 
 const PRODUCT_RELIGHT_PROMPT = [
-  'Task: perform realistic product insertion and material-aware relighting using two references.',
-  'Source roles: the scene reference defines camera, placement, background geometry, horizon, depth, atmosphere, and illumination. The product reference defines immutable identity: silhouette, dimensions, logo and label geometry, component layout, surface finish, and manufacturing details.',
-  'Place one product at a physically plausible foreground anchor with correct scale, perspective, grounding, occlusion, contact shadow, and reflected environment color. Preserve every unrelated scene element.',
-  'Relight by material: transparent glass keeps wall thickness, refraction, liquid level, and controlled highlight bands; glossy polymer receives broad softbox shapes; brushed metal receives narrow directional streaks; matte paper labels remain readable without specular glare; translucent parts carry plausible subsurface glow.',
-  'Match key/fill/rim direction, color temperature, shadow density and softness, lens distortion, focus plane, grain, noise, and chromatic treatment from the scene reference.',
-  'Output contract: a single believable photograph with no pasted edge, floating base, contradictory reflection, altered branding, changed proportions, added packaging, or product duplication.',
+  'Create one high-end fragrance campaign photograph from two references. Input 1 is the immutable blue-hour mineral-spa vanity scene; Input 2 is the immutable ASTERMIST lavender sleep spray.',
+  'Preserve Input 1’s square crop, long honed-limestone counter, carved basin and brass faucet at left, empty counter area at lower right, lime-plaster wall, coastal window, linen shelf, eucalyptus niche, camera height, cool window key and restrained warm shelf light. Do not move the basin, faucet, window, shelf or counter, and do not turn the scene into a studio backdrop.',
+  'Place exactly one ASTERMIST bottle upright on the existing empty lower-right limestone counter, occupying between twenty-five and thirty percent of the image height. Its complete base must touch that original horizontal counter plane directly. Do not add a pedestal, plinth, block, shelf or raised display surface. Preserve its cylindrical lavender glass body, visible liquid level, internal dip tube, silver collar, clear cap, spray nozzle, label proportions and the exact readable two-line copy "ASTERMIST" and "LAVENDER SLEEP SPRAY". Do not float, crop, duplicate or redesign it.',
+  'Relight the transparent bottle from the room: cool window fill through the lavender liquid, one restrained warm edge from the shelf light, physically plausible wall thickness and refraction, and a soft contact shadow across the porous limestone. Keep controlled label glare that leaves both lines readable. The matte counter must never mirror the bottle or label text. Match the source lens, focus falloff, grain, color response and low-contrast blue-hour atmosphere.',
+  'The result must read as a real location campaign photographed in one exposure, not a pasted packshot: coherent scale, perspective, contact, refraction and color spill, with no collage edge, halo, contradictory shadow, synthetic glow, random text, extra packaging or altered background.',
 ].join(' ');
 
 const PACKAGING_DIELINE_PROMPT = [
-  'Objective: turn the supplied dieline or structural control image into a premium retail packaging visualization for MoDiff while keeping the control geometry authoritative.',
+  'Objective: turn the supplied dieline or structural control image into a premium retail package for the fictional traditional-pigment maker "TIDELINE MINERAL PIGMENTS" while keeping the control geometry authoritative.',
   'Structural contract: preserve every panel boundary, fold and cut direction, glue flap, product-window position, handle or tab, label-safe zone, front/side hierarchy, and dominant outer silhouette. Do not move folds to accommodate decoration.',
-  'Graphic system: use a disciplined white-and-charcoal technical grid, one warm yellow accent, a clear MoDiff front-panel name zone, compact modality badges, restrained specifications, and generous blank space. Keep visible copy short, aligned to panel perspective, and readable.',
-  'Material and camera: realistic coated folding carton with subtle paper tooth, accurate creases, clean die-cut edges, slight edge wear, soft overhead key, white-card fill, grounded studio shadow, eye-level three-quarter package view, and crisp focus across the front plane.',
+  'Graphic system: use unbleached warm-gray paperboard, deep indigo block printing, one restrained oxidized-copper foil line, a clear exact front-panel title "TIDELINE MINERAL PIGMENTS", and the smaller exact line "COASTAL SET 06". Add a sparse hand-drawn mineral strata diagram and compact pigment-safety icons; avoid the yellow technical-grid visual language used by the separate layout-control template.',
+  'Material and camera: show one assembled, manufacturable carton standing on a pigment-stained oak workbench in a working ceramics studio, with subtle paper tooth, accurate creases, clean die-cut edges, slight edge wear, soft north-window key light, white-card fill, grounded shadow, eye-level three-quarter package view, and crisp focus across the front plane. Include restrained background evidence of the craft—two ceramic test tiles, a stone mortar, and folded linen—without obscuring the package.',
   'Output contract: one manufacturable-looking package mockup with straight typography, consistent print registration, intact folds, no melted corners, no impossible window, and no decoration crossing structural seams unintentionally.',
 ].join(' ');
 
@@ -546,17 +899,16 @@ const TILE_EXTRACT_PROMPT = [
 ].join(' ');
 
 const LOGO_TEXTURE_PROMPT = [
-  'Apply the texture, material, and lighting language from the reference image to the logo or mark image while preserving the logo silhouette.',
-  'Keep the logo readable and centered. Preserve its proportions, negative spaces, internal counters, and recognizable outline.',
-  'Blend in realistic surface detail such as enamel, chrome, embroidered thread, carved stone, glossy resin, or brushed metal depending on the reference material.',
-  'Create a premium brand asset mockup with accurate reflections, shadows, edge highlights, and a simple editorial background.',
+  'Create one photorealistic architectural monogram using two references with strict roles. Input 1 defines the immutable centered modular M silhouette, proportions, three vertical legs, two diagonal joins, negative counters and square margins. Input 2 defines only the deep forest-green bookmatched marble, sparse pale veins, honed reflectivity and narrow aged-satin-brass bevel.',
+  'Preserve Input 1’s exact outer contour, central V notch, lower counters, baseline and symmetry. Fill only the face of the M with the forest-green marble from Input 2, align one quiet bookmatch seam through its center, and wrap the complete outer and inner perimeter with one narrow continuous aged-brass bevel. Do not convert the M into another letter, add a duplicate outline, close either counter or thicken one leg differently.',
+  'Mount the finished M flush on one warm off-white lime-plaster wall under soft raking daylight from upper left. Use realistic stone depth, sparse veins that continue across joins, fine brass grain, a restrained contact shadow and subtle photographic falloff. Output one premium architectural identity photograph with no word, caption, extra letter, icon, screw, cable, cobalt blue, chrome, enamel, neon, frame or decorative clutter.',
 ].join(' ');
 
 const LAYERED_PORTRAIT_PROMPT = [
-  'Decompose the source image into clean editable layers while preserving the full scene description.',
-  'Overall image: cinematic medium portrait on a windswept rocky coast, warm late-afternoon sunlight, sparkling ocean, distant tall ship, shallow depth of field, romantic nostalgic mood.',
-  'Layer intent: separate foreground person, hair silhouette, clothing, background ocean, sky, distant ship, and soft atmospheric light as cleanly as the backend supports.',
-  'Preserve hidden or partially occluded content where possible so each layer can be edited later without obvious holes, halos, or jagged alpha edges.',
+  'Decompose the supplied image into three ordered editable RGBA layers while faithfully preserving the complete photographed content.',
+  'Overall image description: at blue hour on an alpine observatory deck, one adult woman astronomer in a navy field jacket and charcoal trousers stands center-right with both empty hands relaxed beside her body. One physically separate brass-and-matte-black refractor telescope on a complete three-leg tripod occupies the lower-left foreground without touching or overlapping the woman. A white observatory dome, a standard-height open doorway, a metal safety rail, mountain silhouettes and a clear deep-blue sky form the background.',
+  'Occluded-content description: reconstruct the uninterrupted deck, rail, observatory wall, mountains and sky behind the woman and telescope so hiding a layer does not reveal an obvious cutout hole.',
+  'Keep the source identity, pose, scale, eye-level 50 mm perspective, blue-hour lighting and object placement. Preserve the measured source relationship: the complete telescope assembly is about ninety-four percent of the woman’s visible height, its tube length is about fifty-one percent of her visible height, and a clear gap of about three percent of the image width separates the telescope from her body. Keep the entire telescope and all three grounded tripod feet coherent in one place without a detached tube, mount or tripod fragment elsewhere. Produce useful alpha boundaries and a recomposition that matches the source without bright fringe, dark matte, duplicated feature, missing content or flattened depth.',
 ].join(' ');
 
 const OUTPAINT_ASPECT_PROMPT = [
@@ -566,20 +918,23 @@ const OUTPAINT_ASPECT_PROMPT = [
 ].join(' ');
 
 const INPAINT_REPLACE_PROMPT = [
-  'Mask contract: replace only the masked tabletop object with one compact smoked-amber glass task lamp; treat every unmasked person, hand, prop, logo, edge, and background region as immutable.',
-  'Replacement design: low circular brass base, slim black stem, shallow amber glass shade, warm diffused pool of light, realistic cable exit, and plausible scale relative to neighboring objects.',
-  'Integration: continue the desk plane through the mask, match camera perspective and focus, reproduce local grain and texture scale, add a grounded contact shadow, warm light spill, physically consistent reflection and occlusion, and feather the boundary without soft halos.',
-  'Do not change the source crop, faces, hands, clothing, background layout, existing typography, exposure outside the local light spill, or any pixels conceptually outside the mask.',
+  'Mask contract: replace only the small masked charcoal box on the entryway console with one handcrafted stoneware keepsake chest; treat the complete unmasked entryway as immutable.',
+  'Replacement design: preserve the original box outer width, height, depth, position and rectangular silhouette so the new chest fills the masked footprint. Construct four straight vertical stoneware walls, softly chamfered corners, uninterrupted rectangular faces, a narrow unglazed clay foot and one flat fitted dark-walnut slab lid. Finish the body in deep forest-green low-sheen celadon with subtle horizontal hand-finishing texture and a thin cork gasket line.',
+  'Integration: match the source camera perspective, focus plane, soft left window light, warm wall bounce, texture scale, grain, wall tone and exposure; ground the stoneware chest with one physically correct contact shadow, a restrained broad glaze highlight facing the window, and believable base occlusion, then feather the boundary without a halo.',
+  'Preserve the source crop, doorway, switch plate, hooks, folded scarf, ceramic bowl, basket, wall color, console geometry and every region outside the mask.',
 ].join(' ');
 
 const MODIFF_AUDIO_PROMPT = [
-  'Thirty-second alternative-metal song at 170 BPM in C-sharp minor, 4/4, with a dark modern nu-metal and djent production language.',
-  'Instrumentation: down-tuned seven-string guitars, articulate pick bass, tight acoustic metal kit, sparse sub impact, coarse male lead vocal, and a female scream double used only to widen the chorus.',
-  'Arrangement: 0-4 seconds, filtered clean-guitar arpeggio and distant reverse texture; 4-13 seconds, restrained verse with palm-muted syncopation and half-time vocal space; 13-22 seconds, full chorus with wide distorted guitars, double-kick drive, bass locked to the riff, and layered vocal hook; 22-27 seconds, compact tapping break with one tom fill; 27-30 seconds, final hook and one unified hard stop.',
-  'Performance: precise low-string attacks, natural pick noise, human drum velocity, intelligible aggressive phrasing, and controlled contrast between the clean opening and dense chorus.',
-  'Mix: centered kick, snare, bass, and lead vocal; wide rhythm guitars and backing scream; punchy low mids, restrained cymbal harshness, short dark room, clean headroom, no clipping.',
-  'End with the band and vocal stopping on the same final transient; no fade, no silence before the stop, no extra outro, no artist imitation.',
+  'Dark modern alternative metal with nu-metal and djent production.',
+  'Use an unmistakable triple-meter groove: strong beat one, two lighter quarter-note pulses, and palm-muted riffs resolving in three-beat phrases, never 4/4 or 6/8.',
+  'Use down-tuned seven-string guitars, pick bass, a tight acoustic metal kit, sparse sub impact, a coarse male lead, and a female scream double only on the chorus.',
+  'Approximate arrangement: 0-6 seconds, filtered clean arpeggio and reverse texture; 6-23 seconds, restrained verse; 23-32 seconds, tom-led pre-chorus; 32-49 seconds, full chorus with wide guitars, triple-meter double-kick, riff-locked bass, and layered hook; 49-57 seconds, tapping bridge and one tom fill; 57-72 seconds, strongest final chorus; 72-75 seconds, short closing tag and unified hard stop.',
+  'Keep precise attacks, natural pick noise, human drum velocity, intelligible aggression, centered kick, snare, bass, and lead, wide guitars and backing scream, punchy low mids, restrained cymbals, a short dark room, and clean headroom.',
+  'Band and vocal stop on one transient with no fade, trailing silence, extra outro, clipping, or artist imitation.',
 ].join(' ');
+
+const MODIFF_AUDIO_75_SECOND_EXAMPLE_PATH = '/template-gallery/ace_step_text_to_audio.current.wav';
+const ACE_STEP_CHINESE_NEW_YEAR_EXAMPLE_PATH = '/template-gallery/ace_step_chinese_new_year_lora.wav';
 
 const MODIFF_AUDIO_COVER_PROMPT = [
   'Task: create a cohesive alternative-metal cover of the supplied source recording, not a loose song with similar mood.',
@@ -590,11 +945,10 @@ const MODIFF_AUDIO_COVER_PROMPT = [
 ].join(' ');
 
 const MODIFF_AUDIO_CONTINUATION_PROMPT = [
-  'Task: generate a fifteen-second continuation tail that begins as an inaudible extension of the supplied source, then resolves into a deliberate ending.',
-  'Source invariants: inherit the exact tempo, key, meter, groove, melody language, instrumentation, vocalist identity, room tone, stereo width, loudness, reverb tail, and production character present at the cut. Do not restart the song or quote an unrelated intro.',
-  'Timeline: during the first four seconds, complete the phrase already in motion with matching drums, bass, guitars, and vocal cadence; during the middle seven seconds, develop one existing motif with a controlled energy lift; during the final four seconds, return to the hook and land every instrument on one synchronized hard stop.',
-  'Boundary contract: align beat phase, harmony, noise floor, ambience, transient character, and spectral balance at the splice. Keep vocals intelligible and human, low end tight, cymbals controlled, and dynamics continuous.',
-  'Avoid a tempo jump, key change, duplicated attack, silence at the join, new vocalist, unrelated section, long fade, clipped final transient, or residual audio after the stop.',
+  'Continue the supplied 75-second alternative-metal song from absolute time 75 to 90 seconds, generating exactly one 15-second tail at 170 BPM in C-sharp minor and strict 3/4.',
+  'Preserve its down-tuned seven-string guitars, pick bass, tight acoustic metal kit, coarse male lead, chorus-only female scream double, melody language, vocalist identity, mix, room, loudness, and three-beat pulse.',
+  'Treat the source hard stop as one intentional dramatic breath before a final coda, not as permission to restart with a new intro. Relative to the generated tail: 0-2 seconds, re-enter on beat one with the established low-string motif and drum tone; 2-6 seconds, sing the two-line continuation couplet; 6-12 seconds, lift into the two-line final hook over the established chorus harmony; 12-15 seconds, complete the last phrase and resolve every instrument and vocal together on one new hard stop.',
+  'Match beat phase, key, timbre, noise floor, stereo width, and ambience at the join. Do not replay the intro, change singer, drift into 4/4 or 6/8, quote unrelated lyrics, fade out, clip, or leave trailing audio.',
 ].join(' ');
 
 const MODIFF_AUDIO_REPAINT_PROMPT = [
@@ -628,16 +982,59 @@ MoDiff—lock the final line
 
 [hard stop]`;
 
+const MODIFF_AUDIO_75_SECOND_LYRICS = `[Intro]
+Signal waking, low and slow
+
+[Verse]
+Blocks ignite beneath the wire
+Shape the noise and feed the fire
+Image, motion, sound align
+Every path becomes design
+Hold the pulse in groups of three
+Build the chain and set it free
+
+[Pre-Chorus]
+One by one the modules rise
+Pressure climbing through the lines
+
+[Chorus]
+MoDiff, move the whole graph now
+Break it down and build it loud
+Run the chain, let modules shift
+Make the impossible a modular gift
+
+[Bridge]
+
+[Chorus]
+MoDiff, move the whole graph now
+Every signal ringing out
+Run the chain, let modules shift
+Make the impossible a modular gift
+
+[Outro]
+MoDiff—lock the final line`;
+
+const MODIFF_AUDIO_CONTINUATION_LYRICS = `${MODIFF_AUDIO_75_SECOND_LYRICS}
+
+[Continuation]
+From the silence, count to three
+One last circuit, set it free
+
+[Final Hook]
+MoDiff, drive the signal home
+Every path returns as one
+
+[Hard Stop]`;
+
 const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePrompt: string }> = {
   z_image_quick_concept: {
     prompt: [
-      'Creative objective: design a cinematic key-art frame for Solace Beacon, a compact solar-powered field radio used by mountain rescue crews during a night storm.',
-      'Product design: one rugged wet-graphite radio with a folded brass antenna, knurled weather-sealed controls, a warm amber status lamp, fine rain beads, believable gasket seams, and a clear functional silhouette.',
-      'Composition and camera: low tabletop three-quarter hero view, 50 mm lens, product filling the left two-thirds of frame, sharp focus on the controls, shallow falloff toward distant rescue lights, and quiet negative space on the right.',
-      'Environment and light: scratched lookout table beside a rain-streaked window, cold blue-hour mountains outside, soft cool window key, weak warm cabin fill, narrow amber rim reflection, realistic contact shadow, restrained film grain, no typography.',
+      'Create a realistic documentary product photograph of one unbranded compact rescue-equipment case used inside a mountain storm lookout.',
+      'The compact tabletop case has a rigid wet-graphite rectangular shell with softly rounded corners, two small black mechanical latches, one flat burnt-orange silicone pull tab, a continuous dark gasket seam, four tiny rubber feet and no other parts. It is a closed passive case: no lamp, lens, display, dial, antenna, speaker, button, glow or electronic component.',
+      'Use a natural eye-level 50 mm three-quarter view with the complete case on a scratched timber table, sharp latch and gasket detail, correct feet and contact shadow, and a rain-streaked window with blue-gray mountain weather softly out of focus behind it.',
+      'Light the scene only with cool overcast window light and weak warm room bounce. Preserve dark graphite material detail, realistic rain beads, restrained highlights and fine film grain, with no cross symbol, branding, lettering, labels, typography or cinematic fantasy glow.',
     ].join(' '),
-    negativePrompt:
-      'extra radios, duplicated controls, warped knobs, bent antenna, floating product, muddy silhouette, flat plastic material, noisy rain texture, blown amber light, unreadable markings, generic stock-photo staging, soft focus',
+    negativePrompt: '',
   },
   z_image_product_mockup: {
     prompt: [
@@ -646,28 +1043,25 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
       'Compose a front three-quarter view at counter height with an 85 mm product lens; place the warmer slightly right of center and arrange exactly three capsules as a restrained diagonal foreground rhythm.',
       'Use a dark honed-slate cafe counter, soft overcast morning window key from camera left, white-card fill, a narrow warm rim on the brass, controlled reflections, crisp microtexture, realistic contact shadows, shallow background bokeh, and generous editorial negative space.',
     ].join(' '),
-    negativePrompt:
-      'distorted appliance, extra buttons, duplicate capsules, floating product, broken lid seam, plastic-looking ceramic, mirror-like brass glare, cluttered countertop, mismatched perspective, weak contact shadow, crushed blacks, soft focus',
+    negativePrompt: '',
   },
   z_image_poster: {
     prompt: [
-      'Output constraint: create only a text-free vertical artwork layer for a future-food night-market campaign. Render zero letters, words, numbers, logos, signage, captions, or typographic marks; this is not the finished poster.',
-      'Hero subject: one translucent smoked-glass noodle bowl hovering a few centimeters above a brushed stainless prep table, luminous saffron broth, crisp herbs, dark chopsticks, and a controlled spiral of steam.',
-      'Composition and camera: symmetrical vertical frame, slightly low 65 mm view, bowl centered in the lower half, the entire top forty percent intentionally empty and near-black for later graphic design, strong circular silhouette, clean print-safe margins, and a single visual hierarchy.',
-      'Lighting and finish: magenta stall light from camera left, acidic green edge light from the right, warm broth glow from below, realistic metal reflections, humid night haze, deep ink-like shadows, subtle halftone grain, premium food-editorial detail.',
+      'Create a finished vertical photographic poster for a heritage seed library. Set the exact title “HERITAGE SEED LIBRARY” in large, clean, dark-sage sans-serif type across the upper field; render those three words exactly once and include no other text, numbers, logos or typographic marks.',
+      'On a worn oak potting table, arrange one open archival seed box containing small unprinted kraft envelopes, dried bean pods, a brass hand trowel, loose dark soil, and a few living nasturtium leaves. Every object rests naturally under gravity; nothing floats or glows.',
+      'Frame the still life in the lower half with a natural 50 mm editorial camera and leave the upper forty percent as a softly textured limewashed wall for later typography. Use asymmetrical but balanced spacing, clean print margins, and one clear hierarchy.',
+      'Use soft north-window daylight, gentle warm bounce from the timber, realistic paper fibers, soil granules, oxidized brass and leaf translucency. Keep an earthy umber, sage and faded-cream palette with restrained film grain and no neon color or synthetic light.',
     ].join(' '),
-    negativePrompt:
-      'any text, letters, words, title, headline, numbers, logo, signage, caption, busy collage, multiple bowls, cramped top margin, warped glass bowl, floating ingredients, flat lighting, muddy steam, clipped neon colors, weak silhouette, low-resolution print artifacts',
+    negativePrompt: '',
   },
   z_image_lora_style: {
     prompt: [
-      'Create a controlled four-panel style study for Pico, a palm-sized ceramic astronaut mascot, using the selected LoRA visual language consistently without redesigning the character.',
-      'Identity lock: rounded square helmet, one amber visor, compact white ceramic body, navy joint rings, tiny backpack, and the same face proportions in every panel.',
-      'Panel plan: neutral front pose, left-to-right walking pose, close portrait, and simplified product-sticker pose; keep equal margins, one pale warm-gray sweep, consistent eye-level camera height, soft overhead key, gentle rim light, glossy ceramic highlights, and readable silhouette at thumbnail size.',
-      'Vary pose and crop only. Preserve palette, surface treatment, line weight, facial identity, and LoRA style signature across all four views.',
+      'Create a four-panel photoreal documentary style study of the same coastal rescue engineer at a working lifeboat station, using the selected realism LoRA consistently.',
+      'Identity lock: the same weathered woman in her early forties, short dark curls, small scar above the left eyebrow, navy waterproof jacket with one orange shoulder yoke, gray knit layer and no logo in every panel.',
+      'Panel plan: waist-up portrait beside the open boathouse door; wide view checking a real orange rescue boat; close hands fastening a steel radio clip; three-quarter portrait in wind-driven spray. Use genuinely different camera distances while preserving face, clothing and station identity.',
+      'Natural overcast daylight, wet fabric, believable skin pores, salt-stained steel, documentary 35 mm grain and grounded real-location backgrounds. This must look photographed, never like a toy, mascot, illustration, animation or glossy 3D render.',
     ].join(' '),
-    negativePrompt:
-      'style drift, different mascot identity, changing helmet shape, inconsistent visor color, extra limbs, missing backpack, uneven panel scale, cluttered background, overprocessed texture, weak silhouette, broken ceramic, low detail',
+    negativePrompt: '',
   },
   qwen_text_rendering: {
     prompt: [
@@ -680,12 +1074,13 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   },
   qwen_poster_logo_text: {
     prompt: [
-      'Design a print-ready museum poster for the fictional exhibition ORBITAL TYPE LAB.',
-      'Use the exact title text "ORBITAL TYPE LAB" as the dominant centered logo mark, with a small readable date line "JULY 18 - AUGUST 04" and micro-caption blocks aligned to a strict grid.',
-      'Visual subject: a chrome letter O hovering above a matte black floor, thin yellow orbital paths, sharp kerning, balanced margins, and premium graphic-design contrast.',
+      'Design a print-ready portrait poster for the fictional exhibition "MATERIAL CULTURE" using a refined photo-led editorial layout, not a synthetic 3D render.',
+      'Render exactly three text elements and nothing else: the dominant title "MATERIAL CULTURE", the subtitle "DESIGN ARCHIVE", and the date "SEP 06—21". All three must be readable, correctly spelled, and aligned to one disciplined grid; do not generate microcopy.',
+      'Use one documentary macro photograph of layered handmade paper, a bone folder and a single red binding thread as the visual field. Keep real paper fibers, tool wear and natural shadows, with the title integrated into clean warm-white negative space rather than placed over busy texture.',
+      'Use black type, warm paper whites and one restrained vermilion accent. Maintain generous margins, typographic hierarchy, optical spacing and a credible contemporary museum-print finish.',
     ].join(' '),
     negativePrompt:
-      'wrong title text, duplicated words, broken kerning, random symbols, cluttered grid, illegible date, jagged chrome, print artifacts',
+      'wrong title, misspelled MATERIAL CULTURE, misspelled DESIGN ARCHIVE, wrong date, extra text, microcopy, random symbols, chrome ring, glowing orbit, synthetic 3D object, cluttered grid, illegible date, broken kerning, print artifacts',
   },
   qwen_product_mockup: {
     prompt: [
@@ -721,17 +1116,18 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   },
   qwen_low_vram_poster_layout: {
     prompt: [
-      'Design a minimal event poster for the fictional workshop "QUIET SIGNALS".',
-      'Render the exact headline "QUIET SIGNALS" large and readable, with a small subtitle "SOUND DESIGN LAB" and a simple date line "SEPT 14".',
-      'Visual motif: one matte white speaker cone drawn as a clean architectural object, black ink grid, one muted yellow accent bar, generous margins, precise alignment, and a print-design finish at square format.',
+      'Create a portrait-format photographic campaign artwork for a fictional coastal film week, built around one real place rather than floating graphic text.',
+      'Show the weathered entrance of a small 1930s seaside cinema at blue hour after rain: glazed teal tile, dark timber doors, wet pavement, one warm tungsten wall lamp, and the Atlantic horizon glimpsed at the end of the street. Use documentary architectural photography with believable reflections, straight verticals, fine material wear, and restrained offset-print grain.',
+      'Above the doors is one physical three-row milk-glass marquee. Its removable black letters read exactly "TIDELINE" on row one, "COASTAL FILM WEEK" on row two, and "OCT 12" on row three. This single marquee is the artwork’s complete typographic hierarchy.',
+      'Frame the entrance low in the portrait with generous rainy sky above it, a quiet asymmetrical composition, deep teal and warm amber color separation, and enough environmental detail to feel like a real cultural venue rather than a layout mockup.',
     ].join(' '),
     negativePrompt:
-      'wrong headline, unreadable subtitle, extra random text, warped speaker cone, cluttered poster, messy grid, jagged letters, blur',
+      'warped architecture, plastic materials, impossible reflection, floating sign, illegible marquee letters, extra building, crowd, neon nightclub, cartoon, illustration, blur',
   },
   qwen_control_image_layout: {
     prompt: [
       'Packaging objective: turn the supplied control image into an orthographic premium folding-carton design proof for the fictional expedition notebook brand "NORTHSTAR FIELD NOTES".',
-      'Control contract: preserve every outer flap, central and side-panel proportion, fold boundary, main front label rectangle, lower specification modules, circular feature marks, and yellow footer bars from the control image. Keep the layout straight-on and centered; do not fold, rotate, crop, merge, or invent panels.',
+      'Control contract: preserve every outer flap, central and side-panel proportion, fold boundary, main front label rectangle, lower specification modules, circular feature marks, and yellow footer bars from the control image. Directly below the main label, retain two separate outlined specification boxes in their original positions: one small box on the left containing exactly one circular mark, and one wide box on the right containing exactly three circular marks. Keep all four marks inside those two front-panel boxes, never on the side panels. Keep the layout straight-on and centered; do not fold, rotate, crop, merge, relocate, or invent panels.',
       'Front-panel copy: set the exact readable brand "NORTHSTAR FIELD NOTES" in a compact black grotesk, with the smaller line "EXPEDITION SERIES 04". Use the lower modules for short technical copy and icons only; the side panels may carry restrained grid lines and small vertical product information.',
       'Material and finish: warm-white FSC paperboard, fine uncoated fiber, crisp black keylines, muted mustard-yellow technical badges, shallow blind emboss on the brand block, precise print registration, subtle scored fold channels, and physically plausible paper thickness along the outer cut edge.',
       'Presentation: neutral warm-gray proofing table, orthographic 90-degree camera, even D50 studio light with gentle relief shadows only at score lines, clean prepress/editorial art direction, generous clear space, and sharp readable print detail across the full board.',
@@ -747,16 +1143,17 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   qwen_product_ad_composite: {
     prompt: PRODUCT_AD_PROMPT,
     negativePrompt:
-      'collage edges, mismatched perspective, unreadable text, warped logo, floating product, bad contact shadow, wrong product proportions',
+      'headline, body copy, caption, logo, any printed text, fake letters, gibberish typography, graphic panel, neon studio backdrop, collage edges, mismatched perspective, closed cube, solid block, glowing glass, floating product, missing platform, missing person, missing lake reflection, contradictory refraction, wrong vessel proportions, duplicate vessel, synthetic illustration, arbitrary neon, unrelated props covering product',
   },
   qwen_product_relight: {
     prompt: PRODUCT_RELIGHT_PROMPT,
     negativePrompt:
-      'wrong reflections, mismatched lighting, altered product logo, warped packaging, bad shadows, pasted object, low detail',
+      'misspelled ASTERMIST, misspelled LAVENDER SLEEP SPRAY, unreadable label, oversized bottle, duplicate bottle, redesigned pump, missing dip tube, floating base, cropped product, invented pedestal, raised plinth, new stone block, mirrored label on stone, wrong reflections, mismatched lighting, altered architecture, moved pool, warped packaging, hard cutout edge, synthetic glow, arbitrary neon, low detail',
   },
   qwen_packaging_dieline: {
     prompt: PACKAGING_DIELINE_PROMPT,
-    negativePrompt: 'warped panels, broken folds, unreadable text, wrong silhouette, messy shadows, low quality',
+    negativePrompt:
+      'flat unfolded proof, yellow grid design, warped panels, broken folds, missing flap, unreadable TIDELINE MINERAL PIGMENTS, misspelled COASTAL SET 06, wrong silhouette, floating carton, melted edge, decoration across seam, synthetic plastic paper, impossible window, duplicate package, clutter covering package, arbitrary neon, messy shadows',
   },
   qwen_character_angles: {
     prompt: CHARACTER_ANGLES_PROMPT,
@@ -771,20 +1168,21 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   qwen_logo_texture: {
     prompt: LOGO_TEXTURE_PROMPT,
     negativePrompt:
-      'changed logo shape, unreadable mark, broken letters, clutter, mismatched material, noisy texture, low contrast',
+      'changed M silhouette, second letter, word, caption, closed counter, asymmetric leg, broken bevel, busy veins, cracked stone, cobalt blue, chrome, enamel, neon, screw, cable, clutter, low contrast',
   },
   qwen_layered_portrait: {
     prompt: LAYERED_PORTRAIT_PROMPT,
-    negativePrompt: 'merged layers, jagged alpha, halos, missing hair detail, broken background, flattened subject',
+    negativePrompt:
+      'merged layers, empty layer, jagged alpha, halos, detached telescope fragment, duplicated tripod, person-telescope overlap, wrong relative scale, broken background, flattened depth',
   },
   qwen_outpaint_aspect_template: {
     prompt: [
-      'Extend the source lifestyle product photo into a clean wide campaign frame while preserving the original product scale, silhouette, label readability, camera height, lens perspective, and light direction.',
-      'Use the new canvas area for believable set continuation: matching tabletop texture, soft shadow falloff, subtle background depth, and one restrained prop cluster placed away from the product.',
-      'Keep the original image visually anchored in the center; the expanded borders should feel photographed in the same session, not painted as a separate scene.',
+      'Extend the source documentary portrait of a marine field researcher into a wide environmental photograph while preserving the original person, facial identity, waterproof jacket, pose, scale, central crop, horizon, camera height, lens perspective and overcast light.',
+      'Generate only a level continuation of the same low basalt foreshore outside the source: similarly sized layered black rocks, shallow tide pools, sparse low wind-bent grass and uninterrupted distant gray water. Keep the shoreline elevation low and continuous; do not introduce cliffs, coves, headlands or large new landforms. Match rock scale, atmospheric depth, cloud structure, grain, focus falloff and shadow softness across both transitions.',
+      'Keep the original image visually anchored in the center. Do not add another person, duplicate equipment, repeat rock patterns, stretch the body, change the face, or turn the new borders into a painted or fantastical landscape.',
     ].join(' '),
     negativePrompt:
-      'repeated edge patterns, stretched subject, warped label, broken perspective, mismatched tabletop, changed original product, obvious fill artifacts, extra products',
+      'repeated rock patterns, stretched subject, changed face, duplicate person, extra equipment, broken horizon, mismatched weather, changed original crop, obvious seam, painted landscape, fantasy glow',
   },
   qwen_inpaint_object_replace: {
     prompt: INPAINT_REPLACE_PROMPT,
@@ -793,12 +1191,12 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   },
   character_edit: {
     prompt: [
-      'Edit the source portrait into a rain-ready cyber courier character while preserving the same face shape, age, gaze direction, pose, crop, and camera perspective.',
-      'Add a translucent graphite rain jacket with small amber piping, damp hair detail, subtle city-reflection rim light, and sharper editorial texture.',
-      'Do not change the person into someone else; keep the original background structure and skin tones natural.',
+      'Restyle only the source singer into a realistic coastal field-recording presenter while preserving her exact face shape, age, warm skin tone, gaze direction, hairstyle and copper streak, hand positions, microphone, pose, crop, camera perspective, and the complete rocky-coast background.',
+      'Replace the silver jacket with one tailored rust-brown waxed-canvas field jacket: matte weathered fabric, dark navy wool collar, reinforced shoulder panels, two believable brass snaps, and one narrow slate-blue scarf tucked naturally inside the collar. Keep the garment correctly fitted around both shoulders, elbows, wrists, and microphone grip.',
+      'Treat every non-clothing region as structurally locked. Keep the distant ship as a comparably small, soft, out-of-focus silhouette in the same upper-left distance; preserve the horizon, water highlights, rocks, amber practical lights, hair flyaways, face, hands, microphone, cable, crop, focus, and original warm late-afternoon illumination. The result must remain a documentary photograph, not science fiction, fashion illustration, or animation.',
     ].join(' '),
     negativePrompt:
-      'identity drift, different face, changed pose, extra limbs, plastic skin, mismatched jacket lighting, warped eyes, visible edit boundary',
+      'identity drift, different face, changed hairstyle, missing copper streak, changed pose, changed hands or microphone, extra fingers, extra limbs, plastic skin, changed ship position, enlarged ship, sharp ship, changed horizon, changed rocks or water, moved practical lights, translucent clothing, neon, armor, cyberpunk, illustration, mismatched jacket lighting, malformed seams, warped eyes, visible edit boundary, text, watermark',
   },
   qwen_edit_strength_sweep: {
     prompt: [
@@ -810,29 +1208,32 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   },
   reference_fusion: {
     prompt: [
-      'Fuse the references into a single hero image of a sculptural lounge chair for a boutique hotel lobby.',
-      'Use reference one for the chair silhouette and proportions, reference two for the material language: ribbed olive velvet, smoked oak arms, brushed steel feet, and warm lobby lighting.',
-      'Keep one coherent object, realistic scale, elegant negative space, and commercial furniture-photography polish.',
+      'Create one photorealistic furniture campaign by fusing two references with explicit roles. Input 1 defines the immutable lounge-chair identity: low curved back flowing into both arms, deep seat, walnut outer shell, four short splayed feet, complete proportions and front three-quarter view. Input 2 defines only the cobalt vitreous-enamel and champagne-aluminum surface language.',
+      'Preserve Input 1’s chair silhouette, ergonomic seams, seat depth, arm thickness, walnut rear shell and all four mechanically attached feet. Apply deep cobalt enamel only to two inset outer-arm panels and use brushed champagne aluminum only on the four feet and their small mounting plates. Keep the main seat and inner back in understated charcoal wool so the chair remains usable; do not coat cushions in hard enamel.',
+      'Place the single complete chair in a quiet sunlit rammed-earth hotel reading room with one tall arched opening, pale terrazzo floor and no other furniture. Use a 70 mm eye-level camera, warm side light, cool fill, an accurate grounded shadow, fine wool fibers, walnut pores, enamel depth, directional metal grain and restrained editorial negative space.',
+      'Output one coherent manufactured chair photographed in a real interior. No second chair, floating feet, changed silhouette, melted join, full-metal cushion, generic studio cyclorama, arbitrary neon, text, logo, person or decorative clutter.',
     ].join(' '),
     negativePrompt:
-      'mixed identities, two separate chairs, mismatched perspective, material confusion, cluttered lobby, floating legs, low detail',
+      'changed chair silhouette, two chairs, missing foot, floating leg, broken arm join, enamel cushion, all-metal seat, mismatched perspective, material confusion, glossy plastic wool, cluttered room, arbitrary neon, text, logo, person, low detail',
   },
   qwen_multi_reference_product: {
     prompt: [
-      'Create one coherent product image for the fictional folding headphones Vela Arc using three references.',
-      'Reference one defines the headphone shape and hinge placement, reference two defines brushed graphite metal and soft oat fabric, and reference three defines the minimal campaign lighting style.',
-      'Preserve the product silhouette, hinge logic, cushion scale, material finish, and believable studio reflections.',
+      'Create one photorealistic catalog finish-transfer photograph using two references with strict roles. Input 1 defines the immutable full-size road-touring bicycle geometry and studio camera: two equal 700C wheels, complete double-triangle frame, fork, compact drop handlebar with two brake hoods, saddle, front disc brake, crank, chain, rear cassette, derailleur and connected pedal pair. Input 2 defines only the deep cobalt vitreous-enamel finish, narrow polished bevel and brushed champagne-aluminum grain.',
+      'Preserve Input 1’s wheel diameter, wheelbase, straight frame tubes, frame-triangle topology, fork alignment, handlebar, brake and drivetrain layout, side three-quarter camera, neutral warm-gray sweep, ground line and clean margins. Apply deep cobalt enamel only to the steel frame and fork; use brushed champagne aluminum only for both wheel rims, crank, hubs and small fittings; retain black rubber tires, dark leather saddle and dark handlebar tape.',
+      'Add exactly one intentional down-tube wordmark: VELA. Render the four adjacent uppercase letters VELA as one uninterrupted word in a geometric sans-serif, reading left to right along the down tube. Use no hyphen, dash, dot, punctuation, gap, separator or extra mark between any letters. Both black tire sidewalls may retain only a pair of short symmetric non-letter reflective registration dashes; they must contain no readable characters. No other letters, numbers, logo, badge or symbol anywhere. Keep the complete bicycle fully visible at eighty-five to ninety-six percent of the image width, both tires on the same ground line, both wheels differing in apparent diameter by no more than eight percent, and all components physically connected.',
+      'Output one believable premium bicycle catalog photograph with controlled reflections, readable spokes, realistic tire compression and fine studio grain. No duplicate bicycle, extra wheel, oval wheel, bent frame, broken fork, impossible chain, floating pedal, cropped tire, display plinth, loose hardware, person, scenery, random text, arbitrary neon or illustration.',
     ].join(' '),
     negativePrompt:
-      'broken hinges, changed product silhouette, conflicting materials, extra earcups, bad perspective, clutter, unreadable brand mark',
+      'person, rider, duplicate bicycle, extra wheel, unequal wheels, oval wheel, bent frame, missing frame tube, broken fork, impossible chain, extra crank, floating pedal, cropped tire, readable tire-sidewall text, tire brand, tire label, V-ELA, V ELA, misspelled VELA, hyphen inside VELA, punctuation inside VELA, separator inside VELA, extra letters, extra words, numbers, logo, badge, symbol, enamel tires, display plinth, loose hardware, scenery, arbitrary neon, illustration, low detail',
   },
   qwen_inpaint_mask_draft: {
     prompt: [
-      'Inside the mask only, replace the selected chipped ceramic mug with a matte black thermal cup labeled "EMBER ROUTE".',
-      'Match the surrounding desk perspective, contact shadow, rim highlights, scale, and warm window light while keeping every unmasked object, hand, background edge, and table texture conceptually unchanged.',
+      'Inside the mask only, repaint the existing cream enamel surface of the same mug in muted dark burgundy vitreous enamel. Do not generate a new mug. Preserve its exact outer silhouette, rim diameter, body width, height, base footprint, handle position, handle opening, and full occupancy of the original object area. This is a color-and-surface edit only: do not shrink, narrow, move, duplicate, replace, or place anything behind or beneath the mug.',
+      'Retain the existing dark-green rolled rim and the existing handle geometry. Give the burgundy enamel a believable slightly uneven fired surface, two or three pinhead cream flecks, restrained soft highlights, and subtle wear only on the exposed rim edge. Keep the front completely unbranded and text-free; add no badge, logo, symbol, lettering, decorative image, lid, saucer, coaster, pad, paper, cloth, shadow-card, backdrop, straw, cable, grip band, rubber base, or separate accessory.',
+      'Match the field-desk perspective, grounded contact shadow, believable mug scale, neutral morning daylight, and warm canvas bounce. Preserve the field notebook, pencil, basalt samples, folded map, tent seams, support pole, open flap, background edges, crop, focus, and every unmasked table texture unchanged; blend the feathered mask edge without a dark or bright halo.',
     ].join(' '),
     negativePrompt:
-      'changed unmasked area, visible mask boundary, wrong object scale, floating cup, inconsistent texture, warped label, altered hand',
+      'changed unmasked area, rectangular patch, dark patch behind mug, bright patch behind mug, visible mask boundary, shrunken mug, narrowed mug, wrong object scale, moved mug, floating mug, duplicate mug, changed silhouette, inconsistent texture, broken rim, warped handle, grip band, rubber base, text, badge, logo, symbol, lid, saucer, cloth, backdrop, straw, cable, clock, watch, dial, altered notebook, map, rocks or tent',
   },
   layer_decomposition: {
     prompt: [
@@ -853,98 +1254,121 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   },
   qwen_outpaint_draft: {
     prompt: [
-      'Extend the source bookstore portrait into a wider cinematic frame while keeping the original person, book stack, facial identity, camera height, lens perspective, and warm practical lighting unchanged.',
-      'Generate believable new shelving, aisle depth, ceiling lamps, paper texture, and soft background activity outside the original borders, matching grain, color temperature, and shadow direction.',
-      'Blend across the boundary with a narrow seam: no duplicated face, no stretched books, and no changes to the original central crop.',
+      'Extend the source documentary bakery photograph into a wider editorial frame while keeping both bakers, their anatomy, white workwear, the long shaped dough, central wooden bench, brick oven, fire, camera height, lens perspective, depth of field, and mixed cool-window and warm-fire light unchanged.',
+      'Generate only plausible continuation outside the original borders: more of the same flour-dusted timber bench, a restrained brick wall and tall blue-hour window on the left, and the oven masonry plus one dark preparation shelf on the right. Match brick courses, bench thickness, floor line, grain, color temperature, focus falloff, smoke haze, and shadow direction. Add no people, loaves, signs, clocks, lamps, cables, or decorative props.',
+      'Blend both boundaries with narrow invisible seams. Keep the two original bakers at their existing scale and positions; do not duplicate limbs, repeat tools, stretch the bench or oven, mirror the fire, or alter the square source region beyond the feathered overlap.',
     ].join(' '),
     negativePrompt:
-      'repeated shelf edges, broken perspective, stretched subject, mismatched lighting, duplicated face, changed central crop, obvious fill artifacts, noisy border',
+      'extra person, duplicate baker, extra limb, malformed hand, duplicated dough, repeated tool, stretched bench, bent brick courses, mirrored fire, mismatched lighting, changed central crop, obvious seam, border haze, sign, letters, clock, lamp, cable, decorative clutter',
   },
   low_vram: {
     prompt: [
-      'Generate a restrained concept render of a modular desk lamp named Kepler Pin with one circular brass shade, a slim charcoal stem, weighted stone base, and soft pool of light on a small writing desk.',
-      'Keep the scene simple for low-VRAM execution: one subject, minimal props, stable silhouette, realistic materials, and no readable text.',
+      'Create a cinematic industrial-design story frame for Kepler Pin, a modular desk lamp used in a compact architect studio during a rainy blue-hour evening.',
+      'Hero design: one circular brushed-brass shade, slim charcoal stem, weighted speckled-stone base, precise hinge hardware, braided black cable, and a warm pool of light grazing an open folded blueprint.',
+      'Build clear foreground, midground, and background depth without adding another hero object: cropped drafting pencils and tracing-paper curls in the foreground, the lamp on a worn walnut desk in the midground, and softly blurred material samples, pinned sketches, and rain-streaked windows behind it.',
+      'Use a low eye-level 50 mm three-quarter view, warm practical light against cool window ambience, believable brass anisotropy, stone pores, paper fibers, contact shadows, subtle reflections, and restrained film grain. Keep geometry stable and render no readable text.',
     ].join(' '),
     negativePrompt:
-      'extra lamps, cluttered desk, noisy shadows, melted brass shade, weak silhouette, low quality, blurry render',
+      'extra lamps, competing hero objects, chaotic clutter, readable writing, noisy shadows, melted brass shade, broken hinge, floating base, weak silhouette, flat catalog lighting, blurry render',
   },
   fast_lora: {
     prompt: [
-      'Use the selected LoRA style to render a fictional courier helmet named Relay Nine on a plain museum plinth.',
-      'Preserve a clean front three-quarter product angle, graphite shell, amber visor strip, small vent details, and a repeated style signature across the contact sheet without changing the helmet design between tiles.',
+      'Create one premium industrial-design hero photograph of a fictional courier helmet named Relay Nine. Show one complete helmet only, centered in a confident helmet-left three-quarter view on a low warm-gray museum plinth.',
+      'Product identity: compact graphite shell, a continuous narrow amber visor strip, brushed-titanium lower rim, three small rear cooling slots, and one flush circular comms port on the visible side. Keep the helmet physically plausible, wearable, and free of branding, text, or decorative controls.',
+      'Use a chest-height 70 mm product camera, a soft overhead rectangular key, a narrow cool rim, realistic graphite microtexture, restrained amber transmission, titanium anisotropy, precise seams, a grounded contact shadow, and the pinned realism-LoRA finish. Keep the background quiet and the full silhouette unobstructed.',
     ].join(' '),
     negativePrompt:
-      'style drift, different helmet shapes, overprocessed texture, clutter, low detail, broken visor, noisy adapter artifacts',
+      'contact sheet, multiple helmets, duplicate product, cropped helmet, changing shell proportions, extra visor, extra vents, invented controls, text, logo, label, overprocessed texture, clutter, low detail, broken visor, floating product, noisy adapter artifacts',
   },
   high_quality: {
     prompt: [
-      'Create a final hero image of an indoor botanical observatory at dawn: glass geodesic roof, suspended mist nozzles, rare blue orchids, wet stone walkway, and a lone curator in a cream coat for scale.',
-      'Use refined global illumination, crisp plant detail, controlled depth of field, elegant composition, and a polished high-end editorial finish.',
+      'Create a photorealistic documentary editorial image inside a century-old neighborhood bakery during the first production hour before sunrise.',
+      'Show one experienced baker in plain white work clothes shaping a long row of sourdough loaves on a scarred beech bench, with a second worker naturally blurred near the brick oven. Hands, tools, flour, dough weight and body posture must be anatomically and physically believable.',
+      'Use a chest-height 35 mm camera from the end of the bench, warm practical oven light balanced by cool blue window light, real flour dust in the air, worn tile, linen cloth, steel trays and subtle steam. Preserve documentary imperfection, natural skin texture and realistic depth rather than symmetrical fantasy staging.',
+      'The result must resemble a high-end real-location magazine photograph: no conservatory, orchids, cream overcoat, centered mannequin pose, CGI surfaces, theatrical spotlights or rendered text.',
     ].join(' '),
     negativePrompt:
-      'muddy foliage, distorted anatomy, overgrown clutter, warped glass roof, compression artifacts, soft focus, oversaturated colors',
+      'conservatory, greenhouse, orchids, curator, cream overcoat, CGI render, illustration, animated look, plastic skin, extra fingers, distorted hands, floating tools, duplicated bread, impossible oven, theatrical spotlights, oversaturated colors, soft focus',
   },
   wan_vace_cinematic_text_to_video: {
     prompt: [
-      'Shot objective: a continuous five-second cinematic night shot of one glass commuter train crossing a rain-soaked neon district; no cuts or scene changes.',
-      'Opening beat: begin low at curb height on a 35 mm lens, train nose entering from frame left while rain dimples a wet foreground puddle and a cyclist waits under a dark awning.',
-      'Motion and camera: the train glides left to right at constant believable speed while the camera performs a smooth parallel dolly, then eases slightly behind during the final second. Wheel motion, interior passengers, hanging straps, rain streaks, mist, and reflected signage move at coherent relative speeds with natural inertia.',
-      'Continuity: keep the same train body, car count, window spacing, route display, passenger identities, street geometry, and screen direction across every frame. No teleporting, morphing, reversal, or sudden acceleration.',
-      'Look and ending: cold blue overhead rain, warm amber carriage light, restrained magenta signs, stable exposure, realistic motion blur, shallow atmospheric depth, wet asphalt reflections. End with the last illuminated carriage clearing center frame while its reflection trails into the puddle.',
+      'Create one five-second photographic documentary shot of an approaching storm crossing volcanic highlands.',
+      'A shoulder-height camera tracks rapidly beside wind-bent silver tussock grass on an exposed upland trail; close stalks sweep both card edges while full-field gust waves and a dark rain curtain advance across stable distant hills.',
+      'Use restrained natural color, soft storm daylight, realistic motion blur, stable geology and plausible rain and plant dynamics. No people, animals, buildings, vehicles, lightning bolts, fantasy color, corrupted dark bands or static-image hold.',
     ].join(' '),
     negativePrompt:
-      'static frame, flicker, camera jitter, temporal inconsistency, warped train cars, changing car count, changing window rhythm, reversed motion, sliding wheels, teleporting passengers, frozen rain, frame tearing, unstable exposure, oversaturated neon, unreadable crawling text, unrequested cuts, watermark',
+      'static camera, frozen frame, erratic camera, abrupt pan, zoom, cut, moving horizon, terrain geometry drift, warped geology, duplicated ridge, fog popping, flicker, frame tearing, exposure pumping, fake lightning, oversaturated color, illustration, animation, watermark',
+  },
+  ltx_video_text_to_video: {
+    prompt:
+      'Five-second photoreal single take through a mountain train’s front window in rain. The camera moves rapidly forward from frame one above two straight wet rails. Sleepers rush out beneath the lens; close pine trunks and blank signal posts sweep backward past both edges; raindrops streak upward on the glass; a stone tunnel grows steadily ahead. Keep rail spacing, horizon, forest depth and forward direction stable. Natural overcast light. No exterior train, people, station, writing, cut, zoom, warped track, reversal, freeze or animation.',
+    negativePrompt: '',
+  },
+  ltx_video_image_to_video: {
+    prompt:
+      'Ten-second photoreal rally follow-pan from the supplied still. Motion begins immediately: the white classic car accelerates across the foreground and clears frame center before second three, throwing one coherent fan of tire spray. At frame center the roadside camera pans decisively right with the car, sweeping road markings and guardrail posts across more than half the frame, then holds the car as it rapidly recedes around the upper-right bend. Preserve body, four wheels, lamps, road contact and scale. Natural rotation and blur; no hold, collision, morphing or text.',
+    negativePrompt: '',
+  },
+  ltx_video_video_to_video: {
+    prompt:
+      'Photoreal generative remaster of the supplied rocket launch. Improve fine edge clarity, smoke detail, natural tonal separation and stable compression while preserving the exact event. Keep the same rigid white rocket, nose cone, body diameter, vertical trajectory, camera, sky, terrain and plume timing. The rocket rises continuously and stays fully visible. No restyle, extra booster, bent body, duplicate rocket, explosion, altered flight path, writing, logo, flicker, cut or static hold.',
+    negativePrompt: '',
+  },
+  ltx_video_multi_reference: {
+    prompt:
+      'Five-second photoreal stabilized run between the supplied coastal boardwalk keyframes. Move forward immediately and evenly: wet plank seams stream under the lens, opening posts pass behind camera, new right rope posts sweep past, and grass bends left in wind. Preserve one connected walkway, ocean left, cliff right, cold storm light, rain, scale and perspective. Reach the closing view gradually through real parallax. No hold, late jump, dissolve, zoom-only motion, mirrored coast, duplicated posts, people, text, illustration or CGI.',
+    negativePrompt: '',
   },
   wan_vace_animate_product_still: {
     prompt: [
-      'Task: animate the supplied AsterMist product still into one continuous five-second luxury tabletop film without redesigning or physically rotating the bottle.',
-      'Source lock: preserve exact bottle silhouette, glass thickness and lavender tint, liquid level, atomizer, dip tube, label rectangle, the words "ASTERMIST" and "LAVENDER SLEEP SPRAY", limestone surface, background palette, and product position in every frame.',
-      'Camera timeline: start at the source framing on an 85 mm product lens, perform a slow ten-degree clockwise orbit with a subtle five-percent push-in, then settle into a steady final hero frame. Keep horizon and camera height constant; motion must ease in and out without handheld shake.',
-      'Secondary motion and light: a narrow softbox reflection travels slowly across the curved glass, two condensation beads descend naturally, a faint lavender vapor ribbon drifts behind the bottle, and the contact shadow remains grounded. Maintain stable key/fill direction, material refraction, label legibility, exposure, and background.',
-      'End state: finish with the front label nearly square to camera and fully readable, no cut, morph, logo crawl, or added prop.',
+      'Task: animate the supplied landscape still of a sparkling lemon drink into one continuous two-second fixed-camera editorial food film.',
+      'Source lock: preserve the exact tumbler height and rim ellipse, pale liquid level, lemon wheel attached at the upper-right rim, every ice cube, the diagonal rosemary sprig to the right of the base, weathered café table, background planters, crop, lens perspective, and every object scale and position.',
+      'Motion and light: keep the camera locked while fine carbonation bubbles rise through the drink, one condensation bead descends naturally on the outside of the glass, the rosemary tips move once in a faint breeze, and existing leaf shadows shift subtly across the table. Preserve physically plausible refraction, contact shadow, exposure, and daylight direction.',
+      'End state: finish with the glass at exactly the starting scale and position, grounded on the table, with the same single lemon wheel and every ice cube intact; no cut, morph, camera move, added fruit, or disappearing ice.',
     ].join(' '),
     negativePrompt:
-      'static frame, bottle rotation, identity drift, warped bottle, changing atomizer, changing liquid level, misspelled label, label crawling, duplicate product, floating base, flicker, camera jitter, inconsistent reflections, frozen condensation, rubbery glass, unrequested cut, low detail',
+      'static frame, camera movement, zoom, scale drift, warped glass, changing rim, changing liquid level, changing lemon shape, extra fruit, duplicate glass, floating base, disappearing ice, flicker, inconsistent reflections, frozen bubbles, rubbery glass, unrequested cut, text, logo, watermark, low detail',
   },
   wan_vace_video_color_grade: {
     prompt: [
-      'Task: apply a restrained amber-and-teal finishing grade to the complete source video; this is a color and tone edit only, not a content regeneration.',
-      'Preservation contract: keep every face and identity, expression, lip movement, body motion, wardrobe, prop, object position, camera path, crop, lens perspective, scene geometry, cut point, timing, and motion blur unchanged from first frame to last.',
-      'Grade design: protect believable skin hue and highlight detail, warm practical lamps toward soft amber, move deep environmental shadows toward muted cyan, lower distracting green casts, add a gentle filmic contrast curve, retain black detail, and keep neutral objects neutral. Match grain and compression texture rather than smoothing the source.',
-      'Temporal behavior: exposure, white balance, saturation, and local contrast must evolve smoothly through camera moves and existing cuts; prevent frame-wise pumping, halos around moving subjects, or color crawling in shadows.',
-      'Output contract: same source video and action with a cohesive premium grade, no new objects, altered wardrobe, face changes, relighting geometry, crushed blacks, clipped lamps, or oversaturated skin.',
+      'Task: apply a cool high-speed materials-laboratory grade to the complete supplied hydraulic compression test; this is a color-and-tone finish only, not content regeneration.',
+      'Preservation contract: keep the exact steel press, red test cylinder, circular platens, green safety wall, compression timing, deformation, fragments, locked camera, crop and motion blur unchanged from first frame to last.',
+      'Grade design: render machined steel neutral and crisp, keep the specimen safety red, mute the green wall, cool the shadows slightly, protect bright metal highlights and retain detail inside the crushed material. Do not invent gauges, hands, labels, tools or another specimen.',
+      'Temporal behavior: exposure, white balance, saturation and local contrast must remain continuous as the press descends and the specimen fails; prevent pumping, edge halos or color crawling around fragments.',
+      'Output contract: the identical compression action with a clearly cooler premium laboratory finish, stable machine geometry and natural material color; no geometry changes, crushed blacks, clipped steel, cyan metal or oversaturation.',
     ].join(' '),
     negativePrompt:
-      'content changes, identity drift, changed expression, altered lip motion, moved objects, changed camera path, flicker, exposure pumping, color crawling, temporal halos, warped motion, frame tearing, orange skin, cyan skin, crushed shadows, clipped practical lights, oversaturation, plastic denoise, watermark',
+      'content regeneration, changed press geometry, changed platen diameter, duplicate cylinder, moved machinery housing, invented gauge, hand, person, label, changed camera path, flicker, exposure pumping, color crawling, temporal halo, warped motion, frame tearing, cyan steel, oversaturated red, crushed shadows, clipped metal highlights, plastic texture, watermark',
   },
   wan_vace_masked_object_replace: {
     prompt: [
-      'Mask task: throughout the source clip, replace only the tracked masked object with one compact silver field briefcase; the mask defines editable pixels and every unmasked person, prop, surface, and background edge remains unchanged.',
-      'Replacement identity: low rectangular case with rounded aircraft-aluminum corners, two graphite latches, one black folding handle, shallow horizontal ribs, consistent dimensions, and no logo or readable text. Preserve that exact construction through occlusion and camera-angle changes.',
-      'Temporal integration: bind the case to the original object trajectory with believable weight, inertia, hand contact, floor contact, motion blur, and partial occlusion. Match source lens perspective, focus, grain, key-light direction, highlight travel, reflection color, contact shadow, and ambient spill on every frame.',
-      'Boundary behavior: slightly feather the moving mask, reconstruct background only where the old object is revealed, and prevent texture drag or halo trails. Do not modify fingers crossing the mask, faces, clothing, camera movement, timing, or sound-implied action.',
-      'End state: the same single case exits or settles exactly where the source object does, with no shape drift, popping latches, mask bleed, or frame-to-frame redesign.',
+      'Mask task: throughout the supplied product-orbit clip, replace only the square glass vessel inside the mask with one translucent amber vessel; preserve every unmasked stone edge, tabletop, background, cast-shadow direction, camera orbit, crop and timing.',
+      'Replacement identity: one rigid open-top square vessel with the source rim opening, wall thickness, base thickness, height, width and grounded position. Use warm amber glass with restrained refraction and no label or text.',
+      'Reference authority: use the supplied amber-vessel image for color, material, rim, corner and base identity while the source video remains authoritative for scale, pose, camera orbit and surrounding scene.',
+      'Temporal integration: preserve the exact orbit and apparent scale while reflections travel continuously around four stable faces. Keep the same single amber vessel from first frame to last; do not inherit the source green-to-blue color transition.',
+      'Boundary behavior: feather only the mask edge and prevent halo trails, texture drag, color spill or changes outside the mask. The pale stone slab must remain rigid and fully connected beneath the vessel.',
+      'End state: one amber square vessel remains grounded with unchanged proportions, rim, base and contact shadow; no mask bleed, duplicate, melting corner, frame-wise redesign or floating object.',
     ].join(' '),
     negativePrompt:
-      'mask bleed, changed unmasked pixels, edge halo, texture drag, background smear, flicker, camera jitter, inconsistent briefcase shape, changing latch count, floating case, sliding contact, broken hand occlusion, wrong motion blur, reflection popping, temporal noise, low detail',
+      'mask bleed, changed unmasked pixels, edge halo, texture drag, color spill, flicker, camera jitter, changing vessel shape, closed rim, floating vessel, wrong scale, duplicate object, melting corner, reflection popping, text, temporal noise, low detail',
   },
   wan_vace_outpaint_reframe: {
     prompt: [
-      'Canvas task: extend the source clip laterally into a wider cinematic frame while treating the complete original frame as immutable center content.',
-      'Preservation contract: keep original subject identity and motion, camera path and shake profile, horizon, vanishing lines, lens distortion, focus, exposure, color temperature, grain, timing, and every central pixel conceptually unchanged.',
-      'New side content: continue the same industrial architecture with plausible beams, wet concrete, receding service corridors, sparse practical lights, rain haze, and floor reflections. Geometry must connect through the old borders with correct parallax and occlusion; newly revealed areas should respond to the same camera movement and light sources.',
-      'Temporal behavior: background landmarks remain fixed in world space, reflections move consistently with viewpoint, rain crosses the seam continuously, and no edge texture repeats from frame to frame. Blend with a narrow stable transition rather than a soft vertical smear.',
-      'Output contract: one coherent wider shot ending with matching architecture on both sides, no duplicated subject, stretched center, perspective break, flicker, border crawl, or exposure mismatch.',
+      'Canvas task: extend the supplied moving orange laboratory-robot clip laterally into a wider workcell view while treating the complete center strip as immutable source content.',
+      'Preservation contract: keep the exact orange arm, joints, cables, gripper, blue-capped vial, orange rack, black bench, white wall, camera, timing and center perspective unchanged.',
+      'New side content: continue the same bench and white safety enclosure through both boundaries, adding only plausible fixed cable routing and the cropped edges of the existing workcell. Match lens perspective, scale, neutral light and contact shadows.',
+      'Temporal behavior: generated side panels remain spatially locked while the preserved robot completes its reach. Both vertical seams remain stable and invisible through the full action.',
+      'Output contract: one coherent wider robotics workcell; no extra arm, duplicate gripper, duplicated vial, mirrored bench, stretched center, perspective jump, frozen seam, flicker, border crawl, person or text.',
     ].join(' '),
     negativePrompt:
-      'changed central frame, repeated borders, mirrored architecture, stretched subject, duplicate subject, warped perspective, broken parallax, crawling seam, frozen reflections, flicker, mismatched lighting, exposure pumping, smeared rain, unstable geometry, low detail',
+      'changed central frame, repeated borders, mirrored forest, stretched rail, warped perspective, broken parallax, crawling seam, frozen side panel, flicker, mismatched lighting, exposure pumping, smeared sleepers, text, unstable geometry, low detail',
   },
   wan_vace_reference_motion: {
     prompt: [
-      'Shot objective: create one five-second cinematic gallery-walk shot using the supplied reference images as the immutable identity and wardrobe guide for the same subject.',
+      'Shot objective: create one continuous two-second cinematic gallery-walk shot using the supplied reference images as the immutable identity and wardrobe guide for the same subject.',
       'Identity lock: preserve face proportions, hairstyle, age, skin tone, coat silhouette, fabric color, shoes, accessories, and body proportions across all frames; do not average references into a new person.',
-      'Timeline and blocking: open on a medium-wide rear three-quarter view as the subject walks naturally between two large stone sculptures, then arc gently to a side profile while the subject turns their head toward a skylight, ending on a calm medium shot. Maintain left-to-right screen direction, grounded footsteps, arm swing, cloth inertia, and realistic weight transfer.',
-      'Camera and environment: stabilized 50 mm gimbal push-in at chest height, slow consistent speed, soft overcast skylight, warm gallery practicals, subtle polished-floor reflections, stable sculpture positions, shallow atmospheric depth, and no cut.',
+      'Timeline and blocking: hold one medium-wide side three-quarter view while the subject takes exactly two natural steps from left to right between two large stone sculptures and makes one small upward glance toward a skylight. Preserve the same framing and body scale from start to finish, with grounded foot plants, modest arm swing, cloth inertia, and realistic weight transfer.',
+      'Camera and environment: nearly locked chest-height 50 mm camera with only a subtle stabilized forward drift, soft overcast skylight, warm gallery practicals, restrained polished-floor reflections, stable sculpture positions, shallow atmospheric depth, and no cut or camera arc.',
       'Continuity contract: face, wardrobe, gallery layout, lighting direction, walking cadence, and reflection behavior remain coherent with no sliding feet, pose reset, morphing profile, background teleport, or camera jitter.',
     ].join(' '),
     negativePrompt:
@@ -952,14 +1376,14 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
   },
   wan_vace_grayscale_control: {
     prompt: [
-      'Control task: render the supplied grayscale control video as a realistic dawn harbor while following its geometry, silhouettes, timing, depth changes, subject trajectories, and camera path frame for frame.',
-      'Control roles: let the grayscale clip determine edges, object placement, scale, motion, and occlusion. Use the text only for appearance: wet concrete quay, weathered fishing boats, dark wool coats on moving figures, coiled rope, pale mist, and a cold steel-blue harbor palette warmed by a thin orange horizon.',
-      'Camera and motion: preserve the control clip lens perspective, screen direction, speed, and any pan or dolly exactly. Water ripples, coat hems, rope ends, exhaust haze, and reflections may add subtle physically plausible secondary motion without displacing controlled silhouettes.',
-      'Lighting and continuity: low sunrise from the horizon, cool skylight fill, long soft reflections, stable material texture, coherent parallax, and gradual atmospheric depth. Maintain the same boat count, figure identities, dock structure, and exposure across the full shot.',
-      'Output contract: polished live-action realism that never drifts from the control structure; no new foreground subjects, broken silhouettes, frozen motion, flicker, camera deviation, or changing harbor layout.',
+      'Control task: reconstruct the supplied moving grayscale street segmentation clip as a photoreal protected urban cycle-lane point-of-view while following every curb, paving boundary, parked scooter silhouette, tree, façade, timing and camera movement frame for frame.',
+      'Control roles: let the grayscale clip determine geometry, scale, forward travel and occlusion. Use text only for real materials and light: pale concrete cycle lane, red-brown brick sidewalk, dark asphalt, a parked black scooter at the right curb, leafy street trees and warm clear-morning sunlight.',
+      'Camera and motion: preserve the exact low forward point of view. Near paving seams and curb edges move beneath the camera while the distant street grows continuously; the parked scooter passes the right edge according to the control sequence.',
+      'Lighting and continuity: keep natural exposure, stable horizon, crisp lane boundaries and layered parallax across the full ride. Shadows remain attached to their objects and move only with the source camera.',
+      'Output contract: one believable real city cycling-lane inspection with obvious forward travel; no static hold, moving parked scooter, changing curb layout, flicker, camera reversal, lettering, illustration or synthetic render.',
     ].join(' '),
     negativePrompt:
-      'ignored control video, motion drift, camera-path deviation, broken edges, unstable silhouettes, changing boat count, changing dock geometry, extra foreground figures, frozen water, sliding reflections, flicker, jitter, exposure pumping, oversaturated sunrise, cartoon materials, low detail, watermark',
+      'ignored control video, motion drift, camera-path deviation, broken rail, unstable silhouette, changing track count, frozen mist, reversed travel, shrinking tunnel, flicker, jitter, frame tear, illustration, animation, synthetic render, text, low detail, watermark',
   },
   ace_step_text_to_audio: {
     prompt: MODIFF_AUDIO_PROMPT,
@@ -977,31 +1401,82 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
     prompt: MODIFF_AUDIO_REPAINT_PROMPT,
     negativePrompt: '',
   },
+  ace_step_chinese_new_year_lora: {
+    prompt: 'chinese traditional music, erhu solo, peaceful and elegant',
+    negativePrompt: '',
+  },
+  ace_step_custom_lora: {
+    prompt:
+      'Original cinematic folk song shaped by the selected personal style adapter, intimate lead vocal, fingerpicked acoustic guitar, bowed strings entering in the chorus, restrained hand percussion, clear verse and chorus structure, natural performance timing, detailed balanced mix.',
+    negativePrompt: '',
+  },
   flux_schnell_text_to_image: {
     prompt: [
-      'Create a fast but professionally directed campaign image for Vanta One, a compact modular cinema camera designed for documentary crews.',
-      'Product design: one matte-black magnesium body with a centered circular lens mount, ribbed focus ring, one amber tally light, vent slots, two precise side buttons, subtle edge wear, and a readable functional silhouette; do not invent a second camera, extra lens, screen, logo, or controls.',
-      'Composition and camera: low front three-quarter hero view on a 65 mm lens, product placed on the left third of a rain-dark concrete plinth, lens mount sharp, shallow falloff toward a quiet charcoal background, and generous negative space to the right for later copy.',
-      'Lighting and finish: large cool softbox from upper left, narrow warm rim from behind, realistic black-metal highlight rolloff, crisp rain beads, grounded contact shadow, one restrained reflection in the wet plinth, high-contrast commercial color grade, no warped geometry, muddy reflections, stock-photo clutter, or rendered text.',
+      'Create a photorealistic editorial landscape photograph of coastal conservation work after a rain shower on a windswept Atlantic headland.',
+      'Show an experienced dry-stone mason in a mustard rain shell and navy work trousers repairing one storm-damaged field wall. The mason kneels side-on with both gloved hands setting one flat gray slate into a clear gap; the wall is built from irregular local stone laid in stable overlapping courses with visible through-stones and small packing stones, never mortar or impossible balancing rocks.',
+      'Build a detailed working foreground around the repair: a wooden wheelbarrow holding sorted slate, one canvas tool roll with a mason hammer and two chisels, a taut yellow string line between short stakes, a folded waterproof site plan, muddy boot prints, and separate neat piles of large face stones and small packing stones. Every tool rests naturally and the worker has believable anatomy, grip, weight and ground contact.',
+      'Use a natural eye-level 35 mm camera from the wet footpath. Let the repaired wall lead diagonally from the near left toward the worker at center, with rough grass, a distant white cottage, layered sea cliffs and gray Atlantic water receding on the right. Keep the horizon level and the perspective documentary rather than heroic.',
+      'Use cool late-afternoon overcast light with one weak sun break catching wet slate edges, believable water-darkened stone and fabric, restrained reflections, natural gray-green color, fine documentary grain, and no signs, letters, logos or rendered text.',
     ].join(' '),
     negativePrompt: '',
   },
   flux_dev_expert_text_to_image: {
     prompt: [
-      'Editorial objective: visualize a credible glass greenhouse capsule suspended two meters above a calm alpine lake at blue-gold dawn, balancing ecological engineering with quiet surrealism.',
-      'Architecture: one elongated faceted capsule with a thin oxidized-brass frame, curved low-iron glass, visible structural ribs, a narrow maintenance door, hanging irrigation lines, and dense but individually readable ferns and rare blue orchids inside. Preserve believable gravity, connections, glass thickness, and scale.',
-      'Composition and camera: wide 40 mm view from just above water level, capsule on the upper-right third, its full reflection leading toward the foreground, dark pine ridge and snow peaks receding through layered mist, one distant technician in a cream coat for scale, and clean sky negative space.',
-      'Lighting and material: cold skylight, first warm sun catching brass edges, subtle interior horticultural glow, physically plausible glass refraction and reflection, wet foliage microdetail, smooth lake ripples, restrained cyan-amber palette, fine editorial grain. Exclude warped framing, impossible supports, duplicated capsule, melted plants, noisy fog, clipped highlights, oversaturated color, and generic fantasy clutter.',
+      'Create a high-end documentary photograph inside a working coastal aircraft-restoration hangar during a winter rainstorm.',
+      'Show one experienced mechanic inspecting the exposed radial engine of a 1940s aluminum seaplane. Frame the aircraft nose, engine, near wing root and both pontoons while the tail continues naturally outside the square crop. The aircraft rests on locked maintenance stands with both pontoons grounded, and every hose, cylinder, fastener and tool has believable mechanical scale and attachment.',
+      'Compose a wide chest-height 35 mm view through a partially open hangar door, with rain streaks and the gray harbor outside, the mechanic and engine on the right third, a rolling tool chest and oil-stained work mat in the foreground, and timber roof trusses receding into depth. Preserve natural anatomy, safe working posture and clear spatial layers.',
+      'Use cool storm daylight balanced by warm overhead shop lamps, realistic oxidized aluminum, wet concrete reflections, worn cotton coveralls, restrained color and fine editorial grain. Keep the fuselage completely unlettered: no decal, serial, writing, emblem, symbol or logo. No floating parts, invented aircraft geometry, duplicate person, plastic surface or theatrical glow.',
     ].join(' '),
     negativePrompt: '',
   },
-  flux_kontext_edit: {
+  flux_lora_cinematic_octane_3d: {
     prompt: [
-      'Source contract: preserve the original subject identity, silhouette, pose, facial features if present, object proportions, camera position, crop, perspective, background geometry, depth of field, and all readable branding.',
-      'Requested edit: change only the subject surface system into premium industrial materials—fine directional brushed graphite on rigid shells, translucent frosted glass on existing clear panels, and one narrow amber light accent following the original seam geometry. Do not add parts, remove controls, alter the outline, or move the subject.',
-      'Integration: carry the source key-light direction and exposure into the new materials; create believable anisotropic highlights on graphite, soft transmission through glass, restrained amber spill on nearby surfaces, consistent contact and cast shadows, matching grain, and unchanged occlusion.',
-      'Output must read as the same photograph after a high-end material prototype swap, with no identity drift, changed pose, bent geometry, duplicate edges, plastic metal, mismatched perspective, relit background, clutter, blur, or invented text.',
+      'cinematic_octane, 3D Portrait, 3d render of one original near-future deep-sea salvage engineer standing inside a compact pressure-dock airlock.',
+      'Show a weathered woman in her late thirties wearing a graphite diving suit with an oxidized-brass pressure collar, one transparent helmet carried under her left arm, a small scar through the right eyebrow, damp short black hair, and no logo or lettering.',
+      'Frame a vertical waist-up 50 mm portrait from slightly below eye level. Place the engineer on the right third, with a circular steel hatch, wet cable conduits, one amber maintenance lamp and a glimpse of dark ocean through a thick round window behind her.',
+      'Use cinematic Octane-style physically based materials, ray-traced reflections, restrained volumetric haze, crisp suit microtexture, realistic skin, a cool cyan environment key, warm amber rim light and deep but readable contrast.',
+      'Keep the low-strength 3D appearance subtle: premium cinematic character visualization rather than plastic toy styling. No extra person, duplicate limb, deformed hand, helmet on the head, floating equipment, readable text, watermark or franchise character.',
     ].join(' '),
+    negativePrompt: '',
+  },
+  flux_lora_ghibli_story: {
+    prompt:
+      'Ghibli style original-character story illustration on a broad rural station platform safely separated from the railway. Show two complete travelers together in the foreground: a young bicycle courier with a short chestnut bob, round brass goggles, teal rain cape, bicycle, and one red travel satchel; beside her, a visibly elderly woman station keeper with silver-gray hair, a wrinkled kind face, forest-green uniform, and her own smaller red travel case. They pause together before departure with warm, familiar expressions. Keep both people, both bags, and the entire bicycle on the platform, never on the rails. A small cream local train is stopped behind them across the platform edge. Lush mossy forest after rain, warm late-afternoon light, hand-painted cel-animation background, no existing franchise character, logo, lettering or watermark.',
+    negativePrompt: '',
+  },
+  flux_lora_oil_painting: {
+    prompt:
+      'A realistic oil painting of one weathered lighthouse keeper carrying a brass storm lantern along a cliff path at dusk, the lighthouse beam beginning to sweep across a darkening sea while a squall approaches beyond the headland. Large simple composition, one complete figure, wind-bent grass, restrained earth and ultramarine palette, strong textured brushwork, soft distant background, believable anatomy and a clear journey toward the lit doorway.',
+    negativePrompt: '',
+  },
+  flux_lora_film_noir: {
+    prompt:
+      'One exhausted night-shift radio operator discovers an urgent handwritten warning emerging from a teletype machine in an empty 1940s newsroom, one hand stopping above the paper while the other reaches for a black telephone, rain streaking the tall window and a clock approaching midnight, low Dutch camera angle, hard venetian-blind shadows, cigarette haze without a visible smoker, in the style of FLMNR, high contrast black and white, one clear dramatic decision, no modern device, logo or watermark.',
+    negativePrompt: '',
+  },
+  flux_lora_retro_comic: {
+    prompt:
+      'c0m1c style vintage 1930s comic strip panel on a city-hall rooftop: one night watchman yanks down a red emergency lever beside an enormous brass alarm bell as a meteor streaks high across the open sky toward the sleeping city below. Show the lever, bell, watchman and distant meteor as four clearly separate objects with readable cause and effect. Include exactly one large speech balloon. Inside it print exactly these three uppercase words, including the middle word: “WAKE THE CITY!” The balloon must read WAKE THE CITY!, not WAKE CITY, and no other text may appear. Bold ink contours, limited vermilion teal and cream printing, coarse halftone dots, dramatic diagonal composition, aged paper edges, no telescope, cannon, firearm, beam, extra panel, duplicated limb or watermark.',
+    negativePrompt: '',
+  },
+  flux_lora_watercolor: {
+    prompt:
+      'AQUACOLTOK watercolor painting on clean white cotton paper with exactly two complete people. On the near half of a narrow footbridge, one mountain trail engineer kneels and secures the final plank. On the far bank, one hiker stands and waits safely, fully visible and clearly separate from the engineer. Show the bridge connecting both banks, a turquoise stream below, one red survey flag and one compact tool satchel beside the engineer, and pale alpine peaks dissolving into mist. Transparent pigment blooms, confident indigo and burnt-sienna linework, generous unpainted margins, clear cause and effect, no extra people, lettering, logo or photorealistic rendering.',
+    negativePrompt: '',
+  },
+  flux_lora_paper_cutout: {
+    prompt:
+      'An original folktale scene of a small village astronomer climbing a moonlit hill to relight a fallen star lantern before dawn, layered midnight-blue hills, amber village windows, silver clouds and one winding path built from visibly cut textured paper with raised edges and soft cast shadows, Paper Cutout Style, coherent foreground middle ground and sky layers, simple readable silhouette, no existing character, text, logo or plastic 3D render.',
+    negativePrompt: '',
+  },
+  flux_lora_photoreal_documentary: {
+    prompt:
+      'A natural documentary photograph of a rural veterinarian examining an injured tawny owl inside a working wildlife rescue clinic at dawn. Show one veterinarian in plain navy scrubs supporting the owl with both gloved hands while a rehabilitator adjusts one small examination lamp, stainless worktable, folded cotton towel, transport crate and rain-dark trees visible through the window. Eye-level 50 mm lens, practical window and lamp light, realistic skin, feathers, fabric and metal, restrained color, believable anatomy and hand contact, no glamour pose, illustration, CGI, logo, text or duplicated animal.',
+    negativePrompt: '',
+  },
+  flux_kontext_edit: {
+    prompt:
+      'Edit the source photo. Keep the bottle outline, pump, label, exact ASTERMIST and LAVENDER SLEEP SPRAY text, camera, background, and shadow fixed. Change only the lavender body to brushed graphite metal, clear cap to frosted glass, and silver collar to amber metal. Match light, perspective, grain, reflections, and contact shadow. No shape drift, moved parts, duplicate edges, or misspelled text.',
     negativePrompt: '',
   },
   flux_fill_inpaint: {
@@ -1022,7 +1497,130 @@ const TEMPLATE_PROMPTS: Record<StudioTemplateId, { prompt: string; negativePromp
     ].join(' '),
     negativePrompt: '',
   },
+  flux_krea_text_to_image: {
+    prompt:
+      'Create a natural editorial portrait of one ceramic artist in a sunlit coastal workshop, hands resting beside a half-finished cobalt vase. Preserve believable anatomy, clay dust, linen texture, wood grain, and an uncluttered silhouette. Compose a waist-up 50 mm view with the artist on the right third, shelves receding softly behind, warm window key from camera left, cool skylight fill, realistic contact shadows, restrained film color, and no rendered text, duplicate hands, plastic skin, warped pottery, or stock-photo staging.',
+    negativePrompt: '',
+  },
+  flux_kontext_multi_reference: {
+    prompt:
+      'Use the first reference as the fixed ASTERMIST bottle and the second only for cobalt ceramic color, warm studio light, and tactile material. Keep the bottle silhouette, pump, label, exact text, camera, crop, and background fixed. Change only the body to brushed cobalt enamel and collar to champagne aluminum. Match source reflections, grain, focus, and shadow. Do not add the potter, pottery, objects, controls, seams, duplicate edges, or new text.',
+    negativePrompt: '',
+  },
+  flux_fill_outpaint: {
+    prompt:
+      'Outpaint only beyond the supplied source boundaries to widen the same documentary photograph of a traditional bookbinder at a workbench. Keep the complete original center image, hands, open book, bone folder, linen thread, cutting mat, bench edge, camera, exposure and focus conceptually unchanged. Continue the real workshop at both sides with asymmetric shelves of paper, one small cast-iron book press, cropped binding hand tools and natural window falloff, all at correct 50 mm perspective and scale. Match wood grain, paper texture, shadow direction, film grain and color temperature across both seams. Deliver one continuous wide photograph with the single original worker and naturally varied workshop detail.',
+    negativePrompt: '',
+  },
+  flux_depth_control: {
+    prompt:
+      'Strictly follow the supplied depth map as authoritative for the camera, boat-repair shed geometry, timber ribs, workbench positions, skiff hull, open doorway, floor plane and occlusion. Render a real working wooden-boat repair shed on an overcast morning: one partially restored clinker-built fishing skiff resting securely on two timber trestles, old structural framing, steel hand tools, two naturally coiled ropes, scattered sawdust and cool daylight entering through the open doors. Preserve every major depth boundary and vanishing line while adding only scale-compatible construction detail. Use natural documentary exposure, believable worn timber, oxidized metal, fibrous rope, grounded furniture and directional floor shadows.',
+    negativePrompt: '',
+  },
+  flux_redux_edit: {
+    prompt:
+      'Create a natural-color documentary variation of the source watchmaker photograph. Use the source as the visual reference for one elderly watchmaker, his hand-held wristwatch, dark wool cardigan, repair bench, parts drawers, north-facing window and camera on the sill. Keep these recognizable visual cues while allowing Redux to create a new coherent composition rather than claiming pixel-exact preservation. Show the watchmaker seated at one bench, examining one complete watch above a shallow tray containing a few brass gears, with tweezers and small steel tools grounded on worn wood. Use honest north-window daylight, realistic skin, wool, glass, brass and timber texture, restrained color, fine reportage grain, natural anatomy, practical object scale and one plausible 50 mm camera perspective.',
+    negativePrompt: '',
+  },
+  flux_redux_multi_reference: {
+    prompt:
+      'Wide photoreal documentary. Preserve the first reference pose: the woman courier stands beside her single complete dark city bicycle on the shoulder of the rainy underpass road, one hand holding the saddle and the other holding the handlebar. Show her full body and the entire bicycle in clean side profile with both round wheels fully visible. Preserve the bicycle mechanics from the courier reference: two brake levers, routed brake cables, one small round white front lamp mounted at the head tube, complete crankset, two crank arms and pedals, chain, fork, saddle, mudguards and rear rack. Use the second reference for unmistakable concrete columns, long wet road, ceiling beams, lights and deep vanishing point toward the bright exit. Rust-red jacket, one woman, one bicycle, natural anatomy, plausible scale and grounded contact shadows. No riding pose, duplicates, CGI, collage or text.',
+    negativePrompt:
+      'cartoon, animation, illustration, oil painting, painterly texture, CGI render, plastic skin, split screen, collage seam, duplicate person, extra limbs, malformed hands, deformed bicycle, warped wheel, broken frame, floating bicycle, impossible reflection, glowing headlamp, text, watermark',
+  },
+  flux2_klein_text_to_image: {
+    prompt:
+      'Create an editorial material-study photograph in a sunlit conservation studio. Hero subject: one hand-cast translucent cobalt glass cube with a precise silhouette, subtly irregular thick glass walls, trapped microbubbles, internal refraction, and physically accurate blue caustics. Place it on layered pale limestone and crumpled archival linen, with a cropped brass caliper and color swatch entering the far foreground as supporting scale cues, never competing subjects. Compose a low front three-quarter 70 mm view with the cube on the right third, diagonal late-afternoon window light crossing the table, a long prismatic shadow, cool reflected fill, softly receding plaster shelves, and visible dust motes. Deliver tactile stone grain, glass edge highlights, linen fibers, grounded contact, rich foreground-midground-background depth, and no labels, duplicate cubes, warped edges, blacked-out glass, floating geometry, or sterile white-cyclorama staging.',
+    negativePrompt: '',
+  },
+  flux2_klein_edit: {
+    prompt:
+      'Preserve the source cube geometry, camera angle, crop, limestone slab, background, focus, and light direction. Change only the cobalt glass to transparent emerald green glass with physically consistent transmission, refraction, highlights, and colored spill. Keep every edge and shadow anchored to the original photograph; do not add objects, reshape the cube, move the camera, replace the surface, introduce text, or alter unrelated pixels.',
+    negativePrompt: '',
+  },
+  flux2_klein_multi_reference: {
+    prompt:
+      'Use the first reference as the exact composition and geometry anchor for one worn hiking boot resting on a damp trail rock. Use the second reference only for indigo woven-canvas texture, rust-orange stitching and dark waxed-leather material evidence. Preserve the single boot silhouette, sole construction, complete lace path, camera, crop, scale, mossy rock, background focus and overcast light. Transform only the existing boot-panel materials: apply the three reference materials coherently with correct weave direction, purposeful seam placement, natural edge wear, firm contact shadow and restrained moisture. Deliver one continuous outdoor product photograph with an unchanged sole and one physically complete boot.',
+    negativePrompt: '',
+  },
+  wan_vace_video_to_video: {
+    prompt:
+      'Transform the supplied daylight clip of one cat walking left to right across grass into a photoreal rain-dark stone courtyard at blue hour. Preserve the exact same cat, coat markings, body proportions, four-leg gait, head direction, tail motion, screen path, camera, crop, timing and frame cadence. Change the environment and light clearly: replace the green lawn with wet charcoal cobblestones, add restrained warm window reflections behind the cat and a thin natural sheen beneath its paws, while keeping every paw grounded and the animal fully visible. No illustration, different cat, extra limb, missing paw, sliding foot, changing coat, puddle splash, person, text, geometry morph, flicker, frame tearing, frozen region or crawling texture.',
+    negativePrompt:
+      'changed camera path, changed motion timing, geometry drift, illustration, synthetic render, invented train, people, lettering, flicker, exposure pumping, texture crawl, frozen side region, broken rail, duplicate sleepers, unrequested cuts, watermark',
+  },
+  qwen_edit_plus_single_image: {
+    prompt:
+      'Source contract: preserve the photographed product identity, silhouette, proportions, controls, logo spelling, camera angle, crop, background geometry, and depth of field. Change only the tabletop setting into a quiet rain-lit hotel desk with dark walnut, one folded linen napkin, and a soft window reflection; keep the product fixed in place. Match source perspective, key-light direction, exposure, contact shadow, reflections, texture scale, grain, and occlusion so the edit reads as one photograph. Do not redesign the product, add controls, move branding, duplicate objects, change the lens, create halos, or alter unrelated details.',
+    negativePrompt:
+      'identity drift, changed product geometry, misspelled branding, moved controls, duplicate product, changed camera angle, pasted edge, halo, mismatched light, floating base, clutter, blur',
+  },
+  ltx_video_long_showcase: {
+    prompt:
+      'Photoreal six-shot road thriller, The Last Signal. Follow one white vintage rally coupe with a black hood, two headlamps and three auxiliary lamps carrying an emergency radio from wet mountain bends through pines, a blocked pass and snow to a stone weather station. Each authored camera move begins immediately and shows measurable subject travel or foreground parallax. Preserve rigid car geometry, plausible grip, story direction and natural light. No deformity, deformed tire, missing wheel, people, crash, text, CGI or static hold.',
+    // LTX 0.9.8 distilled uses its upstream-recommended guidance 1 contract;
+    // classifier-free negative conditioning is ignored at that setting. Put
+    // exclusion constraints in each shot instruction instead of presenting a
+    // negative field that cannot affect the result.
+    negativePrompt: '',
+  },
+  wan_video_long_showcase: {
+    prompt:
+      'Create a coherent photoreal port-logistics documentary called Before Sunrise. Follow one orange container from ship unloading, across the crane gantry, onto a terminal tractor, through ordered container lanes and finally onto a departing freight train. In every shot, a stabilized tracking, panning or crane camera follows one simple readable operation with immediate large-scale machinery movement, stable rigid geometry, realistic wheel or cable contact, and foreground parallax. Preserve the orange container identity and cool predawn industrial light; no people in close view, water spectacle, collision, invented machine, text, synthetic rendering or static hold.',
+    negativePrompt:
+      'cartoon, painting, illustration, game render, static frame, fixed subject, geometry morph, scale drift, contact sliding, flicker, frame tear, duplicate container, malformed crane, impossible cable, collision, illegible text, watermark',
+  },
+  wan_22_i2v_seed_vault: {
+    prompt:
+      'Continue exactly from the supplied fine-dining kitchen keyframe in one continuous five-second photoreal documentary shot. This is the final carrot-garnish cut for a composed root-vegetable course. Preserve the same adult chef, white jacket, dark apron, face, natural two-hand anatomy, one chef knife, one carrot, separated carrot rounds, walnut cutting board, white plate, folded towel, copper pans, stainless pass, camera height, lens and warm service light. Motion starts in the first frame: the chef keeps the guide hand in a safe curled claw grip and completes one slow controlled slicing action—the unchanged knife descends through the carrot, contacts the board, one new round separates cleanly, then the blade lifts slightly and holds. A stabilized close side camera slides slowly along the counter for the entire shot, creating visible foreground parallax while the chef shifts weight naturally. Keep five fingers per visible hand, one unchanged knife, one unchanged carrot, stationary plate, towel and background cookware, physically plausible contact and consistent shadows. No extra person, extra limb, extra utensil, repeated chopping, morphing food, cutaway, flambé, liquid splash, reflection figure, logo or writing.',
+    negativePrompt:
+      'deformity, deformed anatomy, deformed limbs, malformed hands, extra fingers, missing fingers, fused fingers, extra hand, extra arm, detached limb, changing face, identity drift, painting, illustration, animation, cartoon, game render, plastic CGI, low resolution, pixelation, excessive blur, static frame, frozen action, camera freeze, flicker, temporal jitter, warped knife, bending knife, duplicate knife, extra utensil, morphing carrot, fused slices, floating food, impossible contact, unsafe grip, abrupt camera jump, extra person, text, subtitle, logo, watermark',
+  },
+  wan_21_t2v_13b_seed_vault: {
+    prompt:
+      'Create a coherent six-shot photoreal railway short called The Winter Delivery. Follow one blue-and-cream electric freight locomotive carrying emergency supplies from a mountain depot, through valley switches and a rock tunnel, across a snowy high pass, and finally into an isolated village station before night. Preserve rigid locomotive geometry, the same sealed wagons, plausible wheel-to-rail contact, forward screen direction and motivated documentary camera coverage in every shot.',
+    negativePrompt:
+      'deformity, deformed wheels, deformed bodywork, cartoon, painting, illustration, game render, toy train, low resolution, pixelation, compression artifacts, static pose, frozen frame, flicker, temporal jitter, warped locomotive, changing paint color, changing wagon count, duplicate train, missing wheel, wheel sliding, broken rail, impossible cable, collision, text, subtitle, logo, watermark',
+  },
+  wan_22_ti2v_5b_seed_vault: {
+    prompt:
+      'Low contrast. In a retro 1970s-style subway station, a street musician plays in dim colors and rough textures. He wears an old jacket, playing guitar with focus. Commuters hurry by, and a small crowd gathers to listen. The camera slowly moves right, capturing the blend of music and city noise, with old subway signs and mottled walls in the background.',
+    negativePrompt:
+      '色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走',
+  },
+  wan_vace_direct_text_to_video: {
+    prompt:
+      'Photoreal printworks documentary called The First Fold, one continuous five-second process shot with immediate readable action. A wide unprinted white paper web streams continuously from the upper-left feed roller, passes through two large counter-rotating steel cylinders at frame center, and exits as evenly folded blank sections toward the lower-right delivery belt. The cylinders make several visibly complete rotations while a stabilized close side camera trucks briskly beside the press; safety rails and fixed vertical frame posts sweep across the foreground in strong parallax. Keep one rigid press, attached rollers, taut paper, believable contact and the same feed direction from opening to closing. Cool industrial daylight, oily steel and natural motion blur. No people, hands, printed words, newspaper headline, loose sheet, torn paper, duplicate press, moving frame, cut, reverse motion or static hold.',
+    negativePrompt:
+      'deformity, deformed rollers, painting, illustration, synthetic render, low resolution, static frame, frozen action, slow motion, motionless paper, locked camera, camera pause, weak parallax, flicker, temporal jitter, warped cylinder, changing roller size, loose paper, torn paper, duplicate hardware, impossible paper contact, reversed travel, abrupt camera jump, text, subtitle, logo, watermark',
+  },
+  ltx_video_animated_story: {
+    prompt:
+      'Three-shot live-action documentary called From Green Bean to Morning Cup. Follow pale raw coffee beans pouring into a roaster hopper, chestnut roasted beans swirling across a cooling tray, and fresh espresso filling one white cup. Keep immediate readable motion, stable machinery, real bean texture and natural roastery light. No people, plastic pellets, labels, text, logo, cartoon, static hold, flicker or frame tear.',
+    negativePrompt: '',
+  },
+  ace_step_lyric_music_video: {
+    prompt:
+      'Original dream-pop music at a 96 BPM tempo with an intimate clear lead vocal, soft electronic drums, warm bass, glassy arpeggiator, six short intelligible lyric lines, a polished spacious stereo mix, and a clean ending; no artist imitation.',
+    negativePrompt: '',
+  },
 };
+
+const WAN_VIDEO_DEFORMITY_GUARD =
+  'deformity, deformed anatomy, deformed limbs, deformed wheels, deformed rigid-body geometry, identity drift';
+
+// Wan uses active negative conditioning, unlike the qualified CFG-1 LTX
+// distilled recipe. Keep one shared structural guard on every Wan template so
+// new workflows cannot accidentally omit the same anatomy/vehicle protection.
+for (const [templateId, prompts] of Object.entries(TEMPLATE_PROMPTS)) {
+  if (
+    templateId.startsWith('wan_') &&
+    prompts.negativePrompt.trim() &&
+    !prompts.negativePrompt.toLowerCase().includes('deformity')
+  ) {
+    prompts.negativePrompt = `${WAN_VIDEO_DEFORMITY_GUARD}, ${prompts.negativePrompt}`;
+  }
+}
 
 function inferIntentGroup(template: StudioTemplate): StudioTemplateIntentGroup {
   if (template.difficulty === 'blocked' || template.example?.status === 'blocked') return 'planning';
@@ -1117,6 +1715,39 @@ function userGoalForTemplate(template: StudioTemplate) {
 
 function withTemplateRecipeDefaults(template: StudioTemplate): StudioTemplate {
   const promptRecipe = TEMPLATE_PROMPTS[template.id];
+  const cardPoster = TEMPLATE_CARD_POSTERS[template.id];
+  const lockedSettings = template.example?.lockedSettings;
+  const loaderSettings = {
+    ...DEFAULT_STUDIO_FORM,
+    ...(getPreset(template.presetId)?.values ?? {}),
+    ...(lockedSettings ?? {}),
+  };
+  const autoLoaderTopology =
+    template.modelType === 'QwenImageModularPipeline'
+      ? template.mode === 'control_image'
+        ? 'control-image'
+        : 'base-image'
+      : 'default';
+  const runtimeContract =
+    loaderSettings.resourceMode === 'auto'
+      ? ['auto-planned', autoLoaderTopology]
+      : [
+          loaderSettings.dtype,
+          loaderSettings.quantizationMode,
+          loaderSettings.autoOffload ? 'auto-offload' : 'resident',
+          loaderSettings.offloadMode,
+        ];
+  const runtimeReuseKey =
+    template.runtimeReuseKey ??
+    (template.modelType === 'LTXVideoPipeline'
+      ? 'ltx-0.9.8-13b-distilled-bfloat16-model-cpu'
+      : template.modelType === 'WanVACEPipeline'
+        ? 'wan-vace-1.3b-bfloat16-model-cpu'
+        : template.modelType === 'WanVideoPipeline'
+          ? 'wan-2.1-t2v-1.3b-bfloat16-model-cpu'
+          : template.modelType === 'WanTI2VPipeline'
+            ? 'wan-2.2-ti2v-5b-bfloat16-resident'
+            : [template.modelType, ...runtimeContract].join(':'));
   return {
     ...template,
     intentGroup: template.intentGroup ?? inferIntentGroup(template),
@@ -1125,6 +1756,11 @@ function withTemplateRecipeDefaults(template: StudioTemplate): StudioTemplate {
     recipeSummary: template.recipeSummary ?? template.description,
     mediaSlots: template.mediaSlots ?? mediaSlotsForTemplate(template),
     verificationStatus: template.verificationStatus ?? template.example?.status ?? 'unverified',
+    runtimeReuseKey,
+    example:
+      template.example && cardPoster
+        ? { ...template.example, thumbnailPath: template.example.thumbnailPath ?? cardPoster }
+        : template.example,
     prompt: promptRecipe.prompt,
     negativePrompt: promptRecipe.negativePrompt,
   };
@@ -1134,6 +1770,7 @@ function audioExample(
   seed: number,
   runtimeEstimate: string,
   settings: Partial<StudioTemplateLockedSettings> = {},
+  expectedDurationSeconds?: number,
 ): StudioTemplateExample {
   return {
     mediaType: 'audio',
@@ -1154,7 +1791,7 @@ function audioExample(
       ...settings,
     },
     expectedOutput: {
-      durationSeconds: settings.audioDuration ?? settings.extensionDuration ?? 30,
+      durationSeconds: expectedDurationSeconds ?? settings.audioDuration ?? settings.extensionDuration ?? 30,
       sampleRate: 48000,
     },
     modelRevision: 'pin-required',
@@ -1178,7 +1815,7 @@ const QWEN_LOW_VRAM_TEMPLATE_SETTINGS: Partial<StudioTemplateLockedSettings> = {
 const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   {
     id: 'z_image_quick_concept',
-    label: 'Z quick concept',
+    label: 'Z-Image Turbo — Text to Image: Quick Concept',
     mode: 'text_to_image',
     modelType: 'ZImageModularPipeline',
     category: 'concept',
@@ -1198,7 +1835,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'z_image_product_mockup',
-    label: 'Z product mockup',
+    label: 'Z-Image Turbo — Text to Image: Product Mockup',
     mode: 'text_to_image',
     modelType: 'ZImageModularPipeline',
     category: 'product',
@@ -1218,7 +1855,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'z_image_poster',
-    label: 'Z poster',
+    label: 'Z-Image Turbo — Text to Image: Poster Artwork',
     mode: 'text_to_image',
     modelType: 'ZImageModularPipeline',
     category: 'poster',
@@ -1238,7 +1875,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'z_image_lora_style',
-    label: 'Z LoRA style',
+    label: 'Z-Image Turbo — LoRA Text to Image: Coastal Rescue Documentary',
     mode: 'text_to_image',
     modelType: 'ZImageModularPipeline',
     category: 'lora',
@@ -1273,7 +1910,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
       4210,
       '20-45 sec plus adapter load time',
       'Adapter file, weight, revision, hash, and scale are pinned; the Exact badge awaits matching live runs and review.',
-      { resourceMode: 'expert' },
+      {},
     ),
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: {
@@ -1286,7 +1923,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_text_rendering',
-    label: 'Qwen text rendering',
+    label: 'Qwen-Image-2512 — Text to Image: Exact Text',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'text',
@@ -1294,19 +1931,19 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     difficulty: 'intermediate',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '60-120 sec',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_IMAGE_RUNTIME_ESTIMATE,
     description: 'Readable signs, labels, and short typography.',
     prompt: TEMPLATE_PROMPTS.qwen_text_rendering.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_text_rendering.negativePrompt,
     presetId: 'text_accuracy',
-    example: example(5101, '60-120 sec on a consumer GPU'),
+    example: example(5101, QWEN_IMAGE_RUNTIME_ESTIMATE),
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: predictability(5101),
   },
   {
     id: 'qwen_poster_logo_text',
-    label: 'Qwen poster/logo',
+    label: 'Qwen-Image-2512 — Text to Image: Poster and Logo',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'poster',
@@ -1314,19 +1951,19 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     difficulty: 'intermediate',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '60-120 sec',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_IMAGE_RUNTIME_ESTIMATE,
     description: 'Brand-style compositions with strong text hierarchy.',
     prompt: TEMPLATE_PROMPTS.qwen_poster_logo_text.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_poster_logo_text.negativePrompt,
     presetId: 'text_accuracy',
-    example: example(5102, '60-120 sec on a consumer GPU', { width: 768, height: 1344 }),
+    example: example(5102, QWEN_IMAGE_RUNTIME_ESTIMATE, { width: 768, height: 1344 }),
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: predictability(5102),
   },
   {
     id: 'qwen_product_mockup',
-    label: 'Qwen product mockup',
+    label: 'Qwen-Image-2512 — Text to Image: Product Mockup',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'product',
@@ -1334,55 +1971,55 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     difficulty: 'intermediate',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_IMAGE_RUNTIME_ESTIMATE,
     description: 'Studio product imagery and packaging concepts.',
     prompt: TEMPLATE_PROMPTS.qwen_product_mockup.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_product_mockup.negativePrompt,
     presetId: 'quality',
-    example: example(5103, '75-150 sec on a consumer GPU'),
+    example: example(5103, QWEN_IMAGE_RUNTIME_ESTIMATE),
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: predictability(5103),
   },
   {
     id: 'qwen_low_vram_text_rendering',
-    label: 'Qwen 4-bit label',
+    label: 'Qwen-Image-2512 — Text to Image: Label (Auto Offload)',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'text',
-    tags: ['low vram', 'typography', '4-bit'],
+    tags: ['low vram', 'auto offload', 'typography', 'text to image'],
     difficulty: 'starter',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
     requiredBackendCapabilities: ['Qwen direct Auto Diffusers path'],
     vramEstimate: '16 GB cautious with Auto resource mode',
-    runtimeEstimate: '90-180 sec',
+    runtimeEstimate: QWEN_AUTO_RUNTIME_ESTIMATE,
     description: 'Readable short label text using Qwen Auto on constrained local hardware.',
     prompt: TEMPLATE_PROMPTS.qwen_low_vram_text_rendering.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_low_vram_text_rendering.negativePrompt,
     presetId: 'low_vram',
-    example: example(5111, '90-180 sec with 4-bit Auto offload', QWEN_LOW_VRAM_TEMPLATE_SETTINGS),
+    example: example(5111, QWEN_AUTO_RUNTIME_ESTIMATE, QWEN_LOW_VRAM_TEMPLATE_SETTINGS),
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: predictability(5111),
   },
   {
     id: 'qwen_low_vram_product_concept',
-    label: 'Qwen 4-bit product',
+    label: 'Qwen-Image-2512 — Text to Image: Product Concept (Auto Offload)',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'product',
-    tags: ['low vram', 'product', '4-bit'],
+    tags: ['low vram', 'auto offload', 'product', 'text to image'],
     difficulty: 'starter',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
     requiredBackendCapabilities: ['Qwen direct Auto Diffusers path'],
     vramEstimate: '16 GB cautious with Auto resource mode',
-    runtimeEstimate: '75-150 sec',
+    runtimeEstimate: QWEN_AUTO_RUNTIME_ESTIMATE,
     description: 'Directed 4:3 product campaign recipe for Qwen Auto on smaller CUDA GPUs.',
     prompt: TEMPLATE_PROMPTS.qwen_low_vram_product_concept.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_low_vram_product_concept.negativePrompt,
     presetId: 'low_vram',
-    example: example(5112, '75-150 sec with 4-bit Auto offload', {
+    example: example(5112, QWEN_AUTO_RUNTIME_ESTIMATE, {
       ...QWEN_LOW_VRAM_TEMPLATE_SETTINGS,
       width: 1024,
       height: 768,
@@ -1392,28 +2029,33 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_low_vram_poster_layout',
-    label: 'Qwen 4-bit poster',
+    label: 'Qwen-Image-2512 — Text to Image: Poster Layout (Auto Offload)',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'poster',
-    tags: ['low vram', 'poster', '4-bit'],
+    tags: ['low vram', 'auto offload', 'poster', 'text to image'],
     difficulty: 'starter',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
     requiredBackendCapabilities: ['Qwen direct Auto Diffusers path'],
     vramEstimate: '16 GB cautious with Auto resource mode',
-    runtimeEstimate: '90-180 sec',
-    description: 'Minimal poster layout using Qwen Auto resource management.',
+    runtimeEstimate: QWEN_AUTO_RUNTIME_ESTIMATE,
+    description:
+      'Portrait cultural-poster artwork with a photographed cinema marquee, generated using Qwen Auto offload.',
     prompt: TEMPLATE_PROMPTS.qwen_low_vram_poster_layout.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_low_vram_poster_layout.negativePrompt,
     presetId: 'low_vram',
-    example: example(5113, '90-180 sec with 4-bit Auto offload', QWEN_LOW_VRAM_TEMPLATE_SETTINGS),
+    example: example(6219, QWEN_AUTO_RUNTIME_ESTIMATE, {
+      ...QWEN_LOW_VRAM_TEMPLATE_SETTINGS,
+      width: 768,
+      height: 1024,
+    }),
     promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(5113),
+    predictability: predictability(6219),
   },
   {
     id: 'qwen_control_image_layout',
-    label: 'Qwen control layout',
+    label: 'Qwen-Image-2512 — Control Image: Layout-Guided Generation',
     mode: 'control_image',
     modelType: 'QwenImageModularPipeline',
     category: 'control',
@@ -1423,23 +2065,24 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { controlImage: true, sampleAssets: ['layout or edge/control image'] },
     outputKinds: ['image'],
     requiredBackendCapabilities: ['Qwen ControlNet Union graph contract'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-160 sec',
-    description: 'Control image recipe using Qwen Image and Qwen ControlNet Union.',
+    vramEstimate: 'Auto selects native BF16 on high-memory GPUs or a bounded offload plan on smaller supported GPUs',
+    runtimeEstimate: QWEN_CONTROL_RUNTIME_ESTIMATE,
+    description:
+      'Control image recipe using Qwen Image and Qwen ControlNet Union with hardware-adaptive Auto resources.',
     prompt: TEMPLATE_PROMPTS.qwen_control_image_layout.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_control_image_layout.negativePrompt,
     presetId: 'balanced',
-    example: example(5201, '75-160 sec after control image is prepared', {
+    example: example(5201, QWEN_CONTROL_RUNTIME_ESTIMATE, {
       width: 768,
       height: 768,
-      steps: 28,
+      steps: 36,
       guidanceScale: 4,
-      conditioningScale: 1,
-      resourceMode: 'expert',
+      conditioningScale: 1.2,
+      resourceMode: 'auto',
       dtype: 'bfloat16',
-      quantizationMode: 'bnb_4bit',
-      autoOffload: true,
-      offloadMode: 'group_disk',
+      quantizationMode: 'none',
+      autoOffload: false,
+      offloadMode: 'none',
       maxSequenceLength: 512,
     }),
     promptGuide: CONTROL_PROMPT_GUIDE,
@@ -1454,7 +2097,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'z_image_cinematic_contact_sheet',
-    label: 'Cinematic contact sheet',
+    label: 'Z-Image Turbo — Text to Image: Cinematic Contact Sheet',
     mode: 'text_to_image',
     modelType: 'ZImageModularPipeline',
     category: 'concept',
@@ -1475,7 +2118,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_product_ad_composite',
-    label: 'Product ad composite',
+    label: 'Qwen-Image-Edit-2511 — Multi-Reference Edit: Product Ad',
     mode: 'multi_image_reference_edit',
     modelType: 'QwenImageEditPlusModularPipeline',
     category: 'product',
@@ -1484,14 +2127,19 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['layout/ad reference', 'product reference'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec',
-    description: 'MoDiff-native product poster replacement with layout and product references.',
+    requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_2511_LIGHTNING_RUNTIME_ESTIMATE,
+    description:
+      'Product poster replacement with layout and product references using the official Qwen 2511 Lightning adapter.',
     prompt: PRODUCT_AD_PROMPT,
-    negativePrompt:
-      'collage edges, mismatched perspective, unreadable text, warped logo, floating product, bad contact shadow, wrong product proportions',
+    negativePrompt: TEMPLATE_PROMPTS.qwen_product_ad_composite.negativePrompt,
     presetId: 'quality',
-    example: example(6201, '75-150 sec after references are prepared'),
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: {
+      lora: QWEN_EDIT_2511_LIGHTNING_LORA,
+    },
+    example: example(6201, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(6201),
@@ -1503,7 +2151,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_product_relight',
-    label: 'Product scene relight',
+    label: 'Qwen-Image-Edit-2511 — Multi-Reference Edit: Product Relighting',
     mode: 'multi_image_reference_edit',
     modelType: 'QwenImageEditPlusModularPipeline',
     category: 'product',
@@ -1512,20 +2160,22 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['scene/background reference', 'product reference'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec',
+    requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_2511_LIGHTNING_RUNTIME_ESTIMATE,
     description: 'Material-aware product insertion and relighting inspired by MoDiff product scene recipes.',
     prompt: PRODUCT_RELIGHT_PROMPT,
-    negativePrompt:
-      'wrong reflections, mismatched lighting, altered product logo, warped packaging, bad shadows, pasted object, low detail',
+    negativePrompt: TEMPLATE_PROMPTS.qwen_product_relight.negativePrompt,
     presetId: 'quality',
-    example: example(6202, '75-150 sec after references are prepared'),
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
+    example: example(6202, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: predictability(6202),
   },
   {
     id: 'qwen_packaging_dieline',
-    label: 'Packaging from dieline',
+    label: 'Qwen-Image-2512 — Control Image: Packaging Dieline',
     mode: 'control_image',
     modelType: 'QwenImageModularPipeline',
     category: 'control',
@@ -1535,13 +2185,25 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { controlImage: true, sampleAssets: ['dieline or packaging layout image'] },
     outputKinds: ['image'],
     requiredBackendCapabilities: ['Qwen ControlNet Union graph contract'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-160 sec',
+    vramEstimate: 'Auto selects native BF16 on high-memory GPUs or a bounded offload plan on smaller supported GPUs',
+    runtimeEstimate: QWEN_CONTROL_RUNTIME_ESTIMATE,
     description: 'Generate a retail packaging mockup that follows a dieline/control layout.',
     prompt: PACKAGING_DIELINE_PROMPT,
-    negativePrompt: 'warped panels, broken folds, unreadable text, wrong silhouette, messy shadows, low quality',
+    negativePrompt: TEMPLATE_PROMPTS.qwen_packaging_dieline.negativePrompt,
     presetId: 'text_accuracy',
-    example: example(5202, '75-160 sec after control image is prepared', { width: 1024, height: 1024 }),
+    example: example(5202, QWEN_CONTROL_RUNTIME_ESTIMATE, {
+      width: 768,
+      height: 768,
+      steps: 36,
+      guidanceScale: 4,
+      conditioningScale: 1.1,
+      resourceMode: 'auto',
+      dtype: 'bfloat16',
+      quantizationMode: 'none',
+      autoOffload: false,
+      offloadMode: 'none',
+      maxSequenceLength: 512,
+    }),
     promptGuide: CONTROL_PROMPT_GUIDE,
     predictability: {
       ...predictability(5202),
@@ -1554,7 +2216,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_character_angles',
-    label: 'Character angle sheet',
+    label: 'Qwen-Image-Edit — Image Edit: Character Angle Sheet',
     mode: 'edit_image',
     modelType: 'QwenImageEditModularPipeline',
     category: 'edit',
@@ -1563,20 +2225,20 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'contactSheet',
     inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['character source image'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '60-120 sec',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_RUNTIME_ESTIMATE,
     description: 'One-image character turnaround inspired by MoDiff multi-angle recipes.',
     prompt: CHARACTER_ANGLES_PROMPT,
     negativePrompt:
       'identity drift, different outfit, different face, borders, labels, captions, inconsistent lighting, extra limbs, warped anatomy',
     presetId: 'quality',
-    example: example(6203, '60-120 sec after source image is prepared', { width: 1024, height: 1024 }),
+    example: example(6203, QWEN_EDIT_RUNTIME_AFTER_INPUT, { width: 1024, height: 1024 }),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: predictability(6203),
   },
   {
     id: 'qwen_tile_extract',
-    label: 'Contact sheet tile extract',
+    label: 'Qwen-Image-Edit — Image Edit: Contact-Sheet Tile Extraction',
     mode: 'edit_image',
     modelType: 'QwenImageEditModularPipeline',
     category: 'edit',
@@ -1585,20 +2247,20 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['generated 3x3 contact sheet'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '60-120 sec',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_RUNTIME_ESTIMATE,
     description: 'Turn one selected contact-sheet tile into a standalone high-quality frame.',
     prompt: TILE_EXTRACT_PROMPT,
     negativePrompt:
       'grid, neighboring tiles, borders, labels, captions, low resolution, compression artifacts, changed subject, changed camera angle',
     presetId: 'quality',
-    example: example(6204, '60-120 sec after contact sheet image is prepared', { width: 1344, height: 768 }),
+    example: example(6204, QWEN_EDIT_RUNTIME_AFTER_INPUT, { width: 1344, height: 768 }),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: predictability(6204),
   },
   {
     id: 'qwen_logo_texture',
-    label: 'Logo texture transfer',
+    label: 'Qwen-Image-Edit-2511 — Multi-Reference Edit: Logo Texture Transfer',
     mode: 'multi_image_reference_edit',
     modelType: 'QwenImageEditPlusModularPipeline',
     category: 'product',
@@ -1607,20 +2269,23 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['logo/mark image', 'material texture reference'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec',
+    requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_2511_LIGHTNING_RUNTIME_ESTIMATE,
     description: 'Apply material and lighting from a texture reference to a logo while preserving its silhouette.',
     prompt: LOGO_TEXTURE_PROMPT,
     negativePrompt:
-      'changed logo shape, unreadable mark, broken letters, clutter, mismatched material, noisy texture, low contrast',
+      'changed M silhouette, second letter, word, caption, closed counter, asymmetric leg, broken bevel, busy veins, cracked stone, cobalt blue, chrome, enamel, neon, screw, cable, clutter, low contrast',
     presetId: 'text_accuracy',
-    example: example(6205, '75-150 sec after references are prepared'),
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
+    example: example(6205, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: predictability(6205),
   },
   {
     id: 'qwen_layered_portrait',
-    label: 'Layered portrait split',
+    label: 'Qwen-Image-Layered — Layer Decomposition: Portrait into Editable Layers',
     mode: 'layer_decomposition',
     modelType: 'QwenImageLayeredModularPipeline',
     category: 'layers',
@@ -1630,20 +2295,40 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['portrait/source image'] },
     outputKinds: ['image', 'json'],
     requiredBackendCapabilities: ['layer output metadata and per-layer media hashes'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '90-180 sec',
+    vramEstimate:
+      '64 GB native BF16 on the qualified high-memory host; lower-memory quantized/offloaded paths require separate hardware qualification',
+    runtimeEstimate:
+      'About 13-15 min once resident; about 47-50 min including a cold native-BF16 load on the qualified ROCm host',
     description:
-      'Layer-decomposition recipe with a detailed scene description, inspired by MoDiff layered Qwen recipes.',
+      'Decompose an observatory portrait into separately previewable background, person, and foreground-telescope layers.',
     prompt: LAYERED_PORTRAIT_PROMPT,
-    negativePrompt: 'merged layers, jagged alpha, halos, missing hair detail, broken background, flattened subject',
-    presetId: 'quality',
-    example: example(7102, '90-180 sec after source image is prepared', { width: 1024, height: 1024 }),
+    negativePrompt:
+      'merged layers, empty layer, jagged alpha, halos, detached telescope fragment, duplicated tripod, person-telescope overlap, wrong relative scale, broken background, flattened depth',
+    presetId: 'balanced',
+    example: {
+      ...example(7102, 'About 13-15 min once resident on the qualified ROCm host', {
+        // Qwen-Image-Layered exposes 640 and 1024 source-resolution contracts;
+        // 768 was never a valid pipeline output size. The default stays at the
+        // official 640 path for an 18-minute proof while the same generic graph
+        // can switch to 1024 through the Studio size controls.
+        width: 640,
+        height: 640,
+        steps: 30,
+        guidanceScale: 4,
+        layers: 3,
+      }),
+      // The graph emits three individual 640px RGBA layers. The browser asset
+      // is a derived 3x2 review sheet containing the source, recomposition,
+      // every layer, and measured review status.
+      expectedOutput: { width: 640, height: 640 },
+      galleryExpectedOutput: { width: 1536, height: 1108 },
+    },
     promptGuide: LAYER_PROMPT_GUIDE,
     predictability: predictability(7102),
   },
   {
     id: 'qwen_outpaint_aspect_template',
-    label: 'Outpaint aspect',
+    label: 'Qwen-Image-Edit — Outpaint: Aspect-Ratio Expansion',
     mode: 'outpaint',
     modelType: 'QwenImageEditModularPipeline',
     category: 'outpaint',
@@ -1651,10 +2336,29 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     difficulty: 'advanced',
     thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source product or lifestyle image'] },
+    inputBindings: [
+      {
+        id: 'generated-outpaint-canvas',
+        label: 'Expanded source canvas',
+        mediaType: 'image',
+        origin: 'graph',
+        requiredAt: 'downstream',
+        producer: { role: 'qwenOutpaintCanvas', output: 'image' },
+      },
+      {
+        id: 'generated-outpaint-mask',
+        label: 'Boundary mask',
+        mediaType: 'image',
+        origin: 'graph',
+        requiredAt: 'downstream',
+        producer: { role: 'qwenOutpaintCanvas', output: 'mask' },
+      },
+    ],
     outputKinds: ['image'],
     requiredBackendCapabilities: ['outpaint canvas, mask, and placement controls'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec after source image is prepared',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate:
+      'About 4-6 min once resident; about 46-50 min including a cold native-BF16 load on the qualified ROCm host',
     description:
       'Any-aspect outpaint recipe that builds an expanded canvas and boundary mask before Qwen Image inpaint.',
     prompt: OUTPAINT_ASPECT_PROMPT,
@@ -1663,18 +2367,20 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     presetId: 'balanced',
     example: nonExactExample(
       7302,
-      '75-150 sec after source image is prepared',
+      'About 4-6 min once resident; about 46-50 min including a cold native-BF16 load on the qualified ROCm host',
       'Exact outpaint examples require pinned source image, generated canvas/mask metadata, runtime fingerprint, and decoded output hashes.',
       {
         width: 1344,
         height: 768,
+        steps: 12,
         outpaintLeft: 256,
         outpaintRight: 256,
         outpaintTop: 0,
         outpaintBottom: 0,
-        outpaintOverlap: 24,
-        outpaintFeather: 8,
+        outpaintOverlap: 96,
+        outpaintFeather: 48,
         outpaintFillColor: 'black',
+        strength: 1,
       },
     ),
     promptGuide: EDIT_PROMPT_GUIDE,
@@ -1688,7 +2394,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_inpaint_object_replace',
-    label: 'Masked object replace',
+    label: 'Qwen-Image-Edit — Inpaint: Masked Object Replacement',
     mode: 'inpaint',
     modelType: 'QwenImageEditModularPipeline',
     category: 'inpaint',
@@ -1698,45 +2404,49 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { sourceImage: true, maskImage: true, sampleAssets: ['source image', 'object mask'] },
     outputKinds: ['image'],
     requiredBackendCapabilities: ['native inpaint mask graph contract'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec after source and mask image are prepared',
-    description: 'Masked object replacement recipe using direct Qwen Image inpaint with one source image and one mask.',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: '2-8 min depending on accelerator; about 4 min on the qualified ROCm APU',
+    description: 'Masked object replacement recipe using Qwen Image inpaint with one source image and one mask.',
     prompt: INPAINT_REPLACE_PROMPT,
     negativePrompt:
       'changed unmasked pixels, visible mask boundary, wrong scale, mismatched lighting, floating object, altered background',
     presetId: 'balanced',
     example: nonExactExample(
       6131,
-      '75-150 sec after source and mask image are prepared',
+      '2-8 min depending on accelerator; about 4 min on the qualified ROCm APU',
       'Exact inpaint examples require pinned source image, mask image, backend revision, and decoded output hashes.',
+      { strength: 1, steps: 8 },
     ),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: predictability(6131),
   },
   {
     id: 'character_edit',
-    label: 'Character edit',
+    label: 'Qwen-Image-Edit-2511 — Portrait Edit: Wardrobe Restyling',
     mode: 'edit_image',
-    modelType: 'QwenImageEditModularPipeline',
+    modelType: 'QwenImageEditPlusModularPipeline',
     category: 'edit',
     tags: ['before/after', 'identity', 'retouch'],
     difficulty: 'intermediate',
     thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source portrait or character image'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '60-120 sec',
-    description: 'One-image character edits that preserve identity.',
+    requiredBackendCapabilities: ['Qwen single-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_2511_LIGHTNING_RUNTIME_ESTIMATE,
+    description: 'Restyle a portrait wardrobe while preserving identity, pose, held objects, and scene lighting.',
     prompt: TEMPLATE_PROMPTS.character_edit.prompt,
     negativePrompt: TEMPLATE_PROMPTS.character_edit.negativePrompt,
     presetId: 'balanced',
-    example: example(6101, '60-120 sec after source image is prepared'),
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
+    example: example(6101, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: predictability(6101),
   },
   {
     id: 'qwen_edit_strength_sweep',
-    label: 'Edit strength sweep',
+    label: 'Qwen-Image-Edit — Image Edit: Strength Comparison',
     mode: 'edit_image',
     modelType: 'QwenImageEditModularPipeline',
     category: 'edit',
@@ -1745,13 +2455,13 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'contactSheet',
     inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source image for strength sweep'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '60-120 sec per candidate',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: `${QWEN_EDIT_RUNTIME_ESTIMATE} per candidate`,
     description: 'Image-to-image edit starting point for strength sweeps.',
     prompt: TEMPLATE_PROMPTS.qwen_edit_strength_sweep.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_edit_strength_sweep.negativePrompt,
     presetId: 'balanced',
-    example: example(6110, '60-120 sec per sweep candidate after source image is prepared'),
+    example: example(6110, `${QWEN_EDIT_RUNTIME_AFTER_INPUT} per sweep candidate`),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(6110),
@@ -1763,7 +2473,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'reference_fusion',
-    label: 'Reference fusion',
+    label: 'Qwen-Image-Edit-2511 — Multi-Reference Edit: Reference Fusion',
     mode: 'multi_image_reference_edit',
     modelType: 'QwenImageEditPlusModularPipeline',
     category: 'reference',
@@ -1772,34 +2482,40 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['subject reference', 'style/material reference'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec',
+    requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_2511_LIGHTNING_RUNTIME_ESTIMATE,
     description: 'Use multiple reference images for combined direction.',
     prompt: TEMPLATE_PROMPTS.reference_fusion.prompt,
     negativePrompt: TEMPLATE_PROMPTS.reference_fusion.negativePrompt,
     presetId: 'balanced',
-    example: example(6102, '75-150 sec after references are prepared'),
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
+    example: example(6102, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: predictability(6102),
   },
   {
     id: 'qwen_multi_reference_product',
-    label: 'Multi-ref product',
+    label: 'Qwen-Image-Edit-2511 — Multi-Reference Product Finish Transfer',
     mode: 'multi_image_reference_edit',
     modelType: 'QwenImageEditPlusModularPipeline',
     category: 'product',
     tags: ['multi-reference', 'product', 'material'],
     difficulty: 'advanced',
     thumbnailVariant: 'compareSlider',
-    inputRequirements: { referenceImages: 3, sampleAssets: ['product shape', 'material cue', 'style reference'] },
+    inputRequirements: { referenceImages: 2, sampleAssets: ['product geometry', 'material finish'] },
     outputKinds: ['image'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec',
-    description: 'Combine product, material, and style references into one guided edit.',
+    requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate: QWEN_EDIT_2511_LIGHTNING_RUNTIME_ESTIMATE,
+    description: 'Transfer a material reference onto preserved product geometry with exact branded text.',
     prompt: TEMPLATE_PROMPTS.qwen_multi_reference_product.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_multi_reference_product.negativePrompt,
     presetId: 'balanced',
-    example: example(6120, '75-150 sec after references are prepared'),
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
+    example: example(6120, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(6120),
@@ -1811,7 +2527,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_inpaint_mask_draft',
-    label: 'Inpaint mask draft',
+    label: 'Qwen-Image-Edit — Inpaint: Localized Mug Material Restyle',
     mode: 'inpaint',
     modelType: 'QwenImageEditModularPipeline',
     category: 'inpaint',
@@ -1821,16 +2537,19 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { sourceImage: true, maskImage: true, sampleAssets: ['source image', 'mask image'] },
     outputKinds: ['image'],
     requiredBackendCapabilities: ['native inpaint mask graph contract'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec after source and mask image are prepared',
-    description: 'Direct Qwen Image inpaint recipe for targeted edits with one source image and one mask.',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate:
+      '4-12 min depending on accelerator; about 7 min for the bounded sixteen-step proof on the qualified ROCm APU',
+    description:
+      'Restyle only a masked mug surface while preserving its scale, silhouette, and surrounding documentary worktable.',
     prompt: TEMPLATE_PROMPTS.qwen_inpaint_mask_draft.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_inpaint_mask_draft.negativePrompt,
     presetId: 'balanced',
     example: nonExactExample(
       6130,
-      '75-150 sec after source and mask image are prepared',
+      '4-12 min depending on accelerator; about 7 min for the bounded sixteen-step proof on the qualified ROCm APU',
       'Exact inpaint examples require pinned source image, mask image, backend revision, and decoded output hashes.',
+      { strength: 1, steps: 16 },
     ),
     promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
@@ -1843,30 +2562,8 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     },
   },
   {
-    id: 'layer_decomposition',
-    label: 'Layer decomposition',
-    mode: 'layer_decomposition',
-    modelType: 'QwenImageLayeredModularPipeline',
-    category: 'layers',
-    tags: ['layers', 'alpha', 'editable output'],
-    difficulty: 'advanced',
-    thumbnailVariant: 'contactSheet',
-    inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source image to split into layers'] },
-    outputKinds: ['image', 'json'],
-    requiredBackendCapabilities: ['layer output metadata and per-layer media hashes'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '90-180 sec',
-    description: 'Split a source image into editable visual layers.',
-    prompt: TEMPLATE_PROMPTS.layer_decomposition.prompt,
-    negativePrompt: TEMPLATE_PROMPTS.layer_decomposition.negativePrompt,
-    presetId: 'balanced',
-    example: example(7101, '90-180 sec after source image is prepared'),
-    promptGuide: LAYER_PROMPT_GUIDE,
-    predictability: predictability(7101),
-  },
-  {
     id: 'qwen_upscale_finish',
-    label: 'Upscale finish',
+    label: 'Qwen-Image-2512 — Text to Image and Upscale: 2× Product Upscale',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'upscale',
@@ -1876,6 +2573,10 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { upscalerModel: true, sampleAssets: ['pinned Real-ESRGAN x4plus model'] },
     outputKinds: ['image'],
     requiredBackendCapabilities: ['Spandrel or equivalent upscaler graph block'],
+    // The finishing node loads after the same Qwen base pipeline. Keep it in
+    // the base-image group so qualification does not discard and reload
+    // roughly 58 GB of identical weights before the upscaler step.
+    runtimeReuseKey: 'QwenImageModularPipeline:auto-planned:base-image',
     workflowBlocks: ['upscaler'],
     workflowBlockSettings: {
       upscaler: {
@@ -1896,12 +2597,17 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     prompt: TEMPLATE_PROMPTS.qwen_upscale_finish.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_upscale_finish.negativePrompt,
     presetId: 'quality',
-    example: nonExactExample(
-      7201,
-      '75-150 sec plus upscaler runtime',
-      'The upscaler file, revision, hash, and net scale are pinned; the Exact badge awaits matching live runs and review.',
-      { resourceMode: 'expert' },
-    ),
+    example: {
+      ...nonExactExample(
+        7201,
+        '75-150 sec plus upscaler runtime',
+        'The upscaler file, revision, hash, and net scale are pinned; the Exact badge awaits matching live runs and review.',
+        { resourceMode: 'expert' },
+      ),
+      // Real-ESRGAN x4 followed by the pinned 0.5 post-downscale is a strict
+      // 2x workflow output, not the generator's 1024px intermediate.
+      expectedOutput: { width: 2048, height: 2048 },
+    },
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: {
       ...predictability(7201),
@@ -1913,7 +2619,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'qwen_outpaint_draft',
-    label: 'Outpaint draft',
+    label: 'Qwen-Image-Edit — Outpaint: Bakery Workspace Expansion',
     mode: 'outpaint',
     modelType: 'QwenImageEditModularPipeline',
     category: 'outpaint',
@@ -1921,18 +2627,37 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     difficulty: 'advanced',
     thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source portrait or scene image'] },
+    inputBindings: [
+      {
+        id: 'generated-outpaint-canvas',
+        label: 'Expanded source canvas',
+        mediaType: 'image',
+        origin: 'graph',
+        requiredAt: 'downstream',
+        producer: { role: 'qwenOutpaintCanvas', output: 'image' },
+      },
+      {
+        id: 'generated-outpaint-mask',
+        label: 'Boundary mask',
+        mediaType: 'image',
+        origin: 'graph',
+        requiredAt: 'downstream',
+        producer: { role: 'qwenOutpaintCanvas', output: 'mask' },
+      },
+    ],
     outputKinds: ['image'],
     requiredBackendCapabilities: ['outpaint canvas, mask, and boundary-fill graph contract'],
-    vramEstimate: '16 GB recommended',
-    runtimeEstimate: '75-150 sec after source image is prepared',
+    vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
+    runtimeEstimate:
+      'About 8-9 min once resident; about 50-55 min including a cold native-BF16 load on the qualified ROCm host',
     description:
-      'Canvas expansion recipe that creates the boundary mask automatically and feeds direct Qwen Image inpaint.',
+      'Expand a documentary bakery workspace horizontally using an automatically generated boundary mask and Qwen Image inpaint.',
     prompt: TEMPLATE_PROMPTS.qwen_outpaint_draft.prompt,
     negativePrompt: TEMPLATE_PROMPTS.qwen_outpaint_draft.negativePrompt,
     presetId: 'balanced',
     example: nonExactExample(
       7301,
-      '75-150 sec after source image is prepared',
+      'About 8-9 min once resident; about 50-55 min including a cold native-BF16 load on the qualified ROCm host',
       'Exact outpaint examples require pinned source image, generated canvas/mask metadata, runtime fingerprint, and decoded output hashes.',
       {
         width: 1344,
@@ -1944,6 +2669,8 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
         outpaintOverlap: 24,
         outpaintFeather: 8,
         outpaintFillColor: 'black',
+        strength: 1,
+        steps: 20,
       },
     ),
     promptGuide: EDIT_PROMPT_GUIDE,
@@ -1957,7 +2684,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'low_vram',
-    label: 'Low VRAM',
+    label: 'Z-Image Turbo — Text to Image: Auto-Offload Preview',
     mode: 'text_to_image',
     modelType: 'ZImageModularPipeline',
     category: 'low_vram',
@@ -1967,7 +2694,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     outputKinds: ['image'],
     vramEstimate: '6-8 GB with offload',
     runtimeEstimate: '30-70 sec',
-    description: 'A safer baseline for smaller GPUs.',
+    description: 'Z-Image Turbo text-to-image preview using automatic CPU offload for lower-memory GPUs.',
     prompt: TEMPLATE_PROMPTS.low_vram.prompt,
     negativePrompt: TEMPLATE_PROMPTS.low_vram.negativePrompt,
     presetId: 'low_vram',
@@ -1977,13 +2704,13 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'fast_lora',
-    label: 'Fast LoRA',
+    label: 'Z-Image Turbo — LoRA Text to Image: Product Hero',
     mode: 'text_to_image',
     modelType: 'ZImageModularPipeline',
     category: 'lora',
     tags: ['lora', 'style', 'fast'],
     difficulty: 'advanced',
-    thumbnailVariant: 'contactSheet',
+    thumbnailVariant: 'image',
     inputRequirements: { loraAdapter: true, sampleAssets: ['pinned LoRA adapter'] },
     outputKinds: ['image'],
     requiredBackendCapabilities: ['LoRA loader node with pinned adapter hash'],
@@ -2004,21 +2731,21 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     },
     vramEstimate: '8-14 GB plus adapter',
     runtimeEstimate: '20-45 sec plus adapter load',
-    description: 'Fast pinned Z-Image realism-adapter contact-sheet iteration.',
+    description: 'Z-Image Turbo product hero using a pinned realism LoRA adapter.',
     prompt: TEMPLATE_PROMPTS.fast_lora.prompt,
     negativePrompt: TEMPLATE_PROMPTS.fast_lora.negativePrompt,
     presetId: 'fast',
-    example: example(4205, '20-45 sec when LoRA assets are available', { resourceMode: 'expert' }),
+    example: example(7423, '20-45 sec when LoRA assets are available'),
     promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(4205),
+    predictability: predictability(7423),
   },
   {
     id: 'high_quality',
-    label: 'High quality',
+    label: 'Qwen-Image-2512 — Text to Image: High-Detail Scene',
     mode: 'text_to_image',
     modelType: 'QwenImageModularPipeline',
     category: 'concept',
-    tags: ['quality', 'final pass', 'detail', 'unsloth'],
+    tags: ['quality', 'final pass', 'detail', 'bakery documentary'],
     difficulty: 'intermediate',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
@@ -2034,24 +2761,24 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     ],
     requiredBackendCapabilities: ['Qwen direct Auto Diffusers path'],
     vramEstimate: '16 GB cautious with Auto resource mode',
-    runtimeEstimate: '90-180 sec',
-    description: 'Final-pass Qwen Auto generation with the Unsloth-compatible local recipe.',
+    runtimeEstimate: QWEN_IMAGE_RUNTIME_ESTIMATE,
+    description: 'Qwen-Image-2512 text-to-image final pass using the Auto offload-compatible local recipe.',
     userGoal:
-      'Review the generated botanical observatory preview and build the same Qwen Auto recipe as a runnable graph.',
+      'Review the generated documentary bakery preview and build the same Qwen Auto recipe as a runnable graph.',
     prompt: TEMPLATE_PROMPTS.high_quality.prompt,
     negativePrompt: TEMPLATE_PROMPTS.high_quality.negativePrompt,
     presetId: 'quality',
-    example: example(5104, '90-180 sec with 4-bit Auto offload', QWEN_LOW_VRAM_TEMPLATE_SETTINGS),
+    example: example(5104, QWEN_IMAGE_RUNTIME_ESTIMATE, QWEN_LOW_VRAM_TEMPLATE_SETTINGS),
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: predictability(5104),
   },
   {
     id: 'wan_vace_cinematic_text_to_video',
-    label: 'Wan cinematic text video',
+    label: 'Wan 2.1 T2V 1.3B — Text to Video: Storm Across Volcanic Highlands',
     mode: 'text_to_video',
-    modelType: 'WanVACEPipeline',
+    modelType: 'WanVideoPipeline',
     category: 'video_generation',
-    tags: ['video', 'text to video', 'wan vace'],
+    tags: ['video', 'text to video', 'wan 2.1'],
     difficulty: 'starter',
     thumbnailVariant: 'video',
     outputKinds: ['video'],
@@ -2062,98 +2789,459 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
         kind: 'video',
         role: 'output',
         path: '/template-gallery/wan_vace_cinematic_text_to_video.mp4',
-        posterPath: '/template-gallery/wan_vace_cinematic_text_to_video.poster.webp',
+        posterPath: '/template-gallery/wan_vace_cinematic_text_to_video.poster.png',
         placeholder: 'video example pending',
       },
     ],
-    requiredBackendCapabilities: ['modules.WanVACE.LoadPipeline', 'modules.WanVACE.Generate', 'modules.Video.Export'],
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.LoadPipeline',
+      'modules.DiffusersVideo.Generate',
+      'modules.Video.Export',
+    ],
     vramEstimate: '16 GB recommended, 8 GB documented baseline',
-    runtimeEstimate: 'Measured 62 min; allow up to 90 min on 16 GB offload',
-    description: 'Prompt-only Wan VACE starter for cinematic short clips.',
+    runtimeEstimate: 'About 45-75 min for one native 81-frame shot and 50 steps on the qualified ROCm host',
+    description: 'Generate one native-length, visibly moving storm-trail documentary shot.',
     prompt: TEMPLATE_PROMPTS.wan_vace_cinematic_text_to_video.prompt,
     negativePrompt: TEMPLATE_PROMPTS.wan_vace_cinematic_text_to_video.negativePrompt,
-    presetId: 'video_balanced',
-    example: videoExample(8201, 'Measured 62 min; allow up to 90 min on 16 GB offload'),
+    presetId: 'video_low_vram',
+    example: videoExample(
+      8201,
+      'About 45-75 min on the qualified ROCm host',
+      {
+        numFrames: 81,
+        fps: 16,
+        steps: 50,
+        guidanceScale: 4.5,
+      },
+      {
+        frames: 81,
+        durationSeconds: 5.06,
+        maximumNearBlackFrameRatio: 0.35,
+      },
+    ),
     promptGuide: VIDEO_PROMPT_GUIDE,
     predictability: videoPredictability(8201),
   },
   {
+    id: 'wan_vace_direct_text_to_video',
+    label: 'Wan VACE 1.3B — Text to Video: Working Print Press',
+    mode: 'text_to_video',
+    modelType: 'WanVACEPipeline',
+    category: 'video_generation',
+    tags: ['wan vace', 'text to video', 'printworks', 'process', 'photoreal'],
+    difficulty: 'blocked',
+    thumbnailVariant: 'video',
+    outputKinds: ['video'],
+    requiredBackendCapabilities: ['modules.DiffusersVideo.LoadPipeline', 'modules.DiffusersVideo.Generate'],
+    vramEstimate: '16 GB recommended with model CPU offload',
+    runtimeEstimate: 'Model-dependent; one 81-frame quality shot',
+    description: 'Generate one native five-second moving print-press process shot through the generic Diffusers graph.',
+    ...TEMPLATE_PROMPTS.wan_vace_direct_text_to_video,
+    presetId: 'video_quality',
+    example: {
+      ...videoExample(8231, 'Qualification blocked after two full app-run motion proofs', {
+        numFrames: 81,
+        fps: 16,
+        steps: 30,
+        guidanceScale: 5,
+      }),
+      status: 'blocked',
+      notes:
+        'Planning item only: full 30-step VACE text-only proofs produced sharp frames but ignored the requested conveyor and print-press motion. Use the dedicated Wan text-to-video adapter for reliable text-only motion; keep VACE for source-conditioned editing.',
+    },
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8231),
+  },
+  {
+    id: 'ltx_video_text_to_video',
+    label: 'LTX-Video — Text to Video: Rainy Rail Approach',
+    mode: 'text_to_video',
+    modelType: 'LTXVideoPipeline',
+    category: 'video_generation',
+    tags: ['video', 'text to video', 'ltx', 'railway', 'rain', 'forward motion', 'camera motion'],
+    difficulty: 'intermediate',
+    thumbnailVariant: 'video',
+    outputKinds: ['video'],
+    videoDelivery: 'spatial_upscale',
+    mediaSlots: [
+      {
+        id: 'primary',
+        label: 'Generated preview',
+        kind: 'video',
+        role: 'output',
+        path: '/template-gallery/ltx_video_text_to_video.mp4',
+        posterPath: '/template-gallery/ltx_video_text_to_video.poster.png',
+        placeholder: 'LTX rainy rail-window motion proof pending qualification',
+      },
+    ],
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.LoadPipeline',
+      'modules.DiffusersVideo.Generate',
+      'modules.Spandrel.Upscaler',
+      'modules.Video.Export',
+    ],
+    vramEstimate: '32 GB VRAM or 64 GB unified memory; CPU offload supported',
+    runtimeEstimate: 'About 8-18 min for one five-second shot and 2× delivery upscale on the qualified ROCm host',
+    description:
+      'Generate a continuous rainy rail-window approach in LTX’s motion-stable 768×512 regime, then apply the pinned 2× delivery upscale.',
+    prompt: TEMPLATE_PROMPTS.ltx_video_text_to_video.prompt,
+    negativePrompt: TEMPLATE_PROMPTS.ltx_video_text_to_video.negativePrompt,
+    presetId: 'ltx_video_balanced',
+    workflowBlocks: ['upscaler'],
+    workflowBlockSettings: { upscaler: VIDEO_DELIVERY_UPSCALER },
+    example: videoExample(
+      8301,
+      'About 8-18 min on the qualified ROCm host',
+      {
+        width: 768,
+        height: 512,
+        numFrames: 121,
+        fps: 24,
+        steps: 8,
+        guidanceScale: 1,
+      },
+      {
+        frames: 121,
+        durationSeconds: 5.04,
+        motionReviewProfile: 'global_camera',
+        minimumMotionCoverage: 0.7,
+        minimumAdjacentMotionCoverage: 0.08,
+        minimumEndToEndMotionCoverage: 0.45,
+        minimumActiveMotionWindowRatio: 0.9,
+        minimumStrongMotionWindowRatio: 0.8,
+        maximumLowMotionFrameRatio: 0.2,
+        maximumNearBlackFrameRatio: 0.35,
+      },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8301),
+  },
+  {
+    id: 'ltx_video_image_to_video',
+    label: 'LTX-Video — Image to Video: Rally Car Tracking Shot',
+    mode: 'image_to_video',
+    modelType: 'LTXVideoPipeline',
+    category: 'video_edit',
+    tags: ['video', 'image to video', 'ltx', 'rally car', 'tracking shot', 'parallax'],
+    difficulty: 'starter',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { referenceImages: 1, sampleAssets: ['rally car source still'] },
+    outputKinds: ['video'],
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.LoadPipeline',
+      'modules.DiffusersVideo.Generate',
+      'modules.Video.Export',
+    ],
+    vramEstimate: '32 GB VRAM or 64 GB unified memory; CPU offload supported',
+    runtimeEstimate: 'About 2-6 min for 161 frames and 8 distilled steps on the qualified ROCm host',
+    description: 'Animate a rally still into an immediate car pass with wheel motion, tire spray and camera parallax.',
+    prompt: TEMPLATE_PROMPTS.ltx_video_image_to_video.prompt,
+    negativePrompt: TEMPLATE_PROMPTS.ltx_video_image_to_video.negativePrompt,
+    presetId: 'ltx_video_balanced',
+    example: videoExample(
+      8302,
+      'About 2-6 min on the qualified ROCm host',
+      {
+        width: 768,
+        height: 512,
+        numFrames: 161,
+        fps: 16,
+        steps: 8,
+        guidanceScale: 1,
+        conditioningScale: 0.7,
+        strength: 0.7,
+      },
+      {
+        // I2V may correctly preserve a locked background while a large foreground
+        // subject traverses and recedes. This profile still rejects the old
+        // near-static clips, while measuring the localized action the card shows.
+        motionReviewProfile: 'localized_subject',
+        minimumMotionCoverage: 0.55,
+        minimumAdjacentMotionCoverage: 0.03,
+        minimumEndToEndMotionCoverage: 0.35,
+        minimumStrongMotionWindowRatio: 0.45,
+      },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8302),
+  },
+  {
+    id: 'ltx_video_video_to_video',
+    label: 'LTX-Video — Generative Remaster: Rocket Launch',
+    mode: 'video_to_video',
+    modelType: 'LTXVideoPipeline',
+    category: 'video_edit',
+    tags: ['video', 'video to video', 'ltx', 'rocket', 'remaster', 'restoration'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { sourceVideo: true, sampleAssets: ['daylight rocket launch source video'] },
+    outputKinds: ['video'],
+    videoDelivery: 'spatial_upscale',
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.LoadPipeline',
+      'modules.DiffusersVideo.Generate',
+      'modules.Spandrel.Upscaler',
+      'modules.Video.Export',
+    ],
+    vramEstimate: '32 GB VRAM or 64 GB unified memory; CPU offload supported',
+    runtimeEstimate:
+      'About 6-15 min for a five-second source excerpt and 2× delivery upscale on the qualified ROCm host',
+    description:
+      'Reconstruct and upscale a rocket launch while preserving its vehicle, trajectory, plume timing and camera.',
+    prompt: TEMPLATE_PROMPTS.ltx_video_video_to_video.prompt,
+    negativePrompt: TEMPLATE_PROMPTS.ltx_video_video_to_video.negativePrompt,
+    presetId: 'ltx_video_balanced',
+    workflowBlocks: ['upscaler'],
+    workflowBlockSettings: { upscaler: VIDEO_DELIVERY_UPSCALER },
+    example: videoExample(
+      8313,
+      'About 6-15 min on the qualified ROCm host',
+      {
+        width: 768,
+        height: 512,
+        numFrames: 81,
+        fps: 16,
+        steps: 8,
+        guidanceScale: 1,
+        conditioningScale: 1,
+        strength: 0.6,
+      },
+      {
+        motionReviewProfile: 'localized_subject',
+        minimumMotionCoverage: 0.8,
+        minimumAdjacentMotionCoverage: 0.025,
+        minimumEndToEndMotionCoverage: 0.4,
+        minimumStrongMotionWindowRatio: 0.15,
+        maximumLowMotionFrameRatio: 0.75,
+        frames: 81,
+        durationSeconds: 5.06,
+      },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8313),
+  },
+  {
+    id: 'ltx_video_multi_reference',
+    label: 'LTX-Video — Multi-Reference to Video: Storm Boardwalk Tracking',
+    mode: 'reference_to_video',
+    modelType: 'LTXVideoPipeline',
+    category: 'video_reference',
+    tags: ['video', 'multi-reference', 'ltx', 'boardwalk', 'camera tracking', 'storm'],
+    difficulty: 'intermediate',
+    thumbnailVariant: 'contactSheet',
+    inputRequirements: {
+      referenceImages: 2,
+      sampleAssets: ['coastal boardwalk opening keyframe', 'coastal boardwalk closing keyframe'],
+    },
+    outputKinds: ['video'],
+    videoDelivery: 'spatial_upscale',
+    mediaSlots: [
+      {
+        id: 'subject-reference',
+        label: 'Opening boardwalk keyframe',
+        kind: 'image',
+        role: 'source',
+        path: '/template-gallery/inputs/ltx_boardwalk_tracking.start.webp',
+        placeholder: 'opening boardwalk keyframe pending',
+      },
+      {
+        id: 'composition-reference',
+        label: 'Closing boardwalk keyframe',
+        kind: 'image',
+        role: 'source',
+        path: '/template-gallery/inputs/ltx_boardwalk_tracking.end.webp',
+        placeholder: 'closing boardwalk keyframe pending',
+      },
+      {
+        id: 'output',
+        label: 'Generated motion',
+        kind: 'video',
+        role: 'output',
+        path: '/template-gallery/ltx_video_multi_reference.mp4',
+        posterPath: '/template-gallery/ltx_video_multi_reference.poster.png',
+        placeholder: 'multi-reference video pending',
+      },
+    ],
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.LoadPipeline',
+      'modules.DiffusersVideo.Generate',
+      'modules.Spandrel.Upscaler',
+      'modules.Video.Export',
+    ],
+    vramEstimate: '32 GB VRAM or 64 GB unified memory; CPU offload supported',
+    runtimeEstimate: 'About 6-15 min for one five-second shot and 2× delivery upscale on the qualified ROCm host',
+    description:
+      'Track forward between two matching boardwalk keyframes in LTX’s motion-stable 768×512 regime, then apply the pinned 2× delivery upscale.',
+    prompt: TEMPLATE_PROMPTS.ltx_video_multi_reference.prompt,
+    negativePrompt: TEMPLATE_PROMPTS.ltx_video_multi_reference.negativePrompt,
+    presetId: 'ltx_video_balanced',
+    workflowBlocks: ['upscaler'],
+    workflowBlockSettings: { upscaler: VIDEO_DELIVERY_UPSCALER },
+    example: videoExample(
+      8304,
+      'About 6-15 min on the qualified ROCm host',
+      {
+        width: 768,
+        height: 512,
+        numFrames: 81,
+        fps: 16,
+        steps: 8,
+        guidanceScale: 1,
+        conditioningScale: 1,
+        strength: 0.55,
+      },
+      {
+        motionReviewProfile: 'global_camera',
+        minimumMotionCoverage: 0.75,
+        minimumAdjacentMotionCoverage: 0.08,
+        minimumEndToEndMotionCoverage: 0.55,
+        frames: 81,
+        durationSeconds: 5.06,
+      },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8304),
+  },
+  {
     id: 'wan_vace_animate_product_still',
-    label: 'Animate product still',
+    label: 'Wan VACE 1.3B — Still Image to Video: Sparkling Lemon Drink',
     mode: 'image_to_video',
     modelType: 'WanVACEPipeline',
     category: 'video_edit',
-    tags: ['video', 'image to video', 'product'],
-    difficulty: 'starter',
-    thumbnailVariant: 'video',
-    inputRequirements: { referenceImages: 1, sampleAssets: ['product still image'] },
+    tags: ['video', 'image to video', 'food', 'photoreal'],
+    difficulty: 'blocked',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { referenceImages: 1, sampleAssets: ['landscape beverage still'] },
     outputKinds: ['video'],
-    requiredBackendCapabilities: ['modules.WanVACE.Generate', 'modules.VideoConditioning.ReferenceImages'],
+    requiredBackendCapabilities: ['modules.DiffusersVideo.Generate', 'modules.VideoConditioning.ReferenceImages'],
     vramEstimate: '16 GB recommended',
-    runtimeEstimate: '60-120+ min on 16 GB offload after image load',
-    description: 'Animate one still image while preserving product identity and framing.',
+    runtimeEstimate:
+      'Measured about 9 min end-to-end for 33 frames and 16 steps on the qualified high-memory ROCm host',
+    description:
+      'Animate a realistic beverage still with restrained bubbles, condensation, and breeze while preserving glass geometry, physical scale, and table contact.',
     prompt: TEMPLATE_PROMPTS.wan_vace_animate_product_still.prompt,
     negativePrompt: TEMPLATE_PROMPTS.wan_vace_animate_product_still.negativePrompt,
-    presetId: 'video_balanced',
-    example: videoExample(8202, '60-120+ min on 16 GB offload after image load'),
+    presetId: 'video_low_vram',
+    example: {
+      ...videoExample(8202, 'Qualification blocked after three app-run source-fidelity proofs', {
+        width: 832,
+        height: 480,
+        numFrames: 33,
+        fps: 16,
+        steps: 16,
+        guidanceScale: 4.5,
+        conditioningScale: 1,
+      }),
+      status: 'blocked',
+      notes:
+        'Planning item only: app proofs were temporally stable, but the 1.3B VACE pipeline either reframed/reconstructed source objects or applied a strong global contrast and saturation shift before motion began.',
+    },
     promptGuide: VIDEO_PROMPT_GUIDE,
     predictability: videoPredictability(8202),
   },
   {
     id: 'wan_vace_video_color_grade',
-    label: 'Source video color grade',
+    label: 'Wan 2.1 T2V 1.3B — Generative Look Transfer: Materials Lab',
     mode: 'video_color_edit',
-    modelType: 'WanVACEPipeline',
+    modelType: 'WanVideoPipeline',
     category: 'video_color',
     tags: ['video', 'color', 'edit'],
     difficulty: 'intermediate',
     thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceVideo: true, sampleAssets: ['source video'] },
     outputKinds: ['video'],
-    requiredBackendCapabilities: ['modules.Video.Load', 'modules.WanVACE.Generate', 'modules.Video.Export'],
+    requiredBackendCapabilities: ['modules.Video.Load', 'modules.DiffusersVideo.Generate', 'modules.Video.Export'],
     vramEstimate: '16 GB recommended',
-    runtimeEstimate: 'Unproven on 16 GB offload; prior source-video run exceeded 5 hr',
-    description: 'Prompt-guided cinematic color edit while preserving source motion.',
+    runtimeEstimate: 'About 35-65 min for 81 frames and 50 steps on the qualified high-memory ROCm host',
+    description:
+      'Prompt-guided generative look transfer; source motion and geometry can change. Use deterministic Video Color nodes when an exact grade is required.',
     prompt: TEMPLATE_PROMPTS.wan_vace_video_color_grade.prompt,
     negativePrompt: TEMPLATE_PROMPTS.wan_vace_video_color_grade.negativePrompt,
     presetId: 'color_preserve_edit',
-    example: videoExample(8203, 'Unproven on 16 GB offload; prior source-video run exceeded 5 hr'),
+    example: videoExample(
+      8203,
+      'About 35-65 min on the qualified high-memory ROCm host',
+      {
+        numFrames: 81,
+        steps: 50,
+        // 0.18 preserved the source but the qualified press proof was still too
+        // subtle to communicate a look-transfer operation. Keep the structural
+        // guard at 0.20 and use the model's recommended CFG 5 for a clearer grade.
+        strength: 0.2,
+        guidanceScale: 5,
+      },
+      {
+        // The camera is intentionally locked and motion is localized to the
+        // descending press and specimen. These floors match the byte-locked
+        // source motion while still rejecting a frozen or mistimed edit.
+        motionReviewProfile: 'localized_subject',
+        minimumMotionCoverage: 0.27,
+        minimumAdjacentMotionCoverage: 0.03,
+        minimumEndToEndMotionCoverage: 0.18,
+        minimumActiveMotionWindowRatio: 0.65,
+        minimumStrongMotionWindowRatio: 0,
+        maximumLowMotionFrameRatio: 0.3,
+      },
+    ),
     promptGuide: VIDEO_PROMPT_GUIDE,
     predictability: videoPredictability(8203),
   },
   {
     id: 'wan_vace_masked_object_replace',
-    label: 'Masked video object replace',
+    label: 'Wan VACE 1.3B — Video Inpaint: Amber Glass Replacement',
     mode: 'video_inpaint',
     modelType: 'WanVACEPipeline',
     category: 'video_inpaint',
-    tags: ['video', 'mask', 'inpaint'],
+    tags: ['video', 'mask', 'inpaint', 'product', 'glass'],
     difficulty: 'advanced',
     thumbnailVariant: 'compareSlider',
     inputRequirements: {
       sourceVideo: true,
       maskVideo: true,
-      sampleAssets: ['source video', 'white-generate mask video'],
+      referenceImages: 1,
+      sampleAssets: ['source video', 'white-generate mask video', 'replacement identity reference'],
     },
     outputKinds: ['video'],
-    requiredBackendCapabilities: ['modules.VideoConditioning.AlignMask', 'modules.WanVACE.Generate'],
+    requiredBackendCapabilities: [
+      'modules.Image.Load',
+      'modules.VideoConditioning.AlignMask',
+      'modules.DiffusersVideo.Generate',
+    ],
     vramEstimate: '16 GB recommended',
-    runtimeEstimate: 'Unproven on 16 GB offload; may take hours',
-    description: 'Replace masked regions across frames using Wan VACE mask semantics.',
+    runtimeEstimate: 'About 100-130 min for two native segments, 161 frames, and 30 steps on the qualified ROCm host',
+    description: 'Replace one masked glass vessel across a moving product orbit while preserving its surrounding set.',
     prompt: TEMPLATE_PROMPTS.wan_vace_masked_object_replace.prompt,
     negativePrompt: TEMPLATE_PROMPTS.wan_vace_masked_object_replace.negativePrompt,
     presetId: 'video_balanced',
-    example: videoExample(8204, 'Unproven on 16 GB offload; may take hours'),
+    example: videoExample(
+      8217,
+      'Measured about 110 min on the qualified Radeon 8060S host',
+      {
+        numFrames: 161,
+        steps: 30,
+      },
+      {
+        motionReviewProfile: 'localized_subject',
+        minimumMotionCoverage: 0.5,
+        minimumAdjacentMotionCoverage: 0.08,
+        // A product orbit can finish close to its opening view. Require strong
+        // continuous motion, but do not reject the intended return angle.
+        minimumEndToEndMotionCoverage: 0.35,
+        minimumActiveMotionWindowRatio: 0.9,
+        minimumStrongMotionWindowRatio: 0.75,
+        maximumLowMotionFrameRatio: 0.2,
+      },
+    ),
     promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8204),
+    predictability: videoPredictability(8217),
   },
   {
     id: 'wan_vace_outpaint_reframe',
-    label: 'Video outpaint reframe',
+    label: 'Wan VACE 1.3B — Video Outpaint: Wider Robotics Workcell',
     mode: 'video_outpaint',
     modelType: 'WanVACEPipeline',
     category: 'video_outpaint',
-    tags: ['video', 'outpaint', 'reframe'],
+    tags: ['video', 'outpaint', 'reframe', 'robotics', 'laboratory'],
     difficulty: 'advanced',
     thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceVideo: true, maskVideo: true, sampleAssets: ['source video', 'boundary mask video'] },
@@ -2161,21 +3249,24 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     requiredBackendCapabilities: [
       'modules.VideoConditioning.Normalize',
       'modules.VideoConditioning.AlignMask',
-      'modules.WanVACE.Generate',
+      'modules.DiffusersVideo.Generate',
     ],
     vramEstimate: '16 GB recommended',
-    runtimeEstimate: 'Unproven on 16 GB offload; may take hours',
-    description: 'Extend or reframe a video using boundary-generation masks.',
+    runtimeEstimate: 'About 25-45 min for 81 frames and 30 steps on the qualified high-memory ROCm host',
+    description: 'Extend a moving laboratory-robot clip with perspective-correct, temporally stable side content.',
     prompt: TEMPLATE_PROMPTS.wan_vace_outpaint_reframe.prompt,
     negativePrompt: TEMPLATE_PROMPTS.wan_vace_outpaint_reframe.negativePrompt,
     presetId: 'video_balanced',
-    example: videoExample(8205, 'Unproven on 16 GB offload; may take hours'),
+    example: videoExample(8205, 'About 25-45 min on the qualified high-memory ROCm host', {
+      numFrames: 81,
+      steps: 30,
+    }),
     promptGuide: VIDEO_PROMPT_GUIDE,
     predictability: videoPredictability(8205),
   },
   {
     id: 'wan_vace_reference_motion',
-    label: 'Reference subject motion',
+    label: 'Wan VACE 1.3B — Reference to Video: Subject Motion',
     mode: 'reference_to_video',
     modelType: 'WanVACEPipeline',
     category: 'video_reference',
@@ -2184,42 +3275,68 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'video',
     inputRequirements: { referenceImages: 2, sampleAssets: ['subject reference', 'style reference'] },
     outputKinds: ['video'],
-    requiredBackendCapabilities: ['modules.VideoConditioning.ReferenceImages', 'modules.WanVACE.Generate'],
+    requiredBackendCapabilities: ['modules.VideoConditioning.ReferenceImages', 'modules.DiffusersVideo.Generate'],
     vramEstimate: '16 GB recommended',
-    runtimeEstimate: 'Unproven on 16 GB offload; may take hours',
+    runtimeEstimate: 'About 9-15 min for 33 frames and 16 steps on the qualified high-memory ROCm host',
     description: 'Use references to guide a short subject-driven video.',
     prompt: TEMPLATE_PROMPTS.wan_vace_reference_motion.prompt,
     negativePrompt: TEMPLATE_PROMPTS.wan_vace_reference_motion.negativePrompt,
     presetId: 'video_balanced',
-    example: videoExample(8206, 'Unproven on 16 GB offload; may take hours'),
+    example: {
+      ...videoExample(8206, 'Qualification blocked after a real two-reference app proof', {
+        numFrames: 33,
+        steps: 16,
+      }),
+      status: 'blocked',
+      notes:
+        'Planning item only: the Wan 1.3B reference proof rendered the rainy portrait as a giant scene billboard, kept the subject nearly static, and did not produce the requested gallery walk. The adapter needs reference-identity conditioning that cannot leak source pixels into the scene before this mode is supported.',
+    },
     promptGuide: VIDEO_PROMPT_GUIDE,
     predictability: videoPredictability(8206),
   },
   {
     id: 'wan_vace_grayscale_control',
-    label: 'Grayscale control video',
+    label: 'Wan VACE 1.3B — Control to Video: City Cycle Lane',
     mode: 'control_to_video',
     modelType: 'WanVACEPipeline',
     category: 'video_control',
-    tags: ['video', 'control', 'grayscale'],
+    tags: ['video', 'control', 'grayscale', 'street', 'cycling', 'photoreal'],
     difficulty: 'intermediate',
     thumbnailVariant: 'video',
     inputRequirements: { controlVideo: true, sampleAssets: ['prepared grayscale/control video'] },
     outputKinds: ['video'],
-    requiredBackendCapabilities: ['modules.Video.Load', 'modules.WanVACE.Generate', 'modules.Video.Export'],
+    requiredBackendCapabilities: ['modules.Video.Load', 'modules.DiffusersVideo.Generate', 'modules.Video.Export'],
     vramEstimate: '16 GB recommended',
-    runtimeEstimate: 'Unproven on 16 GB offload; may take hours',
-    description: 'Use a prepared grayscale/control clip to guide final video generation.',
+    runtimeEstimate: 'About 25-45 min for 81 frames and 30 steps on the qualified high-memory ROCm host',
+    description: 'Turn a moving street segmentation study into a photoreal protected cycle-lane journey.',
     prompt: TEMPLATE_PROMPTS.wan_vace_grayscale_control.prompt,
     negativePrompt: TEMPLATE_PROMPTS.wan_vace_grayscale_control.negativePrompt,
     presetId: 'video_balanced',
-    example: videoExample(8207, 'Unproven on 16 GB offload; may take hours'),
+    example: videoExample(
+      8207,
+      'About 25-45 min on the qualified high-memory ROCm host',
+      {
+        numFrames: 81,
+        steps: 30,
+      },
+      {
+        // This workflow follows a deliberately smooth low-speed control camera.
+        // Require broad end-to-end travel while allowing small per-frame deltas;
+        // the global defaults are calibrated for faster free-generation shots.
+        minimumMotionCoverage: 0.75,
+        minimumAdjacentMotionCoverage: 0.03,
+        minimumEndToEndMotionCoverage: 0.6,
+        minimumActiveMotionWindowRatio: 0.6,
+        minimumStrongMotionWindowRatio: 0.4,
+        maximumLowMotionFrameRatio: 0.8,
+      },
+    ),
     promptGuide: VIDEO_PROMPT_GUIDE,
     predictability: videoPredictability(8207),
   },
   {
     id: 'ace_step_text_to_audio',
-    label: 'ACE text to audio',
+    label: 'ACE-Step Audio — Text to Audio: Alternative-Metal Song',
     mode: 'text_to_audio',
     modelType: 'AceStepAudioPipeline',
     category: 'audio_generation',
@@ -2228,19 +3345,28 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'audio',
     outputKinds: ['audio'],
     requiredBackendCapabilities: ['Diffusers audio direct pipeline'],
-    vramEstimate: '16 GB with offload',
-    runtimeEstimate: '2-6 min for 30 sec audio',
+    vramEstimate: ACE_STEP_MEMORY_ESTIMATE,
+    runtimeEstimate: 'About 5-15 min for 75 sec audio',
     description: 'Generate music from prompt and optional lyrics with ACE-Step Diffusers.',
     prompt: TEMPLATE_PROMPTS.ace_step_text_to_audio.prompt,
     negativePrompt: TEMPLATE_PROMPTS.ace_step_text_to_audio.negativePrompt,
     presetId: 'audio_balanced',
-    example: audioExample(8301, '2-6 min for 30 sec audio'),
+    example: {
+      ...audioExample(8301, 'About 5-15 min for 75 sec audio', {
+        audioDuration: 75,
+        lyrics: MODIFF_AUDIO_75_SECOND_LYRICS,
+        bpm: 170,
+        keyscale: 'C# minor',
+        timesignature: '3',
+      }),
+      outputPath: MODIFF_AUDIO_75_SECOND_EXAMPLE_PATH,
+    },
     promptGuide: AUDIO_PROMPT_GUIDE,
     predictability: predictability(8301),
   },
   {
     id: 'ace_step_audio_variation',
-    label: 'ACE audio variation',
+    label: 'ACE-Step Audio — Audio Variation: Alternate Arrangement',
     mode: 'audio_variation',
     modelType: 'AceStepAudioPipeline',
     category: 'audio_edit',
@@ -2250,7 +3376,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { sourceAudio: true, sampleAssets: ['source wav audio'] },
     outputKinds: ['audio'],
     requiredBackendCapabilities: ['Diffusers audio direct pipeline', 'modules.Audio.Load'],
-    vramEstimate: '16 GB with offload',
+    vramEstimate: ACE_STEP_MEMORY_ESTIMATE,
     runtimeEstimate: '2-6 min after source audio load',
     description: 'Create a guided cover or variation from source audio.',
     prompt: TEMPLATE_PROMPTS.ace_step_audio_variation.prompt,
@@ -2262,7 +3388,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'ace_step_audio_continuation',
-    label: 'ACE continuation',
+    label: 'ACE-Step Audio — Audio Continuation: Extend Track',
     mode: 'audio_continuation',
     modelType: 'AceStepAudioPipeline',
     category: 'audio_edit',
@@ -2271,20 +3397,37 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     thumbnailVariant: 'audio',
     inputRequirements: { sourceAudio: true, sampleAssets: ['source wav audio'] },
     outputKinds: ['audio'],
-    requiredBackendCapabilities: ['Diffusers audio direct pipeline', 'modules.Audio.Load'],
-    vramEstimate: '16 GB with offload',
+    requiredBackendCapabilities: [
+      'Diffusers audio direct pipeline',
+      'modules.Audio.Load',
+      'modules.Audio.MatchLoudness',
+      'modules.Audio.Join',
+    ],
+    vramEstimate: ACE_STEP_MEMORY_ESTIMATE,
     runtimeEstimate: '2-6 min after source audio load',
-    description: 'Continue an existing audio clip with prompt-guided generation.',
+    description: 'Continue the included 75-second track and export the complete joined 90-second song.',
     prompt: TEMPLATE_PROMPTS.ace_step_audio_continuation.prompt,
     negativePrompt: TEMPLATE_PROMPTS.ace_step_audio_continuation.negativePrompt,
     presetId: 'audio_continuation',
-    example: audioExample(8303, '2-6 min after source audio load', { extensionDuration: 15 }),
+    example: audioExample(
+      8303,
+      '2-6 min after source audio load',
+      {
+        audioDuration: 75,
+        extensionDuration: 15,
+        lyrics: MODIFF_AUDIO_CONTINUATION_LYRICS,
+        bpm: 170,
+        keyscale: 'C# minor',
+        timesignature: '3',
+      },
+      90,
+    ),
     promptGuide: AUDIO_PROMPT_GUIDE,
     predictability: predictability(8303),
   },
   {
     id: 'ace_step_audio_repaint',
-    label: 'ACE repaint',
+    label: 'ACE-Step Audio — Audio Repaint: Replace Segment',
     mode: 'audio_repaint',
     modelType: 'AceStepAudioPipeline',
     category: 'audio_edit',
@@ -2294,7 +3437,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     inputRequirements: { sourceAudio: true, sampleAssets: ['source wav audio'] },
     outputKinds: ['audio'],
     requiredBackendCapabilities: ['Diffusers audio direct pipeline', 'modules.Audio.Load'],
-    vramEstimate: '16 GB with offload',
+    vramEstimate: ACE_STEP_MEMORY_ESTIMATE,
     runtimeEstimate: '2-6 min after source audio load',
     description: 'Regenerate a selected section of source audio while preserving the rest.',
     prompt: TEMPLATE_PROMPTS.ace_step_audio_repaint.prompt,
@@ -2305,8 +3448,75 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     predictability: predictability(8304),
   },
   {
+    id: 'ace_step_chinese_new_year_lora',
+    label: 'ACE-Step Audio — LoRA: Chinese New Year Ensemble',
+    mode: 'text_to_audio',
+    modelType: 'AceStepAudioPipeline',
+    category: 'lora',
+    tags: ['audio', 'music', 'lora', 'ace-step', 'traditional'],
+    difficulty: 'starter',
+    thumbnailVariant: 'audio',
+    outputKinds: ['audio'],
+    requiredBackendCapabilities: ['modules.DiffusersAudio.LoadAdapter', 'modules.DiffusersAudio.Generate'],
+    vramEstimate: '12-16 GB with model offload',
+    runtimeEstimate: 'About 1-5 min for the pinned 30 sec recipe after model load',
+    description: 'Use the adapter and base-model pairing verified in the merged Diffusers ACE-Step LoRA change.',
+    promptQualityPolicy: 'adapter_reference',
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: ACE_STEP_CNY_LORA },
+    inputRequirements: { loraAdapter: true, sampleAssets: ['pinned ACE-Step LoRA'] },
+    prompt: TEMPLATE_PROMPTS.ace_step_chinese_new_year_lora.prompt,
+    negativePrompt: TEMPLATE_PROMPTS.ace_step_chinese_new_year_lora.negativePrompt,
+    presetId: 'audio_balanced',
+    example: {
+      ...audioExample(42, 'About 1-5 min for 30 sec audio after model load', {
+        audioDuration: 30,
+        bpm: 96,
+        keyscale: 'D major',
+        lyrics: '[verse]\n\u6625\u98ce\u53c8\u7eff\u6c5f\u5357\u5cb8\n\u660e\u6708\u4f55\u65f6\u7167\u6211\u8fd8',
+      }),
+      outputPath: ACE_STEP_CHINESE_NEW_YEAR_EXAMPLE_PATH,
+    },
+    promptGuide: AUDIO_PROMPT_GUIDE,
+    predictability: predictability(42),
+  },
+  {
+    id: 'ace_step_custom_lora',
+    label: 'ACE-Step Audio — LoRA: Your Trained Audio Style',
+    mode: 'text_to_audio',
+    modelType: 'AceStepAudioPipeline',
+    category: 'lora',
+    tags: ['audio', 'music', 'lora', 'ace-step', 'custom'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'audio',
+    outputKinds: ['audio'],
+    evidencePolicy: 'user_supplied',
+    requiredBackendCapabilities: ['modules.DiffusersAudio.LoadAdapter', 'modules.DiffusersAudio.Generate'],
+    vramEstimate: '12-16 GB with model offload',
+    runtimeEstimate: 'Depends on the selected adapter and duration',
+    description: 'Start with an original ACE-Step 1.5 LoRA folder, then tune adapter strength without editing code.',
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: ACE_STEP_CUSTOM_LORA },
+    inputRequirements: { loraAdapter: true, sampleAssets: ['your trained adapter_model.safetensors'] },
+    prompt: TEMPLATE_PROMPTS.ace_step_custom_lora.prompt,
+    negativePrompt: TEMPLATE_PROMPTS.ace_step_custom_lora.negativePrompt,
+    presetId: 'audio_balanced',
+    example: {
+      ...audioExample(8451, 'Depends on the selected adapter', {
+        audioDuration: 20,
+        bpm: 92,
+        keyscale: 'A minor',
+        lyrics: '[instrumental]',
+      }),
+      notes:
+        'Bring-your-own adapter recipe. The generic ACE-Step LoRA path is qualified by the pinned Chinese New Year adapter, while this card deliberately waits for the user’s own compatible weights.',
+    },
+    promptGuide: AUDIO_PROMPT_GUIDE,
+    predictability: predictability(8451),
+  },
+  {
     id: 'flux_schnell_text_to_image',
-    label: 'FLUX schnell',
+    label: 'FLUX.1-schnell — Text to Image: Coastal Wall Restoration',
     mode: 'text_to_image',
     modelType: 'FluxSchnellPipeline',
     category: 'flux',
@@ -2316,22 +3526,26 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     outputKinds: ['image'],
     requiredBackendCapabilities: ['Diffusers image direct pipeline'],
     vramEstimate: '16 GB with offload',
-    runtimeEstimate: '45-120 sec',
-    description: 'Local 16GB-friendly FLUX text-to-image using the low-step schnell recipe.',
+    runtimeEstimate: 'About 25-27 min cold; 45-120 sec after the model is resident',
+    description: 'Low-step FLUX documentary scene showing a mason repairing a coastal dry-stone wall.',
     prompt: TEMPLATE_PROMPTS.flux_schnell_text_to_image.prompt,
     negativePrompt: TEMPLATE_PROMPTS.flux_schnell_text_to_image.negativePrompt,
     presetId: 'flux_fast',
-    example: example(8401, '45-120 sec', { steps: 4, guidanceScale: 0, resourceMode: 'auto' }),
+    example: example(8427, 'About 25-27 min cold; 45-120 sec after the model is resident', {
+      steps: 4,
+      guidanceScale: 0,
+      resourceMode: 'auto',
+    }),
     promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8401),
+    predictability: predictability(8427),
   },
   {
     id: 'flux_dev_expert_text_to_image',
-    label: 'FLUX dev expert',
+    label: 'FLUX.1-dev — Text to Image: Aircraft Restoration Documentary',
     mode: 'text_to_image',
     modelType: 'FluxDevPipeline',
     category: 'flux',
-    tags: ['flux', 'dev', 'expert'],
+    tags: ['flux', 'dev', 'aircraft', 'documentary', 'restoration'],
     difficulty: 'advanced',
     thumbnailVariant: 'image',
     outputKinds: ['image'],
@@ -2342,13 +3556,244 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     prompt: TEMPLATE_PROMPTS.flux_dev_expert_text_to_image.prompt,
     negativePrompt: TEMPLATE_PROMPTS.flux_dev_expert_text_to_image.negativePrompt,
     presetId: 'flux_quality',
-    example: example(8402, '2-6 min depending on artifact', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
+    example: example(8402, '2-6 min depending on artifact', {
+      steps: 28,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
     promptGuide: BASE_PROMPT_GUIDE,
     predictability: predictability(8402),
   },
   {
+    id: 'flux_lora_cinematic_octane_3d',
+    label: 'FLUX.1-dev — LoRA Mix: Cinematic Octane 3D',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'cinematic octane', '3d render', 'character', 'flux'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.cinematicOctane3d },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after the base and both adapters are resident',
+    description:
+      'Cinematic-Octane character rendering with the documented trigger and a low-strength 3D-render adapter for controlled CG depth.',
+    ...TEMPLATE_PROMPTS.flux_lora_cinematic_octane_3d,
+    presetId: 'flux_quality',
+    example: example(9371, '2-6 min after the base and both adapters are resident', {
+      width: 768,
+      height: 1024,
+      steps: 24,
+      guidanceScale: 3,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(9371),
+  },
+  {
+    id: 'flux_lora_ghibli_story',
+    label: 'FLUX.1-dev — LoRA: Ghibli-Style Story Illustration',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'ghibli', 'animation', 'story'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.ghibli },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after adapter load',
+    description: 'Personal-use-only original-character story illustration using the documented Ghibli adapter recipe.',
+    ...TEMPLATE_PROMPTS.flux_lora_ghibli_story,
+    presetId: 'flux_quality',
+    example: example(9361, '2-6 min after adapter load', {
+      width: 1024,
+      height: 768,
+      steps: 30,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(9361),
+  },
+  {
+    id: 'flux_lora_oil_painting',
+    label: 'FLUX.1-dev — LoRA: Textured Oil Painting',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'oil painting', 'painterly'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.oilPainting },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after adapter load',
+    description: 'Single-subject atmospheric oil painting tuned to the adapter author’s recommended 0.8–1.0 weight.',
+    ...TEMPLATE_PROMPTS.flux_lora_oil_painting,
+    presetId: 'flux_quality',
+    example: example(8451, '2-6 min after adapter load', {
+      width: 1024,
+      height: 1024,
+      steps: 28,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(8451),
+  },
+  {
+    id: 'flux_lora_film_noir',
+    label: 'FLUX.1-dev — LoRA: Film-Noir Turning Point',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'film noir', 'cinematic', 'black and white'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.filmNoir },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after adapter load',
+    description: 'A readable newsroom crisis using the adapter’s documented FLMNR trigger and noir lighting language.',
+    ...TEMPLATE_PROMPTS.flux_lora_film_noir,
+    presetId: 'flux_quality',
+    example: example(8452, '2-6 min after adapter load', {
+      width: 1024,
+      height: 1024,
+      steps: 28,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(8452),
+  },
+  {
+    id: 'flux_lora_retro_comic',
+    label: 'FLUX.1-dev — LoRA: Retro Comic Emergency',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'retro comic', 'halftone', 'story'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.retroComic },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after adapter load',
+    description:
+      'One decisive comic panel using the documented c0m1c trigger, v2 weight, halftone print, and concise dialogue.',
+    ...TEMPLATE_PROMPTS.flux_lora_retro_comic,
+    presetId: 'flux_quality',
+    example: example(9362, '2-6 min after adapter load', {
+      width: 1024,
+      height: 1024,
+      steps: 28,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(9362),
+  },
+  {
+    id: 'flux_lora_watercolor',
+    label: 'FLUX.1-dev — LoRA: Alpine Watercolor',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'watercolor', 'aquarelle', 'paper'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.watercolor },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after adapter load',
+    description:
+      'Clean-paper watercolor composition using the documented AQUACOLTOK trigger and restrained scene design.',
+    ...TEMPLATE_PROMPTS.flux_lora_watercolor,
+    presetId: 'flux_quality',
+    example: example(9363, '2-6 min after adapter load', {
+      width: 1024,
+      height: 1024,
+      steps: 28,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(9363),
+  },
+  {
+    id: 'flux_lora_paper_cutout',
+    label: 'FLUX.1-dev — LoRA: Layered Paper Folktale',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'paper cutout', 'folktale', 'layered'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.paperCutout },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after adapter load',
+    description: 'Original layered-paper folktale using the adapter’s exact Paper Cutout Style trigger.',
+    ...TEMPLATE_PROMPTS.flux_lora_paper_cutout,
+    presetId: 'flux_quality',
+    example: example(8455, '2-6 min after adapter load', {
+      width: 1024,
+      height: 1024,
+      steps: 28,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(8455),
+  },
+  {
+    id: 'flux_lora_photoreal_documentary',
+    label: 'FLUX.1-dev — LoRA: Wildlife Rescue Documentary',
+    mode: 'text_to_image',
+    modelType: 'FluxDevPipeline',
+    category: 'lora',
+    tags: ['lora', 'photoreal', 'documentary', 'wildlife'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
+    workflowBlocks: ['lora'],
+    workflowBlockSettings: { lora: FLUX_THEME_LORAS.photoreal },
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after adapter load',
+    description: 'Photographic wildlife-clinic scene using the widely adopted XLabs FLUX realism adapter.',
+    ...TEMPLATE_PROMPTS.flux_lora_photoreal_documentary,
+    presetId: 'flux_quality',
+    example: example(8456, '2-6 min after adapter load', {
+      width: 1024,
+      height: 1024,
+      steps: 28,
+      guidanceScale: 3.5,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(8456),
+  },
+  {
     id: 'flux_kontext_edit',
-    label: 'FLUX Kontext edit',
+    label: 'FLUX.1-Kontext-dev — Image Edit: Material Replacement',
     mode: 'edit_image',
     modelType: 'FluxKontextPipeline',
     category: 'flux',
@@ -2364,13 +3809,13 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     prompt: TEMPLATE_PROMPTS.flux_kontext_edit.prompt,
     negativePrompt: TEMPLATE_PROMPTS.flux_kontext_edit.negativePrompt,
     presetId: 'flux_kontext',
-    example: example(8403, '2-6 min after source load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
+    example: example(8443, '2-6 min after source load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
     promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8403),
+    predictability: predictability(8443),
   },
   {
     id: 'flux_fill_inpaint',
-    label: 'FLUX Fill inpaint',
+    label: 'FLUX.1-Fill-dev — Inpaint: Masked Object Replacement',
     mode: 'inpaint',
     modelType: 'FluxFillPipeline',
     category: 'flux',
@@ -2397,7 +3842,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
   },
   {
     id: 'flux_control_canny',
-    label: 'FLUX control canny',
+    label: 'FLUX.1-Canny-dev — Control Image: Edge-Guided Architecture',
     mode: 'control_image',
     modelType: 'FluxCannyPipeline',
     category: 'flux',
@@ -2421,9 +3866,855 @@ const BASE_STUDIO_TEMPLATES: StudioTemplate[] = [
     promptGuide: CONTROL_PROMPT_GUIDE,
     predictability: predictability(8405),
   },
+  {
+    id: 'flux_krea_text_to_image',
+    label: 'FLUX.1-Krea-dev — Text to Image: Editorial Portrait',
+    mode: 'text_to_image',
+    modelType: 'FluxKreaPipeline',
+    category: 'flux',
+    tags: ['flux', 'krea', 'portrait'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline'],
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min',
+    description: 'Natural editorial image generation with FLUX.1-Krea-dev.',
+    ...TEMPLATE_PROMPTS.flux_krea_text_to_image,
+    presetId: 'flux_quality',
+    example: example(8406, '2-6 min', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(8406),
+  },
+  {
+    id: 'flux_kontext_multi_reference',
+    label: 'FLUX.1-Kontext-dev — Multi-Reference Edit: Material Transfer',
+    mode: 'multi_image_reference_edit',
+    modelType: 'FluxKontextPipeline',
+    category: 'flux',
+    tags: ['flux', 'kontext', 'multi-reference'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { referenceImages: 2, sampleAssets: ['source image', 'material reference'] },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image edit pipeline'],
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after reference load',
+    description: 'Preserve a primary image while transferring material cues from additional references.',
+    ...TEMPLATE_PROMPTS.flux_kontext_multi_reference,
+    presetId: 'flux_kontext',
+    example: example(8407, '2-6 min after reference load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
+    promptGuide: EDIT_PROMPT_GUIDE,
+    predictability: predictability(8407),
+  },
+  {
+    id: 'flux_fill_outpaint',
+    label: 'FLUX.1-Fill-dev — Outpaint: Canvas Expansion',
+    mode: 'outpaint',
+    modelType: 'FluxFillPipeline',
+    category: 'flux',
+    tags: ['flux', 'fill', 'outpaint'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: {
+      sourceImage: true,
+      maskImage: true,
+      sampleAssets: ['expanded source canvas', 'boundary mask'],
+    },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image inpaint pipeline'],
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after source load',
+    description: 'Extend a source image through the generic FLUX Fill contract.',
+    ...TEMPLATE_PROMPTS.flux_fill_outpaint,
+    presetId: 'flux_fill',
+    example: example(8408, '2-6 min after source load', {
+      width: 1536,
+      height: 1024,
+      steps: 50,
+      guidanceScale: 30,
+      resourceMode: 'expert',
+      outpaintLeft: 256,
+      outpaintRight: 256,
+      outpaintTop: 0,
+      outpaintBottom: 0,
+      outpaintOverlap: 24,
+      outpaintFeather: 8,
+      outpaintFillColor: 'black',
+    }),
+    promptGuide: EDIT_PROMPT_GUIDE,
+    predictability: predictability(8408),
+  },
+  {
+    id: 'flux_depth_control',
+    label: 'FLUX.1-Depth-dev — Control Image: Depth-Guided Architecture',
+    mode: 'control_image',
+    modelType: 'FluxDepthPipeline',
+    category: 'flux',
+    tags: ['flux', 'depth', 'control'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { controlImage: true, sampleAssets: ['depth control image'] },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image control pipeline'],
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after control load',
+    description: 'Render appearance while retaining an authoritative depth layout.',
+    ...TEMPLATE_PROMPTS.flux_depth_control,
+    presetId: 'flux_control',
+    example: example(8409, '2-6 min after control load', { steps: 50, guidanceScale: 30, resourceMode: 'expert' }),
+    promptGuide: CONTROL_PROMPT_GUIDE,
+    predictability: predictability(8409),
+  },
+  {
+    id: 'flux_redux_edit',
+    label: 'FLUX.1-Redux-dev — Image Variation: Documentary Watchmaker',
+    mode: 'edit_image',
+    modelType: 'FluxReduxPipeline',
+    category: 'flux',
+    tags: ['flux', 'redux', 'edit'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { sourceImage: true, sampleAssets: ['source image'] },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image edit pipeline'],
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after source load',
+    description:
+      'Generate a natural documentary watchmaker variation from one visual reference with the FLUX Redux adapter.',
+    ...TEMPLATE_PROMPTS.flux_redux_edit,
+    presetId: 'flux_kontext',
+    example: example(8410, '2-6 min after source load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
+    promptGuide: EDIT_PROMPT_GUIDE,
+    predictability: predictability(8410),
+  },
+  {
+    id: 'flux_redux_multi_reference',
+    label: 'FLUX.1-Redux-dev — Multi-Reference Visual Blend: Rain Courier',
+    mode: 'multi_image_reference_edit',
+    modelType: 'FluxReduxPipeline',
+    category: 'flux',
+    tags: ['flux', 'redux', 'multi-reference', 'visual blend'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { referenceImages: 2, sampleAssets: ['rainy underpass reference', 'bicycle courier reference'] },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image edit pipeline'],
+    vramEstimate: '24 GB native or quantized/offloaded',
+    runtimeEstimate: '2-6 min after reference load',
+    description:
+      'Blend two compatible photographic references into one documentary variation with Diffusers FLUX Redux.',
+    ...TEMPLATE_PROMPTS.flux_redux_multi_reference,
+    presetId: 'flux_kontext',
+    example: {
+      ...example(8413, '2-6 min after reference load', {
+        steps: 50,
+        guidanceScale: 2.5,
+        conditioningScale: 0.7,
+        resourceMode: 'expert',
+      }),
+      status: 'reviewed',
+      notes:
+        'User-reviewed real-weight proof generated through the generic Diffusers graph with native weighted multi-reference Redux conditioning.',
+    },
+    promptGuide: EDIT_PROMPT_GUIDE,
+    predictability: predictability(8413),
+  },
+  {
+    id: 'flux2_klein_text_to_image',
+    label: 'FLUX.2-klein-4B — Text to Image: Glass Material Study',
+    mode: 'text_to_image',
+    modelType: 'Flux2KleinPipeline',
+    category: 'flux',
+    tags: ['flux2', 'klein', 'product'],
+    difficulty: 'starter',
+    thumbnailVariant: 'image',
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image direct pipeline'],
+    vramEstimate: '13 GB native or model offload',
+    runtimeEstimate: 'About 13 min cold; under 1 min after the model is resident',
+    description: 'Fast four-step product generation through the generic Diffusers image façade.',
+    ...TEMPLATE_PROMPTS.flux2_klein_text_to_image,
+    presetId: 'flux_fast',
+    example: example(173, 'About 13 min cold; under 1 min after the model is resident', {
+      steps: 4,
+      guidanceScale: 1,
+      resourceMode: 'auto',
+    }),
+    promptGuide: BASE_PROMPT_GUIDE,
+    predictability: predictability(173),
+  },
+  {
+    id: 'flux2_klein_edit',
+    label: 'FLUX.2-klein-4B — Image Edit: Material Change',
+    mode: 'edit_image',
+    modelType: 'Flux2KleinPipeline',
+    category: 'flux',
+    tags: ['flux2', 'klein', 'edit'],
+    difficulty: 'starter',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { sourceImage: true, sampleAssets: ['source image'] },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image edit pipeline'],
+    vramEstimate: '13 GB native or model offload',
+    runtimeEstimate: 'About 12 sec with the model resident; about 13 min cold',
+    description: 'A preservation-focused single-reference material transformation.',
+    ...TEMPLATE_PROMPTS.flux2_klein_edit,
+    presetId: 'flux_kontext',
+    example: example(174, 'About 12 sec with the model resident; about 13 min cold', {
+      steps: 4,
+      guidanceScale: 1,
+      resourceMode: 'auto',
+    }),
+    promptGuide: EDIT_PROMPT_GUIDE,
+    predictability: predictability(174),
+  },
+  {
+    id: 'flux2_klein_multi_reference',
+    label: 'FLUX.2-klein-4B — Multi-Reference Edit: Material Fusion',
+    mode: 'multi_image_reference_edit',
+    modelType: 'Flux2KleinPipeline',
+    category: 'flux',
+    tags: ['flux2', 'klein', 'multi-reference'],
+    difficulty: 'intermediate',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { referenceImages: 2, sampleAssets: ['composition reference', 'material reference'] },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Diffusers image edit pipeline'],
+    vramEstimate: '13 GB native or model offload',
+    runtimeEstimate: 'About 37 sec with the model resident; about 13 min cold',
+    description: 'Two-reference fusion through the same model-neutral edit node.',
+    ...TEMPLATE_PROMPTS.flux2_klein_multi_reference,
+    presetId: 'flux_kontext',
+    example: example(175, 'About 37 sec with the model resident; about 13 min cold', {
+      steps: 4,
+      guidanceScale: 1,
+      resourceMode: 'auto',
+    }),
+    promptGuide: EDIT_PROMPT_GUIDE,
+    predictability: predictability(175),
+  },
+  {
+    id: 'wan_vace_video_to_video',
+    label: 'Wan 2.1 T2V 1.3B — Video to Video: Rainy Courtyard Cat',
+    mode: 'video_to_video',
+    modelType: 'WanVideoPipeline',
+    category: 'video_edit',
+    tags: ['wan', 'video-to-video', 'photoreal', 'cat', 'courtyard', 'environment restyle'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { sourceVideo: true, sampleAssets: ['source video'] },
+    outputKinds: ['video'],
+    requiredBackendCapabilities: ['Diffusers video direct pipeline', 'modules.Video.Load'],
+    vramEstimate: '24 GB with offload',
+    runtimeEstimate: 'About 35-65 min for 81 frames and 50 steps on the qualified high-memory ROCm host',
+    description:
+      'Move a walking cat from a daylight lawn into a rain-dark courtyard while preserving its gait and identity.',
+    ...TEMPLATE_PROMPTS.wan_vace_video_to_video,
+    presetId: 'video_balanced',
+    example: videoExample(8412, 'About 35-65 min on the qualified high-memory ROCm host', {
+      numFrames: 81,
+      steps: 50,
+      // Match the upstream Diffusers Wan video-to-video example. The earlier
+      // 0.35 proof preserved the source but failed the requested semantic edit.
+      strength: 0.7,
+      guidanceScale: 5,
+    }),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8412),
+  },
+  {
+    id: 'ltx_video_long_showcase',
+    label: 'LTX-Video — Long Video: The Last Signal',
+    mode: 'image_to_video',
+    modelType: 'LTXVideoPipeline',
+    category: 'video_generation',
+    tags: ['video', 'long-form', 'sequence', 'road thriller', 'story', 'ltx'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'video',
+    inputRequirements: {
+      referenceImages: 6,
+      sampleAssets: [
+        'wet hairpin opening keyframe',
+        'pine-road opening keyframe',
+        'closed-road lateral-dolly keyframe',
+        'snow-ridge opening keyframe',
+        'weather-station approach keyframe',
+        'weather-station crane-finale keyframe',
+      ],
+    },
+    outputKinds: ['video'],
+    videoDelivery: 'spatial_upscale',
+    requiredBackendCapabilities: [
+      'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
+      'modules.DiffusersVideo.BuildShotJobs',
+      'modules.DiffusersVideo.GenerateShotJob',
+      'visual collection loops',
+      'modules.Video.ConcatenateAssets',
+    ],
+    workflowBlocks: ['quality_video_sequence'],
+    workflowBlockSettings: {
+      qualityVideoSequence: {
+        mode: 'image_to_video',
+        fps: 16,
+        width: 768,
+        height: 512,
+        steps: 8,
+        guidanceScale: 1,
+        conditioningStrength: 0.9,
+        transitionSeconds: 0,
+        shotsJson: JSON.stringify([
+          {
+            title: 'The Dispatch',
+            seed: 718268,
+            duration_seconds: 5,
+            conditioning_strength: 0.7,
+            prompt:
+              'Photoreal wet mountain hairpin. The white vintage rally coupe stays parked with rigid tires, black hood, lamps and body unchanged. Camera immediately slides laterally and pushes closer, carrying the complete car across frame while curve, gravel, guardrail and firs create strong parallax. Rain and reflections move naturally. No wheel rotation, vehicle motion, smoke, deformed tire, changing car, person, text, morph, cut or static hold.',
+          },
+          {
+            title: 'Through the Pines',
+            seed: 718242,
+            duration_seconds: 5,
+            conditioning_strength: 1,
+            prompt:
+              'Locked low camera behind the supplied pine road. The same white rally coupe accelerates away immediately, becoming smaller but recognizable near the left bend at the end. Preserve the existing double yellow centerline exactly from frame one. Trees, road edges and reflector posts stay rigid while wheel spray trails and settles. Preserve the fastback, spoiler and four wheels. No pan, new marking, sign, person, crash, morph, text or cut.',
+          },
+          {
+            title: 'The Dead End',
+            seed: 718263,
+            duration_seconds: 5,
+            conditioning_strength: 0.7,
+            prompt:
+              'Five-second photoreal low lateral dolly past the stopped white vintage rally coupe at a blocked mountain road. Camera motion starts in frame one and travels rapidly right across the pale gravel, creating strong foreground parallax while the complete parked car, red-white barrier, wet asphalt bend, forest and mountains remain rigid. Wind moves grass and rain crosses frame. Preserve four grounded wheels, black hood, lamps and body. No vehicle motion, reverse motion, morph, duplicated car, changing barrier, text, cut or static hold.',
+          },
+          {
+            title: 'Above the Snow Line',
+            seed: 718204,
+            duration_seconds: 5,
+            conditioning_strength: 0.95,
+            prompt:
+              'Locked rear camera on the supplied snow ridge. The white rally coupe drives away immediately, becomes smaller and reaches the far bend near the weather mast. Wheels rotate, light powder trails behind and every snow pole stays fixed. Preserve the rigid fastback, spoiler, four tires and plausible traction. No pan, people, avalanche, morph, text or cut.',
+          },
+          {
+            title: 'The Last Signal',
+            seed: 718245,
+            duration_seconds: 5,
+            conditioning_strength: 1,
+            prompt:
+              'Locked station-entrance camera. The complete white vintage rally coupe rolls less than one car length toward screen left, then brakes before the gray door and remains fully visible. Wheels rotate slowly and small gravel spray settles. Preserve the exact car, door, stone wall, roof, mast, mountains and road geometry. The car never touches the building or frame edge. No distant road, disappearance, person, sign, morph, text or cut.',
+          },
+          {
+            title: 'Tower in Sight',
+            seed: 718267,
+            duration_seconds: 5,
+            conditioning_strength: 0.7,
+            prompt:
+              'Photoreal rear view on the supplied mountain road. The same white rally coupe drives continuously uphill toward the weather station without changing its fastback, spoiler or tires. Keep the complete tower and antenna centered above the wet curve while guardrails and snow poles create strong parallax. Wheel spray, rain and storm clouds move naturally. No reversing, new structure, bent antenna, person, text, morph, cut or static hold.',
+          },
+        ]),
+      },
+    },
+    vramEstimate: '32 GB VRAM or 64 GB unified memory; sequential app-managed shots',
+    runtimeEstimate: 'About 15-35 min for six keyframe-locked distilled shots plus per-shot 2x delivery upscale',
+    description:
+      'Animate six authored keyframes inside a visible retryable loop, retain every segment, and join them into a meaningful 30-second emergency journey.',
+    ...TEMPLATE_PROMPTS.ltx_video_long_showcase,
+    presetId: 'ltx_video_balanced',
+    example: videoExample(
+      8510,
+      'About 15-35 min on the qualified host',
+      { width: 768, height: 512, numFrames: 81, fps: 16, steps: 8, guidanceScale: 1 },
+      {
+        frames: 486,
+        durationSeconds: 30.38,
+        maximumNearBlackFrameRatio: 0.35,
+        minimumActiveMotionWindowRatio: 0.65,
+        maximumLowMotionFrameRatio: 0.4,
+      },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8510),
+  },
+  {
+    id: 'wan_video_long_showcase',
+    label: 'Wan 2.1 T2V 1.3B — Long Video: Before Sunrise',
+    mode: 'text_to_video',
+    modelType: 'WanVideoPipeline',
+    category: 'video_generation',
+    tags: ['video', 'long-form', 'sequence', 'port logistics', 'documentary', 'story', 'wan'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'video',
+    inputRequirements: {},
+    outputKinds: ['video'],
+    requiredBackendCapabilities: ['modules.DiffusersVideo.GenerateSequence', 'modules.Video.Compose'],
+    workflowBlocks: ['video_sequence'],
+    workflowBlockSettings: {
+      videoSequence: {
+        transitionSeconds: 0,
+        promptsJson: JSON.stringify([
+          'Photoreal predawn port documentary. One orange shipping container rises immediately from a cargo ship hold on four taut crane cables while a stabilized camera cranes beside it and rigid blue container stacks pass behind. Preserve the orange box shape, corner castings and plausible cable tension; no close people, water spectacle, collision, text or cut.',
+          'Continue the same orange container crossing high above the quay on a ship-to-shore gantry trolley. A parallel camera tracks briskly as crane beams and container rows sweep past in layered parallax. Stable rigid geometry, controlled sway and cool predawn work lights; no dropped load, duplicate container, text or cut.',
+          'Continue as the same orange container lowers squarely onto one terminal tractor trailer and the twist locks engage. A low three-quarter camera moves with the simple operation, then the tractor pulls forward. Plausible contact, wheel rotation and scale; no people in close view, collision, extra load, text or cut.',
+          'Continue the orange container journey through ordered terminal lanes. The tractor drives steadily between tall rigid stacks while a side-tracking camera keeps the complete vehicle visible and near lane markers cross the frame. Stable container identity, wheels and architecture; no crash, warped stacks, text or cut.',
+          'Photoreal logistics finale at dawn. A rail crane places the same orange container onto a departing freight wagon; after secure contact, the loaded train moves toward sunrise as a low camera pans beside rotating wheels. Preserve one container, rigid wagon geometry and plausible rail contact; no people in close view, collision, text or cut.',
+        ]),
+      },
+    },
+    vramEstimate: '24 GB with sequential offload',
+    runtimeEstimate: 'About 4 hr 40 min-7 hr 50 min for five upstream-quality 50-step Wan shots plus upscale',
+    description: 'Generate and compose five readable logistics operations into one purposeful predawn cargo journey.',
+    ...TEMPLATE_PROMPTS.wan_video_long_showcase,
+    presetId: 'video_balanced',
+    example: videoExample(
+      8511,
+      'About 4 hr 40 min-7 hr 50 min on the qualified host',
+      { numFrames: 81, fps: 16, steps: 50 },
+      { frames: 405, durationSeconds: 25.31, maximumNearBlackFrameRatio: 0.7 },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8511),
+  },
+  {
+    id: 'wan_21_t2v_13b_seed_vault',
+    label: 'Wan 2.1 T2V 1.3B — Long Video: The Winter Delivery',
+    mode: 'text_to_video',
+    modelType: 'WanVideoPipeline',
+    category: 'video_generation',
+    tags: [
+      'wan 2.1',
+      'text-to-video',
+      'photoreal',
+      'railway documentary',
+      'story',
+      '30 seconds',
+      'loop',
+      'qualified hardware',
+    ],
+    difficulty: 'advanced',
+    thumbnailVariant: 'video',
+    inputRequirements: {},
+    outputKinds: ['video'],
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.BuildShotJobs',
+      'modules.DiffusersVideo.GenerateShotJob',
+      'visual collection loops',
+      'modules.Video.ConcatenateAssets',
+    ],
+    workflowBlocks: ['quality_video_sequence'],
+    workflowBlockSettings: {
+      qualityVideoSequence: {
+        mode: 'text_to_video',
+        fps: 15,
+        width: 832,
+        height: 480,
+        steps: 50,
+        guidanceScale: 6,
+        transitionSeconds: 0.15,
+        shotsJson: JSON.stringify([
+          {
+            title: 'The Dispatch',
+            duration_seconds: 5.4,
+            prompt:
+              'Photoreal railway-documentary opening. One blue-and-cream electric freight locomotive immediately pulls six sealed supply wagons out of a compact mountain depot with plain unmarked gray walls before a storm. A low trackside camera pans with the full rigid locomotive as wheels rotate and bare utility poles cross the frame. Preserve blue-and-cream paint, two front windows, one headlamp, six gray wagons and plausible rail contact; no wall sign, symbol, writing, people, duplicate train, collision or cut.',
+          },
+          {
+            title: 'Valley Switches',
+            duration_seconds: 5.4,
+            prompt:
+              'Continue the emergency supply journey with the same blue-and-cream electric locomotive and six sealed gray wagons. The train moves briskly through ordinary valley switches while a stabilized side camera tracks beside it and near switch stands sweep past. Preserve locomotive proportions, paint, wagon count, forward screen direction and rotating wheels; natural overcast light, no people, collision, text or cut.',
+          },
+          {
+            title: 'Rock Tunnel',
+            duration_seconds: 5.4,
+            prompt:
+              'Continue the same blue-and-cream supply train approaching and entering one real stone railway tunnel. A low three-quarter chase camera follows as tunnel marker posts and the portal grow rapidly, the headlamp brightens and the complete locomotive remains on both rails. Stable bodywork, six sealed wagons and plausible motion blur; no people, cave fantasy, collision, text or cut.',
+          },
+          {
+            title: 'The High Pass',
+            duration_seconds: 5.4,
+            prompt:
+              'Continue the same blue-and-cream electric freight train emerging into a snowy alpine pass. A parallel moving camera keeps the full locomotive and first wagons visible while snow poles cross both card edges and windblown powder travels across the tracks. Preserve rigid geometry, rail contact, forward screen direction and restrained gray daylight; no avalanche, people, collision, text or cut.',
+          },
+          {
+            title: 'Village Ahead',
+            duration_seconds: 5.4,
+            prompt:
+              'Continue the emergency train descending toward one isolated alpine village now clearly visible ahead. The same blue-and-cream locomotive and six gray wagons round a broad safe curve while a high roadside camera tracks forward; near catenary poles pass quickly and warm station lights grow. Stable railway geometry and realistic speed; no people in close view, derailment, text or cut.',
+          },
+          {
+            title: 'Supplies Arrive',
+            duration_seconds: 5.4,
+            prompt:
+              'Photoreal railway-documentary finale. The same blue-and-cream supply locomotive enters the small village station, brakes naturally and stops with its six sealed wagons beside the lit freight platform as the station signal changes from red to green. A low camera dollies backward then settles on the complete train and station, clearly showing delivery. Stable wheels, rails and architecture; no people in close view, opening cargo, text or cut.',
+          },
+        ]),
+      },
+    },
+    vramEstimate: 'About 20 GB accelerator memory in resident BF16 on the qualified Radeon host',
+    runtimeEstimate: 'About 49 minutes per 5.4-second shot; roughly five hours for six shots plus composition',
+    description:
+      'Tell a chronological emergency-supply railway story, pin every source segment for re-editing, and join them inside a visible retryable loop.',
+    ...TEMPLATE_PROMPTS.wan_21_t2v_13b_seed_vault,
+    presetId: 'wan_t2v_13b_quality',
+    example: videoExample(
+      48117,
+      'About five hours on the qualified Radeon 8060S host',
+      { width: 832, height: 480, numFrames: 81, fps: 15, steps: 50, guidanceScale: 6, shift: 8 },
+      { frames: 486, durationSeconds: 31.65 },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(48117),
+  },
+  {
+    id: 'wan_22_ti2v_5b_seed_vault',
+    label: 'Wan 2.2 TI2V 5B — Music Video with ACE-Step: Subway Musician',
+    mode: 'text_to_video',
+    modelType: 'WanTI2VPipeline',
+    category: 'video_generation',
+    tags: ['wan 2.2', 'ace-step', 'text-to-video', 'music video', 'street musician', 'generated soundtrack'],
+    difficulty: 'intermediate',
+    thumbnailVariant: 'video',
+    inputRequirements: {},
+    outputKinds: ['video'],
+    videoDelivery: 'native',
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.LoadPipeline',
+      'modules.DiffusersVideo.Generate',
+      'modules.DiffusersAudio.LoadPipeline',
+      'modules.DiffusersAudio.Generate',
+      'modules.Audio.FitDuration',
+      'modules.Video.ExportWithAudio',
+    ],
+    workflowBlocks: ['soundtrack'],
+    workflowBlockSettings: {
+      soundtrack: {
+        model: {
+          source: 'hub',
+          value: 'ACE-Step/acestep-v15-xl-turbo-diffusers',
+          revision: '200ba991ae448051e14b0183157e35c2d27c9fb0',
+        },
+        pipelineClass: 'AceStepPipeline',
+        prompt:
+          'Instrumental diegetic solo acoustic-guitar soundtrack matching existing subway footage. For the entire twelve seconds, perform forceful uninterrupted 84 BPM eighth-note down-up chord strumming on one warm steel-string acoustic guitar. Start the established strumming pattern immediately and keep its energy, tempo, and full-chord attack constant past ten seconds. Use a clear alternating downstroke-upstroke pick pattern, realistic pick attack, and natural fret noise, with no pauses or melodic detours. Do not cadence, resolve, decay, slow down, thin out, or stop early; the usable soundtrack will be cut from the middle of this continuous performance. Keep subtle station room ambience far beneath the guitar. No fingerpicking, arpeggio, lead melody, vocals, spoken words, drums, percussion, bass, band, synthesizer, applause, crowd cheering, fade-in, fade-out, or early ending.',
+        negativePrompt:
+          'fingerpicking, fingerpicked riff, arpeggio, arpeggiated guitar, lead guitar, lead melody, guitar solo, single-note melody, sparse picking, gentle picking, vocals, singing, speech, drums, percussion, bass guitar, full band, synthesizer, electronic beat, applause, crowd cheering, silence, pause, breakdown, cadence, final chord, early resolution, early decay, early ending, long intro, fade-in, fade-out, clipping, abrupt cutoff',
+        durationSeconds: 12,
+        steps: 8,
+        guidanceScale: 1,
+        seed: 1684710282,
+        bpm: 84,
+        keyscale: 'E minor',
+        timesignature: '4/4',
+        audioFit: {
+          sourceStartSeconds: 1,
+          sourceDurationSeconds: 121 / 24,
+          targetDurationSeconds: 121 / 24,
+          delaySeconds: 4 / 24,
+          targetSampleRate: 48000,
+          fadeInSeconds: 0.008,
+          fadeOutSeconds: 0.12,
+        },
+      },
+    },
+    vramEstimate:
+      'About 32 GB resident BF16 on the qualified Radeon host; smaller systems require a qualified Diffusers offload recipe',
+    runtimeEstimate:
+      'Estimated about 3 hr 45 min for the official 50-step Wan shot plus under one minute for ACE-Step and muxing',
+    description:
+      'Generate the cinematic subway-musician shot, an editable ACE-Step guitar soundtrack, and one muxed MP4.',
+    ...TEMPLATE_PROMPTS.wan_22_ti2v_5b_seed_vault,
+    presetId: 'wan_ti2v_quality',
+    example: videoExample(
+      898471028164125,
+      'Estimated about 3 hr 45 min on the qualified Radeon 8060S host',
+      { width: 1280, height: 704, numFrames: 121, fps: 24, steps: 50, guidanceScale: 5, shift: 8 },
+      { frames: 121, durationSeconds: 5.04, requiresAudio: true },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(898471028164125),
+  },
+  {
+    id: 'wan_22_i2v_seed_vault',
+    label: 'Wan 2.2 I2V A14B — Image to Video: Final Mise en Place',
+    mode: 'image_to_video',
+    modelType: 'WanImageToVideoPipeline',
+    category: 'video_generation',
+    tags: ['wan 2.2', 'image-to-video', 'photoreal', 'fine dining', 'chef', 'food preparation', 'five seconds'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'video',
+    inputRequirements: {
+      referenceImages: 1,
+      sampleAssets: ['identity-locked fine-dining kitchen opening keyframe'],
+    },
+    outputKinds: ['video'],
+    videoDelivery: 'native',
+    requiredBackendCapabilities: [
+      'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
+      'modules.DiffusersVideo.LoadPipeline',
+      'modules.DiffusersVideo.Generate',
+      'modules.Video.ExportAsset',
+    ],
+    vramEstimate:
+      'About 85 GB peak resident BF16 with tiled VAE conditioning on the qualified host; model offload is available on smaller systems',
+    runtimeEstimate: 'About 6 hr 25-40 min for the recommended 40-step resident-BF16 recipe on this Radeon host',
+    description:
+      'Follow one chef completing a single controlled carrot-garnish cut for a composed root-vegetable course in a five-second, quality-first kitchen shot.',
+    ...TEMPLATE_PROMPTS.wan_22_i2v_seed_vault,
+    presetId: 'wan_i2v_quality',
+    example: videoExample(
+      92021,
+      'About 6 hr 25-40 min on the qualified Radeon 8060S host',
+      {
+        width: 768,
+        height: 512,
+        numFrames: 81,
+        fps: 16,
+        steps: 40,
+        guidanceScale: 3.5,
+        guidanceScale2: 3.5,
+      },
+      { frames: 81, durationSeconds: 5.06 },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(92021),
+  },
+  {
+    id: 'ltx_video_animated_story',
+    label: 'LTX-Video — Text to Video: From Green Bean to Morning Cup',
+    mode: 'text_to_video',
+    modelType: 'LTXVideoPipeline',
+    category: 'video_generation',
+    tags: ['video', 'photoreal', 'coffee roasting', 'food process', 'story', 'ltx'],
+    difficulty: 'intermediate',
+    thumbnailVariant: 'video',
+    inputRequirements: {},
+    outputKinds: ['video'],
+    videoDelivery: 'spatial_upscale',
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.GenerateSequence',
+      'modules.Video.Compose',
+      'modules.Spandrel.Upscaler',
+    ],
+    workflowBlocks: ['video_sequence', 'upscaler'],
+    workflowBlockSettings: {
+      videoSequence: {
+        transitionSeconds: 0,
+        promptsJson: JSON.stringify([
+          {
+            prompt:
+              'Five-second live-action coffee roastery. Pale sage-green unroasted coffee beans cascade immediately from a burlap chute into one steel hopper. Every bean is a small oval with one straight central crease, never round like a pea or long like a peanut. A close side camera trucks beside the falling beans as the hopper rim crosses the foreground. Natural gravity, dry matte texture and morning window light. No people, hands, nuts, plastic pellets, glass, writing, spill, cut or hold.',
+            seed: 8622,
+          },
+          {
+            prompt:
+              'Five-second live-action coffee roastery. Chestnut-brown roasted coffee beans tumble continuously across one perforated steel cooling tray while its rigid sweep arm rotates clockwise. A low close camera arcs around the tray, revealing warm bean texture, light chaff and stable attached machinery. No people, raw beans, plastic pellets, smoke, fire, writing, logo, cut or hold.',
+            seed: 8613,
+          },
+          {
+            prompt:
+              'Five-second live-action coffee finale. One plain white demitasse filled with dark espresso and golden crema sits alone on a walnut table. A close table-level camera makes a steady clockwise half-orbit for all five seconds, creating clear background parallax. Two natural steam ribbons twist upward continuously while tiny crema bubbles rotate and pop. Preserve the rigid cup, round rim, handle and table contact. No machine, utensil, person, second cup, letters, numbers, logo, warped ceramic, cut, freeze or hold.',
+            seed: 8644,
+          },
+        ]),
+      },
+      upscaler: VIDEO_DELIVERY_UPSCALER,
+    },
+    vramEstimate: '32 GB VRAM or 64 GB unified memory',
+    runtimeEstimate: 'About 15-30 min for three distilled shots plus 2× delivery upscale',
+    description: 'A 15-second three-stage coffee story from raw beans through roasting to one finished espresso.',
+    prompt: TEMPLATE_PROMPTS.ltx_video_animated_story.prompt,
+    negativePrompt: '',
+    presetId: 'ltx_video_balanced',
+    example: videoExample(
+      8512,
+      'About 18-35 min on the qualified host',
+      { width: 768, height: 512, numFrames: 81, fps: 16, steps: 8, guidanceScale: 1 },
+      { frames: 243, durationSeconds: 15.19, maximumNearBlackFrameRatio: 0.7 },
+    ),
+    promptGuide: VIDEO_PROMPT_GUIDE,
+    predictability: videoPredictability(8512),
+  },
+  {
+    id: 'ace_step_lyric_music_video',
+    label: 'ACE-Step Audio — Lyrics to Music Video: Moonflower Night',
+    mode: 'text_to_audio',
+    modelType: 'AceStepAudioPipeline',
+    category: 'audio_generation',
+    tags: ['audio', 'video', 'lyrics', 'music video', 'ace-step', 'ltx', 'photoreal', 'story'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'audio',
+    inputRequirements: {},
+    outputKinds: ['video', 'audio'],
+    requiredBackendCapabilities: [
+      'modules.DiffusersAudio.Generate',
+      'modules.DiffusersVideo.GenerateSequence',
+      'modules.Audio.FitDuration',
+      'modules.Video.LyricOverlay',
+      'modules.Video.ExportWithAudio',
+    ],
+    workflowBlocks: ['lyric_video'],
+    workflowBlockSettings: {
+      lyricVideo: {
+        visualModel: { source: 'hub', value: 'Lightricks/LTX-Video-0.9.8-13B-distilled' },
+        transitionSeconds: 0.35,
+        ['fontSize']: 58,
+        bottomMargin: 70,
+        audio: {
+          prompt:
+            "Dream-pop at 100 BPM in C-sharp minor and 4/4. A clear English lead vocal starts on the first beat and sings each of the six supplied lines exactly once, in order, one line every two bars. Finish the final words 'the dawn' by bar 12, then leave a short instrumental tail. Soft electronic drums, warm bass, glassy arpeggiator, polished spacious stereo. No intro, interlude, ad-libs, repeated lines, omitted words, or fade.",
+          lyrics:
+            '[Verse]\nDaylight leaves the garden wall\nSilver buds begin to call\nWhite petals turn into the night\nEvery vine unfolds its light\nStars grow pale above the lawn\nMoonflowers hold until the dawn',
+          durationSeconds: 30,
+          steps: 8,
+          guidanceScale: 1,
+          shift: 3,
+          seed: 1201047366,
+          bpm: 100,
+          keyscale: 'C# minor',
+          timesignature: '4',
+          vocalLanguage: 'en',
+        },
+        audioFit: {
+          sourceStartSeconds: 0,
+          sourceDurationSeconds: 30,
+          targetDurationSeconds: 381 / 16,
+          delaySeconds: 0,
+          targetSampleRate: 48000,
+          fadeInSeconds: 0,
+          fadeOutSeconds: 0,
+        },
+        lrc: '[00:00.00]Daylight leaves the garden wall\n[00:03.26]Silver buds begin to call\n[00:07.44]White petals turn into the night\n[00:11.38]Every vine unfolds its light\n[00:15.08]Stars grow pale above the lawn\n[00:18.90]Moonflowers hold until the dawn',
+        promptsJson: JSON.stringify([
+          'Photoreal music-video opening without visible text. At blue dusk, a stabilized camera glides low beside a real garden wall as closed white moonflower buds and heart-shaped leaves stream past in foreground parallax. Wind moves every vine from frame one while the last warm daylight visibly fades. Natural plant anatomy and restrained color; no people, fantasy glow, illustration, duplicate stems or static hold.',
+          'Photoreal macro time-lapse in the same garden. One healthy white moonflower bud opens continuously into a complete trumpet-shaped bloom while nearby leaves sway in an evening breeze. The camera makes a slow curved move, keeping the flower center sharp and the stone wall softly behind it. Preserve realistic petals and stem attachment; no hands, insects, melting, extra petals, text or frozen interval.',
+          'Photoreal moonlit tracking shot along a mature trellis covered in fully opened white moonflowers. The camera travels steadily between foreground leaves while several blooms turn gently in the wind and soft cloud shadows cross the wall. Clear depth and natural silver-blue light; no people, fantasy particles, artificial neon, warped vines, lettering or static frame.',
+          'Photoreal close passage through the moonflower canopy after a brief shower. The camera pushes forward continuously as round droplets roll down broad leaves, flexible stems rebound in the breeze and white blossoms pass close to both edges. Keep flowers crisp, attached and naturally wet; no flood, impossible water, insects, people, text, synthetic render or sudden jump.',
+          'Photoreal dawn finale in the same garden. A wide camera cranes slowly upward from open white moonflowers toward a pale gold horizon while vines ripple, clouds travel and the first sunlight moves across the wall. The flowers remain stable and recognizable through the closing frame. No people, fantasy glow, melting petals, duplicate blooms, text, illustration or static hold.',
+        ]),
+      },
+    },
+    vramEstimate: 'ACE-Step and LTX run sequentially with model offload',
+    runtimeEstimate: 'About 20-45 min plus listening and lyric-sync review',
+    description:
+      'Generate an original lyric song and a five-shot photoreal dusk-to-dawn moonflower story with timed lyrics and a muxed 20-30 second final video.',
+    prompt:
+      "Dream-pop at 100 BPM in C-sharp minor and 4/4. A clear English lead vocal starts on the first beat and sings each of the six supplied lines exactly once, in order, one line every two bars. Finish the final words 'the dawn' by bar 12, then leave a short instrumental tail. Soft electronic drums, warm bass, glassy arpeggiator, polished spacious stereo. No intro, interlude, ad-libs, repeated lines, omitted words, or fade.",
+    negativePrompt: '',
+    presetId: 'audio_balanced',
+    example: {
+      ...audioExample(1201047366, 'About 20-45 min on the qualified host', {
+        audioDuration: 30,
+        lyrics:
+          '[Verse]\nDaylight leaves the garden wall\nSilver buds begin to call\nWhite petals turn into the night\nEvery vine unfolds its light\nStars grow pale above the lawn\nMoonflowers hold until the dawn',
+        bpm: 100,
+        timesignature: '4',
+      }),
+      mediaType: 'video',
+      expectedOutput: {
+        width: 1536,
+        height: 1024,
+        frames: 381,
+        durationSeconds: 23.81,
+        requiresAudio: true,
+        minimumMotionCoverage: 0.75,
+        minimumAdjacentMotionCoverage: 0.08,
+        minimumEndToEndMotionCoverage: 0.5,
+      },
+    },
+    promptGuide: AUDIO_PROMPT_GUIDE,
+    predictability: predictability(8513),
+  },
+  {
+    id: 'qwen_edit_plus_single_image',
+    label: 'Qwen-Image-Edit-2511 — Image Edit: Single-Image Restyling',
+    mode: 'edit_image',
+    modelType: 'QwenImageEditPlusModularPipeline',
+    category: 'edit',
+    tags: ['qwen', 'edit', 'single-image'],
+    difficulty: 'advanced',
+    thumbnailVariant: 'compareSlider',
+    inputRequirements: { sourceImage: true, sampleAssets: ['source product image'] },
+    outputKinds: ['image'],
+    requiredBackendCapabilities: ['Modular Diffusers Qwen Image Edit Plus'],
+    vramEstimate:
+      '64 GB native BF16 on the qualified high-memory host; lower-memory quantized/offloaded recipes require separate hardware qualification',
+    runtimeEstimate:
+      'About 19-21 min once resident; about 60-65 min including a cold native-BF16 load on the qualified ROCm host',
+    description: 'A single-source edit using the same generic modular contract as multi-reference Qwen.',
+    ...TEMPLATE_PROMPTS.qwen_edit_plus_single_image,
+    presetId: 'balanced',
+    example: example(
+      8501,
+      'About 19-21 min once resident; about 60-65 min including a cold native-BF16 load on the qualified ROCm host',
+      { steps: 40, guidanceScale: 4, resourceMode: 'auto' },
+    ),
+    promptGuide: EDIT_PROMPT_GUIDE,
+    predictability: predictability(8501),
+  },
 ];
 
-export const STUDIO_TEMPLATES: StudioTemplate[] = BASE_STUDIO_TEMPLATES.map(withTemplateRecipeDefaults);
+function withVideoDeliveryWorkflow(template: StudioTemplate): StudioTemplate {
+  const generatedInputBindings =
+    (TEMPLATE_DEFAULT_INPUT_BINDINGS as Partial<Record<StudioTemplateId, StudioTemplateInputBinding[]>>)[template.id] ??
+    [];
+  const explicitTemplateInputBindings =
+    template.inputBindings?.filter((binding) => binding.origin === 'template') ?? [];
+  const overriddenTemplateFields = new Set(explicitTemplateInputBindings.map((binding) => binding.field));
+  const normalized = withTemplateRecipeDefaults({
+    ...template,
+    inputBindings: [
+      ...(template.inputBindings ?? []).filter((binding) => binding.origin !== 'template'),
+      ...generatedInputBindings.filter(
+        (binding) => binding.origin !== 'template' || !overriddenTemplateFields.has(binding.field),
+      ),
+      ...explicitTemplateInputBindings,
+    ],
+  });
+  if (!normalized.outputKinds?.includes('video')) return normalized;
+  if (normalized.videoDelivery === 'native') return normalized;
+  const lyricVideo = normalized.workflowBlocks?.includes('lyric_video') === true;
+  const expectedOutput = normalized.example?.expectedOutput;
+  const deliveredExample =
+    !lyricVideo && normalized.example && expectedOutput?.width && expectedOutput?.height
+      ? {
+          ...normalized.example,
+          expectedOutput: {
+            ...expectedOutput,
+            width: expectedOutput.width * 2,
+            height: expectedOutput.height * 2,
+          },
+        }
+      : normalized.example;
+  return {
+    ...normalized,
+    example: deliveredExample,
+    inputRequirements: { ...normalized.inputRequirements, upscalerModel: true },
+    requiredBackendCapabilities: [
+      ...new Set([...(normalized.requiredBackendCapabilities ?? []), 'modules.Spandrel.Upscaler']),
+    ],
+    workflowBlocks: lyricVideo
+      ? normalized.workflowBlocks
+      : [...new Set([...(normalized.workflowBlocks ?? []), 'upscaler' as const])],
+    workflowBlockSettings: {
+      ...normalized.workflowBlockSettings,
+      upscaler: normalized.workflowBlockSettings?.upscaler ?? VIDEO_DELIVERY_UPSCALER,
+    },
+  };
+}
+
+const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow);
+
+// Failed qualification contracts stay available to planning/reporting code, but
+// never appear as runnable browser templates. A template returns to the browser
+// only after its app-managed proof and modality review remove the blocked state.
+export const PLANNING_STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEMPLATES.filter(
+  (template) => template.example?.status === 'blocked',
+);
+
+export const STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEMPLATES.filter(
+  (template) => template.example?.status !== 'blocked',
+);
 
 export function getPreset(id: string | undefined) {
   return STUDIO_PRESETS.find((preset) => preset.id === id);

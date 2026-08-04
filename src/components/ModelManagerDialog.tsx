@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ChevronDown,
@@ -9,10 +11,8 @@ import {
   LoaderCircle,
   Power,
   RefreshCw,
-  Search,
   Settings,
   Trash2,
-  X,
 } from 'lucide-react';
 
 import config from '../../app.config';
@@ -24,6 +24,7 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import {
   autoPlanIsReady,
   autoPlanKeyForForm,
+  autoResourceCompatibility,
   autoResourceHealthBadge,
   autoResourceInstallTarget,
   fetchAutoResourcePlans,
@@ -31,8 +32,8 @@ import {
 } from '../studio/autoResource';
 import { getStudioWorkflowArtifactRequirements } from '../studio/artifactRequirements';
 import { getRepoCacheStatus, getStudioModelCacheStatus } from '../studio/modelCache';
-import { getStudioModelHardwareFit } from '../studio/modelHardware';
 import {
+  classifyHfDownloadFailure,
   getDownloadPercent,
   hasHfDownloadFailed,
   isHfDownloadActive,
@@ -46,8 +47,19 @@ import {
   isStudioModelDiffusersBacked,
   STUDIO_MODEL_PROFILES,
 } from '../studio/modelProfiles';
-import type { FocusedModelManagerTarget } from '../studio/types';
-import { ModiffButton, ModiffIconButton, ModiffInput, StatusActionChip, type StatusActionChipTone } from '../ui';
+import type { FocusedModelManagerTarget, StudioFormState } from '../studio/types';
+import { repositoryRequiresHuggingFaceGate } from '../studio/modelUsagePolicies';
+import {
+  ModiffButton,
+  ModiffDialog,
+  ModiffDisclosure,
+  ModiffIconButton,
+  ModiffInput,
+  ModiffPasswordInput,
+  ModiffSearchInput,
+  StatusActionChip,
+  type StatusActionChipTone,
+} from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { cx } from '../utils/classNames';
 import { createLatestRequestGate, formatRequestError, requestJson } from '../utils/requestJson';
@@ -68,6 +80,12 @@ interface HFModel {
   last_accessed: number;
   revisions: Revision[];
   class_names: string[];
+  cached?: boolean;
+  installed?: boolean;
+  complete?: boolean;
+  repair_required?: boolean;
+  install_reason?: string;
+  active_files?: string[];
 }
 
 const fullHfCacheGate = createLatestRequestGate<'fullCache'>();
@@ -131,7 +149,7 @@ function StatusPill({
                   ? 'missing'
                   : 'details'
       }
-      className="min-h-6 px-2 py-0.5 text-xs"
+      className="min-h-7 px-2 py-0.5 text-xs"
       disabled={disabled}
       label={children}
       onClick={onClick}
@@ -154,7 +172,7 @@ function DetailLine({
     <p
       className={cx(
         'break-words text-xs leading-5',
-        tone === 'muted' && 'text-modiff-muted',
+        tone === 'muted' && 'text-modiff-subtle-text',
         tone === 'success' && 'text-modiff-green',
         tone === 'warning' && 'text-hf-orange',
         tone === 'error' && 'text-modiff-red',
@@ -243,8 +261,9 @@ function groupedItems<T>(items: T[], groupFor: (item: T) => ModelGroup) {
 }
 
 function compactHealthBadge(label: string) {
-  if (label === 'Works with quantized artifact') return 'Quantized';
-  if (label === 'Will not work on this machine') return 'Blocked';
+  if (label === 'This should work') return 'Estimated';
+  if (label === 'Community option') return 'Community';
+  if (label === 'Not suitable locally' || label === 'Will not work on this machine') return 'Blocked';
   if (label === 'Repair required') return 'Repair';
   if (label === 'Failed here before') return 'Failed';
   if (label === 'Expert only') return 'Expert';
@@ -274,7 +293,7 @@ function formatTitle(id: unknown) {
   const namespace = parts.join('/');
   return (
     <>
-      {namespace ? <span className="text-gray-400">{namespace}</span> : null}
+      {namespace ? <span className="text-modiff-subtle-text">{namespace}</span> : null}
       {namespace ? '/' : null}
       <strong>{name}</strong>
     </>
@@ -294,7 +313,7 @@ function InventorySection({
 }) {
   return (
     <section className="grid gap-2" data-testid={testId}>
-      <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase text-modiff-muted">
+      <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase text-modiff-subtle-text">
         <span>{title}</span>
         <StatusPill tone="default">{count}</StatusPill>
       </div>
@@ -306,8 +325,8 @@ function InventorySection({
 function SupportedProfileRow({
   activeInstallCount,
   autoPlan,
+  form,
   focused,
-  hardwareFit,
   hfTokenConfigured,
   installProgress,
   onConfigureHfToken,
@@ -317,41 +336,53 @@ function SupportedProfileRow({
 }: {
   activeInstallCount: number;
   autoPlan?: StudioAutoResourcePlan;
+  form: StudioFormState;
   focused?: boolean;
-  hardwareFit: ReturnType<typeof getStudioModelHardwareFit>;
   installProgress: ReturnType<typeof useNodesStore.getState>['hfDownloadProgress'];
   hfTokenConfigured: boolean;
-  onConfigureHfToken: () => void;
+  onConfigureHfToken: (repo: string) => void;
   onInstall: (repo: string, repair?: boolean) => Promise<void>;
   profile: (typeof STUDIO_MODEL_PROFILES)[keyof typeof STUDIO_MODEL_PROFILES];
   status: ReturnType<typeof getStudioModelCacheStatus>;
 }) {
-  const autoInstallTarget = autoResourceInstallTarget(autoPlan);
+  const autoInstallTarget = autoResourceInstallTarget(autoPlan, form);
   const installRepo = autoInstallTarget?.repo ?? profile.defaultRepo;
   const progress = installProgress[installRepo];
   const installing = isHfDownloadActive(progress);
   const failed = hasHfDownloadFailed(progress);
-  const tokenRequired = !hfTokenConfigured && installRepo.startsWith('black-forest-labs/');
-  const ready = autoPlan ? autoPlanIsReady(autoPlan) : status.runnable;
-  const healthBadge = ready ? 'Ready' : autoResourceHealthBadge(autoPlan);
-  const blocked = !ready && (healthBadge === 'Will not work on this machine' || hardwareFit.status === 'blocked');
+  const accessFailure =
+    failed &&
+    (progress?.error_code === 'huggingface_access_required' || classifyHfDownloadFailure(progress) === 'access');
+  const tokenRequired = accessFailure || (!hfTokenConfigured && repositoryRequiresHuggingFaceGate(installRepo));
+  const ready = autoPlan ? autoPlanIsReady(autoPlan, form) : status.runnable;
+  const compatibility = autoResourceCompatibility(autoPlan, form);
+  const healthBadge = ready ? 'Ready' : autoResourceHealthBadge(autoPlan, form);
+  const blocked =
+    !ready &&
+    (healthBadge === 'Not suitable locally' ||
+      healthBadge === 'Will not work on this machine' ||
+      compatibility.state === 'unsuitable');
   const tone: StatusPillTone = ready ? 'success' : blocked ? 'error' : 'warning';
-  const actionLabel = tokenRequired
-    ? 'Add HF token'
-    : ready
-      ? 'Ready'
-      : installing
-        ? 'Installing'
-        : failed
-          ? 'Retry'
-          : compactHealthBadge(autoInstallTarget?.actionLabel ?? healthBadge);
+  const actionLabel = accessFailure
+    ? 'Review access'
+    : tokenRequired
+      ? 'Add HF token'
+      : ready
+        ? 'Ready'
+        : installing
+          ? 'Installing'
+          : failed
+            ? 'Retry'
+            : compactHealthBadge(autoInstallTarget?.actionLabel ?? healthBadge);
   const actionTitle = tokenRequired
-    ? 'This gated Hugging Face repository needs an accepted license and a configured read token.'
+    ? accessFailure && progress?.error
+      ? progress.error
+      : 'This gated Hugging Face repository needs an accepted license and a configured read token.'
     : ready
       ? status.reason
       : failed && progress?.error
         ? progress.error
-        : (autoInstallTarget?.reason ?? autoPlan?.blockingReason ?? autoPlan?.willNotWorkReason ?? hardwareFit.message);
+        : (autoInstallTarget?.reason ?? compatibility.detail);
   const canInstall = !tokenRequired && !ready && autoInstallTarget && !installing && activeInstallCount < 2;
 
   return (
@@ -361,6 +392,7 @@ function SupportedProfileRow({
         focused ? 'border-hf-yellow/80' : 'border-modiff-border',
       )}
       data-testid={`model-manager-supported-${profile.modelType}`}
+      data-model-manager-focused={focused ? 'true' : undefined}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -376,7 +408,7 @@ function SupportedProfileRow({
           disabled={installing || (!tokenRequired && !ready && !canInstall)}
           onClick={
             tokenRequired
-              ? onConfigureHfToken
+              ? () => onConfigureHfToken(installRepo)
               : canInstall
                 ? () => {
                     void onInstall(autoInstallTarget.repo, autoInstallTarget.repair);
@@ -438,6 +470,7 @@ function ModelManagerDialog({
   const [customModuleName, setCustomModuleName] = useState('');
   const [customModuleAction, setCustomModuleAction] = useState<string | null>(null);
   const [hfTokenEditorOpen, setHfTokenEditorOpen] = useState(false);
+  const [hfAccessRepo, setHfAccessRepo] = useState<string | null>(null);
   const [hfToken, setHfToken] = useState('');
   const [hfTokenSaving, setHfTokenSaving] = useState(false);
   const [hfTokenError, setHfTokenError] = useState<string | null>(null);
@@ -448,7 +481,7 @@ function ModelManagerDialog({
     ([, progress]) => isHfDownloadActive(progress) || hasHfDownloadFailed(progress) || isHfDownloadComplete(progress),
   );
   const missingGraphNodes = graphNodes.filter((node) => {
-    if (node.data.type === 'group') return false;
+    if (node.data.type === 'group' || node.data.type === 'loop') return false;
     const key = `${node.data.module}.${node.data.action}`;
     return !nodesRegistry[key];
   });
@@ -503,6 +536,17 @@ function ModelManagerDialog({
     () => groupedItems(supportedProfiles, (profile) => supportedModelGroup(profile.surfaceCategory)),
     [supportedProfiles],
   );
+
+  useEffect(() => {
+    if (!focus) return;
+    const timeout = window.setTimeout(() => {
+      document.querySelector<HTMLElement>('[data-model-manager-focused="true"]')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 80);
+    return () => window.clearTimeout(timeout);
+  }, [focus, supportedProfiles.length]);
   const focusedLabel =
     focus?.label ??
     supportedProfiles.find((profile) => profile.modelType === focus?.modelType || profile.defaultRepo === focus?.repo)
@@ -760,722 +804,686 @@ function ModelManagerDialog({
 
   useEffect(() => {
     void fetchHfCache();
-    void refreshModelIndexes(false);
     void refreshAutoPlans();
     if (expertMode) void fetchCustomModules();
-  }, [expertMode, fetchCustomModules, fetchHfCache, refreshAutoPlans, refreshModelIndexes]);
-
-  if (!opener) return null;
+  }, [expertMode, fetchCustomModules, fetchHfCache, refreshAutoPlans]);
 
   return (
-    <div className="relative z-50">
-      <div
-        className="fixed inset-0 flex items-center justify-center bg-black/70 p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Models"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) handleOnClose();
-        }}
-      >
-        <div
-          className="flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-surface shadow-modiff-node"
-          data-testid="model-manager-dialog"
-        >
-          <header className="border-b border-modiff-border bg-modiff-panel p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="grid size-9 shrink-0 place-items-center rounded-modiff-compact border border-modiff-border bg-modiff-bg text-hf-yellow">
-                  <Database size={17} />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="truncate text-sm font-bold text-modiff-text">Models</h2>
-                  <p className="truncate text-xs text-modiff-muted">
-                    {installedItems.length} installed, {supportedProfiles.length} supported
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <StatusPill
-                  tone={runtimeStatus?.config?.hf_token_configured ? 'success' : 'warning'}
-                  title="Required for gated or private Hugging Face repos."
-                  onClick={() => setHfTokenEditorOpen((open) => !open)}
-                >
-                  {runtimeStatus?.config?.hf_token_configured ? 'HF token ready' : 'Add HF token'}
-                </StatusPill>
-                <StatusPill
-                  tone={activeInstallCount > 0 ? 'warning' : 'default'}
-                  title={`${activeInstallCount} active model download${activeInstallCount === 1 ? '' : 's'}`}
-                >
-                  {activeInstallCount} active
-                </StatusPill>
-                {expertMode ? (
-                  <StatusPill
-                    tone={missingGraphNodes.length === 0 ? 'success' : 'error'}
-                    title="Current graph backend node definitions."
-                  >
-                    {missingGraphNodes.length === 0 ? 'Nodes' : `${missingGraphNodes.length} nodes`}
-                  </StatusPill>
-                ) : null}
-                <ModiffButton
-                  className="h-8 px-2 text-xs"
-                  icon={<RefreshCw size={14} />}
-                  onClick={() => {
-                    void refreshHealth(true);
-                  }}
-                >
-                  Refresh
-                </ModiffButton>
-                <ModiffIconButton
-                  className="size-8"
-                  data-testid="model-manager-close"
-                  label="Close model manager"
-                  onClick={handleOnClose}
-                >
-                  <X size={15} />
-                </ModiffIconButton>
-              </div>
-            </div>
-            {hfTokenEditorOpen ? (
-              <div className="mt-3 grid gap-2 rounded-modiff-compact border border-hf-yellow/50 bg-modiff-bg p-2">
-                <div className="text-xs text-modiff-muted">
-                  Accept the{' '}
-                  <a
-                    className="text-hf-yellow underline underline-offset-2"
-                    href="https://huggingface.co/black-forest-labs/FLUX.1-schnell"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    repository terms
-                  </a>
-                  , create a{' '}
-                  <a
-                    className="text-hf-yellow underline underline-offset-2"
-                    href="https://huggingface.co/settings/tokens"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    read token
-                  </a>
-                  , then paste it below. The token is validated and stored in the backend config; it is never returned
-                  to the browser.
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <ModiffInput
-                    type="password"
-                    autoComplete="off"
-                    value={hfToken}
-                    onChange={(event) => setHfToken(event.target.value)}
-                    placeholder="hf_..."
-                    disabled={hfTokenSaving}
-                    className="min-w-56 flex-1"
-                  />
-                  <ModiffButton
-                    tone="primary"
-                    disabled={hfTokenSaving || !hfToken.trim()}
-                    icon={hfTokenSaving ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}
-                    onClick={() => {
-                      void handleSaveHfToken();
-                    }}
-                  >
-                    Save token
-                  </ModiffButton>
-                </div>
-                {hfTokenError ? <DetailLine tone="warning">{hfTokenError}</DetailLine> : null}
-              </div>
-            ) : null}
-          </header>
-
-          <div className="relative min-h-0 flex-1 overflow-auto p-3">
-            <label className="mb-3 flex h-9 w-full items-center gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text focus-within:border-hf-yellow">
-              <Search size={16} className="shrink-0 text-gray-400" />
-              <input
-                placeholder="Filter models and artifacts"
-                value={cacheSearch}
-                onChange={(event) => setCacheSearch(event.target.value)}
-                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-500"
-              />
-            </label>
-
-            {isLoading ? (
-              <div className="absolute inset-0 z-[1] grid place-items-center bg-modiff-panel/80">
-                <LoaderCircle className="animate-spin text-hf-yellow" size={28} />
-              </div>
-            ) : null}
-
-            {focusedLabel ? (
-              <div
-                className="mb-3 flex flex-wrap items-center gap-2 rounded-modiff-compact border border-hf-yellow/70 bg-hf-yellow/10 p-2"
-                data-testid="model-manager-focus"
+    <ModiffDialog
+      open={Boolean(opener)}
+      onClose={handleOnClose}
+      title={
+        <span className="flex min-w-0 items-center gap-2">
+          <Database size={17} className="shrink-0 text-hf-yellow" />
+          <span className="truncate">Models</span>
+          <span className="truncate text-xs font-normal text-modiff-subtle-text">
+            {installedItems.length} installed, {supportedProfiles.length} supported
+          </span>
+        </span>
+      }
+      panelClassName="max-w-4xl"
+      bodyClassName="!max-h-[72vh] !p-0"
+      testId="model-manager-dialog"
+      footer={
+        <ModiffButton data-testid="model-manager-close" onClick={handleOnClose}>
+          Close
+        </ModiffButton>
+      }
+    >
+      <div className="border-b border-modiff-border bg-modiff-panel p-3">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusPill
+              tone={runtimeStatus?.config?.hf_token_configured ? 'success' : 'warning'}
+              title="Required for gated or private Hugging Face repos."
+              onClick={() => setHfTokenEditorOpen((open) => !open)}
+            >
+              {runtimeStatus?.config?.hf_token_configured ? 'HF token ready' : 'Add HF token'}
+            </StatusPill>
+            <StatusPill
+              tone={activeInstallCount > 0 ? 'warning' : 'default'}
+              title={`${activeInstallCount} active model download${activeInstallCount === 1 ? '' : 's'}`}
+            >
+              {activeInstallCount} active
+            </StatusPill>
+            {expertMode ? (
+              <StatusPill
+                tone={missingGraphNodes.length === 0 ? 'success' : 'error'}
+                title="Current graph backend node definitions."
               >
-                <StatusPill tone="warning">Focused</StatusPill>
-                <span className="min-w-0 truncate text-sm font-semibold text-modiff-text">{focusedLabel}</span>
-              </div>
+                {missingGraphNodes.length === 0 ? 'Nodes' : `${missingGraphNodes.length} nodes`}
+              </StatusPill>
             ) : null}
+            <ModiffButton
+              className="h-8 px-2 text-xs"
+              icon={<RefreshCw size={14} />}
+              onClick={() => {
+                void refreshHealth(true);
+              }}
+            >
+              Refresh
+            </ModiffButton>
+          </div>
+        </div>
+        {hfTokenEditorOpen ? (
+          <div className="mt-3 grid gap-2 rounded-modiff-compact border border-hf-yellow/50 bg-modiff-bg p-2">
+            <div className="text-xs text-modiff-subtle-text">
+              Accept the{' '}
+              <a
+                className="text-hf-yellow underline underline-offset-2"
+                href={hfAccessRepo ? `https://huggingface.co/${hfAccessRepo}` : 'https://huggingface.co/models'}
+                target="_blank"
+                rel="noreferrer"
+              >
+                repository terms
+              </a>
+              , create a{' '}
+              <a
+                className="text-hf-yellow underline underline-offset-2"
+                href="https://huggingface.co/settings/tokens"
+                target="_blank"
+                rel="noreferrer"
+              >
+                read token
+              </a>
+              , then paste it below. The token is validated and stored in the backend config; it is never returned to
+              the browser.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <ModiffPasswordInput
+                aria-label="Hugging Face access token"
+                autoComplete="off"
+                value={hfToken}
+                onChange={(event) => setHfToken(event.target.value)}
+                placeholder="hf_..."
+                disabled={hfTokenSaving}
+                className="min-w-56 flex-1"
+              />
+              <ModiffButton
+                tone="primary"
+                disabled={hfTokenSaving || !hfToken.trim()}
+                icon={hfTokenSaving ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}
+                onClick={() => {
+                  void handleSaveHfToken();
+                }}
+              >
+                Save token
+              </ModiffButton>
+            </div>
+            {hfTokenError ? <DetailLine tone="warning">{hfTokenError}</DetailLine> : null}
+          </div>
+        ) : null}
+      </div>
 
-            {visibleDownloads.length > 0 ? (
-              <section className="mb-3 grid gap-2" data-testid="model-manager-downloads">
-                <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase text-modiff-muted">
-                  <span>Downloads</span>
-                  <StatusPill tone={activeInstallCount > 0 ? 'warning' : 'default'}>
-                    {activeInstallCount} active
-                  </StatusPill>
-                </div>
-                {visibleDownloads.map(([repo, progress]) => (
-                  <ModelDownloadProgressCard
-                    key={repo}
-                    repoId={repo}
-                    progress={progress}
+      <div className="relative p-3">
+        <ModiffSearchInput
+          aria-label="Filter models and artifacts"
+          className="mb-3"
+          controlSize="normal"
+          placeholder="Filter models and artifacts"
+          value={cacheSearch}
+          onChange={(event) => setCacheSearch(event.target.value)}
+          onClear={() => setCacheSearch('')}
+        />
+
+        {isLoading ? (
+          <div className="absolute inset-0 z-[1] grid place-items-center bg-modiff-panel/80">
+            <LoaderCircle className="animate-spin text-hf-yellow" size={28} />
+          </div>
+        ) : null}
+
+        {focusedLabel ? (
+          <div
+            className="mb-3 flex flex-wrap items-center gap-2 rounded-modiff-compact border border-hf-yellow/70 bg-hf-yellow/10 p-2"
+            data-testid="model-manager-focus"
+          >
+            <StatusPill tone="warning">Focused</StatusPill>
+            <span className="min-w-0 truncate text-sm font-semibold text-modiff-text">{focusedLabel}</span>
+          </div>
+        ) : null}
+
+        {visibleDownloads.length > 0 ? (
+          <section className="mb-3 grid gap-2" data-testid="model-manager-downloads">
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase text-modiff-subtle-text">
+              <span>Downloads</span>
+              <StatusPill tone={activeInstallCount > 0 ? 'warning' : 'default'}>{activeInstallCount} active</StatusPill>
+            </div>
+            {visibleDownloads.map(([repo, progress]) => (
+              <ModelDownloadProgressCard
+                key={repo}
+                repoId={repo}
+                progress={progress}
+                compact={!expertMode}
+                testId={`model-manager-download-${repo}`}
+              />
+            ))}
+          </section>
+        ) : null}
+
+        <div className="grid gap-4">
+          {hasWorkflowModelContext && workflowRequirements.length > 0 ? (
+            <InventorySection
+              count={workflowRequirements.length}
+              testId="model-manager-requirements"
+              title="Current workflow"
+            >
+              <div className="grid gap-1">
+                {workflowRequirements.map((requirement) => (
+                  <WorkflowArtifactRequirementRow
+                    key={requirement.id}
+                    activeInstallCount={activeInstallCount}
+                    actionTestId={`model-manager-install-requirement-${requirement.id}`}
                     compact={!expertMode}
-                    testId={`model-manager-download-${repo}`}
+                    installProgress={hfDownloadProgress}
+                    onInstall={(target) => handleInstall(target.repo, target.repair)}
+                    onUseLocal={() => setCacheSearch(requirement.repo.split('/').pop() ?? requirement.repo)}
+                    requirement={requirement}
+                    testId={`model-manager-requirement-${requirement.id}`}
                   />
                 ))}
-              </section>
-            ) : null}
+              </div>
+            </InventorySection>
+          ) : null}
 
-            <div className="grid gap-4">
-              {hasWorkflowModelContext && workflowRequirements.length > 0 ? (
-                <InventorySection
-                  count={workflowRequirements.length}
-                  testId="model-manager-requirements"
-                  title="Current workflow"
-                >
-                  <div className="grid gap-1">
-                    {workflowRequirements.map((requirement) => (
-                      <WorkflowArtifactRequirementRow
-                        key={requirement.id}
+          <InventorySection count={installedItems.length} testId="model-manager-installed" title="Installed">
+            {visibleInstalledGroups.length === 0 ? (
+              <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
+                No visible model artifacts indexed yet.
+              </div>
+            ) : (
+              visibleInstalledGroups.map(([group, items]) => (
+                <div key={group} className="grid gap-1">
+                  <div className="px-1 text-xs font-semibold text-modiff-subtle-text">{group}</div>
+                  {items.map(({ item, source }) => (
+                    <article
+                      key={`${source}-${modelItemText(item)}`}
+                      className="flex min-h-10 items-center justify-between gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
+                      title={modelItemText(item)}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <HardDrive size={15} className="shrink-0 text-hf-yellow" />
+                        <span className="min-w-0 truncate text-sm font-semibold text-modiff-text">
+                          {modelItemLabel(item)}
+                        </span>
+                      </span>
+                      <div className="flex flex-none items-center gap-1">
+                        {isHfModel(item) ? (
+                          <StatusPill tone="default" title={formatFileSize(item.size)}>
+                            {formatFileSize(item.size)}
+                          </StatusPill>
+                        ) : null}
+                        <StatusPill tone="success">{source}</StatusPill>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ))
+            )}
+          </InventorySection>
+
+          <InventorySection count={supportedProfiles.length} testId="model-manager-supported" title="Supported">
+            {supportedGroups.length === 0 ? (
+              <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
+                No supported models match the current filter.
+              </div>
+            ) : (
+              supportedGroups.map(([group, profiles]) => (
+                <div key={group} className="grid gap-1">
+                  <div className="px-1 text-xs font-semibold text-modiff-subtle-text">{group}</div>
+                  {profiles.map((profile) => {
+                    const rowForm = getFormDefaultsForMode(getPrimaryModeForProfile(profile), profile.modelType);
+                    const planKey = autoPlanKeyForForm(rowForm);
+                    const rowPlan = autoResourcePlans[planKey];
+                    const rowInstallTarget = autoResourceInstallTarget(rowPlan);
+                    return (
+                      <SupportedProfileRow
+                        key={profile.modelType}
                         activeInstallCount={activeInstallCount}
-                        actionTestId={`model-manager-install-requirement-${requirement.id}`}
-                        compact={!expertMode}
+                        autoPlan={rowPlan}
+                        form={rowForm}
+                        focused={
+                          focus?.modelType === profile.modelType ||
+                          focus?.repo === profile.defaultRepo ||
+                          focus?.repo === rowInstallTarget?.repo
+                        }
                         installProgress={hfDownloadProgress}
-                        onInstall={(target) => handleInstall(target.repo, target.repair)}
-                        onUseLocal={() => setCacheSearch(requirement.repo.split('/').pop() ?? requirement.repo)}
-                        requirement={requirement}
-                        testId={`model-manager-requirement-${requirement.id}`}
+                        hfTokenConfigured={Boolean(runtimeStatus?.config?.hf_token_configured)}
+                        onConfigureHfToken={(repo) => {
+                          setHfAccessRepo(repo);
+                          setHfTokenEditorOpen(true);
+                        }}
+                        onInstall={handleInstall}
+                        profile={profile}
+                        status={getStudioModelCacheStatus(profile, compactHfCache, localModels, modelCacheDiagnostics)}
                       />
-                    ))}
-                  </div>
-                </InventorySection>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </InventorySection>
+
+          {expertMode ? (
+            <ModiffDisclosure
+              className="rounded-modiff-compact border border-modiff-border bg-modiff-panel p-3"
+              data-testid="model-manager-diagnostics"
+              label={
+                <span className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <Settings size={15} className="text-hf-yellow" />
+                    Diagnostics
+                  </span>
+                  <StatusPill tone="default">Expert</StatusPill>
+                </span>
+              }
+              buttonClassName="p-0"
+              panelClassName="mt-3 grid gap-4"
+            >
+              <section className="grid gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <ModiffButton
+                    className="h-8 px-2 text-xs"
+                    icon={<RefreshCw size={14} />}
+                    onClick={() => {
+                      void fetchRegistry();
+                    }}
+                  >
+                    Update registry
+                  </ModiffButton>
+                  <ModiffButton
+                    className="h-8 px-2 text-xs"
+                    icon={<Copy size={14} />}
+                    onClick={copyEnvironmentSnapshot}
+                  >
+                    Copy snapshot
+                  </ModiffButton>
+                </div>
+              </section>
+
+              {modelCacheDiagnostics ? (
+                <section className="grid gap-1">
+                  <h3 className="text-xs font-bold uppercase text-modiff-subtle-text">Scanned folders</h3>
+                  {modelCacheDiagnostics.locations.map((location) => (
+                    <div
+                      key={`${location.label}-${location.path}`}
+                      className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill
+                          tone={!location.exists ? 'error' : location.runnable === false ? 'warning' : 'success'}
+                        >
+                          {!location.exists ? 'Missing' : location.runnable === false ? 'Not runnable' : 'Indexed'}
+                        </StatusPill>
+                        <span className="min-w-0 break-all text-xs font-semibold text-modiff-subtle-text">
+                          {location.label}: {location.path || 'default'}
+                        </span>
+                      </div>
+                      <DetailLine tone={location.runnable === false ? 'warning' : location.exists ? 'muted' : 'error'}>
+                        {location.repo_count ?? location.file_count ?? 0} item(s),{' '}
+                        {location.compatible_hf_repo_count ?? 0} compatible HF repo(s),{' '}
+                        {location.external_package_count ?? 0} external package(s)
+                        {location.reason ? ` | ${location.reason}` : ''}
+                      </DetailLine>
+                    </div>
+                  ))}
+                </section>
               ) : null}
 
-              <InventorySection count={installedItems.length} testId="model-manager-installed" title="Installed">
-                {visibleInstalledGroups.length === 0 ? (
-                  <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-muted">
-                    No visible model artifacts indexed yet.
-                  </div>
-                ) : (
-                  visibleInstalledGroups.map(([group, items]) => (
-                    <div key={group} className="grid gap-1">
-                      <div className="px-1 text-xs font-semibold text-modiff-muted">{group}</div>
-                      {items.map(({ item, source }) => (
-                        <article
-                          key={`${source}-${modelItemText(item)}`}
-                          className="flex min-h-10 items-center justify-between gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
-                          title={modelItemText(item)}
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <HardDrive size={15} className="shrink-0 text-hf-yellow" />
-                            <span className="min-w-0 truncate text-sm font-semibold text-modiff-text">
-                              {modelItemLabel(item)}
-                            </span>
+              {(modelCacheDiagnostics?.external_model_packages?.length ?? 0) > 0 ? (
+                <section className="grid gap-1">
+                  <h3 className="text-xs font-bold uppercase text-modiff-subtle-text">External packages</h3>
+                  {modelCacheDiagnostics?.external_model_packages?.slice(0, 8).map((item) => (
+                    <div
+                      key={`${item.source}-${item.path}`}
+                      className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill tone={item.runnable ? 'success' : 'warning'}>
+                          {item.runnable ? 'Compatible' : 'Needs link'}
+                        </StatusPill>
+                        <span className="min-w-0 break-all text-xs font-semibold text-modiff-subtle-text">
+                          {item.label}
+                        </span>
+                      </div>
+                      <DetailLine tone={item.runnable ? 'success' : 'warning'}>
+                        {item.format} | {formatFileSize(item.model_file_bytes ?? 0)} | {item.path} | {item.reason}
+                      </DetailLine>
+                    </div>
+                  ))}
+                </section>
+              ) : null}
+
+              {(modelCacheDiagnostics?.hf_compatible_external_repos?.length ?? 0) > 0 ? (
+                <section className="grid gap-1">
+                  <h3 className="text-xs font-bold uppercase text-modiff-subtle-text">HF-compatible external repos</h3>
+                  {modelCacheDiagnostics?.hf_compatible_external_repos?.slice(0, 8).map((item) => {
+                    const status = getRepoCacheStatus(item.repo_id, compactHfCache, localModels, modelCacheDiagnostics);
+                    return (
+                      <div
+                        key={`${item.source}-${item.path}`}
+                        className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusPill tone={status.runnable ? 'success' : 'warning'}>
+                            {status.runnable ? 'Runnable' : 'Link needed'}
+                          </StatusPill>
+                          <span className="min-w-0 break-all text-xs font-semibold text-modiff-subtle-text">
+                            {item.repo_id}
                           </span>
-                          <div className="flex flex-none items-center gap-1">
-                            {isHfModel(item) ? (
-                              <StatusPill tone="default" title={formatFileSize(item.size)}>
-                                {formatFileSize(item.size)}
-                              </StatusPill>
-                            ) : null}
-                            <StatusPill tone="success">{source}</StatusPill>
+                        </div>
+                        <DetailLine tone={status.runnable ? 'success' : 'warning'}>
+                          {item.path} | {item.reason}
+                        </DetailLine>
+                      </div>
+                    );
+                  })}
+                </section>
+              ) : null}
+
+              <section className="grid gap-1">
+                <h3 className="text-xs font-bold uppercase text-modiff-subtle-text">Workflow node definitions</h3>
+                {missingGraphNodes.length === 0 ? (
+                  <DetailLine tone="success">
+                    Every current graph node has a matching backend registry definition.
+                  </DetailLine>
+                ) : (
+                  missingGraphNodes.slice(0, 8).map((node) => (
+                    <div
+                      key={node.id}
+                      className="rounded-modiff-compact border border-modiff-red/70 bg-modiff-red/10 p-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill tone={node.data.uiState?.disabled ? 'warning' : 'error'}>
+                          {node.data.uiState?.disabled ? 'Disabled' : 'Missing'}
+                        </StatusPill>
+                        <span className="min-w-0 flex-1 break-all text-xs font-semibold text-modiff-subtle-text">
+                          {node.data.label || node.id}
+                        </span>
+                      </div>
+                      <DetailLine tone={node.data.uiState?.disabled ? 'warning' : 'error'}>
+                        {node.data.module}.{node.data.action}
+                      </DetailLine>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <ModiffButton
+                          tone="secondary"
+                          icon={<Power size={14} />}
+                          onClick={() => toggleMissingNodeDisabled(node.id, !node.data.uiState?.disabled)}
+                        >
+                          {node.data.uiState?.disabled ? 'Enable' : 'Disable'}
+                        </ModiffButton>
+                        <ModiffButton
+                          tone="secondary"
+                          icon={<Copy size={14} />}
+                          onClick={() => copyMissingNodeKey(node.id, `${node.data.module}.${node.data.action}`)}
+                        >
+                          Copy key
+                        </ModiffButton>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </section>
+
+              <section className="grid gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xs font-bold uppercase text-modiff-subtle-text">Custom modules</h3>
+                  <StatusPill tone={customModules.length > 0 ? 'success' : 'default'}>
+                    {customModules.length} module(s)
+                  </StatusPill>
+                  <ModiffButton
+                    className="h-8 px-2 text-xs"
+                    disabled={customModuleAction !== null}
+                    icon={
+                      customModuleAction === 'refresh' ? (
+                        <LoaderCircle size={14} className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={14} />
+                      )
+                    }
+                    onClick={() => {
+                      void handleRefreshCustomModules();
+                    }}
+                  >
+                    Refresh
+                  </ModiffButton>
+                </div>
+                <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2">
+                  <ModiffInput
+                    aria-label="Custom module Git URL or local folder path"
+                    value={customModuleSource}
+                    onChange={(event) => setCustomModuleSource(event.target.value)}
+                    placeholder="Git URL or local folder path"
+                    disabled={customModuleAction !== null}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <ModiffInput
+                      aria-label="Custom module folder name"
+                      value={customModuleName}
+                      onChange={(event) => setCustomModuleName(event.target.value)}
+                      placeholder="Folder name (optional)"
+                      disabled={customModuleAction !== null}
+                      className="min-w-40 flex-1"
+                    />
+                    <ModiffButton
+                      tone="primary"
+                      icon={
+                        customModuleAction === 'install' ? (
+                          <LoaderCircle size={14} className="animate-spin" />
+                        ) : (
+                          <Download size={14} />
+                        )
+                      }
+                      disabled={customModuleAction !== null || !customModuleSource.trim()}
+                      onClick={() => {
+                        void handleInstallCustomModule();
+                      }}
+                    >
+                      Install
+                    </ModiffButton>
+                  </div>
+                  <DetailLine tone={customModuleError ? 'warning' : 'muted'}>
+                    {customModuleError ||
+                      'Installs are limited to the backend custom module folder. Disable moves a module to custom/.disabled instead of deleting it.'}
+                  </DetailLine>
+                </div>
+                <div className="grid gap-1">
+                  {customModules.length === 0 ? (
+                    <DetailLine tone="muted">No custom modules are registered yet.</DetailLine>
+                  ) : (
+                    customModules.map((module) => {
+                      const updateBusy = customModuleAction === `${module.name}:update`;
+                      const toggleBusy =
+                        customModuleAction === `${module.name}:${module.enabled ? 'disable' : 'enable'}`;
+                      return (
+                        <div
+                          key={`${module.name}-${module.enabled ? 'enabled' : 'disabled'}`}
+                          className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusPill tone={module.enabled ? 'success' : 'warning'}>
+                              {module.enabled ? 'Enabled' : 'Disabled'}
+                            </StatusPill>
+                            <StatusPill tone={module.nodeCount > 0 ? 'success' : 'warning'}>
+                              {module.nodeCount} node(s)
+                            </StatusPill>
+                            {module.hasGit ? <StatusPill tone="default">Git</StatusPill> : null}
+                            <span className="min-w-0 flex-1 break-all text-xs font-semibold text-modiff-subtle-text">
+                              {module.moduleKey}
+                            </span>
+                          </div>
+                          <DetailLine tone={module.enabled && module.nodeCount === 0 ? 'warning' : 'muted'}>
+                            {module.path}
+                            {module.remote ? ` | ${module.remote}` : ''}
+                            {module.branch ? ` | ${module.branch}` : ''}
+                          </DetailLine>
+                          {module.nodes.length > 0 ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {module.nodes.slice(0, 8).map((nodeName) => (
+                                <span
+                                  key={nodeName}
+                                  className="rounded-modiff-compact border border-modiff-border bg-modiff-panel px-1.5 py-0.5 text-xs text-modiff-subtle-text"
+                                >
+                                  {nodeName}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <ModiffButton
+                              tone="secondary"
+                              icon={
+                                updateBusy ? (
+                                  <LoaderCircle size={14} className="animate-spin" />
+                                ) : (
+                                  <RefreshCw size={14} />
+                                )
+                              }
+                              disabled={customModuleAction !== null || !module.canUpdate}
+                              onClick={() => {
+                                void handleUpdateCustomModule(module.name);
+                              }}
+                            >
+                              Update
+                            </ModiffButton>
+                            <ModiffButton
+                              tone={module.enabled ? 'danger' : 'secondary'}
+                              icon={
+                                toggleBusy ? <LoaderCircle size={14} className="animate-spin" /> : <Power size={14} />
+                              }
+                              disabled={customModuleAction !== null}
+                              onClick={() => {
+                                void handleToggleCustomModule(module.name, !module.enabled);
+                              }}
+                            >
+                              {module.enabled ? 'Disable' : 'Enable'}
+                            </ModiffButton>
+                            <ModiffButton
+                              tone="secondary"
+                              icon={<Copy size={14} />}
+                              onClick={() => copyMissingNodeKey(module.name, module.moduleKey)}
+                            >
+                              Copy key
+                            </ModiffButton>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              <section className="grid gap-1">
+                <h3 className="text-xs font-bold uppercase text-modiff-subtle-text">Raw Hugging Face cache</h3>
+                {hfCache.length === 0 && !isLoading ? (
+                  <DetailLine tone="muted">
+                    {cacheSearch ? 'No cache entries match the current filter.' : 'The local cache is empty.'}
+                  </DetailLine>
+                ) : (
+                  hfCache.map((model) => {
+                    if (!isHfModel(model)) {
+                      const label = modelItemText(model);
+                      return (
+                        <article key={label} className="border-b border-modiff-border py-3 last:border-b-0">
+                          <div className="flex items-start gap-3">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="truncate text-sm font-semibold text-modiff-text">{formatTitle(label)}</h4>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                <StatusPill tone="default">Indexed</StatusPill>
+                              </div>
+                            </div>
                           </div>
                         </article>
-                      ))}
-                    </div>
-                  ))
-                )}
-              </InventorySection>
-
-              <InventorySection count={supportedProfiles.length} testId="model-manager-supported" title="Supported">
-                {supportedGroups.length === 0 ? (
-                  <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-muted">
-                    No supported models match the current filter.
-                  </div>
-                ) : (
-                  supportedGroups.map(([group, profiles]) => (
-                    <div key={group} className="grid gap-1">
-                      <div className="px-1 text-xs font-semibold text-modiff-muted">{group}</div>
-                      {profiles.map((profile) => {
-                        const planKey = autoPlanKeyForForm(
-                          getFormDefaultsForMode(getPrimaryModeForProfile(profile), profile.modelType),
-                        );
-                        const rowPlan = autoResourcePlans[planKey];
-                        const rowInstallTarget = autoResourceInstallTarget(rowPlan);
-                        return (
-                          <SupportedProfileRow
-                            key={profile.modelType}
-                            activeInstallCount={activeInstallCount}
-                            autoPlan={rowPlan}
-                            focused={
-                              focus?.modelType === profile.modelType ||
-                              focus?.repo === profile.defaultRepo ||
-                              focus?.repo === rowInstallTarget?.repo
-                            }
-                            hardwareFit={getStudioModelHardwareFit(profile, runtimeStatus)}
-                            installProgress={hfDownloadProgress}
-                            hfTokenConfigured={Boolean(runtimeStatus?.config?.hf_token_configured)}
-                            onConfigureHfToken={() => setHfTokenEditorOpen(true)}
-                            onInstall={handleInstall}
-                            profile={profile}
-                            status={getStudioModelCacheStatus(
-                              profile,
-                              compactHfCache,
-                              localModels,
-                              modelCacheDiagnostics,
-                            )}
-                          />
-                        );
-                      })}
-                    </div>
-                  ))
-                )}
-              </InventorySection>
-
-              {expertMode ? (
-                <details
-                  className="rounded-modiff-compact border border-modiff-border bg-modiff-panel p-3"
-                  data-testid="model-manager-diagnostics"
-                >
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-bold text-modiff-text">
-                    <span className="flex items-center gap-2">
-                      <Settings size={15} className="text-hf-yellow" />
-                      Diagnostics
-                    </span>
-                    <StatusPill tone="default">Expert</StatusPill>
-                  </summary>
-                  <div className="mt-3 grid gap-4">
-                    <section className="grid gap-2">
-                      <div className="flex flex-wrap gap-2">
-                        <ModiffButton
-                          className="h-8 px-2 text-xs"
-                          icon={<RefreshCw size={14} />}
-                          onClick={() => {
-                            void fetchRegistry();
-                          }}
-                        >
-                          Update registry
-                        </ModiffButton>
-                        <ModiffButton
-                          className="h-8 px-2 text-xs"
-                          icon={<Copy size={14} />}
-                          onClick={copyEnvironmentSnapshot}
-                        >
-                          Copy snapshot
-                        </ModiffButton>
-                      </div>
-                    </section>
-
-                    {modelCacheDiagnostics ? (
-                      <section className="grid gap-1">
-                        <h3 className="text-xs font-bold uppercase text-modiff-muted">Scanned folders</h3>
-                        {modelCacheDiagnostics.locations.map((location) => (
-                          <div
-                            key={`${location.label}-${location.path}`}
-                            className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <StatusPill
-                                tone={!location.exists ? 'error' : location.runnable === false ? 'warning' : 'success'}
-                              >
-                                {!location.exists
-                                  ? 'Missing'
-                                  : location.runnable === false
-                                    ? 'Not runnable'
-                                    : 'Indexed'}
+                      );
+                    }
+                    const revisionsOpen = isOpen.includes(model.id);
+                    return (
+                      <article key={model.id} className="border-b border-modiff-border py-3 last:border-b-0">
+                        <div className="flex items-start gap-3">
+                          <div className="min-w-0 flex-1">
+                            <h4 className="truncate text-sm font-semibold text-modiff-text">{formatTitle(model.id)}</h4>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <StatusPill tone="default">{formatFileSize(model.size)}</StatusPill>
+                              <StatusPill tone="default">
+                                {new Date(model.last_accessed * 1000).toLocaleDateString()}
                               </StatusPill>
-                              <span className="min-w-0 break-all text-xs font-semibold text-gray-300">
-                                {location.label}: {location.path || 'default'}
-                              </span>
-                            </div>
-                            <DetailLine
-                              tone={location.runnable === false ? 'warning' : location.exists ? 'muted' : 'error'}
-                            >
-                              {location.repo_count ?? location.file_count ?? 0} item(s),{' '}
-                              {location.compatible_hf_repo_count ?? 0} compatible HF repo(s),{' '}
-                              {location.external_package_count ?? 0} external package(s)
-                              {location.reason ? ` | ${location.reason}` : ''}
-                            </DetailLine>
-                          </div>
-                        ))}
-                      </section>
-                    ) : null}
-
-                    {(modelCacheDiagnostics?.external_model_packages?.length ?? 0) > 0 ? (
-                      <section className="grid gap-1">
-                        <h3 className="text-xs font-bold uppercase text-modiff-muted">External packages</h3>
-                        {modelCacheDiagnostics?.external_model_packages?.slice(0, 8).map((item) => (
-                          <div
-                            key={`${item.source}-${item.path}`}
-                            className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <StatusPill tone={item.runnable ? 'success' : 'warning'}>
-                                {item.runnable ? 'Compatible' : 'Needs link'}
-                              </StatusPill>
-                              <span className="min-w-0 break-all text-xs font-semibold text-gray-300">
-                                {item.label}
-                              </span>
-                            </div>
-                            <DetailLine tone={item.runnable ? 'success' : 'warning'}>
-                              {item.format} | {formatFileSize(item.model_file_bytes ?? 0)} | {item.path} | {item.reason}
-                            </DetailLine>
-                          </div>
-                        ))}
-                      </section>
-                    ) : null}
-
-                    {(modelCacheDiagnostics?.hf_compatible_external_repos?.length ?? 0) > 0 ? (
-                      <section className="grid gap-1">
-                        <h3 className="text-xs font-bold uppercase text-modiff-muted">HF-compatible external repos</h3>
-                        {modelCacheDiagnostics?.hf_compatible_external_repos?.slice(0, 8).map((item) => {
-                          const status = getRepoCacheStatus(
-                            item.repo_id,
-                            compactHfCache,
-                            localModels,
-                            modelCacheDiagnostics,
-                          );
-                          return (
-                            <div
-                              key={`${item.source}-${item.path}`}
-                              className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <StatusPill tone={status.runnable ? 'success' : 'warning'}>
-                                  {status.runnable ? 'Runnable' : 'Link needed'}
+                              {model.class_names.slice(0, 5).map((name) => (
+                                <StatusPill key={name} tone="default">
+                                  {name}
                                 </StatusPill>
-                                <span className="min-w-0 break-all text-xs font-semibold text-gray-300">
-                                  {item.repo_id}
-                                </span>
-                              </div>
-                              <DetailLine tone={status.runnable ? 'success' : 'warning'}>
-                                {item.path} | {item.reason}
-                              </DetailLine>
+                              ))}
                             </div>
-                          );
-                        })}
-                      </section>
-                    ) : null}
-
-                    <section className="grid gap-1">
-                      <h3 className="text-xs font-bold uppercase text-modiff-muted">Workflow node definitions</h3>
-                      {missingGraphNodes.length === 0 ? (
-                        <DetailLine tone="success">
-                          Every current graph node has a matching backend registry definition.
-                        </DetailLine>
-                      ) : (
-                        missingGraphNodes.slice(0, 8).map((node) => (
-                          <div
-                            key={node.id}
-                            className="rounded-modiff-compact border border-modiff-red/70 bg-modiff-red/10 p-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <StatusPill tone={node.data.uiState?.disabled ? 'warning' : 'error'}>
-                                {node.data.uiState?.disabled ? 'Disabled' : 'Missing'}
-                              </StatusPill>
-                              <span className="min-w-0 flex-1 break-all text-xs font-semibold text-gray-300">
-                                {node.data.label || node.id}
-                              </span>
-                            </div>
-                            <DetailLine tone={node.data.uiState?.disabled ? 'warning' : 'error'}>
-                              {node.data.module}.{node.data.action}
-                            </DetailLine>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <ModiffButton
-                                tone="secondary"
-                                icon={<Power size={14} />}
-                                onClick={() => toggleMissingNodeDisabled(node.id, !node.data.uiState?.disabled)}
-                              >
-                                {node.data.uiState?.disabled ? 'Enable' : 'Disable'}
-                              </ModiffButton>
-                              <ModiffButton
-                                tone="secondary"
-                                icon={<Copy size={14} />}
-                                onClick={() => copyMissingNodeKey(node.id, `${node.data.module}.${node.data.action}`)}
-                              >
-                                Copy key
-                              </ModiffButton>
-                            </div>
+                            <ModiffButton
+                              tone="ghost"
+                              size="compact"
+                              className="mt-2 px-2 text-xs"
+                              onClick={() => handleCollapse(model.id)}
+                              icon={revisionsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            >
+                              Revisions
+                            </ModiffButton>
                           </div>
-                        ))
-                      )}
-                    </section>
-
-                    <section className="grid gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-xs font-bold uppercase text-modiff-muted">Custom modules</h3>
-                        <StatusPill tone={customModules.length > 0 ? 'success' : 'default'}>
-                          {customModules.length} module(s)
-                        </StatusPill>
-                        <ModiffButton
-                          className="h-8 px-2 text-xs"
-                          disabled={customModuleAction !== null}
-                          icon={
-                            customModuleAction === 'refresh' ? (
-                              <LoaderCircle size={14} className="animate-spin" />
-                            ) : (
-                              <RefreshCw size={14} />
-                            )
-                          }
-                          onClick={() => {
-                            void handleRefreshCustomModules();
-                          }}
-                        >
-                          Refresh
-                        </ModiffButton>
-                      </div>
-                      <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2">
-                        <ModiffInput
-                          value={customModuleSource}
-                          onChange={(event) => setCustomModuleSource(event.target.value)}
-                          placeholder="Git URL or local folder path"
-                          disabled={customModuleAction !== null}
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <ModiffInput
-                            value={customModuleName}
-                            onChange={(event) => setCustomModuleName(event.target.value)}
-                            placeholder="Folder name (optional)"
-                            disabled={customModuleAction !== null}
-                            className="min-w-40 flex-1"
-                          />
-                          <ModiffButton
-                            tone="primary"
-                            icon={
-                              customModuleAction === 'install' ? (
-                                <LoaderCircle size={14} className="animate-spin" />
-                              ) : (
-                                <Download size={14} />
-                              )
-                            }
-                            disabled={customModuleAction !== null || !customModuleSource.trim()}
+                          <ModiffIconButton
+                            label={`Delete ${model.id}`}
+                            className="border border-modiff-red text-modiff-red hover:bg-modiff-red/10 hover:text-modiff-red"
                             onClick={() => {
-                              void handleInstallCustomModule();
+                              setAlertOpener({
+                                title: 'Confirm deletion',
+                                message: `Delete ${model.id} model?`,
+                                confirmText: 'Delete',
+                                cancelText: 'Cancel',
+                                onConfirm: () => {
+                                  void deleteHfModel(model.revisions.map((revision) => revision.hash).join(','));
+                                },
+                              });
                             }}
                           >
-                            Install
-                          </ModiffButton>
+                            <Trash2 size={15} />
+                          </ModiffIconButton>
                         </div>
-                        <DetailLine tone={customModuleError ? 'warning' : 'muted'}>
-                          {customModuleError ||
-                            'Installs are limited to the backend custom module folder. Disable moves a module to custom/.disabled instead of deleting it.'}
-                        </DetailLine>
-                      </div>
-                      <div className="grid gap-1">
-                        {customModules.length === 0 ? (
-                          <DetailLine tone="muted">No custom modules are registered yet.</DetailLine>
-                        ) : (
-                          customModules.map((module) => {
-                            const updateBusy = customModuleAction === `${module.name}:update`;
-                            const toggleBusy =
-                              customModuleAction === `${module.name}:${module.enabled ? 'disable' : 'enable'}`;
-                            return (
+                        {revisionsOpen ? (
+                          <div className="mt-2 space-y-1 pl-4">
+                            {model.revisions.map((revision) => (
                               <div
-                                key={`${module.name}-${module.enabled ? 'enabled' : 'disabled'}`}
-                                className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
+                                key={revision.hash}
+                                className="flex items-center gap-2 text-xs text-modiff-subtle-text"
                               >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <StatusPill tone={module.enabled ? 'success' : 'warning'}>
-                                    {module.enabled ? 'Enabled' : 'Disabled'}
-                                  </StatusPill>
-                                  <StatusPill tone={module.nodeCount > 0 ? 'success' : 'warning'}>
-                                    {module.nodeCount} node(s)
-                                  </StatusPill>
-                                  {module.hasGit ? <StatusPill tone="default">Git</StatusPill> : null}
-                                  <span className="min-w-0 flex-1 break-all text-xs font-semibold text-gray-300">
-                                    {module.moduleKey}
-                                  </span>
-                                </div>
-                                <DetailLine tone={module.enabled && module.nodeCount === 0 ? 'warning' : 'muted'}>
-                                  {module.path}
-                                  {module.remote ? ` | ${module.remote}` : ''}
-                                  {module.branch ? ` | ${module.branch}` : ''}
-                                </DetailLine>
-                                {module.nodes.length > 0 ? (
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    {module.nodes.slice(0, 8).map((nodeName) => (
-                                      <span
-                                        key={nodeName}
-                                        className="rounded-modiff-compact border border-modiff-border bg-modiff-panel px-1.5 py-0.5 text-xs text-gray-300"
-                                      >
-                                        {nodeName}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : null}
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  <ModiffButton
-                                    tone="secondary"
-                                    icon={
-                                      updateBusy ? (
-                                        <LoaderCircle size={14} className="animate-spin" />
-                                      ) : (
-                                        <RefreshCw size={14} />
-                                      )
-                                    }
-                                    disabled={customModuleAction !== null || !module.canUpdate}
-                                    onClick={() => {
-                                      void handleUpdateCustomModule(module.name);
-                                    }}
-                                  >
-                                    Update
-                                  </ModiffButton>
-                                  <ModiffButton
-                                    tone={module.enabled ? 'danger' : 'secondary'}
-                                    icon={
-                                      toggleBusy ? (
-                                        <LoaderCircle size={14} className="animate-spin" />
-                                      ) : (
-                                        <Power size={14} />
-                                      )
-                                    }
-                                    disabled={customModuleAction !== null}
-                                    onClick={() => {
-                                      void handleToggleCustomModule(module.name, !module.enabled);
-                                    }}
-                                  >
-                                    {module.enabled ? 'Disable' : 'Enable'}
-                                  </ModiffButton>
-                                  <ModiffButton
-                                    tone="secondary"
-                                    icon={<Copy size={14} />}
-                                    onClick={() => copyMissingNodeKey(module.name, module.moduleKey)}
-                                  >
-                                    Copy key
-                                  </ModiffButton>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </section>
-
-                    <section className="grid gap-1">
-                      <h3 className="text-xs font-bold uppercase text-modiff-muted">Raw Hugging Face cache</h3>
-                      {hfCache.length === 0 && !isLoading ? (
-                        <DetailLine tone="muted">
-                          {cacheSearch ? 'No cache entries match the current filter.' : 'The local cache is empty.'}
-                        </DetailLine>
-                      ) : (
-                        hfCache.map((model) => {
-                          if (!isHfModel(model)) {
-                            const label = modelItemText(model);
-                            return (
-                              <article key={label} className="border-b border-modiff-border py-3 last:border-b-0">
-                                <div className="flex items-start gap-3">
-                                  <div className="min-w-0 flex-1">
-                                    <h4 className="truncate text-sm font-semibold text-modiff-text">
-                                      {formatTitle(label)}
-                                    </h4>
-                                    <div className="mt-1 flex flex-wrap gap-1">
-                                      <StatusPill tone="default">Indexed</StatusPill>
-                                    </div>
-                                  </div>
-                                </div>
-                              </article>
-                            );
-                          }
-                          const revisionsOpen = isOpen.includes(model.id);
-                          return (
-                            <article key={model.id} className="border-b border-modiff-border py-3 last:border-b-0">
-                              <div className="flex items-start gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <h4 className="truncate text-sm font-semibold text-modiff-text">
-                                    {formatTitle(model.id)}
-                                  </h4>
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    <StatusPill tone="default">{formatFileSize(model.size)}</StatusPill>
-                                    <StatusPill tone="default">
-                                      {new Date(model.last_accessed * 1000).toLocaleDateString()}
-                                    </StatusPill>
-                                    {model.class_names.slice(0, 5).map((name) => (
-                                      <StatusPill key={name} tone="default">
-                                        {name}
-                                      </StatusPill>
-                                    ))}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="mt-2 inline-flex h-7 items-center gap-1 rounded-modiff-compact px-2 text-xs font-semibold text-gray-300 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
-                                    onClick={() => handleCollapse(model.id)}
-                                  >
-                                    Revisions
-                                    {revisionsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                  </button>
+                                <div className="min-w-0 flex-1 break-words">
+                                  <strong className="text-modiff-text">{revision.hash.slice(0, 8)}</strong> |{' '}
+                                  {new Date(revision.last_modified * 1000).toLocaleString()} |{' '}
+                                  {formatFileSize(revision.size)}
                                 </div>
                                 <ModiffIconButton
-                                  label={`Delete ${model.id}`}
+                                  label={`Delete revision ${revision.hash.slice(0, 8)}`}
+                                  size="compact"
                                   className="border border-modiff-red text-modiff-red hover:bg-modiff-red/10 hover:text-modiff-red"
                                   onClick={() => {
                                     setAlertOpener({
                                       title: 'Confirm deletion',
-                                      message: `Delete ${model.id} model?`,
+                                      message: `Delete ${revision.hash.slice(0, 8)} revision of ${model.id} model?`,
                                       confirmText: 'Delete',
                                       cancelText: 'Cancel',
                                       onConfirm: () => {
-                                        void deleteHfModel(model.revisions.map((revision) => revision.hash).join(','));
+                                        void deleteHfModel(revision.hash);
                                       },
                                     });
                                   }}
                                 >
-                                  <Trash2 size={15} />
+                                  <Trash2 size={13} />
                                 </ModiffIconButton>
                               </div>
-                              {revisionsOpen ? (
-                                <div className="mt-2 space-y-1 pl-4">
-                                  {model.revisions.map((revision) => (
-                                    <div key={revision.hash} className="flex items-center gap-2 text-xs text-gray-300">
-                                      <div className="min-w-0 flex-1 break-words">
-                                        <strong className="text-modiff-text">{revision.hash.slice(0, 8)}</strong> |{' '}
-                                        {new Date(revision.last_modified * 1000).toLocaleString()} |{' '}
-                                        {formatFileSize(revision.size)}
-                                      </div>
-                                      <ModiffIconButton
-                                        label={`Delete revision ${revision.hash.slice(0, 8)}`}
-                                        className="size-6 border border-modiff-red text-modiff-red hover:bg-modiff-red/10 hover:text-modiff-red"
-                                        onClick={() => {
-                                          setAlertOpener({
-                                            title: 'Confirm deletion',
-                                            message: `Delete ${revision.hash.slice(0, 8)} revision of ${model.id} model?`,
-                                            confirmText: 'Delete',
-                                            cancelText: 'Cancel',
-                                            onConfirm: () => {
-                                              void deleteHfModel(revision.hash);
-                                            },
-                                          });
-                                        }}
-                                      >
-                                        <Trash2 size={13} />
-                                      </ModiffIconButton>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </article>
-                          );
-                        })
-                      )}
-                    </section>
-                  </div>
-                </details>
-              ) : null}
-            </div>
-          </div>
-
-          <footer className="flex justify-center gap-2 border-t border-modiff-border bg-modiff-panel px-4 py-3">
-            <ModiffButton onClick={handleOnClose}>Close</ModiffButton>
-          </footer>
+                            ))}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })
+                )}
+              </section>
+            </ModiffDisclosure>
+          ) : null}
         </div>
       </div>
-    </div>
+    </ModiffDialog>
   );
 }
 

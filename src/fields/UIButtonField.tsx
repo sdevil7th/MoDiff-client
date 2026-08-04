@@ -1,7 +1,7 @@
-import { LoaderCircle } from 'lucide-react';
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { FieldProps } from '../components/NodeContent';
-import { FieldFrame } from '../ui/FieldFrame';
-import { cx } from '../utils/classNames';
+import { FieldFrame, ModiffButton } from '../ui';
 import fieldAction from '../utils/fieldAction';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -27,20 +27,17 @@ export default function UIButtonField(props: FieldProps) {
 
   return (
     <FieldFrame dataKey={props.fieldKey} hidden={props.hidden} layoutStyle={props.style} className="nodrag">
-      <button
+      <ModiffButton
         type="button"
-        disabled={props.disabled}
+        loading={props.disabled}
         onClick={handleClick}
-        className={cx(
-          'inline-flex h-8 w-full items-center justify-center gap-2 px-3 text-sm font-semibold transition disabled:pointer-events-none disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-          primary
-            ? 'bg-hf-yellow text-black hover:bg-hf-orange'
-            : 'border border-modiff-border bg-modiff-surface text-gray-200 hover:border-hf-yellow/70 hover:text-white',
-        )}
+        fullWidth
+        size="dense"
+        tone={primary ? 'primary' : 'secondary'}
+        className="nodrag"
       >
-        {props.disabled ? <LoaderCircle size={16} className="animate-spin" /> : null}
         <span className="truncate">{props.disabled ? ' ' : props.label || ' '}</span>
-      </button>
+      </ModiffButton>
     </FieldFrame>
   );
 }

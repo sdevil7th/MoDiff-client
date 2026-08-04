@@ -37,7 +37,10 @@ The launcher also saves its latest report at `artifacts/dev-server-current/backe
 The supported client toolchain is defined in `.nvmrc`, `package.json`, and `package-lock.json`.
 
 1. Confirm Node `24.12.x` and npm `11.6.x`.
-2. Use `npm ci`; do not regenerate the lockfile just to work around an install failure.
+2. For paired development, rerun `./install-dev.sh --accelerator auto` or
+   `.\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto`. Use `npm ci`
+   directly only for client-only work against an already-installed backend.
+   Do not regenerate the lockfile just to work around an install failure.
 3. If the lockfile and manifest intentionally changed together, run `npm install` once as part of that dependency change, review the diff, and return to `npm ci` for validation.
 4. If native browser installation fails, retry `npx playwright install chromium` and follow Playwright's platform dependency message.
 
@@ -128,6 +131,10 @@ Use **Setup** or **Models** to view the authoritative state:
 
 For gated repositories, accept the model terms on Hugging Face and configure credentials through supported Hugging Face tooling. Never paste a token into an issue, screenshot, workflow export, or tracked `.env` file.
 
+MoDiff handles the backend `huggingface_access_required` code by linking to the
+exact repository and offering token setup plus retry. It does not infer access
+from an organization name and cannot accept repository terms for the user.
+
 Avoid moving individual Hugging Face blob/snapshot files by hand. Cache structure and immutable revisions are part of artifact validation.
 
 ## Download Progress Appears Stuck
@@ -165,6 +172,42 @@ Use Auto for the first known recipe. Switch to Expert only when you intend to di
 5. Restart the backend if the runtime remains unhealthy.
 
 An Auto recipe can reduce risk but cannot guarantee success under changing memory pressure. Include the selected model, task, dimensions/frames, and the redacted exception type in a bug report.
+
+## A Run Is Taking Much Longer Than Expected
+
+Check whether the run is progressing before treating it as stalled:
+
+- A changing active phase or node, advancing step counter, websocket task
+  updates, backend log activity, or sustained accelerator activity indicates a
+  live run.
+- A static phase with no heartbeat, log output, resource activity, or task
+  update for an extended period may indicate a stalled worker.
+- During denoising, multiply the recent time per completed step by the remaining
+  steps for a rough estimate. Decode and export still add time afterward.
+
+Interpret the phase shown in Queue:
+
+- **Download/validation** can wait on metadata, network transfer, hashing, and
+  Hugging Face cache materialization.
+- **Loading/placement** can move many gigabytes before the first step. An
+  integrated GPU's shared system-memory capacity is not equivalent to discrete
+  local VRAM and can be dramatically slower.
+- **Denoising** repeats model inference for the requested steps, frames, or
+  temporal windows.
+- **Decode/export** converts latents and writes image, video, or audio media;
+  high resolution, duration, and local FFmpeg performance matter.
+
+Auto qualifies a runnable resource recipe but does not guarantee a performance
+tier. With identical prompts and generation parameters, a later run may be
+faster using a qualified pre-quantized artifact, supported attention backend,
+compile/cache option, or improved device placement. Applying those changes
+requires a pipeline reload and cannot speed up the active run. Do not switch on
+an unqualified quantizer or kernel simply because Expert exposes it.
+
+For the initial smoke test, use a lightweight Auto-ready image recipe. If
+generation settings may be changed, reduce resolution, steps, frames, or
+duration while diagnosing performance. If progress continues, interruption is
+a user choice rather than required crash recovery.
 
 ## Queue Or UI State Looks Stale
 

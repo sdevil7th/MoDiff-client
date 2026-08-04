@@ -1,0 +1,9 @@
+{
+  "viewport": "2048x1024",
+  "widthPercent": 82,
+  "heightPercent": 80,
+  "mountedCards": 12,
+  "compactHeader": true,
+  "ctaAligned": true,
+  "detailContained": true
+}

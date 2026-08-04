@@ -42,10 +42,16 @@ The frontend treats backend responses, websocket messages, local storage, dynami
 
 - `src/main.tsx` mounts the app inside `ModiffSnackbarProvider`, `WebsocketProvider`, and `ReactFlowProvider`.
 - `src/App.tsx` owns the top bar, left rail/panels, central canvas, workflow tabs, right workspace, and app-level Gallery/issues dialogs.
-- `src/components/TopBar.tsx` owns New, Export, Auto/Expert, Run mode, Run/Stop, model/template/settings/Gallery openers, progress, and connection controls.
+- `src/components/TopBar.tsx` owns New, workflow Save/Save as, Export, graph-fix review, Auto/Expert, Run mode,
+  context-aware Run/Queue, Stop, runtime-resource status, model/template/settings/Gallery openers, progress, and connection controls.
 - `src/components/Workflow.tsx` owns the React Flow canvas, graph/node drops, node search, connections, selection, and canvas-level dialogs.
 - `src/components/WorkflowTabsBar.tsx` presents local workflow snapshots managed by `useStudioStore`.
 - `src/components/WorkspacePanel.tsx` owns the right-side Studio, Queue, Setup, and conditional Run-as-app tabs.
+- `src/components/GraphFixDialog.tsx` presents deterministic repairs produced by `src/studio/graphFix.ts`; fixes remain
+  explicit user-reviewed graph mutations.
+- `src/components/RuntimeResourceMonitor.tsx` reads the bounded `/runtime/resources` snapshot for top-bar monitoring.
+- `src/components/RuntimeOptimizationsCard.tsx` owns the Setup UI for optimization catalog, jobs, receipts,
+  qualification, isolated-environment activation, and rollback.
 - `src/components/LeftLibraryPanels.tsx` implements template, Gallery/media, model, and related left-rail libraries; node and workflow lists have dedicated components.
 
 The app shell is responsible for arranging features, not duplicating their domain state.
@@ -87,7 +93,20 @@ All execution surfaces, including Studio and Run as app, must submit this graph 
 
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
 
-Model visibility, artifact presence, and Auto readiness are separate concepts. `src/studio/modelCache.ts`, `modelHardware.ts`, `artifactRequirements.ts`, and `autoResource.ts` combine the corresponding backend facts without treating a discovered directory as runnable proof.
+Model visibility, artifact presence, and Auto readiness are separate concepts.
+`src/studio/modelCache.ts` and `artifactRequirements.ts` describe local artifact
+state. The backend `/auto_resource/plan` response is the sole Auto compatibility
+authority; `src/studio/autoResource.ts` validates its versioned
+`compatibility` assessment and UI surfaces render that assessment without
+re-evaluating GPU, platform, OS, or memory thresholds. A missing plan is
+presented as **Checking compatibility**, never as a client-side hardware guess.
+
+Reviewed model usage notices live in `src/studio/modelUsagePolicies.ts`.
+Template and model-manager components consume that registry generically. Only
+dependencies with `acknowledgementRequired` alter template-card UX; the stored
+acknowledgement key includes repository, revision, policy version, and terms
+URL so changed terms are shown again. Hugging Face gating remains an upstream
+account action and install recovery uses the backend's structured error code.
 
 ## Websocket And Task State
 
@@ -106,7 +125,12 @@ Important message families include:
 - resource planning/retry: disclose selected Auto plan, fallback, and cleanup
 - notification/error: user-visible state with bounded detail
 
-Run updates carry task/client-run/attempt identity. Handlers must reject late or unrelated updates that would overwrite another workflow tab or newer attempt.
+Run updates carry task/client-run/attempt identity. Workflow-owned dynamic
+field/schema messages and queued field-action completion also carry the
+originating WebSocket session, workflow tab, and canvas epoch. Handlers must
+reject late or unrelated updates that would overwrite another workflow tab,
+replacement canvas, or newer attempt. Identity-less legacy field messages are
+accepted only when a single open workflow leaves no tab ambiguity.
 
 ## Studio Domain
 
@@ -116,15 +140,20 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 - `modelProfiles.ts`: model/task capabilities, defaults, artifact notes, and Auto requirement metadata
 - `templates.ts`: curated workflow recipes and Gallery metadata
 - `graphBridge.ts`: create/reconcile a managed graph from a Studio form
-- `resourcePlanner.ts` and `autoResource.ts`: client resource projection and backend Auto plan contract
+- `resourcePlanner.ts` and `autoResource.ts`: form normalization and the versioned backend Auto plan contract
+- `modelUsagePolicies.ts`: reviewed dependency usage/access notices and acknowledgement fingerprints
 - `runReadiness.ts` and `useRunReadinessIssues.ts`: graph/model/input/runtime validation
 - `runPreparation.ts` and `runCoordinator.ts`: submission metadata, deterministic identity, runtime hints, and response attachment
-- `outputContracts.ts`, `outputApi.ts`, and `outputUtils.ts`: validate, persist, and present generated outputs
+- `outputContracts.ts`, `outputApi.ts`, `outputUtils.ts`, and `previewState.ts`: validate, persist, classify, and present generated outputs
 - `workflowPackage.ts`: portable JSON/PNG workflow metadata
 - `templateReadiness.ts`, `templateExactness.ts`, and `templateQuality.ts`: publication/readiness rules
 - `workflowInference.ts`: infer Studio context from imported/custom graphs
 
-`src/stores/useStudioStore.ts` persists stable authoring state under `modiff.studio`: form values, prompt/snippet data, outputs, imported assets, workflow tabs, app-mode configs, blueprints, and pinned inputs. Live graph binding, graph-finalization status, Auto request state, and active run contexts remain volatile unless restored from a package/output snapshot.
+`src/stores/useStudioStore.ts` persists stable authoring state under `modiff.studio`: form values, prompt/snippet data, imported assets, workflow tabs, app-mode configs, blueprints, and pinned inputs. Output history and preview-slot state are backend-owned, hydrated from `/studio_outputs`, and deliberately excluded from local storage. Live graph binding, graph-finalization status, Auto request state, and active run contexts remain volatile unless restored from a package/output snapshot.
+
+`src/studio/workflowFileSave.ts` and the workflow request helpers persist named snapshots through the backend workflow
+API. Local tabs remain the editing surface; a successful explicit Save creates or replaces a backend library file,
+while Save JSON copy is a browser download.
 
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
 
@@ -154,12 +183,14 @@ User selects Run
   -> apply deterministic/runtime/candidate metadata
   -> capture run context and input hash
   -> POST /graph
-  -> attach task response to client-run identity
+  -> attach task response and accepted preview-slot state to client-run identity
   -> consume websocket progress/output/failure
   -> persist attributable Studio output
 ```
 
 `src/studio/runCoordinator.ts` owns submission identity and output attribution. `src/utils/runGraph.ts` owns transport. Callers own readiness and user feedback.
+
+`POST /graph` is always queue admission. The toolbar labels the one-shot action **Run** while the queue is idle and **Queue** while work is active or waiting; both paths use the same coordinator and never invoke cancellation. A queued context is indexed immediately for attribution but does not replace the active canvas owner until its exact `task_started` event arrives for the same workflow tab and canvas epoch.
 
 ## Fields And Dynamic Actions
 
@@ -175,7 +206,7 @@ Custom React fields are dynamically imported from the `@custom-fields` Vite alia
 
 ## Outputs, Gallery, And Packages
 
-`update_value` messages that match recognized output fields are attributed to the active run context. The client stores a bounded output view and synchronizes through `/studio_outputs`.
+`update_value` messages that match recognized output fields are attributed to the active run context. The client stores a bounded output view and synchronizes through `/studio_outputs`. A backend preview slot, scoped by workflow/node/field, is the authority for the main preview: an accepted new run marks the slot pending, a generated output promotes its durable output ID, and tab changes or browser refreshes do not reclassify it. The Previous strip excludes that ID. Saved canvas values and current-run heuristics are compatibility fallbacks only when talking to an older backend that has no preview-slot contract.
 
 An output can carry:
 
@@ -190,9 +221,15 @@ Gallery restore creates a workflow tab from the snapshot. Rerun recomputes curre
 
 Workflow packages are JSON. Image packages can also embed the `modiff.workflow` metadata key in PNG text chunks. Imported packages must be parsed/coerced at the boundary before they affect stores.
 
-## Templates And Static Gallery
+## Templates And Gallery Assets
 
-Curated templates live in `src/studio/templates.ts`. Public examples and provenance live under `public/template-gallery/`; Vite copies them to the build.
+Curated templates live in `src/studio/templates.ts`. Git stores their typed
+definitions, asset identities, and small manifests. Published examples,
+default-input media, and provenance records live in a public Hugging Face
+Dataset pinned by immutable commit SHA. `src/studio/templateAssets.ts` is the
+single URL resolver. Local mode exists for migration and verified offline
+copies; release builds use remote mode and do not copy Gallery media into the
+bundle.
 
 Publication tooling in `scripts/` enforces:
 

@@ -2,11 +2,20 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { CheckCircle2, Clock3, RefreshCw, Square, Trash2, XCircle } from 'lucide-react';
-import { useTaskStore, type SessionRun } from '../stores/useTaskStore';
+import { useTaskStore, type SessionRun, type Task } from '../stores/useTaskStore';
 import { ProgressBar } from '../ui/ProgressBar';
-import { StatusBox } from '../ui/StatusBox';
 import { formatRequestError } from '../utils/requestJson';
 import { cancelQueuedTask, requestExecutionStop } from '../utils/serverActions';
+import { ModiffButton, ModiffTooltip } from '../ui';
+import {
+  openRunActivity,
+  runActivityLabelForTask,
+  runActivityTargetForTask,
+  type RunActivityStatus,
+} from '../studio/runActivity';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { cx } from '../utils/classNames';
+import { executionProgressDetail, executionProgressFrom } from '../studio/executionProgress';
 
 type QueueButtonProps = {
   children: string;
@@ -18,16 +27,9 @@ type QueueButtonProps = {
 
 function QueueButton({ children, disabled, icon, onClick, testId }: QueueButtonProps) {
   return (
-    <button
-      type="button"
-      data-testid={testId}
-      disabled={disabled}
-      onClick={onClick}
-      className="inline-flex h-8 items-center justify-center gap-1.5 bg-hf-yellow px-3 text-sm font-semibold text-black transition hover:bg-hf-orange disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
-    >
-      {icon}
+    <ModiffButton tone="primary" icon={icon} data-testid={testId} disabled={disabled} onClick={onClick}>
       <span>{children}</span>
-    </button>
+    </ModiffButton>
   );
 }
 
@@ -53,6 +55,62 @@ function sessionRunDuration(run: SessionRun) {
   return undefined;
 }
 
+type RunActivityRowProps = {
+  children: ReactNode;
+  fallbackStatus: RunActivityStatus;
+  focused?: boolean;
+  pending?: boolean;
+  severity?: 'default' | 'success' | 'error';
+  task: SessionRun | Task | undefined;
+  taskId: string;
+  testId: string;
+};
+
+function RunActivityRow({
+  children,
+  fallbackStatus,
+  focused = false,
+  pending = false,
+  severity = 'default',
+  task,
+  taskId,
+  testId,
+}: RunActivityRowProps) {
+  if (!task) return null;
+  const label = runActivityLabelForTask(task, taskId);
+  const detail =
+    executionProgressDetail(executionProgressFrom(task)) ||
+    task.error ||
+    task.message ||
+    `${label} · ${fallbackStatus}`;
+  return (
+    <ModiffTooltip<HTMLButtonElement> content={detail} placement="top">
+      {(tooltipProps) => (
+        <ModiffButton
+          {...tooltipProps}
+          align="left"
+          fullWidth
+          tone="secondary"
+          loading={pending}
+          data-testid={testId}
+          aria-label={`Open ${label} run details. ${detail}`}
+          onClick={() => {
+            void openRunActivity(runActivityTargetForTask(task, taskId, fallbackStatus));
+          }}
+          className={cx(
+            'h-auto! min-w-0 rounded-none p-2',
+            severity === 'success' && 'border-modiff-green/60',
+            severity === 'error' && 'border-modiff-red/70 bg-modiff-red/10 hover:border-modiff-red',
+            focused && 'ring-2 ring-hf-yellow',
+          )}
+        >
+          {children}
+        </ModiffButton>
+      )}
+    </ModiffTooltip>
+  );
+}
+
 export default function RunQueuePanel() {
   const currentTask = useTaskStore((state) => state.currentTask);
   const queuedTasks = useTaskStore((state) => state.queuedTasks);
@@ -60,6 +118,8 @@ export default function RunQueuePanel() {
   const sessionRuns = useTaskStore((state) => state.sessionRuns);
   const fetchTasks = useTaskStore((state) => state.fetchTasks);
   const clearCompletedSessionRuns = useTaskStore((state) => state.clearCompletedSessionRuns);
+  const focusedTaskId = useTaskStore((state) => state.focusedTaskId);
+  const activityPendingTaskId = useSettingsStore((state) => state.runActivityPendingTaskId);
   const queued = Object.entries(queuedTasks);
   const failed = Object.entries(failedTasks).slice(0, 8);
   const finishedSessionRuns = sessionRuns
@@ -69,6 +129,11 @@ export default function RunQueuePanel() {
   useEffect(() => {
     void fetchTasks();
   }, [fetchTasks]);
+
+  useEffect(() => {
+    if (!focusedTaskId) return;
+    document.getElementById(`queue-task-${focusedTaskId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [focusedTaskId, currentTask, queuedTasks, sessionRuns, failedTasks]);
 
   const handleStop = async () => {
     try {
@@ -124,118 +189,169 @@ export default function RunQueuePanel() {
 
       <h2 className="mb-2 text-sm font-bold">Current run</h2>
       {currentTask ? (
-        <StatusBox sx={{ mb: 2 }} testId="queue-current-run">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="truncate text-sm">{currentTask.name || currentTask.task_id || 'Running task'}</div>
-              <div className="truncate text-xs text-modiff-muted">
-                {currentTask.message || currentTask.task_id || currentTask.sid}
-              </div>
-            </div>
-            <Clock3 size={16} className="flex-none text-hf-yellow" />
-          </div>
-          {(currentTask.current_step || currentTask.eta_seconds || currentTask.average_step_seconds) && (
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-modiff-muted">
-              {currentTask.current_step && currentTask.total_steps ? (
-                <span>{`Step ${currentTask.current_step}/${currentTask.total_steps}`}</span>
-              ) : null}
-              {formatSeconds(currentTask.eta_seconds) ? (
-                <span>{`ETA ${formatSeconds(currentTask.eta_seconds)}`}</span>
-              ) : null}
-              {formatSeconds(currentTask.average_step_seconds) ? (
-                <span>{`${formatSeconds(currentTask.average_step_seconds)}/step`}</span>
-              ) : null}
-            </div>
-          )}
-          <ProgressBar value={currentTask.progress} className="mt-2" />
-        </StatusBox>
+        <RunActivityRow
+          fallbackStatus="running"
+          focused={focusedTaskId === currentTask.task_id}
+          pending={activityPendingTaskId === currentTask.task_id}
+          task={currentTask}
+          taskId={currentTask.task_id || 'current'}
+          testId="queue-current-run"
+        >
+          <span id={`queue-task-${currentTask.task_id || 'current'}`} className="block min-w-0 flex-1">
+            <span className="flex items-center justify-between gap-2">
+              <span className="min-w-0">
+                <span className="block truncate text-sm">
+                  {runActivityLabelForTask(currentTask, currentTask.task_id || 'Running task')}
+                </span>
+                <span className="block truncate text-xs text-modiff-subtle-text">
+                  {currentTask.message || currentTask.task_id || currentTask.sid}
+                </span>
+              </span>
+              <Clock3 size={16} className="flex-none text-hf-yellow" />
+            </span>
+            {(currentTask.current_step || currentTask.eta_seconds || currentTask.average_step_seconds) && (
+              <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-modiff-subtle-text">
+                {currentTask.current_step && currentTask.total_steps ? (
+                  <span>{`Step ${currentTask.current_step}/${currentTask.total_steps}`}</span>
+                ) : null}
+                {formatSeconds(currentTask.eta_seconds) ? (
+                  <span>{`ETA ${formatSeconds(currentTask.eta_seconds)}`}</span>
+                ) : null}
+                {formatSeconds(currentTask.average_step_seconds) ? (
+                  <span>{`${formatSeconds(currentTask.average_step_seconds)}/step`}</span>
+                ) : null}
+              </span>
+            )}
+            <ProgressBar value={currentTask.progress} className="mt-2" />
+          </span>
+        </RunActivityRow>
       ) : (
-        <p className="mb-4 text-xs text-modiff-muted">No current run.</p>
+        <p className="mb-4 text-xs text-modiff-subtle-text">No current run.</p>
       )}
 
       <h2 className="mb-2 text-sm font-bold">Queued runs</h2>
       {queued.length === 0 ? (
-        <p className="text-xs text-modiff-muted">No queued runs.</p>
+        <p className="text-xs text-modiff-subtle-text">No queued runs.</p>
       ) : (
         <div className="grid gap-2">
           {queued.map(([id, task]) => (
-            <StatusBox key={id} testId={`queue-run-${id}`}>
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{task.name || id}</div>
-                  <div className="truncate text-xs text-modiff-muted">{task.task_id || task.sid}</div>
-                </div>
-                <button
-                  type="button"
-                  title="Cancel queued task"
-                  onClick={() => {
-                    void handleCancelQueued(id);
-                  }}
-                  className="inline-flex h-8 flex-none items-center gap-1.5 px-2 text-sm font-semibold text-gray-300 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
-                >
-                  <XCircle size={15} />
-                  <span>Cancel</span>
-                </button>
-              </div>
-            </StatusBox>
+            <div
+              key={id}
+              id={`queue-task-${id}`}
+              data-testid={`queue-run-${id}`}
+              className={cx(
+                'flex items-stretch border border-modiff-border bg-modiff-surface',
+                focusedTaskId === id && 'ring-2 ring-hf-yellow',
+              )}
+            >
+              <ModiffButton
+                align="left"
+                fullWidth
+                tone="ghost"
+                loading={activityPendingTaskId === (task.task_id || id)}
+                aria-label={`Open ${runActivityLabelForTask(task, id)} run details`}
+                onClick={() => {
+                  void openRunActivity(runActivityTargetForTask(task, id, 'queued'));
+                }}
+                className="h-auto! min-w-0 flex-1 rounded-none p-2"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">{runActivityLabelForTask(task, id)}</span>
+                  <span className="block truncate text-xs text-modiff-subtle-text">{task.task_id || task.sid}</span>
+                </span>
+              </ModiffButton>
+              <ModiffButton
+                tone="ghost"
+                size="dense"
+                title="Cancel queued task"
+                onClick={() => {
+                  void handleCancelQueued(id);
+                }}
+                icon={<XCircle size={15} />}
+                className="h-auto! flex-none rounded-none border-l border-modiff-border px-2 text-modiff-subtle-text"
+              >
+                <span>Cancel</span>
+              </ModiffButton>
+            </div>
           ))}
         </div>
       )}
 
       <div className="mb-2 mt-4 flex items-center justify-between gap-2">
         <h2 className="text-sm font-bold">Session history</h2>
-        <button
-          type="button"
+        <ModiffButton
+          tone="ghost"
+          size="dense"
           disabled={finishedSessionRuns.length === 0}
           onClick={clearCompletedSessionRuns}
-          className="inline-flex h-8 items-center gap-1.5 px-2 text-xs font-semibold text-modiff-muted transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+          icon={<Trash2 size={14} />}
+          className="px-2 text-xs"
         >
-          <Trash2 size={14} />
           Clear finished
-        </button>
+        </ModiffButton>
       </div>
       {finishedSessionRuns.length === 0 ? (
-        <p className="text-xs text-modiff-muted">Completed runs will appear here for this browser session.</p>
+        <p className="text-xs text-modiff-subtle-text">Completed runs will appear here for this browser session.</p>
       ) : (
         <div className="grid gap-2">
           {finishedSessionRuns.map((run) => (
-            <StatusBox
+            <RunActivityRow
               key={run.id}
+              fallbackStatus={run.status ?? 'completed'}
+              focused={focusedTaskId === (run.task_id || run.id)}
+              pending={activityPendingTaskId === (run.task_id || run.id)}
               severity={run.status === 'failed' ? 'error' : run.status === 'completed' ? 'success' : 'default'}
+              task={run}
+              taskId={run.task_id || run.id}
               testId={`queue-session-run-${run.id}`}
             >
-              <div className="flex items-start gap-2">
-                {run.status === 'completed' ? (
-                  <CheckCircle2 size={16} className="mt-0.5 flex-none text-modiff-green" />
-                ) : (
-                  <XCircle size={16} className="mt-0.5 flex-none text-modiff-red" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{run.name || run.task_id || 'Graph execution'}</div>
-                  <div className="truncate text-xs text-modiff-muted">
-                    {run.error || run.message || run.task_id || run.sid}
-                  </div>
-                </div>
-                <div className="flex-none text-xs font-semibold text-modiff-muted">
-                  {formatDuration(sessionRunDuration(run))}
-                </div>
-              </div>
-            </StatusBox>
+              <span id={`queue-task-${run.task_id || run.id}`} className="block min-w-0 flex-1">
+                <span className="flex items-start gap-2">
+                  {run.status === 'completed' ? (
+                    <CheckCircle2 size={16} className="mt-0.5 flex-none text-modiff-green" />
+                  ) : (
+                    <XCircle size={16} className="mt-0.5 flex-none text-modiff-red" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">
+                      {runActivityLabelForTask(run, run.task_id || run.id)}
+                    </span>
+                    <span className="block truncate text-xs text-modiff-subtle-text">
+                      {run.error || run.message || run.task_id || run.sid}
+                    </span>
+                  </span>
+                  <span className="flex-none text-xs font-semibold text-modiff-subtle-text">
+                    {formatDuration(sessionRunDuration(run))}
+                  </span>
+                </span>
+              </span>
+            </RunActivityRow>
           ))}
         </div>
       )}
 
       <h2 className="mb-2 mt-4 text-sm font-bold">Failed runs</h2>
       {failed.length === 0 ? (
-        <p className="text-xs text-modiff-muted">No failed runs recorded in this session.</p>
+        <p className="text-xs text-modiff-subtle-text">No failed runs recorded in this session.</p>
       ) : (
         <div className="grid gap-2">
           {failed.map(([id, task]) => (
-            <StatusBox key={id} severity="error" testId={`queue-failed-run-${id}`}>
-              <div className="truncate text-sm text-modiff-red">{task.name || id}</div>
-              <div className="break-all text-xs text-modiff-muted">{task.task_id || task.sid}</div>
-              {task.error && <div className="break-words text-xs text-modiff-red">{task.error}</div>}
-            </StatusBox>
+            <RunActivityRow
+              key={id}
+              fallbackStatus="failed"
+              focused={focusedTaskId === id}
+              pending={activityPendingTaskId === (task.task_id || id)}
+              severity="error"
+              task={task}
+              taskId={id}
+              testId={`queue-failed-run-${id}`}
+            >
+              <span id={`queue-task-${id}`} className="block min-w-0 flex-1">
+                <span className="block truncate text-sm text-modiff-red">{runActivityLabelForTask(task, id)}</span>
+                <span className="block break-all text-xs text-modiff-subtle-text">{task.task_id || task.sid}</span>
+                {task.error && <span className="block break-words text-xs text-modiff-red">{task.error}</span>}
+              </span>
+            </RunActivityRow>
           ))}
         </div>
       )}

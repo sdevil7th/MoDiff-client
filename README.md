@@ -1,3 +1,5 @@
+<!-- Derived from cubiq/Mellon-client@af0c5801f843453a1700733596e99fe6589b2e86; modified by MoDiff. -->
+
 # MoDiff Client
 
 MoDiff Client is the graph-first web interface for the MoDiff generative-media backend. It combines a visual node editor with a guided Studio for image, video, and audio workflows. Users can start from a task or curated recipe, inspect the graph that will run, install required Hugging Face artifacts, follow queue progress, and restore generated outputs as editable workflows.
@@ -6,6 +8,49 @@ The client is built with React 19, TypeScript, Vite, Tailwind CSS, Headless UI, 
 
 > [!IMPORTANT]
 > MoDiff is under active development. It is designed for a trusted, local, single-user environment and has not been hardened as an internet-facing multi-user service. Model support depends on the backend version, installed packages, model access terms, hardware, and available disk space. The UI keeps unsupported or unproven paths visibly blocked instead of treating every listed model as runnable.
+
+## Install and run MoDiff
+
+Clone both repositories into the same parent directory. The backend installer
+automatically finds this sibling client, installs its locked Node.js toolchain
+and packages, downloads the verified Gallery assets, and bundles the frontend.
+The backend [installation guide](https://github.com/sdevil7th/MoDiff#install-and-run)
+is the canonical source for installer profiles, prerequisites, repair, and
+platform support.
+
+Linux or macOS:
+
+```bash
+git clone https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+cd MoDiff
+./install.sh --accelerator auto
+./run.sh
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+cd MoDiff
+.\install.ps1 -Accelerator auto
+.\run.ps1
+```
+
+Open <http://127.0.0.1:8088>. No separate frontend install or frontend process
+is needed for normal use.
+
+### Which launcher should I use?
+
+| Purpose                              | Start                                 | Stop             | What runs                                                                |
+| ------------------------------------ | ------------------------------------- | ---------------- | ------------------------------------------------------------------------ |
+| Use the installed app on Linux/macOS | From `MoDiff`: `./run.sh`             | Press `Ctrl+C`   | The backend and its installed frontend bundle at `http://127.0.0.1:8088` |
+| Use the installed app on Windows     | From `MoDiff`: `.\run.ps1`            | Press `Ctrl+C`   | The backend and its installed frontend bundle at `http://127.0.0.1:8088` |
+| Develop the frontend on Linux/macOS  | From `MoDiff-client`: `./run-dev.sh`  | `./stop-dev.sh`  | The backend plus a separate Vite frontend with hot reload                |
+| Develop the frontend on Windows      | From `MoDiff-client`: `.\run-dev.ps1` | `.\stop-dev.ps1` | The backend plus a separate Vite frontend with hot reload                |
+
+Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 
 ## What You Can Do
 
@@ -43,7 +88,8 @@ Client development requires:
 Integrated development also requires:
 
 - A sibling MoDiff backend checkout, or its path passed to the launcher
-- Python 3.12 and backend dependencies installed with `uv sync`
+- The backend's managed Python 3.12 environment, installed with its reviewed
+  `install.ps1` or `install.sh` profile
 - Sufficient RAM, accelerator memory, and disk space for the model being used
 - Hugging Face authorization for gated model repositories, when applicable
 
@@ -56,26 +102,38 @@ npm --version
 
 For backend and accelerator prerequisites, follow the backend README first. Platform-specific client notes are available for [Windows](docs/windows-support.md), [Ubuntu Linux](docs/linux-support.md), and [Apple Silicon macOS](docs/macos-support.md).
 
-## Quick Start
+## Development quick start
 
-Clone the backend and client into the sibling layout shown above. Replace the placeholders with the repository URLs after they are published:
+Clone the backend and client into the sibling layout shown above:
 
 ```bash
-git clone <backend-repository-url> MoDiff
-git clone <client-repository-url> MoDiff-client
+git clone https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 ```
 
-Install the backend from `MoDiff`:
+For an editable two-process development session, run the client repository's
+development installer. It installs the backend in backend-only mode, adds the
+backend test requirements, installs the locked client dependencies, and writes
+a preflight report without building the production frontend bundle.
 
-```bash
-uv sync
-uv run python -m modiff.preflight --json --check-port 8088 --fail-on-error
+Windows PowerShell, from `MoDiff-client`:
+
+```powershell
+.\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto
 ```
 
-Install the locked client dependencies from `MoDiff-client`:
+Linux or macOS, from `MoDiff-client`:
 
 ```bash
-npm ci
+chmod +x install-dev.sh run-dev.sh stop-dev.sh
+./install-dev.sh --accelerator auto
+```
+
+For a non-sibling POSIX checkout, set `MODIFF_BACKEND_DIR` for both commands:
+
+```bash
+MODIFF_BACKEND_DIR=/path/to/MoDiff ./install-dev.sh --accelerator auto
+MODIFF_BACKEND_DIR=/path/to/MoDiff ./run-dev.sh
 ```
 
 Start both applications on Windows:
@@ -126,21 +184,53 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
 
 ## Your First Workflow
 
-1. Wait for the connection indicator in the top bar to show that the backend is available.
+1. Wait for the top-bar connection indicator, then open **Setup**. Confirm the
+   runtime profile is usable and resolve any environment or model-cache repair
+   blocker before starting a model download.
 2. On the empty canvas, choose **Text to image** or click **Browse recipes**.
-3. Open the right-side **Studio** panel and keep **Auto** enabled for the first run.
-4. Enter a prompt or select a template. Studio creates or reconciles the visible graph.
-5. Review the readiness card. If an artifact is missing, use its **Install** action and wait for Setup/Models to report it as runnable.
-6. Select **Run** in the top bar. Blocking inputs, model requirements, or graph errors are shown before the graph is submitted.
-7. Follow the active run in the session shelf or **Queue** panel.
-8. Open **Gallery** after completion. From an output you can inspect metadata, download media, restore its workflow, rerun it, favorite it, or send it into an edit flow.
-9. Use the top-bar **Export** menu to save a portable workflow or output package.
+   Prefer a lightweight image recipe that Auto marks ready for the detected
+   device; a large video or audio model is not a useful first smoke test.
+3. Open the right-side **Studio** panel and keep the resource-mode **Auto**
+   switch enabled for the first run.
+4. Enter a prompt or select a template. Studio creates or reconciles the visible
+   graph; the canvas remains the workflow that will execute.
+   Templates whose reviewed dependencies require a usage notice show one
+   warning icon. Their first **Review terms** action lists only those restricted
+   model dependencies and links to the original terms. Acknowledging the notice
+   creates the local graph; it does not change or grant any model rights.
+5. Review readiness. If an artifact is missing or incomplete, use its
+   **Install** or **Repair** action. For a gated repository, accept its upstream
+   terms and configure a least-privilege Hugging Face read token.
+6. Wait for **Setup** or **Models** to report the artifact as runnable, then use
+   one-shot **Run**. Blocking inputs, model requirements, or graph errors are
+   shown before submission.
+7. Follow the active phase, node, step counter, elapsed time, and ETA when
+   available in the session shelf or **Queue**. Model preparation may take much
+   longer on the first run than on later cached runs.
+8. Use **Stop** only when you intend to interrupt the work. Some native model
+   calls cannot acknowledge cancellation until they return control.
+9. Open **Gallery** after completion. Inspect metadata, download media, restore
+   or rerun the workflow, favorite the output, or send it into an edit flow.
+10. Use the top-bar **Export** menu to save a portable workflow or output
+    package before clearing browser data.
 
 See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas, workflow tabs, Gallery behavior, setup, failure recovery, and a manual verification checklist.
 
 ## Auto And Expert
 
 **Auto** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
+
+The backend planner is the compatibility authority. Template cards, Setup,
+Models, and Run readiness render the same structured assessment and do not
+apply their own GPU-memory thresholds. While that assessment is pending they
+show **Checking compatibility** instead of guessing from a device label or a
+dedicated-VRAM number. This is important for Apple unified memory, AMD shared
+memory, and Intel integrated/XPU devices.
+
+This resource-mode Auto switch is separate from the **Auto** item inside the
+Run menu. Resource Auto selects a hardware-aware recipe. Run-menu Auto repeats
+execution after graph parameter changes; keep it off when you want a single
+generation.
 
 **Expert** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Expert is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
 
@@ -149,9 +239,32 @@ Important model-support rules:
 - A model shown in the catalog is discoverable, not necessarily runnable.
 - A cached directory is not considered complete merely because it exists.
 - Gated Hugging Face models require the user to accept the model terms and authenticate outside MoDiff as required by Hugging Face.
+- A model-access error opens recovery for the exact repository: review its
+  Hugging Face access page, configure a read token, and retry. MoDiff cannot
+  accept Hugging Face terms on the user's behalf.
 - Some Qwen and FLUX variants remain Expert-only until their execution contract and resource recipe are validated.
 - Video and audio jobs may be much slower and more storage-intensive than image jobs.
-- CPU and Apple MPS availability does not imply that every model family has been validated on that device.
+- CPU, Apple MPS, or Intel XPU availability does not imply that every model family has been validated on that device.
+
+Runnable does not mean fast. Auto chooses an eligible recipe and exposes its
+qualification state; it is not a performance guarantee. An integrated/shared-memory GPU can report a large
+addressable pool while performing far below a discrete GPU with the same local
+VRAM figure. Downloading, validation, pipeline loading, and weight placement
+can also dominate the first execution before denoising begins.
+
+Without changing the prompt, resolution, steps, or other generation inputs, a
+later run can sometimes improve through a qualified pre-quantized artifact,
+supported attention backend, compile/cache path, or better device placement.
+These runtime-recipe changes require the pipeline to reload and cannot safely
+speed up a run already in progress. Expert visibility is not evidence that a
+quantizer or optional kernel is supported on the active platform.
+
+On Apple Silicon, Studio selects `mps:0`; on supported Intel Arc or integrated
+graphics with the preview runtime it selects `xpu:0`. Both use direct device
+residency and intentionally disable CUDA-only CPU-offload hooks. Integrated
+Intel graphics and Apple unified memory share system capacity, so Auto uses the
+reported planning budget and keeps exact model/recipe combinations visibly
+unqualified until a retained real-run receipt proves them.
 
 The durable planner contract and model-onboarding checklist are documented in [Auto mode design](docs/auto-mode-design.md).
 
@@ -192,6 +305,32 @@ VITE_SERVER_ADDRESS=http://127.0.0.1:8088
 
 For workstation-specific Vite overrides, create the ignored `vite.config.local.ts`. Keep those changes local; do not place machine addresses or credentials in committed configuration.
 
+## Updating
+
+For the installed application, stop the foreground backend, update both sibling
+repositories, and rerun the backend installer so it validates the managed
+runtime and rebuilds the bundled client. Use the complete cross-platform
+procedure in the backend [updating guide](https://github.com/sdevil7th/MoDiff#updating-and-recovery).
+
+For an editable development checkout, pull both repositories and rerun the
+development installer before launching again:
+
+```bash
+git -C ../MoDiff pull --ff-only
+git pull --ff-only
+./install-dev.sh --accelerator auto
+./run-dev.sh
+```
+
+```powershell
+git -C ..\MoDiff pull --ff-only
+git pull --ff-only
+.\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto
+.\run-dev.ps1
+```
+
+Do not update or repair either environment while a model run is active.
+
 ## Build And Serve
 
 Create a production client build:
@@ -202,7 +341,11 @@ npm run build
 
 Vite writes the static output to `dist/`. `npm run preview` can inspect that build locally, but an integrated MoDiff installation should serve the files from the backend so API and websocket requests share the same origin.
 
-When copying a new build into the backend, replace generated `web/assets` and `web/template-gallery` content while preserving backend-owned files such as `web/user` custom fields. The full procedure and deployment safety notes are in [Build and deployment](docs/deployment.md).
+Remote-mode builds contain no Gallery media. When copying a new build into the
+backend, replace generated shell files under `web/` while preserving
+backend-owned files such as `web/user` custom fields. The full procedure is in
+[Build and deployment](docs/deployment.md), and the public Dataset lifecycle is
+in [Template Gallery asset storage](docs/template-gallery-assets.md).
 
 ## Validation
 
@@ -247,6 +390,11 @@ MoDiff is local-first, but it is not data-free:
 
 Keep both servers bound to `127.0.0.1` unless you have deliberately added authentication, TLS, request limits, origin controls, and filesystem isolation. Inspect exports before publishing them. See [Privacy and security](docs/privacy-and-security.md) and [SECURITY.md](SECURITY.md) for data locations, cleanup guidance, deployment boundaries, and vulnerability reporting.
 
+To remove local history or files, export anything important first and follow
+[Clearing Local Data](docs/privacy-and-security.md#clearing-local-data). Stop
+MoDiff before deleting backend data, and inspect individual paths rather than
+removing `data/`, `config.ini`, or a shared Hugging Face cache wholesale.
+
 ## Troubleshooting
 
 Start with the preflight report and browser connection state. Common fixes include:
@@ -257,6 +405,9 @@ Start with the preflight report and browser connection state. Common fixes inclu
 - Confirm the client origin can request `/health`, `/nodes`, and `/runtime/status` through the Vite proxy.
 - For a missing or partial model, use **Setup** or **Models** and follow the reported repair/access action instead of moving cache files manually.
 - For an out-of-memory failure, stop the run, use accelerator cleanup, reduce the workflow, or return to a known Auto recipe.
+- If a run is slow, check whether its active phase or step counter is advancing
+  before treating it as stalled. The troubleshooting guide explains download,
+  placement, denoising, decode/export, and shared-memory performance.
 
 The [troubleshooting guide](docs/troubleshooting.md) contains platform-specific commands and recovery steps.
 
@@ -283,4 +434,13 @@ Please use the repository's issue tracker for reproducible bugs and feature prop
 
 ## License
 
-MoDiff Client is available under the [Apache License 2.0](LICENSE). Model weights, datasets, generated-media inputs, and third-party dependencies may have separate licenses or acceptable-use terms; users are responsible for reviewing them.
+MoDiff Client source code is available under the [Apache License 2.0](LICENSE) and retains the copyright notice from
+[Mellon Client](https://github.com/cubiq/Mellon-client), from which this client
+was derived. Model weights, adapters, and Gallery media are not relicensed by MoDiff and remain subject to their
+respective upstream terms. Datasets, generated-media inputs, and third-party dependencies may also have separate
+licenses or acceptable-use terms; users are responsible for reviewing them. Notices for
+font software redistributed with the client are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The production web
+distribution also ships a generated, lock-derived
+[dependency license inventory](public/THIRD_PARTY_LICENSES.txt); regenerate it
+with `npm run licenses:generate` after dependency changes.

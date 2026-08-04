@@ -3,7 +3,12 @@ import { cx } from '../utils/classNames';
 
 const indentClasses = ['pl-4', 'pl-8', 'pl-12', 'pl-16', 'pl-20', 'pl-24', 'pl-28', 'pl-32'] as const;
 
-const treeOpenSurfaceClasses = ['bg-white/[0.04]', 'bg-white/[0.06]', 'bg-white/[0.08]', 'bg-white/[0.10]'] as const;
+const treeOpenSurfaceClasses = [
+  'bg-modiff-surface-hover/25',
+  'bg-modiff-surface-hover/40',
+  'bg-modiff-surface-hover/55',
+  'bg-modiff-surface-hover/70',
+] as const;
 
 function indentClass(level: number) {
   return indentClasses[Math.min(Math.max(0, level), indentClasses.length - 1)];
@@ -31,7 +36,7 @@ export function TreeButtonRow({
     <button
       type={type}
       className={cx(
-        'flex min-h-8 w-full items-center gap-2 rounded-modiff-compact pr-2 text-left text-sm text-modiff-text transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
+        'flex min-h-8 min-w-0 w-full items-center gap-2 overflow-hidden rounded-modiff-compact pr-2 text-left text-modiff-control text-modiff-text transition hover:bg-modiff-surface-hover active:bg-modiff-surface-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-modiff-focus',
         indentClass(level),
         open && openClass(level),
         className,
@@ -53,7 +58,7 @@ export function TreeStaticRow({ children, className, level = 0, open = false, ..
   return (
     <div
       className={cx(
-        'flex min-h-8 w-full items-center gap-2 rounded-modiff-compact pr-2 text-sm text-modiff-text',
+        'flex min-h-8 min-w-0 w-full items-center gap-2 overflow-hidden rounded-modiff-compact pr-2 text-sm text-modiff-text',
         indentClass(level),
         open && openClass(level),
         className,

@@ -12,7 +12,7 @@ import {
 import {
   coerceStudioFormState,
   coerceStudioGraphBinding,
-  coerceStudioOutput,
+  coerceStudioPreviewSlot,
   coerceStudioTemplateId,
   isRecord,
   optionalNullableString,
@@ -20,6 +20,7 @@ import {
 } from '../studio/outputContracts';
 import { deleteStudioOutput, fetchStudioOutputs, setStudioOutputFavorite, syncStudioOutput } from '../studio/outputApi';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
+import { normalizeStudioDeviceOffloadPlan } from '../studio/deviceOffload';
 import {
   firstImageValue,
   firstAudioValue,
@@ -40,11 +41,13 @@ import {
   stableStringify,
 } from '../studio/templateExactness';
 import { STUDIO_TEMPLATES, getPreset } from '../studio/templates';
+import { adoptManagedWorkflowGraph, inferStudioFormFromWorkflow } from '../studio/workflowInference';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
 import { createLatestRequestGate, formatRequestError, requestBlob } from '../utils/requestJson';
 import type { MediaArtifact } from '../utils/imageArtifacts';
-import type { StudioAutoResourcePlan } from '../studio/autoResource';
+import { autoPlanKeyForForm, type StudioAutoResourcePlan } from '../studio/autoResource';
 import type {
+  AutoFieldOverride,
   AppModeConfig,
   AppModeInput,
   AppModeOutput,
@@ -56,17 +59,22 @@ import type {
   StudioMode,
   StudioOutput,
   StudioOutputMediaItem,
+  StudioPreviewSlot,
   StudioPreset,
   StudioRunContext,
   StudioTemplate,
   StudioTemplateId,
+  StudioTemplateInputFormPatch,
   WorkflowBlueprint,
   WorkflowTab,
   WorkflowTabSnapshot,
-  UserBlockDefinition,
 } from '../studio/types';
-import { useFlowStore } from './useFlowStore';
-import { useUserBlockStore } from './useUserBlockStore';
+import {
+  durableFlowNodeSnapshot,
+  normalizePersistedFlowState,
+  type CustomNodeType,
+  useFlowStore,
+} from './useFlowStore';
 
 export type StudioRecentChange = {
   id: string;
@@ -91,9 +99,15 @@ type StudioState = {
   activeAppModeConfigId: string | null;
   blueprints: WorkflowBlueprint[];
   pinnedGraphInputIds: string[];
+  autoFieldOverrides: Record<string, AutoFieldOverride>;
 };
 
 type StudioVolatileState = {
+  workflowCanvasHydrated: boolean;
+  /** Changes whenever the live canvas starts representing a different document. */
+  workflowCanvasEpoch: number;
+  /** Changes whenever Studio form values in the active document are replaced. */
+  workflowFormEpoch: number;
   graphBinding: StudioGraphBinding | null;
   graphFinalization: StudioGraphFinalizationState | null;
   autoResourcePlan: StudioAutoResourcePlan | null;
@@ -119,6 +133,8 @@ type StudioVolatileState = {
   galleryBackendError: string | null;
   galleryRequests: Record<GalleryRequestKey, { error: string | null; pending: number }>;
   outputRevision: number;
+  previewSlots: Record<string, StudioPreviewSlot>;
+  previewStateRevision: number;
 };
 
 type GalleryRequestKey = 'history' | 'mutation' | 'sync';
@@ -127,11 +143,15 @@ type StudioActions = {
   selectMode: (mode: StudioMode) => void;
   updateForm: (values: Partial<StudioFormState>) => void;
   applyPreset: (preset: StudioPreset) => void;
-  applyTemplate: (template: StudioTemplate) => void;
+  applyTemplate: (template: StudioTemplate, inputDefaults?: StudioTemplateInputFormPatch) => void;
   setGraphBinding: (binding: StudioGraphBinding | null) => void;
+  hydrateActiveWorkflowCanvas: () => void;
+  detachManagedGraph: () => void;
   setGraphFinalization: (finalization: StudioGraphFinalizationState | null) => void;
   setAutoResourcePlan: (plan: StudioAutoResourcePlan | null) => void;
+  applyAutoResourcePlan: (plan: StudioAutoResourcePlan, values: Partial<StudioFormState>) => void;
   setAutoResourcePlans: (plans: Record<string, StudioAutoResourcePlan>) => void;
+  invalidateAutoResourcePlans: () => void;
   setAutoResourceCheck: (check: Partial<StudioVolatileState['autoResourceCheck']>) => void;
   clearGraphBinding: () => void;
   setCanvasTransition: (transition: StudioVolatileState['canvasTransition']) => void;
@@ -155,11 +175,17 @@ type StudioActions = {
     apiGraph?: unknown,
     variation?: Pick<StudioRunContext, 'variationGroupId' | 'variationLabel'>,
     identity?: { clientRunId: string; runInputHash: string },
+    options?: { activate?: boolean },
   ) => StudioRunContext;
+  activateRunContext: (taskId?: string | null, clientRunId?: string | null) => StudioRunContext | null;
   clearRunContext: () => void;
   restoreWorkflowFromOutput: (output: StudioOutput) => void;
   shouldAcceptRunOutputUpdate: (taskId?: string | null, clientRunId?: string | null) => boolean;
-  shouldApplyRunUpdateToActiveWorkflow: (taskId?: string | null, clientRunId?: string | null) => boolean;
+  shouldApplyRunUpdateToActiveWorkflow: (
+    taskId?: string | null,
+    clientRunId?: string | null,
+    workflowTabId?: string | null,
+  ) => boolean;
   markRunContextStatus: (
     taskId: string | null | undefined,
     clientRunId: string | null | undefined,
@@ -179,9 +205,11 @@ type StudioActions = {
       runtimeFingerprint?: unknown;
       dataType?: string | string[];
       artifacts?: unknown;
+      outputId?: string | null;
     },
   ) => void;
   attachRunResponse: (response: unknown, clientRunId?: string) => void;
+  mergePreviewState: (slots: StudioPreviewSlot[], revision: number) => void;
   fetchBackendOutputs: () => Promise<void>;
   syncOutputToBackend: (output: StudioOutput) => Promise<void>;
   toggleFavoriteOutput: (id: string) => void;
@@ -198,6 +226,8 @@ type StudioActions = {
   switchWorkflowTab: (id: string) => void;
   closeWorkflowTab: (id: string) => void;
   renameWorkflowTab: (id: string, title: string) => void;
+  mergeBackendWorkflow: (tab: WorkflowTab) => void;
+  removeBackendWorkflow: (id: string) => void;
   createAppModeConfig: (workflowTabId?: string | null) => string | null;
   updateAppModeConfig: (
     id: string,
@@ -207,6 +237,8 @@ type StudioActions = {
   setActiveAppModeConfig: (id: string | null) => void;
   setPinnedGraphInputIds: (ids: string[]) => void;
   togglePinnedGraphInput: (id: string) => void;
+  pinAutoFieldOverride: (nodeId: string, fieldKey: string, value: unknown, formKey?: keyof StudioFormState) => void;
+  resetAutoFieldOverride: (nodeId: string, fieldKey: string) => void;
   createBlueprintFromSelection: (name?: string) => string | null;
   insertBlueprint: (id: string) => void;
   deleteBlueprint: (id: string) => void;
@@ -215,6 +247,79 @@ type StudioActions = {
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function autoFieldOverrideKey(nodeId: string, fieldKey: string) {
+  return `${encodeURIComponent(nodeId)}::${encodeURIComponent(fieldKey)}`;
+}
+
+function normalizeAutoFieldOverrides(value: unknown): Record<string, AutoFieldOverride> {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(-256)
+      .flatMap(([key, raw]) => {
+        if (!isRecord(raw) || typeof raw.nodeId !== 'string' || typeof raw.fieldKey !== 'string') return [];
+        const formKey =
+          typeof raw.formKey === 'string' && raw.formKey in DEFAULT_STUDIO_FORM
+            ? (raw.formKey as keyof StudioFormState)
+            : undefined;
+        const normalizedKey = autoFieldOverrideKey(raw.nodeId, raw.fieldKey);
+        return [
+          [
+            normalizedKey || key,
+            {
+              schemaVersion: 1 as const,
+              nodeId: raw.nodeId,
+              fieldKey: raw.fieldKey,
+              ...(formKey ? { formKey } : {}),
+              value: safeCloneJson(raw.value),
+              updatedAt: finiteNumber(raw.updatedAt, Date.now()),
+            },
+          ],
+        ];
+      }),
+  );
+}
+
+function omitPinnedAutoFormValues(
+  values: Partial<StudioFormState>,
+  overrides: Record<string, AutoFieldOverride>,
+): Partial<StudioFormState> {
+  const pinnedKeys = new Set(
+    Object.values(overrides)
+      .map((override) => override.formKey)
+      .filter((key): key is keyof StudioFormState => Boolean(key)),
+  );
+  return Object.fromEntries(
+    Object.entries(values).filter(([key]) => key === 'resourceMode' || !pinnedKeys.has(key as keyof StudioFormState)),
+  ) as Partial<StudioFormState>;
+}
+
+function preservePinnedAutoFormValues(
+  resolved: StudioFormState,
+  previous: StudioFormState,
+  requested: Partial<StudioFormState>,
+  overrides: Record<string, AutoFieldOverride>,
+): StudioFormState {
+  const latestByFormKey = new Map<keyof StudioFormState, AutoFieldOverride>();
+  Object.values(overrides).forEach((override) => {
+    if (!override.formKey) return;
+    const current = latestByFormKey.get(override.formKey);
+    if (!current || current.updatedAt <= override.updatedAt) {
+      latestByFormKey.set(override.formKey, override);
+    }
+  });
+  if (latestByFormKey.size === 0) return resolved;
+
+  const preserved = { ...resolved } as Record<keyof StudioFormState, unknown>;
+  latestByFormKey.forEach((_override, formKey) => {
+    // A node edit pins the normalized form patch in the same transaction.
+    // Subsequent planner/normalizer passes must retain the current workflow
+    // value until Reset to Auto removes the override.
+    preserved[formKey] = requested[formKey] !== undefined ? requested[formKey] : previous[formKey];
+  });
+  return preserved as StudioFormState;
 }
 
 function currentGraphSnapshot(): StudioGraphSnapshot {
@@ -229,7 +334,13 @@ function currentGraphSnapshot(): StudioGraphSnapshot {
 function currentWorkflowSnapshot(
   state: Pick<
     StudioState & StudioVolatileState,
-    'form' | 'selectedMode' | 'graphBinding' | 'activeTemplateId' | 'sourceOutputId' | 'pinnedGraphInputIds'
+    | 'form'
+    | 'selectedMode'
+    | 'graphBinding'
+    | 'activeTemplateId'
+    | 'sourceOutputId'
+    | 'pinnedGraphInputIds'
+    | 'autoFieldOverrides'
   >,
 ): WorkflowTabSnapshot {
   const graph = currentGraphSnapshot();
@@ -243,7 +354,7 @@ function currentWorkflowSnapshot(
     activeTemplateId: state.activeTemplateId,
     sourceOutputId: state.sourceOutputId,
     pinnedGraphInputIds: cloneJson(state.pinnedGraphInputIds),
-    userBlocks: cloneJson(useUserBlockStore.getState().blocks),
+    autoFieldOverrides: cloneJson(state.autoFieldOverrides),
   };
 }
 
@@ -258,42 +369,242 @@ function blankWorkflowSnapshot(): WorkflowTabSnapshot {
     activeTemplateId: null,
     sourceOutputId: null,
     pinnedGraphInputIds: [],
-    userBlocks: [],
+    autoFieldOverrides: {},
   };
 }
 
-function safeUserBlocks(value: unknown): UserBlockDefinition[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (item): item is UserBlockDefinition =>
-      isRecord(item) &&
-      typeof item.id === 'string' &&
-      typeof item.name === 'string' &&
-      item.version === 1 &&
-      Array.isArray(item.nodes) &&
-      Array.isArray(item.edges) &&
-      Array.isArray(item.inputs) &&
-      Array.isArray(item.outputs) &&
-      Array.isArray(item.exposedParams),
-  );
+function blueprintNodeSnapshot(node: CustomNodeType): CustomNodeType {
+  const snapshot = durableFlowNodeSnapshot(node);
+  delete snapshot.data.studioRole;
+  delete snapshot.data.studioOwned;
+  delete snapshot.data.studioAuxiliary;
+  return snapshot;
 }
 
-function normalizeWorkflowSnapshot(snapshot: unknown): WorkflowTabSnapshot {
-  const value = isRecord(snapshot) ? snapshot : {};
-  const studioForm = resolveStudioResourceForm(coerceStudioFormState(value.studioForm));
+function reconcileSnapshotGraphBinding(
+  binding: StudioGraphBinding | null,
+  nodes: unknown[],
+  edges: unknown[],
+  form: StudioFormState,
+  recoverTemplateBinding: boolean,
+): StudioGraphBinding | null {
+  if (!binding && !recoverTemplateBinding) return null;
+
+  const studioNodes = nodes
+    .filter(isRecord)
+    .map((node) => {
+      const data = isRecord(node.data) ? node.data : {};
+      return {
+        id: typeof node.id === 'string' ? node.id : '',
+        role: typeof data.studioRole === 'string' ? data.studioRole : '',
+        owned: data.studioOwned === true,
+      };
+    })
+    .filter((node) => node.id && (node.owned || node.role));
+  if (!binding && studioNodes.length === 0) return null;
+
+  const originalManagedNodeIds = new Set(binding?.managedNodeIds ?? []);
+  const managedNodeIds = Array.from(
+    new Set([...(binding?.managedNodeIds ?? []), ...studioNodes.map((node) => node.id)]),
+  );
+  const managedNodeSet = new Set(managedNodeIds);
+  const hasRecoveredExtensions = studioNodes.some((node) => !originalManagedNodeIds.has(node.id));
+  const currentManagedEdgeIds = edges
+    .filter(isRecord)
+    .filter(
+      (edge) =>
+        typeof edge.id === 'string' &&
+        typeof edge.source === 'string' &&
+        typeof edge.target === 'string' &&
+        managedNodeSet.has(edge.source) &&
+        managedNodeSet.has(edge.target),
+    )
+    .map((edge) => String(edge.id));
+  const roleNodes = Object.fromEntries(
+    studioNodes.filter((node) => node.role).map((node) => [node.role, node.id]),
+  ) as StudioGraphBinding['nodes'];
+  const now = Date.now();
+
   return {
-    nodes: Array.isArray(value.nodes) ? (safeCloneJson(value.nodes) as unknown[]) : [],
-    edges: Array.isArray(value.edges) ? (safeCloneJson(value.edges) as unknown[]) : [],
-    viewport: value.viewport === undefined ? undefined : safeCloneJson(value.viewport),
+    mode: binding?.mode ?? form.mode,
+    modelType: binding?.modelType ?? form.modelType,
+    nodes: { ...(binding?.nodes ?? {}), ...roleNodes },
+    managedNodeIds,
+    managedEdgeIds:
+      !binding || hasRecoveredExtensions ? currentManagedEdgeIds : Array.from(new Set(binding.managedEdgeIds)),
+    fingerprint: binding?.fingerprint || `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+    ...(binding?.finalizationProof ? { finalizationProof: binding.finalizationProof } : {}),
+    createdAt: binding?.createdAt ?? now,
+    updatedAt: binding?.updatedAt ?? now,
+  };
+}
+
+function isInferredRecoveryBinding(binding: StudioGraphBinding | null) {
+  return Boolean(binding && binding.createdAt === 0 && binding.updatedAt === 0);
+}
+
+export function normalizeManagedSnapshotExecutionPlan(
+  nodes: unknown[],
+  form: StudioFormState,
+  binding: StudioGraphBinding | null,
+) {
+  const managedNodeIds = new Set(binding?.managedNodeIds ?? []);
+  return nodes.map((node) => {
+    if (!isRecord(node) || !isRecord(node.data) || !isRecord(node.data.params)) return node;
+    const managed =
+      managedNodeIds.has(String(node.id ?? '')) ||
+      node.data.studioOwned === true ||
+      node.data.studioAuxiliary === true ||
+      typeof node.data.studioRole === 'string';
+    if (!managed) return node;
+
+    const params = { ...node.data.params };
+    const rawAutoOffload = isRecord(params.auto_offload) ? params.auto_offload.value : undefined;
+    const rawOffloadMode = isRecord(params.offload_mode) ? params.offload_mode.value : undefined;
+    const offloadMode =
+      rawOffloadMode === 'none' ||
+      rawOffloadMode === 'model_cpu' ||
+      rawOffloadMode === 'sequential_cpu' ||
+      rawOffloadMode === 'group_cpu' ||
+      rawOffloadMode === 'group_disk'
+        ? rawOffloadMode
+        : form.offloadMode;
+    const execution = normalizeStudioDeviceOffloadPlan({
+      device: form.device,
+      autoOffload:
+        typeof rawAutoOffload === 'boolean'
+          ? rawAutoOffload
+          : isRecord(params.offload_mode)
+            ? offloadMode !== 'none'
+            : form.autoOffload,
+      offloadMode,
+    });
+    let changed = false;
+    const setValue = (key: string, value: unknown) => {
+      const param = params[key];
+      if (!isRecord(param)) return;
+      if (param.value === value) return;
+      params[key] = { ...param, value };
+      changed = true;
+    };
+    setValue('device', execution.device);
+    setValue('auto_offload', execution.autoOffload);
+    setValue('offload_mode', execution.offloadMode);
+    if (!changed) return node;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        params,
+      },
+    };
+  });
+}
+
+function normalizeWorkflowSnapshot(
+  snapshot: unknown,
+  templateSourceId: StudioTemplateId | null = null,
+  allowCanonicalAdoption = true,
+): WorkflowTabSnapshot {
+  const value = isRecord(snapshot) ? snapshot : {};
+  const hasPersistedTemplateId = Object.prototype.hasOwnProperty.call(value, 'activeTemplateId');
+  const activeTemplateId = hasPersistedTemplateId
+    ? (coerceStudioTemplateId(value.activeTemplateId) ?? null)
+    : templateSourceId;
+  const activeTemplate = activeTemplateId
+    ? STUDIO_TEMPLATES.find((template) => template.id === activeTemplateId)
+    : undefined;
+  const rawPersistedStudioForm = resolveStudioResourceForm(coerceStudioFormState(value.studioForm));
+  // Template identity is durable workflow provenance. Older clients could
+  // coerce newly added model types (notably LTX and Wan variants) to Z-Image
+  // while retaining the original graph and template id. Repair those existing
+  // documents from their template contract instead of perpetuating the split.
+  const persistedStudioForm = activeTemplate
+    ? resolveStudioResourceForm({
+        ...rawPersistedStudioForm,
+        mode: activeTemplate.mode,
+        modelType: activeTemplate.modelType,
+      })
+    : rawPersistedStudioForm;
+  const normalizedFlow = normalizePersistedFlowState({
+    nodes: Array.isArray(value.nodes) ? safeCloneJson(value.nodes) : [],
+    edges: Array.isArray(value.edges) ? safeCloneJson(value.edges) : [],
+  });
+  const seenNodeIds = new Set<string>();
+  const nodes = normalizedFlow.nodes
+    .filter((node) => {
+      if (seenNodeIds.has(node.id)) return false;
+      seenNodeIds.add(node.id);
+      return true;
+    })
+    .map((node) => {
+      if (!activeTemplateId || typeof node.data.studioRole !== 'string') return node;
+      return { ...node, data: { ...node.data, studioOwned: true } };
+    });
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const seenEdgeIds = new Set<string>();
+  const edges = normalizedFlow.edges.filter((edge) => {
+    if (seenEdgeIds.has(edge.id) || !nodeIds.has(edge.source) || !nodeIds.has(edge.target)) return false;
+    seenEdgeIds.add(edge.id);
+    return true;
+  });
+  const rawViewport = isRecord(value.viewport) ? value.viewport : null;
+  const viewport =
+    rawViewport &&
+    finiteNumber(rawViewport.x, Number.NaN) === rawViewport.x &&
+    finiteNumber(rawViewport.y, Number.NaN) === rawViewport.y &&
+    finiteNumber(rawViewport.zoom, Number.NaN) === rawViewport.zoom &&
+    Number(rawViewport.zoom) > 0
+      ? { x: Number(rawViewport.x), y: Number(rawViewport.y), zoom: Number(rawViewport.zoom) }
+      : undefined;
+  const rawPersistedGraphBinding = coerceStudioGraphBinding(value.studioGraphBinding);
+  const persistedGraphBinding =
+    rawPersistedGraphBinding && activeTemplate
+      ? {
+          ...rawPersistedGraphBinding,
+          mode: activeTemplate.mode,
+          modelType: activeTemplate.modelType,
+        }
+      : rawPersistedGraphBinding;
+  const shouldRecoverManagedIdentity =
+    allowCanonicalAdoption &&
+    !activeTemplateId &&
+    (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
+  const inferredManagedForm = shouldRecoverManagedIdentity
+    ? resolveStudioResourceForm(inferStudioFormFromWorkflow(nodes, persistedStudioForm))
+    : persistedStudioForm;
+  const adoptedGraph = shouldRecoverManagedIdentity
+    ? adoptManagedWorkflowGraph(nodes, edges as import('@xyflow/react').Edge[], inferredManagedForm)
+    : null;
+  const studioForm = adoptedGraph ? inferredManagedForm : persistedStudioForm;
+  const normalizedNodes = adoptedGraph?.nodes ?? nodes;
+  const executionNormalizedNodes = normalizeManagedSnapshotExecutionPlan(
+    normalizedNodes,
     studioForm,
-    studioGraphBinding: coerceStudioGraphBinding(value.studioGraphBinding),
+    persistedGraphBinding ?? adoptedGraph?.binding ?? null,
+  );
+  const studioGraphBinding = reconcileSnapshotGraphBinding(
+    isInferredRecoveryBinding(persistedGraphBinding)
+      ? (adoptedGraph?.binding ?? null)
+      : (persistedGraphBinding ?? adoptedGraph?.binding ?? null),
+    executionNormalizedNodes,
+    edges,
+    studioForm,
+    Boolean(templateSourceId && activeTemplateId === templateSourceId && !persistedGraphBinding),
+  );
+  return {
+    nodes: executionNormalizedNodes,
+    edges,
+    viewport,
+    studioForm,
+    studioGraphBinding,
     selectedMode: studioForm.mode,
-    activeTemplateId: coerceStudioTemplateId(value.activeTemplateId) ?? null,
+    activeTemplateId,
     sourceOutputId: typeof value.sourceOutputId === 'string' ? value.sourceOutputId : null,
     pinnedGraphInputIds: Array.isArray(value.pinnedGraphInputIds)
       ? value.pinnedGraphInputIds.filter((item): item is string => typeof item === 'string')
       : [],
-    userBlocks: safeUserBlocks(value.userBlocks),
+    autoFieldOverrides: normalizeAutoFieldOverrides(value.autoFieldOverrides),
   };
 }
 
@@ -327,6 +638,8 @@ function normalizeWorkflowTab(value: unknown): WorkflowTab | undefined {
   if (!isRecord(value)) return undefined;
   const createdAt = finiteNumber(value.createdAt, Date.now());
   const source = workflowTabSource(value.source);
+  const sourceLabel = workflowTabSourceLabel(source, value.sourceLabel);
+  const templateSourceId = source === 'template' ? (coerceStudioTemplateId(sourceLabel) ?? null) : null;
   return {
     id: typeof value.id === 'string' && value.id ? value.id : nanoid(),
     title: typeof value.title === 'string' && value.title.trim() ? value.title : 'Workflow',
@@ -334,8 +647,13 @@ function normalizeWorkflowTab(value: unknown): WorkflowTab | undefined {
     updatedAt: finiteNumber(value.updatedAt, createdAt),
     dirty: typeof value.dirty === 'boolean' ? value.dirty : false,
     source,
-    sourceLabel: workflowTabSourceLabel(source, value.sourceLabel),
-    snapshot: normalizeWorkflowSnapshot(value.snapshot),
+    sourceLabel,
+    backendRevision: finiteNumber(value.backendRevision, finiteNumber(value.revision, 0)) || undefined,
+    // Early MoDiff workflow records kept their template identity on the tab but
+    // not inside the snapshot. Feed that identity into snapshot normalization
+    // so managed roles/edges can be reconstructed without rebuilding the graph
+    // or altering its persisted node positions and viewport.
+    snapshot: normalizeWorkflowSnapshot(value.snapshot, templateSourceId, source !== 'manual'),
   };
 }
 
@@ -350,6 +668,9 @@ function applyWorkflowSnapshot(snapshot: WorkflowTabSnapshot) {
     edges: cloneJson(snapshot.edges) as typeof flow.edges,
     viewport: (cloneJson(snapshot.viewport) as typeof flow.viewport) ?? flow.viewport,
   });
+  // Undo/redo belongs to the document whose graph produced it. A canvas
+  // replacement must never leave another tab's snapshots armed.
+  flow.resetHistory();
 }
 
 function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
@@ -357,6 +678,13 @@ function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
   const snapshot = currentWorkflowSnapshot(state);
   return state.workflowTabs.map((tab) =>
     tab.id === state.activeWorkflowTabId ? { ...tab, snapshot, updatedAt: Date.now(), dirty: true } : tab,
+  );
+}
+
+function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
+  return (
+    JSON.stringify([left.title, left.source, left.sourceLabel, left.snapshot]) ===
+    JSON.stringify([right.title, right.source, right.sourceLabel, right.snapshot])
   );
 }
 
@@ -369,24 +697,67 @@ function normalizePersistedStudioState(
     ...currentState,
     ...persistedState,
   } as StudioState & StudioVolatileState & StudioActions;
-  const form = resolveStudioResourceForm(coerceStudioFormState(mergedState.form));
+  const workflowTabs = Array.isArray(mergedState.workflowTabs)
+    ? normalizeWorkflowTabs(mergedState.workflowTabs)
+    : currentState.workflowTabs;
+  const activeWorkflowTab = workflowTabs.find((tab) => tab.id === mergedState.activeWorkflowTabId);
+  const activeSnapshot = activeWorkflowTab?.snapshot;
+  const rawActiveWorkflowTab = Array.isArray(persistedState.workflowTabs)
+    ? persistedState.workflowTabs.filter(isRecord).find((tab) => tab.id === mergedState.activeWorkflowTabId)
+    : undefined;
+  const rawActiveSnapshot = isRecord(rawActiveWorkflowTab?.snapshot) ? rawActiveWorkflowTab.snapshot : undefined;
+  const legacySnapshotOmittedTemplateIdentity =
+    Boolean(activeSnapshot?.studioGraphBinding) &&
+    Boolean(rawActiveSnapshot) &&
+    !Object.prototype.hasOwnProperty.call(rawActiveSnapshot, 'activeTemplateId');
+  const rawGraphBinding = coerceStudioGraphBinding(rawActiveSnapshot?.studioGraphBinding);
+  const recoveredManagedIdentity =
+    Boolean(activeSnapshot?.studioGraphBinding) &&
+    Boolean(rawActiveSnapshot) &&
+    (!rawGraphBinding || isInferredRecoveryBinding(rawGraphBinding));
+  // The live top-level form/template fields are persisted synchronously, while
+  // the duplicated tab snapshot is intentionally batched. Prefer the fresher
+  // live values normally. A legacy canonical graph whose missing binding was
+  // recovered during snapshot normalization is the exception: its actual
+  // loader node is authoritative and can correct stale top-level model data.
+  const liveForm = resolveStudioResourceForm(coerceStudioFormState(mergedState.form));
+  const activeBinding = activeSnapshot?.studioGraphBinding;
+  const liveIdentityMatchesActiveDocument =
+    !activeBinding || (liveForm.mode === activeBinding.mode && liveForm.modelType === activeBinding.modelType);
+  const form =
+    recoveredManagedIdentity || !liveIdentityMatchesActiveDocument ? cloneJson(activeSnapshot!.studioForm) : liveForm;
+  const persistedTemplateId = legacySnapshotOmittedTemplateIdentity
+    ? activeSnapshot?.activeTemplateId
+    : Object.prototype.hasOwnProperty.call(persistedState, 'activeTemplateId')
+      ? (coerceStudioTemplateId(mergedState.activeTemplateId) ?? null)
+      : activeSnapshot?.activeTemplateId;
   return {
     ...mergedState,
     selectedMode: form.mode,
     form,
-    activeTemplateId: coerceStudioTemplateId(mergedState.activeTemplateId) ?? null,
-    outputs: Array.isArray(mergedState.outputs)
-      ? mergedState.outputs.map(coerceStudioOutput).filter((output): output is StudioOutput => Boolean(output))
-      : currentState.outputs,
+    graphBinding: activeSnapshot?.studioGraphBinding ? cloneJson(activeSnapshot.studioGraphBinding) : null,
+    graphFinalization: null,
+    canvasTransition: null,
+    activeTemplateId: persistedTemplateId ?? null,
+    sourceOutputId: activeSnapshot ? activeSnapshot.sourceOutputId : (mergedState.sourceOutputId ?? null),
+    // Output history is backend-owned and can include graph snapshots and media
+    // metadata large enough to exceed localStorage. Discard legacy persisted
+    // copies; fetchBackendOutputs hydrates the authoritative history at startup.
+    outputs: currentState.outputs,
+    previewSlots: currentState.previewSlots,
+    previewStateRevision: currentState.previewStateRevision,
     importedAssets: Array.isArray(mergedState.importedAssets)
       ? mergedState.importedAssets.filter(isStudioImportedAsset).slice(0, 24)
       : currentState.importedAssets,
-    workflowTabs: Array.isArray(mergedState.workflowTabs)
-      ? normalizeWorkflowTabs(mergedState.workflowTabs)
-      : currentState.workflowTabs,
-    pinnedGraphInputIds: Array.isArray(mergedState.pinnedGraphInputIds)
-      ? mergedState.pinnedGraphInputIds.filter((item): item is string => typeof item === 'string')
-      : currentState.pinnedGraphInputIds,
+    workflowTabs,
+    pinnedGraphInputIds: Array.isArray(activeSnapshot?.pinnedGraphInputIds)
+      ? activeSnapshot.pinnedGraphInputIds
+      : Array.isArray(mergedState.pinnedGraphInputIds)
+        ? mergedState.pinnedGraphInputIds.filter((item): item is string => typeof item === 'string')
+        : currentState.pinnedGraphInputIds,
+    autoFieldOverrides: activeSnapshot
+      ? normalizeAutoFieldOverrides(activeSnapshot.autoFieldOverrides)
+      : normalizeAutoFieldOverrides(mergedState.autoFieldOverrides),
   };
 }
 
@@ -402,8 +773,24 @@ function isFlowNode(value: unknown): value is {
   return isRecord(value) && typeof value.id === 'string';
 }
 
-function isFlowEdge(value: unknown): value is { id?: string; source: string; target: string } {
-  return isRecord(value) && typeof value.source === 'string' && typeof value.target === 'string';
+function isCustomFlowNode(value: unknown): value is CustomNodeType {
+  if (!isRecord(value) || typeof value.id !== 'string') return false;
+  if (!isRecord(value.position) || typeof value.position.x !== 'number' || typeof value.position.y !== 'number') {
+    return false;
+  }
+  return isRecord(value.data) && isRecord(value.data.params);
+}
+
+function isFlowEdge(value: unknown): value is { id: string; source: string; target: string } {
+  return Boolean(
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    value.id &&
+    typeof value.source === 'string' &&
+    value.source &&
+    typeof value.target === 'string' &&
+    value.target,
+  );
 }
 
 function studioFormInputs(): AppModeInput[] {
@@ -485,9 +872,13 @@ const defaultState: StudioState = {
   activeAppModeConfigId: null,
   blueprints: [],
   pinnedGraphInputIds: [],
+  autoFieldOverrides: {},
 };
 
 const defaultVolatileState: StudioVolatileState = {
+  workflowCanvasHydrated: false,
+  workflowCanvasEpoch: 0,
+  workflowFormEpoch: 0,
   graphBinding: null,
   graphFinalization: null,
   autoResourcePlan: null,
@@ -512,6 +903,8 @@ const defaultVolatileState: StudioVolatileState = {
     sync: { error: null, pending: 0 },
   },
   outputRevision: 0,
+  previewSlots: {},
+  previewStateRevision: 0,
 };
 
 const MAX_RUN_CONTEXTS = 50;
@@ -584,6 +977,88 @@ function matchingRunContext(
   return taskContext ?? clientContext ?? null;
 }
 
+function workflowGraphStructureKey(graph: Pick<StudioGraphSnapshot, 'nodes' | 'edges'>) {
+  const nodes = graph.nodes
+    .filter(isRecord)
+    .map((node) => {
+      const data = isRecord(node.data) ? node.data : {};
+      return {
+        id: typeof node.id === 'string' ? node.id : '',
+        parentId: typeof node.parentId === 'string' ? node.parentId : null,
+        type: typeof node.type === 'string' ? node.type : null,
+        module: typeof data.module === 'string' ? data.module : '',
+        action: typeof data.action === 'string' ? data.action : '',
+      };
+    })
+    .filter((node) => node.id)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const edges = graph.edges
+    .filter(isRecord)
+    .map((edge) => ({
+      id: typeof edge.id === 'string' ? edge.id : '',
+      source: typeof edge.source === 'string' ? edge.source : '',
+      sourceHandle: typeof edge.sourceHandle === 'string' ? edge.sourceHandle : null,
+      target: typeof edge.target === 'string' ? edge.target : '',
+      targetHandle: typeof edge.targetHandle === 'string' ? edge.targetHandle : null,
+    }))
+    .filter((edge) => edge.id && edge.source && edge.target)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return stableStringify({ nodes, edges });
+}
+
+function runContextMatchesRestoredWorkflow(
+  context: StudioRunContext,
+  workflowTabId: string,
+  snapshot: WorkflowTabSnapshot,
+) {
+  if (context.workflowTabId !== workflowTabId) return false;
+  if (context.status && TERMINAL_RUN_STATUSES.has(context.status)) return false;
+  if (
+    context.binding &&
+    snapshot.studioGraphBinding &&
+    context.binding.fingerprint !== snapshot.studioGraphBinding.fingerprint
+  ) {
+    return false;
+  }
+  return workflowGraphStructureKey(context.graph) === workflowGraphStructureKey(snapshot);
+}
+
+function rebaseRunContextsForRestoredWorkflow(
+  state: Pick<StudioVolatileState, 'currentRunContext' | 'runContextsByClientRunId' | 'runContextsByTaskId'>,
+  workflowTabId: string,
+  snapshot: WorkflowTabSnapshot,
+  canvasEpoch: number,
+) {
+  const rebase = (context: StudioRunContext) =>
+    runContextMatchesRestoredWorkflow(context, workflowTabId, snapshot) ? { ...context, canvasEpoch } : context;
+  const runContextsByClientRunId = Object.fromEntries(
+    Object.entries(state.runContextsByClientRunId).map(([clientRunId, context]) => [clientRunId, rebase(context)]),
+  );
+  const runContextsByTaskId = Object.fromEntries(
+    Object.entries(state.runContextsByTaskId).map(([taskId, context]) => [
+      taskId,
+      runContextsByClientRunId[context.clientRunId] ?? rebase(context),
+    ]),
+  );
+  const currentRunContext = state.currentRunContext
+    ? (runContextsByClientRunId[state.currentRunContext.clientRunId] ?? rebase(state.currentRunContext))
+    : null;
+  const resumedRunningContext = Object.values(runContextsByClientRunId)
+    .filter(
+      (context) => context.status === 'running' && runContextMatchesRestoredWorkflow(context, workflowTabId, snapshot),
+    )
+    .sort((left, right) => right.startedAt - left.startedAt)[0];
+
+  return {
+    currentRunContext:
+      currentRunContext && runContextMatchesRestoredWorkflow(currentRunContext, workflowTabId, snapshot)
+        ? currentRunContext
+        : (resumedRunningContext ?? currentRunContext),
+    runContextsByClientRunId,
+    runContextsByTaskId,
+  };
+}
+
 function pruneTerminalRunContexts(
   contextsByClientRunId: Record<string, StudioRunContext>,
   contextsByTaskId: Record<string, StudioRunContext>,
@@ -592,10 +1067,16 @@ function pruneTerminalRunContexts(
   const terminalContexts = Object.values(contextsByClientRunId)
     .filter((context) => context.status && TERMINAL_RUN_STATUSES.has(context.status))
     .sort((left, right) => (right.completedAt ?? 0) - (left.completedAt ?? 0));
+  const currentContext = currentClientRunId ? contextsByClientRunId[currentClientRunId] : undefined;
+  const currentIsTerminal = Boolean(currentContext?.status && TERMINAL_RUN_STATUSES.has(currentContext.status));
+  const terminalBudget = MAX_TERMINAL_RUN_CONTEXTS - (currentIsTerminal ? 1 : 0);
   const retainedTerminalIds = new Set(
-    terminalContexts.slice(0, MAX_TERMINAL_RUN_CONTEXTS).map((context) => context.clientRunId),
+    terminalContexts
+      .filter((context) => context.clientRunId !== currentClientRunId)
+      .slice(0, terminalBudget)
+      .map((context) => context.clientRunId),
   );
-  if (currentClientRunId) retainedTerminalIds.add(currentClientRunId);
+  if (currentIsTerminal && currentClientRunId) retainedTerminalIds.add(currentClientRunId);
   const nextByClientRunId = Object.fromEntries(
     Object.entries(contextsByClientRunId).filter(
       ([, context]) =>
@@ -625,7 +1106,7 @@ function mergeOutputs(preferred: StudioOutput[], fallback: StudioOutput[]) {
 
   return Array.from(merged.values())
     .sort((left, right) => (right.createdAt || 0) - (left.createdAt || 0))
-    .slice(0, 80);
+    .slice(0, 200);
 }
 
 export function outputsForWorkflow(
@@ -850,8 +1331,16 @@ function isGeneratedPreviewParam(display: unknown) {
   return typeof display === 'string' && GENERATED_PREVIEW_DISPLAYS.has(display);
 }
 
-function outputSlotKey(nodeId: string, fieldKey: string, workflowTabId?: string | null) {
-  return `${workflowTabId ?? 'legacy'}:${nodeId}:${fieldKey}`;
+export function studioPreviewSlotKey(nodeId: string, fieldKey: string, workflowTabId?: string | null) {
+  return JSON.stringify([workflowTabId ?? 'legacy', nodeId, fieldKey]);
+}
+
+const outputSlotKey = studioPreviewSlotKey;
+
+function previewSlotMap(slots: StudioPreviewSlot[]) {
+  return Object.fromEntries(
+    slots.map((slot) => [studioPreviewSlotKey(slot.nodeId, slot.fieldKey, slot.workflowTabId), slot]),
+  );
 }
 
 function getRunInputHash(form: StudioFormState, apiGraph: unknown) {
@@ -867,6 +1356,64 @@ function isNonEmptyPreviewValue(value: unknown) {
 const STUDIO_STORAGE_KEY = 'modiff.studio';
 migrateLocalStorageKey('studio', STUDIO_STORAGE_KEY);
 
+export type WorkflowOperationContext = {
+  workflowTabId: string | null;
+  canvasEpoch: number;
+  formEpoch: number;
+};
+
+export class WorkflowOperationCancelledError extends Error {
+  constructor(message = 'The workflow changed before this operation completed.') {
+    super(message);
+    this.name = 'WorkflowOperationCancelledError';
+  }
+}
+
+export function captureWorkflowOperationContext(): WorkflowOperationContext {
+  const state = useStudioStore.getState();
+  return {
+    workflowTabId: state.activeWorkflowTabId,
+    canvasEpoch: state.workflowCanvasEpoch,
+    formEpoch: state.workflowFormEpoch,
+  };
+}
+
+export function workflowOperationContextIsCurrent(
+  context: WorkflowOperationContext,
+  options: { includeForm?: boolean } = {},
+) {
+  const state = useStudioStore.getState();
+  return (
+    state.activeWorkflowTabId === context.workflowTabId &&
+    state.workflowCanvasEpoch === context.canvasEpoch &&
+    (options.includeForm === false || state.workflowFormEpoch === context.formEpoch)
+  );
+}
+
+export function assertWorkflowOperationContext(
+  context: WorkflowOperationContext,
+  options: { includeForm?: boolean } = {},
+) {
+  if (!workflowOperationContextIsCurrent(context, options)) {
+    throw new WorkflowOperationCancelledError();
+  }
+}
+
+/**
+ * Advances a caller-owned operation after that operation intentionally commits
+ * a form change. The tab/canvas identity must still match; unrelated form
+ * changes are never adopted implicitly.
+ */
+export function advanceWorkflowOperationContext(context: WorkflowOperationContext) {
+  assertWorkflowOperationContext(context, { includeForm: false });
+  context.formEpoch = useStudioStore.getState().workflowFormEpoch;
+  return context;
+}
+
+export function isWorkflowOperationCancelled(error: unknown): error is WorkflowOperationCancelledError {
+  return error instanceof WorkflowOperationCancelledError;
+}
+
 export const useStudioStore = create<StudioState & StudioVolatileState & StudioActions>()(
   persist(
     (set, get) => ({
@@ -879,6 +1426,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         set({
           selectedMode: mode,
           activeTemplateId: null,
+          workflowFormEpoch: get().workflowFormEpoch + 1,
           form: resolveStudioResourceForm({
             ...nextForm,
             prompt: current.prompt,
@@ -931,14 +1479,23 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             lastError = `${STUDIO_MODEL_PROFILES[values.modelType].label} does not support ${values.mode ?? state.form.mode}; switched to ${fallbackMode.replace(/_/g, ' ')}.`;
           }
 
-          form = resolveStudioResourceForm(form);
+          form = preservePinnedAutoFormValues(
+            resolveStudioResourceForm(form),
+            state.form,
+            values,
+            state.autoFieldOverrides,
+          );
+          const previousPlanKey = autoPlanKeyForForm(state.form);
+          const nextPlanKey = autoPlanKeyForForm(form);
 
           return {
             form,
+            workflowFormEpoch: state.workflowFormEpoch + 1,
             selectedMode,
             activeTemplateId: values.modelType || values.mode ? null : state.activeTemplateId,
             lastError,
-            autoResourcePlan: null,
+            autoResourcePlan:
+              state.autoResourcePlans[nextPlanKey] ?? (previousPlanKey === nextPlanKey ? state.autoResourcePlan : null),
           };
         });
       },
@@ -947,33 +1504,125 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         get().updateForm(preset.values);
       },
 
-      applyTemplate: (template) => {
+      applyTemplate: (template, inputDefaults = {}) => {
         const defaults = getFormDefaultsForMode(template.mode, template.modelType);
         const presetValues = getPreset(template.presetId)?.values || {};
         const lockedValues = getTemplateLockedSettings(template);
-        set((state) => ({
-          selectedMode: template.mode,
-          activeTemplateId: template.id,
-          sourceOutputId: null,
-          autoResourcePlan: null,
-          form: resolveStudioResourceForm({
+        set((state) => {
+          const form = resolveStudioResourceForm({
             ...state.form,
             ...defaults,
             ...presetValues,
             ...lockedValues,
+            ...inputDefaults,
             mode: template.mode,
             modelType: template.modelType,
             prompt: template.prompt,
             negativePrompt: template.negativePrompt ?? lockedValues.negativePrompt,
-          }),
-        }));
+          });
+          return {
+            selectedMode: template.mode,
+            activeTemplateId: template.id,
+            sourceOutputId: null,
+            autoFieldOverrides: {},
+            autoResourcePlan: state.autoResourcePlans[autoPlanKeyForForm(form)] ?? null,
+            form,
+            workflowFormEpoch: state.workflowFormEpoch + 1,
+          };
+        });
       },
 
-      setGraphBinding: (binding) => set({ graphBinding: binding }),
+      setGraphBinding: (binding) => {
+        set({ graphBinding: binding });
+        // The managed binding is document identity, not transient UI state.
+        // Checkpoint it synchronously so a reload cannot observe a newer canvas
+        // with an older/null binding while the normal tab autosave is pending.
+        if (get().workflowCanvasHydrated && get().activeWorkflowTabId) {
+          get().saveActiveWorkflowTab(true);
+        }
+      },
+      hydrateActiveWorkflowCanvas: () => {
+        const state = get();
+        const activeTab = state.workflowTabs.find((tab) => tab.id === state.activeWorkflowTabId);
+        const activeSnapshot = activeTab?.snapshot;
+        const activeBinding = activeSnapshot?.studioGraphBinding;
+        const formIdentityMatchesActiveDocument =
+          !activeBinding ||
+          (state.form.mode === activeBinding.mode && state.form.modelType === activeBinding.modelType);
+        if (activeTab) {
+          // The active tab is the document authority. `modiff.flow` is only a
+          // fast canvas cache and may belong to another tab if the page exited
+          // between its immediate write and the tab snapshot's batched write.
+          applyWorkflowSnapshot(activeTab.snapshot);
+        }
+        set({
+          ...(activeSnapshot && !formIdentityMatchesActiveDocument
+            ? {
+                selectedMode: activeSnapshot.studioForm.mode,
+                form: cloneJson(activeSnapshot.studioForm),
+                graphBinding: activeBinding ? cloneJson(activeBinding) : null,
+                activeTemplateId: activeSnapshot.activeTemplateId,
+              }
+            : {}),
+          workflowCanvasHydrated: true,
+          workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
+          workflowFormEpoch: state.workflowFormEpoch + 1,
+          launcherDismissed: activeTab ? activeTab.snapshot.nodes.length > 0 : state.launcherDismissed,
+        });
+      },
+      detachManagedGraph: () => {
+        set((state) => ({
+          activeTemplateId: null,
+          graphBinding: null,
+          graphFinalization: null,
+          workflowTabs: state.workflowTabs.map((tab) =>
+            tab.id === state.activeWorkflowTabId ? { ...tab, source: 'manual' } : tab,
+          ),
+        }));
+        // Persist the detachment and current topology atomically so a refresh
+        // cannot revive a stale managed snapshot during the normal save delay.
+        get().saveActiveWorkflowTab(true);
+      },
       setGraphFinalization: (finalization) => set({ graphFinalization: finalization }),
       setAutoResourcePlan: (plan) => set({ autoResourcePlan: plan }),
+      applyAutoResourcePlan: (plan, values) =>
+        set((state) => {
+          const allowedValues = omitPinnedAutoFormValues(values, state.autoFieldOverrides);
+          const mergedForm: StudioFormState = {
+            ...state.form,
+            ...allowedValues,
+            resourceMode: 'auto',
+          };
+          const form = normalizeStudioDeviceOffloadPlan(mergedForm);
+          const planKey = autoPlanKeyForForm(form);
+          return {
+            form,
+            workflowFormEpoch: state.workflowFormEpoch + 1,
+            autoResourcePlan: plan,
+            autoResourcePlans: {
+              ...state.autoResourcePlans,
+              [planKey]: plan,
+            },
+          };
+        }),
       setAutoResourcePlans: (plans) =>
-        set((state) => ({ autoResourcePlans: { ...state.autoResourcePlans, ...plans } })),
+        set((state) => {
+          const nextPlans = { ...state.autoResourcePlans };
+          Object.entries(plans).forEach(([key, plan]) => {
+            // A transport timeout is not a resource verdict. Never replace a
+            // usable application-lifetime plan with a transient request error,
+            // and do not make that error sticky in the keyed cache.
+            if (plan?.error) return;
+            nextPlans[key] = plan;
+          });
+          return { autoResourcePlans: nextPlans };
+        }),
+      invalidateAutoResourcePlans: () =>
+        set({
+          autoResourcePlan: null,
+          autoResourcePlans: {},
+          autoResourceCheck: defaultVolatileState.autoResourceCheck,
+        }),
       setAutoResourceCheck: (check) =>
         set((state) => ({
           autoResourceCheck: {
@@ -996,6 +1645,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           currentRunContext: null,
           runContextsByClientRunId: {},
           runContextsByTaskId: {},
+          autoFieldOverrides: {},
           lastError: null,
         }),
 
@@ -1081,6 +1731,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           selectedMode: mode,
           sourceOutputId: output.id,
           activeTemplateId: null,
+          workflowFormEpoch: get().workflowFormEpoch + 1,
           form: {
             ...current,
             ...defaults,
@@ -1138,6 +1789,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             selectedMode: mode,
             sourceOutputId: null,
             activeTemplateId: null,
+            workflowFormEpoch: get().workflowFormEpoch + 1,
             form: applyImportedVideoToForm(baseForm, assetInput),
           });
           return;
@@ -1159,6 +1811,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             selectedMode: mode,
             sourceOutputId: null,
             activeTemplateId: null,
+            workflowFormEpoch: get().workflowFormEpoch + 1,
             form: applyImportedAudioToForm(baseForm, assetInput),
           });
           return;
@@ -1180,12 +1833,13 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             selectedMode: mode,
             sourceOutputId: null,
             activeTemplateId: null,
+            workflowFormEpoch: get().workflowFormEpoch + 1,
             form: applyImportedImageToForm(baseForm, assetInput),
           });
         }
       },
 
-      captureRunContext: (apiGraph, variation, identity) => {
+      captureRunContext: (apiGraph, variation, identity, options) => {
         const state = get();
         const clientRunId = identity?.clientRunId ?? nanoid();
         const runInputHash = identity?.runInputHash ?? getRunInputHash(state.form, apiGraph ?? currentGraphSnapshot());
@@ -1196,6 +1850,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           clientRunId,
           runInputHash,
           workflowTabId: state.activeWorkflowTabId,
+          canvasEpoch: state.workflowCanvasEpoch,
           form: cloneJson(state.form),
           graph: currentGraphSnapshot(),
           binding: state.graphBinding ? cloneJson(state.graphBinding) : null,
@@ -1206,13 +1861,27 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           variationLabel: variation?.variationLabel,
         };
         set((current) => ({
-          currentRunContext: context,
+          ...(options?.activate === false ? {} : { currentRunContext: context }),
           runContextsByClientRunId: withBoundedRunContext(
             current.runContextsByClientRunId,
             context.clientRunId,
             context,
           ),
         }));
+        return context;
+      },
+
+      activateRunContext: (taskId, clientRunId) => {
+        const state = get();
+        const context = matchingRunContext(state, taskId, clientRunId);
+        if (
+          !context ||
+          state.activeWorkflowTabId !== context.workflowTabId ||
+          (typeof context.canvasEpoch === 'number' && state.workflowCanvasEpoch !== context.canvasEpoch)
+        ) {
+          return null;
+        }
+        set({ currentRunContext: context });
         return context;
       },
 
@@ -1230,14 +1899,29 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         return Boolean(normalizedTaskId && !hasCapturedRuns);
       },
 
-      shouldApplyRunUpdateToActiveWorkflow: (taskId, clientRunId) => {
+      shouldApplyRunUpdateToActiveWorkflow: (taskId, clientRunId, workflowTabId) => {
         const state = get();
         const context = matchingRunContext(state, taskId, clientRunId);
-        if (!context) return true;
-        return (
-          state.currentRunContext?.clientRunId === context.clientRunId &&
-          state.activeWorkflowTabId === context.workflowTabId
-        );
+        if (context) {
+          return (
+            state.currentRunContext?.clientRunId === context.clientRunId &&
+            state.activeWorkflowTabId === context.workflowTabId &&
+            (typeof context.canvasEpoch !== 'number' || state.workflowCanvasEpoch === context.canvasEpoch)
+          );
+        }
+
+        const normalizedWorkflowTabId =
+          typeof workflowTabId === 'string' && workflowTabId.trim() ? workflowTabId : null;
+        if (normalizedWorkflowTabId) return state.activeWorkflowTabId === normalizedWorkflowTabId;
+
+        const hasRunIdentity =
+          (typeof taskId === 'string' && Boolean(taskId.trim())) ||
+          (typeof clientRunId === 'string' && Boolean(clientRunId.trim()));
+        // Identity-less legacy node messages are still scoped by the live
+        // graph. A correlated message whose workflow origin is unknown is not:
+        // after reload it could otherwise mutate a different graph that happens
+        // to reuse the same node IDs.
+        return !hasRunIdentity;
       },
 
       markRunContextStatus: (taskId, clientRunId, status) => {
@@ -1339,6 +2023,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             flow.setNodeUiState(node.id, {
               validationSeverity: 'error',
               validationMessage: 'Run failed before producing a new output.',
+              errorMessage: 'Run failed before producing a new output.',
             });
           }
         });
@@ -1350,6 +2035,16 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           if (!capturedContext) return {};
           const runResponse = isRecord(response) ? response : {};
           const taskId = optionalNullableString(runResponse.task_id);
+          const previewSlots = Array.isArray(runResponse.preview_slots)
+            ? runResponse.preview_slots
+                .map(coerceStudioPreviewSlot)
+                .filter((slot): slot is StudioPreviewSlot => Boolean(slot))
+            : [];
+          const previewStateRevision =
+            typeof runResponse.preview_state_revision === 'number' &&
+            Number.isFinite(runResponse.preview_state_revision)
+              ? runResponse.preview_state_revision
+              : 0;
           const nextContext: StudioRunContext = {
             ...capturedContext,
             run: {
@@ -1373,8 +2068,26 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               nextContext,
             ),
             runContextsByTaskId,
+            ...(previewSlots.length > 0 && previewStateRevision >= state.previewStateRevision
+              ? {
+                  previewSlots: { ...state.previewSlots, ...previewSlotMap(previewSlots) },
+                  previewStateRevision,
+                }
+              : {}),
           };
         });
+      },
+
+      mergePreviewState: (slots, revision) => {
+        if (!Number.isFinite(revision)) return;
+        set((state) =>
+          revision < state.previewStateRevision
+            ? {}
+            : {
+                previewSlots: { ...state.previewSlots, ...previewSlotMap(slots) },
+                previewStateRevision: revision,
+              },
+        );
       },
 
       fetchBackendOutputs: async () => {
@@ -1382,17 +2095,36 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const outputRevision = get().outputRevision;
         set((state) => galleryRequestPatch(state, 'history', 1, null));
         try {
-          const backendOutputs = await fetchStudioOutputs(ticket.signal);
+          const backendState = await fetchStudioOutputs(ticket.signal);
           if (!ticket.isLatest()) return;
-          set((state) => ({
-            ...(state.outputRevision === outputRevision
-              ? {
-                  outputs: mergeOutputs(backendOutputs, state.outputs),
-                  outputRevision: state.outputRevision + 1,
-                }
-              : {}),
-            ...galleryRequestPatch(state, 'history', -1, null),
-          }));
+          set((state) => {
+            const previewStateIsCurrent = backendState.revision >= state.previewStateRevision;
+            const currentOutputIds = new Set(
+              backendState.previewSlots.flatMap((slot) => (slot.currentOutputId ? [slot.currentOutputId] : [])),
+            );
+            const requiredCurrentOutputs = backendState.outputs.filter((output) => currentOutputIds.has(output.id));
+            const canMergeFullHistory = state.outputRevision === outputRevision;
+            const outputsToMerge = canMergeFullHistory
+              ? backendState.outputs
+              : previewStateIsCurrent
+                ? requiredCurrentOutputs
+                : [];
+            return {
+              ...(outputsToMerge.length > 0 || (canMergeFullHistory && backendState.outputs.length === 0)
+                ? {
+                    outputs: mergeOutputs(outputsToMerge, state.outputs),
+                    outputRevision: state.outputRevision + 1,
+                  }
+                : {}),
+              ...(previewStateIsCurrent
+                ? {
+                    previewSlots: previewSlotMap(backendState.previewSlots),
+                    previewStateRevision: backendState.revision,
+                  }
+                : {}),
+              ...galleryRequestPatch(state, 'history', -1, null),
+            };
+          });
         } catch (error) {
           if (!ticket.isLatest()) return;
           set((state) =>
@@ -1418,12 +2150,18 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             ...output,
             ...(imageData ? { image_data: imageData } : {}),
           };
-          const backendOutputs = await syncStudioOutput(payload);
+          const backendState = await syncStudioOutput(payload);
           set((state) => ({
             ...(mutation.isLatest()
               ? {
-                  outputs: mergeOutputs(backendOutputs, state.outputs),
+                  outputs: mergeOutputs(backendState.outputs, state.outputs),
                   outputRevision: state.outputRevision + 1,
+                }
+              : {}),
+            ...(backendState.revision >= state.previewStateRevision
+              ? {
+                  previewSlots: { ...state.previewSlots, ...previewSlotMap(backendState.previewSlots) },
+                  previewStateRevision: backendState.revision,
                 }
               : {}),
             ...galleryRequestPatch(state, 'sync', -1, null),
@@ -1464,7 +2202,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
       },
 
       recordOutputFromUpdate: (nodeId, fieldKey, value, metadata = {}) => {
-        const { taskId, clientRunId, runInputHash, attemptIndex, runtimeFingerprint, dataType } = metadata;
+        const { taskId, clientRunId, runInputHash, attemptIndex, runtimeFingerprint, dataType, outputId } = metadata;
         if (!get().shouldAcceptRunOutputUpdate(taskId, clientRunId)) return;
         const hasExplicitDataType = dataType !== undefined;
         const isVideoOutput =
@@ -1500,6 +2238,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               : resolveStudioImageUrl(mediaValue ?? '', nodeId, fieldKey);
         const context = matchingRunContext(get(), taskId, clientRunId) ?? get().currentRunContext;
         if (!context) return;
+        const outputClientRunId = clientRunId ?? context.clientRunId;
+        const outputTaskId = taskId ?? context.run?.taskId ?? null;
+        const outputRunInputHash = runInputHash ?? context.runInputHash;
         const form = context?.form ?? get().form;
         const profile = getProfileForForm(form);
         const template = STUDIO_TEMPLATES.find((item) => item.id === context?.templateId);
@@ -1515,18 +2256,18 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
                 value,
                 url,
                 displayType: 'text' as const,
-                clientRunId: clientRunId ?? context.clientRunId,
-                runInputHash: runInputHash ?? context.runInputHash,
+                clientRunId: outputClientRunId,
+                runInputHash: outputRunInputHash,
                 attemptIndex,
-                taskId: taskId ?? context.run?.taskId ?? null,
+                taskId: outputTaskId,
               },
             ]
           : mediaItemsForOutput(value, mediaKind, nodeId, fieldKey, form, metadata.artifacts)?.map((item) => ({
               ...item,
-              clientRunId: clientRunId ?? context.clientRunId,
-              runInputHash: runInputHash ?? context.runInputHash,
+              clientRunId: outputClientRunId,
+              runInputHash: outputRunInputHash,
               attemptIndex,
-              taskId: taskId ?? context.run?.taskId ?? null,
+              taskId: outputTaskId,
             }));
         const displayType = isTextOutput
           ? 'text'
@@ -1538,9 +2279,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
                 ? 'image_collection'
                 : 'image';
         const output: StudioOutput = {
-          id: nanoid(),
-          clientRunId: clientRunId ?? context.clientRunId,
-          runInputHash: runInputHash ?? context.runInputHash,
+          id: outputId || nanoid(),
+          clientRunId: outputClientRunId,
+          runInputHash: outputRunInputHash,
           workflowTabId: context.workflowTabId,
           attemptIndex,
           nodeId,
@@ -1554,7 +2295,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           templateId: context?.templateId,
           templateLabel: template?.label,
           runId: context?.run?.runId ?? context?.id,
-          taskId: context?.run?.taskId ?? null,
+          taskId: outputTaskId,
           sid: context?.run?.sid ?? null,
           prompt: form.prompt,
           negativePrompt: form.negativePrompt,
@@ -1587,9 +2328,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             templateLockHash,
             promptSettingsHash,
             exactTemplateCompatible,
-            backendExecutionId: context?.run?.taskId ?? null,
-            clientRunId: clientRunId ?? context.clientRunId,
-            runInputHash: runInputHash ?? context.runInputHash,
+            backendExecutionId: outputTaskId,
+            clientRunId: outputClientRunId,
+            runInputHash: outputRunInputHash,
             workflowTabId: context.workflowTabId,
             attemptIndex,
             nodeId,
@@ -1642,7 +2383,8 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           outputs: [
             output,
             ...state.outputs.filter(
-              (item) => !(item.nodeId === nodeId && item.fieldKey === fieldKey && item.url === url),
+              (item) =>
+                item.id !== output.id && !(item.nodeId === nodeId && item.fieldKey === fieldKey && item.url === url),
             ),
           ].slice(0, 80),
           outputRevision: state.outputRevision + 1,
@@ -1661,8 +2403,16 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           ...galleryRequestPatch(state, 'mutation', 1, null),
         }));
         void setStudioOutputFavorite(id, favorite)
-          .then(() => {
-            set((state) => galleryRequestPatch(state, 'mutation', -1, null));
+          .then((backendState) => {
+            set((state) => ({
+              ...(backendState.revision >= state.previewStateRevision
+                ? {
+                    previewSlots: { ...state.previewSlots, ...previewSlotMap(backendState.previewSlots) },
+                    previewStateRevision: backendState.revision,
+                  }
+                : {}),
+              ...galleryRequestPatch(state, 'mutation', -1, null),
+            }));
           })
           .catch((error) => {
             const message = formatRequestError(error, 'Could not update the Studio output.');
@@ -1691,8 +2441,16 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           ...galleryRequestPatch(state, 'mutation', 1, null),
         }));
         void deleteStudioOutput(id)
-          .then(() => {
-            set((state) => galleryRequestPatch(state, 'mutation', -1, null));
+          .then((backendState) => {
+            set((state) => ({
+              ...(backendState.revision >= state.previewStateRevision
+                ? {
+                    previewSlots: { ...state.previewSlots, ...previewSlotMap(backendState.previewSlots) },
+                    previewStateRevision: backendState.revision,
+                  }
+                : {}),
+              ...galleryRequestPatch(state, 'mutation', -1, null),
+            }));
           })
           .catch((error) => {
             const message = formatRequestError(error, 'Could not delete the Studio output.');
@@ -1714,6 +2472,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         if (state.workflowTabs.length > 0 && state.activeWorkflowTabId) return;
         const snapshot = currentWorkflowSnapshot(state);
         const id = nanoid();
+        useFlowStore.getState().resetHistory();
         set({
           workflowTabs: [
             {
@@ -1727,6 +2486,8 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             },
           ],
           activeWorkflowTabId: id,
+          workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
+          workflowFormEpoch: state.workflowFormEpoch + 1,
         });
       },
 
@@ -1742,6 +2503,13 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const id = nanoid();
         const state = get();
         const nextSnapshot = normalizeWorkflowSnapshot(snapshot ?? blankWorkflowSnapshot());
+        const templateSourceId =
+          source === 'template' && !snapshot ? (coerceStudioTemplateId(sourceLabel) ?? null) : null;
+        if (templateSourceId) {
+          // Establish provenance in the new document before model planning,
+          // default-input uploads, or graph construction can yield.
+          nextSnapshot.activeTemplateId = templateSourceId;
+        }
         const savedTabs = savedTabsWithActiveSnapshot(state);
         const tab: WorkflowTab = {
           id,
@@ -1757,15 +2525,18 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         set({
           workflowTabs: [...savedTabs, tab],
           activeWorkflowTabId: id,
+          workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
+          workflowFormEpoch: state.workflowFormEpoch + 1,
           selectedMode: nextSnapshot.selectedMode,
           form: cloneJson(nextSnapshot.studioForm),
           graphBinding: nextSnapshot.studioGraphBinding ? cloneJson(nextSnapshot.studioGraphBinding) : null,
           graphFinalization: null,
-          autoResourcePlan: null,
+          autoResourcePlan: state.autoResourcePlans[autoPlanKeyForForm(nextSnapshot.studioForm)] ?? null,
           canvasTransition: null,
           activeTemplateId: nextSnapshot.activeTemplateId,
           sourceOutputId: nextSnapshot.sourceOutputId,
           pinnedGraphInputIds: nextSnapshot.pinnedGraphInputIds ?? [],
+          autoFieldOverrides: nextSnapshot.autoFieldOverrides ?? {},
           launcherDismissed: nextSnapshot.nodes.length > 0,
           lastError: null,
         });
@@ -1774,31 +2545,48 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
 
       switchWorkflowTab: (id) => {
         const state = get();
-        if (id === state.activeWorkflowTabId) return;
+        if (id === state.activeWorkflowTabId) {
+          const liveSnapshot = normalizeWorkflowSnapshot(currentWorkflowSnapshot(state));
+          set(rebaseRunContextsForRestoredWorkflow(state, id, liveSnapshot, state.workflowCanvasEpoch));
+          return;
+        }
         const target = state.workflowTabs.find((tab) => tab.id === id);
         if (!target) return;
         const savedTabs = savedTabsWithActiveSnapshot(state);
         const targetSnapshot = normalizeWorkflowSnapshot(target.snapshot);
+        const nextCanvasEpoch = state.workflowCanvasEpoch + 1;
+        const resumedRunContexts = rebaseRunContextsForRestoredWorkflow(state, id, targetSnapshot, nextCanvasEpoch);
         applyWorkflowSnapshot(targetSnapshot);
         set({
           workflowTabs: savedTabs,
           activeWorkflowTabId: id,
+          workflowCanvasEpoch: nextCanvasEpoch,
+          workflowFormEpoch: state.workflowFormEpoch + 1,
           selectedMode: targetSnapshot.selectedMode,
           form: cloneJson(targetSnapshot.studioForm),
           graphBinding: targetSnapshot.studioGraphBinding ? cloneJson(targetSnapshot.studioGraphBinding) : null,
           graphFinalization: null,
-          autoResourcePlan: null,
+          autoResourcePlan: state.autoResourcePlans[autoPlanKeyForForm(targetSnapshot.studioForm)] ?? null,
           canvasTransition: null,
           activeTemplateId: targetSnapshot.activeTemplateId,
           sourceOutputId: targetSnapshot.sourceOutputId,
           pinnedGraphInputIds: targetSnapshot.pinnedGraphInputIds ?? [],
+          autoFieldOverrides: targetSnapshot.autoFieldOverrides ?? {},
           launcherDismissed: targetSnapshot.nodes.length > 0,
           lastError: null,
+          ...resumedRunContexts,
         });
       },
 
       closeWorkflowTab: (id) => {
         const state = get();
+        if (!state.workflowTabs.some((tab) => tab.id === id)) return;
+        if (id !== state.activeWorkflowTabId) {
+          // Closing a background view must not checkpoint, rehydrate, clear
+          // errors, or reset the active document's pending graph work/history.
+          set({ workflowTabs: state.workflowTabs.filter((tab) => tab.id !== id) });
+          return;
+        }
         const tabs = savedTabsWithActiveSnapshot(state).filter((tab) => tab.id !== id);
         if (tabs.length === 0) {
           const snapshot = normalizeWorkflowSnapshot(blankWorkflowSnapshot());
@@ -1817,6 +2605,8 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               },
             ],
             activeWorkflowTabId: newId,
+            workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
+            workflowFormEpoch: state.workflowFormEpoch + 1,
             selectedMode: snapshot.selectedMode,
             form: cloneJson(snapshot.studioForm),
             graphBinding: null,
@@ -1826,6 +2616,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             activeTemplateId: null,
             sourceOutputId: null,
             pinnedGraphInputIds: [],
+            autoFieldOverrides: {},
             launcherDismissed: false,
             lastError: null,
           });
@@ -1838,21 +2629,32 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             : (tabs.find((tab) => tab.id === state.activeWorkflowTabId) ?? tabs[0]);
         if (!nextActive) return;
         const nextSnapshot = normalizeWorkflowSnapshot(nextActive.snapshot);
+        const nextCanvasEpoch = state.workflowCanvasEpoch + 1;
+        const resumedRunContexts = rebaseRunContextsForRestoredWorkflow(
+          state,
+          nextActive.id,
+          nextSnapshot,
+          nextCanvasEpoch,
+        );
         applyWorkflowSnapshot(nextSnapshot);
         set({
           workflowTabs: tabs,
           activeWorkflowTabId: nextActive.id,
+          workflowCanvasEpoch: nextCanvasEpoch,
+          workflowFormEpoch: state.workflowFormEpoch + 1,
           selectedMode: nextSnapshot.selectedMode,
           form: cloneJson(nextSnapshot.studioForm),
           graphBinding: nextSnapshot.studioGraphBinding ? cloneJson(nextSnapshot.studioGraphBinding) : null,
           graphFinalization: null,
-          autoResourcePlan: null,
+          autoResourcePlan: state.autoResourcePlans[autoPlanKeyForForm(nextSnapshot.studioForm)] ?? null,
           canvasTransition: null,
           activeTemplateId: nextSnapshot.activeTemplateId,
           sourceOutputId: nextSnapshot.sourceOutputId,
           pinnedGraphInputIds: nextSnapshot.pinnedGraphInputIds ?? [],
+          autoFieldOverrides: nextSnapshot.autoFieldOverrides ?? {},
           launcherDismissed: nextSnapshot.nodes.length > 0,
           lastError: null,
+          ...resumedRunContexts,
         });
       },
 
@@ -1864,6 +2666,89 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             tab.id === id ? { ...tab, title: trimmed, updatedAt: Date.now(), dirty: true } : tab,
           ),
         }));
+      },
+
+      mergeBackendWorkflow: (incoming) => {
+        const normalized = normalizeWorkflowTab(incoming);
+        if (!normalized) return;
+        const state = get();
+        const existing = state.workflowTabs.find((tab) => tab.id === normalized.id);
+        if (existing && (existing.backendRevision ?? 0) >= (normalized.backendRevision ?? 0)) return;
+        const localDocument =
+          existing && state.activeWorkflowTabId === normalized.id
+            ? { ...existing, snapshot: currentWorkflowSnapshot(state) }
+            : existing;
+        const hasUnsavedLocalDocument = Boolean(
+          existing &&
+          localDocument &&
+          (existing.dirty || !sameWorkflowDocument(existing, localDocument)) &&
+          !sameWorkflowDocument(localDocument, normalized),
+        );
+        if (existing && localDocument && hasUnsavedLocalDocument) {
+          // A websocket broadcast can race the response for an older PUT (or a
+          // save from another browser) while this tab has newer local content.
+          // Advance the observed backend revision without replacing that
+          // document; the sync hook will upload the preserved local snapshot.
+          set({
+            workflowTabs: state.workflowTabs.map((tab) =>
+              tab.id === normalized.id
+                ? {
+                    ...localDocument,
+                    backendRevision: normalized.backendRevision,
+                    dirty: true,
+                  }
+                : tab,
+            ),
+          });
+          return;
+        }
+        const activeRunOwnsWorkflow =
+          state.activeWorkflowTabId === normalized.id &&
+          state.currentRunContext?.workflowTabId === normalized.id &&
+          (!state.currentRunContext.status || !TERMINAL_RUN_STATUSES.has(state.currentRunContext.status));
+        if (activeRunOwnsWorkflow) {
+          // Backend acknowledgements and edits from another browser must never
+          // restore a saved preview over a run that is currently using this
+          // canvas. Keep the live graph as the next document revision; the
+          // workflow sync hook will persist it after this protected merge.
+          const liveSnapshot = currentWorkflowSnapshot(state);
+          const tabs = existing
+            ? state.workflowTabs.map((tab) =>
+                tab.id === normalized.id ? { ...normalized, snapshot: liveSnapshot, dirty: true } : tab,
+              )
+            : [...state.workflowTabs, { ...normalized, snapshot: liveSnapshot, dirty: true }];
+          set({ workflowTabs: tabs });
+          return;
+        }
+        const tabs = existing
+          ? state.workflowTabs.map((tab) => (tab.id === normalized.id ? { ...normalized, dirty: false } : tab))
+          : [...state.workflowTabs, { ...normalized, dirty: false }];
+        if (state.activeWorkflowTabId === normalized.id) {
+          applyWorkflowSnapshot(normalized.snapshot);
+          set({
+            workflowTabs: tabs,
+            workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
+            workflowFormEpoch: state.workflowFormEpoch + 1,
+            selectedMode: normalized.snapshot.selectedMode,
+            form: cloneJson(normalized.snapshot.studioForm),
+            graphBinding: normalized.snapshot.studioGraphBinding
+              ? cloneJson(normalized.snapshot.studioGraphBinding)
+              : null,
+            graphFinalization: null,
+            autoResourcePlan: state.autoResourcePlans[autoPlanKeyForForm(normalized.snapshot.studioForm)] ?? null,
+            activeTemplateId: normalized.snapshot.activeTemplateId,
+            sourceOutputId: normalized.snapshot.sourceOutputId,
+            pinnedGraphInputIds: normalized.snapshot.pinnedGraphInputIds ?? [],
+            autoFieldOverrides: normalized.snapshot.autoFieldOverrides ?? {},
+          });
+          return;
+        }
+        set({ workflowTabs: tabs });
+      },
+
+      removeBackendWorkflow: (id) => {
+        if (!get().workflowTabs.some((tab) => tab.id === id)) return;
+        get().closeWorkflowTab(id);
       },
 
       createAppModeConfig: (workflowTabId) => {
@@ -1921,19 +2806,53 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         get().saveActiveWorkflowTab(true);
       },
 
+      pinAutoFieldOverride: (nodeId, fieldKey, value, formKey) => {
+        const overrideKey = autoFieldOverrideKey(nodeId, fieldKey);
+        set((state) => ({
+          autoFieldOverrides: {
+            ...state.autoFieldOverrides,
+            [overrideKey]: {
+              schemaVersion: 1,
+              nodeId,
+              fieldKey,
+              ...(formKey ? { formKey } : {}),
+              value: safeCloneJson(value),
+              updatedAt: Date.now(),
+            },
+          },
+          autoResourcePlan: null,
+        }));
+        get().saveActiveWorkflowTab(true);
+      },
+
+      resetAutoFieldOverride: (nodeId, fieldKey) => {
+        const overrideKey = autoFieldOverrideKey(nodeId, fieldKey);
+        set((state) => {
+          if (!state.autoFieldOverrides[overrideKey]) return state;
+          const autoFieldOverrides = { ...state.autoFieldOverrides };
+          delete autoFieldOverrides[overrideKey];
+          return {
+            autoFieldOverrides,
+            autoResourcePlan: null,
+          };
+        });
+        get().saveActiveWorkflowTab(true);
+      },
+
       createBlueprintFromSelection: (name) => {
         const flow = useFlowStore.getState();
         const selectedNodes = flow.nodes.filter((node) => node.selected);
         if (selectedNodes.length === 0) return null;
         const nodeIds = new Set(selectedNodes.map((node) => node.id));
         const edges = flow.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+        const blueprintNodes = selectedNodes.map(blueprintNodeSnapshot);
         const blueprint: WorkflowBlueprint = {
           id: nanoid(),
           name: name?.trim() || `Blueprint ${get().blueprints.length + 1}`,
-          nodes: cloneJson(selectedNodes),
+          nodes: blueprintNodes,
           edges: cloneJson(edges),
-          exposedInputs: graphParamInputs(selectedNodes),
-          exposedOutputs: graphOutputs(selectedNodes),
+          exposedInputs: graphParamInputs(blueprintNodes),
+          exposedOutputs: graphOutputs(blueprintNodes),
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
@@ -1945,11 +2864,12 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const blueprint = get().blueprints.find((item) => item.id === id);
         if (!blueprint) return;
         const idMap = new Map<string, string>();
-        const nodes = blueprint.nodes.filter(isFlowNode).map((node) => {
+        const nodes = blueprint.nodes.filter(isCustomFlowNode).map((node) => {
           const nextId = nanoid();
           idMap.set(node.id, nextId);
+          const snapshot = blueprintNodeSnapshot(node);
           return {
-            ...cloneJson(node),
+            ...snapshot,
             id: nextId,
             selected: false,
             position: {
@@ -1996,7 +2916,6 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         negativePromptPresets: state.negativePromptPresets,
         activeTemplateId: state.activeTemplateId,
         sourceOutputId: state.sourceOutputId,
-        outputs: state.outputs,
         importedAssets: state.importedAssets,
         workflowTabs: state.workflowTabs,
         activeWorkflowTabId: state.activeWorkflowTabId,
@@ -2004,8 +2923,16 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         activeAppModeConfigId: state.activeAppModeConfigId,
         blueprints: state.blueprints,
         pinnedGraphInputIds: state.pinnedGraphInputIds,
+        autoFieldOverrides: state.autoFieldOverrides,
       }),
       merge: normalizePersistedStudioState,
+      onRehydrateStorage: () => (state) => {
+        state?.hydrateActiveWorkflowCanvas();
+      },
     },
   ),
 );
+
+export function findStudioRunContext(taskId?: string | null, clientRunId?: string | null) {
+  return matchingRunContext(useStudioStore.getState(), taskId, clientRunId);
+}

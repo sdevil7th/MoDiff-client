@@ -1,19 +1,51 @@
-import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
+import { Position, useUpdateNodeInternals } from '@xyflow/react';
+import { useShallow } from 'zustand/react/shallow';
 import { FieldProps } from '../components/NodeContent';
 import { useEffect, useRef } from 'react';
 import fieldAction, { relaySignal } from '../utils/fieldAction';
 import { dataTypeClass, normalizeDataType } from '../utils/dataTypeCategory';
 import { FieldFrame } from '../ui';
+import { useGraphFixStore } from '../stores/useGraphFixStore';
+import { cx } from '../utils/classNames';
+import { connectionColor, connectionTypeGradient, connectionTypes, edgeConnectionType } from '../theme/connectionTypes';
+import { useFlowStore } from '../stores/useFlowStore';
+import { GraphTypedHandle } from '../ui/GraphTypedHandle';
 
 export default function HandleField(props: FieldProps) {
   const type = props.fieldType === 'output' ? 'source' : 'target';
-  const position = props.fieldType === 'output' ? Position.Right : Position.Left;
+  const position = props.handlePosition ?? (props.fieldType === 'output' ? Position.Right : Position.Left);
   const textAlignClassName = props.fieldType === 'output' ? 'text-right' : 'text-left';
   const isCompact = Boolean(props.compactHandle);
   const updateNodeInternals = useUpdateNodeInternals();
   const propsRef = useRef(props);
   propsRef.current = props;
   const { fieldKey, isConnected, nodeId, onChange, onSignal, signal } = props;
+  const connectedTargetType = useFlowStore(
+    useShallow((state) => {
+      if (type !== 'target') return null;
+      const edge = state.edges.find((item) => item.target === nodeId && item.targetHandle === fieldKey);
+      return edge ? edgeConnectionType(edge, state.nodes) : null;
+    }),
+  );
+  const visualType = connectedTargetType ?? props.connectionType ?? props.dataType;
+  const handleColor = connectionColor(visualType);
+  const handleGradient = connectionTypeGradient(visualType);
+  const typeLabel = connectionTypes(visualType).join(' or ') || 'untyped';
+  const directionLabel = type === 'source' ? 'Output' : 'Input';
+  const graphFixHighlighted = useGraphFixStore((state) =>
+    Boolean(
+      (state.dialogOpen &&
+        state.issueTargets.some((target) => target.nodeId === nodeId && target.handle === fieldKey)) ||
+      state.previewCandidate?.operations.some(
+        (operation) =>
+          operation.kind === 'connect' &&
+          ((operation.source.nodeId === nodeId && operation.source.handle === fieldKey) ||
+            (operation.target.nodeId === nodeId && operation.target.handle === fieldKey)),
+      ),
+    ),
+  );
 
   useEffect(() => {
     if (onChange) {
@@ -37,18 +69,34 @@ export default function HandleField(props: FieldProps) {
       disabled={props.disabled}
       hidden={props.hidden && !props.isConnected}
       layoutStyle={props.style}
-      className={isCompact ? 'relative h-5' : 'relative'}
+      className={cx(
+        isCompact ? 'relative h-5' : 'relative',
+        graphFixHighlighted && 'bg-hf-yellow/10 ring-1 ring-inset ring-hf-yellow/70',
+      )}
     >
-      <Handle
+      <GraphTypedHandle
         id={props.fieldKey}
         type={type}
         position={position}
-        className={`${normalizeDataType(props.dataType)}-handle ${dataTypeClass(props.dataType)}`}
+        aria-label={`${directionLabel} ${props.label}, ${typeLabel}`}
+        title={`${props.label} · ${typeLabel}`}
+        data-connection-type={typeLabel}
+        data-testid={`node-handle-${nodeId}-${props.fieldKey}`}
+        connectionColor={handleColor}
+        connectionGradient={handleGradient}
+        className={cx(
+          `${normalizeDataType(visualType)}-handle`,
+          dataTypeClass(visualType),
+          graphFixHighlighted && 'ring-2 ring-hf-yellow ring-offset-2 ring-offset-modiff-bg',
+        )}
       />
       {isCompact ? (
         <span className="sr-only">{props.label}</span>
       ) : (
-        <div className={`mx-0.5 truncate px-2 text-[13px] text-gray-400 ${textAlignClassName}`} title={props.label}>
+        <div
+          className={`text-modiff-control mx-0.5 truncate px-2 text-modiff-subtle-text ${textAlignClassName}`}
+          title={props.label}
+        >
           {props.label}
         </div>
       )}

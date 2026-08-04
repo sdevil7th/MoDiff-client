@@ -1,9 +1,28 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useShallow } from 'zustand/react/shallow';
-import { ClipboardCopy, GalleryVerticalEnd, Info, Pin, PinOff, Save, Trash2, WandSparkles } from 'lucide-react';
+import {
+  AlertTriangle,
+  ClipboardCopy,
+  GalleryVerticalEnd,
+  Info,
+  Pin,
+  PinOff,
+  Save,
+  Trash2,
+  WandSparkles,
+} from 'lucide-react';
 
-import { latestOutputForWorkflow, scopedOutputsForWorkflow, useStudioStore } from '../stores/useStudioStore';
+import {
+  advanceWorkflowOperationContext,
+  assertWorkflowOperationContext,
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+  latestOutputForWorkflow,
+  scopedOutputsForWorkflow,
+  useStudioStore,
+  workflowOperationContextIsCurrent,
+} from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -12,6 +31,8 @@ import { useRunIssueStore } from '../stores/useRunIssueStore';
 import {
   createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
+  getStudioGraphRunBlockingMessage,
+  getStudioGraphShapeKey,
   inspectStudioGraphBindingDivergence,
   syncStudioGraphValues,
 } from '../studio/graphBridge';
@@ -40,7 +61,6 @@ import {
 import {
   getStudioResourceExecutionPathLabel,
   resolveStudioResourcePlan,
-  STUDIO_RESOURCE_DESCRIPTIONS,
   STUDIO_RESOURCE_LABELS,
   STUDIO_RESOURCE_MODES,
 } from '../studio/resourcePlanner';
@@ -72,9 +92,12 @@ import { requestExecutionStop } from '../utils/serverActions';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun, useStudioRunActions } from '../studio/useStudioRunActions';
+import { syncManagedNodeControlChange } from '../studio/managedControlSync';
 import { diffStudioFormValues, formatStudioFieldValue, publishStudioChange } from '../studio/presetDiff';
 import {
   ActionStatusRow,
+  ModiffDisclosure,
+  ModiffFieldShell,
   SectionHeader,
   StatusBox,
   StatusActionChip,
@@ -101,23 +124,6 @@ const ASPECT_OPTIONS: { label: StudioAspectRatio; width: number; height: number 
 ];
 
 const MODE_OPTIONS = Object.keys(STUDIO_MODE_LABELS).filter((mode) => mode !== 'advanced_workflow') as StudioMode[];
-const AUTO_PIN_KEYWORDS = [
-  'prompt',
-  'negative',
-  'model',
-  'repo',
-  'seed',
-  'step',
-  'width',
-  'height',
-  'guidance',
-  'cfg',
-  'strength',
-  'source',
-  'reference',
-  'control',
-  'mask',
-];
 
 function numberValue(value: string, fallback: number) {
   const parsed = Number(value);
@@ -133,6 +139,8 @@ export default function StudioPanel() {
   const [isWorking, setIsWorking] = useState(false);
   const [autoPlanChecking, setAutoPlanChecking] = useState(false);
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
+  const [stickyHeaderHeight, setStickyHeaderHeight] = useState(0);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setLightboxOpener = useSettingsStore((state) => state.setLightboxOpener);
@@ -153,8 +161,8 @@ export default function StudioPanel() {
     runtimeStatus,
     nodesRegistry,
     hfDownloadProgress,
+    studioModelCapabilities,
     installHfModel,
-    fetchRuntimeStatus,
   } = useNodesStore(
     useShallow((state) => ({
       hfCache: state.hfCache,
@@ -163,8 +171,8 @@ export default function StudioPanel() {
       runtimeStatus: state.runtimeStatus,
       nodesRegistry: state.nodesRegistry,
       hfDownloadProgress: state.hfDownloadProgress,
+      studioModelCapabilities: state.studioModelCapabilities,
       installHfModel: state.installHfModel,
-      fetchRuntimeStatus: state.fetchRuntimeStatus,
     })),
   );
   const {
@@ -180,15 +188,16 @@ export default function StudioPanel() {
     lastError,
     recentChange,
     pinnedGraphInputIds,
+    workflowCanvasHydrated,
+    launcherDismissed,
     applyPreset,
     addPromptHistory,
-    setPinnedGraphInputIds,
     togglePinnedGraphInput,
-    setAutoResourcePlan,
     saveCurrentPromptAsSnippet,
     removeSnippet,
     applySnippet,
     applyNegativePreset,
+    detachManagedGraph,
   } = useStudioStore(
     useShallow((state) => ({
       form: state.form,
@@ -203,15 +212,16 @@ export default function StudioPanel() {
       lastError: state.lastError,
       recentChange: state.recentChange,
       pinnedGraphInputIds: state.pinnedGraphInputIds,
+      workflowCanvasHydrated: state.workflowCanvasHydrated,
+      launcherDismissed: state.launcherDismissed,
       applyPreset: state.applyPreset,
       addPromptHistory: state.addPromptHistory,
-      setPinnedGraphInputIds: state.setPinnedGraphInputIds,
       togglePinnedGraphInput: state.togglePinnedGraphInput,
-      setAutoResourcePlan: state.setAutoResourcePlan,
       saveCurrentPromptAsSnippet: state.saveCurrentPromptAsSnippet,
       removeSnippet: state.removeSnippet,
       applySnippet: state.applySnippet,
       applyNegativePreset: state.applyNegativePreset,
+      detachManagedGraph: state.detachManagedGraph,
     })),
   );
 
@@ -241,9 +251,17 @@ export default function StudioPanel() {
   const resourcePlan = useMemo(() => resolveStudioResourcePlan(form, { runtimeStatus }), [form, runtimeStatus]);
   const resourcePathLabel = getStudioResourceExecutionPathLabel(resourcePlan);
   const expertResourceMode = studioViewMode === 'expert';
-  const selectedAutoPlanCandidate = selectedAutoCandidate(autoResourcePlan);
+  const autoPlanExecution = useMemo(
+    () => ({
+      device: form.device,
+      autoOffload: form.autoOffload,
+      offloadMode: form.offloadMode,
+    }),
+    [form.autoOffload, form.device, form.offloadMode],
+  );
+  const selectedAutoPlanCandidate = selectedAutoCandidate(autoResourcePlan, autoPlanExecution);
   const autoResourceChecking = autoPlanChecking || autoResourceCheck.status !== 'idle';
-  const autoPlanReady = form.resourceMode !== 'auto' || autoPlanIsReady(autoResourcePlan);
+  const autoPlanReady = form.resourceMode !== 'auto' || autoPlanIsReady(autoResourcePlan, autoPlanExecution);
   const autoPlanStatusLabel =
     form.resourceMode === 'auto'
       ? (autoResourceCheck.message ?? autoResourcePlan?.statusLabel ?? 'Checking hardware')
@@ -257,8 +275,19 @@ export default function StudioPanel() {
     : null;
   const graphBinding = useStudioStore((state) => state.graphBinding);
   const graphFinalization = useStudioStore((state) => state.graphFinalization);
-  const graphBindingFingerprint = graphBinding?.fingerprint;
-  const autoPlanCheckedAt = autoResourcePlan?.checkedAt;
+  const managedGraphRunBlockingMessage = graphBinding ? getStudioGraphRunBlockingMessage(form) : null;
+  const displayedGraphFinalization =
+    graphFinalization ??
+    (managedGraphRunBlockingMessage
+      ? {
+          status: 'warning' as const,
+          message: managedGraphRunBlockingMessage,
+        }
+      : null);
+  const canvasTransition = useStudioStore((state) => state.canvasTransition);
+  const templateGraphPreparing = Boolean(
+    canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId,
+  );
   const graphInspectionSignature = useFlowStore(
     useShallow((state) => ({
       nodes: state.nodes
@@ -279,11 +308,18 @@ export default function StudioPanel() {
   );
   void graphInspectionSignature;
   const graphInspection = inspectCurrentGraph();
-  const graphDivergence = graphBinding ? inspectStudioGraphBindingDivergence(graphBinding) : null;
+  const graphDivergence =
+    workflowCanvasHydrated && !templateGraphPreparing && graphBinding
+      ? inspectStudioGraphBindingDivergence(graphBinding)
+      : null;
   const graphDivergenceKey = graphDivergence
     ? `${graphDivergence.kind}:${graphDivergence.details ?? graphDivergence.message}`
     : '';
-  const customGraphMode = (!graphBinding && graphInspection.nodeCount > 0) || Boolean(graphDivergence);
+  const customGraphMode =
+    workflowCanvasHydrated &&
+    !templateGraphPreparing &&
+    ((!graphBinding && graphInspection.nodeCount > 0) || Boolean(graphDivergence));
+  const showExactNodeInspector = customGraphMode || studioViewMode === 'expert';
   const customGraphModelText =
     graphInspection.modelRefs.length > 0
       ? `${new Set(graphInspection.modelRefs.map((reference) => `${reference.kind}:${reference.value}`)).size} model refs`
@@ -297,55 +333,44 @@ export default function StudioPanel() {
         ? `${runReadiness.warningIssues.length} warning${runReadiness.warningIssues.length === 1 ? '' : 's'}`
         : undefined;
   const graphNodes = useFlowStore(useShallow((state) => state.nodes));
+  const emptyWorkflow =
+    workflowCanvasHydrated && !templateGraphPreparing && !launcherDismissed && !graphBinding && graphNodes.length === 0;
   const selectedGraphNodes = useMemo(() => graphNodes.filter((node) => node.selected), [graphNodes]);
-  const selectedGraphNode = selectedGraphNodes.length === 1 ? selectedGraphNodes[0] : null;
-  const selectedGraphNodeId = selectedGraphNode?.id ?? null;
-  const selectedGraphNodeLabel = selectedGraphNode
-    ? selectedGraphNode.data.label || `${selectedGraphNode.data.module}.${selectedGraphNode.data.action}`
-    : '';
-  const selectedGraphNodeEditableCount = selectedGraphNode
-    ? Object.values(selectedGraphNode.data.params).filter((param) => {
-        const display = param.isInput ? 'input' : param.display || '';
-        return display !== 'input' && display !== 'output' && !param.hidden;
-      }).length
-    : 0;
-  const graphInputCandidates = useMemo(() => graphParamInputCandidates(graphNodes), [graphNodes]);
-  const autoPinnedGraphInputIds = useMemo(() => autoPinnedInputIds(graphInputCandidates), [graphInputCandidates]);
-  const effectivePinnedGraphInputIds =
-    pinnedGraphInputIds.length > 0
-      ? pinnedGraphInputIds.filter((id) => graphInputCandidates.some((input) => input.id === id))
-      : autoPinnedGraphInputIds;
+  const inspectExactNode = showExactNodeInspector || selectedGraphNodes.length > 0;
+  const graphInputCandidates = useMemo(
+    () => (inspectExactNode ? graphParamInputCandidates(graphNodes) : []),
+    [graphNodes, inspectExactNode],
+  );
+  const effectivePinnedGraphInputIds = pinnedGraphInputIds.filter((id) =>
+    graphInputCandidates.some((input) => input.id === id),
+  );
   const pinnedGraphInputs = useMemo(() => {
     const ids = new Set(effectivePinnedGraphInputIds);
     return graphInputCandidates.filter((input) => ids.has(input.id));
   }, [effectivePinnedGraphInputIds, graphInputCandidates]);
-  useEffect(() => {
-    if (pinnedGraphInputIds.length > 0 || autoPinnedGraphInputIds.length === 0 || graphNodes.length === 0) return;
-    setPinnedGraphInputIds(autoPinnedGraphInputIds);
-  }, [autoPinnedGraphInputIds, graphNodes.length, pinnedGraphInputIds.length, setPinnedGraphInputIds]);
-  const updateSelectedGraphNodeParam = useCallback(
-    (param: string, value: unknown, key?: keyof NodeParams) => {
-      if (!selectedGraphNodeId) return;
-      useFlowStore.getState().setParam(selectedGraphNodeId, param, value, key);
-    },
-    [selectedGraphNodeId],
-  );
-  const { capability, compatibleModels, showImageTray, supportsMask, inpaintContract, missingInstallTarget } =
-    useStudioReadiness({
-      form,
-      hfCache,
-      localModels,
-      modelCacheDiagnostics,
-      runtimeStatus,
-      nodesRegistry,
-      hfDownloadProgress,
-      isConnected,
-      autoResourcePlan,
-    });
+  const {
+    capability,
+    compatibleModels,
+    compatibleModes,
+    showImageTray,
+    supportsMask,
+    inpaintContract,
+    missingInstallTarget,
+  } = useStudioReadiness({
+    form,
+    hfCache,
+    localModels,
+    modelCacheDiagnostics,
+    runtimeStatus,
+    nodesRegistry,
+    hfDownloadProgress,
+    isConnected,
+    autoResourcePlan,
+    backendCapabilities: studioModelCapabilities,
+  });
   const runBlockedReason = runReadiness.blockingIssues[0]?.message ?? '';
   const runControlsBlocked = !runReadiness.canRun;
-  const showPinnedInputs = selectedGraphNodes.length === 0 && graphNodes.length > 0;
-  const showFullStudioForm = !customGraphMode && graphNodes.length === 0;
+  const showFullStudioForm = !customGraphMode && !emptyWorkflow;
   const showStudioResourceHeader = false;
   const {
     updateAndSync,
@@ -364,6 +389,11 @@ export default function StudioPanel() {
   });
 
   useEffect(() => {
+    // Template creation publishes its managed graph only after dynamic fields,
+    // layout, and saved-tab state are stable. Validating the deliberately hidden
+    // intermediate graph would briefly surface false structure/model issues in
+    // the right panel and paint those issues onto nodes before reveal.
+    if (!workflowCanvasHydrated || templateGraphPreparing) return;
     validateCurrentRun({ sid, isConnected, includeStudio: true, showDialog: false });
   }, [
     sid,
@@ -376,67 +406,28 @@ export default function StudioPanel() {
     modelCacheDiagnostics,
     runtimeStatus,
     nodesRegistry,
+    templateGraphPreparing,
+    workflowCanvasHydrated,
   ]);
 
   useEffect(() => {
-    if (!graphBinding || !graphDivergence || graphFinalization?.status === 'pending') return;
-    useStudioStore.getState().clearGraphBinding();
-  }, [graphBinding, graphDivergenceKey, graphDivergence, graphFinalization?.status]);
-
-  useEffect(() => {
-    if (isConnected) {
-      void fetchRuntimeStatus();
+    if (
+      !graphBinding ||
+      !graphDivergence ||
+      graphFinalization?.status === 'pending' ||
+      canvasTransition?.type === 'template_graph_building'
+    ) {
+      return;
     }
-  }, [fetchRuntimeStatus, isConnected]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (form.resourceMode !== 'auto') {
-      setAutoResourcePlan(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const timer = window.setTimeout(() => {
-      void fetchAutoResourcePlan(form)
-        .then((plan) => {
-          if (!cancelled) setAutoResourcePlan(plan);
-        })
-        .catch((error) => {
-          if (!cancelled) {
-            setAutoResourcePlan({
-              error: true,
-              status: 'needs_setup',
-              statusLabel: 'Needs setup',
-              message: String(error),
-            });
-          }
-        });
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [form, setAutoResourcePlan]);
-
-  useEffect(() => {
-    if (form.resourceMode !== 'auto' || !graphBindingFingerprint || !autoPlanIsReady(autoResourcePlan)) return;
-    const candidate = selectedAutoCandidate(autoResourcePlan);
-    const currentForm = useStudioStore.getState().form;
-    const patch = formPatchForAutoCandidate(candidate, currentForm);
-    const changed = Object.entries(patch).some(([key, value]) => currentForm[key as keyof StudioFormState] !== value);
-    if (changed) {
-      useStudioStore.getState().updateForm(patch);
-      useStudioStore.getState().setAutoResourcePlan(autoResourcePlan);
-    }
-    const nextForm = useStudioStore.getState().form;
-    syncStudioGraphValues(nextForm);
-    void createOrUpdateStudioGraph(nextForm).catch((error) => {
-      useStudioStore.getState().setLastError(String(error));
-    });
-  }, [autoPlanCheckedAt, form.resourceMode, graphBindingFingerprint, autoResourcePlan]);
+    detachManagedGraph();
+  }, [
+    canvasTransition?.type,
+    detachManagedGraph,
+    graphBinding,
+    graphDivergence,
+    graphDivergenceKey,
+    graphFinalization?.status,
+  ]);
 
   useEffect(() => {
     if (!runtimeStatus) return;
@@ -453,14 +444,17 @@ export default function StudioPanel() {
 
   const applyAutoCandidateToGraph = useCallback(async () => {
     if (form.resourceMode !== 'auto') return null;
+    const context = captureWorkflowOperationContext();
     setAutoPlanChecking(true);
     try {
-      const currentPlan = autoPlanIsReady(useStudioStore.getState().autoResourcePlan)
+      const liveForm = useStudioStore.getState().form;
+      const currentPlan = autoPlanIsReady(useStudioStore.getState().autoResourcePlan, liveForm)
         ? useStudioStore.getState().autoResourcePlan
-        : await fetchAutoResourcePlan(useStudioStore.getState().form);
-      useStudioStore.getState().setAutoResourcePlan(currentPlan);
+        : await fetchAutoResourcePlan(liveForm);
+      assertWorkflowOperationContext(context);
 
-      if (!currentPlan || !autoPlanIsReady(currentPlan)) {
+      if (!currentPlan || !autoPlanIsReady(currentPlan, liveForm)) {
+        useStudioStore.getState().setAutoResourcePlan(currentPlan);
         const message =
           currentPlan?.blockingReason || currentPlan?.message || 'Auto could not choose a runnable local plan yet.';
         useStudioStore.getState().setLastError(message);
@@ -468,18 +462,24 @@ export default function StudioPanel() {
         return null;
       }
 
-      const candidate = selectedAutoCandidate(currentPlan);
-      const patch = formPatchForAutoCandidate(candidate, useStudioStore.getState().form);
-      if (Object.keys(patch).length > 0) {
-        useStudioStore.getState().updateForm(patch);
-        useStudioStore.getState().setAutoResourcePlan(currentPlan);
-        const nextForm = useStudioStore.getState().form;
-        syncStudioGraphValues(nextForm);
-        await createOrUpdateStudioGraph(nextForm);
+      const currentForm = useStudioStore.getState().form;
+      const previousShapeKey = getStudioGraphShapeKey(currentForm);
+      const candidate = selectedAutoCandidate(currentPlan, currentForm);
+      const patch = formPatchForAutoCandidate(candidate, currentForm);
+      useStudioStore.getState().applyAutoResourcePlan(currentPlan, patch);
+      advanceWorkflowOperationContext(context);
+      const nextForm = useStudioStore.getState().form;
+      syncStudioGraphValues(nextForm);
+      if (previousShapeKey !== getStudioGraphShapeKey(nextForm)) {
+        await createOrUpdateStudioGraph(nextForm, context);
+      } else {
+        await ensureStudioGraphReadyForRun(nextForm, context);
       }
+      assertWorkflowOperationContext(context);
       enqueueSnackbar('Auto plan refreshed.', { variant: 'success', autoHideDuration: 2200 });
       return currentPlan;
     } catch (error) {
+      if (isWorkflowOperationCancelled(error)) return null;
       const message = String(error);
       useStudioStore.getState().setLastError(message);
       enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
@@ -609,13 +609,16 @@ export default function StudioPanel() {
     setIsWorking(true);
     try {
       useStudioStore.getState().restoreWorkflowFromOutput(latest);
-      const autoReady = await ensureStudioAutoPlanReadyForRun();
+      const context = captureWorkflowOperationContext();
+      const autoReady = await ensureStudioAutoPlanReadyForRun(context);
       if (!autoReady) return;
       await coordinateGraphRun({
         sid,
         studioContext: { forceDeterministic: !latest.formSnapshot.randomSeed },
+        workflowContext: context,
       });
     } catch (error) {
+      if (isWorkflowOperationCancelled(error)) return;
       enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 });
     } finally {
       setIsWorking(false);
@@ -651,21 +654,26 @@ export default function StudioPanel() {
         ...useStudioStore.getState().form,
         referenceImages: [...useStudioStore.getState().form.referenceImages],
       };
+      const context = captureWorkflowOperationContext();
       const variationGroupId = `sweep-${Date.now()}`;
       setIsWorking(true);
       useStudioStore.getState().addPromptHistory(baseForm.prompt);
 
       try {
         for (const variation of variations) {
+          assertWorkflowOperationContext(context);
           const nextValues = { ...variation.values, randomSeed: false };
-          const nextForm = { ...useStudioStore.getState().form, ...nextValues };
           useStudioStore.getState().updateForm(nextValues);
+          advanceWorkflowOperationContext(context);
+          const nextForm = useStudioStore.getState().form;
           syncStudioGraphValues(nextForm);
-          await ensureStudioGraphReadyForRun(nextForm);
-          const autoReady = await ensureStudioAutoPlanReadyForRun();
+          const autoReady = await ensureStudioAutoPlanReadyForRun(context);
           if (!autoReady) break;
+          await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
+          assertWorkflowOperationContext(context);
           const { response } = await coordinateGraphRun({
             sid,
+            workflowContext: context,
             studioContext: {
               forceDeterministic: true,
               variation: {
@@ -674,6 +682,7 @@ export default function StudioPanel() {
               },
             },
           });
+          assertWorkflowOperationContext(context);
           if (response.error) {
             useStudioStore.getState().setLastError(response.message || 'MoDiff could not queue this sweep variation.');
             break;
@@ -681,40 +690,74 @@ export default function StudioPanel() {
         }
         enqueueSnackbar('Variation sweep queued', { variant: 'success', autoHideDuration: 2200 });
       } catch (error) {
+        if (isWorkflowOperationCancelled(error)) return;
         const message = String(error);
         useStudioStore.getState().setLastError(message);
         enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
       } finally {
-        useStudioStore.getState().updateForm(baseForm);
-        syncStudioGraphValues(baseForm);
-        await createOrUpdateStudioGraph(baseForm).catch(() => undefined);
+        if (workflowOperationContextIsCurrent(context)) {
+          useStudioStore.getState().updateForm(baseForm);
+          advanceWorkflowOperationContext(context);
+          syncStudioGraphValues(baseForm);
+          await createOrUpdateStudioGraph(baseForm, context).catch((error) => {
+            if (!isWorkflowOperationCancelled(error)) console.error('Could not restore the sweep graph', error);
+          });
+        }
         setIsWorking(false);
       }
     },
     [isConnected, runBlockedReason, sid],
   );
 
+  useLayoutEffect(() => {
+    const header = stickyHeaderRef.current;
+    if (!header) return undefined;
+
+    const syncHeaderHeight = () => {
+      const nextHeight = Math.ceil(header.getBoundingClientRect().height);
+      setStickyHeaderHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
+    };
+
+    syncHeaderHeight();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    let animationFrame = 0;
+    const observer = new ResizeObserver(() => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(syncHeaderHeight);
+    });
+    observer.observe(header);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <div className="flex flex-col gap-3 p-3" data-testid="studio-panel">
-      <div className="sticky top-0 z-20 -mx-3 -mt-3 grid gap-2 border-b border-modiff-border bg-modiff-bg/95 p-3 shadow-modiff-node">
+      <div
+        ref={stickyHeaderRef}
+        className="sticky top-0 z-20 -mx-3 -mt-3 grid gap-2 border-b border-modiff-border bg-modiff-bg p-3 shadow-modiff-node"
+        data-testid="studio-sticky-header"
+      >
         {showStudioResourceHeader &&
           !customGraphMode &&
           (expertResourceMode ? (
-            <div className="grid gap-1.5 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2">
-              <div className="flex items-center justify-between gap-2">
-                <label
-                  htmlFor="studio-header-resource-mode"
-                  className="text-xs font-semibold uppercase text-modiff-muted"
-                >
-                  Resource mode
-                </label>
-                <span
-                  data-testid="studio-resource-path-badge"
-                  className="shrink-0 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 py-1 text-xs font-semibold text-modiff-muted"
-                >
-                  {resourcePathLabel}
+            <ModiffFieldShell
+              htmlFor="studio-header-resource-mode"
+              className="grid gap-1.5 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2"
+              label={
+                <span className="flex items-center justify-between gap-2">
+                  <span>Resource mode</span>
+                  <span
+                    data-testid="studio-resource-path-badge"
+                    className="shrink-0 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 py-1 text-xs font-semibold text-modiff-subtle-text"
+                  >
+                    {resourcePathLabel}
+                  </span>
                 </span>
-              </div>
+              }
+              labelClassName="block uppercase"
+            >
               <div className="flex items-center gap-2">
                 <StudioSelect
                   id="studio-header-resource-mode"
@@ -722,16 +765,14 @@ export default function StudioPanel() {
                   className="flex-1"
                   data-testid="studio-header-resource-mode-select"
                   value={form.resourceMode}
-                  onChange={(event) => {
-                    void handleResourceModeChange(event.target.value as StudioResourceMode);
+                  onValueChange={(value) => {
+                    void handleResourceModeChange(value as StudioResourceMode);
                   }}
-                >
-                  {STUDIO_RESOURCE_MODES.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {STUDIO_RESOURCE_LABELS[mode]}
-                    </option>
-                  ))}
-                </StudioSelect>
+                  options={STUDIO_RESOURCE_MODES.map((mode) => ({
+                    value: mode,
+                    label: STUDIO_RESOURCE_LABELS[mode],
+                  }))}
+                />
                 <StudioButton
                   tone="ghost"
                   className="min-h-8 px-2 text-xs"
@@ -748,7 +789,7 @@ export default function StudioPanel() {
               {form.resourceMode === 'auto' ? (
                 <div className="grid gap-1 text-xs">
                   <div className="flex items-center justify-between gap-2">
-                    <span className={autoPlanReady ? 'text-modiff-green' : 'text-modiff-muted'}>
+                    <span className={autoPlanReady ? 'text-modiff-green' : 'text-modiff-subtle-text'}>
                       {autoPlanStatusLabel}
                     </span>
                     <StudioButton
@@ -791,6 +832,21 @@ export default function StudioPanel() {
                         <ReadinessPill title={selectedAutoPlanSummary ?? undefined}>
                           {selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps
                         </ReadinessPill>
+                        {selectedAutoPlanCandidate.artifactResolution?.substituted ||
+                        selectedAutoPlanCandidate.compatibilityEvidence?.level !== 'ran_here' ? (
+                          <StudioIconButton
+                            size="compact"
+                            className="rounded-full border border-hf-yellow/60 bg-hf-yellow/10 text-hf-yellow hover:bg-hf-yellow/20 hover:text-hf-yellow"
+                            title="Open model compatibility details"
+                            data-testid="studio-compatibility-warning"
+                            onClick={() => {
+                              setRightPanelOpen(true);
+                              setRightPanelTab('compatibility');
+                            }}
+                          >
+                            <AlertTriangle size={13} />
+                          </StudioIconButton>
+                        ) : null}
                       </div>
                     </>
                   ) : (
@@ -806,7 +862,7 @@ export default function StudioPanel() {
                   )}
                 </div>
               ) : null}
-            </div>
+            </ModiffFieldShell>
           ) : (
             <div
               className="flex flex-wrap items-center gap-1.5 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2"
@@ -882,36 +938,42 @@ export default function StudioPanel() {
           }}
           onCompareLatest={compareLatestOutputs}
         />
-        {graphFinalization && graphFinalization.status !== 'complete' && graphFinalization.status !== 'idle' && (
-          <StatusBox
-            severity={
-              graphFinalization.status === 'error'
-                ? 'error'
-                : graphFinalization.status === 'warning'
-                  ? 'warning'
-                  : 'info'
-            }
-            testId="studio-graph-finalization"
-          >
-            <p className="text-xs font-semibold text-modiff-text">
-              {graphFinalization.status === 'pending'
-                ? 'Finalizing graph...'
-                : graphFinalization.status === 'warning'
-                  ? 'Graph still finalizing'
-                  : 'Graph finalization failed'}
-            </p>
-            <p className="mt-1 text-xs text-modiff-muted">
-              {graphFinalization.message || 'Preparing dynamic fields and managed links in the background.'}
-            </p>
-          </StatusBox>
-        )}
+        {displayedGraphFinalization &&
+          displayedGraphFinalization.status !== 'complete' &&
+          displayedGraphFinalization.status !== 'idle' && (
+            <StatusBox
+              severity={
+                displayedGraphFinalization.status === 'error'
+                  ? 'error'
+                  : displayedGraphFinalization.status === 'warning'
+                    ? 'warning'
+                    : 'info'
+              }
+              testId="studio-graph-finalization"
+            >
+              <p className="text-xs font-semibold text-modiff-text">
+                {displayedGraphFinalization.status === 'pending'
+                  ? 'Finalizing graph...'
+                  : displayedGraphFinalization.status === 'warning'
+                    ? 'Graph still finalizing'
+                    : 'Graph finalization failed'}
+              </p>
+              <p className="mt-1 text-xs text-modiff-subtle-text">
+                {displayedGraphFinalization.message || 'Preparing dynamic fields and managed links in the background.'}
+              </p>
+            </StatusBox>
+          )}
         {lastError && (
           <StatusBox severity="error">
             <div className="flex items-start gap-2">
-              <details className="min-w-0 flex-1">
-                <summary className="cursor-pointer list-none text-xs font-semibold text-modiff-red">Last error</summary>
+              <ModiffDisclosure
+                className="min-w-0 flex-1"
+                label="Last error"
+                buttonClassName="min-h-0 justify-start p-0 text-xs text-modiff-invalid hover:bg-transparent"
+                panelClassName="mt-1"
+              >
                 <p className="mt-1 max-h-28 overflow-auto break-words text-xs text-modiff-red">{lastError}</p>
-              </details>
+              </ModiffDisclosure>
               <StudioIconButton title="Copy error" onClick={() => copyText(lastError, 'Error')}>
                 <ClipboardCopy size={15} />
               </StudioIconButton>
@@ -921,126 +983,17 @@ export default function StudioPanel() {
       </div>
 
       <StudioSection id="task" title="Task" defaultOpen>
-        <div className="grid gap-2">
+        {emptyWorkflow ? (
           <div
-            className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
-            data-testid="studio-task-model-summary"
+            className="grid gap-3 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
+            data-testid="studio-empty-workflow"
           >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase text-modiff-muted">
-                  {customGraphMode ? 'Current graph' : 'Current task'}
-                </p>
-                <h2 className="truncate text-base font-bold text-modiff-text">
-                  {customGraphMode ? 'Custom graph' : STUDIO_MODE_LABELS[form.mode]}
-                </h2>
-              </div>
-              <div className="min-w-0 text-right">
-                <p className="text-xs font-semibold uppercase text-modiff-muted">
-                  {customGraphMode ? 'Graph models' : 'Selected model'}
-                </p>
-                <div className="flex items-center justify-end gap-1">
-                  <h3 className="truncate text-base font-bold text-hf-yellow">
-                    {customGraphMode ? customGraphModelText : selectedModelName}
-                  </h3>
-                  {!customGraphMode && (
-                    <StudioIconButton className="size-6" title={selectedModelInfo}>
-                      <Info size={13} />
-                    </StudioIconButton>
-                  )}
-                </div>
-              </div>
+            <div>
+              <p className="text-sm font-semibold text-modiff-text">No task or model selected</p>
+              <p className="mt-1 text-xs leading-5 text-modiff-subtle-text">
+                Choose a task in the canvas, browse templates, or add a node from the Nodes panel to build manually.
+              </p>
             </div>
-          </div>
-          {showFullStudioForm && (
-            <>
-              <StudioSelect
-                value={form.mode}
-                data-testid="studio-task-select"
-                onChange={(event) => {
-                  void handleModeChange(event.target.value as StudioMode);
-                }}
-              >
-                {MODE_OPTIONS.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {STUDIO_MODE_LABELS[mode]}
-                  </option>
-                ))}
-              </StudioSelect>
-              <StudioSelect
-                value={form.modelType}
-                data-testid="studio-model-select"
-                onChange={(event) => {
-                  handleModelTypeChange(event.target.value as StudioModelType);
-                }}
-              >
-                {compatibleModels.map((modelType) => (
-                  <option key={modelType} value={modelType}>
-                    {STUDIO_MODEL_LABELS[modelType]}
-                  </option>
-                ))}
-              </StudioSelect>
-            </>
-          )}
-          <ActionStatusRow
-            tone={runReadinessSummary.tone}
-            title={
-              studioReadinessMeta ? `${runReadinessSummary.title} - ${studioReadinessMeta}` : runReadinessSummary.title
-            }
-            meta={runReadiness.primaryIssue?.message}
-            testId="studio-run-readiness"
-            onClick={runReadiness.issues.length > 0 ? handleReviewRunIssues : undefined}
-          />
-          {selectedGraphNodes.length > 0 ? (
-            <div
-              className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
-              data-testid="studio-custom-graph-inspector"
-            >
-              {selectedGraphNodes.length > 1 ? (
-                <StatusLine>One node at a time</StatusLine>
-              ) : selectedGraphNode ? (
-                <div className="grid gap-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase text-modiff-muted">Selected node</span>
-                    <span
-                      className="min-w-0 truncate text-sm font-semibold text-modiff-text"
-                      title={selectedGraphNodeLabel}
-                    >
-                      {selectedGraphNodeLabel}
-                    </span>
-                  </div>
-                  {selectedGraphNodeEditableCount > 0 ? (
-                    <div className="grid gap-1">
-                      <NodeContent
-                        nodeId={selectedGraphNode.id}
-                        params={selectedGraphNode.data.params}
-                        updateStore={updateSelectedGraphNodeParam}
-                        module={selectedGraphNode.data.module}
-                        action={selectedGraphNode.data.action}
-                        hideHandles
-                        executionStatus={selectedGraphNode.data.executionStatus}
-                        progressMessage={selectedGraphNode.data.progressMessage}
-                        uiStateMessage={
-                          selectedGraphNode.data.uiState?.validationMessage ??
-                          selectedGraphNode.data.uiState?.errorMessage
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <StatusLine>No editable params</StatusLine>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          ) : showPinnedInputs ? (
-            <PinnedGraphInputs
-              candidates={graphInputCandidates}
-              pinnedInputs={pinnedGraphInputs}
-              pinnedIds={effectivePinnedGraphInputIds}
-              onTogglePin={togglePinnedGraphInput}
-            />
-          ) : null}
-          {graphNodes.length === 0 ? (
             <StudioButton
               fullWidth
               tone="secondary"
@@ -1048,10 +1001,108 @@ export default function StudioPanel() {
               data-testid="studio-open-template-browser"
               onClick={openTemplateGallery}
             >
-              Templates
+              Browse templates
             </StudioButton>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <div className="grid gap-2">
+            <div
+              className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
+              data-testid="studio-task-model-summary"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase text-modiff-subtle-text">
+                    {customGraphMode ? 'Current graph' : 'Current task'}
+                  </p>
+                  <h2 className="truncate text-base font-bold text-modiff-text">
+                    {customGraphMode ? 'Custom graph' : STUDIO_MODE_LABELS[form.mode]}
+                  </h2>
+                </div>
+                <div className="min-w-0 text-right">
+                  <p className="text-xs font-semibold uppercase text-modiff-subtle-text">
+                    {customGraphMode ? 'Graph models' : 'Selected model'}
+                  </p>
+                  <div className="flex items-center justify-end gap-1">
+                    <h3 className="truncate text-base font-bold text-hf-yellow">
+                      {customGraphMode ? customGraphModelText : selectedModelName}
+                    </h3>
+                    {!customGraphMode && (
+                      <StudioIconButton title={selectedModelInfo}>
+                        <Info size={13} />
+                      </StudioIconButton>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {showFullStudioForm && (
+              <>
+                <StudioSelect
+                  aria-label="Task"
+                  value={form.mode}
+                  data-testid="studio-task-select"
+                  onValueChange={(value) => {
+                    void handleModeChange(value as StudioMode);
+                  }}
+                  options={(compatibleModes.length > 0 ? compatibleModes : MODE_OPTIONS).map((mode) => ({
+                    value: mode,
+                    label: STUDIO_MODE_LABELS[mode],
+                  }))}
+                />
+                <StudioSelect
+                  aria-label="Model"
+                  value={form.modelType}
+                  data-testid="studio-model-select"
+                  onValueChange={(value) => {
+                    handleModelTypeChange(value as StudioModelType);
+                  }}
+                  options={compatibleModels.map((modelType) => ({
+                    value: modelType,
+                    label: STUDIO_MODEL_LABELS[modelType],
+                  }))}
+                />
+              </>
+            )}
+            {templateGraphPreparing ? (
+              <ActionStatusRow tone="info" title="Preparing graph" testId="studio-run-readiness" />
+            ) : (
+              <ActionStatusRow
+                tone={runReadinessSummary.tone}
+                title={
+                  studioReadinessMeta
+                    ? `${runReadinessSummary.title} - ${studioReadinessMeta}`
+                    : runReadinessSummary.title
+                }
+                meta={runReadiness.primaryIssue?.message}
+                testId="studio-run-readiness"
+                onClick={runReadiness.issues.length > 0 ? handleReviewRunIssues : undefined}
+              />
+            )}
+            {inspectExactNode && graphNodes.length > 0 ? (
+              <GraphNodeInputs
+                candidates={graphInputCandidates}
+                nodes={graphNodes}
+                pinnedInputs={pinnedGraphInputs}
+                pinnedIds={effectivePinnedGraphInputIds}
+                selectedNodes={selectedGraphNodes}
+                workflowId={activeWorkflowTabId}
+                onTogglePin={togglePinnedGraphInput}
+              />
+            ) : null}
+            {graphNodes.length === 0 ? (
+              <StudioButton
+                fullWidth
+                tone="secondary"
+                icon={<GalleryVerticalEnd size={15} />}
+                data-testid="studio-open-template-browser"
+                onClick={openTemplateGallery}
+              >
+                Templates
+              </StudioButton>
+            ) : null}
+          </div>
+        )}
       </StudioSection>
 
       {showFullStudioForm && (
@@ -1061,7 +1112,9 @@ export default function StudioPanel() {
               id="prompt"
               title="Prompt"
               defaultOpen
-              className="sticky top-32 z-10 rounded-modiff-panel border border-modiff-border bg-modiff-bg/95 px-2 pb-2 shadow-modiff-node backdrop-blur"
+              testId="studio-sticky-prompt"
+              className="sticky z-10 rounded-modiff-panel border border-modiff-border bg-modiff-bg px-2 pb-2 shadow-modiff-node before:absolute before:-inset-x-3 before:-top-3 before:h-3 before:bg-modiff-bg before:content-['']"
+              stickyTop={stickyHeaderHeight + 12}
             >
               <div data-testid="studio-prompt-input">
                 <StudioInput
@@ -1071,14 +1124,16 @@ export default function StudioPanel() {
                   onChange={(value) => updateAndSync({ prompt: value })}
                 />
               </div>
-              <div data-testid="studio-negative-prompt-input">
-                <StudioInput
-                  label="Negative prompt"
-                  value={form.negativePrompt}
-                  multiline
-                  onChange={(value) => updateAndSync({ negativePrompt: value })}
-                />
-              </div>
+              {capability.supportsNegativePrompt !== false && (
+                <div data-testid="studio-negative-prompt-input">
+                  <StudioInput
+                    label="Negative prompt"
+                    value={form.negativePrompt}
+                    multiline
+                    onChange={(value) => updateAndSync({ negativePrompt: value })}
+                  />
+                </div>
+              )}
               <div className="flex gap-2">
                 <StudioButton tone="ghost" icon={<Save size={15} />} onClick={saveCurrentPromptAsSnippet}>
                   Snippet
@@ -1113,7 +1168,7 @@ export default function StudioPanel() {
                       {recentChange.fields.slice(0, 6).map((field) => (
                         <span
                           key={String(field.key)}
-                          className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-gray-300"
+                          className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-modiff-subtle-text"
                         >
                           {field.label}: {formatStudioFieldValue(field.before)}
                           {' -> '}
@@ -1174,22 +1229,24 @@ export default function StudioPanel() {
                         </div>
                       </section>
                     )}
-                    <section>
-                      <SectionHeader title="Negative presets" />
-                      <div className="flex flex-wrap gap-1">
-                        {negativePromptPresets.map((preset) => (
-                          <StudioChip
-                            key={preset}
-                            onClick={() => {
-                              applyNegativePreset(preset);
-                              queueMicrotask(() => syncStudioGraphValues());
-                            }}
-                          >
-                            {preset}
-                          </StudioChip>
-                        ))}
-                      </div>
-                    </section>
+                    {capability.supportsNegativePrompt !== false && (
+                      <section>
+                        <SectionHeader title="Negative presets" />
+                        <div className="flex flex-wrap gap-1">
+                          {negativePromptPresets.map((preset) => (
+                            <StudioChip
+                              key={preset}
+                              onClick={() => {
+                                applyNegativePreset(preset);
+                                queueMicrotask(() => syncStudioGraphValues());
+                              }}
+                            >
+                              {preset}
+                            </StudioChip>
+                          ))}
+                        </div>
+                      </section>
+                    )}
                   </div>
                 </>
               )}
@@ -1203,23 +1260,22 @@ export default function StudioPanel() {
             </StudioSection>
           </div>
 
-          <StudioSection id="advanced-generation" title="Advanced generation">
+          <StudioSection id="advanced-generation" title={expertResourceMode ? 'Advanced generation' : 'Generation'}>
             <section>
               <SectionHeader title={isVideoMode ? 'Video frame' : 'Image size'} />
               <div className="flex gap-2">
                 <StudioSelect
+                  aria-label="Aspect ratio"
                   value={form.aspectRatio}
-                  onChange={(event) => handleAspectChange(event.target.value as StudioAspectRatio)}
+                  onValueChange={(value) => handleAspectChange(value as StudioAspectRatio)}
+                  options={[
+                    ...ASPECT_OPTIONS.map((aspect) => ({ value: aspect.label, label: aspect.label })),
+                    { value: 'custom', label: 'Custom' },
+                  ]}
                   className="flex-1"
-                >
-                  {ASPECT_OPTIONS.map((aspect) => (
-                    <option key={aspect.label} value={aspect.label}>
-                      {aspect.label}
-                    </option>
-                  ))}
-                  <option value="custom">Custom</option>
-                </StudioSelect>
+                />
                 <StudioTextInput
+                  aria-label="Width"
                   value={form.width}
                   data-testid="studio-width-input"
                   onChange={(event) =>
@@ -1228,6 +1284,7 @@ export default function StudioPanel() {
                   className="w-[86px]"
                 />
                 <StudioTextInput
+                  aria-label="Height"
                   value={form.height}
                   data-testid="studio-height-input"
                   onChange={(event) =>
@@ -1263,22 +1320,24 @@ export default function StudioPanel() {
                       onChange={(value) => updateAndSync({ outpaintBottom: numberValue(value, form.outpaintBottom) })}
                     />
                   </div>
-                  <p className="text-xs text-gray-400">Seam overlap: {form.outpaintOverlap}</p>
-                  <StudioSlider
-                    min={0}
-                    max={128}
-                    step={4}
-                    value={form.outpaintOverlap}
-                    onChange={(value) => updateAndSync({ outpaintOverlap: value })}
-                  />
-                  <p className="text-xs text-gray-400">Mask feather: {form.outpaintFeather}</p>
-                  <StudioSlider
-                    min={0}
-                    max={64}
-                    step={1}
-                    value={form.outpaintFeather}
-                    onChange={(value) => updateAndSync({ outpaintFeather: value })}
-                  />
+                  <ModiffFieldShell label={`Seam overlap: ${form.outpaintOverlap}`}>
+                    <StudioSlider
+                      min={0}
+                      max={128}
+                      step={4}
+                      value={form.outpaintOverlap}
+                      onChange={(value) => updateAndSync({ outpaintOverlap: value })}
+                    />
+                  </ModiffFieldShell>
+                  <ModiffFieldShell label={`Mask feather: ${form.outpaintFeather}`}>
+                    <StudioSlider
+                      min={0}
+                      max={64}
+                      step={1}
+                      value={form.outpaintFeather}
+                      onChange={(value) => updateAndSync({ outpaintFeather: value })}
+                    />
+                  </ModiffFieldShell>
                   <StudioInput
                     label="Fill color"
                     value={form.outpaintFillColor}
@@ -1303,23 +1362,23 @@ export default function StudioPanel() {
                   onChange={(checked) => updateAndSync({ randomSeed: checked })}
                   label="Randomize seed on export"
                 />
-                <p className="text-xs text-gray-400">Steps: {form.steps}</p>
-                <StudioSlider
-                  min={1}
-                  max={80}
-                  value={form.steps}
-                  onChange={(value) => updateAndSync({ steps: value })}
-                />
-                <p className="text-xs text-gray-400">
-                  {capability.guidanceLabel}: {form.guidanceScale}
-                </p>
-                <StudioSlider
-                  min={0}
-                  max={10}
-                  step={0.1}
-                  value={form.guidanceScale}
-                  onChange={(value) => updateAndSync({ guidanceScale: value })}
-                />
+                <ModiffFieldShell label={`Steps: ${form.steps}`}>
+                  <StudioSlider
+                    min={1}
+                    max={80}
+                    value={form.steps}
+                    onChange={(value) => updateAndSync({ steps: value })}
+                  />
+                </ModiffFieldShell>
+                <ModiffFieldShell label={`${capability.guidanceLabel}: ${form.guidanceScale}`}>
+                  <StudioSlider
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    value={form.guidanceScale}
+                    onChange={(value) => updateAndSync({ guidanceScale: value })}
+                  />
+                </ModiffFieldShell>
                 {isVideoMode && (
                   <>
                     <div className="grid grid-cols-2 gap-2">
@@ -1334,59 +1393,68 @@ export default function StudioPanel() {
                         onChange={(value) => updateAndSync({ fps: numberValue(value, form.fps) })}
                       />
                     </div>
-                    <p className="text-xs text-gray-400">Conditioning: {form.conditioningScale}</p>
-                    <StudioSlider
-                      min={0}
-                      max={2}
-                      step={0.05}
-                      value={form.conditioningScale}
-                      onChange={(value) => updateAndSync({ conditioningScale: value })}
-                    />
-                    <p className="text-xs text-gray-400">Guidance 2: {form.guidanceScale2}</p>
-                    <StudioSlider
-                      min={0}
-                      max={20}
-                      step={0.1}
-                      value={form.guidanceScale2}
-                      onChange={(value) => updateAndSync({ guidanceScale2: value })}
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <StudioSelect
-                        value={form.outputType}
-                        onChange={(event) =>
-                          updateAndSync({ outputType: event.target.value as StudioFormState['outputType'] })
-                        }
-                      >
-                        <option value="pil">Output: PIL</option>
-                        <option value="np">Output: NumPy</option>
-                        <option value="pt">Output: Torch</option>
-                      </StudioSelect>
-                      <StudioInput
-                        label="Max tokens"
-                        value={form.maxSequenceLength}
-                        onChange={(value) =>
-                          updateAndSync({ maxSequenceLength: numberValue(value, form.maxSequenceLength) })
-                        }
+                    <ModiffFieldShell label={`Conditioning: ${form.conditioningScale}`}>
+                      <StudioSlider
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        value={form.conditioningScale}
+                        onChange={(value) => updateAndSync({ conditioningScale: value })}
                       />
-                    </div>
-                    <StudioInput
-                      label="Attention kwargs JSON"
-                      value={form.attentionKwargsJson}
-                      multiline
-                      onChange={(value) => updateAndSync({ attentionKwargsJson: value })}
-                    />
+                    </ModiffFieldShell>
+                    {expertResourceMode ? (
+                      <>
+                        <ModiffFieldShell label={`Guidance 2: ${form.guidanceScale2}`}>
+                          <StudioSlider
+                            min={0}
+                            max={20}
+                            step={0.1}
+                            value={form.guidanceScale2}
+                            onChange={(value) => updateAndSync({ guidanceScale2: value })}
+                          />
+                        </ModiffFieldShell>
+                        <div className="grid grid-cols-2 gap-2">
+                          <StudioSelect
+                            aria-label="Output type"
+                            value={form.outputType}
+                            onValueChange={(value) =>
+                              updateAndSync({ outputType: value as StudioFormState['outputType'] })
+                            }
+                            options={[
+                              { value: 'pil', label: 'Output: PIL' },
+                              { value: 'np', label: 'Output: NumPy' },
+                              { value: 'pt', label: 'Output: Torch' },
+                            ]}
+                          />
+                          <StudioInput
+                            label="Max tokens"
+                            value={form.maxSequenceLength}
+                            onChange={(value) =>
+                              updateAndSync({ maxSequenceLength: numberValue(value, form.maxSequenceLength) })
+                            }
+                          />
+                        </div>
+                        <StudioInput
+                          label="Attention kwargs JSON"
+                          value={form.attentionKwargsJson}
+                          multiline
+                          onChange={(value) => updateAndSync({ attentionKwargsJson: value })}
+                        />
+                      </>
+                    ) : null}
                   </>
                 )}
                 {capability.supportsImageInput && !isVideoMode && (
                   <>
-                    <p className="text-xs text-gray-400">Strength: {form.strength}</p>
-                    <StudioSlider
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={form.strength}
-                      onChange={(value) => updateAndSync({ strength: value })}
-                    />
+                    <ModiffFieldShell label={`Strength: ${form.strength}`}>
+                      <StudioSlider
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={form.strength}
+                        onChange={(value) => updateAndSync({ strength: value })}
+                      />
+                    </ModiffFieldShell>
                   </>
                 )}
                 {capability.supportsLayers && (
@@ -1439,10 +1507,12 @@ export default function StudioPanel() {
                   />
                 )}
                 {form.mode === 'image_to_video' && (
-                  <p className="text-xs text-gray-400">Use Reference inputs below for the starting image.</p>
+                  <p className="text-xs text-modiff-subtle-text">Use Reference inputs below for the starting image.</p>
                 )}
                 {form.mode === 'reference_to_video' && (
-                  <p className="text-xs text-gray-400">Use Reference inputs below for subject and style images.</p>
+                  <p className="text-xs text-modiff-subtle-text">
+                    Use Reference inputs below for subject and style images.
+                  </p>
                 )}
               </div>
             </StudioSection>
@@ -1471,9 +1541,8 @@ export default function StudioPanel() {
                   onChange={(value) => updateAndSync({ lyrics: value })}
                   multiline
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="grid gap-1 text-xs text-modiff-muted">
-                    <span>Duration {form.audioDuration}s</span>
+                <div className={cx('grid gap-2', expertResourceMode && 'grid-cols-2')}>
+                  <ModiffFieldShell label={`Duration ${form.audioDuration}s`}>
                     <StudioSlider
                       value={form.audioDuration}
                       min={1}
@@ -1481,21 +1550,21 @@ export default function StudioPanel() {
                       step={0.5}
                       onChange={(value) => updateAndSync({ audioDuration: value })}
                     />
-                  </label>
-                  <label className="grid gap-1 text-xs text-modiff-muted">
-                    <span>Shift {form.shift}</span>
-                    <StudioSlider
-                      value={form.shift}
-                      min={0}
-                      max={10}
-                      step={0.1}
-                      onChange={(value) => updateAndSync({ shift: value })}
-                    />
-                  </label>
+                  </ModiffFieldShell>
+                  {expertResourceMode ? (
+                    <ModiffFieldShell label={`Shift ${form.shift}`}>
+                      <StudioSlider
+                        value={form.shift}
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        onChange={(value) => updateAndSync({ shift: value })}
+                      />
+                    </ModiffFieldShell>
+                  ) : null}
                 </div>
                 {form.mode === 'audio_continuation' && (
-                  <label className="grid gap-1 text-xs text-modiff-muted">
-                    <span>Continuation length {form.extensionDuration}s</span>
+                  <ModiffFieldShell label={`Continuation length ${form.extensionDuration}s`}>
                     <StudioSlider
                       value={form.extensionDuration}
                       min={1}
@@ -1503,12 +1572,11 @@ export default function StudioPanel() {
                       step={0.5}
                       onChange={(value) => updateAndSync({ extensionDuration: value })}
                     />
-                  </label>
+                  </ModiffFieldShell>
                 )}
                 {form.mode === 'audio_repaint' && (
                   <div className="grid grid-cols-2 gap-2">
-                    <label className="grid gap-1 text-xs text-modiff-muted">
-                      <span>Repaint start {form.repaintingStart}s</span>
+                    <ModiffFieldShell label={`Repaint start ${form.repaintingStart}s`}>
                       <StudioSlider
                         value={form.repaintingStart}
                         min={0}
@@ -1516,9 +1584,8 @@ export default function StudioPanel() {
                         step={0.1}
                         onChange={(value) => updateAndSync({ repaintingStart: value })}
                       />
-                    </label>
-                    <label className="grid gap-1 text-xs text-modiff-muted">
-                      <span>Repaint end {form.repaintingEnd}s</span>
+                    </ModiffFieldShell>
+                    <ModiffFieldShell label={`Repaint end ${form.repaintingEnd}s`}>
                       <StudioSlider
                         value={form.repaintingEnd}
                         min={0}
@@ -1526,12 +1593,11 @@ export default function StudioPanel() {
                         step={0.1}
                         onChange={(value) => updateAndSync({ repaintingEnd: value })}
                       />
-                    </label>
+                    </ModiffFieldShell>
                   </div>
                 )}
                 {form.mode === 'audio_variation' && (
-                  <label className="grid gap-1 text-xs text-modiff-muted">
-                    <span>Cover strength {form.audioCoverStrength}</span>
+                  <ModiffFieldShell label={`Cover strength ${form.audioCoverStrength}`}>
                     <StudioSlider
                       value={form.audioCoverStrength}
                       min={0}
@@ -1539,7 +1605,7 @@ export default function StudioPanel() {
                       step={0.01}
                       onChange={(value) => updateAndSync({ audioCoverStrength: value })}
                     />
-                  </label>
+                  </ModiffFieldShell>
                 )}
                 <div className="grid grid-cols-3 gap-2">
                   <StudioTextInput
@@ -1564,57 +1630,22 @@ export default function StudioPanel() {
 
           {expertResourceMode && (
             <StudioSection id="runtime" title="Runtime">
-              <section>
-                <SectionHeader title="Resource mode" />
-                <StudioSelect
-                  data-testid="studio-resource-mode-select"
-                  value={form.resourceMode}
-                  onChange={(event) => {
-                    void handleResourceModeChange(event.target.value as StudioResourceMode);
-                  }}
-                >
-                  {STUDIO_RESOURCE_MODES.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {STUDIO_RESOURCE_LABELS[mode]}
-                    </option>
-                  ))}
-                </StudioSelect>
-                <StatusBox severity={autoPlanReady ? 'success' : 'info'}>
-                  <div className="flex flex-wrap gap-1.5 text-xs">
-                    <ReadinessPill tone={autoPlanReady ? 'success' : 'default'} title={resourcePlan.summary}>
-                      {resourcePathLabel}
-                    </ReadinessPill>
-                    <ReadinessPill title={STUDIO_RESOURCE_DESCRIPTIONS[form.resourceMode]}>
-                      {STUDIO_RESOURCE_LABELS[form.resourceMode]}
-                    </ReadinessPill>
-                    {resourcePlan.executionPath === 'direct-qwen-image' ? (
-                      <ReadinessPill title="Auto uses a compact direct Diffusers Qwen pipeline for local reliability. Switch Resource mode to Expert to build the expanded Modular Diffusers graph.">
-                        Direct Qwen
-                      </ReadinessPill>
-                    ) : null}
-                    {form.resourceMode === 'auto' && selectedAutoPlanCandidate ? (
-                      <ReadinessPill
-                        title={`Auto recipe: ${selectedAutoPlanSummary ?? 'selected candidate'} | ${selectedAutoPlanCandidate.pipelineClass ?? 'pipeline'} | readiness ${selectedAutoPlanCandidate.proof?.status ?? 'unknown'}.`}
-                      >
-                        Recipe
-                      </ReadinessPill>
-                    ) : null}
-                  </div>
-                </StatusBox>
-              </section>
               <section className="grid gap-2" data-testid="studio-expert-runtime-controls">
                 <SectionHeader title="Expert runtime" />
                 <div className="flex gap-2">
                   <StudioSelect
+                    aria-label="Data type"
                     value={form.dtype}
-                    onChange={(event) => updateAndSync({ dtype: event.target.value as StudioFormState['dtype'] })}
+                    onValueChange={(value) => updateAndSync({ dtype: value as StudioFormState['dtype'] })}
+                    options={[
+                      { value: 'bfloat16', label: 'bfloat16' },
+                      { value: 'float16', label: 'float16' },
+                      { value: 'float32', label: 'float32' },
+                    ]}
                     className="flex-1"
-                  >
-                    <option value="bfloat16">bfloat16</option>
-                    <option value="float16">float16</option>
-                    <option value="float32">float32</option>
-                  </StudioSelect>
+                  />
                   <StudioTextInput
+                    aria-label="Device"
                     value={form.device}
                     onChange={(event) => updateAndSync({ device: event.target.value })}
                     className="w-24"
@@ -1635,38 +1666,36 @@ export default function StudioPanel() {
                 >
                   {(capability.family === 'Qwen Image' || capability.family === 'FLUX Image') && (
                     <StudioSelect
+                      aria-label="Quantization"
                       data-testid="studio-quantization-select"
                       value={form.quantizationMode}
-                      onChange={(event) => {
-                        const quantizationMode = event.target.value as StudioFormState['quantizationMode'];
+                      onValueChange={(value) => {
+                        const quantizationMode = value as StudioFormState['quantizationMode'];
                         updateAndSync({ quantizationMode });
-                        void createOrUpdateStudioGraph({ ...form, quantizationMode });
                       }}
-                    >
-                      <option value="none">No quantization</option>
-                      <option value="bnb_4bit">4-bit BnB</option>
-                      {capability.family === 'FLUX Image' && (
-                        <>
-                          <option value="bnb_8bit">8-bit BnB</option>
-                          <option value="quanto_float8">Quanto float8</option>
-                          <option value="torchao_float8">TorchAO float8</option>
-                        </>
-                      )}
-                    </StudioSelect>
+                      options={[
+                        { value: 'none', label: 'No quantization' },
+                        { value: 'bnb_4bit', label: '4-bit BnB' },
+                        ...(capability.family === 'FLUX Image'
+                          ? [
+                              { value: 'bnb_8bit', label: '8-bit BnB' },
+                              { value: 'quanto_float8', label: 'Quanto float8' },
+                              { value: 'torchao_float8', label: 'TorchAO float8' },
+                            ]
+                          : []),
+                      ]}
+                    />
                   )}
                   <StudioSelect
+                    aria-label="Offload mode"
                     data-testid="studio-offload-mode-select"
                     value={form.offloadMode}
-                    onChange={(event) =>
-                      updateAndSync({ offloadMode: event.target.value as StudioFormState['offloadMode'] })
-                    }
-                  >
-                    {capability.offloadSupport.modes.map((mode) => (
-                      <option key={mode} value={mode}>
-                        {STUDIO_OFFLOAD_LABELS[mode]}
-                      </option>
-                    ))}
-                  </StudioSelect>
+                    onValueChange={(value) => updateAndSync({ offloadMode: value as StudioFormState['offloadMode'] })}
+                    options={capability.offloadSupport.modes.map((mode) => ({
+                      value: mode,
+                      label: STUDIO_OFFLOAD_LABELS[mode],
+                    }))}
+                  />
                 </div>
               </section>
             </StudioSection>
@@ -1694,7 +1723,7 @@ export default function StudioPanel() {
               <p
                 className={cx(
                   'text-xs',
-                  form.mode === 'control_image' || supportsMask ? 'text-gray-400' : 'text-hf-orange',
+                  form.mode === 'control_image' || supportsMask ? 'text-modiff-subtle-text' : 'text-hf-orange',
                 )}
               >
                 {form.mode === 'control_image'
@@ -1733,7 +1762,7 @@ export default function StudioPanel() {
           )}
 
           {expertResourceMode ? (
-            <p className="border-t border-modiff-border pt-3 text-xs text-gray-400">
+            <p className="border-t border-modiff-border pt-3 text-xs text-modiff-subtle-text">
               {graphBinding
                 ? 'Studio is linked to graph nodes. Expert graph edits remain visible on the canvas.'
                 : 'Custom graph mode: add nodes, connect an output, or start from a template.'}
@@ -1750,17 +1779,25 @@ type GraphInputCandidate = AppModeInput & {
   param: NodeParams;
 };
 
+const INSPECTOR_PREVIEW_DISPLAYS = new Set(['ui_image', 'ui_video', 'ui_audio', 'ui_text', 'ui_imagecompare']);
+const inspectorDisclosureMemory = new Map<string, boolean>();
+
+function isInspectorEditableParam(key: string, param: NodeParams) {
+  const display = param.isInput ? 'input' : param.display || '';
+  return (
+    display !== 'input' &&
+    display !== 'output' &&
+    !INSPECTOR_PREVIEW_DISPLAYS.has(display) &&
+    !param.hidden &&
+    !param.isInput &&
+    !['output', 'images', 'latents'].includes(key)
+  );
+}
+
 function graphParamInputCandidates(nodes: CustomNodeType[]): GraphInputCandidate[] {
   return nodes.flatMap((node) =>
     Object.entries(node.data.params ?? {})
-      .filter(
-        ([key, param]) =>
-          param.display !== 'input' &&
-          param.display !== 'output' &&
-          !param.hidden &&
-          !param.isInput &&
-          !['output', 'images', 'latents'].includes(key),
-      )
+      .filter(([key, param]) => isInspectorEditableParam(key, param))
       .map(([key, param]) => ({
         id: `graph:${node.id}:${key}`,
         kind: 'graph-param' as const,
@@ -1773,28 +1810,26 @@ function graphParamInputCandidates(nodes: CustomNodeType[]): GraphInputCandidate
   );
 }
 
-function autoPinnedInputIds(candidates: GraphInputCandidate[]) {
-  return candidates
-    .filter((input) => {
-      const haystack = `${input.paramKey ?? ''} ${input.label}`.toLowerCase();
-      return AUTO_PIN_KEYWORDS.some((keyword) => haystack.includes(keyword));
-    })
-    .slice(0, 12)
-    .map((input) => input.id);
-}
-
-function PinnedGraphInputs({
+function GraphNodeInputs({
   candidates,
+  nodes,
   onTogglePin,
   pinnedIds,
   pinnedInputs,
+  selectedNodes,
+  workflowId,
 }: {
   candidates: GraphInputCandidate[];
+  nodes: CustomNodeType[];
   onTogglePin: (id: string) => void;
   pinnedIds: string[];
   pinnedInputs: GraphInputCandidate[];
+  selectedNodes: CustomNodeType[];
+  workflowId: string | null;
 }) {
+  const [disclosureState, setDisclosureState] = useState<Record<string, boolean>>({});
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+  const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const groups = useMemo(() => {
     const byNode = new Map<string, { node: CustomNodeType; params: Record<string, NodeParams> }>();
     pinnedInputs.forEach((input) => {
@@ -1803,68 +1838,127 @@ function PinnedGraphInputs({
       group.params[input.paramKey] = input.param;
       byNode.set(input.nodeId, group);
     });
-    return Array.from(byNode.values());
-  }, [pinnedInputs]);
+
+    if (selectedNode) {
+      const selectedParams = Object.fromEntries(
+        Object.entries(selectedNode.data.params ?? {}).filter(([key, param]) => isInspectorEditableParam(key, param)),
+      );
+      byNode.set(selectedNode.id, { node: selectedNode, params: selectedParams });
+    }
+
+    const orderedNodeIds = [
+      ...(selectedNode ? [selectedNode.id] : []),
+      ...nodes.map((node) => node.id).filter((id) => id !== selectedNode?.id),
+    ];
+    return orderedNodeIds.flatMap((id) => {
+      const group = byNode.get(id);
+      return group ? [group] : [];
+    });
+  }, [nodes, pinnedInputs, selectedNode]);
 
   const updateParam = useCallback((nodeId: string, param: string, value: unknown, key?: keyof NodeParams) => {
-    useFlowStore.getState().setParam(nodeId, param, value, key);
+    useFlowStore.getState().setParamWithHistory(nodeId, param, value, key);
+    syncManagedNodeControlChange(nodeId, param, value, key);
   }, []);
 
   return (
     <div
-      className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
-      data-testid="studio-pinned-graph-inputs"
+      className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2"
+      data-testid={selectedNodes.length > 0 ? 'studio-custom-graph-inspector' : 'studio-pinned-graph-inputs'}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-modiff-text">Graph inputs</span>
-        <span className="text-xs text-modiff-muted">{pinnedInputs.length}</span>
+        <span className="text-sm font-semibold text-modiff-text">Node controls</span>
       </div>
+      {selectedNodes.length > 1 ? <StatusLine>One node at a time</StatusLine> : null}
       {groups.length > 0 ? (
-        groups.map(({ node, params }) => (
-          <div key={node.id} className="grid gap-1 border-t border-modiff-border pt-2 first:border-t-0 first:pt-0">
-            <div className="truncate text-xs font-semibold text-modiff-muted" title={node.data.label || node.id}>
-              {node.data.label || node.id}
-            </div>
-            <NodeContent
-              nodeId={node.id}
-              params={params}
-              updateStore={(param, value, key) => updateParam(node.id, param, value, key)}
-              module={node.data.module}
-              action={node.data.action}
-              hideHandles
-              executionStatus={node.data.executionStatus}
-              progressMessage={node.data.progressMessage}
-              uiStateMessage={node.data.uiState?.validationMessage ?? node.data.uiState?.errorMessage}
-            />
-          </div>
-        ))
+        groups.map(({ node, params }, index) => {
+          const selected = selectedNode?.id === node.id;
+          const disclosureKey = `${workflowId ?? 'unscoped'}:${node.id}`;
+          const rememberedOpen = disclosureState[disclosureKey] ?? inspectorDisclosureMemory.get(disclosureKey);
+          const defaultOpen = selected || (rememberedOpen ?? index === 0);
+          const label = node.data.label || `${node.data.module}.${node.data.action}`;
+          const fieldCount = Object.keys(params).length;
+
+          return (
+            <ModiffDisclosure
+              key={`${disclosureKey}:${selected ? 'selected' : 'idle'}`}
+              aria-label={`Node controls: ${label}`}
+              className={cx(
+                'overflow-hidden rounded-modiff-compact border bg-modiff-bg',
+                selected ? 'border-hf-yellow/60' : 'border-modiff-border',
+              )}
+              data-testid={`studio-node-disclosure-${node.id}`}
+              defaultOpen={defaultOpen}
+              label={
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate" title={label}>
+                    {label}
+                  </span>
+                  <span className="text-xs font-normal text-modiff-subtle-text">{fieldCount}</span>
+                </span>
+              }
+              onOpenChange={(open) => {
+                inspectorDisclosureMemory.set(disclosureKey, open);
+                setDisclosureState((current) =>
+                  current[disclosureKey] === open ? current : { ...current, [disclosureKey]: open },
+                );
+              }}
+              panelClassName="border-t border-modiff-border-subtle p-3"
+            >
+              {fieldCount > 0 ? (
+                <div className="grid gap-3 [&>[data-key]]:m-0">
+                  <NodeContent
+                    nodeId={node.id}
+                    params={params}
+                    updateStore={(param, value, key) => updateParam(node.id, param, value, key)}
+                    module={node.data.module}
+                    action={node.data.action}
+                    mode="controls"
+                    hidePreviews
+                    executionStatus={node.data.executionStatus}
+                    progressMessage={node.data.progressMessage}
+                    uiStateMessage={node.data.uiState?.validationMessage ?? node.data.uiState?.errorMessage}
+                  />
+                </div>
+              ) : (
+                <StatusLine tone="secondary">No editable params</StatusLine>
+              )}
+            </ModiffDisclosure>
+          );
+        })
       ) : (
         <StatusLine tone="secondary">No pinned inputs</StatusLine>
       )}
       {candidates.length > 0 ? (
-        <details className="border-t border-modiff-border pt-2">
-          <summary className="cursor-pointer list-none text-xs font-semibold text-modiff-muted">Pin inputs</summary>
-          <div className="mt-2 grid gap-1">
-            {candidates.map((input) => {
-              const pinned = pinnedSet.has(input.id);
-              return (
-                <button
-                  key={input.id}
-                  type="button"
-                  className="flex min-h-8 items-center gap-2 rounded-modiff-compact px-2 text-left text-xs text-modiff-text transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
-                  onClick={() => onTogglePin(input.id)}
-                >
-                  {pinned ? (
+        <ModiffDisclosure
+          className="border-t border-modiff-border pt-2"
+          label="Pin inputs"
+          buttonClassName="min-h-0 justify-start p-0 text-xs text-modiff-subtle-text hover:bg-transparent"
+          panelClassName="mt-2 grid gap-1"
+        >
+          {candidates.map((input) => {
+            const pinned = pinnedSet.has(input.id);
+            return (
+              <StudioButton
+                key={input.id}
+                tone="ghost"
+                align="left"
+                fullWidth
+                className="min-h-8 px-2 text-xs"
+                onClick={() => onTogglePin(input.id)}
+                icon={
+                  pinned ? (
                     <PinOff size={14} className="text-hf-yellow" />
                   ) : (
-                    <Pin size={14} className="text-modiff-muted" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate">{input.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </details>
+                    <Pin size={14} className="text-modiff-subtle-text" />
+                  )
+                }
+              >
+                <span className="min-w-0 flex-1 truncate">{input.label}</span>
+              </StudioButton>
+            );
+          })}
+        </ModiffDisclosure>
       ) : null}
     </div>
   );
@@ -1901,7 +1995,7 @@ function ReadinessPill({
                 ? 'missing'
                 : 'details'
       }
-      className="min-h-6 px-2 py-0.5 text-xs"
+      className="min-h-7 px-2 py-0.5 text-xs"
       disabled={disabled}
       label={children}
       onClick={onClick}

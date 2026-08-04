@@ -1,9 +1,22 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useMemo, useState, type ChangeEvent } from 'react';
 import { FieldProps } from '../components/NodeContent';
 
 import { ExternalLink, X } from 'lucide-react';
-import { FieldFrame, ModiffButton, SelectOptionGrid } from '../ui';
+import {
+  FieldFrame,
+  ModiffButton,
+  ModiffCheckbox,
+  ModiffDialog,
+  ModiffFieldShell,
+  ModiffIconButton,
+  ModiffSearchInput,
+  SelectOptionGrid,
+} from '../ui';
+import { GraphControlButton, GraphIconButton } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
+import { runtimeOptionEntries } from '../studio/runtimeOptions';
 
 function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
@@ -23,13 +36,14 @@ export default function SelectDialogField(props: FieldProps) {
   const selectedValues = asStringArray(props.value);
 
   const normalizedOptions = useMemo(() => {
-    if (Array.isArray(props.options)) {
-      return (props.options || []).filter(Boolean).map((opt: unknown) => ({ id: String(opt), label: String(opt) }));
-    }
-    if (typeof props.options === 'object' && props.options !== null) {
-      return Object.entries(props.options).map(([id, label]) => ({ id, label: String(label) }));
-    }
-    return [];
+    return runtimeOptionEntries(props.options)
+      .filter((entry) => entry.type === 'option')
+      .map((entry) => ({
+        id: entry.value,
+        label: entry.label,
+        disabled: entry.disabled,
+        disabledReason: entry.disabledReason,
+      }));
   }, [props.options]);
 
   const optionCount = normalizedOptions.length;
@@ -71,168 +85,140 @@ export default function SelectDialogField(props: FieldProps) {
       layoutStyle={props.style}
       className="modiff-field"
     >
-      <div
+      <ModiffFieldShell
+        htmlFor={`${props.nodeId}-${props.fieldKey}`}
+        label={props.label}
+        layout="inline"
+        disabled={props.disabled}
+        labelClassName="pointer-events-none max-w-[50%] pr-2 font-normal"
         className={cx(
           'flex w-full items-center justify-between overflow-hidden rounded-modiff-compact bg-modiff-bg px-2 py-1 outline outline-2',
           isFocused ? 'outline-hf-yellow' : 'outline-transparent',
         )}
       >
-        {props.label && (
-          <div className="pointer-events-none max-w-[50%] pr-2">
-            <span className="block truncate text-[13px] text-gray-400" title={props.label}>
-              {props.label}
-            </span>
-          </div>
-        )}
-        <div
-          tabIndex={0}
-          onClick={() => setIsDialogOpen(true)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          className="flex max-h-[898px] min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-1 overflow-y-auto"
-        >
-          {selectedValues.map((value) => {
-            const option = normalizedOptions.find((opt) => opt.id === value);
-            return (
-              <span
-                key={value}
-                className="inline-flex max-w-full items-center gap-1 rounded-modiff-compact bg-modiff-panel px-2 py-0.5 text-xs text-modiff-text"
-              >
-                <span className="truncate">{option ? option.label : value}</span>
-                <button
-                  type="button"
-                  className="grid size-4 place-items-center rounded-full text-gray-400 hover:bg-white/10 hover:text-white"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleOnDelete(value);
-                  }}
-                  aria-label={`Remove ${option ? option.label : value}`}
-                  title={`Remove ${option ? option.label : value}`}
+        <div className="relative max-h-[898px] min-w-0 flex-1 overflow-y-auto">
+          <GraphControlButton
+            id={`${props.nodeId}-${props.fieldKey}`}
+            type="button"
+            disabled={props.disabled}
+            aria-haspopup="dialog"
+            aria-expanded={isDialogOpen}
+            aria-label={`Choose ${props.label}`}
+            className="absolute inset-0 size-full cursor-pointer rounded-modiff-compact"
+            onClick={() => setIsDialogOpen(true)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+          />
+          <div className="pointer-events-none relative flex min-h-7 flex-wrap items-center gap-1">
+            {selectedValues.map((value) => {
+              const option = normalizedOptions.find((opt) => opt.id === value);
+              return (
+                <span
+                  key={value}
+                  className="inline-flex max-w-full items-center gap-1 rounded-modiff-compact bg-modiff-panel px-2 py-0.5 text-xs text-modiff-text"
                 >
-                  <X size={12} />
-                </button>
+                  <span className="truncate">{option ? option.label : value}</span>
+                  <GraphIconButton
+                    type="button"
+                    disabled={props.disabled}
+                    className="pointer-events-auto rounded-full"
+                    onClick={() => handleOnDelete(value)}
+                    label={`Remove ${option ? option.label : value}`}
+                  >
+                    <X size={12} />
+                  </GraphIconButton>
+                </span>
+              );
+            })}
+            {selectedValues.length === 0 && (
+              <span className="text-sm text-modiff-subtle-text">
+                {asString(props.fieldOptions?.placeholder, 'Open dialog...')}
               </span>
-            );
-          })}
-          {selectedValues.length === 0 && (
-            <span className="text-sm text-gray-400">{asString(props.fieldOptions?.placeholder, 'Open dialog...')}</span>
-          )}
+            )}
+          </div>
         </div>
-        <button
-          type="button"
+        <ModiffIconButton
+          disabled={props.disabled}
           onClick={() => setIsDialogOpen(true)}
-          className="nodrag grid size-7 shrink-0 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-hf-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
-          title="Open dialog"
-          aria-label="Open dialog"
+          className="nodrag text-modiff-text hover:text-hf-yellow"
+          label={`Choose ${props.label}`}
+          size="compact"
         >
           <ExternalLink size={16} />
-        </button>
-      </div>
-      {isDialogOpen && (
-        <div
-          className="relative z-50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={`${props.nodeId}-${props.fieldKey}-dialog-title`}
-        >
-          <div
-            className="fixed inset-0 flex items-center justify-center bg-black/70 p-4"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setIsDialogOpen(false);
-            }}
-          >
-            <div
-              className={cx(
-                'max-h-[90vh] w-full overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-surface shadow-modiff-node',
-                dialogWidthClass,
-              )}
-            >
-              <header className="flex items-center justify-between gap-3 border-b border-modiff-border bg-modiff-panel px-4 py-3">
-                <h2
-                  id={`${props.nodeId}-${props.fieldKey}-dialog-title`}
-                  className="min-w-0 truncate text-base font-semibold text-modiff-text"
-                >
-                  {asString(props.fieldOptions?.dialogTitle, props.label)}
-                </h2>
-                <button
-                  type="button"
-                  className="grid size-8 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setIsDialogOpen(false)}
-                  aria-label="Close"
-                  title="Close"
-                >
-                  <X size={16} />
-                </button>
-              </header>
-              <div className="relative max-h-[70vh] overflow-auto bg-modiff-panel">
-                {optionCount > 50 && (
-                  <div className="sticky top-0 z-[1] bg-modiff-panel p-3">
-                    <input
-                      className="h-8 w-full rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text outline-none focus:border-hf-yellow"
-                      placeholder="Filter options..."
-                      value={optionFilter}
-                      onChange={handleFilterChange}
-                    />
-                    {suggestedValues.length > 0 && (
-                      <label className="mt-2 flex cursor-pointer items-center text-sm text-hf-yellow">
-                        <input
-                          type="checkbox"
-                          className="mr-2 size-4 accent-hf-yellow"
-                          checked={showSuggestedValues}
-                          onChange={(event) => {
-                            setOptionFilter('');
-                            setShowSuggestedValues(event.target.checked);
-                          }}
-                        />
-                        <span>Show suggested values</span>
-                      </label>
-                    )}
-                  </div>
-                )}
-                <SelectOptionGrid columns={optionColumns}>
-                  {filteredOptions.map((option) => {
-                    const checked = selectedValues.includes(option.id);
-                    const suggested = suggestedValues.includes(option.id);
-                    return (
-                      <label
-                        key={option.id}
-                        className="flex min-w-0 cursor-pointer items-center gap-2 py-1 pr-2 text-sm text-modiff-text"
-                      >
-                        <input
-                          type="checkbox"
-                          className="size-4 shrink-0 accent-hf-yellow"
-                          checked={checked}
-                          onChange={(event) => {
-                            const newValue = event.target.checked
-                              ? [...selectedValues, option.id]
-                              : selectedValues.filter((v: string) => v !== option.id);
-                            props.updateStore(props.fieldKey, newValue);
-                          }}
-                        />
-                        <span
-                          className={cx('min-w-0 truncate', (checked || suggested) && 'text-hf-yellow')}
-                          title={option.label}
-                        >
-                          {option.label}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </SelectOptionGrid>
-              </div>
-              <footer className="flex items-center justify-end gap-2 border-t border-modiff-border bg-modiff-panel px-4 py-3">
-                <span className="mr-auto text-sm text-gray-400">
-                  Selected options: {selectedValues.length} / {optionCount}
-                </span>
-                <ModiffButton onClick={() => props.updateStore(props.fieldKey, [])}>Clear Selection</ModiffButton>
-                <ModiffButton tone="primary" onClick={() => setIsDialogOpen(false)}>
-                  Done
-                </ModiffButton>
-              </footer>
-            </div>
+        </ModiffIconButton>
+      </ModiffFieldShell>
+      <ModiffDialog
+        open={isDialogOpen}
+        onClose={() => setIsDialogOpen(false)}
+        title={asString(props.fieldOptions?.dialogTitle, props.label)}
+        panelClassName={dialogWidthClass}
+        bodyClassName="relative !max-h-[70vh] bg-modiff-panel !p-0"
+        footer={
+          <>
+            <span className="mr-auto text-sm text-modiff-subtle-text">
+              Selected options: {selectedValues.length} / {optionCount}
+            </span>
+            <ModiffButton disabled={props.disabled} onClick={() => props.updateStore(props.fieldKey, [])}>
+              Clear Selection
+            </ModiffButton>
+            <ModiffButton tone="primary" onClick={() => setIsDialogOpen(false)}>
+              Done
+            </ModiffButton>
+          </>
+        }
+      >
+        {optionCount > 50 && (
+          <div className="sticky top-0 z-[1] bg-modiff-panel p-3">
+            <ModiffSearchInput
+              aria-label={`Filter ${props.label} options`}
+              className="nodrag nowheel"
+              placeholder="Filter options..."
+              value={optionFilter}
+              onChange={handleFilterChange}
+              onClear={() => setOptionFilter('')}
+            />
+            {suggestedValues.length > 0 && (
+              <ModiffCheckbox
+                checked={showSuggestedValues}
+                label="Show suggested values"
+                className="mt-2 text-hf-yellow"
+                onCheckedChange={(checked) => {
+                  setOptionFilter('');
+                  setShowSuggestedValues(checked);
+                }}
+              />
+            )}
           </div>
-        </div>
-      )}
+        )}
+        <SelectOptionGrid columns={optionColumns}>
+          {filteredOptions.map((option) => {
+            const checked = selectedValues.includes(option.id);
+            const suggested = suggestedValues.includes(option.id);
+            return (
+              <ModiffCheckbox
+                key={option.id}
+                checked={checked}
+                className="py-1 pr-2"
+                label={
+                  <span
+                    className={cx('min-w-0 truncate', (checked || suggested) && 'text-hf-yellow')}
+                    title={option.disabledReason || option.label}
+                  >
+                    {option.label}
+                  </span>
+                }
+                disabled={props.disabled || option.disabled}
+                onCheckedChange={(nextChecked) => {
+                  const newValue = nextChecked
+                    ? [...selectedValues, option.id]
+                    : selectedValues.filter((value: string) => value !== option.id);
+                  props.updateStore(props.fieldKey, newValue);
+                }}
+              />
+            );
+          })}
+        </SelectOptionGrid>
+      </ModiffDialog>
     </FieldFrame>
   );
 }

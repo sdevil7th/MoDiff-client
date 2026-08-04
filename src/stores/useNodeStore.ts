@@ -1,6 +1,10 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { create } from 'zustand';
+import type { RuntimeResourceSnapshot } from '../studio/runtimeResources';
 import config from '../../app.config';
 import {
+  classifyHfDownloadFailure,
   compactHfDownloadFailureLabel,
   formatDownloadBytes,
   formatDownloadDuration,
@@ -8,18 +12,20 @@ import {
   isHfDownloadActive,
   isHfDownloadComplete,
 } from '../studio/modelInstall';
-import type { RunReadinessIssue, StudioModelProfile } from '../studio/types';
+import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
+import type { ExecutionProgress, RunReadinessIssue, StudioModelProfile, UserBlockDefinition } from '../studio/types';
 import type { ModiffFieldStyle, ModiffNodeStyle } from '../theme';
 import { enqueueSnackbar } from '../ui/snackbar';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { createLatestRequestGate, formatRequestError, requestJson, RequestError } from '../utils/requestJson';
+import { useStudioStore } from './useStudioStore';
 
 export type NodeParamOptions = unknown[] | Record<string, unknown>;
 export type NodeParamSignal = { direction: 'input' | 'output'; origin?: string; value: unknown };
 export type NodeExecutionStatus = 'queued' | 'running' | 'completed' | 'cached' | 'failed' | 'cancelled' | 'succeeded';
 
 export type NodeData = {
-  type: 'custom' | 'any' | 'group';
+  type: 'custom' | 'any' | 'group' | 'loop' | 'block';
   module: string;
   action: string;
   label: string;
@@ -28,6 +34,7 @@ export type NodeData = {
   description?: string;
   style?: ModiffNodeStyle;
   resizable?: boolean;
+  skipParamsCheck?: boolean;
   executionTime?: Record<string, number>;
   memoryUsage?: Record<string, number>;
   isCached?: boolean;
@@ -37,10 +44,14 @@ export type NodeData = {
   executionStatus?: NodeExecutionStatus;
   executionPhase?: string;
   progressMessage?: string;
+  executionProgress?: ExecutionProgress;
   minimized?: boolean;
   headerColor?: string;
   uiState?: {
     collapsed?: boolean;
+    blockExpanded?: boolean;
+    blockCollapsedWidth?: number;
+    blockCollapsedHeight?: number;
     disabled?: boolean;
     validationSeverity?: RunReadinessIssue['severity'];
     validationMessage?: string;
@@ -52,6 +63,9 @@ export type NodeData = {
   studioOwned?: boolean;
   studioAuxiliary?: boolean;
   userBlockId?: string;
+  userBlockSnapshot?: UserBlockDefinition;
+  userBlockInstanceId?: string;
+  userBlockSourceNodeId?: string;
 };
 
 export type NodeParams = {
@@ -63,6 +77,7 @@ export type NodeParams = {
   description?: string;
   disabled?: boolean;
   hidden?: boolean;
+  required?: boolean;
   isInput?: boolean;
   isConnected?: boolean;
   spawn?: boolean;
@@ -140,28 +155,31 @@ export type HfDownloadProgress = {
   repo_id: string;
   task_id?: string;
   download_id?: string;
-  progress?: number;
+  progress?: number | null;
   status?: string;
   phase?: string;
   path?: string;
   cache_dir?: string;
   downloaded_bytes?: number;
   completed_bytes?: number;
-  total_bytes?: number;
-  remaining_bytes?: number;
-  bytes_per_second?: number;
+  total_bytes?: number | null;
+  remaining_bytes?: number | null;
+  bytes_per_second?: number | null;
   file_count?: number;
-  total_file_count?: number;
-  completed_file_count?: number;
-  current_file?: string;
+  total_file_count?: number | null;
+  completed_file_count?: number | null;
+  current_file?: string | null;
   active_files?: string[];
-  eta_seconds?: number;
+  eta_seconds?: number | null;
   started_at?: number;
   updated_at?: number;
   completed_at?: number | null;
   size_known?: boolean;
   plan_error?: string;
-  error?: string;
+  error?: string | null;
+  error_code?: string | null;
+  last_error?: string;
+  message?: string;
 };
 
 export type HfInstallResult = {
@@ -212,6 +230,13 @@ export type RuntimeCudaDevice = {
   total_memory?: number;
   memory_free_bytes?: number;
   memory_total_bytes?: number;
+  accessible_memory_total?: number;
+  dedicated_memory_total?: number;
+  shared_memory_total?: number;
+  memory_kind?: 'dedicated' | 'shared' | 'unified' | string;
+  vendor?: string;
+  backend?: string;
+  architecture?: string;
   properties_error?: string;
   memory_error?: string;
 };
@@ -220,6 +245,19 @@ export type RuntimeMpsDevice = {
   index?: number;
   name?: string;
   total_memory?: number;
+  memory_free_bytes?: number;
+  memory_kind?: 'unified' | 'shared' | string;
+  architecture?: string;
+};
+
+export type RuntimeXpuDevice = {
+  index?: number;
+  name?: string;
+  total_memory?: number;
+  memory_free_bytes?: number;
+  accessible_memory_total?: number;
+  memory_kind?: 'dedicated' | 'shared' | 'unified' | string;
+  architecture?: string;
 };
 
 export type RuntimePackageStatus = {
@@ -234,6 +272,10 @@ export type RuntimePackageStatus = {
   cuda_memory_total_bytes?: number;
   cuda_devices?: RuntimeCudaDevice[];
   cuda_error?: string;
+  xpu_available?: boolean;
+  xpu_device_count?: number;
+  xpu_devices?: RuntimeXpuDevice[];
+  xpu_error?: string;
   mps_built?: boolean;
   mps_available?: boolean;
   mps_device_count?: number;
@@ -243,6 +285,8 @@ export type RuntimePackageStatus = {
 
 export type RuntimeStatus = {
   ready?: boolean;
+  runtime_fingerprint?: string;
+  runtimeEnvironment: RuntimeEnvironment;
   server?: {
     host?: string;
     port?: number;
@@ -281,6 +325,7 @@ type NodesStore = {
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
   studioModelCapabilities: StudioModelProfile[];
   runtimeStatus: RuntimeStatus | null;
+  runtimeResources: RuntimeResourceSnapshot | null;
   runtimeError: string | null;
   hfDownloadProgress: Record<string, HfDownloadProgress>;
   customModules: CustomModuleInfo[];
@@ -288,14 +333,19 @@ type NodesStore = {
   discoveryRequests: Record<DiscoveryRequestKey, DiscoveryRequestState>;
   setHfDownloadProgress: (progress: HfDownloadProgress) => void;
   clearHfDownloadProgress: (repoId: string) => void;
-  refreshModelIndexes: (refresh?: boolean) => Promise<void>;
-  installHfModel: (repoId: string, sid?: string | null, options?: { repair?: boolean }) => Promise<HfInstallResult>;
+  refreshModelIndexes: (refresh?: boolean, options?: { invalidateAutoPlans?: boolean }) => Promise<void>;
+  installHfModel: (
+    repoId: string,
+    sid?: string | null,
+    options?: { repair?: boolean; files?: string[] },
+  ) => Promise<HfInstallResult>;
   fetchCustomModules: () => Promise<void>;
   refreshCustomModules: () => Promise<CustomModuleActionResult>;
   installCustomModule: (source: string, name?: string) => Promise<CustomModuleActionResult>;
   updateCustomModule: (name: string) => Promise<CustomModuleActionResult>;
   setCustomModuleEnabled: (name: string, enabled: boolean) => Promise<CustomModuleActionResult>;
   fetchRuntimeStatus: () => Promise<void>;
+  setRuntimeResources: (snapshot: RuntimeResourceSnapshot | null) => void;
   fetchNodes: () => Promise<void>;
   fetchHfCache: (refresh?: boolean) => Promise<void>;
   fetchLocalModels: (refresh?: boolean) => Promise<void>;
@@ -317,6 +367,7 @@ type NodesStoreSet = (partial: Partial<NodesStore> | ((state: NodesStore) => Par
 type NodesStoreGet = () => NodesStore;
 
 const inFlightHfInstalls = new Map<string, Promise<HfInstallResult>>();
+let inFlightNodeDiscovery: Promise<void> | null = null;
 const discoveryRequestGate = createLatestRequestGate<DiscoveryRequestKey>();
 const CUSTOM_MODULE_TIMEOUT_MS = 16 * 60 * 1000;
 const HF_DOWNLOAD_TIMEOUT_MS = 6 * 60 * 60 * 1000;
@@ -469,7 +520,11 @@ function parseArrayResponse(value: unknown, label: string) {
 }
 
 function parseRuntimeStatus(value: unknown) {
-  return payloadRecord(value, 'The runtime status response is invalid.') as RuntimeStatus;
+  const payload = payloadRecord(value, 'The runtime status response is invalid.');
+  return {
+    ...payload,
+    runtimeEnvironment: parseRuntimeEnvironment(payload),
+  } as RuntimeStatus;
 }
 
 function parseModelCacheDiagnostics(value: unknown) {
@@ -553,11 +608,13 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   modelCacheDiagnostics: null,
   studioModelCapabilities: [],
   runtimeStatus: null,
+  runtimeResources: null,
   runtimeError: null,
   hfDownloadProgress: {},
   customModules: [],
   customModuleError: null,
   discoveryRequests: initialDiscoveryRequests(),
+  setRuntimeResources: (runtimeResources) => set({ runtimeResources }),
   setHfDownloadProgress: (progress) => {
     if (!progress.repo_id) {
       return;
@@ -586,7 +643,10 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       return { hfDownloadProgress: next };
     });
   },
-  refreshModelIndexes: async (refresh: boolean = true) => {
+  refreshModelIndexes: async (refresh: boolean = true, options = {}) => {
+    if (refresh && options.invalidateAutoPlans !== false) {
+      useStudioStore.getState().invalidateAutoResourcePlans();
+    }
     await Promise.all([
       get().fetchRuntimeStatus(),
       get().fetchHfCache(refresh),
@@ -596,7 +656,8 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     ]);
   },
   installHfModel: async (repoId, sid = null, options = {}) => {
-    const installKey = `${repoId}:${options.repair ? 'repair' : 'install'}`;
+    const requestedFiles = [...new Set(options.files?.map((file) => file.trim()).filter(Boolean) ?? [])].sort();
+    const installKey = `${repoId}:${options.repair ? 'repair' : 'install'}:${requestedFiles.join(',')}`;
     const existing = inFlightHfInstalls.get(installKey);
     if (existing) {
       return existing;
@@ -609,17 +670,16 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         progress: 0,
       });
 
-      const params = new URLSearchParams({ repo_id: repoId });
-      if (sid) {
-        params.set('sid', sid);
-      }
-      if (options.repair) {
-        params.set('repair', '1');
-      }
-
       try {
-        const data = await requestJson(`${config.serverAddress}/hf_download?${params.toString()}`, {
-          method: 'GET',
+        const data = await requestJson(`${config.serverAddress}/hf_download`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_id: repoId,
+            ...(sid ? { sid } : {}),
+            ...(options.repair ? { repair: true } : {}),
+            ...(requestedFiles.length > 0 ? { files: requestedFiles } : {}),
+          }),
           timeoutMs: HF_DOWNLOAD_TIMEOUT_MS,
           parse: (value) => parseHfInstallResponse(value, repoId),
         });
@@ -640,10 +700,22 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const errorPayload =
+          error instanceof RequestError && error.payload && typeof error.payload === 'object'
+            ? (error.payload as Record<string, unknown>)
+            : null;
+        const explicitErrorCode = typeof errorPayload?.code === 'string' ? errorPayload.code : null;
+        const classifiedFailure = classifyHfDownloadFailure({
+          repo_id: repoId,
+          status: 'error',
+          error: message,
+        });
+        const errorCode = explicitErrorCode ?? (classifiedFailure === 'access' ? 'huggingface_access_required' : null);
         get().setHfDownloadProgress({
           repo_id: repoId,
           status: 'error',
           error: message,
+          error_code: errorCode,
         });
         throw error;
       } finally {
@@ -710,6 +782,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     );
   },
   fetchRuntimeStatus: async () => {
+    const previousFingerprint = get().runtimeStatus?.runtime_fingerprint;
     await runDiscoveryRequest(
       'runtime',
       set,
@@ -718,13 +791,28 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           signal,
           parse: parseRuntimeStatus,
         }),
-      (runtimeStatus) => ({ runtimeStatus, runtimeError: null }),
+      (runtimeStatus) => {
+        const nextFingerprint = runtimeStatus.runtime_fingerprint;
+        if (
+          previousFingerprint !== undefined &&
+          nextFingerprint !== undefined &&
+          previousFingerprint !== nextFingerprint
+        ) {
+          useStudioStore.getState().invalidateAutoResourcePlans();
+        }
+        return { runtimeStatus, runtimeError: null };
+      },
       (message) => ({ runtimeStatus: null, runtimeError: message }),
       'Could not read runtime status. Check that the server is running.',
     );
   },
   fetchNodes: async () => {
-    await runDiscoveryRequest(
+    if (inFlightNodeDiscovery) {
+      await inFlightNodeDiscovery;
+      return;
+    }
+
+    const request = runDiscoveryRequest(
       'nodes',
       set,
       (signal) =>
@@ -736,6 +824,14 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (message) => ({ error: message }),
       `Server ${config.serverAddress} is not responding. Check if the server is running and the address is correct.`,
     );
+    inFlightNodeDiscovery = request;
+    try {
+      await request;
+    } finally {
+      if (inFlightNodeDiscovery === request) {
+        inFlightNodeDiscovery = null;
+      }
+    }
   },
 
   fetchHfCache: async (refresh: boolean = false) => {
@@ -803,7 +899,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   },
 
   fetchRegistry: async () => {
+    // Invalidate before any startup request begins. Invalidating between node
+    // discovery and model discovery raced the startup template-plan batch and
+    // could erase a freshly resolved plan.
+    useStudioStore.getState().invalidateAutoResourcePlans();
     await get().fetchNodes();
-    await Promise.all([get().refreshModelIndexes(false), get().fetchCustomModules()]);
+    await Promise.all([get().refreshModelIndexes(true, { invalidateAutoPlans: false }), get().fetchCustomModules()]);
   },
 }));

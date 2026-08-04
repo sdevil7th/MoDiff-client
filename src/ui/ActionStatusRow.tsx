@@ -6,16 +6,16 @@ import type { IssueCardTone } from './IssueCard';
 const toneClasses: Record<IssueCardTone, string> = {
   default: 'border-modiff-border bg-modiff-surface text-modiff-text hover:border-hf-yellow/70',
   success: 'border-modiff-green/50 bg-modiff-surface text-modiff-text hover:border-modiff-green',
-  warning: 'border-hf-orange/70 bg-modiff-surface text-modiff-text hover:border-hf-orange',
-  error: 'border-modiff-red/70 bg-modiff-surface text-modiff-text hover:border-modiff-red',
+  warning: 'border-modiff-warning/70 bg-modiff-surface text-modiff-text hover:border-modiff-warning',
+  error: 'border-modiff-invalid/70 bg-modiff-surface text-modiff-text hover:border-modiff-invalid',
   info: 'border-modiff-blue/70 bg-modiff-surface text-modiff-text hover:border-modiff-blue',
 };
 
 const iconClasses: Record<IssueCardTone, string> = {
-  default: 'text-gray-400',
+  default: 'text-modiff-subtle-text',
   success: 'text-modiff-green',
-  warning: 'text-hf-orange',
-  error: 'text-modiff-red',
+  warning: 'text-modiff-warning',
+  error: 'text-modiff-invalid',
   info: 'text-modiff-blue',
 };
 
@@ -49,17 +49,19 @@ export function ActionStatusRow({
   const content = (
     <>
       <Icon size={16} className={cx('shrink-0', iconClasses[tone])} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-semibold">{title}</span>
-        {meta ? <span className="mt-0.5 block truncate text-xs text-modiff-muted">{meta}</span> : null}
+      <span className="min-w-0 flex-1 overflow-hidden">
+        <span className="block break-words font-semibold">{title}</span>
+        {meta ? (
+          <span className="mt-0.5 block break-words text-modiff-metadata text-modiff-subtle-text">{meta}</span>
+        ) : null}
       </span>
       {action ? <span className="shrink-0">{action}</span> : null}
     </>
   );
   const rowClassName = cx(
-    'flex min-h-11 w-full items-center gap-2 rounded-modiff-compact border px-3 py-2 text-left text-sm transition',
+    'flex min-h-11 w-full min-w-0 items-center gap-2 overflow-hidden rounded-modiff-compact border px-3 py-2 text-left text-sm transition',
     onClick &&
-      'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
+      'active:bg-modiff-surface-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-modiff-focus',
     disabled && 'pointer-events-none opacity-50',
     toneClasses[tone],
     className,

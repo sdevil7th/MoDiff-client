@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { cx } from '../utils/classNames';
 
 export type ImageFrameProps = {
+  actionLabel?: string;
   src: string;
   alt: string;
   fit?: 'contain' | 'cover';
@@ -16,6 +17,7 @@ export type ImageFrameProps = {
 };
 
 export function ImageFrame({
+  actionLabel,
   src,
   alt,
   fit = 'contain',
@@ -32,6 +34,19 @@ export function ImageFrame({
   if (maxHeight !== undefined) imgStyle.maxHeight = maxHeight;
   if (aspectRatio !== undefined) imgStyle.aspectRatio = aspectRatio;
 
+  const image = (
+    <img
+      src={src}
+      alt={alt}
+      className={cx(
+        'block w-full bg-modiff-media-backdrop',
+        fit === 'cover' ? 'object-cover' : 'object-contain',
+        imgClassName,
+      )}
+      style={imgStyle}
+    />
+  );
+
   return (
     <div
       data-testid={testId}
@@ -41,18 +56,18 @@ export function ImageFrame({
         className,
       )}
     >
-      <img
-        src={src}
-        alt={alt}
-        onClick={onClick}
-        className={cx(
-          'block w-full bg-black',
-          fit === 'cover' ? 'object-cover' : 'object-contain',
-          onClick && 'cursor-pointer',
-          imgClassName,
-        )}
-        style={imgStyle}
-      />
+      {onClick ? (
+        <button
+          type="button"
+          aria-label={actionLabel ?? `Open ${alt}`}
+          onClick={onClick}
+          className="block w-full cursor-pointer rounded-modiff-compact bg-transparent p-0 outline-none transition active:brightness-90 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-modiff-focus"
+        >
+          {image}
+        </button>
+      ) : (
+        image
+      )}
     </div>
   );
 }

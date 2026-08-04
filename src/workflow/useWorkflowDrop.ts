@@ -12,6 +12,8 @@ import { createNodeFromRegistry } from './nodeFactory';
 import { createUserBlockNode, USER_BLOCK_DRAG_PREFIX } from '../studio/userBlocks';
 import { useUserBlockStore } from '../stores/useUserBlockStore';
 import { formatRequestError, requestJson, RequestError } from '../utils/requestJson';
+import { isRecord } from '../studio/outputContracts';
+import { parseWorkflowPackage } from '../studio/workflowPackage';
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
 type CreateWorkflowTab = (
@@ -40,6 +42,13 @@ function showGraphImportError(message: string) {
   enqueueSnackbar(message, { variant: 'error', autoHideDuration: message.length * 80 });
 }
 
+function savedWorkflowSnapshot(value: unknown) {
+  if (!isRecord(value) || !Array.isArray(value.nodes) || !Array.isArray(value.edges) || !isRecord(value.studioForm)) {
+    return null;
+  }
+  return value as unknown as WorkflowTabSnapshot;
+}
+
 export function useWorkflowDrop({
   addNode,
   createWorkflowTab,
@@ -64,14 +73,22 @@ export function useWorkflowDrop({
 
         const reader = new FileReader();
         reader.onload = (readerEvent) => {
-          const graph = JSON.parse(readerEvent.target?.result as string) as WorkflowGraphDrop;
-          createWorkflowTab(
-            file.name || 'Imported graph',
-            workflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form),
-            'import',
-            file.name,
-          );
-          enqueueSnackbar('Workflow opened as a new tab', { variant: 'success', autoHideDuration: 2200 });
+          try {
+            const value = JSON.parse(readerEvent.target?.result as string) as unknown;
+            const workflowPackage = parseWorkflowPackage(value);
+            const snapshot = savedWorkflowSnapshot(value) ?? workflowPackage?.snapshot;
+            const title = workflowPackage?.title || file.name.replace(/\.json$/i, '') || 'Imported workflow';
+            createWorkflowTab(
+              title,
+              snapshot ??
+                workflowSnapshotFromGraph(value as WorkflowGraphDrop, edgeType, useStudioStore.getState().form),
+              'import',
+              file.name,
+            );
+            enqueueSnackbar('Workflow opened as a new tab', { variant: 'success', autoHideDuration: 2200 });
+          } catch (error) {
+            showGraphImportError(formatRequestError(error, 'Could not read the workflow JSON.'));
+          }
         };
         reader.readAsText(file);
         return;

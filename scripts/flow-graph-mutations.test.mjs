@@ -7,6 +7,7 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let flowStoreModule;
+let nodeStoreModule;
 let server;
 let originalFetch;
 let requests;
@@ -37,6 +38,7 @@ before(async () => {
     appType: 'custom',
   });
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  nodeStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   originalFetch = globalThis.fetch;
 });
 
@@ -59,6 +61,7 @@ beforeEach(() => {
     historyFuture: [],
     historyTransaction: null,
   });
+  nodeStoreModule.useNodesStore.setState({ nodesRegistry: {} });
 });
 
 after(async () => {
@@ -90,6 +93,80 @@ function edge(id, source, target, sourceHandle, targetHandle) {
 function cacheRequests() {
   return requests.filter((request) => request.url.endsWith('/cache') && request.init.method === 'DELETE');
 }
+
+test('graph replacement restores missing live UI preview contracts without replacing saved values', () => {
+  nodeStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      'modules.Test.Preview': {
+        type: 'custom',
+        module: 'modules.Test',
+        action: 'Preview',
+        label: 'Preview',
+        category: 'Test',
+        params: {
+          title: {
+            display: 'ui_label',
+            label: 'Current label',
+            value: 'Live fallback',
+            fieldOptions: { tone: 'subtle' },
+          },
+          preview: {
+            display: 'ui_video',
+            type: 'url',
+            dataSource: 'file',
+          },
+          file: {
+            display: 'output',
+            type: 'video',
+          },
+        },
+      },
+    },
+  });
+
+  flowStoreModule.useFlowStore.getState().replaceGraph({
+    nodes: [
+      node('Preview', {
+        title: {
+          display: 'ui_label',
+          label: 'Stale label',
+          value: 'Saved workflow title',
+          fieldOptions: { tone: 'old' },
+        },
+        file: { display: 'output', type: 'video' },
+      }),
+    ],
+    edges: [],
+  });
+  let params = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
+  let preview = params.preview;
+  assert.deepEqual(preview, {
+    display: 'ui_video',
+    type: 'url',
+    dataSource: 'file',
+  });
+  assert.deepEqual(params.title, {
+    display: 'ui_label',
+    label: 'Current label',
+    value: 'Saved workflow title',
+    fieldOptions: { tone: 'subtle' },
+  });
+
+  flowStoreModule.useFlowStore.getState().replaceGraph({
+    nodes: [
+      node('Preview', {
+        file: { display: 'output', type: 'video' },
+        preview: { value: '/file?file=previous.mp4' },
+      }),
+    ],
+    edges: [],
+  });
+  params = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
+  preview = params.preview;
+  assert.equal(preview.display, 'ui_video');
+  assert.equal(preview.dataSource, 'file');
+  assert.equal(preview.value, '/file?file=previous.mp4');
+});
 
 test('node deletion cleans edges, spawned inputs, signals, handles, cache, and round-trips through history', () => {
   const source = node(
@@ -180,6 +257,211 @@ test('node deletion cleans edges, spawned inputs, signals, handles, cache, and r
   assert.equal(cacheRequests().length, 2);
 });
 
+test('terminal cleanup is task-scoped and durable graph snapshots never retain execution state', () => {
+  const completedTaskNode = node(
+    'completed-task-node',
+    {
+      output: {
+        display: 'output',
+        type: 'image',
+        artifacts: [{ url: '/cache/completed/output' }],
+        signal: { direction: 'output', value: 'runtime-only' },
+      },
+    },
+    {
+      progress: -1,
+      activeTaskId: 'task-completed',
+      attemptIndex: 2,
+      executionStatus: 'running',
+      executionPhase: 'decoding',
+      progressMessage: 'Decoding',
+    },
+  );
+  const newerTaskNode = node(
+    'newer-task-node',
+    {},
+    {
+      progress: 35,
+      activeTaskId: 'task-newer',
+      attemptIndex: 0,
+      executionStatus: 'running',
+      executionPhase: 'denoising',
+      progressMessage: 'Denoising',
+    },
+  );
+  flowStoreModule.useFlowStore.setState({ nodes: [completedTaskNode, newerTaskNode], edges: [] });
+
+  flowStoreModule.useFlowStore.getState().resetExecutionProgress('task-completed');
+
+  const state = flowStoreModule.useFlowStore.getState();
+  const cleared = state.nodes.find((item) => item.id === 'completed-task-node');
+  const active = state.nodes.find((item) => item.id === 'newer-task-node');
+  assert.equal(cleared.data.progress, 0);
+  assert.equal(cleared.data.activeTaskId, null);
+  assert.equal(cleared.data.attemptIndex, undefined);
+  assert.equal(cleared.data.executionStatus, undefined);
+  assert.equal(cleared.data.executionPhase, undefined);
+  assert.equal(cleared.data.progressMessage, undefined);
+  assert.equal(active.data.progress, 35);
+  assert.equal(active.data.activeTaskId, 'task-newer');
+  assert.equal(active.data.executionStatus, 'running');
+
+  const durable = state.toObject();
+  const durableActive = durable.nodes.find((item) => item.id === 'newer-task-node');
+  const durableCleared = durable.nodes.find((item) => item.id === 'completed-task-node');
+  assert.equal(durableActive.data.progress, undefined);
+  assert.equal(durableActive.data.activeTaskId, undefined);
+  assert.equal(durableActive.data.attemptIndex, undefined);
+  assert.equal(durableActive.data.executionStatus, undefined);
+  assert.equal(durableActive.data.executionPhase, undefined);
+  assert.equal(durableActive.data.progressMessage, undefined);
+  assert.equal(durableCleared.data.params.output.artifacts, undefined);
+  assert.equal(durableCleared.data.params.output.signal.value, undefined);
+
+  const persisted = JSON.parse(globalThis.localStorage.getItem('modiff.flow')).state;
+  const persistedActive = persisted.nodes.find((item) => item.id === 'newer-task-node');
+  assert.equal(persistedActive.data.progress, undefined);
+  assert.equal(persistedActive.data.activeTaskId, undefined);
+  assert.equal(persistedActive.data.executionStatus, undefined);
+});
+
+test('advancing a task retires the previous node progress indicator', () => {
+  flowStoreModule.useFlowStore.setState({
+    nodes: [node('config', {}), node('loader', {})],
+    edges: [],
+  });
+
+  const flow = flowStoreModule.useFlowStore.getState();
+  flow.updateProgress('config', -1, {
+    activeTaskId: 'stale-or-missing-task-identity',
+    attemptIndex: 0,
+    executionStatus: 'running',
+    executionPhase: 'preparing',
+    progressMessage: 'Building execution recipe',
+    executionProgress: { phase: 'preparing', message: 'Building execution recipe' },
+  });
+  flow.updateProgress('loader', 23, {
+    activeTaskId: 'task-sequential',
+    attemptIndex: 0,
+    executionStatus: 'running',
+    executionPhase: 'loading',
+    progressMessage: 'Loading weights 91/398',
+    executionProgress: { phase: 'loading', message: 'Loading weights 91/398' },
+  });
+
+  const state = flowStoreModule.useFlowStore.getState();
+  const config = state.nodes.find((item) => item.id === 'config');
+  const loader = state.nodes.find((item) => item.id === 'loader');
+  assert.equal(config.data.progress, 0);
+  assert.equal(config.data.activeTaskId, null);
+  assert.equal(config.data.executionStatus, undefined);
+  assert.equal(config.data.executionPhase, undefined);
+  assert.equal(config.data.progressMessage, undefined);
+  assert.equal(config.data.executionProgress, undefined);
+  assert.equal(loader.data.progress, 23);
+  assert.equal(loader.data.activeTaskId, 'task-sequential');
+  assert.equal(loader.data.executionStatus, 'running');
+  assert.equal(loader.data.progressMessage, 'Loading weights 91/398');
+});
+
+test('persisted flow hydration versions and filters malformed graph state', async () => {
+  const valid = node('persisted-valid', { prompt: { value: 'restored' } });
+  globalThis.localStorage.setItem(
+    'modiff.flow',
+    JSON.stringify({
+      version: 1,
+      state: {
+        nodes: [
+          valid,
+          { id: 'invalid-node', position: null, data: { params: {} } },
+          {
+            ...node('invalid-param-node'),
+            data: { ...node('invalid-param-node').data, params: { prompt: null } },
+          },
+        ],
+        edges: [
+          edge('valid-edge', 'persisted-valid', 'persisted-valid', 'output', 'input'),
+          edge('dangling-edge', 'persisted-valid', 'missing-node', 'output', 'input'),
+        ],
+        viewport: { x: 12, y: Number.NaN, zoom: -4 },
+      },
+    }),
+  );
+
+  await flowStoreModule.useFlowStore.persist.rehydrate();
+
+  const restored = flowStoreModule.useFlowStore.getState();
+  assert.deepEqual(
+    restored.nodes.map((item) => item.id),
+    ['persisted-valid'],
+  );
+  assert.deepEqual(
+    restored.edges.map((item) => item.id),
+    ['valid-edge'],
+  );
+  assert.deepEqual(restored.viewport, { x: 12, y: 0, zoom: 1 });
+  assert.equal(restored.historyPast.length, 0);
+  assert.equal(restored.historyFuture.length, 0);
+});
+
+test('cache status reset is atomic and never publishes an empty graph during reconnect', () => {
+  const managedNode = node(
+    'managed-generate',
+    {},
+    {
+      studioRole: 'generate',
+      progress: 42,
+      activeTaskId: 'task-running',
+      attemptIndex: 0,
+      executionStatus: 'running',
+      executionPhase: 'denoising',
+      progressMessage: 'Denoising',
+    },
+  );
+  const outputNode = node('managed-output', {}, { studioRole: 'output', isCached: true });
+  const connection = edge('managed-edge', managedNode.id, outputNode.id, 'image', 'image');
+  const viewport = { x: 21, y: -13, zoom: 0.82 };
+  flowStoreModule.useFlowStore.setState({
+    nodes: [managedNode, outputNode],
+    edges: [connection],
+    viewport,
+    lastExecutionTime: 1250,
+  });
+
+  const publications = [];
+  const unsubscribe = flowStoreModule.useFlowStore.subscribe((state) => {
+    publications.push({
+      nodeIds: state.nodes.map((item) => item.id),
+      edgeIds: state.edges.map((item) => item.id),
+      viewport: state.viewport,
+    });
+  });
+  flowStoreModule.useFlowStore.getState().resetStatus(['managed-generate']);
+  unsubscribe();
+
+  assert.ok(publications.length > 0);
+  assert.ok(publications.every((publication) => publication.nodeIds.length === 2));
+  assert.ok(publications.every((publication) => publication.edgeIds.length === 1));
+  assert.ok(publications.every((publication) => publication.viewport === viewport));
+
+  const state = flowStoreModule.useFlowStore.getState();
+  const generate = state.nodes.find((item) => item.id === 'managed-generate');
+  const output = state.nodes.find((item) => item.id === 'managed-output');
+  assert.equal(generate.data.studioRole, 'generate');
+  assert.equal(generate.data.isCached, true);
+  assert.equal(generate.data.progress, 0);
+  assert.equal(generate.data.activeTaskId, null);
+  assert.equal(generate.data.attemptIndex, undefined);
+  assert.equal(generate.data.executionStatus, undefined);
+  assert.equal(generate.data.executionPhase, undefined);
+  assert.equal(generate.data.progressMessage, undefined);
+  assert.equal(output.data.studioRole, 'output');
+  assert.equal(output.data.isCached, false);
+  assert.deepEqual(state.edges, [connection]);
+  assert.equal(state.viewport, viewport);
+  assert.equal(state.lastExecutionTime, 0);
+});
+
 test('React Flow removal deletes group descendants through the same invariant path', () => {
   const group = {
     ...node('group', {}),
@@ -193,6 +475,30 @@ test('React Flow removal deletes group descendants through the same invariant pa
 
   assert.equal(flowStoreModule.useFlowStore.getState().nodes.length, 0);
   assert.deepEqual(JSON.parse(cacheRequests()[0].init.body), { nodes: ['group', 'child'] });
+});
+
+test('loop creation keeps selected nodes visible as direct container children and can be reversed', () => {
+  const first = { ...node('first', {}), position: { x: 100, y: 120 }, width: 180, height: 100, selected: true };
+  const second = { ...node('second', {}), position: { x: 360, y: 180 }, width: 180, height: 100, selected: true };
+  flowStoreModule.useFlowStore.setState({ nodes: [first, second], edges: [] });
+
+  flowStoreModule.useFlowStore.getState().loopNodes(['first', 'second']);
+
+  let state = flowStoreModule.useFlowStore.getState();
+  const loop = state.nodes.find((item) => item.data.type === 'loop');
+  assert.ok(loop);
+  assert.equal(state.nodes.find((item) => item.id === 'first').parentId, loop.id);
+  assert.equal(state.nodes.find((item) => item.id === 'second').parentId, loop.id);
+  assert.equal(loop.data.params.iterations.value, 2);
+
+  state.ungroupNodes(loop.id);
+  state = flowStoreModule.useFlowStore.getState();
+  assert.equal(
+    state.nodes.some((item) => item.id === loop.id),
+    false,
+  );
+  assert.equal(state.nodes.find((item) => item.id === 'first').parentId, undefined);
+  assert.deepEqual(state.nodes.find((item) => item.id === 'first').position, { x: 100, y: 120 });
 });
 
 test('graph replacement filters dangling edges and reconciles disconnected runtime state', () => {

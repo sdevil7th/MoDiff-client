@@ -137,7 +137,7 @@ export function StudioPromptEnhancer({ form, template, onApply }: StudioPromptEn
                   key={`${token.text}-${index}`}
                   className={cx(
                     'mb-1 mr-1 inline-block rounded-modiff-compact px-1 text-xs',
-                    token.kind === 'same' && 'text-gray-400',
+                    token.kind === 'same' && 'text-modiff-subtle-text',
                     token.kind === 'added' && 'bg-modiff-green/10 text-modiff-green',
                     token.kind === 'removed' && 'bg-modiff-red/10 text-modiff-red line-through',
                   )}
@@ -147,8 +147,8 @@ export function StudioPromptEnhancer({ form, template, onApply }: StudioPromptEn
               ))}
             </div>
             <div className="grid gap-1 border-t border-modiff-border pt-2">
-              <p className="text-xs font-semibold uppercase text-hf-gray">Negative</p>
-              <p className="break-words text-xs text-gray-300">{proposal.negativePrompt || 'None'}</p>
+              <p className="text-xs font-semibold uppercase text-modiff-subtle-text">Negative</p>
+              <p className="break-words text-xs text-modiff-subtle-text">{proposal.negativePrompt || 'None'}</p>
             </div>
           </div>
         )}

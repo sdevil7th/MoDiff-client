@@ -33,12 +33,13 @@ export const reactFlowBaselineStyles = {
 
 export const reactFlowBaseCss = `
 .react-flow__handle {
-  --modiff-flow-handle-color: var(--color-hf-gray);
+  --modiff-flow-handle-color: var(--color-modiff-subtle-text);
   width: 12px;
   height: 12px;
   border: 2px solid var(--color-modiff-bg);
   border-radius: var(--radius-modiff-compact);
   background-color: var(--modiff-flow-handle-color);
+  background-image: var(--modiff-flow-handle-segments, none);
   box-shadow: 0 0 0 1px var(--color-modiff-border);
   opacity: 0.88;
   transition: opacity 120ms ease, box-shadow 120ms ease, transform 120ms ease;
@@ -74,13 +75,17 @@ export const reactFlowBaseCss = `
 
 .react-flow__connection-path {
   marker-end: url(#connection-marker);
-  stroke: var(--color-hf-gray);
+  stroke: var(--modiff-flow-connection-color, var(--color-modiff-subtle-text));
   stroke-width: 3;
   stroke-dasharray: 8,8;
 }
 
+#connection-marker rect {
+  fill: var(--modiff-flow-connection-color, var(--color-modiff-subtle-text));
+}
+
 .react-flow__edge .react-flow__edge-path {
-  stroke: var(--modiff-flow-edge-color, var(--color-hf-gray));
+  stroke: var(--modiff-flow-edge-color, var(--color-modiff-subtle-text));
   stroke-width: 3;
   stroke-opacity: 0.7;
   transition: stroke-opacity 120ms ease, stroke-width 120ms ease;
@@ -90,6 +95,22 @@ export const reactFlowBaseCss = `
 .react-flow__edge:hover .react-flow__edge-path {
   stroke-opacity: 1;
   stroke-width: 3.5;
+}
+
+.react-flow__node.modiff-graph-fix-ghost {
+  opacity: 0.58;
+  pointer-events: none;
+  filter: saturate(0.7);
+}
+
+.react-flow__edge.modiff-graph-fix-ghost {
+  pointer-events: none;
+}
+
+.react-flow__edge.modiff-graph-fix-ghost .react-flow__edge-path {
+  stroke: var(--color-hf-yellow);
+  stroke-dasharray: 7 6;
+  stroke-opacity: 0.9;
 }
 
 .react-flow__node.selected > [class*="category-"] {
@@ -102,19 +123,36 @@ export const reactFlowBaseCss = `
 }
 
 .invalid-connection .react-flow__connection-path {
-  stroke: var(--color-modiff-red);
+  stroke: var(--modiff-flow-connection-color, var(--color-modiff-subtle-text));
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 3px var(--color-modiff-red));
 }
 
 .invalid-connection #connection-marker rect {
-  fill: var(--color-modiff-red);
+  fill: var(--modiff-flow-connection-color, var(--color-modiff-subtle-text));
+  stroke: var(--color-modiff-red);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 2px var(--color-modiff-red));
 }
 
 .valid-connection .react-flow__connection-path {
-  stroke: var(--color-modiff-green);
+  stroke: var(--modiff-flow-connection-color, var(--color-modiff-subtle-text));
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 3px var(--color-modiff-green));
 }
 
 .valid-connection #connection-marker rect {
-  fill: var(--color-modiff-green);
+  fill: var(--modiff-flow-connection-color, var(--color-modiff-subtle-text));
+  stroke: var(--color-modiff-green);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 2px var(--color-modiff-green));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.animated .react-flow__edge-path {
+    animation: none;
+    stroke-dasharray: none;
+  }
 }`;
 
 export function generateReactFlowCategoryCss() {

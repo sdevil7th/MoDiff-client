@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "overrides": [
+    {
+      "templateId": "ace_step_audio_continuation",
+      "role": "source_audio",
+      "bindingLabel": "Included 75-second source audio",
+      "assetLabel": "75-second 3/4 source song",
+      "path": "public/template-gallery/ace_step_text_to_audio.current.wav",
+      "previewPath": "/template-gallery/ace_step_text_to_audio.current.wav",
+      "contentHash": "sha256:bytes:3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230",
+      "byteSize": 14400044,
+      "sourceTaskId": "6K8vnoVfgEEz",
+      "selectionReason": "User-selected latest 75-second ACE-Step output at 170 BPM, C# minor, and 3/4 for the continuation template source."
+    }
+  ]
+}

@@ -13,14 +13,27 @@ import type {
   StudioModelType,
   StudioOutput,
   StudioOutputMediaItem,
+  StudioPreviewSlot,
+  StudioPreviewSlotStatus,
   StudioTemplateId,
 } from './types';
 
 export type BackendOutputsResponse = {
   error?: boolean;
   message?: string;
-  outputs?: StudioOutput[];
+  outputs: StudioOutput[];
+  previewSlots: StudioPreviewSlot[];
+  revision: number;
 };
+
+const STUDIO_PREVIEW_SLOT_STATUSES: readonly StudioPreviewSlotStatus[] = [
+  'empty',
+  'pending',
+  'ready',
+  'failed',
+  'cancelled',
+  'completed_without_output',
+];
 
 const STUDIO_MODES: readonly StudioMode[] = [
   'text_to_image',
@@ -45,23 +58,11 @@ const STUDIO_MODES: readonly StudioMode[] = [
   'advanced_workflow',
 ];
 
-const STUDIO_MODEL_TYPES: readonly StudioModelType[] = [
-  'ZImageModularPipeline',
-  'QwenImageModularPipeline',
-  'QwenImageEditModularPipeline',
-  'QwenImageEditPlusModularPipeline',
-  'QwenImageLayeredModularPipeline',
-  'WanVACEPipeline',
-  'AceStepAudioPipeline',
-  'FluxSchnellPipeline',
-  'FluxDevPipeline',
-  'FluxKreaPipeline',
-  'FluxKontextPipeline',
-  'FluxFillPipeline',
-  'FluxDepthPipeline',
-  'FluxCannyPipeline',
-  'FluxReduxPipeline',
-];
+// Keep persistence validation tied to the canonical model registry. A copied
+// allow-list previously omitted the Wan and LTX model types, so restoring an
+// otherwise valid video workflow silently replaced its model with the global
+// Z-Image default while preserving the video graph.
+const STUDIO_MODEL_TYPES = Object.keys(STUDIO_MODEL_PROFILES) as StudioModelType[];
 
 const STUDIO_ASPECT_RATIOS: readonly StudioFormState['aspectRatio'][] = ['1:1', '4:3', '3:4', '16:9', '9:16', 'custom'];
 const STUDIO_DTYPES: readonly StudioFormState['dtype'][] = ['float32', 'float16', 'bfloat16'];
@@ -108,6 +109,7 @@ const STUDIO_TEMPLATE_IDS: readonly StudioTemplateId[] = [
   'fast_lora',
   'high_quality',
   'wan_vace_cinematic_text_to_video',
+  'wan_vace_direct_text_to_video',
   'wan_vace_animate_product_still',
   'wan_vace_video_color_grade',
   'wan_vace_masked_object_replace',
@@ -118,11 +120,42 @@ const STUDIO_TEMPLATE_IDS: readonly StudioTemplateId[] = [
   'ace_step_audio_variation',
   'ace_step_audio_continuation',
   'ace_step_audio_repaint',
+  'ace_step_chinese_new_year_lora',
+  'ace_step_custom_lora',
   'flux_schnell_text_to_image',
   'flux_dev_expert_text_to_image',
+  'flux_lora_ghibli_story',
+  'flux_lora_oil_painting',
+  'flux_lora_film_noir',
+  'flux_lora_retro_comic',
+  'flux_lora_watercolor',
+  'flux_lora_paper_cutout',
+  'flux_lora_photoreal_documentary',
   'flux_kontext_edit',
   'flux_fill_inpaint',
   'flux_control_canny',
+  'flux_krea_text_to_image',
+  'flux_kontext_multi_reference',
+  'flux_fill_outpaint',
+  'flux_depth_control',
+  'flux_redux_edit',
+  'flux_redux_multi_reference',
+  'flux2_klein_text_to_image',
+  'flux2_klein_edit',
+  'flux2_klein_multi_reference',
+  'wan_vace_video_to_video',
+  'qwen_edit_plus_single_image',
+  'ltx_video_text_to_video',
+  'ltx_video_image_to_video',
+  'ltx_video_video_to_video',
+  'ltx_video_multi_reference',
+  'ltx_video_long_showcase',
+  'wan_video_long_showcase',
+  'wan_22_i2v_seed_vault',
+  'wan_21_t2v_13b_seed_vault',
+  'wan_22_ti2v_5b_seed_vault',
+  'ltx_video_animated_story',
+  'ace_step_lyric_music_video',
 ];
 const STUDIO_OUTPUT_DISPLAY_TYPES: readonly NonNullable<StudioOutput['displayType']>[] = [
   'image',
@@ -141,25 +174,6 @@ const STUDIO_MEDIA_ITEM_DISPLAY_TYPES: readonly NonNullable<StudioOutputMediaIte
   'json',
   'unknown',
 ];
-const LEGACY_TEMPLATE_MARKER = 'co' + 'mfy';
-
-function legacyTemplateId(prefix: string, suffix: string) {
-  return `${prefix}_${LEGACY_TEMPLATE_MARKER}_${suffix}`;
-}
-
-const LEGACY_STUDIO_TEMPLATE_IDS = new Map<string, StudioTemplateId>([
-  [legacyTemplateId('z', 'cinematic_contact_sheet'), 'z_image_cinematic_contact_sheet'],
-  [legacyTemplateId('qwen', 'product_ad_composite'), 'qwen_product_ad_composite'],
-  [legacyTemplateId('qwen', 'product_relight'), 'qwen_product_relight'],
-  [legacyTemplateId('qwen', 'packaging_dieline'), 'qwen_packaging_dieline'],
-  [legacyTemplateId('qwen', 'character_angles'), 'qwen_character_angles'],
-  [legacyTemplateId('qwen', 'tile_extract'), 'qwen_tile_extract'],
-  [legacyTemplateId('qwen', 'logo_texture'), 'qwen_logo_texture'],
-  [legacyTemplateId('qwen', 'layered_portrait'), 'qwen_layered_portrait'],
-  [legacyTemplateId('qwen', 'outpaint_aspect'), 'qwen_outpaint_aspect_template'],
-  [legacyTemplateId('qwen', 'inpaint_object_replace'), 'qwen_inpaint_object_replace'],
-]);
-
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
@@ -299,6 +313,22 @@ export function coerceStudioGraphSnapshot(value: unknown): StudioGraphSnapshot |
 
 export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | null {
   if (!isRecord(value)) return null;
+  const rawProof = isRecord(value.finalizationProof) ? value.finalizationProof : null;
+  const finalizationProof =
+    rawProof?.schemaVersion === 1 &&
+    typeof rawProof.shapeKey === 'string' &&
+    rawProof.shapeKey.length > 0 &&
+    typeof rawProof.fieldSchemaHash === 'string' &&
+    rawProof.fieldSchemaHash.length > 0 &&
+    typeof rawProof.finalizedAt === 'number' &&
+    Number.isFinite(rawProof.finalizedAt)
+      ? {
+          schemaVersion: 1 as const,
+          shapeKey: rawProof.shapeKey,
+          fieldSchemaHash: rawProof.fieldSchemaHash,
+          finalizedAt: rawProof.finalizedAt,
+        }
+      : undefined;
   return {
     mode: stringUnionValue(value.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode),
     modelType: stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType),
@@ -306,6 +336,7 @@ export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | n
     managedNodeIds: stringArrayValue(value.managedNodeIds),
     managedEdgeIds: stringArrayValue(value.managedEdgeIds),
     fingerprint: stringValue(value.fingerprint, ''),
+    ...(finalizationProof ? { finalizationProof } : {}),
     createdAt: numberValue(value.createdAt, Date.now()),
     updatedAt: numberValue(value.updatedAt, Date.now()),
   };
@@ -313,8 +344,7 @@ export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | n
 
 export function coerceStudioTemplateId(value: unknown): StudioTemplateId | undefined {
   if (typeof value !== 'string') return undefined;
-  const current = optionalStringUnion(value, STUDIO_TEMPLATE_IDS);
-  return current ?? LEGACY_STUDIO_TEMPLATE_IDS.get(value);
+  return optionalStringUnion(value, STUDIO_TEMPLATE_IDS);
 }
 
 function coerceStudioOutputMediaItem(value: unknown, fallbackIndex: number): StudioOutputMediaItem | undefined {
@@ -423,5 +453,31 @@ export function parseBackendOutputsResponse(value: unknown): BackendOutputsRespo
     outputs: Array.isArray(data.outputs)
       ? data.outputs.map(coerceStudioOutput).filter((output): output is StudioOutput => Boolean(output))
       : [],
+    previewSlots: Array.isArray(data.previewSlots)
+      ? data.previewSlots.map(coerceStudioPreviewSlot).filter((slot): slot is StudioPreviewSlot => Boolean(slot))
+      : [],
+    revision: numberValue(data.revision, 0),
+  };
+}
+
+export function coerceStudioPreviewSlot(value: unknown): StudioPreviewSlot | null {
+  if (!isRecord(value)) return null;
+  const workflowTabId = optionalString(value.workflowTabId);
+  const nodeId = optionalString(value.nodeId);
+  const fieldKey = optionalString(value.fieldKey);
+  if (!workflowTabId || !nodeId || !fieldKey) return null;
+  return {
+    schemaVersion: 1,
+    workflowTabId,
+    nodeId,
+    fieldKey,
+    currentOutputId: optionalNullableString(value.currentOutputId),
+    pendingClientRunId: optionalNullableString(value.pendingClientRunId),
+    pendingTaskId: optionalNullableString(value.pendingTaskId),
+    generation: Math.max(0, numberValue(value.generation, 0)),
+    attemptIndex:
+      typeof value.attemptIndex === 'number' && Number.isFinite(value.attemptIndex) ? value.attemptIndex : null,
+    status: stringUnionValue(value.status, STUDIO_PREVIEW_SLOT_STATUSES, 'empty'),
+    updatedAt: numberValue(value.updatedAt, 0),
   };
 }

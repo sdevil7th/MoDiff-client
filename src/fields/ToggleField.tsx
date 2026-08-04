@@ -1,24 +1,29 @@
-import { ChangeEvent } from 'react';
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
+import type { ReactNode } from 'react';
 import { FieldProps } from '../components/NodeContent';
 import fieldAction from '../utils/fieldAction';
 import { useInitialFieldAction } from '../utils/useInitialFieldAction';
-import { FieldFrame } from '../ui';
+import { FieldFrame, ModiffCheckbox, ModiffSwitch } from '../ui';
 import { cx } from '../utils/classNames';
+import { runtimeOptionEntries } from '../studio/runtimeOptions';
 
 export default function ToggleField(props: FieldProps) {
   const isCheckbox = props.fieldType === 'checkbox';
   const multiOptions =
-    !Array.isArray(props.options) && typeof props.options === 'object' ? Object.entries(props.options) : null;
+    !Array.isArray(props.options) && typeof props.options === 'object'
+      ? runtimeOptionEntries(props.options).filter((entry) => entry.type === 'option')
+      : null;
   const selectedValues = Array.isArray(props.value) ? props.value : [];
 
-  const handleOnChange = (e: ChangeEvent<HTMLInputElement>, key?: string) => {
+  const handleOnChange = (checked: boolean, key?: string) => {
     if (multiOptions) {
-      const newValue = e.target.checked ? [...selectedValues, key] : selectedValues.filter((k: string) => k !== key);
+      const newValue = checked ? [...selectedValues, key] : selectedValues.filter((k: string) => k !== key);
       props.updateStore(props.fieldKey, newValue);
       fieldAction(props, newValue);
     } else {
-      props.updateStore(props.fieldKey, e.target.checked);
-      fieldAction(props, e.target.checked.toString());
+      props.updateStore(props.fieldKey, checked);
+      fieldAction(props, checked.toString());
     }
   };
 
@@ -33,34 +38,37 @@ export default function ToggleField(props: FieldProps) {
       className="modiff-field"
     >
       {!multiOptions ? (
-        <label className="flex w-full cursor-pointer items-center gap-2 rounded-modiff-compact px-2 py-1 text-sm text-modiff-text">
-          <ToggleControl
-            checked={Boolean(props.value)}
-            disabled={props.disabled}
-            isCheckbox={isCheckbox}
-            onChange={(event) => handleOnChange(event)}
-          />
-          <span className="min-w-0 truncate">{props.label}</span>
-        </label>
+        <ToggleControl
+          checked={Boolean(props.value)}
+          disabled={props.disabled}
+          isCheckbox={isCheckbox}
+          label={<span className="min-w-0 truncate">{props.label}</span>}
+          onChange={(checked) => handleOnChange(checked)}
+          className="w-full rounded-modiff-compact px-2 py-1"
+        />
       ) : (
         <>
-          <div className="text-[13px] text-gray-400">{props.label}</div>
+          <div className="text-modiff-label text-modiff-subtle-text">{props.label}</div>
           <div
             className={cx(
               'flex w-full flex-wrap gap-1 p-1',
               props.fieldOptions?.direction === 'column' ? 'flex-col' : 'flex-row',
             )}
           >
-            {multiOptions.map(([key, value]) => (
-              <label key={key} className="flex cursor-pointer items-center gap-1.5 pr-2 text-sm text-modiff-text">
-                <ToggleControl
-                  checked={selectedValues.includes(key)}
-                  disabled={props.disabled}
-                  isCheckbox={isCheckbox}
-                  onChange={(event) => handleOnChange(event, key)}
-                />
-                <span className="min-w-0 truncate">{String(value)}</span>
-              </label>
+            {multiOptions.map((option) => (
+              <ToggleControl
+                key={option.key}
+                checked={selectedValues.includes(option.value)}
+                disabled={props.disabled || option.disabled}
+                isCheckbox={isCheckbox}
+                label={
+                  <span className="min-w-0 truncate" title={option.disabledReason}>
+                    {option.label}
+                  </span>
+                }
+                onChange={(checked) => handleOnChange(checked, option.value)}
+                className="pr-2"
+              />
             ))}
           </div>
         </>
@@ -71,39 +79,38 @@ export default function ToggleField(props: FieldProps) {
 
 function ToggleControl({
   checked,
+  className,
   disabled,
   isCheckbox,
+  label,
   onChange,
 }: {
   checked: boolean;
+  className?: string;
   disabled?: boolean;
   isCheckbox: boolean;
-  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  label: ReactNode;
+  onChange: (checked: boolean) => void;
 }) {
   if (isCheckbox) {
     return (
-      <input
-        type="checkbox"
-        className="nodrag size-4 accent-hf-yellow"
+      <ModiffCheckbox
         checked={checked}
         disabled={disabled}
-        onChange={onChange}
+        label={label}
+        onCheckedChange={onChange}
+        className={className}
       />
     );
   }
 
   return (
-    <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
-      <input
-        type="checkbox"
-        role="switch"
-        className="peer nodrag absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-      />
-      <span className="absolute inset-0 rounded-full bg-white/15 transition peer-checked:bg-hf-yellow peer-disabled:opacity-50" />
-      <span className="absolute left-0.5 size-4 rounded-full bg-gray-200 transition peer-checked:translate-x-4 peer-checked:bg-black" />
-    </span>
+    <ModiffSwitch
+      checked={checked}
+      disabled={disabled}
+      label={label}
+      onCheckedChange={onChange}
+      className={className}
+    />
   );
 }

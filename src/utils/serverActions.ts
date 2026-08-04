@@ -24,6 +24,12 @@ export type GpuCleanupResult = ServerActionResult & {
   released_node_count?: number;
 };
 
+export type MediaCleanupResult = ServerActionResult & {
+  removed: { asset_id: string; path: string }[];
+  errors: { asset_id: string; path: string; error: string }[];
+  remaining: number;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
@@ -47,8 +53,9 @@ function serverAction<T extends ServerActionResult>(
   fallbackMessage: string,
   init: Omit<RequestInit, 'signal'> = {},
   validate?: (payload: T) => void,
+  baseAddress = config.serverAddress,
 ) {
-  const url = `${config.serverAddress}${path}`;
+  const url = `${baseAddress}${path}`;
   return requestJson<T>(url, {
     ...init,
     parse: (value) => {
@@ -60,7 +67,13 @@ function serverAction<T extends ServerActionResult>(
 }
 
 export function requestExecutionStop() {
-  return serverAction('/stop', 'Could not stop the current execution.', { method: 'GET' });
+  return serverAction(
+    '/stop',
+    'Could not stop the current execution.',
+    { method: 'POST' },
+    undefined,
+    config.supervisorAddress,
+  ).catch(() => serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' }));
 }
 
 export function cancelQueuedTask(taskId: string) {
@@ -96,6 +109,23 @@ export function deleteNodeCache(nodeIds: string[]) {
 
 export function cleanupGpuMemory() {
   return serverAction<GpuCleanupResult>('/runtime/gpu_cleanup', 'Accelerator cleanup failed.', { method: 'POST' });
+}
+
+export function cleanupTemporaryMedia() {
+  return serverAction<MediaCleanupResult>(
+    '/media_assets',
+    'Temporary media cleanup failed.',
+    {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'all_unpinned' }),
+    },
+    (payload) => {
+      if (!Array.isArray(payload.removed) || !Array.isArray(payload.errors)) {
+        throw new Error('The temporary media cleanup response is invalid.');
+      }
+    },
+  );
 }
 
 export function deleteHfCacheEntry(hash: string) {

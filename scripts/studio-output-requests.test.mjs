@@ -9,6 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let originalFetch;
 let server;
 let studioStoreModule;
+let previewStateModule;
 
 const storageValues = new Map();
 const localStorageMock = {
@@ -38,13 +39,17 @@ before(async () => {
     appType: 'custom',
   });
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  previewStateModule = await server.ssrLoadModule('/src/studio/previewState.ts');
   originalFetch = globalThis.fetch;
 });
 
 beforeEach(() => {
+  storageValues.clear();
   studioStoreModule.useStudioStore.setState({
     outputs: [],
     outputRevision: 0,
+    previewSlots: {},
+    previewStateRevision: 0,
     galleryBackendStatus: 'idle',
     galleryBackendError: null,
     galleryRequests: {
@@ -88,6 +93,22 @@ function output(id, favorite = false) {
   };
 }
 
+function previewSlot(currentOutputId, revision = 1) {
+  return {
+    schemaVersion: 1,
+    workflowTabId: 'workflow-a',
+    nodeId: 'node-1',
+    fieldKey: 'image',
+    currentOutputId,
+    pendingClientRunId: null,
+    pendingTaskId: null,
+    generation: revision,
+    attemptIndex: 0,
+    status: currentOutputId ? 'ready' : 'pending',
+    updatedAt: revision,
+  };
+}
+
 async function flushPromises() {
   await Promise.resolve();
   await new Promise((resolve) => setImmediate(resolve));
@@ -122,6 +143,128 @@ test('an invalid backend output rejects the whole response instead of partially 
   assert.deepEqual(state.outputs, []);
   assert.equal(state.galleryBackendStatus, 'error');
   assert.match(state.galleryBackendError, /invalid output/);
+});
+
+test('backend-owned output history is not duplicated into localStorage', async () => {
+  globalThis.fetch = async () => jsonResponse({ error: false, outputs: [output('backend')] });
+  await studioStoreModule.useStudioStore.getState().fetchBackendOutputs();
+
+  assert.deepEqual(
+    studioStoreModule.useStudioStore.getState().outputs.map((item) => item.id),
+    ['backend'],
+  );
+  const persisted = JSON.parse(storageValues.get('modiff.studio'));
+  assert.equal(Object.hasOwn(persisted.state, 'outputs'), false);
+});
+
+test('refresh hydrates the durable current preview separately from previous outputs', async () => {
+  const current = { ...output('current'), workflowTabId: 'workflow-a' };
+  const previous = { ...output('previous'), workflowTabId: 'workflow-a' };
+  globalThis.fetch = async () =>
+    jsonResponse({
+      error: false,
+      outputs: [current, previous],
+      previewSlots: [previewSlot('current', 4)],
+      revision: 4,
+    });
+
+  await studioStoreModule.useStudioStore.getState().fetchBackendOutputs();
+  const state = studioStoreModule.useStudioStore.getState();
+  const key = studioStoreModule.studioPreviewSlotKey('node-1', 'image', 'workflow-a');
+  assert.equal(state.previewSlots[key].currentOutputId, 'current');
+  assert.deepEqual(
+    previewStateModule
+      .previousOutputsForPreview(
+        state.outputs,
+        'workflow-a',
+        'node-1',
+        'image',
+        state.previewSlots[key].currentOutputId,
+      )
+      .map((item) => item.id),
+    ['previous'],
+  );
+});
+
+test('a slower history response cannot replace a newer preview-state revision', async () => {
+  const call = deferred();
+  globalThis.fetch = () => call.promise;
+  const fetching = studioStoreModule.useStudioStore.getState().fetchBackendOutputs();
+  studioStoreModule.useStudioStore.getState().mergePreviewState([previewSlot('new-current', 9)], 9);
+  call.resolve(
+    jsonResponse({
+      error: false,
+      outputs: [{ ...output('old-current'), workflowTabId: 'workflow-a' }],
+      previewSlots: [previewSlot('old-current', 8)],
+      revision: 8,
+    }),
+  );
+  await fetching;
+
+  const state = studioStoreModule.useStudioStore.getState();
+  const key = studioStoreModule.studioPreviewSlotKey('node-1', 'image', 'workflow-a');
+  assert.equal(state.previewStateRevision, 9);
+  assert.equal(state.previewSlots[key].currentOutputId, 'new-current');
+});
+
+test('legacy localStorage output copies are discarded during hydration', async () => {
+  const state = studioStoreModule.useStudioStore.getState();
+  storageValues.set(
+    'modiff.studio',
+    JSON.stringify({
+      state: {
+        selectedMode: state.selectedMode,
+        form: state.form,
+        outputs: [output('legacy')],
+      },
+      version: 0,
+    }),
+  );
+
+  await studioStoreModule.useStudioStore.persist.rehydrate();
+
+  assert.deepEqual(studioStoreModule.useStudioStore.getState().outputs, []);
+});
+
+test('workflow snapshots drop obsolete per-tab user-block copies', () => {
+  const state = studioStoreModule.useStudioStore.getState();
+  state.mergeBackendWorkflow({
+    id: 'legacy-user-block-workflow',
+    title: 'Legacy user block workflow',
+    createdAt: 1,
+    updatedAt: 1,
+    dirty: false,
+    source: 'manual',
+    snapshot: {
+      nodes: [],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      studioForm: state.form,
+      studioGraphBinding: null,
+      selectedMode: state.selectedMode,
+      activeTemplateId: null,
+      sourceOutputId: null,
+      pinnedGraphInputIds: [],
+      userBlocks: [
+        {
+          id: 'legacy-copy',
+          name: 'Legacy copy',
+          version: 1,
+          nodes: [],
+          edges: [],
+          inputs: [],
+          outputs: [],
+          exposedParams: [],
+        },
+      ],
+    },
+  });
+
+  const snapshot = studioStoreModule.useStudioStore
+    .getState()
+    .workflowTabs.find((tab) => tab.id === 'legacy-user-block-workflow')?.snapshot;
+  assert.ok(snapshot);
+  assert.equal(Object.hasOwn(snapshot, 'userBlocks'), false);
 });
 
 test('a failed favorite mutation rolls back only the affected optimistic value', async () => {

@@ -8,34 +8,41 @@ Target environment:
 
 - Ubuntu 22.04 or 24.04 x86_64
 - Node 24.12.0 and npm 11.6.2
-- Python 3.12 and `uv`
-- NVIDIA driver compatible with PyTorch CUDA 12.8 wheels for GPU workflows
+- A driver/runtime supported by the backend's selected NVIDIA, qualified AMD
+  ROCm, preview Intel XPU, or CPU profile
 - `ffmpeg`, `libgl1`, and `libglib2.0-0` for image/video dependencies
 
 Useful Ubuntu packages:
 
 ```bash
 sudo apt update
-sudo apt install -y git curl build-essential python3.12-dev python3.12-venv ffmpeg libgl1 libglib2.0-0
+sudo apt install -y git curl build-essential ffmpeg libgl1 libglib2.0-0
 ```
 
-Ubuntu 24.04 provides Python 3.12 packages directly. Ubuntu 22.04 may require a trusted additional Python package source or another supported Python installation method. Install Node 24.12.0 and `uv` using your normal system tooling. CUDA toolkit/NVCC is only required for packages that compile native CUDA extensions, such as FlashAttention or SageAttention.
+The backend installer bootstraps a hash-verified local uv and Python 3.12 when
+needed. Install Node 24.12.0 with your normal system tooling. CUDA toolkit/NVCC
+is only required for optional packages that compile native CUDA extensions.
 
 ## Backend Setup
 
 From the backend checkout:
 
 ```bash
-uv sync --frozen
-uv run python -m modiff.preflight --json --check-port 8088 --fail-on-error
+./install.sh --accelerator auto
+./.venv/bin/python -m modiff.preflight --json --check-port 8088 --fail-on-error
 ./run.sh
 ```
 
-Optional model support can be installed explicitly:
+Inspect profile selection without changing the machine:
 
 ```bash
-uv sync --frozen --extra spandrel --extra nunchaku --extra quantization
+./install.sh --accelerator auto --dry-run --system-check --json
 ```
+
+Supported Intel Arc and integrated graphics can be selected explicitly with
+`./install.sh --accelerator intel`. This is a preview XPU path: preflight must
+pass a real `xpu:0` tensor, integrated devices are planned as shared memory, and
+CUDA-only Diffusers CPU-offload hooks stay disabled.
 
 Put large model caches on a writable disk with enough space by setting `HF_HOME`, `HF_HUB_CACHE`, or `[huggingface] cache_dir` in `config.ini`. If you change `config.ini`, keep local development on:
 
@@ -52,8 +59,8 @@ Use `host = 0.0.0.0` only for an intentional LAN or remote deployment, and prote
 From this client checkout:
 
 ```bash
-npm ci
-chmod +x run-dev.sh stop-dev.sh
+chmod +x install-dev.sh run-dev.sh stop-dev.sh
+./install-dev.sh --accelerator auto
 ./run-dev.sh
 ```
 
@@ -94,7 +101,7 @@ npm run check:ui
 Backend smoke:
 
 ```bash
-uv run python -m modiff.preflight --json --check-port 8088 --fail-on-error
+./.venv/bin/python -m modiff.preflight --json --check-port 8088 --fail-on-error
 curl -fsS http://127.0.0.1:8088/nodes >/dev/null
 curl -fsS http://127.0.0.1:8088/runtime/status >/dev/null
 ```

@@ -1,10 +1,17 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { create } from 'zustand';
 import config from '../../app.config';
 import { createLatestRequestGate, formatRequestError, requestJson } from '../utils/requestJson';
 import { useFlowStore } from './useFlowStore';
+import { useRunIssueStore } from './useRunIssueStore';
+import { useStudioStore } from './useStudioStore';
+import { runtimeProgressTarget } from '../studio/userBlocks';
+import { executionProgressFrom } from '../studio/executionProgress';
 
 export type Task = {
   name: string;
+  queue_position?: number;
   queued_at?: number;
   started_at?: number;
   completed_at?: number;
@@ -17,20 +24,44 @@ export type Task = {
   phase?: string;
   current_step?: number;
   total_steps?: number;
+  component?: string;
+  shard_current?: number;
+  shard_total?: number;
   eta_seconds?: number;
   average_step_seconds?: number;
   elapsed_seconds?: number;
+  last_heartbeat_at?: number;
+  resource_snapshot?: Record<string, unknown>;
+  phase_timings?: Record<string, number>;
   sid?: string;
   task_id?: string;
+  client_run_id?: string;
+  run_input_hash?: string;
+  workflow_tab_id?: string;
+  workflow_title?: string;
+  workflow_snapshot?: unknown;
+  node_id?: string;
+  runtimeFingerprint?: string;
   status?: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   error?: string;
   message?: string;
+  exception_type?: string;
+  category?: string;
+  error_code?: string;
+  recovery_hint?: string;
+  oom?: boolean;
 };
 
 const TASK_STATUSES = new Set<Task['status']>(['queued', 'running', 'completed', 'failed', 'cancelled']);
 const TERMINAL_TASK_STATUSES = new Set<Task['status']>(['completed', 'failed', 'cancelled']);
 const MAX_SESSION_RUNS = 30;
 const queueRequestGate = createLatestRequestGate<'queue'>();
+const supervisorQueueRequestGate = createLatestRequestGate<'supervisorQueue'>();
+let supervisorQueueRequest: Promise<void> | null = null;
+
+export function isTerminalTaskStatus(status: Task['status']): status is 'completed' | 'failed' | 'cancelled' {
+  return Boolean(status && TERMINAL_TASK_STATUSES.has(status));
+}
 
 export type QueueFetchState = {
   status: 'error' | 'idle' | 'loading' | 'success';
@@ -60,6 +91,10 @@ function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function optionalTaskStatus(value: unknown): Task['status'] | undefined {
   return typeof value === 'string' && TASK_STATUSES.has(value as Task['status'])
     ? (value as Task['status'])
@@ -68,8 +103,14 @@ function optionalTaskStatus(value: unknown): Task['status'] | undefined {
 
 export function coerceTask(value: unknown): Task | undefined {
   if (!isRecord(value)) return undefined;
+  const runtimeHints = isRecord(value.runtimeHints)
+    ? value.runtimeHints
+    : isRecord(value.runtime_hints)
+      ? value.runtime_hints
+      : {};
   return {
     name: optionalString(value.name) ?? optionalString(value.task_id) ?? optionalString(value.sid) ?? 'Task',
+    queue_position: optionalNumber(value.queue_position),
     queued_at: optionalNumber(value.queued_at),
     started_at: optionalNumber(value.started_at),
     completed_at: optionalNumber(value.completed_at),
@@ -77,19 +118,43 @@ export function coerceTask(value: unknown): Task | undefined {
     progress: optionalNumber(value.progress),
     node_progress: optionalNumber(value.node_progress),
     attempt_index: optionalNumber(value.attempt_index),
-    current_node: optionalString(value.current_node),
-    current_node_name: optionalString(value.current_node_name),
+    current_node: optionalString(value.current_node) ?? optionalString(value.node),
+    current_node_name: optionalString(value.current_node_name) ?? optionalString(value.node_name),
     phase: optionalString(value.phase),
     current_step: optionalNumber(value.current_step),
     total_steps: optionalNumber(value.total_steps),
+    component: optionalString(value.component),
+    shard_current: optionalNumber(value.shard_current),
+    shard_total: optionalNumber(value.shard_total),
     eta_seconds: optionalNumber(value.eta_seconds),
     average_step_seconds: optionalNumber(value.average_step_seconds),
     elapsed_seconds: optionalNumber(value.elapsed_seconds),
+    last_heartbeat_at: optionalNumber(value.last_heartbeat_at),
+    resource_snapshot: isRecord(value.resource_snapshot) ? value.resource_snapshot : undefined,
+    phase_timings: isRecord(value.phase_timings)
+      ? Object.fromEntries(
+          Object.entries(value.phase_timings).filter(
+            (entry): entry is [string, number] => optionalNumber(entry[1]) !== undefined,
+          ),
+        )
+      : undefined,
     sid: optionalString(value.sid),
     task_id: optionalString(value.task_id),
+    client_run_id: optionalString(value.client_run_id) ?? optionalString(runtimeHints.clientRunId),
+    run_input_hash: optionalString(value.run_input_hash) ?? optionalString(runtimeHints.runInputHash),
+    workflow_tab_id: optionalString(value.workflow_tab_id) ?? optionalString(runtimeHints.workflowTabId),
+    workflow_title: optionalString(value.workflow_title) ?? optionalString(runtimeHints.workflowTitle),
+    workflow_snapshot: value.workflow_snapshot ?? runtimeHints.workflowSnapshot,
+    node_id: optionalString(value.node_id) ?? optionalString(runtimeHints.nodeId),
+    runtimeFingerprint: optionalString(value.runtimeFingerprint),
     status: optionalTaskStatus(value.status),
     error: optionalString(value.error),
     message: optionalString(value.message),
+    exception_type: optionalString(value.exception_type),
+    category: optionalString(value.category),
+    error_code: optionalString(value.error_code),
+    recovery_hint: optionalString(value.recovery_hint),
+    oom: optionalBoolean(value.oom) ?? (value.category === 'oom' ? true : undefined),
   };
 }
 
@@ -125,16 +190,19 @@ interface TaskState {
   taskCount: number;
   queueRevision: number;
   fetchState: QueueFetchState;
+  focusedTaskId: string | null;
 }
 
 interface TaskActions {
   setTasks: (current: Task | undefined, queued: Record<string, Task>, recent?: Task[]) => void;
   fetchTasks: () => Promise<void>;
+  fetchSupervisorTasks: () => Promise<void>;
   updateProgress: (task_id: string, progress: number, message?: string, details?: Partial<Task>) => void;
   markTaskFailed: (task: Task) => void;
   markTaskCompleted: (task: Task) => void;
   recordTaskSnapshot: (task: Task, status?: Task['status'], message?: string) => void;
   clearCompletedSessionRuns: () => void;
+  setFocusedTaskId: (taskId: string | null) => void;
   //getCurrentTask: () => Task | undefined;
 }
 
@@ -178,16 +246,13 @@ function mergeSessionRun(runs: SessionRun[], patch: Partial<SessionRun> & { id: 
     completedAtMs && startedAtMs
       ? Math.max(0, completedAtMs - startedAtMs)
       : (patch.durationMs ?? existing?.durationMs);
+  const definedPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined),
+  ) as Partial<SessionRun> & { id: string };
+  const mergedValues = { ...existing, ...definedPatch };
   const merged: SessionRun = {
-    name: patch.name ?? existing?.name ?? patch.id,
-    task_id: patch.task_id ?? existing?.task_id,
-    sid: patch.sid ?? existing?.sid,
-    progress: patch.progress ?? existing?.progress,
-    queued_at: patch.queued_at ?? existing?.queued_at,
-    started_at: patch.started_at ?? existing?.started_at,
-    completed_at: patch.completed_at ?? existing?.completed_at,
-    error: patch.error ?? existing?.error,
-    message: patch.message ?? existing?.message,
+    ...mergedValues,
+    name: mergedValues.name ?? patch.id,
     id: patch.id,
     status,
     createdAtMs: existing?.createdAtMs ?? patch.createdAtMs ?? now,
@@ -208,6 +273,8 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
   taskCount: 0,
   queueRevision: 0,
   fetchState: { status: 'idle', error: null, requestId: null },
+  focusedTaskId: null,
+  setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
   fetchTasks: async () => {
     const ticket = queueRequestGate.begin('queue');
@@ -235,6 +302,35 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
     }
   },
 
+  fetchSupervisorTasks: () => {
+    if (supervisorQueueRequest) return supervisorQueueRequest;
+    const ticket = supervisorQueueRequestGate.begin('supervisorQueue');
+    const queueRevision = get().queueRevision;
+    const request = (async () => {
+      try {
+        const payload = await requestJson(`${config.supervisorAddress}/queue`, {
+          signal: ticket.signal,
+          timeoutMs: 2_000,
+          parse: parseQueueResponse,
+        });
+        if (!ticket.isLatest()) return;
+        // A websocket queue snapshot that arrived while this emergency request
+        // was in flight is newer and must remain authoritative.
+        if (get().queueRevision === queueRevision) {
+          get().setTasks(payload.current, payload.queued, payload.recent);
+        }
+      } catch {
+        // The control plane is an emergency fallback. Normal websocket/HTTP
+        // connectivity owns visible connection errors.
+      } finally {
+        ticket.finish();
+        supervisorQueueRequest = null;
+      }
+    })();
+    supervisorQueueRequest = request;
+    return request;
+  },
+
   setTasks: (current, queued, recent = []) => {
     set((state) => {
       let sessionRuns = state.sessionRuns;
@@ -259,15 +355,44 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
         queueRevision: state.queueRevision + 1,
       };
     });
-    if (current?.current_node) {
-      useFlowStore.getState().updateProgress(current.current_node, current.node_progress ?? 0, {
-        activeTaskId: current.task_id ?? null,
-        attemptIndex: current.attempt_index,
-        executionStatus: current.status ?? 'running',
-        executionPhase: current.phase,
-        progressMessage: current.message,
-      });
+    if (current?.current_node && !isTerminalTaskStatus(current.status)) {
+      const flow = useFlowStore.getState();
+      const progressNodeId = runtimeProgressTarget(flow.nodes, current.current_node, current.current_node_name);
+      if (progressNodeId) {
+        flow.updateProgress(progressNodeId, current.node_progress ?? 0, {
+          activeTaskId: current.task_id ?? null,
+          attemptIndex: current.attempt_index,
+          executionStatus: current.status ?? 'running',
+          executionPhase: current.phase,
+          progressMessage: current.message,
+          executionProgress: executionProgressFrom(current),
+        });
+      }
     }
+    recent.forEach((task) => {
+      if (!task.task_id || !isTerminalTaskStatus(task.status)) return;
+      useFlowStore.getState().resetExecutionProgress(task.task_id);
+      useStudioStore.getState().markRunContextStatus(task.task_id, task.client_run_id, task.status!);
+      if (task.status === 'failed' && !useRunIssueStore.getState().failuresByTaskId[task.task_id]) {
+        useRunIssueStore.getState().reportFailure(
+          {
+            taskId: task.task_id,
+            clientRunId: task.client_run_id ?? null,
+            workflowTabId: task.workflow_tab_id ?? null,
+            runInputHash: task.run_input_hash ?? null,
+            nodeId: task.current_node ?? task.node_id ?? null,
+            nodeName: task.current_node_name ?? null,
+            message: task.message || task.error || 'Run failed.',
+            exceptionType: task.exception_type ?? null,
+            category: task.category ?? null,
+            errorCode: task.error_code ?? null,
+            recoveryHint: task.recovery_hint ?? null,
+            oom: task.oom ?? false,
+          },
+          false,
+        );
+      }
+    });
   },
 
   updateProgress: (task_id, progress, message, details = {}) => {
@@ -287,12 +412,24 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
       return;
     }
 
+    const definedDetails = Object.fromEntries(
+      Object.entries(details).filter(([, value]) => value !== undefined),
+    ) as Partial<Task>;
+    const preservedIdentity = Object.fromEntries(
+      (['client_run_id', 'run_input_hash', 'workflow_tab_id', 'node_id'] as const)
+        .map((key) => [key, currentTask[key]] as const)
+        .filter(([, value]) => value !== undefined),
+    ) as Partial<Task>;
+    const updatedTask = {
+      ...currentTask,
+      ...definedDetails,
+      ...preservedIdentity,
+      progress,
+      message: message ?? definedDetails.message ?? currentTask.message,
+    };
     set((state) => ({
-      currentTask: { ...currentTask, ...details, progress, message: message ?? details.message ?? currentTask.message },
-      sessionRuns: mergeSessionRun(
-        state.sessionRuns,
-        taskPatch({ ...currentTask, ...details, progress, message }, 'running', message),
-      ),
+      currentTask: updatedTask,
+      sessionRuns: mergeSessionRun(state.sessionRuns, taskPatch(updatedTask, 'running', message)),
     }));
   },
   markTaskFailed: (task) => {
@@ -327,7 +464,8 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
     }));
   },
   markTaskCompleted: (task) => {
-    const fallback = get().currentTask;
+    const current = get().currentTask;
+    const fallback = !task.task_id || !current?.task_id || task.task_id === current.task_id ? current : undefined;
     const completed = {
       ...(fallback ?? {}),
       ...task,
@@ -338,9 +476,16 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
       status: 'completed' as const,
       completed_at: task.completed_at ?? Date.now() / 1000,
     };
-    set((state) => ({
-      sessionRuns: mergeSessionRun(state.sessionRuns, taskPatch(completed, 'completed')),
-    }));
+    set((state) => {
+      const completesCurrent = Boolean(
+        completed.task_id && state.currentTask?.task_id && completed.task_id === state.currentTask.task_id,
+      );
+      return {
+        currentTask: completesCurrent ? undefined : state.currentTask,
+        taskCount: Object.keys(state.queuedTasks).length + (completesCurrent ? 0 : state.currentTask ? 1 : 0),
+        sessionRuns: mergeSessionRun(state.sessionRuns, taskPatch(completed, 'completed')),
+      };
+    });
   },
   recordTaskSnapshot: (task, status, message) => {
     set((state) => ({

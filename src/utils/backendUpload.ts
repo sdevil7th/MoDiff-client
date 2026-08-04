@@ -14,7 +14,7 @@ export function uploadBackendFile(file: File, type: string, signal?: AbortSignal
     method: 'POST',
     body,
     signal,
-    timeoutMs: 60_000,
+    timeoutMs: 15 * 60_000,
     parse: (value) => {
       if (!isRecord(value)) throw new Error('The file upload returned an invalid response.');
       if (value.error) {

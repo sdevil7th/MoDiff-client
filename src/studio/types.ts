@@ -27,6 +27,10 @@ export type StudioModelType =
   | 'QwenImageEditPlusModularPipeline'
   | 'QwenImageLayeredModularPipeline'
   | 'WanVACEPipeline'
+  | 'WanVideoPipeline'
+  | 'WanImageToVideoPipeline'
+  | 'WanTI2VPipeline'
+  | 'LTXVideoPipeline'
   | 'AceStepAudioPipeline'
   | 'FluxSchnellPipeline'
   | 'FluxDevPipeline'
@@ -35,7 +39,8 @@ export type StudioModelType =
   | 'FluxFillPipeline'
   | 'FluxDepthPipeline'
   | 'FluxCannyPipeline'
-  | 'FluxReduxPipeline';
+  | 'FluxReduxPipeline'
+  | 'Flux2KleinPipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -52,7 +57,11 @@ export type StudioPresetId =
   | 'video_preview'
   | 'video_balanced'
   | 'video_quality'
+  | 'wan_i2v_quality'
+  | 'wan_t2v_13b_quality'
+  | 'wan_ti2v_quality'
   | 'video_low_vram'
+  | 'ltx_video_balanced'
   | 'portrait_video'
   | 'color_preserve_edit'
   | 'audio_fast'
@@ -99,6 +108,7 @@ export type StudioTemplateId =
   | 'fast_lora'
   | 'high_quality'
   | 'wan_vace_cinematic_text_to_video'
+  | 'wan_vace_direct_text_to_video'
   | 'wan_vace_animate_product_still'
   | 'wan_vace_video_color_grade'
   | 'wan_vace_masked_object_replace'
@@ -109,13 +119,48 @@ export type StudioTemplateId =
   | 'ace_step_audio_variation'
   | 'ace_step_audio_continuation'
   | 'ace_step_audio_repaint'
+  | 'ace_step_chinese_new_year_lora'
+  | 'ace_step_custom_lora'
   | 'flux_schnell_text_to_image'
   | 'flux_dev_expert_text_to_image'
+  | 'flux_lora_cinematic_octane_3d'
+  | 'flux_lora_ghibli_story'
+  | 'flux_lora_oil_painting'
+  | 'flux_lora_film_noir'
+  | 'flux_lora_retro_comic'
+  | 'flux_lora_watercolor'
+  | 'flux_lora_paper_cutout'
+  | 'flux_lora_photoreal_documentary'
   | 'flux_kontext_edit'
   | 'flux_fill_inpaint'
-  | 'flux_control_canny';
+  | 'flux_control_canny'
+  | 'flux_krea_text_to_image'
+  | 'flux_kontext_multi_reference'
+  | 'flux_fill_outpaint'
+  | 'flux_depth_control'
+  | 'flux_redux_edit'
+  | 'flux_redux_multi_reference'
+  | 'flux2_klein_text_to_image'
+  | 'flux2_klein_edit'
+  | 'flux2_klein_multi_reference'
+  | 'wan_vace_video_to_video'
+  | 'ltx_video_text_to_video'
+  | 'ltx_video_image_to_video'
+  | 'ltx_video_video_to_video'
+  | 'ltx_video_multi_reference'
+  | 'ltx_video_long_showcase'
+  | 'wan_video_long_showcase'
+  | 'wan_22_i2v_seed_vault'
+  | 'wan_21_t2v_13b_seed_vault'
+  | 'wan_22_ti2v_5b_seed_vault'
+  | 'ltx_video_animated_story'
+  | 'ace_step_lyric_music_video'
+  | 'qwen_edit_plus_single_image';
 
-export type WorkspacePanelTab = 'studio' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints';
+export type WorkspacePanelTab =
+  'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints';
+
+export type StudioResourcePreference = 'recommended' | 'best_quality' | 'faster' | 'lowest_memory';
 
 export type FocusedModelManagerTarget = {
   modelType?: StudioModelType;
@@ -126,7 +171,16 @@ export type FocusedModelManagerTarget = {
 };
 
 export type RunReadinessIssueSeverity = 'error' | 'warning' | 'info' | 'success';
-export type RunReadinessIssueCategory = 'backend' | 'model' | 'graph' | 'input' | 'device';
+export type RunReadinessIssueCategory =
+  | 'environment'
+  | 'package'
+  | 'backend'
+  | 'model'
+  | 'model_integrity'
+  | 'hardware_fit'
+  | 'asset'
+  | 'graph'
+  | 'user_input';
 
 export type RunReadinessIssueAction =
   | 'install_model'
@@ -141,6 +195,7 @@ export type RunReadinessIssueAction =
 
 export type RunReadinessIssue = {
   id: string;
+  code?: string;
   category: RunReadinessIssueCategory;
   severity: RunReadinessIssueSeverity;
   nodeId?: string;
@@ -150,6 +205,19 @@ export type RunReadinessIssue = {
   details?: string;
   blocking: boolean;
   action?: RunReadinessIssueAction;
+};
+
+export type RunReadinessDecisionState = 'preparing' | 'blocked' | 'ready_with_warnings' | 'ready';
+
+export type RunReadinessDecision = {
+  state: RunReadinessDecisionState;
+  issues: RunReadinessIssue[];
+  blockingIssues: RunReadinessIssue[];
+  warningIssues: RunReadinessIssue[];
+  primaryIssue: RunReadinessIssue | null;
+  canRun: boolean;
+  title: string;
+  message: string;
 };
 
 export type GraphInspectionSummary = {
@@ -176,6 +244,9 @@ export type GraphInspectionSummary = {
 export type RuntimeFailure = {
   id: string;
   taskId?: string | null;
+  clientRunId?: string | null;
+  workflowTabId?: string | null;
+  runInputHash?: string | null;
   nodeId?: string | null;
   nodeName?: string | null;
   message: string;
@@ -260,6 +331,8 @@ export type StudioGraphRole =
   | 'imageEncode'
   | 'controlnetModel'
   | 'controlnet'
+  | 'diffusersQuantization'
+  | 'diffusersRecipe'
   | 'wanPipeline'
   | 'loadVideo'
   | 'loadControlVideo'
@@ -279,6 +352,8 @@ export type StudioGraphRole =
   | 'loadReferenceAudio'
   | 'audioPipeline'
   | 'audioGenerate'
+  | 'audioLoudnessMatch'
+  | 'audioJoin'
   | 'audioExport';
 
 export type StudioGraphBinding = {
@@ -288,6 +363,12 @@ export type StudioGraphBinding = {
   managedNodeIds: string[];
   managedEdgeIds: string[];
   fingerprint: string;
+  finalizationProof?: {
+    schemaVersion: 1;
+    shapeKey: string;
+    fieldSchemaHash: string;
+    finalizedAt: number;
+  };
   createdAt: number;
   updatedAt: number;
 };
@@ -304,6 +385,60 @@ export type StudioGraphFinalizationState = {
   message?: string | null;
 };
 
+export type AutoFieldOverride = {
+  schemaVersion: 1;
+  nodeId: string;
+  fieldKey: string;
+  formKey?: keyof StudioFormState;
+  value: unknown;
+  updatedAt: number;
+};
+
+export type OptionDescriptor = {
+  schemaVersion: 1;
+  value: string;
+  label: string;
+  group?: string;
+  compatibility: 'compatible' | 'incompatible' | 'unknown';
+  availability: 'installed' | 'remote' | 'unavailable';
+  disabledReason?: string;
+  installationState: 'installed' | 'installable' | 'installing' | 'missing' | 'unavailable';
+  dependencies?: Record<string, string | number | boolean | null>;
+};
+
+export type ExecutionProgress = {
+  schemaVersion: 1;
+  status?: 'queued' | 'running' | 'completed' | 'cached' | 'failed' | 'cancelled' | 'succeeded';
+  phase?: string;
+  message?: string;
+  component?: string;
+  shard?: { current: number; total: number };
+  step?: { current: number; total: number; averageSeconds?: number; etaSeconds?: number };
+  elapsedSeconds?: number;
+  attemptIndex?: number;
+  lastHeartbeatAt?: number;
+  resourceSnapshot?: unknown;
+  phaseTimings?: Record<string, number>;
+};
+
+export type OutputSummary = {
+  schemaVersion: 1;
+  status: 'waiting' | 'encoding' | 'encoded' | 'cached' | 'failed';
+  sourceUrl?: string;
+  shape?: number[];
+  dtype?: string;
+  device?: string;
+  elapsedSeconds?: number;
+  updatedAt: number;
+};
+
+export type ComparisonCapability = {
+  schemaVersion: 1;
+  sourceNodeIds: string[];
+  outputNodeId: string;
+  selectedSourceNodeId?: string;
+};
+
 export type WorkflowTabSnapshot = {
   nodes: unknown[];
   edges: unknown[];
@@ -314,6 +449,7 @@ export type WorkflowTabSnapshot = {
   activeTemplateId: StudioTemplateId | null;
   sourceOutputId: string | null;
   pinnedGraphInputIds?: string[];
+  autoFieldOverrides?: Record<string, AutoFieldOverride>;
   userBlocks?: UserBlockDefinition[];
 };
 
@@ -325,6 +461,7 @@ export type WorkflowTab = {
   dirty: boolean;
   source?: 'new' | 'import' | 'template' | 'gallery' | 'manual';
   sourceLabel?: string;
+  backendRevision?: number;
   snapshot: WorkflowTabSnapshot;
 };
 
@@ -401,6 +538,8 @@ export type StudioFormState = {
   steps: number;
   guidanceScale: number;
   resourceMode: StudioResourceMode;
+  resourcePreference?: StudioResourcePreference;
+  confirmedCommunityArtifact?: string;
   dtype: 'float32' | 'float16' | 'bfloat16';
   quantizationMode: StudioQuantizationMode;
   device: string;
@@ -454,17 +593,34 @@ export type StudioInpaintContractStatus = {
   missingInputs?: string[];
 };
 
+export type StudioExecutionProfile = {
+  id: string;
+  model_type: StudioModelType;
+  modes: StudioMode[];
+  backend_path: string;
+  pipeline_class: string;
+  default_repo: string;
+  fallback_repo?: string | null;
+  quantizable_components: string[];
+  default_quantized_components: string[];
+  supported_offload_modes: StudioOffloadMode[];
+  retry_offload_modes: StudioOffloadMode[];
+  max_low_memory_side?: number | null;
+  max_low_memory_steps?: number | null;
+  live_proof: boolean;
+};
+
 export type StudioModelProfile = {
   modelType: StudioModelType;
   label: string;
   displayName: string;
-  family: 'Z-Image' | 'Qwen Image' | 'Wan Video' | 'ACE Audio' | 'FLUX Image';
+  family: 'Z-Image' | 'Qwen Image' | 'Wan Video' | 'LTX Video' | 'ACE Audio' | 'FLUX Image';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
-  runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'legacy_external' | 'unsupported';
+  runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';
   isDiffusersBacked?: boolean;
   acceleratorStrategy?: string;
-  legacyReason?: string;
+  specializedReason?: string;
   defaultRepo: string;
   artifactLabel?: string;
   alternateArtifact?: string;
@@ -473,6 +629,7 @@ export type StudioModelProfile = {
   recommendedSteps: number;
   recommendedGuidance: number;
   guidanceLabel: string;
+  supportsNegativePrompt?: boolean;
   supportsImageInput: boolean;
   supportsMask: boolean;
   supportsMultiImage: boolean;
@@ -508,6 +665,14 @@ export type StudioModelProfile = {
   modes: StudioMode[];
   additionalRequirements?: StudioModelRequirement[];
   modeRequirements?: Partial<Record<StudioMode, StudioModeRequirement>>;
+  schemaVersion?: 2;
+  mediaKind?: 'image' | 'video' | 'audio' | 'json';
+  supportTier?: 'supported' | 'experimental';
+  pipelineClasses?: string[];
+  executionProfiles?: StudioExecutionProfile[];
+  runnableModes?: StudioMode[];
+  downloadFiles?: string[];
+  inputContracts?: Partial<Record<StudioMode, StudioModeRequirement>>;
 };
 
 export type StudioModelRequirement = {
@@ -554,7 +719,8 @@ export type StudioTemplateIntentGroup =
   | 'utility'
   | 'planning';
 
-export type StudioTemplateWorkflowBlock = 'lora' | 'upscaler';
+export type StudioTemplateWorkflowBlock =
+  'lora' | 'upscaler' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack' | 'lyric_video';
 
 export type StudioTemplateModelArtifact = {
   source: 'hub' | 'local';
@@ -563,17 +729,88 @@ export type StudioTemplateModelArtifact = {
   sha256?: string;
   byteSize?: number;
   license?: string;
+  /** Optional reviewed policy reference. Runtime UI must resolve its copy from the policy registry. */
+  usagePolicyId?: string;
+};
+
+export type StudioAudioFitSettings = {
+  sourceStartSeconds: number;
+  sourceDurationSeconds: number;
+  targetDurationSeconds: number;
+  delaySeconds?: number;
+  targetSampleRate?: number;
+  fadeInSeconds?: number;
+  fadeOutSeconds?: number;
+};
+
+export type StudioTemplateLoraSettings = {
+  model: StudioTemplateModelArtifact;
+  baseModel?: StudioTemplateModelArtifact;
+  weightName?: string;
+  adapterName?: string;
+  scale: number;
+  schedulerClass?: string;
+  schedulerConfig?: Record<string, boolean | number | string | null>;
+  additionalAdapters?: StudioTemplateLoraSettings[];
 };
 
 export type StudioTemplateWorkflowBlockSettings = {
-  lora?: {
-    model: StudioTemplateModelArtifact;
-    weightName?: string;
-    scale: number;
-  };
+  lora?: StudioTemplateLoraSettings;
   upscaler?: {
     model: StudioTemplateModelArtifact;
     downscale: number;
+  };
+  videoSequence?: {
+    promptsJson: string;
+    transitionSeconds: number;
+  };
+  qualityVideoSequence?: {
+    shotsJson: string;
+    transitionSeconds: number;
+    mode?: 'image_to_video' | 'text_to_video';
+    fps?: number;
+    width?: number;
+    height?: number;
+    steps?: number;
+    guidanceScale?: number;
+    secondaryGuidanceScale?: number;
+    conditioningStrength?: number;
+  };
+  soundtrack?: {
+    model: StudioTemplateModelArtifact;
+    pipelineClass: 'AceStepPipeline' | 'StableAudioPipeline';
+    prompt: string;
+    negativePrompt?: string;
+    durationSeconds: number;
+    steps: number;
+    guidanceScale: number;
+    seed: number;
+    bpm?: number;
+    keyscale?: string;
+    timesignature?: string;
+    audioFit: StudioAudioFitSettings;
+  };
+  lyricVideo?: {
+    visualModel: StudioTemplateModelArtifact;
+    promptsJson: string;
+    lrc: string;
+    transitionSeconds: number;
+    fontSize?: number;
+    bottomMargin?: number;
+    audio: {
+      prompt: string;
+      lyrics: string;
+      durationSeconds: number;
+      steps: number;
+      guidanceScale: number;
+      shift?: number;
+      seed: number;
+      bpm?: number;
+      keyscale?: string;
+      timesignature?: string;
+      vocalLanguage?: string;
+    };
+    audioFit: StudioAudioFitSettings;
   };
 };
 
@@ -638,6 +875,62 @@ export type StudioTemplateInputRequirements = {
   sampleAssets?: string[];
 };
 
+export type StudioTemplateInputFormField =
+  | 'referenceImages'
+  | 'maskImage'
+  | 'controlImage'
+  | 'sourceVideo'
+  | 'maskVideo'
+  | 'controlVideo'
+  | 'sourceAudio'
+  | 'referenceAudio';
+
+export type StudioTemplateDefaultInputAsset = {
+  id: string;
+  label: string;
+  mediaType: 'image' | 'video' | 'audio';
+  /**
+   * Browser-visible derivative used only to explain the input. It may be
+   * transcoded independently and must never be sent to the graph as proof of
+   * the reviewed runtime input.
+   */
+  previewPath?: string;
+  /** Byte-identical runtime input fetched by the client and uploaded to MoDiff. */
+  runtimePath: string;
+  runtimeSha256: `sha256:bytes:${string}`;
+  fileName?: string;
+};
+
+type StudioTemplateInputBindingBase = {
+  id: string;
+  label: string;
+  mediaType: 'image' | 'video' | 'audio';
+};
+
+export type StudioTemplateInputBinding =
+  | (StudioTemplateInputBindingBase & {
+      origin: 'user';
+      requiredAt: 'workflow_start';
+      field: StudioTemplateInputFormField;
+      count?: number;
+    })
+  | (StudioTemplateInputBindingBase & {
+      origin: 'template';
+      requiredAt: 'workflow_start';
+      field: StudioTemplateInputFormField;
+      defaultAssets: StudioTemplateDefaultInputAsset[];
+    })
+  | (StudioTemplateInputBindingBase & {
+      origin: 'graph';
+      requiredAt: 'downstream';
+      producer: {
+        role: StudioGraphRole;
+        output: string;
+      };
+    });
+
+export type StudioTemplateInputFormPatch = Partial<Pick<StudioFormState, StudioTemplateInputFormField>>;
+
 export type StudioTemplateLockedSettings = Pick<
   StudioFormState,
   | 'mode'
@@ -689,18 +982,39 @@ export type StudioTemplateLockedSettings = Pick<
   | 'attentionKwargsJson'
 >;
 
+export type TemplateMotionReviewProfile = 'global_camera' | 'localized_subject';
+
+export type TemplateExpectedOutput = {
+  width?: number;
+  height?: number;
+  frames?: number;
+  durationSeconds?: number;
+  sampleRate?: number;
+  motionReviewProfile?: TemplateMotionReviewProfile;
+  minimumMotionCoverage?: number;
+  minimumAdjacentMotionCoverage?: number;
+  minimumEndToEndMotionCoverage?: number;
+  /** Minimum share of half-second windows meeting the selected profile's active-motion threshold. */
+  minimumActiveMotionWindowRatio?: number;
+  /** Minimum share of half-second windows meeting the selected profile's strong-motion threshold. */
+  minimumStrongMotionWindowRatio?: number;
+  /** Maximum share of adjacent frame pairs below the selected profile's low-motion threshold. */
+  maximumLowMotionFrameRatio?: number;
+  /** Maximum near-black pixel share permitted in any single decoded frame. */
+  maximumNearBlackFrameRatio?: number;
+  /** Require a non-silent embedded audio stream in the delivered video. */
+  requiresAudio?: boolean;
+};
+
 export type StudioTemplateExample = {
   mediaType: TemplateMediaType;
   status: TemplateExactnessStatus;
   lockedSeed: number;
   lockedSettings?: Partial<StudioTemplateLockedSettings>;
-  expectedOutput?: {
-    width?: number;
-    height?: number;
-    frames?: number;
-    durationSeconds?: number;
-    sampleRate?: number;
-  };
+  /** Contract for each primary runtime output emitted by the graph. */
+  expectedOutput?: TemplateExpectedOutput;
+  /** Optional derived gallery-media override, such as a review contact sheet. */
+  galleryExpectedOutput?: TemplateExpectedOutput;
   modelRevision: string;
   runtimeEstimate: string;
   outputPath?: string;
@@ -750,11 +1064,21 @@ export type StudioTemplate = {
   difficulty?: StudioTemplateDifficulty;
   thumbnailVariant?: StudioTemplateThumbnailVariant;
   inputRequirements?: StudioTemplateInputRequirements;
+  inputBindings?: StudioTemplateInputBinding[];
   outputKinds?: TemplateMediaType[];
   mediaSlots?: StudioTemplateMediaSlot[];
   requiredBackendCapabilities?: string[];
   workflowBlocks?: StudioTemplateWorkflowBlock[];
   workflowBlockSettings?: StudioTemplateWorkflowBlockSettings;
+  videoDelivery?: 'native' | 'spatial_upscale';
+  /**
+   * `user_supplied` marks a runnable bring-your-own-model recipe whose card
+   * must be complete, but which cannot honestly ship a generated proof for an
+   * adapter that only exists on the user's machine.
+   */
+  evidencePolicy?: 'generated' | 'user_supplied';
+  /** Exact loader contract key used by serial qualification runs to retain one compatible pipeline safely. */
+  runtimeReuseKey?: string;
   readinessPolicy?: StudioTemplateReadinessPolicy;
   vramEstimate?: string;
   runtimeEstimate?: string;
@@ -762,6 +1086,12 @@ export type StudioTemplate = {
   recipeSummary?: string;
   verificationStatus?: TemplateExactnessStatus;
   description: string;
+  /**
+   * `adapter_reference` preserves a deliberately minimal, adapter-qualified
+   * prompt instead of expanding it with generic production language that can
+   * dilute the adapter's documented conditioning.
+   */
+  promptQualityPolicy?: 'modality_complete' | 'adapter_reference';
   prompt: string;
   negativePrompt?: string;
   presetId?: StudioPresetId;
@@ -791,6 +1121,7 @@ export type StudioRunContext = {
   clientRunId: string;
   runInputHash: string;
   workflowTabId?: string | null;
+  canvasEpoch?: number;
   form: StudioFormState;
   graph: StudioGraphSnapshot;
   binding: StudioGraphBinding | null;
@@ -943,4 +1274,21 @@ export type StudioOutput = {
     templateLockHash?: string;
     promptSettingsHash?: string;
   };
+};
+
+export type StudioPreviewSlotStatus =
+  'empty' | 'pending' | 'ready' | 'failed' | 'cancelled' | 'completed_without_output';
+
+export type StudioPreviewSlot = {
+  schemaVersion: 1;
+  workflowTabId: string;
+  nodeId: string;
+  fieldKey: string;
+  currentOutputId: string | null;
+  pendingClientRunId: string | null;
+  pendingTaskId: string | null;
+  generation: number;
+  attemptIndex: number | null;
+  status: StudioPreviewSlotStatus;
+  updatedAt: number;
 };

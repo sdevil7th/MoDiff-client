@@ -70,6 +70,13 @@ test('production source keeps raw fetch calls inside the request transport bound
   assert.deepEqual(violations, []);
 });
 
+test('the development proxy covers run attribution and workflow restoration routes', async () => {
+  const viteConfig = await readFile(path.join(ROOT, 'vite.config.ts'), 'utf8');
+  for (const route of ['/runs', '/workflows', '/queue', '/graph', '/ws']) {
+    assert.match(viteConfig, new RegExp(`['"]${route}['"]`), `${route} must be proxied to the backend`);
+  }
+});
+
 test('binary request helpers consume blobs and array buffers through the shared transport', async () => {
   const bytes = new Uint8Array([1, 2, 3, 4]);
   globalThis.fetch = async () => new Response(bytes, { status: 200, headers: { 'Content-Type': 'image/png' } });

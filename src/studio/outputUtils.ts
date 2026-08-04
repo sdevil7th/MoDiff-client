@@ -1,8 +1,30 @@
 import config from '../../app.config';
+import { resolveTemplateAssetUrl } from './templateAssets';
+import { bundledTemplateInputPreviewUrl } from './templateInputPreview';
 
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|apng|webp|gif|bmp|ico|tiff|svg)(\?.*)?$/i;
 const VIDEO_EXTENSIONS = /\.(mp4|webm|mov|mkv|m4v)(\?.*)?$/i;
 const AUDIO_EXTENSIONS = /\.(wav|mp3|flac|ogg|m4a|aac)(\?.*)?$/i;
+
+/**
+ * Runtime template defaults are uploaded under the backend data root and
+ * represented by safe `@data/<relative>` identifiers. Their byte-identical
+ * source is also available through the configured public template-asset
+ * source. Prefer that public URL for previews so a backend reconnect or page
+ * refresh cannot turn a valid template input into an "Image not found"
+ * placeholder.
+ */
+export function bundledPublicAssetUrl(value: string) {
+  const normalized = value.replace(/\\/g, '/');
+  if (normalized.startsWith('/template-gallery/')) return resolveTemplateAssetUrl(normalized) ?? normalized;
+  const publicMarker = '/public/';
+  const publicIndex = normalized.lastIndexOf(publicMarker);
+  if (publicIndex >= 0) {
+    const publicPath = normalized.slice(publicIndex + publicMarker.length);
+    if (publicPath.startsWith('template-gallery/')) return resolveTemplateAssetUrl(publicPath) ?? `/${publicPath}`;
+  }
+  return bundledTemplateInputPreviewUrl(normalized);
+}
 
 export function isLikelyImageValue(value: unknown): boolean {
   if (typeof value === 'string') {
@@ -143,6 +165,9 @@ export function resolveStudioImageUrl(value: string, nodeId?: string, fieldKey?:
     return value;
   }
 
+  const bundledAssetUrl = bundledPublicAssetUrl(value);
+  if (bundledAssetUrl) return bundledAssetUrl;
+
   if (value.startsWith('/')) {
     return `${config.serverAddress}${value}`;
   }
@@ -168,6 +193,9 @@ export function resolveStudioVideoUrl(value: string, nodeId?: string, fieldKey?:
     return value;
   }
 
+  const bundledAssetUrl = bundledPublicAssetUrl(value);
+  if (bundledAssetUrl) return bundledAssetUrl;
+
   if (value.startsWith('/')) {
     return `${config.serverAddress}${value}`;
   }
@@ -192,6 +220,9 @@ export function resolveStudioAudioUrl(value: string, nodeId?: string, fieldKey?:
   ) {
     return value;
   }
+
+  const bundledAssetUrl = bundledPublicAssetUrl(value);
+  if (bundledAssetUrl) return bundledAssetUrl;
 
   if (value.startsWith('/')) {
     return `${config.serverAddress}${value}`;

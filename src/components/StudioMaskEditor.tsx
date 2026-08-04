@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Brush, Eraser, RotateCcw, RotateCw, Save, Trash2, X } from 'lucide-react';
 
-import { SectionHeader, StudioButton, StudioChip, StudioSlider } from '../ui';
+import { ModiffFieldShell, SectionHeader, StudioButton, StudioChip, StudioSlider } from '../ui';
 import { cx } from '../utils/classNames';
 
 const CANVAS_SIZE = 512;
@@ -177,12 +177,11 @@ export function StudioMaskEditor({ sourceImage, maskImage, onCancel, onSave }: S
             <RotateCw size={13} /> Redo
           </StudioChip>
         </div>
-        <div>
-          <p className="mb-1 text-xs text-gray-400">Brush size: {brushSize}</p>
+        <ModiffFieldShell label={`Brush size: ${brushSize}`}>
           <StudioSlider min={4} max={120} value={brushSize} onChange={setBrushSize} />
-        </div>
+        </ModiffFieldShell>
         <div>
-          <p className="mb-1 text-xs text-gray-400">Source overlay: {overlayOpacity}%</p>
+          <p className="mb-1 text-xs text-modiff-subtle-text">Source overlay: {overlayOpacity}%</p>
           <div className="flex flex-wrap gap-1">
             {[25, 50, 75, 100].map((value) => (
               <StudioChip key={value} active={overlayOpacity === value} onClick={() => setOverlayOpacity(value)}>

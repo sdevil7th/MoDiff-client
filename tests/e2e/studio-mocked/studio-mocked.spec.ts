@@ -14,10 +14,18 @@ declare global {
           visibleNodeCount: number;
           nodes: Array<{
             id: string;
+            selected?: boolean;
+            position: { x: number; y: number };
             module: string;
             action: string;
+            label?: string;
             params?: Record<string, { value?: unknown; artifacts?: unknown; display?: string; type?: string }>;
-            uiState?: { validationSeverity?: string; validationMessage?: string; collapsed?: boolean };
+            uiState?: {
+              validationSeverity?: string;
+              validationMessage?: string;
+              collapsed?: boolean;
+              blockExpanded?: boolean;
+            };
             progress?: number;
             executionStatus?: string;
             executionPhase?: string;
@@ -39,6 +47,7 @@ declare global {
             resourceMode?: string;
             quantizationMode?: string;
             offloadMode?: string;
+            autoOffload?: boolean;
             prompt?: string;
             negativePrompt?: string;
             referenceImages?: string[];
@@ -74,9 +83,35 @@ declare global {
           } | null;
           lastError?: string | null;
           graphBinding?: {
+            mode?: string;
+            modelType?: string;
             nodes?: Record<string, string>;
             managedEdgeIds?: string[];
             managedNodeIds?: string[];
+          } | null;
+          currentRunContext?: {
+            form?: {
+              resourceMode?: string;
+              quantizationMode?: string;
+              offloadMode?: string;
+              autoOffload?: boolean;
+            };
+            apiGraph?: {
+              nodes?: Record<
+                string,
+                {
+                  module?: string;
+                  action?: string;
+                  params?: Record<string, { value?: unknown }>;
+                }
+              >;
+              runtimeHints?: {
+                resourceMode?: string;
+                quantizationMode?: string;
+                offloadMode?: string;
+                autoOffload?: boolean;
+              };
+            };
           } | null;
           outputs: Array<{
             id: string;
@@ -102,6 +137,14 @@ declare global {
             displayType?: string;
             storage?: string;
           }>;
+        };
+        tasks: {
+          currentTask?: {
+            task_id?: string;
+            client_run_id?: string;
+            workflow_tab_id?: string;
+            node_progress?: number;
+          };
         };
         runIssues: {
           issueDialogOpen: boolean;
@@ -131,13 +174,35 @@ declare global {
         modelRefs: Array<{ kind: 'repo' | 'path'; value: string; paramKey: string }>;
         blockingIssues: Array<{ message: string; blocking: boolean; repoId?: string }>;
       };
+      inspectStudioGraphBindingDivergence: () => {
+        kind?: string;
+        message?: string;
+        details?: string;
+      } | null;
+      exportWorkflowGraph: () => {
+        nodes: Array<{
+          id: string;
+          position: { x: number; y: number };
+        }>;
+        edges: Array<{ id: string; source: string; target: string }>;
+        viewport: { x: number; y: number; zoom: number };
+      };
       setGraphScenarioForTest: (
         scenario:
-          'empty' | 'no_enabled' | 'outputless' | 'disconnected_output' | 'missing_model' | 'multi_model_compare',
+          | 'empty'
+          | 'no_enabled'
+          | 'outputless'
+          | 'disconnected_output'
+          | 'disconnected_image_output'
+          | 'missing_model'
+          | 'multi_model_compare',
       ) => void;
       addCustomNodeForTest: (key?: string) => string;
       setFirstNodeCollapsedByAction: (action: string, collapsed: boolean) => boolean;
       setFirstNodePositionByAction: (action: string, position: { x: number; y: number }) => boolean;
+      setFirstNodeSizeByAction: (action: string, size: { width: number; height: number }) => boolean;
+      selectFirstNodeByAction: (action: string) => boolean;
+      selectNodesByAction: (actions: string[]) => number;
       setWebsocketConnection: (connection: { sid?: string | null; isConnected?: boolean }) => void;
       startStudioRunForTest: (identity: { clientRunId: string; runInputHash: string; taskId?: string | null }) => {
         clientRunId: string;
@@ -169,7 +234,13 @@ declare global {
       openWorkspacePanelForTest: (
         tab: 'studio' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints',
       ) => void;
+      setWorkspacePanelOpenForTest: (open: boolean) => void;
       sendWebsocketMessage: (message: Record<string, unknown>) => void;
+      runActiveTemplate: () => Promise<{
+        templateId: string | null;
+        taskId?: string | null;
+        response: unknown;
+      }>;
     };
   }
 }
@@ -268,7 +339,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const qwenInstalled = mockInstalledRepos.has('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   const selectedCandidate = {
     id: 'qwen-t2i-prequantized-model-cpu',
-    executionPath: 'direct-qwen-image',
+    executionPath: 'direct-diffusers-image',
     modelRepo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     artifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
@@ -452,9 +523,30 @@ const mockRegistry = {
     latents: { type: 'Latents', display: 'input' },
     images: { type: 'image', display: 'output' },
   }),
+  'modules.ModularDiffusers.ImageEncode': nodeDef('modules.ModularDiffusers', 'ImageEncode', 'image', {
+    vae: { type: 'VAE', display: 'input' },
+    image: { type: 'image', display: 'input' },
+    image_latents: { type: 'Latents', display: 'output' },
+    encode_summary_data: { type: 'str', display: 'output', value: '', hidden: true },
+    encode_summary: {
+      type: 'text',
+      display: 'ui_text',
+      dataSource: 'encode_summary_data',
+      value: '',
+      hidden: true,
+    },
+  }),
   'modules.Image.Preview': nodeDef('modules.Image', 'Preview', 'image', {
     image: { type: 'image', display: 'input' },
     selected_image: { type: 'image', display: 'ui_image', value: [] },
+    all_images: { type: 'image', display: 'output' },
+  }),
+  'modules.Spandrel.Upscaler': nodeDef('modules.Spandrel', 'Upscaler', 'image', {
+    image: { type: 'image', display: 'input' },
+    model_id: { type: 'string', value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth' },
+    device: { type: 'string', value: 'cuda:0' },
+    downscale: { type: 'float', value: 1 },
+    output: { type: 'image', display: 'output' },
   }),
   'modules.Image.Load': nodeDef('modules.Image', 'Load', 'image', {
     image: { type: 'image', display: 'output' },
@@ -492,16 +584,78 @@ const mockRegistry = {
       quantization_config: { label: 'Quantization Config', type: 'quant_config', display: 'output' },
     },
   ),
+  'modules.DiffusersRuntime.PipelineQuantizationConfigV2': nodeDef(
+    'modules.DiffusersRuntime',
+    'PipelineQuantizationConfigV2',
+    'Diffusers Runtime',
+    {
+      backend: {
+        type: 'string',
+        value: 'none',
+        options: [
+          'none',
+          'bnb_4bit',
+          'bnb_8bit',
+          'quanto_float8',
+          'quanto_int8',
+          'torchao_float8',
+          'torchao_int8_weight_only',
+        ],
+      },
+      components: {
+        type: 'string',
+        display: 'select',
+        value: ['transformer'],
+        options: ['transformer', 'transformer_2', 'text_encoder', 'text_encoder_2', 'vae'],
+        fieldOptions: { multiple: true },
+      },
+      dtype: { type: 'string', value: 'bfloat16', options: ['float32', 'float16', 'bfloat16'] },
+      excluded_modules: { type: 'text', display: 'textarea', value: '' },
+      component_overrides: { type: 'text', display: 'textarea', value: '{}' },
+      quantization_config: { type: 'quantization_config', display: 'output' },
+      summary: { type: 'string', display: 'output' },
+    },
+  ),
+  'modules.DiffusersRuntime.DiffusersExecutionRecipe': nodeDef(
+    'modules.DiffusersRuntime',
+    'DiffusersExecutionRecipe',
+    'Diffusers Runtime',
+    {
+      quantization_config: { type: 'quantization_config', display: 'input' },
+      device_map: { type: 'string', value: 'none' },
+      offload_mode: { type: 'string', value: 'none' },
+      device: { type: 'string', value: 'cuda:0' },
+      attention_backend: { type: 'string', value: 'auto' },
+      attention_components: { type: 'string', value: '' },
+      vae_slicing: { type: 'bool', value: true },
+      vae_tiling: { type: 'bool', value: true },
+      execution_recipe: { type: 'diffusers_execution_recipe', display: 'output' },
+      summary: { type: 'string', display: 'output' },
+    },
+  ),
   'modules.DiffusersImage.LoadPipeline': nodeDef('modules.DiffusersImage', 'LoadPipeline', 'Diffusers Image', {
     model_id: { type: 'string', value: 'black-forest-labs/FLUX.1-schnell' },
     pipeline_class: { type: 'string', value: 'FluxPipeline' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
+    quantization_mode: { type: 'string', value: 'none' },
+    quantized_components: { type: 'string', display: 'select', value: [], options: ['transformer', 'text_encoder'] },
+    auto_offload: { type: 'bool', value: true },
+    offload_mode: { type: 'string', value: 'model_cpu' },
+    execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
     pipeline: { type: 'image_diffusion_pipeline', display: 'output' },
   }),
   'modules.DiffusersImage.Generate': nodeDef('modules.DiffusersImage', 'Generate', 'Diffusers Image', {
     pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
     prompt: { type: 'text', display: 'textarea', value: '' },
+    negative_prompt: { type: 'text', display: 'textarea', value: '' },
+    width: { type: 'int', value: 1024 },
+    height: { type: 'int', value: 1024 },
+    seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
+    num_inference_steps: { type: 'int', value: 50 },
+    guidance_scale: { type: 'float', value: 4 },
+    output_type: { type: 'string', value: 'pil' },
+    max_sequence_length: { type: 'int', value: 512 },
     images: { type: 'image', display: 'output' },
   }),
   'modules.DiffusersImage.Edit': nodeDef('modules.DiffusersImage', 'Edit', 'Diffusers Image', {
@@ -515,89 +669,16 @@ const mockRegistry = {
     image: { type: 'image', display: 'input' },
     mask_image: { type: 'image', display: 'input' },
     prompt: { type: 'text', display: 'textarea', value: '' },
-    images: { type: 'image', display: 'output' },
-  }),
-  'modules.DiffusersImage.ControlGenerate': nodeDef('modules.DiffusersImage', 'ControlGenerate', 'Diffusers Image', {
-    pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
-    control_image: { type: 'image', display: 'input' },
-    prompt: { type: 'text', display: 'textarea', value: '' },
-    images: { type: 'image', display: 'output' },
-  }),
-  'modules.DiffusersAudio.LoadPipeline': nodeDef('modules.DiffusersAudio', 'LoadPipeline', 'Diffusers Audio', {
-    model_id: { type: 'string', value: 'ACE-Step/acestep-v15-xl-turbo-diffusers' },
-    dtype: { type: 'string', value: 'bfloat16' },
-    device: { type: 'string', value: 'cuda:0' },
-    pipeline: { type: 'diffusers_audio_pipeline', display: 'output' },
-  }),
-  'modules.DiffusersAudio.Generate': nodeDef('modules.DiffusersAudio', 'Generate', 'Diffusers Audio', {
-    pipeline: { type: 'diffusers_audio_pipeline', display: 'input' },
-    prompt: { type: 'text', display: 'textarea', value: '' },
-    audio: { type: 'audio', display: 'output' },
-  }),
-  'modules.Audio.Export': nodeDef('modules.Audio', 'Export', 'audio', {
-    audio: { type: 'audio', display: 'input' },
-    file: { type: 'str', value: '{PATH:audio}/MoDiff_{HASH:6}.wav' },
-  }),
-  'modules.QwenImage.LoadPipeline': nodeDef('modules.QwenImage', 'LoadPipeline', 'Qwen Image', {
-    pipeline: { type: 'qwen_image_pipeline', display: 'output' },
-    model_id: {
-      display: 'modelselect',
-      type: 'string',
-      value: { source: 'hub', value: 'Qwen/Qwen-Image-2512' },
-      fieldOptions: { noValidation: true, sources: ['hub', 'local'] },
-    },
-    dtype: { type: 'string', value: 'bfloat16' },
-    device: { type: 'string', value: 'cuda:0' },
-    quantization_mode: { type: 'string', value: 'bnb_4bit', options: ['none', 'bnb_4bit'] },
-    quantized_components: {
-      type: 'string',
-      display: 'select',
-      value: ['transformer', 'text_encoder'],
-      options: ['transformer', 'text_encoder'],
-    },
-    bnb_4bit_quant_type: { type: 'string', value: 'nf4', options: ['nf4', 'fp4'] },
-    bnb_4bit_compute_dtype: { type: 'string', value: 'bfloat16', options: ['float32', 'float16', 'bfloat16'] },
-    bnb_4bit_use_double_quant: { type: 'bool', value: true },
-    auto_offload: { type: 'bool', value: true },
-    offload_mode: {
-      type: 'string',
-      value: 'model_cpu',
-      options: ['auto_cpu', 'none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'],
-    },
-    resolved_artifact: { type: 'string', display: 'output' },
-  }),
-  'modules.QwenImage.Generate': nodeDef('modules.QwenImage', 'Generate', 'Qwen Image', {
-    pipeline: { type: 'qwen_image_pipeline', display: 'input' },
-    prompt: { type: 'text', display: 'textarea', value: '' },
     negative_prompt: { type: 'text', display: 'textarea', value: '' },
     width: { type: 'int', value: 1024 },
     height: { type: 'int', value: 1024 },
     seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
-    num_inference_steps: { type: 'int', value: 50 },
-    true_cfg_scale: { type: 'float', value: 4 },
-    output_type: { type: 'string', value: 'pil' },
-    max_sequence_length: { type: 'int', value: 512 },
+    num_inference_steps: { type: 'int', value: 40 },
+    guidance_scale: { type: 'float', value: 4 },
+    strength: { type: 'float', value: 0.6 },
     images: { type: 'image', display: 'output' },
   }),
-  'modules.QwenImage.LoadInpaintPipeline': nodeDef('modules.QwenImage', 'LoadInpaintPipeline', 'Qwen Image', {
-    pipeline: { type: 'qwen_image_inpaint_pipeline', display: 'output' },
-    model_id: {
-      display: 'modelselect',
-      type: 'string',
-      value: { source: 'hub', value: 'Qwen/Qwen-Image-Edit' },
-      fieldOptions: { noValidation: true, sources: ['hub', 'local'] },
-    },
-    dtype: { type: 'string', value: 'bfloat16' },
-    device: { type: 'string', value: 'cuda:0' },
-    quant_config: { type: 'quant_config', display: 'input' },
-    auto_offload: { type: 'bool', value: true },
-    offload_mode: {
-      type: 'string',
-      value: 'model_cpu',
-      options: ['auto_cpu', 'none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'],
-    },
-  }),
-  'modules.QwenImage.OutpaintCanvas': nodeDef('modules.QwenImage', 'OutpaintCanvas', 'Qwen Image', {
+  'modules.DiffusersImage.OutpaintCanvas': nodeDef('modules.DiffusersImage', 'OutpaintCanvas', 'Diffusers Image', {
     image: { type: 'image', display: 'input' },
     width: { type: 'int', value: 1344 },
     height: { type: 'int', value: 768 },
@@ -613,23 +694,123 @@ const mockRegistry = {
     width_out: { type: 'int', display: 'output' },
     height_out: { type: 'int', display: 'output' },
   }),
-  'modules.QwenImage.Inpaint': nodeDef('modules.QwenImage', 'Inpaint', 'Qwen Image', {
-    pipeline: { type: 'qwen_image_inpaint_pipeline', display: 'input' },
-    image: { type: 'image', display: 'input' },
-    mask_image: { type: 'image', display: 'input' },
+  'modules.DiffusersImage.ControlGenerate': nodeDef('modules.DiffusersImage', 'ControlGenerate', 'Diffusers Image', {
+    pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
+    control_image: { type: 'image', display: 'input' },
     prompt: { type: 'text', display: 'textarea', value: '' },
-    negative_prompt: { type: 'text', display: 'textarea', value: '' },
-    width: { type: 'int', value: 1024 },
-    height: { type: 'int', value: 1024 },
-    seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
-    num_inference_steps: { type: 'int', value: 40 },
-    true_cfg_scale: { type: 'float', value: 4 },
-    strength: { type: 'float', value: 0.6 },
-    output_type: { type: 'string', value: 'pil' },
-    max_sequence_length: { type: 'int', value: 512 },
     images: { type: 'image', display: 'output' },
   }),
+  'modules.DiffusersVideo.LoadPipeline': nodeDef('modules.DiffusersVideo', 'LoadPipeline', 'Diffusers Video', {
+    model_id: { type: 'string', value: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers' },
+    pipeline_class: { type: 'string', value: 'WanImageToVideoPipeline' },
+    dtype: { type: 'string', value: 'bfloat16' },
+    device: { type: 'string', value: 'cuda:0' },
+    auto_offload: { type: 'bool', value: false },
+    offload_mode: { type: 'string', value: 'none' },
+    execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
+    pipeline: { type: 'video_diffusion_pipeline', display: 'output' },
+  }),
+  'modules.DiffusersVideo.Generate': nodeDef('modules.DiffusersVideo', 'Generate', 'Diffusers Video', {
+    pipeline: { type: 'video_diffusion_pipeline', display: 'input' },
+    prompt: { type: 'text', display: 'textarea', value: '' },
+    negative_prompt: { type: 'text', display: 'textarea', value: '' },
+    reference_images: { type: 'image', display: 'input' },
+    mode: { type: 'string', value: 'image_to_video' },
+    width: { type: 'int', value: 768 },
+    height: { type: 'int', value: 512 },
+    num_frames: { type: 'int', value: 81 },
+    num_inference_steps: { type: 'int', value: 40 },
+    guidance_scale: { type: 'float', value: 3.5 },
+    seed: { type: 'int', display: 'random', value: { value: 92021, isRandom: false } },
+    video_out: { type: 'video', display: 'output' },
+  }),
+  'modules.Video.Load': nodeDef('modules.Video', 'Load', 'Video', {
+    file: { type: 'str', display: 'filebrowser', value: '' },
+    video: { type: 'video', display: 'output' },
+    filename: { type: 'str', display: 'output' },
+    width: { type: 'int', display: 'output' },
+    height: { type: 'int', display: 'output' },
+    frames: { type: 'int', display: 'output' },
+    fps: { type: 'float', display: 'output' },
+  }),
+  'modules.VideoConditioning.Normalize': nodeDef('modules.VideoConditioning', 'Normalize', 'Video Conditioning', {
+    video: { type: 'video', display: 'input' },
+    width: { type: 'int', value: 832 },
+    height: { type: 'int', value: 480 },
+    num_frames: { type: 'int', value: 81 },
+    fit: { type: 'string', value: 'cover', options: ['cover', 'contain', 'stretch'] },
+    output: { type: 'video', display: 'output' },
+    frames_out: { type: 'int', display: 'output' },
+  }),
+  'modules.VideoConditioning.AlignMask': nodeDef('modules.VideoConditioning', 'AlignMask', 'Video Conditioning', {
+    video: { type: 'video', display: 'input' },
+    mask: { type: 'video', display: 'input' },
+    invert: { type: 'bool', value: false },
+    threshold: { type: 'int', value: 127 },
+    grow_pixels: { type: 'int', value: 0 },
+    output: { type: 'video', display: 'output' },
+  }),
+  'modules.Video.Export': nodeDef('modules.Video', 'Export', 'Video', {
+    video: { type: 'video', display: 'input' },
+    filename: { type: 'str', value: '{PATH:videos}/MoDiff_{HASH:6}.mp4' },
+    fps: { type: 'float', value: 16 },
+    preview: { type: 'url', display: 'ui_video' },
+    file: { type: 'video', display: 'output' },
+  }),
+  'modules.DiffusersAudio.LoadPipeline': nodeDef('modules.DiffusersAudio', 'LoadPipeline', 'Diffusers Audio', {
+    model_id: { type: 'string', value: 'ACE-Step/acestep-v15-xl-turbo-diffusers' },
+    dtype: { type: 'string', value: 'bfloat16' },
+    device: { type: 'string', value: 'cuda:0' },
+    execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
+    pipeline: { type: 'diffusers_audio_pipeline', display: 'output' },
+  }),
+  'modules.DiffusersAudio.Generate': nodeDef('modules.DiffusersAudio', 'Generate', 'Diffusers Audio', {
+    pipeline: { type: 'diffusers_audio_pipeline', display: 'input' },
+    prompt: { type: 'text', display: 'textarea', value: '' },
+    audio: { type: 'audio', display: 'output' },
+  }),
+  'modules.Audio.Export': nodeDef('modules.Audio', 'Export', 'audio', {
+    audio: { type: 'audio', display: 'input' },
+    file: { type: 'str', value: '{PATH:audio}/MoDiff_{HASH:6}.wav' },
+    preview: { type: 'url', display: 'ui_audio' },
+  }),
 };
+
+function canonicalUnmarkedModularWorkflow() {
+  const entries = [
+    ['models', 'modules.ModularDiffusers.ModelsLoader'],
+    ['prompt', 'modules.ModularDiffusers.EncodePrompt'],
+    ['denoise', 'modules.ModularDiffusers.Denoise'],
+    ['decode', 'modules.ModularDiffusers.DecodeLatents'],
+    ['preview', 'modules.Image.Preview'],
+  ] as const;
+  const nodes = entries.map(([id, key], index) => ({
+    id,
+    type: 'custom',
+    position: { x: index * 310 - 620, y: index % 2 === 0 ? 80 : -100 },
+    data: JSON.parse(JSON.stringify(mockRegistry[key])),
+  }));
+  const edge = (id: string, source: string, sourceHandle: string, target: string, targetHandle: string) => ({
+    id,
+    source,
+    sourceHandle,
+    target,
+    targetHandle,
+  });
+  return {
+    nodes,
+    edges: [
+      edge('models-prompt', 'models', 'text_encoders', 'prompt', 'text_encoders'),
+      edge('models-denoise-unet', 'models', 'unet_out', 'denoise', 'unet'),
+      edge('models-decode', 'models', 'vae_out', 'decode', 'vae'),
+      edge('models-denoise-scheduler', 'models', 'scheduler', 'denoise', 'scheduler'),
+      edge('prompt-denoise', 'prompt', 'embeddings', 'denoise', 'embeddings'),
+      edge('denoise-decode', 'denoise', 'latents', 'decode', 'latents'),
+      edge('decode-preview', 'decode', 'images', 'preview', 'image'),
+    ],
+    viewport: { x: -140, y: 100, zoom: 0.73 },
+  };
+}
 
 const mockGraphList = [
   {
@@ -660,6 +841,141 @@ const mockGraphList = [
 
 async function installMockRoutes(page: Page) {
   mockFileUploadCalls = 0;
+  const workflows = new Map<string, Record<string, unknown>>();
+  const userBlocks = new Map<string, Record<string, unknown>>();
+  let workflowRevision = 0;
+  await page.route('**/media/capabilities', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        version: 1,
+        media: {
+          audio: { importExtensions: ['.wav'], exportFormats: [] },
+          image: { importExtensions: ['.png'], exportFormats: [] },
+          text: { importExtensions: ['.txt'], exportFormats: [] },
+          video: {
+            importExtensions: ['.mp4', '.webm', '.mov', '.gif'],
+            exportFormats: [
+              {
+                value: 'mp4',
+                label: 'MP4 (H.264 + AAC)',
+                extension: '.mp4',
+                mimeType: 'video/mp4',
+                preset: 'Compatible',
+              },
+              {
+                value: 'webm',
+                label: 'WebM (VP9 + Opus)',
+                extension: '.webm',
+                mimeType: 'video/webm',
+                preset: 'Web',
+              },
+              {
+                value: 'mov',
+                label: 'MOV (ProRes + PCM)',
+                extension: '.mov',
+                mimeType: 'video/quicktime',
+                preset: 'Editing',
+              },
+              {
+                value: 'gif',
+                label: 'Animated GIF',
+                extension: '.gif',
+                mimeType: 'image/gif',
+                preset: 'Loop',
+                hasAudio: false,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+  await page.route('**/studio/blocks**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const marker = '/studio/blocks/';
+    const markerIndex = url.pathname.indexOf(marker);
+    const blockId = markerIndex >= 0 ? decodeURIComponent(url.pathname.slice(markerIndex + marker.length)) : '';
+    if (request.method() === 'GET' && !blockId) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ blocks: Array.from(userBlocks.values()), count: userBlocks.size }),
+      });
+      return;
+    }
+    if (request.method() === 'POST' && !blockId) {
+      const block = (request.postDataJSON() ?? {}) as Record<string, unknown>;
+      const saved = { ...block, updatedAt: Date.now() };
+      userBlocks.set(String(block.id), saved);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, block: saved }),
+      });
+      return;
+    }
+    if (request.method() === 'DELETE' && blockId) {
+      userBlocks.delete(blockId);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, id: blockId }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: true }) });
+  });
+  await page.route('**/workflows**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const marker = '/workflows/';
+    const markerIndex = url.pathname.indexOf(marker);
+    const workflowId = markerIndex >= 0 ? decodeURIComponent(url.pathname.slice(markerIndex + marker.length)) : '';
+    if (request.method() === 'GET' && !workflowId) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ workflows: Array.from(workflows.values()) }),
+      });
+      return;
+    }
+    if (request.method() === 'PUT' && workflowId) {
+      const payload = (request.postDataJSON() ?? {}) as Record<string, unknown>;
+      const record = {
+        ...payload,
+        id: workflowId,
+        revision: ++workflowRevision,
+        updatedAt: Date.now(),
+      };
+      workflows.set(workflowId, record);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(record) });
+      return;
+    }
+    if (request.method() === 'GET' && workflowId && workflows.has(workflowId)) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(workflows.get(workflowId)),
+      });
+      return;
+    }
+    if (request.method() === 'DELETE' && workflowId) {
+      workflows.delete(workflowId);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: true }) });
+  });
+  await page.route('**/queue', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ queued: {}, current: null, recent: [] }),
+    });
+  });
   await page.route('**/cache', async (route) => {
     const body = route.request().postDataJSON() as { nodes?: unknown } | null;
     await route.fulfill({
@@ -706,7 +1022,7 @@ async function installMockRoutes(page: Page) {
       Object.entries(mockRegistry)
         .filter(([key]) => {
           if (!mockIncludeQuantizationNode && key === 'modules.ModularDiffusers.QuantizationConfigNode') return false;
-          if (!mockIncludeOutpaintNode && key === 'modules.QwenImage.OutpaintCanvas') return false;
+          if (!mockIncludeOutpaintNode && key === 'modules.DiffusersImage.OutpaintCanvas') return false;
           return true;
         })
         .map(([key, value]) => {
@@ -825,10 +1141,52 @@ async function installMockRoutes(page: Page) {
       }),
     });
   });
+  await page.route('**/runtime/resources**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 1,
+        sampledAt: Date.now() / 1000,
+        system: {
+          cpuPercent: 18,
+          ramTotalBytes: 64 * 1024 ** 3,
+          ramAvailableBytes: 40 * 1024 ** 3,
+          ramUsedBytes: 24 * 1024 ** 3,
+          ramPercent: 37.5,
+        },
+        process: {
+          cpuPercent: 6,
+          rssBytes: 3 * 1024 ** 3,
+        },
+        activeDevice: 'cuda:0',
+        accelerators: [
+          {
+            device: 'cuda:0',
+            index: 0,
+            name: 'Mock CUDA 16GB',
+            backend: 'cuda',
+            memoryKind: 'dedicated',
+            utilizationPercent: 42,
+            utilizationSource: 'mock',
+            memoryTotalBytes: 16 * 1024 ** 3,
+            memoryFreeBytes: 10 * 1024 ** 3,
+            memoryUsedBytes: 6 * 1024 ** 3,
+            allocatedBytes: 4 * 1024 ** 3,
+            reservedBytes: 5 * 1024 ** 3,
+            peakAllocatedBytes: 6 * 1024 ** 3,
+            peakReservedBytes: 7 * 1024 ** 3,
+          },
+        ],
+        currentRun: null,
+        errors: [],
+      }),
+    });
+  });
   await page.route('**/hf_download**', async (route) => {
     mockDownloadCalls += 1;
-    const url = new URL(route.request().url());
-    const repoId = url.searchParams.get('repo_id') ?? 'missing';
+    const body = route.request().postDataJSON() as { repo_id?: unknown } | null;
+    const repoId = typeof body?.repo_id === 'string' ? body.repo_id : 'missing';
     if (mockDownloadFailureRepo === repoId) {
       await route.fulfill({
         status: 403,
@@ -859,9 +1217,56 @@ async function setStudioViewMode(page: Page, mode: 'auto' | 'expert') {
 }
 
 async function openTemplateBrowser(page: Page) {
-  await page.getByTestId('left-tab-templates').click();
-  await page.getByTestId('left-open-template-browser').click();
+  const openButton = page.getByTestId('left-open-template-browser');
+  if ((await openButton.count()) === 0) {
+    // A workflow transition can close the panel while retaining its selected
+    // tab. Move through a known sibling tab so clicking Templates always opens
+    // it instead of toggling the retained tab back off.
+    await page.getByTestId('left-tab-nodes').click();
+    await page.getByTestId('left-tab-templates').click();
+  }
+  await expect(openButton).toBeVisible();
+  await openButton.click();
   await expect(page.getByTestId('template-browser-search')).toBeVisible();
+}
+
+const STARTUP_INDEX_REQUEST_PATHS = {
+  autoPlans: '/auto_resource/plans',
+  capabilities: '/model_capabilities',
+  customModules: '/custom_modules',
+  hfCache: '/hf_cache',
+  localModels: '/local_models',
+  manifest: '/template-gallery/manifest.json',
+  modelDiagnostics: '/model_cache/diagnostics',
+  nodes: '/nodes',
+  runtime: '/runtime/status',
+} as const;
+
+type StartupIndexRequestName = keyof typeof STARTUP_INDEX_REQUEST_PATHS;
+
+function trackStartupIndexRequests(page: Page) {
+  const counts = Object.fromEntries(Object.keys(STARTUP_INDEX_REQUEST_PATHS).map((name) => [name, 0])) as Record<
+    StartupIndexRequestName,
+    number
+  >;
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    for (const [name, suffix] of Object.entries(STARTUP_INDEX_REQUEST_PATHS) as Array<
+      [StartupIndexRequestName, string]
+    >) {
+      if (pathname.endsWith(suffix)) counts[name] += 1;
+    }
+  });
+  return counts;
+}
+
+async function bootMockedTemplateBrowser(page: Page) {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await openTemplateBrowser(page);
 }
 
 test.afterAll(() => {
@@ -875,6 +1280,685 @@ test.beforeEach(() => {
   mockDownloadFailureRepo = null;
   mockDownloadFailureMessage = '';
   mockHfTokenConfigured = false;
+});
+
+test('top bar reports live system and accelerator resources without refreshing runtime discovery', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const logo = page.getByRole('img', { name: 'MoDiff' });
+  await expect(logo).toBeVisible();
+  await expect.poll(() => logo.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(128);
+
+  const monitor = page.getByTestId('topbar-resource-monitor');
+  await expect(monitor).toBeVisible();
+  await expect(monitor).toHaveAccessibleName('System resource usage');
+  await monitor.click();
+  const popover = page.getByTestId('topbar-resource-popover');
+  await expect(popover).toBeVisible();
+  await expect(popover).toContainText('24.0 GiB / 64.0 GiB');
+  await expect(popover).toContainText('Mock CUDA 16GB');
+  await expect(popover).toContainText('42% (mock)');
+  await expect(popover).toContainText('Peak allocated');
+});
+
+test('manual graphs expose Encode Image status and graph-derived full-resolution A/B comparison', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('disconnected_image_output');
+  });
+
+  const nodeIds = await page.evaluate(() => {
+    const initial = window.__MODIFF_E2E__!.getState().flow.nodes;
+    const source = initial.find((node) => node.action === 'Load')?.id;
+    const preview = initial.find((node) => node.action === 'Preview')?.id;
+    if (!source || !preview) throw new Error('Manual comparison fixture is incomplete.');
+    const encode = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.ImageEncode');
+    window.__MODIFF_E2E__!.connectGraph({
+      source,
+      sourceHandle: 'image',
+      target: preview,
+      targetHandle: 'image',
+    });
+    window.__MODIFF_E2E__!.connectGraph({
+      source,
+      sourceHandle: 'image',
+      target: encode,
+      targetHandle: 'image',
+    });
+    window.__MODIFF_E2E__!.startStudioRunForTest({
+      clientRunId: 'manual-image-run',
+      runInputHash: 'manual-image-hash',
+      taskId: 'manual-image-task',
+    });
+    return { source, preview, encode };
+  });
+
+  const encodeNode = page.locator(`.react-flow__node[data-id="${nodeIds.encode}"]`);
+  const previewNode = page.locator(`.react-flow__node[data-id="${nodeIds.preview}"]`);
+  await expect(encodeNode).toBeVisible();
+  await expect(previewNode).toBeVisible();
+
+  await page.evaluate(({ encode }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_started',
+      sid: 'mock-sid',
+      current: {
+        task_id: 'manual-image-task',
+        name: 'Manual image workflow',
+        progress: 0,
+        status: 'running',
+      },
+      queued: [],
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'manual-image-task',
+      client_run_id: 'manual-image-run',
+      run_input_hash: 'manual-image-hash',
+      node: encode,
+      status: 'running',
+      phase: 'encoding',
+      message: 'Encoding source image into latent representation',
+      progress: 0,
+      current_step: 0,
+      total_steps: 1,
+    });
+  }, nodeIds);
+  const encodeSummary = encodeNode.getByTestId(`encode-image-summary-${nodeIds.encode}`);
+  await expect(encodeSummary).toContainText('Encoding');
+  await expect(encodeSummary.getByAltText('Input')).toBeVisible();
+
+  await page.evaluate(({ encode, preview }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'update_value',
+      node: encode,
+      key: 'encode_summary',
+      data_type: 'str',
+      value: [
+        JSON.stringify({
+          schemaVersion: 1,
+          status: 'encoded',
+          updatedAt: Date.now() / 1000,
+          elapsedSeconds: 1.25,
+          shape: [1, 16, 128, 128],
+          dtype: 'bfloat16',
+          device: 'cuda:0',
+        }),
+      ],
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'manual-image-task',
+      client_run_id: 'manual-image-run',
+      run_input_hash: 'manual-image-hash',
+      node: encode,
+      status: 'succeeded',
+      phase: 'encoding',
+      message: 'Encoded source image',
+      progress: 100,
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'update_value',
+      task_id: 'manual-image-task',
+      client_run_id: 'manual-image-run',
+      run_input_hash: 'manual-image-hash',
+      node: preview,
+      key: 'selected_image',
+      data_type: 'url',
+      value: ['/cache/manual-image/output.png'],
+    });
+  }, nodeIds);
+
+  await expect(encodeSummary).toContainText('Encoded');
+  await expect(encodeSummary).toContainText('1×16×128×128');
+  await expect(encodeSummary).toContainText('bfloat16');
+  await expect(encodeSummary).toContainText('cuda:0');
+
+  const compareButton = previewNode.getByRole('button', { name: 'Compare before and after', includeHidden: true });
+  await expect(compareButton).toBeEnabled();
+  await compareButton.click();
+  const comparison = previewNode.getByTestId(`node-preview-comparison-${nodeIds.preview}-selected_image`);
+  await expect(comparison).toBeVisible();
+  await expect(comparison).toContainText('A · Before');
+  await expect(comparison).toContainText('B · After');
+  await previewNode.getByRole('button', { name: 'Open full-resolution comparison' }).click();
+  await expect(page.getByRole('heading', { name: 'A/B image comparison' })).toBeVisible();
+});
+
+test('template browser loads indexes once at startup and never refreshes them when reopened', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  const requestCounts = trackStartupIndexRequests(page);
+
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect.poll(() => Object.values(requestCounts).every((count) => count >= 1), { timeout: 30_000 }).toBe(true);
+  await page.waitForTimeout(250);
+
+  const oncePerStartup = Object.fromEntries(
+    Object.keys(STARTUP_INDEX_REQUEST_PATHS).map((name) => [name, 1]),
+  ) as Record<StartupIndexRequestName, number>;
+  expect(requestCounts).toEqual(oncePerStartup);
+
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-search').fill('Product Concept');
+  await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
+  await openTemplateBrowser(page);
+  await page.waitForTimeout(250);
+
+  expect(requestCounts).toEqual(oncePerStartup);
+});
+
+test('template startup indexes recover once at the correct readiness signal without a modal refresh', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  let manifestAttempts = 0;
+  let autoPlanAttempts = 0;
+
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/template-gallery/manifest.json', async (route) => {
+    manifestAttempts += 1;
+    if (manifestAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'static index temporarily unavailable' }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route('**/auto_resource/plans', async (route) => {
+    autoPlanAttempts += 1;
+    if (autoPlanAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'backend not ready' }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+
+  await expect.poll(() => manifestAttempts, { timeout: 10_000 }).toBe(2);
+  expect(autoPlanAttempts).toBe(1);
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect.poll(() => autoPlanAttempts, { timeout: 10_000 }).toBe(2);
+
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
+  await openTemplateBrowser(page);
+  await page.waitForTimeout(250);
+  expect(manifestAttempts).toBe(2);
+  expect(autoPlanAttempts).toBe(2);
+});
+
+test('template launcher stacks its copy and external categories scroll into view', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await page.setViewportSize({ width: 900, height: 720 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  await page.getByTestId('left-tab-templates').click();
+  const launcherCard = page.getByRole('button', { name: /Template browser.*Search by task/ });
+  await expect(launcherCard).toBeVisible();
+  const launcherLayout = await launcherCard.evaluate((element) => {
+    const [title, description] = Array.from(element.children);
+    const titleBox = title!.getBoundingClientRect();
+    const descriptionBox = description!.getBoundingClientRect();
+    return {
+      alignItems: getComputedStyle(element).alignItems,
+      descriptionTop: descriptionBox.top,
+      flexDirection: getComputedStyle(element).flexDirection,
+      titleBottom: titleBox.bottom,
+    };
+  });
+  expect(launcherLayout.flexDirection).toBe('column');
+  expect(launcherLayout.alignItems).toBe('stretch');
+  expect(launcherLayout.descriptionTop).toBeGreaterThanOrEqual(launcherLayout.titleBottom + 6);
+
+  const openPerformance = () => page.getByRole('button', { name: /^Performance\s+\d+$/ }).click();
+  const selectedCategoryIsFullyVisible = (testId: string) =>
+    page.getByTestId(testId).evaluate((element) => {
+      const scrollport = element.closest('aside');
+      if (!scrollport) return false;
+      const item = element.getBoundingClientRect();
+      const viewport = scrollport.getBoundingClientRect();
+      const layoutTolerance = 1;
+      return (
+        item.left >= viewport.left - layoutTolerance &&
+        item.right <= viewport.right + layoutTolerance &&
+        item.top >= viewport.top - layoutTolerance &&
+        item.bottom <= viewport.bottom + layoutTolerance
+      );
+    });
+
+  await openPerformance();
+  const performanceCategory = page.getByTestId('template-browser-category-performance');
+  await expect(page.getByRole('group', { name: 'Template categories' })).toBeVisible();
+  await expect(performanceCategory).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => selectedCategoryIsFullyVisible('template-browser-category-performance')).toBe(true);
+
+  await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await openPerformance();
+  await expect(performanceCategory).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => selectedCategoryIsFullyVisible('template-browser-category-performance')).toBe(true);
+});
+
+test('template browser keeps compact layouts, opens card details, and loads 12-card batches on scroll', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await bootMockedTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+  const allCategory = page.getByTestId('template-browser-category-all');
+  await expect(allCategory).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('template-browser-category-recommended')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('group', { name: 'Template categories' })).toBeVisible();
+  await expect
+    .poll(() =>
+      allCategory
+        .locator('span')
+        .last()
+        .evaluate((element) => {
+          const styles = getComputedStyle(element);
+          return {
+            backgroundColor: styles.backgroundColor,
+            color: styles.color,
+          };
+        }),
+    )
+    .toEqual({
+      backgroundColor: 'rgb(43, 42, 22)',
+      color: 'rgb(255, 210, 30)',
+    });
+
+  const assertLayout = async (viewport: { width: number; height: number }) => {
+    const dialog = page.getByTestId('template-browser-dialog');
+    const dialogBox = await dialog.boundingBox();
+    const headerBox = await page.getByTestId('template-browser-header').boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect(headerBox).not.toBeNull();
+    expect(Math.abs(dialogBox!.width - viewport.width * 0.82)).toBeLessThanOrEqual(2);
+    expect(Math.abs(dialogBox!.height - viewport.height * 0.8)).toBeLessThanOrEqual(2);
+
+    const cards = page.locator('[data-testid^="template-browser-card-"]');
+    await expect(cards).toHaveCount(12);
+    const firstRowCtaBottoms = await cards.evaluateAll((items) => {
+      const firstRowTop = Math.min(...items.map((item) => item.getBoundingClientRect().top));
+      return items
+        .filter((item) => Math.abs(item.getBoundingClientRect().top - firstRowTop) <= 1)
+        .map(
+          (item) =>
+            item.querySelector<HTMLElement>('[data-testid^="template-browser-create-card-"]')?.getBoundingClientRect()
+              .bottom ?? 0,
+        );
+    });
+    const ctaDelta = Math.max(...firstRowCtaBottoms) - Math.min(...firstRowCtaBottoms);
+    expect(ctaDelta).toBeLessThanOrEqual(1);
+    await expect(dialog.getByText('Asset-backed only', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText(/^Current task:/)).toHaveCount(0);
+    await expect(dialog.getByText('Start with something remarkable', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText('Find your starting point', { exact: true })).toHaveCount(0);
+
+    const cardDetailsAction = cards.first().locator('button[aria-label^="View details for "]');
+    await expect(cardDetailsAction).toBeVisible();
+    await expect(cards.first()).toHaveAttribute('data-active-template', 'false');
+    await expect(cards.first()).toHaveAttribute('data-inspected', 'false');
+    await expect(cardDetailsAction).toHaveAttribute('aria-pressed', 'false');
+    await expect(cardDetailsAction).not.toHaveAttribute('aria-current');
+    await cardDetailsAction.focus();
+    await expect(cards.first()).toHaveAttribute('data-inspected', 'true');
+    await expect(cardDetailsAction).toHaveAttribute('aria-pressed', 'true');
+    const detail = page.locator('[data-testid^="template-detail-"]').first();
+    await expect(detail).toBeVisible();
+    const detailBox = await detail.boundingBox();
+    expect(detailBox).not.toBeNull();
+    const detailRight = detailBox!.x + detailBox!.width;
+    const detailBottom = detailBox!.y + detailBox!.height;
+    const dialogRight = dialogBox!.x + dialogBox!.width;
+    const dialogBottom = dialogBox!.y + dialogBox!.height;
+    expect(detailRight).toBeLessThanOrEqual(dialogRight + 1);
+    expect(detailBottom).toBeLessThanOrEqual(dialogBottom + 1);
+
+    expect(
+      `${JSON.stringify(
+        {
+          viewport: `${viewport.width}x${viewport.height}`,
+          widthPercent: Math.round((dialogBox!.width / viewport.width) * 100),
+          heightPercent: Math.round((dialogBox!.height / viewport.height) * 100),
+          mountedCards: await cards.count(),
+          compactHeader: headerBox!.height <= 120,
+          ctaAligned: ctaDelta <= 1,
+          detailContained: detailRight <= dialogRight + 1 && detailBottom <= dialogBottom + 1,
+        },
+        null,
+        2,
+      )}\n`,
+    ).toMatchSnapshot(`template-browser-layout-${viewport.width}x${viewport.height}.json`);
+
+    await detail.getByRole('button', { name: 'Templates' }).click();
+  };
+
+  await assertLayout({ width: 1280, height: 720 });
+
+  const clickSelectedCard = page.locator('[data-testid^="template-browser-card-"]').first();
+  const clickSelectedCardId = (await clickSelectedCard.getAttribute('data-testid'))!.replace(
+    'template-browser-card-',
+    '',
+  );
+  await clickSelectedCard.click({ position: { x: 8, y: 8 } });
+  await expect(page.getByTestId(`template-detail-${clickSelectedCardId}`)).toBeVisible();
+  await page.getByTestId(`template-detail-${clickSelectedCardId}`).getByRole('button', { name: 'Templates' }).click();
+
+  const firstBatchIds = await page
+    .locator('[data-testid^="template-browser-card-"]')
+    .evaluateAll((cards) =>
+      cards.map((card) => card.getAttribute('data-testid')).filter((value): value is string => Boolean(value)),
+    );
+  await expect(page.getByTestId('template-browser-pagination')).toHaveCount(0);
+  await expect(page.getByTestId('template-browser-load-sentinel')).toHaveCount(1);
+  await page.getByTestId('template-browser-gallery-scroll').evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.locator('[data-testid^="template-browser-card-"]')).toHaveCount(24);
+  for (const testId of firstBatchIds) {
+    await expect(page.getByTestId(testId)).toHaveCount(1);
+  }
+
+  await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
+  await page.setViewportSize({ width: 2048, height: 1024 });
+  await openTemplateBrowser(page);
+  await assertLayout({ width: 2048, height: 1024 });
+});
+
+test('template details use one narrow scroll pane and split only when the modal content is wide enough', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await bootMockedTemplateBrowser(page);
+
+  const firstCard = page.locator('[data-testid^="template-browser-card-"]').first();
+  const templateId = (await firstCard.getAttribute('data-testid'))!.replace('template-browser-card-', '');
+  await firstCard.getByRole('button', { name: /^View details for / }).click();
+  await expect(page.getByTestId(`template-detail-${templateId}`)).toBeVisible();
+
+  const measureDetailLayout = () =>
+    page.evaluate(() => {
+      const dialog = document.querySelector<HTMLElement>('[data-testid="template-browser-dialog"]')!;
+      const gallery = dialog.querySelector<HTMLElement>('[data-testid="template-browser-gallery-scroll"]')!;
+      const detail = dialog.querySelector<HTMLElement>('[data-testid^="template-detail-"]')!;
+      const split = detail.parentElement!;
+      const content = split.parentElement!;
+      const body = dialog.querySelector<HTMLElement>(':scope > div')!;
+      const rect = (element: HTMLElement) => {
+        const box = element.getBoundingClientRect();
+        return { bottom: box.bottom, height: box.height, left: box.left, right: box.right, width: box.width };
+      };
+      const isVerticalScrollport = (element: HTMLElement) => {
+        const style = getComputedStyle(element);
+        return (
+          style.display !== 'none' &&
+          ['auto', 'scroll'].includes(style.overflowY) &&
+          element.scrollHeight > element.clientHeight
+        );
+      };
+      const galleryStyle = getComputedStyle(gallery);
+      const detailStyle = getComputedStyle(detail);
+      const splitStyle = getComputedStyle(split);
+      return {
+        bodyOverflowY: getComputedStyle(body).overflowY,
+        containerType: getComputedStyle(content).containerType,
+        content: rect(content),
+        detail: rect(detail),
+        detailBorderLeftWidth: detailStyle.borderLeftWidth,
+        detailScrollable: isVerticalScrollport(detail),
+        gallery: rect(gallery),
+        galleryDisplay: galleryStyle.display,
+        galleryScrollable: isVerticalScrollport(gallery),
+        mainScrollportCount: [gallery, detail].filter(isVerticalScrollport).length,
+        split: rect(split),
+        splitColumns: splitStyle.gridTemplateColumns,
+      };
+    });
+
+  const narrow = await measureDetailLayout();
+  expect(narrow.containerType).toBe('inline-size');
+  expect(narrow.content.width).toBeLessThan(1024);
+  expect(narrow.galleryDisplay).toBe('none');
+  expect(narrow.gallery.width).toBe(0);
+  expect(narrow.detail.width).toBeCloseTo(narrow.split.width, 0);
+  expect(narrow.detailScrollable).toBe(true);
+  expect(narrow.galleryScrollable).toBe(false);
+  expect(narrow.mainScrollportCount).toBe(1);
+  expect(narrow.bodyOverflowY).toBe('hidden');
+  expect(narrow.detailBorderLeftWidth).toBe('0px');
+
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await expect.poll(async () => (await measureDetailLayout()).galleryDisplay).toBe('block');
+  const wide = await measureDetailLayout();
+  expect(wide.content.width).toBeGreaterThanOrEqual(1024);
+  expect(wide.gallery.width).toBeGreaterThan(0);
+  expect(wide.detail.width).toBeGreaterThanOrEqual(420);
+  expect(Math.abs(wide.gallery.right - wide.detail.left)).toBeLessThanOrEqual(1);
+  expect(wide.gallery.left).toBeCloseTo(wide.split.left, 0);
+  expect(wide.detail.right).toBeCloseTo(wide.split.right, 0);
+  expect(wide.detailScrollable).toBe(true);
+  expect(wide.galleryScrollable).toBe(true);
+  expect(wide.mainScrollportCount).toBe(2);
+  expect(wide.bodyOverflowY).toBe('hidden');
+  expect(wide.detailBorderLeftWidth).not.toBe('0px');
+
+  const independentScroll = await page.evaluate(() => {
+    const gallery = document.querySelector<HTMLElement>('[data-testid="template-browser-gallery-scroll"]')!;
+    const detail = document.querySelector<HTMLElement>('[data-testid^="template-detail-"]')!;
+    gallery.scrollTop = 0;
+    detail.scrollTop = 120;
+    return { detail: detail.scrollTop, gallery: gallery.scrollTop };
+  });
+  expect(independentScroll.detail).toBeGreaterThan(0);
+  expect(independentScroll.gallery).toBe(0);
+});
+
+test('template browser attaches Recommended infinite scroll when the dialog portal first mounts', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await page.setViewportSize({ width: 2560, height: 1280 });
+  await bootMockedTemplateBrowser(page);
+
+  await expect(page.getByTestId('template-browser-category-recommended')).toHaveAttribute('aria-pressed', 'true');
+  const cards = page.locator('[data-testid^="template-browser-card-"]');
+  const gallery = page.getByTestId('template-browser-gallery-scroll');
+  const totalTemplates = Number(
+    (await page.getByTestId('template-browser-category-recommended').textContent())?.match(/\d+/)?.[0] ?? 0,
+  );
+  expect(totalTemplates).toBeGreaterThan(12);
+
+  // The dialog panel is portalled by Headless UI. Its scroll root and sentinel
+  // mount after the parent open-state effect, so their attachment must itself
+  // start the observer and fill the viewport beyond the first batch.
+  await expect.poll(() => cards.count()).toBeGreaterThan(12);
+  const automaticallyLoaded = await cards.count();
+  expect(automaticallyLoaded).toBeLessThan(totalTemplates);
+
+  await gallery.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(() => cards.count()).toBeGreaterThan(automaticallyLoaded);
+});
+
+test('template browser keeps auto-loading an underfilled gallery and continues loading on scroll', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await bootMockedTemplateBrowser(page);
+  await page.addStyleTag({
+    content: 'article[data-testid^="template-browser-card-"] { height: 64px !important; min-height: 64px !important; }',
+  });
+  await page.getByTestId('template-browser-category-all').click();
+
+  const cards = page.locator('[data-testid^="template-browser-card-"]');
+  const gallery = page.getByTestId('template-browser-gallery-scroll');
+  await expect.poll(() => cards.count()).toBeGreaterThan(24);
+  await page.waitForTimeout(200);
+
+  const automaticallyLoaded = await cards.count();
+  const totalTemplates = Number(
+    (await page.getByTestId('template-browser-category-all').textContent())?.match(/\d+/)?.[0] ?? 0,
+  );
+  expect(automaticallyLoaded).toBeLessThan(totalTemplates);
+
+  await gallery.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(() => cards.count()).toBeGreaterThan(automaticallyLoaded);
+});
+
+test('template video cards honor save-data, detach offscreen media, and use full video in details', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await page.addInitScript(() => {
+    const connection = new EventTarget();
+    Object.defineProperty(connection, 'saveData', { configurable: true, value: true });
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: connection });
+  });
+  await bootMockedTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-search').fill('Wider Robotics Workcell');
+
+  const card = page.getByTestId('template-browser-card-wan_vace_outpaint_reframe');
+  const cardVideo = card.getByTestId('template-card-video');
+  await expect(cardVideo).toHaveAttribute('data-preview-attached', 'false');
+  await expect(cardVideo).not.toHaveAttribute('src');
+  await expect(card.locator('img').first()).toHaveAttribute(
+    'src',
+    /\/template-gallery\/wan_vace_outpaint_reframe\.poster\.png$/,
+  );
+
+  await card.getByRole('button', { name: 'Play video preview' }).click();
+  await expect(cardVideo).toHaveAttribute('src', /\/template-gallery\/wan_vace_outpaint_reframe\.card-preview\.mp4$/);
+  await expect(cardVideo).toHaveAttribute('data-preview-attached', 'true');
+  await expect.poll(() => cardVideo.evaluate((video: HTMLVideoElement) => !video.paused)).toBe(true);
+
+  await card.evaluate((element) => {
+    element.style.marginBottom = '1600px';
+  });
+  await page.getByTestId('template-browser-gallery-scroll').evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(cardVideo).toHaveAttribute('data-preview-attached', 'false');
+  await expect(cardVideo).not.toHaveAttribute('src');
+  await expect.poll(() => cardVideo.evaluate((video: HTMLVideoElement) => video.paused)).toBe(true);
+
+  await card.evaluate((element) => {
+    element.style.marginBottom = '';
+  });
+  await page.getByTestId('template-browser-gallery-scroll').evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(cardVideo).toHaveAttribute('data-preview-attached', 'true');
+  await card.getByTestId('template-browser-use-wan_vace_outpaint_reframe').click();
+  const detail = page.getByTestId('template-detail-wan_vace_outpaint_reframe');
+  const beforeVideo = detail.getByLabel('Before', { exact: true });
+  const detailVideo = detail.getByLabel('After', { exact: true });
+  await expect(beforeVideo).toHaveAttribute(
+    'src',
+    /\/template-gallery\/inputs\/wan_vace_outpaint_reframe\.before\.mp4$/,
+  );
+  await expect.poll(() => beforeVideo.evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThan(0);
+  await expect(detailVideo).toHaveAttribute('src', /\/template-gallery\/wan_vace_outpaint_reframe\.mp4$/);
+  await expect(detailVideo).not.toHaveAttribute('src', /card-preview/);
+  await expect(detailVideo).toHaveAttribute('controls', '');
+  await detailVideo.evaluate(async (video: HTMLVideoElement) => {
+    await video.play();
+  });
+  await expect.poll(() => detailVideo.evaluate((video: HTMLVideoElement) => !video.paused)).toBe(true);
+});
+
+test('Wan outpaint uploads its reviewed source and mask defaults before creating the graph', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockFileUploadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await bootMockedTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-search').fill('Wider Robotics Workcell');
+  await page.getByTestId('template-browser-use-wan_vace_outpaint_reframe').click();
+
+  const detail = page.getByTestId('template-detail-wan_vace_outpaint_reframe');
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText('Included inputs');
+  await expect(detail).not.toContainText('Preview unavailable');
+  await expect(detail).not.toContainText('Source video required');
+  await expect(detail).not.toContainText('Mask video required');
+  await page.getByTestId('template-browser-create-wan_vace_outpaint_reframe').click();
+  await expect(page.getByTestId('template-browser-dialog')).toBeHidden();
+
+  const state = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())) as {
+    flow: {
+      nodes: Array<{
+        studioRole?: string;
+        params: Record<string, { value?: unknown }>;
+      }>;
+    };
+    studio: {
+      activeTemplateId: string | null;
+      form: { sourceVideo: string; maskVideo: string };
+    };
+  };
+  expect(state.studio.activeTemplateId).toBe('wan_vace_outpaint_reframe');
+  expect(state.studio.form.sourceVideo).toBeTruthy();
+  expect(state.studio.form.maskVideo).toBeTruthy();
+  expect(state.studio.form.sourceVideo).not.toBe(state.studio.form.maskVideo);
+  expect(state.flow.nodes.find((node) => node.studioRole === 'loadVideo')?.params.file?.value).toBe(
+    state.studio.form.sourceVideo,
+  );
+  expect(state.flow.nodes.find((node) => node.studioRole === 'loadMaskVideo')?.params.file?.value).toBe(
+    state.studio.form.maskVideo,
+  );
+  expect(mockFileUploadCalls).toBe(2);
 });
 
 test('model downloads show topbar activity, session progress, and completion notification', async ({ page }) => {
@@ -945,7 +2029,7 @@ test('model downloads show topbar activity, session progress, and completion not
   await expect(page.getByTestId('session-download-unsloth/Qwen-Image-2512-unsloth-bnb-4bit')).toContainText('Complete');
 });
 
-test('mocked Studio normalizes legacy persisted forms without video fields', async ({ page }) => {
+test('mocked Studio normalizes persisted forms without video fields', async ({ page }) => {
   mockInstalledRepos.clear();
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = true;
@@ -955,14 +2039,14 @@ test('mocked Studio normalizes legacy persisted forms without video fields', asy
   await ensureFrontend();
   await installMockRoutes(page);
   await page.addInitScript((legacyForm) => {
-    const oldTemplateId = ['z', 'co' + 'mfy', 'cinematic_contact_sheet'].join('_');
+    const persistedTemplateId = 'z_image_cinematic_contact_sheet';
     window.localStorage.setItem(
       'modiff.studio',
       JSON.stringify({
         state: {
           selectedMode: 'text_to_image',
           form: legacyForm,
-          activeTemplateId: oldTemplateId,
+          activeTemplateId: persistedTemplateId,
           workflowTabs: [
             {
               id: 'legacy-tab',
@@ -971,7 +2055,7 @@ test('mocked Studio normalizes legacy persisted forms without video fields', asy
               updatedAt: 1,
               dirty: false,
               source: 'template',
-              sourceLabel: oldTemplateId,
+              sourceLabel: persistedTemplateId,
               snapshot: {
                 nodes: [],
                 edges: [],
@@ -979,7 +2063,7 @@ test('mocked Studio normalizes legacy persisted forms without video fields', asy
                 studioForm: legacyForm,
                 studioGraphBinding: null,
                 selectedMode: 'text_to_image',
-                activeTemplateId: oldTemplateId,
+                activeTemplateId: persistedTemplateId,
                 sourceOutputId: null,
               },
             },
@@ -991,7 +2075,7 @@ test('mocked Studio normalizes legacy persisted forms without video fields', asy
               url: '/file?file=legacy-output.png',
               mode: 'text_to_image',
               modelType: 'ZImageModularPipeline',
-              templateId: oldTemplateId,
+              templateId: persistedTemplateId,
               formSnapshot: legacyForm,
             },
           ],
@@ -1015,14 +2099,283 @@ test('mocked Studio normalizes legacy persisted forms without video fields', asy
   expect(state.studio.activeTemplateId).toBe('z_image_cinematic_contact_sheet');
   expect(state.studio.workflowTabs[0].sourceLabel).toBe('z_image_cinematic_contact_sheet');
   expect(state.studio.workflowTabs[0].snapshot.activeTemplateId).toBe('z_image_cinematic_contact_sheet');
-  expect(state.studio.outputs[0].templateId).toBe('z_image_cinematic_contact_sheet');
+  // Output history is backend-owned. Persisted legacy copies are deliberately
+  // discarded instead of being migrated back into localStorage.
+  expect(state.studio.outputs).toEqual([]);
 
   await page.getByTestId('launcher-mode-text_to_image').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 
-test('mocked Studio keeps model health contextual and hides advanced FLUX by default', async ({ page }) => {
+test('mocked Studio restores legacy template tabs as managed without moving their saved graph', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept'));
+
+  const legacyReloaded = page.waitForEvent('load');
+  await page.evaluate(() => {
+    const current = window.__MODIFF_E2E__!.getState();
+    current.flow.nodes.forEach((node, index) => {
+      const position = {
+        x: -913.25 + index * 381.5,
+        y: 287.5 + (index % 2 === 0 ? index * 43.25 : -index * 71.75),
+      };
+      if (!window.__MODIFF_E2E__!.setFirstNodePositionByAction(node.action, position)) {
+        throw new Error(`Could not move ${node.action}.`);
+      }
+    });
+
+    const flowPersisted = JSON.parse(window.localStorage.getItem('modiff.flow') ?? '{}') as {
+      state?: {
+        nodes?: Array<{
+          id: string;
+          position: { x: number; y: number };
+          data: { studioOwned?: boolean; studioRole?: string };
+        }>;
+        edges?: Array<{ id: string }>;
+        viewport?: { x: number; y: number; zoom: number };
+      };
+      version?: number;
+    };
+    const studioPersisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+      state?: {
+        activeTemplateId?: string | null;
+        activeWorkflowTabId?: string | null;
+        workflowTabs?: Array<{
+          id: string;
+          source?: string;
+          sourceLabel?: string;
+          snapshot: {
+            nodes: typeof flowPersisted.state.nodes;
+            edges: typeof flowPersisted.state.edges;
+            viewport: typeof flowPersisted.state.viewport;
+            studioGraphBinding?: unknown;
+            activeTemplateId?: string | null;
+          };
+        }>;
+      };
+      version?: number;
+    };
+    const flow = flowPersisted.state;
+    const studio = studioPersisted.state;
+    if (!flow?.nodes?.length || !flow.edges?.length || !studio?.workflowTabs?.length) {
+      throw new Error('The generated template graph was not persisted.');
+    }
+    const activeTab = studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId);
+    if (!activeTab) throw new Error('The active generated workflow tab was not persisted.');
+
+    const positions = Object.fromEntries(flow.nodes.map((node) => [node.id, node.position]));
+    // This is the old persisted shape that triggered Custom graph: the tab
+    // retained its template provenance, but the duplicated snapshot fields did
+    // not yet store template identity or a managed binding.
+    activeTab.source = 'template';
+    activeTab.sourceLabel = 'z_image_quick_concept';
+    activeTab.snapshot.nodes = JSON.parse(JSON.stringify(flow.nodes));
+    activeTab.snapshot.edges = JSON.parse(JSON.stringify(flow.edges));
+    activeTab.snapshot.viewport = flow.viewport;
+    delete activeTab.snapshot.activeTemplateId;
+    delete activeTab.snapshot.studioGraphBinding;
+    studio.activeTemplateId = null;
+
+    window.localStorage.setItem('modiff.flow', JSON.stringify(flowPersisted));
+    window.localStorage.setItem('modiff.studio', JSON.stringify(studioPersisted));
+    window.sessionStorage.setItem(
+      'legacy-managed-expected',
+      JSON.stringify({
+        positions,
+        nodeIds: flow.nodes.map((node) => node.id),
+        edgeIds: flow.edges.map((edge) => edge.id),
+      }),
+    );
+    window.setTimeout(() => window.location.reload(), 0);
+  });
+
+  await legacyReloaded;
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const savedGraph = await page.evaluate(() =>
+    JSON.parse(window.sessionStorage.getItem('legacy-managed-expected') ?? '{}'),
+  );
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  const state = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+  const restoredTab = state.studio.workflowTabs[0] as {
+    snapshot: {
+      activeTemplateId: string | null;
+      nodes: Array<{ id: string; position: { x: number; y: number }; data: { studioOwned?: boolean } }>;
+      viewport: { x: number; y: number; zoom: number };
+    };
+  };
+  expect(state.studio.activeTemplateId).toBe('z_image_quick_concept');
+  expect(state.studio.graphBinding?.managedNodeIds).toEqual(savedGraph.nodeIds);
+  expect(state.studio.graphBinding?.managedEdgeIds).toEqual(savedGraph.edgeIds);
+  expect(restoredTab.snapshot.activeTemplateId).toBe('z_image_quick_concept');
+  expect(Object.fromEntries(restoredTab.snapshot.nodes.map((node) => [node.id, node.position]))).toEqual(
+    savedGraph.positions,
+  );
+  expect(restoredTab.snapshot.nodes.every((node) => node.data.studioOwned)).toBe(true);
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+
+  // A real topology edit must atomically detach and persist the managed
+  // identity. This also verifies that the hydration recovery does not revive a
+  // deliberately customized template on the next load.
+  await page.evaluate(() => window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Image.Preview'));
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = window.__MODIFF_E2E__!.getState();
+        return {
+          activeTemplateId: state.studio.activeTemplateId,
+          bound: Boolean(state.studio.graphBinding),
+        };
+      }),
+    )
+    .toEqual({ activeTemplateId: null, bound: false });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+  const customState = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+  expect(customState.studio.activeTemplateId).toBeNull();
+  expect(customState.studio.graphBinding).toBeNull();
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
+  await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+});
+
+test('canonical saved modular imports are adopted as managed and real topology edits stay custom', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('black-forest-labs/FLUX.2-klein-4B');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  const graph = canonicalUnmarkedModularWorkflow();
+  const modelNode = graph.nodes.find((node) => node.id === 'models')!;
+  modelNode.data.params.model_type.value = 'Flux2KleinModularPipeline';
+  modelNode.data.params.repo_id.value = 'black-forest-labs/FLUX.2-klein-4B';
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(
+    ({ graph, form }) => {
+      if (window.localStorage.getItem('modiff.studio')) return;
+      const tabId = 'canonical-import';
+      const snapshot = {
+        ...graph,
+        studioForm: form,
+        studioGraphBinding: null,
+        selectedMode: 'text_to_image',
+        activeTemplateId: null,
+        sourceOutputId: null,
+        pinnedGraphInputIds: [],
+      };
+      window.localStorage.setItem(
+        'modiff.studio',
+        JSON.stringify({
+          state: {
+            selectedMode: 'text_to_image',
+            form,
+            activeTemplateId: null,
+            workflowTabs: [
+              {
+                id: tabId,
+                title: 'text_to_image',
+                createdAt: 1,
+                updatedAt: 1,
+                dirty: false,
+                source: 'import',
+                sourceLabel: '/data/graphs/modular_diffusers/text_to_image.json',
+                snapshot,
+              },
+            ],
+            activeWorkflowTabId: tabId,
+          },
+          version: 0,
+        }),
+      );
+      window.localStorage.setItem(
+        'modiff.flow',
+        JSON.stringify({
+          state: graph,
+          version: 0,
+        }),
+      );
+    },
+    { graph, form: legacyStudioFormWithoutVideoFields },
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  const adopted = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+  expect(adopted.studio.activeTemplateId).toBeNull();
+  expect(adopted.studio.form.modelType).toBe('Flux2KleinPipeline');
+  expect(adopted.studio.graphBinding?.modelType).toBe('Flux2KleinPipeline');
+  expect(adopted.studio.graphBinding?.nodes).toEqual({
+    models: 'models',
+    prompt: 'prompt',
+    denoise: 'denoise',
+    decode: 'decode',
+    preview: 'preview',
+  });
+  expect(adopted.studio.graphBinding?.managedNodeIds).toEqual(graph.nodes.map((node) => node.id));
+  expect(adopted.studio.graphBinding?.managedEdgeIds).toEqual(graph.edges.map((edge) => edge.id));
+  expect(adopted.flow.nodes.map((node) => node.position)).toEqual(graph.nodes.map((node) => node.position));
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence())).toBeNull();
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Image.Preview'));
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = window.__MODIFF_E2E__!.getState();
+        return {
+          bound: Boolean(state.studio.graphBinding),
+          nodeCount: state.flow.nodes.length,
+        };
+      }),
+    )
+    .toEqual({ bound: false, nodeCount: graph.nodes.length + 1 });
+  const persistedCustomCheckpoint = await page.evaluate(() => {
+    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') || '{}');
+    const tab = persisted?.state?.workflowTabs?.find(
+      (candidate: { id?: string }) => candidate.id === 'canonical-import',
+    );
+    return {
+      bound: Boolean(tab?.snapshot?.studioGraphBinding),
+      dirty: tab?.dirty,
+      nodeCount: tab?.snapshot?.nodes?.length,
+    };
+  });
+  expect(persistedCustomCheckpoint).toEqual({
+    bound: false,
+    dirty: true,
+    nodeCount: graph.nodes.length + 1,
+  });
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
+  await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+});
+
+test('mocked Studio keeps model health contextual while exposing every authored FLUX template', async ({ page }) => {
   mockInstalledRepos.clear();
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = true;
@@ -1059,10 +2412,9 @@ test('mocked Studio keeps model health contextual and hides advanced FLUX by def
   await page.getByTestId('node-group-Export').click();
   await expect(page.getByTestId('node-row-modules-Audio-Export')).toContainText('Export');
   await setStudioViewMode(page, 'expert');
-  await expect(page.getByTestId('node-browser-view-essential')).toBeVisible();
-  await page.getByTestId('node-browser-view-advanced').click();
-  await page.getByTestId('node-group-Qwen-Image').click();
-  await expect(page.getByTestId('node-row-modules-QwenImage-LoadPipeline')).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Essentials' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Advanced' }).click();
+  await expect(page.getByTestId('node-row-modules-QwenImage-LoadPipeline')).toHaveCount(0);
   await setStudioViewMode(page, 'auto');
 
   await page.getByTestId('left-tab-templates').click();
@@ -1072,19 +2424,50 @@ test('mocked Studio keeps model health contextual and hides advanced FLUX by def
   await expect(page.getByTestId('template-browser-category-image')).toBeVisible();
   await expect(page.getByTestId('template-browser-category-edit')).toBeVisible();
   await expect(page.getByTestId('template-browser-category-control')).toBeVisible();
+  await expect(page.getByTestId('template-browser-category-adapters')).toBeVisible();
   await expect(page.getByTestId('template-browser-category-performance')).toBeVisible();
   await expect(page.getByTestId('template-browser-category-planning')).toHaveCount(0);
+  await page.getByTestId('template-browser-category-adapters').click();
+  await expect(page.getByTestId('template-browser-use-flux_lora_oil_painting')).toBeVisible();
+  await expect(page.getByTestId('template-browser-use-flux_lora_retro_comic')).toBeVisible();
+  await expect(page.getByTestId('template-browser-card-flux_lora_ghibli_story')).toContainText('No preview yet');
+  await expect(page.getByTestId('template-usage-warning-flux_lora_ghibli_story')).toBeVisible();
+  await expect(page.getByTestId('template-usage-warning-flux_lora_oil_painting')).toBeVisible();
+  await expect(page.getByTestId('template-browser-create-card-flux_lora_ghibli_story')).toContainText('Review terms');
+  await page.getByTestId('template-browser-create-card-flux_lora_ghibli_story').click();
+  const termsDialog = page.getByTestId('template-usage-terms-dialog');
+  await expect(termsDialog).toBeVisible();
+  await expect(termsDialog).toContainText('black-forest-labs/FLUX.1-dev');
+  await expect(termsDialog).toContainText('alvarobartt/ghibli-characters-flux-lora');
+  await expect(termsDialog).toContainText('Personal / non-commercial');
+  await termsDialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(termsDialog).toBeHidden();
+  await page.getByTestId('template-browser-create-card-flux_lora_ghibli_story').click();
+  await page.getByTestId('template-usage-terms-confirm').click();
+  await expect(page.getByTestId('template-browser-dialog')).toBeHidden();
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).studio.activeTemplateId)
+    .toBe('flux_lora_ghibli_story');
+  await page.getByTestId('left-open-template-browser').click();
+  await page.getByTestId('template-browser-category-adapters').click();
+  await expect(page.getByTestId('template-browser-create-card-flux_lora_ghibli_story')).toContainText('Use template');
   await page.getByTestId('template-browser-category-all').click();
   await page.getByTestId('template-browser-search').fill('flux');
   await expect(page.getByTestId('template-browser-use-flux_schnell_text_to_image')).toBeVisible();
-  await expect(page.getByTestId('template-browser-use-flux_dev_expert_text_to_image')).toHaveCount(0);
-  await expect(page.getByTestId('template-browser-use-flux_kontext_edit')).toHaveCount(0);
-  await expect(page.getByTestId('template-browser-use-flux_fill_inpaint')).toHaveCount(0);
-  await expect(page.getByTestId('template-browser-use-flux_control_canny')).toHaveCount(0);
-  const modelFilterText = await page.getByRole('combobox').first().textContent();
-  expect(modelFilterText).not.toContain('FLUX.1-dev');
-  expect(modelFilterText).not.toContain('FLUX.1-Krea-dev');
+  await expect(page.getByTestId('template-browser-use-flux_dev_expert_text_to_image')).toBeVisible();
+  await page.getByTestId('template-browser-search').fill('kontext');
+  await expect(page.getByTestId('template-browser-use-flux_kontext_edit')).toBeVisible();
+  await page.getByTestId('template-browser-search').fill('fill inpaint');
+  await expect(page.getByTestId('template-browser-use-flux_fill_inpaint')).toBeVisible();
+  await page.getByTestId('template-browser-search').fill('canny');
+  await expect(page.getByTestId('template-browser-use-flux_control_canny')).toBeVisible();
+  await page.getByTestId('template-browser-model-filter').click();
+  await expect(page.getByRole('option', { name: 'FLUX.1-dev', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'FLUX.1-Krea-dev', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
 
+  await page.getByTestId('template-browser-search').fill('flux schnell');
+  await expect(page.getByTestId('template-usage-warning-flux_schnell_text_to_image')).toHaveCount(0);
   await page.getByTestId('template-browser-use-flux_schnell_text_to_image').click();
   await expect(page.getByTestId('template-detail-flux_schnell_text_to_image')).toBeVisible();
   await page.getByTestId('template-browser-create-flux_schnell_text_to_image').click();
@@ -1106,6 +2489,46 @@ test('mocked Studio keeps model health contextual and hides advanced FLUX by def
   await expect(page.getByText('FLUX.1-dev', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('setup-workflow-model-health')).not.toContainText('Auto:');
   await expect(page.getByTestId('setup-workflow-model-health')).not.toContainText('Backend modes:');
+});
+
+test('restricted template installation requires the revision-bound terms acknowledgement', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  mockDownloadFailureRepo = null;
+  mockDownloadFailureMessage = '';
+  await bootMockedTemplateBrowser(page);
+
+  await page.getByTestId('template-browser-search').fill('Chinese New Year Ensemble');
+  await page.getByTestId('template-browser-use-ace_step_chinese_new_year_lora').click();
+  const detail = page.getByTestId('template-detail-ace_step_chinese_new_year_lora');
+  await expect(detail).toBeVisible();
+  const installAdapter = detail.getByRole('button', {
+    name: 'Install ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA',
+  });
+  await expect(installAdapter).toBeVisible();
+
+  await installAdapter.click();
+  const termsDialog = page.getByTestId('template-usage-terms-dialog');
+  await expect(termsDialog).toBeVisible();
+  await expect(termsDialog).toContainText('ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA');
+  await expect(termsDialog).toContainText('Research / academic only');
+  await expect(termsDialog).toContainText('commercial use');
+  await expect(termsDialog.getByRole('button', { name: 'I have reviewed and agree — Install' })).toBeVisible();
+  expect(mockDownloadCalls).toBe(0);
+
+  await termsDialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(termsDialog).toBeHidden();
+  expect(mockDownloadCalls).toBe(0);
+
+  await installAdapter.click();
+  await termsDialog.getByRole('button', { name: 'I have reviewed and agree — Install' }).click();
+  await expect(termsDialog).toBeHidden();
+  await expect.poll(() => mockDownloadCalls).toBe(1);
+  expect(mockInstalledRepos.has('ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA')).toBe(true);
+
+  await expect(page.getByTestId('template-browser-create-ace_step_chinese_new_year_lora')).toContainText(
+    'Use template',
+  );
 });
 
 test('mocked Workflows panel groups MoDiff examples in Auto and reveals raw roots in Expert', async ({ page }) => {
@@ -1133,6 +2556,171 @@ test('mocked Workflows panel groups MoDiff examples in Auto and reveals raw root
   await expect(page.getByTestId('workflow-source-modiff')).toBeVisible();
   await expect(page.getByTestId('workflow-source-modular-diffusers')).toBeVisible();
   await expect(page.getByTestId('workflow-source-MoDiff-Examples')).toHaveCount(0);
+});
+
+test('left libraries stay contained at minimum width and collapse workflow actions', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+
+  await page.getByTestId('left-tab-assets').click();
+  const panel = page.getByTestId('left-panel');
+  await expect(panel).toBeVisible();
+  await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(240);
+
+  const panelBox = await panel.boundingBox();
+  expect(panelBox).not.toBeNull();
+  for (const testId of ['left-clean-temporary-media', 'left-import-assets', 'left-open-gallery-library']) {
+    const controlBox = await page.getByTestId(testId).boundingBox();
+    expect(controlBox).not.toBeNull();
+    expect(controlBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+    expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+  }
+  expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  const state = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())) as {
+    studio: { workflowTabs: Array<{ snapshot: unknown }> };
+  };
+  await page.evaluate(
+    async ({ snapshot }) => {
+      await fetch('http://127.0.0.1:8088/workflows/min-width-workflow', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Qwen-Image-2512 — Text to Image: Product campaign with an intentionally long workflow title',
+          snapshot,
+          source: 'manual',
+          createdAt: Date.now(),
+        }),
+      });
+    },
+    { snapshot: state.studio.workflowTabs[0]!.snapshot },
+  );
+  await page.getByTestId('left-tab-workflows').click();
+  const savedRow = page.getByTestId('saved-workflow-min-width-workflow');
+  await expect(savedRow).toBeVisible();
+  await expect(savedRow.getByRole('button', { name: /Actions for Qwen-Image-2512/ })).toHaveCount(1);
+  const savedRowBox = await savedRow.boundingBox();
+  expect(savedRowBox).not.toBeNull();
+  expect(savedRowBox!.x + savedRowBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+  expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+test('new workflows stay neutral and ordinary node clicks dismiss the launcher', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+  await expect(page.getByTestId('studio-empty-workflow')).not.toContainText('Z-Image');
+
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await expect
+    .poll(async () => {
+      const current = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())) as {
+        flow: { visibleNodeCount: number };
+      };
+      return current.flow.visibleNodeCount;
+    })
+    .toBeGreaterThan(0);
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Z-Image Turbo');
+
+  await page.getByTestId('topbar-new-workflow').click();
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+  await expect(page.getByTestId('studio-task-model-summary')).toHaveCount(0);
+  await expect(page.getByTestId('studio-empty-workflow')).not.toContainText('Z-Image');
+
+  await page.getByTestId('left-tab-nodes').click();
+  const firstNodeGroup = page.locator('[data-testid^="node-group-"]').first();
+  await firstNodeGroup.getByRole('button').first().click();
+  const firstNode = page.locator('[data-testid^="node-row-"]').first();
+  await expect(firstNode).toBeVisible();
+  await firstNode.click();
+
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const current = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())) as {
+        flow: { visibleNodeCount: number };
+      };
+      return current.flow.visibleNodeCount;
+    })
+    .toBe(1);
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Z-Image');
+});
+
+test('workflow save shortcuts prevent browser defaults and distinguish Save from Save As', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.getByTestId('topbar-new-workflow').click();
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  const initialTabCount = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.workflowTabs.length);
+
+  const savePrevented = await page.evaluate(() => {
+    const event = new KeyboardEvent('keydown', {
+      key: 's',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    return !window.dispatchEvent(event);
+  });
+  expect(savePrevented).toBe(true);
+
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  await expect(saveDialog).toBeVisible();
+  await page.getByTestId('save-workflow-name').fill('Shortcut Saved');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(saveDialog).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const active = current.studio.workflowTabs.find(
+        (tab: { id: string }) => tab.id === current.studio.activeWorkflowTabId,
+      );
+      return { title: active?.title, tabs: current.studio.workflowTabs.length };
+    })
+    .toEqual({ title: 'Shortcut Saved', tabs: initialTabCount });
+
+  const saveAsPrevented = await page.evaluate(() => {
+    const event = new KeyboardEvent('keydown', {
+      key: 'S',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    return !window.dispatchEvent(event);
+  });
+  expect(saveAsPrevented).toBe(true);
+
+  await expect(saveDialog).toBeVisible();
+  await page.getByTestId('save-workflow-name').fill('Shortcut Copy');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(saveDialog).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const active = current.studio.workflowTabs.find(
+        (tab: { id: string }) => tab.id === current.studio.activeWorkflowTabId,
+      );
+      return { title: active?.title, tabs: current.studio.workflowTabs.length };
+    })
+    .toEqual({ title: 'Shortcut Copy', tabs: initialTabCount + 1 });
 });
 
 test('mocked Gallery and workflow export use the latest active workflow output', async ({ page }) => {
@@ -1501,13 +3089,19 @@ test('mocked topbar Export menu is compact in Auto and raw in Expert', async ({ 
     { tabId: activeWorkflowTabId },
   );
 
-  await page.getByTestId('topbar-export').click();
+  const exportTrigger = page.getByTestId('topbar-export');
+  await exportTrigger.click();
   await expect(page.getByTestId('topbar-export-menu')).toBeVisible();
   await expect(page.getByTestId('topbar-export-workflow-package')).toBeVisible();
   await expect(page.getByTestId('topbar-export-latest-output')).toBeVisible();
   await expect(page.getByTestId('topbar-export-open-gallery')).toBeVisible();
   await expect(page.getByTestId('topbar-export-raw-workflow')).toHaveCount(0);
   await expect(page.getByTestId('topbar-export-api-graph')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('topbar-export-menu')).toHaveCount(0);
+  await expect(exportTrigger).toBeFocused();
+  await exportTrigger.press('Enter');
+  await expect(page.getByTestId('topbar-export-workflow-package')).toHaveAttribute('data-focus', '');
 
   await page.getByTestId('topbar-export-open-gallery').click();
   await expect(page.getByTestId('gallery-panel')).toBeVisible();
@@ -1635,7 +3229,7 @@ test('mocked gated model install failures stay compact and actionable', async ({
   await expect(page.getByTestId('session-download-black-forest-labs/FLUX.1-schnell')).not.toContainText(
     'account example-user is not authorized',
   );
-  await expect(fluxInstall).toContainText('Retry');
+  await expect(fluxInstall).toContainText('Review access');
   await expect(fluxInstall).toHaveAttribute('title', /not authorized/);
 });
 
@@ -1700,36 +3294,11 @@ test('mocked workflow artifact requirements are contextual and role grouped', as
   const controlRequirement = page.getByTestId(
     'left-model-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union',
   );
-  await expect(
-    controlRequirement.getByTestId(
-      'left-install-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union',
-    ),
-  ).toContainText('Install');
-
-  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
-  await page.getByText('Advanced diagnostics', { exact: true }).click();
-  const setupRequirement = page.getByTestId(
-    'setup-model-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union',
+  const controlInstall = controlRequirement.getByTestId(
+    'left-install-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union',
   );
-  await expect(setupRequirement).toBeVisible();
-  await expect(
-    setupRequirement.getByTestId(
-      'setup-install-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union',
-    ),
-  ).toContainText('Install');
-
-  await page.getByTestId('setup-models').click();
-  const dialog = page.getByTestId('model-manager-dialog');
-  await expect(dialog).toBeVisible();
-  const managerRequirement = dialog.getByTestId(
-    'model-manager-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union',
-  );
-  await expect(managerRequirement).toBeVisible();
-  const managerInstall = managerRequirement.getByTestId(
-    'model-manager-install-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union',
-  );
-  await expect(managerInstall).toContainText('Install');
-  await managerInstall.click();
+  await expect(controlInstall).toContainText('Install');
+  await controlInstall.click();
   await expect
     .poll(async () => {
       const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
@@ -1739,6 +3308,16 @@ test('mocked workflow artifact requirements are contextual and role grouped', as
       };
     })
     .toEqual({ cached: true, calls: 1 });
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+  await page.getByText('Advanced diagnostics', { exact: true }).click();
+  // The intentionally incomplete mock registry cannot materialize this Expert
+  // modular graph. Setup still keeps the selected model requirement available so
+  // Graph Fix can repair both the empty canvas and a missing model installation.
+  await expect(page.getByText('Add nodes before running.', { exact: true })).toBeVisible();
+  await expect(
+    page.getByTestId('setup-model-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union'),
+  ).toBeVisible();
 });
 
 test('mocked custom graph inspector blocks invalid graphs in Auto and Expert', async ({ page }) => {
@@ -1813,6 +3392,14 @@ test('mocked custom graph inspector blocks invalid graphs in Auto and Expert', a
       }
       await expect(page.getByTestId('studio-run-readiness')).toContainText(item.title, { timeout: 30_000 });
       await expect(page.getByTestId('studio-run')).toBeDisabled({ timeout: 30_000 });
+      if (mode === 'expert' && item.scenario === 'outputless') {
+        await page.getByTestId('studio-run-readiness').click();
+        const runIssues = page.getByTestId('run-issues-dialog');
+        await expect(runIssues).toBeVisible();
+        await runIssues.getByRole('button', { name: 'Inspect graph' }).click();
+        await expect(runIssues).toHaveCount(0);
+        await expect(page.getByRole('status').filter({ hasText: 'Graph centered' })).toBeVisible();
+      }
     }
   }
 });
@@ -1871,6 +3458,78 @@ test('mocked custom graph artifact requirements show a compact install action', 
     .toEqual({ cached: true, calls: 1 });
 });
 
+test('mocked graph Fix button opens a reviewed model repair without downloading or choosing silently', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(() => window.__MODIFF_E2E__!.setGraphScenarioForTest('missing_model'));
+
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  const fixButton = page.getByTestId('graph-fix');
+  await expect(fixButton).toBeEnabled({ timeout: 30_000 });
+  await fixButton.click();
+
+  const dialog = page.getByTestId('graph-fix-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Choose or install the required model');
+  await expect(dialog).toContainText('missing/GraphModel');
+  await dialog.getByTestId('graph-fix-apply').click();
+  await expect(page.getByTestId('model-manager-dialog')).toBeVisible();
+
+  const after = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  expect(after.nodes.map((node) => node.id)).toEqual(before.nodes.map((node) => node.id));
+  expect(after.nodes.find((node) => node.id === 'scenario-model')?.params?.repo_id?.value).toBe('missing/GraphModel');
+  expect(mockDownloadCalls).toBe(0);
+  expect(after.historyPast).toBe(before.historyPast);
+});
+
+test('mocked graph Fix applies a topology repair once and verifies the original issue is gone', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(() => window.__MODIFF_E2E__!.setGraphScenarioForTest('disconnected_output'));
+
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Connect the graph to an output', {
+    timeout: 30_000,
+  });
+  await page.getByTestId('graph-fix').click();
+  const dialog = page.getByTestId('graph-fix-dialog');
+  await expect(dialog).toContainText('needs text encoders');
+  await dialog.getByRole('radio', { name: /Add modules\.ModularDiffusers\.ModelsLoader/ }).click();
+  await dialog.getByTestId('graph-fix-apply').click();
+  await expect(dialog).toHaveCount(0);
+
+  const after = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  expect(after.nodes).toHaveLength(before.nodes.length + 1);
+  expect(after.edges).toHaveLength(1);
+  expect(after.edges[0].target).toBe('scenario-prompt');
+  expect(after.edges[0].targetHandle).toBe('text_encoders');
+  expect(after.historyPast).toBe(before.historyPast + 1);
+  await expect(page.getByRole('status').filter({ hasText: 'Fix applied and verified' })).toBeVisible();
+  await page.getByTestId('graph-fix').click();
+  await expect(page.getByTestId('graph-fix-dialog')).not.toContainText('needs text encoders');
+});
+
 test('mocked custom graph inspector summarizes multi-model comparison graphs', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
@@ -1927,7 +3586,8 @@ test('mocked Studio switches managed recipes to compact custom graph inspector a
   await page.getByTestId('launcher-mode-text_to_image').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Current task');
-  await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('studio-pinned-graph-inputs')).toHaveCount(0);
   await expect
     .poll(
       async () => {
@@ -1939,6 +3599,10 @@ test('mocked Studio switches managed recipes to compact custom graph inspector a
     .toBe(true);
 
   await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWorkspacePanelOpenForTest(false);
+  });
+  await expect(page.getByTestId('studio-panel')).toHaveCount(0);
+  await page.evaluate(() => {
     window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Image.Preview');
   });
 
@@ -1949,18 +3613,703 @@ test('mocked Studio switches managed recipes to compact custom graph inspector a
         return {
           bound: Boolean(current.studio.graphBinding),
           nodeCount: current.flow.nodes.length,
+          resourceMode: current.studio.form.resourceMode,
         };
       },
       { timeout: 30_000 },
     )
     .toEqual({
       bound: false,
-      nodeCount: 4,
+      nodeCount: 6,
+      resourceMode: 'expert',
     });
+  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByTestId('topbar-auto-switch')).toBeDisabled();
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Current graph');
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
   await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
+  await expect(page.locator('.react-flow__node[data-id]').first()).toBeVisible();
   await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
+});
+
+test('mocked template workflow blocks stay managed and restore with Studio prompt tools', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
+  mockInstalledRepos.add('nateraw/real-esrgan');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video');
+  });
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const upscaler = current.flow.nodes.find((node) => node.action === 'Upscaler');
+      return {
+        activeTemplateId: current.studio.activeTemplateId,
+        bound: Boolean(current.studio.graphBinding),
+        finalization: current.studio.graphFinalization?.status,
+        upscalerManaged: Boolean(
+          upscaler?.studioOwned && current.studio.graphBinding?.managedNodeIds?.includes(upscaler.id),
+        ),
+      };
+    })
+    .toEqual({
+      activeTemplateId: 'wan_vace_cinematic_text_to_video',
+      bound: true,
+      finalization: 'complete',
+      upscalerManaged: true,
+    });
+
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence())).toBeNull();
+  const managedNodeIds = await page.evaluate(() => {
+    const current = window.__MODIFF_E2E__!.getState();
+    return {
+      generate: current.flow.nodes.find((node) => /generate/i.test(node.action))?.id,
+      upscale: current.flow.nodes.find((node) => node.action === 'Upscaler')?.id,
+      output: current.flow.nodes.find((node) => node.module === 'modules.Video' && node.action === 'Export')?.id,
+    };
+  });
+  expect(managedNodeIds).toMatchObject({
+    generate: expect.any(String),
+    upscale: expect.any(String),
+    output: expect.any(String),
+  });
+  await expect(page.locator('.react-flow__node[data-id]').first()).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Current task');
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  await expect(page.getByTestId('topbar-auto-switch')).toBeVisible();
+  await expect(page.getByTestId('studio-resource-mode-select')).toHaveCount(0);
+  await expect(page.getByTestId('studio-header-resource-mode-select')).toHaveCount(0);
+  await expect(page.getByTestId('studio-section-panel-prompt')).toBeVisible();
+  await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+  await page.getByTestId('studio-section-toggle-prompt-tools').click();
+  await expect(page.getByTestId('studio-section-panel-prompt-tools')).toBeVisible();
+
+  const managedTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  expect(managedTabId).toBeTruthy();
+  await page.getByTestId('workflow-tab-new').click();
+  await page.getByTestId(`workflow-tab-${managedTabId}`).click();
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return {
+        activeTemplateId: current.studio.activeTemplateId,
+        bound: Boolean(current.studio.graphBinding),
+      };
+    })
+    .toEqual({
+      activeTemplateId: 'wan_vace_cinematic_text_to_video',
+      bound: true,
+    });
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+});
+
+test('Studio sticky prompt seals the measured header gap while the right panel scrolls', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept'));
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  const promptToolsToggle = page.getByTestId('studio-section-toggle-prompt-tools');
+  await expect(promptToolsToggle).toBeVisible();
+  if ((await promptToolsToggle.getAttribute('aria-expanded')) !== 'true') {
+    await promptToolsToggle.click();
+  }
+
+  const scrollport = page.locator('#workspace-panel-studio');
+  const header = page.getByTestId('studio-sticky-header');
+  const prompt = page.getByTestId('studio-sticky-prompt');
+  await expect(header).toBeVisible();
+  await expect(prompt).toBeVisible();
+  await scrollport.evaluate((element) => {
+    element.scrollTop = Math.min(1200, element.scrollHeight - element.clientHeight);
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const headerElement = document.querySelector<HTMLElement>('[data-testid="studio-sticky-header"]');
+        const promptElement = document.querySelector<HTMLElement>('[data-testid="studio-sticky-prompt"]');
+        if (!headerElement || !promptElement) return null;
+        const headerBounds = headerElement.getBoundingClientRect();
+        const promptBounds = promptElement.getBoundingClientRect();
+        const gapMidpoint = headerBounds.bottom + (promptBounds.top - headerBounds.bottom) / 2;
+        const hitTarget = document.elementFromPoint(promptBounds.left + promptBounds.width / 2, gapMidpoint);
+        const opaque = (value: string) => {
+          const match = value.match(/^rgba?\([^,]+,[^,]+,[^,]+(?:,\s*([^)]+))?\)$/);
+          return !match || match[1] === undefined || Number(match[1]) === 1;
+        };
+        const promptStyle = getComputedStyle(promptElement);
+        const promptCoverStyle = getComputedStyle(promptElement, '::before');
+        return {
+          gap: Math.round(promptBounds.top - headerBounds.bottom),
+          headerOpaque: opaque(getComputedStyle(headerElement).backgroundColor),
+          promptOpaque: opaque(promptStyle.backgroundColor),
+          coverOpaque: opaque(promptCoverStyle.backgroundColor),
+          coverHeight: Math.round(Number.parseFloat(promptCoverStyle.height)),
+          gapOwnedByPrompt: hitTarget === promptElement || promptElement.contains(hitTarget),
+        };
+      }),
+    )
+    .toEqual({
+      gap: 12,
+      headerOpaque: true,
+      promptOpaque: true,
+      coverOpaque: true,
+      coverHeight: 12,
+      gapOwnedByPrompt: true,
+    });
+});
+
+test('mocked audio template stays managed after a page reload', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('ACE-Step/acestep-v15-xl-turbo-diffusers');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await bootMockedTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-audio').click();
+  await page.getByTestId('template-browser-create-card-ace_step_text_to_audio').click();
+  await expect(page.getByTestId('template-browser-dialog')).toHaveCount(0);
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return {
+        activeTemplateId: current.studio.activeTemplateId,
+        bound: Boolean(current.studio.graphBinding),
+      };
+    })
+    .toEqual({
+      activeTemplateId: 'ace_step_text_to_audio',
+      bound: true,
+    });
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence())).toBeNull();
+
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const current = window.__MODIFF_E2E__!.getState();
+          const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+            state?: {
+              activeWorkflowTabId?: string | null;
+              workflowTabs?: Array<{
+                id: string;
+                source?: string;
+                sourceLabel?: string;
+                snapshot?: {
+                  activeTemplateId?: string | null;
+                  studioGraphBinding?: { managedNodeIds?: string[] } | null;
+                };
+              }>;
+            };
+          };
+          const activeTab = persisted.state?.workflowTabs?.find(
+            (tab) => tab.id === persisted.state?.activeWorkflowTabId,
+          );
+          return {
+            activeTemplateId: activeTab?.snapshot?.activeTemplateId ?? null,
+            bindingNodeIds: (activeTab?.snapshot?.studioGraphBinding?.managedNodeIds ?? []).toSorted(),
+            flowNodeIds: current.flow.nodes.map((node) => node.id).toSorted(),
+            source: activeTab?.source,
+            sourceLabel: activeTab?.sourceLabel,
+            tabId: persisted.state?.activeWorkflowTabId ?? null,
+          };
+        }),
+      { timeout: 30_000 },
+    )
+    .toMatchObject({
+      activeTemplateId: 'ace_step_text_to_audio',
+      source: 'template',
+      sourceLabel: 'ace_step_text_to_audio',
+    });
+
+  const beforeReload = await page.evaluate(() => {
+    const current = window.__MODIFF_E2E__!.getState();
+    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+      state?: {
+        activeWorkflowTabId?: string | null;
+        workflowTabs?: Array<{
+          id: string;
+          snapshot?: { studioGraphBinding?: { managedNodeIds?: string[] } | null };
+        }>;
+      };
+    };
+    const activeTab = persisted.state?.workflowTabs?.find((tab) => tab.id === persisted.state?.activeWorkflowTabId);
+    return {
+      bindingNodeIds: (activeTab?.snapshot?.studioGraphBinding?.managedNodeIds ?? []).toSorted(),
+      flowNodeIds: current.flow.nodes.map((node) => node.id).toSorted(),
+      generateId: current.flow.nodes.find((node) => node.studioRole === 'audioGenerate')?.id ?? null,
+      tabId: persisted.state?.activeWorkflowTabId ?? null,
+    };
+  });
+  expect(beforeReload.tabId).toBeTruthy();
+  expect(beforeReload.generateId).toBeTruthy();
+  expect(beforeReload.bindingNodeIds).toEqual(beforeReload.flowNodeIds);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return {
+        activeTemplateId: current.studio.activeTemplateId,
+        bindingNodeIds: (current.studio.graphBinding?.managedNodeIds ?? []).toSorted(),
+        flowNodeIds: current.flow.nodes.map((node) => node.id).toSorted(),
+        tabId: current.studio.activeWorkflowTabId,
+      };
+    })
+    .toEqual({
+      activeTemplateId: 'ace_step_text_to_audio',
+      bindingNodeIds: beforeReload.bindingNodeIds,
+      flowNodeIds: beforeReload.flowNodeIds,
+      tabId: beforeReload.tabId,
+    });
+
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence())).toBeNull();
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+
+  await page.evaluate(
+    ({ generateId, workflowTabId }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'welcome',
+        sid: 'mock-sid',
+        instance: 'mock',
+        cachedNodes: [],
+        current: {
+          task_id: 'rehydrated-task',
+          name: 'Rehydrated audio run',
+          status: 'running',
+          current_node: generateId,
+          node_progress: 36,
+          phase: 'denoising',
+          message: 'Denoising after refresh',
+          workflow_tab_id: workflowTabId,
+        },
+        queued: {},
+        recent: [],
+      });
+    },
+    { generateId: beforeReload.generateId!, workflowTabId: beforeReload.tabId! },
+  );
+  await expect
+    .poll(() =>
+      page.evaluate((generateId) => {
+        const node = window.__MODIFF_E2E__!.getState().flow.nodes.find((candidate) => candidate.id === generateId);
+        return {
+          activeTaskId: node?.activeTaskId,
+          executionStatus: node?.executionStatus,
+          progress: node?.progress,
+          progressMessage: node?.progressMessage,
+        };
+      }, beforeReload.generateId),
+    )
+    .toEqual({
+      activeTaskId: 'rehydrated-task',
+      executionStatus: 'running',
+      progress: 36,
+      progressMessage: 'Denoising after refresh',
+    });
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
+});
+
+test('LTX workflow keeps its model identity and renders numeric Export Video FPS across reload', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Lightricks/LTX-Video-0.9.8-13B-distilled');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('ltx_video_image_to_video', {
+      resourceMode: 'expert',
+      autoOffload: false,
+      offloadMode: 'none',
+      device: 'cuda:0',
+    });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
+  });
+
+  const beforeReload = await page.evaluate(() => {
+    const current = window.__MODIFF_E2E__!.getState();
+    const output = current.flow.nodes.find((node) => node.module === 'modules.Video' && node.action === 'Export');
+    return {
+      formModel: current.studio.form.modelType,
+      bindingModel: current.studio.graphBinding?.modelType,
+      outputId: output?.id ?? null,
+      fps: output?.params?.fps?.value,
+    };
+  });
+  expect(beforeReload).toEqual({
+    formModel: 'LTXVideoPipeline',
+    bindingModel: 'LTXVideoPipeline',
+    outputId: expect.any(String),
+    fps: 16,
+  });
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('LTX-Video');
+  const outputNode = page.locator(`.react-flow__node[data-id="${beforeReload.outputId}"]`);
+  await expect(outputNode).toBeVisible();
+  await expect(outputNode).not.toContainText('(unavailable)');
+  await expect(outputNode).not.toContainText('Something went wrong while rendering');
+  await expect(outputNode.getByRole('textbox', { name: 'Fps' })).toHaveValue('16.0');
+  expect(pageErrors).toEqual([]);
+
+  await page.evaluate(() => {
+    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+      state?: {
+        form?: { modelType?: string };
+        activeWorkflowTabId?: string | null;
+        workflowTabs?: Array<{
+          id: string;
+          snapshot?: {
+            studioForm?: { modelType?: string };
+            studioGraphBinding?: { modelType?: string } | null;
+          };
+        }>;
+      };
+    };
+    if (!persisted.state) throw new Error('Studio persistence is missing.');
+    if (persisted.state.form) persisted.state.form.modelType = 'ZImageModularPipeline';
+    const activeTab = persisted.state.workflowTabs?.find((tab) => tab.id === persisted.state?.activeWorkflowTabId);
+    if (activeTab?.snapshot?.studioForm) {
+      activeTab.snapshot.studioForm.modelType = 'ZImageModularPipeline';
+    }
+    if (activeTab?.snapshot?.studioGraphBinding) {
+      activeTab.snapshot.studioGraphBinding.modelType = 'ZImageModularPipeline';
+    }
+    window.localStorage.setItem('modiff.studio', JSON.stringify(persisted));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const current = window.__MODIFF_E2E__!.getState();
+        return {
+          formModel: current.studio.form.modelType,
+          bindingModel: current.studio.graphBinding?.modelType,
+        };
+      }),
+    )
+    .toEqual({
+      formModel: 'LTXVideoPipeline',
+      bindingModel: 'LTXVideoPipeline',
+    });
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('LTX-Video');
+  await expect(page.locator(`.react-flow__node[data-id="${beforeReload.outputId}"]`)).not.toContainText(
+    '(unavailable)',
+  );
+  expect(pageErrors).toEqual([]);
+});
+
+test('active workflow snapshot wins when the fast canvas cache belongs to another tab', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('ACE-Step/acestep-v15-xl-turbo-diffusers');
+  mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('ace_step_text_to_audio');
+  });
+  const audioCanvas = await page.evaluate(() => {
+    const persisted = JSON.parse(window.localStorage.getItem('modiff.flow') ?? '{}') as {
+      state?: { nodes?: Array<{ id: string }>; edges?: unknown[]; viewport?: unknown };
+    };
+    if (!persisted.state?.nodes?.length) throw new Error('The audio canvas cache was not persisted.');
+    return persisted.state;
+  });
+
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video');
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = window.__MODIFF_E2E__!.getState();
+        return {
+          templateId: state.studio.activeTemplateId,
+          bound: Boolean(state.studio.graphBinding),
+          nodeIds: state.flow.nodes.map((node) => node.id).toSorted(),
+          managedIds: (state.studio.graphBinding?.managedNodeIds ?? []).toSorted(),
+        };
+      }),
+    )
+    .toMatchObject({
+      templateId: 'wan_vace_cinematic_text_to_video',
+      bound: true,
+    });
+
+  const managedVideo = await page.evaluate((audioCanvas) => {
+    const state = window.__MODIFF_E2E__!.getState();
+    const studioPersisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+      state?: {
+        activeWorkflowTabId?: string | null;
+        workflowTabs?: Array<{
+          id: string;
+          snapshot?: { nodes?: Array<{ id: string }>; studioGraphBinding?: { managedNodeIds?: string[] } | null };
+        }>;
+      };
+    };
+    const activeTab = studioPersisted.state?.workflowTabs?.find(
+      (tab) => tab.id === studioPersisted.state?.activeWorkflowTabId,
+    );
+    if (!activeTab?.snapshot?.studioGraphBinding) {
+      throw new Error('The managed video snapshot was not persisted.');
+    }
+    const flowPersisted = JSON.parse(window.localStorage.getItem('modiff.flow') ?? '{}') as {
+      state?: { nodes?: unknown[]; edges?: unknown[]; viewport?: unknown };
+    };
+    if (!flowPersisted.state) throw new Error('The fast canvas cache was not persisted.');
+
+    // Reproduce the historical race: the selected workflow document is video,
+    // but the independently persisted canvas cache still contains audio.
+    flowPersisted.state.nodes = audioCanvas.nodes;
+    flowPersisted.state.edges = audioCanvas.edges;
+    flowPersisted.state.viewport = audioCanvas.viewport;
+    window.localStorage.setItem('modiff.flow', JSON.stringify(flowPersisted));
+
+    return {
+      activeTabId: studioPersisted.state?.activeWorkflowTabId ?? null,
+      nodeIds: (activeTab.snapshot.nodes ?? []).map((node) => node.id).toSorted(),
+      managedIds: (activeTab.snapshot.studioGraphBinding.managedNodeIds ?? []).toSorted(),
+      audioNodeIds: (audioCanvas.nodes ?? []).map((node) => node.id).toSorted(),
+      liveNodeIds: state.flow.nodes.map((node) => node.id).toSorted(),
+    };
+  }, audioCanvas);
+  expect(managedVideo.activeTabId).toBeTruthy();
+  expect(managedVideo.nodeIds).toEqual(managedVideo.managedIds);
+  expect(managedVideo.nodeIds).toEqual(managedVideo.liveNodeIds);
+  expect(managedVideo.audioNodeIds).not.toEqual(managedVideo.nodeIds);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const state = window.__MODIFF_E2E__!.getState();
+          return {
+            activeTabId: state.studio.activeWorkflowTabId,
+            templateId: state.studio.activeTemplateId,
+            nodeIds: state.flow.nodes.map((node) => node.id).toSorted(),
+            managedIds: (state.studio.graphBinding?.managedNodeIds ?? []).toSorted(),
+            divergence: window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence(),
+          };
+        }),
+      { timeout: 30_000 },
+    )
+    .toEqual({
+      activeTabId: managedVideo.activeTabId,
+      templateId: 'wan_vace_cinematic_text_to_video',
+      nodeIds: managedVideo.nodeIds,
+      managedIds: managedVideo.managedIds,
+      divergence: null,
+    });
+
+  // Wait past both the tab autosave and backend-sync debounce. The wrong audio
+  // cache must never be written into the active video document.
+  await page.waitForTimeout(900);
+  const durable = await page.evaluate(() => {
+    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+      state?: {
+        activeWorkflowTabId?: string | null;
+        workflowTabs?: Array<{ id: string; snapshot?: { nodes?: Array<{ id: string }> } }>;
+      };
+    };
+    const activeTab = persisted.state?.workflowTabs?.find((tab) => tab.id === persisted.state?.activeWorkflowTabId);
+    return (activeTab?.snapshot?.nodes ?? []).map((node) => node.id).toSorted();
+  });
+  expect(durable).toEqual(managedVideo.nodeIds);
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+});
+
+test('2x Product Upscale waits for discovery and builds its pinned finishing block', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('amd/realesrgan-x4plus');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-search').fill('Product Upscale');
+  await page.getByTestId('template-browser-create-card-qwen_upscale_finish').click();
+  await expect(page.getByTestId('template-browser-dialog')).toBeHidden();
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const decode = current.flow.nodes.find((node) => node.action === 'DecodeLatents');
+      const upscaler = current.flow.nodes.find((node) => node.action === 'Upscaler');
+      const finishingPreview = current.flow.nodes.find((node) => node.studioRole === 'upscalePreview');
+      return {
+        activeTemplateId: current.studio.activeTemplateId,
+        finalization: current.studio.graphFinalization?.status,
+        lastError: current.studio.lastError,
+        model: upscaler?.params?.model_id?.value,
+        downscale: upscaler?.params?.downscale?.value,
+        decodeConnected: current.flow.edges.some((edge) => edge.source === decode?.id && edge.target === upscaler?.id),
+        previewConnected: current.flow.edges.some(
+          (edge) => edge.source === upscaler?.id && edge.target === finishingPreview?.id,
+        ),
+        upscalerManaged: Boolean(
+          upscaler?.studioOwned && current.studio.graphBinding?.managedNodeIds?.includes(upscaler.id),
+        ),
+      };
+    })
+    .toEqual({
+      activeTemplateId: 'qwen_upscale_finish',
+      finalization: 'complete',
+      lastError: null,
+      model: {
+        source: 'hub',
+        value: 'amd/realesrgan-x4plus/RealESRGAN_x4plus.pth',
+      },
+      downscale: 0.5,
+      decodeConnected: true,
+      previewConnected: true,
+      upscalerManaged: true,
+    });
+
+  await setStudioViewMode(page, 'auto');
+  await expect
+    .poll(
+      async () => {
+        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+        const decode = current.flow.nodes.find((node) => node.action === 'DecodeLatents');
+        const upscaler = current.flow.nodes.find((node) => node.studioRole === 'upscaler');
+        const finishingPreview = current.flow.nodes.find((node) => node.studioRole === 'upscalePreview');
+        return {
+          resourceMode: current.studio.form.resourceMode,
+          decodeConnected: current.flow.edges.some(
+            (edge) => edge.source === decode?.id && edge.target === upscaler?.id,
+          ),
+          previewConnected: current.flow.edges.some(
+            (edge) => edge.source === upscaler?.id && edge.target === finishingPreview?.id,
+          ),
+          upscalerManaged: Boolean(
+            upscaler?.studioOwned && current.studio.graphBinding?.managedNodeIds?.includes(upscaler.id),
+          ),
+          lastError: current.studio.lastError,
+        };
+      },
+      { timeout: 30_000 },
+    )
+    .toEqual({
+      resourceMode: 'auto',
+      decodeConnected: true,
+      previewConnected: true,
+      upscalerManaged: true,
+      lastError: null,
+    });
+  const upscalerId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.studioRole === 'upscaler')?.id,
+  );
+  expect(upscalerId).toBeTruthy();
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
+
+  const previewIds = await page.evaluate(() => {
+    const state = window.__MODIFF_E2E__!.getState();
+    return {
+      before: state.studio.graphBinding?.nodes.preview,
+      after: state.flow.nodes.find((node) => node.studioRole === 'upscalePreview')?.id,
+    };
+  });
+  expect(previewIds.before).toBeTruthy();
+  expect(previewIds.after).toBeTruthy();
+  await page.evaluate(({ before, after }) => {
+    if (!before || !after) throw new Error('Comparison preview nodes are missing.');
+    window.__MODIFF_E2E__!.startStudioRunForTest({
+      clientRunId: 'upscale-comparison-run',
+      runInputHash: 'upscale-comparison-hash',
+      taskId: 'upscale-comparison-task',
+    });
+    for (const [node, path] of [
+      [before, '/cache/upscale-before.png'],
+      [after, '/cache/upscale-after.png'],
+    ] as const) {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'update_value',
+        task_id: 'upscale-comparison-task',
+        client_run_id: 'upscale-comparison-run',
+        run_input_hash: 'upscale-comparison-hash',
+        node,
+        key: 'selected_image',
+        data_type: 'url',
+        value: [path],
+      });
+    }
+  }, previewIds);
+
+  await page.getByTestId('arrange-graph').click();
+  const finishingPreview = page.locator(`.react-flow__node[data-id="${previewIds.after}"]`);
+  await expect(finishingPreview).toBeVisible();
+  const compareButton = finishingPreview.getByRole('button', {
+    name: 'Compare before and after',
+    includeHidden: true,
+  });
+  await expect(compareButton).toHaveCount(1);
+  await compareButton.evaluate((button) => (button as HTMLButtonElement).click());
+  const comparison = finishingPreview.getByTestId(`node-preview-comparison-${previewIds.after}-selected_image`);
+  await expect(comparison).toBeVisible();
+  await expect(comparison.getByText('A · Before')).toBeVisible();
+  await expect(comparison.getByText('B · After')).toBeVisible();
 });
 
 test('mocked Studio blocks missing models, marks loader red, and keeps local tabs', async ({ page }) => {
@@ -1980,9 +4329,28 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   await page.getByTestId('launcher-mode-text_to_image').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await expect(page.getByTestId('studio-section-panel-task')).toBeVisible();
-  await expect(page.getByTestId('studio-section-panel-prompt')).toHaveCount(0);
-  await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
+  await expect(page.getByTestId('studio-section-panel-prompt')).toBeVisible();
+  await expect(page.getByTestId('studio-pinned-graph-inputs')).toHaveCount(0);
   await openTemplateBrowser(page);
+  await expect(page.getByTestId('template-browser-card-qwen_low_vram_product_concept')).toContainText(
+    'Product Concept',
+  );
+  await expect(page.getByTestId('template-browser-card-qwen_low_vram_product_concept')).toContainText(
+    'Qwen-Image-2512',
+  );
+  await expect(page.getByText('Reviewed', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Exact', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Use recipe', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('template-browser-create-card-qwen_low_vram_product_concept')).toContainText(
+    'Use template',
+  );
+  const recommendedCount = Number(
+    (await page.getByTestId('template-browser-category-recommended').textContent())?.match(/\d+/)?.[0] ?? 0,
+  );
+  const allTemplateCount = Number(
+    (await page.getByTestId('template-browser-category-all').textContent())?.match(/\d+/)?.[0] ?? 0,
+  );
+  expect(recommendedCount).toBeLessThanOrEqual(allTemplateCount);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('template-browser-search')).toBeHidden();
   await page.getByTestId('left-tab-assets').click();
@@ -1990,18 +4358,108 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   await page.getByTestId('left-tab-models').click();
   await expect(page.getByTestId('left-open-model-manager')).toBeVisible();
   await openTemplateBrowser(page);
+  const templateDialogBox = await page.getByTestId('template-browser-dialog').boundingBox();
+  const viewport = page.viewportSize();
+  expect(templateDialogBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(Math.abs(templateDialogBox!.width - viewport!.width * 0.82)).toBeLessThanOrEqual(2);
+  expect(Math.abs(templateDialogBox!.height - viewport!.height * 0.8)).toBeLessThanOrEqual(2);
+  await expect(page.getByTestId('template-browser-dialog').getByText('Asset-backed only', { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByTestId('template-browser-dialog').getByText(/^Current task:/)).toHaveCount(0);
   await expect(page.getByTestId('template-browser-use-z_image_quick_concept')).toBeVisible();
-  await expect(page.getByTestId('template-browser-card-z_image_quick_concept')).toContainText('20-45 sec');
+  await expect(page.getByTestId('template-browser-card-z_image_quick_concept')).not.toContainText('20-45 sec');
+  await expect(page.getByTestId('template-runtime-z_image_quick_concept')).toHaveCount(0);
   await page.getByTestId('template-browser-category-all').click();
-  await expect(page.getByTestId('template-browser-use-z_image_cinematic_contact_sheet')).toBeVisible();
-  await expect(page.getByTestId('template-browser-use-qwen_product_ad_composite')).toBeVisible();
-  await expect(page.getByTestId('template-browser-use-qwen_packaging_dieline')).toBeVisible();
-  await expect(page.getByTestId('template-browser-use-qwen_inpaint_object_replace')).toBeVisible();
+  await expect(page.getByTestId('template-browser-pagination')).toHaveCount(0);
+  await expect(page.getByTestId('template-browser-load-sentinel')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="template-browser-card-"]')).toHaveCount(12);
+  const firstRowCtaBottoms = await page.locator('[data-testid^="template-browser-card-"]').evaluateAll((cards) => {
+    const top = Math.min(...cards.map((card) => card.getBoundingClientRect().top));
+    return cards
+      .filter((card) => Math.abs(card.getBoundingClientRect().top - top) <= 1)
+      .map(
+        (card) =>
+          card.querySelector<HTMLElement>('[data-testid^="template-browser-create-card-"]')?.getBoundingClientRect()
+            .bottom ?? 0,
+      );
+  });
+  expect(firstRowCtaBottoms.length).toBeGreaterThan(1);
+  expect(Math.max(...firstRowCtaBottoms) - Math.min(...firstRowCtaBottoms)).toBeLessThanOrEqual(1);
+  const templateSearch = page.getByTestId('template-browser-search');
+  for (const [templateId, query, posterPath] of [
+    [
+      'ltx_video_image_to_video',
+      'Rally Car Tracking Shot',
+      /\/template-gallery\/ltx_video_image_to_video\.poster\.png$/,
+    ],
+    [
+      'wan_vace_masked_object_replace',
+      'Amber Glass Replacement',
+      /\/template-gallery\/wan_vace_masked_object_replace\.poster\.png$/,
+    ],
+  ] as const) {
+    await templateSearch.fill(query);
+    await expect(page.getByTestId(`template-browser-card-${templateId}`).locator('img').last()).toHaveAttribute(
+      'src',
+      posterPath,
+    );
+  }
+  await templateSearch.fill('Aspect-Ratio Expansion');
+  const comparison = page.getByTestId('template-ab-comparison').first();
+  await expect(comparison).toBeVisible();
+  const comparisonBox = await comparison.boundingBox();
+  expect(comparisonBox).not.toBeNull();
+  await comparison.hover({
+    force: true,
+    position: { x: comparisonBox!.width * 0.2, y: comparisonBox!.height * 0.5 },
+  });
+  await expect(comparison).toHaveAttribute('data-position', /^(?:19|20|21)\./);
+  await expect(comparison).toHaveAttribute('data-left', 'before');
+  await expect(comparison).toHaveAttribute('data-right', 'after');
+  await expect(comparison).toContainText('A · Before');
+  await expect(comparison).toContainText('B · After');
+  await expect(comparison.locator('circle')).toHaveCount(0);
+  await templateSearch.fill('Wider Robotics Workcell');
+  const cardVideo = page.getByTestId('template-card-video');
+  await expect(cardVideo).toHaveAttribute('src', /\/template-gallery\/wan_vace_outpaint_reframe\.card-preview\.mp4$/);
+  await expect(cardVideo).toHaveAttribute('data-preview-attached', 'true');
+  await expect.poll(() => cardVideo.evaluate((video: HTMLVideoElement) => !video.paused)).toBe(true);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(cardVideo).toHaveAttribute('data-preview-attached', 'false');
+  await page.getByRole('button', { name: 'Play video preview' }).click();
+  await expect(cardVideo).toHaveAttribute('data-preview-attached', 'true');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.getByTestId('template-browser-use-wan_vace_outpaint_reframe').click();
+  const detailVideo = page.getByLabel('After');
+  await expect(detailVideo).toHaveAttribute('src', /\/template-gallery\/wan_vace_outpaint_reframe\.mp4$/);
+  await expect(detailVideo).toHaveAttribute('controls', '');
+  await page
+    .getByTestId('template-detail-wan_vace_outpaint_reframe')
+    .getByRole('button', { name: 'Templates' })
+    .click();
+  for (const [templateId, query] of [
+    ['z_image_cinematic_contact_sheet', 'Cinematic Contact Sheet'],
+    ['qwen_product_ad_composite', 'Product Ad'],
+    ['qwen_packaging_dieline', 'Packaging Dieline'],
+    ['qwen_inpaint_object_replace', 'Masked Object Replacement'],
+  ] as const) {
+    await templateSearch.fill(query);
+    await expect(page.getByTestId(`template-browser-use-${templateId}`)).toBeVisible();
+  }
   await expect(page.getByTestId('template-browser-category-planning')).toBeHidden();
+  await templateSearch.fill('Aspect-Ratio Expansion');
   await page.getByTestId('template-browser-use-qwen_outpaint_aspect_template').click();
   await expect(page.getByTestId('template-detail-qwen_outpaint_aspect_template')).toBeVisible();
-  await expect(page.getByTestId('template-readiness-qwen_outpaint_aspect_template')).toContainText('Needs input');
-  await expect(page.getByTestId('template-browser-create-qwen_outpaint_aspect_template')).toContainText('Create graph');
+  await expect(page.getByTestId('template-readiness-qwen_outpaint_aspect_template')).toContainText('Ready now');
+  await expect(page.getByTestId('template-detail-qwen_outpaint_aspect_template')).toContainText('Included inputs');
+  await expect(page.getByTestId('template-browser-create-qwen_outpaint_aspect_template')).toContainText('Use template');
+  await page
+    .getByTestId('template-detail-qwen_outpaint_aspect_template')
+    .getByRole('button', { name: 'Templates' })
+    .click();
+  await templateSearch.fill('Quick Concept');
   await page.getByTestId('template-browser-use-z_image_quick_concept').click();
   await expect(page.getByTestId('template-detail-z_image_quick_concept')).toBeVisible();
   await expect(page.getByTestId('template-detail-z_image_quick_concept')).toContainText('8-12 GB with offload');
@@ -2017,7 +4475,27 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
       };
     })
     .toEqual({ activeTemplateId: 'z_image_quick_concept', tabCount: 2 });
-  await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+  const activeTemplateCard = page.getByTestId('template-browser-card-z_image_quick_concept');
+  const activeTemplateDetailsAction = activeTemplateCard.getByRole('button', { name: /^View details for / });
+  await expect(activeTemplateCard).toHaveAttribute('data-active-template', 'true');
+  await expect(activeTemplateCard).toHaveAttribute('data-inspected', 'false');
+  await expect(activeTemplateDetailsAction).toHaveAttribute('aria-current', 'true');
+  await expect(activeTemplateDetailsAction).toHaveAttribute('aria-pressed', 'false');
+  await expect
+    .poll(() => activeTemplateCard.evaluate((element) => getComputedStyle(element).borderTopColor))
+    .toBe('rgb(48, 128, 255)');
+  await page.getByTestId('template-card-readiness-z_image_quick_concept').click();
+  const focusedModelDialog = page.getByTestId('model-manager-dialog');
+  await expect(focusedModelDialog).toBeVisible();
+  await expect(focusedModelDialog.getByTestId('model-manager-supported-ZImageModularPipeline')).toHaveAttribute(
+    'data-model-manager-focused',
+    'true',
+  );
+  await focusedModelDialog.getByTestId('model-manager-close').click();
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-pinned-graph-inputs')).toHaveCount(0);
 
   await expect(page.getByTestId('studio-run')).toBeDisabled();
   const missingModelReadiness = page.getByTestId('studio-run-readiness');
@@ -2038,9 +4516,30 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
     .filter((node) => node.studioRole)
     .map((node) => node.id)
     .sort();
-  expect(studioNodeIds).toHaveLength(3);
+  expect(studioNodeIds).toHaveLength(5);
   expect(graphAfterRunBlock.flow.nodes.some((node) => node.studioRole === 'diffusersImageGenerate')).toBe(true);
   expect(graphAfterRunBlock.flow.edges.length).toBeGreaterThan(0);
+  const generatedNode = graphAfterRunBlock.flow.nodes.find((node) => node.studioRole === 'diffusersImageGenerate');
+  const previewNode = graphAfterRunBlock.flow.nodes.find((node) => node.action === 'Preview');
+  expect(generatedNode?.id).toBeTruthy();
+  expect(previewNode?.id).toBeTruthy();
+  await expect(page.locator(`.react-flow__node[data-id="${generatedNode?.id}"]`)).toBeVisible();
+  const exactPreviewNode = page.locator(`.react-flow__node[data-id="${previewNode?.id}"]`);
+  await expect(exactPreviewNode).toContainText('Preview');
+  await expect(exactPreviewNode.locator('[data-testid^="node-preview-"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
+  expect(
+    await page.evaluate(() => {
+      const stateIds = new Set(window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.id));
+      const renderedIds = [...document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')].map(
+        (node) => node.dataset.id ?? '',
+      );
+      return renderedIds.length === stateIds.size && renderedIds.every((id) => stateIds.has(id));
+    }),
+  ).toBe(true);
+
+  await setStudioViewMode(page, 'expert');
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
   const fieldHookCount = await page.evaluate(() => document.querySelectorAll('.modiff-field').length);
   expect(fieldHookCount).toBeGreaterThan(0);
   const graphVisuals = await page.evaluate(() => {
@@ -2068,43 +4567,62 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   expect(graphVisuals.handleColors.length).toBeGreaterThanOrEqual(2);
   expect(graphVisuals.handleSizes).toEqual(['12pxx12px']);
   expect(graphVisuals.handleRadii).toEqual(['4px']);
-  const originalEdges = graphAfterRunBlock.flow.edges;
-  const firstEdge = originalEdges[0];
-  const replacementEdge = originalEdges.find((edge) => edge.source !== firstEdge?.source && edge.sourceHandle);
-  expect(firstEdge).toBeTruthy();
-  expect(replacementEdge).toBeTruthy();
-  await page.evaluate(
-    ({ source, sourceHandle, target, targetHandle }) => {
-      window.__MODIFF_E2E__!.connectGraph({ source, sourceHandle, target, targetHandle });
-    },
-    {
-      source: replacementEdge!.source,
-      sourceHandle: replacementEdge!.sourceHandle ?? null,
-      target: firstEdge!.target,
-      targetHandle: firstEdge!.targetHandle ?? null,
-    },
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const stateIds = window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.id);
+        const renderedIds = [...document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')].map(
+          (node) => node.dataset.id ?? '',
+        );
+        return (
+          stateIds.length > 0 &&
+          stateIds.length === renderedIds.length &&
+          stateIds.every((id) => renderedIds.includes(id))
+        );
+      }),
+    )
+    .toBe(true);
+  const historyNodeId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes[0]?.id ?? '');
+  expect(historyNodeId).toBeTruthy();
+  const historyNode = page
+    .locator(`.react-flow__node[data-id="${historyNodeId}"]`)
+    .locator('[data-testid^="graph-node-action-"]');
+  await expect(historyNode).toBeVisible();
+  const wasCollapsed = await page.evaluate(
+    (nodeId) =>
+      Boolean(window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.uiState?.collapsed),
+    historyNodeId,
   );
-  const rewiredEdges = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges);
-  expect(rewiredEdges).not.toEqual(originalEdges);
+  await historyNode.dispatchEvent('contextmenu', {
+    bubbles: true,
+    cancelable: true,
+    button: 2,
+    clientX: 360,
+    clientY: 260,
+  });
+  await page.getByTestId('node-menu-collapse-toggle').click();
+  const readHistoryNodeCollapsed = () =>
+    page.evaluate(
+      (nodeId) =>
+        Boolean(window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.uiState?.collapsed),
+      historyNodeId,
+    );
+  await expect.poll(readHistoryNodeCollapsed).toBe(!wasCollapsed);
   await page.keyboard.press('Control+Z');
-  await expect
-    .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).flow.edges)
-    .toEqual(originalEdges);
+  await expect.poll(readHistoryNodeCollapsed).toBe(wasCollapsed);
   await page.keyboard.press('Control+Y');
-  await expect
-    .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).flow.edges)
-    .toEqual(rewiredEdges);
+  await expect.poll(readHistoryNodeCollapsed).toBe(!wasCollapsed);
 
   await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept', { resourceMode: 'expert' });
   });
   const graphAfterSecondUpdate = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-  const expertStudioNodeIds = graphAfterSecondUpdate.flow.nodes
+  const expertStudioRoles = graphAfterSecondUpdate.flow.nodes
     .filter((node) => node.studioRole)
-    .map((node) => node.id)
+    .map((node) => node.studioRole)
     .sort();
-  expect(expertStudioNodeIds).toHaveLength(5);
+  expect(expertStudioRoles).toHaveLength(5);
   expect(
     graphAfterSecondUpdate.flow.nodes.some((node) => node.studioRole === 'models' && node.action === 'ModelsLoader'),
   ).toBe(true);
@@ -2118,37 +4636,19 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
     .poll(async () => {
       const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
       return {
-        ids: current.flow.nodes
+        roles: current.flow.nodes
           .filter((node) => node.studioRole)
-          .map((node) => node.id)
+          .map((node) => node.studioRole)
           .sort(),
         nodeCount: current.flow.nodes.length,
         edgeCount: current.flow.edges.length,
       };
     })
     .toEqual({
-      ids: expertStudioNodeIds,
+      roles: expertStudioRoles,
       nodeCount: graphAfterSecondUpdate.flow.nodes.length,
       edgeCount: graphAfterSecondUpdate.flow.edges.length,
     });
-
-  const renderedGraphNodeAction = await page.evaluate(() => {
-    const node = document.querySelector<HTMLElement>('[data-testid^="graph-node-action-"]');
-    return node?.dataset.testid?.replace('graph-node-action-', '') ?? '';
-  });
-  expect(renderedGraphNodeAction).toBeTruthy();
-  await page.getByTestId(`graph-node-action-${renderedGraphNodeAction}`).first().dispatchEvent('contextmenu', {
-    bubbles: true,
-    cancelable: true,
-    button: 2,
-    clientX: 360,
-    clientY: 260,
-  });
-  await page.getByTestId('node-menu-collapse-toggle').click();
-  const collapsedState = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-  expect(
-    collapsedState.flow.nodes.some((node) => node.action === renderedGraphNodeAction && node.uiState?.collapsed),
-  ).toBe(true);
 
   await missingModelReadiness.click();
   await runIssues.getByRole('button', { name: 'Install', exact: true }).first().click();
@@ -2182,20 +4682,60 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
   await page.getByTestId('launcher-mode-text_to_image').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+  });
   await expect
     .poll(async () => {
       const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-      return current.flow.nodes.length;
+      return {
+        nodeCount: current.flow.nodes.length,
+        transition: current.studio.canvasTransition,
+      };
     })
-    .toBeGreaterThan(0);
+    .toEqual({
+      nodeCount: 5,
+      transition: null,
+    });
 
   await openTemplateBrowser(page);
   await page.getByTestId('template-browser-use-z_image_quick_concept').click();
   await expect(page.getByTestId('template-detail-z_image_quick_concept')).toBeVisible();
 
+  await page.evaluate(() => {
+    type TemplateGraphSample = {
+      promptVisible: boolean;
+      readiness: string;
+      summary: string;
+      runDisabled: boolean;
+      runTitle: string;
+    };
+    type TemplateGraphSampleWindow = Window & {
+      __templateGraphSamples?: TemplateGraphSample[];
+      __templateGraphSampleTimer?: number;
+    };
+    const sampleWindow = window as TemplateGraphSampleWindow;
+    sampleWindow.__templateGraphSamples = [];
+    sampleWindow.__templateGraphSampleTimer = window.setInterval(() => {
+      const current = window.__MODIFF_E2E__!.getState();
+      if (current.studio.canvasTransition?.type !== 'template_graph_building') return;
+      const prompt = document.querySelector<HTMLElement>('[data-testid="studio-prompt-input"]');
+      const runButton = document.querySelector<HTMLButtonElement>('[data-testid="studio-run"]');
+      sampleWindow.__templateGraphSamples!.push({
+        promptVisible: Boolean(prompt && getComputedStyle(prompt).display !== 'none'),
+        readiness:
+          document.querySelector<HTMLElement>('[data-testid="studio-run-readiness"]')?.textContent?.trim() ?? '',
+        summary:
+          document.querySelector<HTMLElement>('[data-testid="studio-task-model-summary"]')?.textContent?.trim() ?? '',
+        runDisabled: runButton?.disabled ?? false,
+        runTitle: runButton?.getAttribute('title') ?? '',
+      });
+    }, 4);
+  });
   const transitionVisible = page.waitForFunction(
     () => {
       const current = window.__MODIFF_E2E__!.getState();
@@ -2220,11 +4760,359 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
     .toEqual({
       activeTemplateId: 'z_image_quick_concept',
       transition: null,
-      visibleNodeCount: 3,
+      visibleNodeCount: 5,
     });
+  const transitionSamples = await page.evaluate(() => {
+    type TemplateGraphSample = {
+      promptVisible: boolean;
+      readiness: string;
+      summary: string;
+      runDisabled: boolean;
+      runTitle: string;
+    };
+    type TemplateGraphSampleWindow = Window & {
+      __templateGraphSamples?: TemplateGraphSample[];
+      __templateGraphSampleTimer?: number;
+    };
+    const sampleWindow = window as TemplateGraphSampleWindow;
+    if (sampleWindow.__templateGraphSampleTimer !== undefined) {
+      window.clearInterval(sampleWindow.__templateGraphSampleTimer);
+    }
+    return sampleWindow.__templateGraphSamples ?? [];
+  });
+  expect(transitionSamples.length).toBeGreaterThan(0);
+  expect(transitionSamples.some((sample) => sample.readiness.includes('Preparing graph'))).toBe(true);
+  transitionSamples.forEach((sample) => {
+    expect(sample.summary).not.toContain('Custom graph');
+    expect(sample.readiness).not.toMatch(/Run blocked|Setup needed/);
+    expect(sample.promptVisible).toBe(true);
+    expect(sample.runDisabled).toBe(true);
+    expect(sample.runTitle).toBe('Preparing graph');
+  });
+  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
 });
 
-test('mocked Studio renders direct Qwen template skeleton without waiting on Modular fields', async ({ page }) => {
+test('low-VRAM Auto template remains finalized across repeated Run planning', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  let submittedGraphs = 0;
+  await page.route('**/graph', async (route) => {
+    submittedGraphs += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        message: 'queued',
+        sid: 'mock-sid',
+        task_id: `low-vram-run-${submittedGraphs}`,
+      }),
+    });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('low_vram');
+  });
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return {
+        activeTemplateId: current.studio.activeTemplateId,
+        finalization: current.studio.graphFinalization?.status,
+        resourceMode: current.studio.form.resourceMode,
+        bound: Boolean(current.studio.graphBinding),
+      };
+    })
+    .toEqual({
+      activeTemplateId: 'low_vram',
+      finalization: 'complete',
+      resourceMode: 'auto',
+      bound: true,
+    });
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+
+  let runTimeAutoPlanRequests = 0;
+  await page.route('**/auto_resource/plan', async (route) => {
+    runTimeAutoPlanRequests += 1;
+    await route.fallback();
+  });
+
+  for (let expectedSubmissions = 1; expectedSubmissions <= 2; expectedSubmissions += 1) {
+    await page.getByTestId('studio-run').click();
+    await expect.poll(() => submittedGraphs).toBe(expectedSubmissions);
+    await expect(page.getByTestId('studio-run')).not.toContainText('Checking Auto');
+    await expect(page.getByTestId('run-issues-dialog')).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+        return current.studio.graphFinalization?.status;
+      })
+      .toBe('complete');
+  }
+  expect(runTimeAutoPlanRequests).toBe(0);
+});
+
+test('busy one-shot action becomes Queue and submits once without stopping active work', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  let graphSubmissions = 0;
+  const destructiveRequests: string[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/stop' || (request.method() === 'DELETE' && pathname.startsWith('/queue/'))) {
+      destructiveRequests.push(`${request.method()} ${pathname}`);
+    }
+  });
+  await page.route('**/graph', async (route) => {
+    graphSubmissions += 1;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        message: 'queued',
+        sid: 'mock-sid',
+        task_id: 'queued-after-active',
+      }),
+    });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('low_vram');
+  });
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
+
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_started',
+      task_id: 'active-task',
+      client_run_id: 'active-client-run',
+      sid: 'another-session',
+      current: {
+        name: 'Existing graph execution',
+        task_id: 'active-task',
+        client_run_id: 'active-client-run',
+        sid: 'another-session',
+        status: 'running',
+      },
+      queued: {},
+    });
+  });
+
+  await expect(page.getByTestId('studio-run')).toContainText('Queue');
+  await page.getByLabel('Run mode').click();
+  await expect(page.getByTestId('run-mode-run')).toHaveText('Queue');
+  await page.getByTestId('run-mode-run').click();
+
+  await page.evaluate(() => {
+    const button = document.querySelector<HTMLButtonElement>('[data-testid="studio-run"]');
+    button?.click();
+    button?.click();
+  });
+  await expect.poll(() => graphSubmissions).toBe(1);
+  await expect(page.getByRole('status').filter({ hasText: 'The current run will continue.' })).toBeVisible();
+  expect(destructiveRequests).toEqual([]);
+});
+
+test('restored finalized Modular workflow queues without replaying field actions or stopping active work', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const modelsLoader = mockRegistry['modules.ModularDiffusers.ModelsLoader'];
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.ModularDiffusers.ModelsLoader': {
+            ...modelsLoader,
+            params: {
+              ...modelsLoader.params,
+              model_type: {
+                ...modelsLoader.params.model_type,
+                onChange: 'refresh_model_type',
+              },
+            },
+          },
+        },
+      }),
+    });
+  });
+
+  let fieldActionRequests = 0;
+  let queueClicked = false;
+  let queuedFieldActionRequests = 0;
+  await page.route('**/fields/action', async (route) => {
+    fieldActionRequests += 1;
+    if (queueClicked) queuedFieldActionRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false }),
+    });
+  });
+
+  let graphSubmissions = 0;
+  const destructiveRequests: string[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/stop' || (request.method() === 'DELETE' && pathname.startsWith('/queue/'))) {
+      destructiveRequests.push(`${request.method()} ${pathname}`);
+    }
+  });
+  await page.route('**/graph', async (route) => {
+    graphSubmissions += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        message: 'queued',
+        sid: 'mock-sid',
+        task_id: 'queued-restored-modular',
+      }),
+    });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('low_vram', { resourceMode: 'expert' });
+  });
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return current.studio.graphFinalization?.status;
+    })
+    .toBe('complete');
+  await expect.poll(() => fieldActionRequests).toBeGreaterThan(0);
+
+  const restoredTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  expect(restoredTabId).toBeTruthy();
+  await page.getByTestId('workflow-tab-new').click();
+  await page.getByTestId(`workflow-tab-${restoredTabId}`).click();
+  await expect
+    .poll(async () => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe(restoredTabId);
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
+  await page.waitForTimeout(250);
+
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_started',
+      task_id: 'active-task-before-restored-queue',
+      client_run_id: 'active-client-run-before-restored-queue',
+      sid: 'another-session',
+      current: {
+        name: 'Existing graph execution',
+        task_id: 'active-task-before-restored-queue',
+        client_run_id: 'active-client-run-before-restored-queue',
+        sid: 'another-session',
+        status: 'running',
+      },
+      queued: {},
+    });
+  });
+
+  await expect(page.getByTestId('studio-run')).toContainText('Queue');
+  queueClicked = true;
+  await page.getByTestId('studio-run').click();
+
+  await expect.poll(() => graphSubmissions).toBe(1);
+  expect(queuedFieldActionRequests).toBe(0);
+  expect(destructiveRequests).toEqual([]);
+});
+
+test('transient Auto planner failure does not report an installed Z-Image model as missing', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  let failNextPlan = false;
+  let failedPlanRequests = 0;
+  await page.route('**/auto_resource/plan', async (route) => {
+    if (!failNextPlan) {
+      await route.fallback();
+      return;
+    }
+    failNextPlan = false;
+    failedPlanRequests += 1;
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'planner temporarily busy' }),
+    });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+  });
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
+
+  failNextPlan = true;
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.refreshModelIndexes();
+  });
+
+  await expect.poll(() => failedPlanRequests).toBe(1);
+  const readiness = page.getByTestId('studio-run-readiness');
+  await expect(readiness).toContainText('Checking compatibility');
+  await expect(readiness).not.toContainText('Tongyi-MAI/Z-Image-Turbo is required');
+  await expect(readiness).not.toContainText('Install');
+  await expect(readiness).toContainText('Ready', { timeout: 10_000 });
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+});
+
+test('mocked Studio renders generic Qwen template skeleton without waiting on Modular fields', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
@@ -2263,7 +5151,7 @@ test('mocked Studio renders direct Qwen template skeleton without waiting on Mod
     .toEqual({
       activeTemplateId: 'qwen_low_vram_product_concept',
       transition: null,
-      visibleNodeCount: 3,
+      visibleNodeCount: 5,
       finalization: 'complete',
     });
 
@@ -2272,10 +5160,10 @@ test('mocked Studio renders direct Qwen template skeleton without waiting on Mod
       async () => {
         const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
         const pipelineNode = current.flow.nodes.find(
-          (node) => node.action === 'LoadPipeline' && node.module === 'modules.QwenImage',
+          (node) => node.action === 'LoadPipeline' && node.module === 'modules.DiffusersImage',
         );
         const generateNode = current.flow.nodes.find(
-          (node) => node.action === 'Generate' && node.module === 'modules.QwenImage',
+          (node) => node.action === 'Generate' && node.module === 'modules.DiffusersImage',
         );
         const pipelineEdge = current.flow.edges.find(
           (edge) =>
@@ -2300,6 +5188,56 @@ test('mocked Studio renders direct Qwen template skeleton without waiting on Mod
       offloadMode: 'model_cpu',
       quantizedComponents: [],
       pipelineEdge: true,
+    });
+});
+
+test('Wan A14B resident I2V templates retain VAE tiling and configure both native-flash experts', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Wan-AI/Wan2.2-I2V-A14B-Diffusers');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('wan_22_i2v_seed_vault', {
+      referenceImages: ['mock-rally-keyframe.webp'],
+      resourceMode: 'expert',
+      autoOffload: false,
+      offloadMode: 'none',
+      device: 'cuda:0',
+    });
+  });
+
+  await expect
+    .poll(
+      async () => {
+        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+        const recipe = current.flow.nodes.find(
+          (node) => node.module === 'modules.DiffusersRuntime' && node.action === 'DiffusersExecutionRecipe',
+        );
+        const pipeline = current.flow.nodes.find(
+          (node) => node.module === 'modules.DiffusersVideo' && node.action === 'LoadPipeline',
+        );
+        return {
+          pipelineClass: pipeline?.params?.pipeline_class?.value,
+          offloadMode: recipe?.params?.offload_mode?.value,
+          vaeTiling: recipe?.params?.vae_tiling?.value,
+          attentionBackend: recipe?.params?.attention_backend?.value,
+          attentionComponents: recipe?.params?.attention_components?.value,
+        };
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      pipelineClass: 'WanImageToVideoPipeline',
+      offloadMode: 'none',
+      vaeTiling: true,
+      attentionBackend: '_native_flash',
+      attentionComponents: 'transformer,transformer_2',
     });
 });
 
@@ -2336,10 +5274,12 @@ test('mocked Studio blocks Expert Modular Qwen run while prompt embeddings are s
   });
   await expect(page.getByTestId('studio-run')).toBeDisabled({ timeout: 30_000 });
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Run blocked', { timeout: 30_000 });
-  await expect(page.getByTestId('studio-graph-finalization')).toContainText('prompt embeddings', { timeout: 30_000 });
+  await expect(page.getByTestId('studio-graph-finalization')).toContainText(/prompt embeddings/i, {
+    timeout: 30_000,
+  });
 });
 
-test('mocked Studio wires direct Qwen Auto graph on a 16GB CUDA device', async ({ page }) => {
+test('mocked Studio preserves the exact Qwen graph across Auto and Expert on a 16GB CUDA device', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
@@ -2364,7 +5304,8 @@ test('mocked Studio wires direct Qwen Auto graph on a 16GB CUDA device', async (
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await setStudioViewMode(page, 'auto');
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Qwen-Image-2512', { timeout: 30_000 });
-  await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-pinned-graph-inputs')).toHaveCount(0);
   await expect(page.getByTestId('studio-update-graph')).toHaveCount(0);
   await expect
     .poll(async () => {
@@ -2379,125 +5320,233 @@ test('mocked Studio wires direct Qwen Auto graph on a 16GB CUDA device', async (
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready', { timeout: 30_000 });
   await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
 
-  await expect
-    .poll(
-      async () => {
-        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-        const pipelineNode = current.flow.nodes.find(
-          (node) => node.module === 'modules.QwenImage' && node.action === 'LoadPipeline',
-        );
-        const generateNode = current.flow.nodes.find(
-          (node) => node.module === 'modules.QwenImage' && node.action === 'Generate',
-        );
-        const quantNode = current.flow.nodes.find((node) => node.action === 'QuantizationConfigNode');
-        const pipelineEdge = current.flow.edges.find(
-          (edge) =>
-            edge.source === pipelineNode?.id &&
-            edge.target === generateNode?.id &&
-            edge.sourceHandle === 'pipeline' &&
-            edge.targetHandle === 'pipeline',
-        );
-        return {
-          quantizationMode: current.studio.form.quantizationMode,
-          resourceMode: current.studio.form.resourceMode,
-          offloadMode: current.studio.form.offloadMode,
-          steps: current.studio.form.steps,
-          guidanceScale: current.studio.form.guidanceScale,
-          pipelineRole: pipelineNode?.studioRole,
-          generateRole: generateNode?.studioRole,
-          quantNodeVisible: Boolean(quantNode),
-          quantizedComponents: pipelineNode?.params?.quantized_components?.value,
-          generateWidth: generateNode?.params?.width?.value,
-          generateHeight: generateNode?.params?.height?.value,
-          generateSteps: generateNode?.params?.num_inference_steps?.value,
-          generateGuidance: generateNode?.params?.true_cfg_scale?.value,
-          pipelineEdge: Boolean(pipelineEdge),
-          graphBindingRole: Boolean(current.studio.graphBinding?.nodes?.qwenPipeline),
-        };
+  const exactGraph = await page.evaluate(() => {
+    const current = window.__MODIFF_E2E__!.getState();
+    const pipelineNode = current.flow.nodes.find(
+      (node) => node.module === 'modules.DiffusersImage' && node.action === 'LoadPipeline',
+    );
+    const generateNode = current.flow.nodes.find(
+      (node) => node.module === 'modules.DiffusersImage' && node.action === 'Generate',
+    );
+    const quantNode = current.flow.nodes.find((node) => node.action === 'QuantizationConfigNode');
+    const pipelineEdge = current.flow.edges.find(
+      (edge) =>
+        edge.source === pipelineNode?.id &&
+        edge.target === generateNode?.id &&
+        edge.sourceHandle === 'pipeline' &&
+        edge.targetHandle === 'pipeline',
+    );
+    return {
+      signature: {
+        nodes: current.flow.nodes.map((node) => `${node.id}:${node.module}.${node.action}`).toSorted(),
+        edges: current.flow.edges
+          .map((edge) => `${edge.source}:${edge.sourceHandle ?? ''}>${edge.target}:${edge.targetHandle ?? ''}`)
+          .toSorted(),
       },
-      { timeout: 30_000 },
-    )
-    .toEqual({
-      quantizationMode: 'none',
-      resourceMode: 'auto',
-      offloadMode: 'model_cpu',
-      steps: 50,
-      guidanceScale: 4,
-      pipelineRole: 'qwenPipeline',
-      generateRole: 'qwenGenerate',
-      quantNodeVisible: false,
-      quantizedComponents: [],
-      generateWidth: 1024,
-      generateHeight: 768,
-      generateSteps: 50,
-      generateGuidance: 4,
-      pipelineEdge: true,
-      graphBindingRole: true,
-    });
+      settings: {
+        quantizationMode: current.studio.form.quantizationMode,
+        resourceMode: current.studio.form.resourceMode,
+        offloadMode: current.studio.form.offloadMode,
+        steps: current.studio.form.steps,
+        guidanceScale: current.studio.form.guidanceScale,
+        pipelineRole: pipelineNode?.studioRole,
+        generateRole: generateNode?.studioRole,
+        quantNodeVisible: Boolean(quantNode),
+        quantizedComponents: pipelineNode?.params?.quantized_components?.value,
+        generateWidth: generateNode?.params?.width?.value,
+        generateHeight: generateNode?.params?.height?.value,
+        generateSteps: generateNode?.params?.num_inference_steps?.value,
+        generateGuidance: generateNode?.params?.guidance_scale?.value,
+        pipelineEdge: Boolean(pipelineEdge),
+        graphBindingRole: Boolean(current.studio.graphBinding?.nodes?.diffusersImagePipeline),
+      },
+    };
+  });
+  expect(exactGraph.settings).toEqual({
+    quantizationMode: 'none',
+    resourceMode: 'auto',
+    offloadMode: 'model_cpu',
+    steps: 50,
+    guidanceScale: 4,
+    pipelineRole: 'diffusersImagePipeline',
+    generateRole: 'diffusersImageGenerate',
+    quantNodeVisible: false,
+    quantizedComponents: [],
+    generateWidth: 1024,
+    generateHeight: 768,
+    generateSteps: 50,
+    generateGuidance: 4,
+    pipelineEdge: true,
+    graphBindingRole: true,
+  });
 
   await setStudioViewMode(page, 'expert');
   await expect
     .poll(
-      async () => {
-        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-        const actions = current.flow.nodes.map((node) => node.action);
-        return {
-          resourceMode: current.studio.form.resourceMode,
-          hasDirectPipeline: actions.includes('LoadPipeline'),
-          hasDirectGenerate: actions.includes('Generate'),
-          hasQuantization: actions.includes('QuantizationConfigNode'),
-          hasModels: actions.includes('ModelsLoader'),
-          hasPrompt: actions.includes('EncodePrompt'),
-          hasDenoise: actions.includes('Denoise'),
-          hasDecode: actions.includes('DecodeLatents'),
-          hasPreview: actions.includes('Preview'),
-        };
-      },
+      () =>
+        page.evaluate(() => {
+          const current = window.__MODIFF_E2E__!.getState();
+          return {
+            resourceMode: current.studio.form.resourceMode,
+            nodes: current.flow.nodes.map((node) => `${node.id}:${node.module}.${node.action}`).toSorted(),
+            edges: current.flow.edges
+              .map((edge) => `${edge.source}:${edge.sourceHandle ?? ''}>${edge.target}:${edge.targetHandle ?? ''}`)
+              .toSorted(),
+          };
+        }),
       { timeout: 30_000 },
     )
     .toEqual({
       resourceMode: 'expert',
-      hasDirectPipeline: false,
-      hasDirectGenerate: false,
-      hasQuantization: false,
-      hasModels: true,
-      hasPrompt: true,
-      hasDenoise: true,
-      hasDecode: true,
-      hasPreview: true,
+      ...exactGraph.signature,
     });
 
   await setStudioViewMode(page, 'auto');
   await expect
     .poll(
-      async () => {
-        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-        const pipelineNode = current.flow.nodes.find(
-          (node) => node.module === 'modules.QwenImage' && node.action === 'LoadPipeline',
-        );
-        const generateNode = current.flow.nodes.find(
-          (node) => node.module === 'modules.QwenImage' && node.action === 'Generate',
-        );
-        const quantNode = current.flow.nodes.find((node) => node.action === 'QuantizationConfigNode');
-        return {
-          resourceMode: current.studio.form.resourceMode,
-          offloadMode: current.studio.form.offloadMode,
-          pipelineRole: pipelineNode?.studioRole,
-          generateRole: generateNode?.studioRole,
-          quantNodeVisible: Boolean(quantNode),
-          graphBindingRole: Boolean(current.studio.graphBinding?.nodes?.qwenPipeline),
-        };
-      },
+      () =>
+        page.evaluate(() => {
+          const current = window.__MODIFF_E2E__!.getState();
+          return {
+            resourceMode: current.studio.form.resourceMode,
+            nodes: current.flow.nodes.map((node) => `${node.id}:${node.module}.${node.action}`).toSorted(),
+            edges: current.flow.edges
+              .map((edge) => `${edge.source}:${edge.sourceHandle ?? ''}>${edge.target}:${edge.targetHandle ?? ''}`)
+              .toSorted(),
+          };
+        }),
       { timeout: 30_000 },
     )
     .toEqual({
       resourceMode: 'auto',
-      offloadMode: 'model_cpu',
-      pipelineRole: 'qwenPipeline',
-      generateRole: 'qwenGenerate',
-      quantNodeVisible: false,
-      graphBindingRole: true,
+      ...exactGraph.signature,
     });
+});
+
+test('mocked Auto Run atomically submits the selected resident Qwen recipe and records the same form', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  await page.route('**/auto_resource/plan', async (route) => {
+    const form = ((route.request().postDataJSON() as { form?: Record<string, unknown> } | null)?.form ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const candidate = {
+      id: 'qwen-t2i-official-bf16-native',
+      executionPath: 'direct-diffusers-image',
+      modelRepo: 'Qwen/Qwen-Image-2512',
+      resolvedArtifact: 'Qwen/Qwen-Image-2512',
+      artifact: 'Qwen/Qwen-Image-2512',
+      dtype: 'bfloat16',
+      quantizationMode: 'none',
+      quantizedComponents: [],
+      offloadMode: 'none',
+      autoOffload: false,
+      generation: {
+        width: Number(form.width ?? 1024),
+        height: Number(form.height ?? 768),
+        steps: Number(form.steps ?? 50),
+        guidanceScale: Number(form.guidanceScale ?? 4),
+        negativePrompt: String(form.negativePrompt ?? ''),
+        maxSequenceLength: Number(form.maxSequenceLength ?? 512),
+      },
+      installed: true,
+      artifactStatus: { installed: true, complete: true },
+      proof: { status: 'live_proven', source: 'mock_live_receipt' },
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        resourceMode: 'auto',
+        status: 'ready',
+        statusLabel: 'Ready with live-proven local Auto recipe',
+        selectedCandidate: candidate,
+        candidates: [candidate],
+        hardware: { runtimeFingerprint: 'mock-high-memory-runtime' },
+        checkedAt: Date.now(),
+      }),
+    });
+  });
+
+  let submittedGraph: {
+    nodes?: Record<string, { module?: string; action?: string; params?: Record<string, { value?: unknown }> }>;
+    runtimeHints?: {
+      resourceMode?: string;
+      quantizationMode?: string;
+      offloadMode?: string;
+      autoOffload?: boolean;
+    };
+  } | null = null;
+  await page.route('**/graph', async (route) => {
+    submittedGraph = route.request().postDataJSON() as typeof submittedGraph;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false, message: 'queued', sid: 'mock-sid', task_id: 'resident-run' }),
+    });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      resourceMode: 'auto',
+      device: 'cuda:0',
+    });
+    await window.__MODIFF_E2E__!.runActiveTemplate();
+  });
+
+  expect(submittedGraph).not.toBeNull();
+  const submittedLoader = Object.values(submittedGraph?.nodes ?? {}).find(
+    (node) => node.module === 'modules.DiffusersImage' && node.action === 'LoadPipeline',
+  );
+  expect({
+    form: await page.evaluate(() => {
+      const state = window.__MODIFF_E2E__!.getState().studio;
+      return {
+        quantizationMode: state.form.quantizationMode,
+        offloadMode: state.form.offloadMode,
+        autoOffload: state.form.autoOffload,
+        receiptQuantizationMode: state.currentRunContext?.form?.quantizationMode,
+        receiptOffloadMode: state.currentRunContext?.form?.offloadMode,
+        receiptAutoOffload: state.currentRunContext?.form?.autoOffload,
+      };
+    }),
+    graph: {
+      quantizationMode: submittedGraph?.runtimeHints?.quantizationMode,
+      offloadMode: submittedGraph?.runtimeHints?.offloadMode,
+      autoOffload: submittedGraph?.runtimeHints?.autoOffload,
+      loaderOffloadMode: submittedLoader?.params?.offload_mode?.value,
+      loaderAutoOffload: submittedLoader?.params?.auto_offload?.value,
+    },
+  }).toEqual({
+    form: {
+      quantizationMode: 'none',
+      offloadMode: 'none',
+      autoOffload: false,
+      receiptQuantizationMode: 'none',
+      receiptOffloadMode: 'none',
+      receiptAutoOffload: false,
+    },
+    graph: {
+      quantizationMode: 'none',
+      offloadMode: 'none',
+      autoOffload: false,
+      loaderOffloadMode: 'none',
+      loaderAutoOffload: false,
+    },
+  });
 });
 
 test('mocked Studio image preview actions and progress ignore stale websocket messages', async ({ page }) => {
@@ -2548,7 +5597,8 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
       preview: current.flow.nodes.find((node) => node.action === 'Preview')!.id,
     };
   });
-  const canvasPreviewNode = page.locator(`[data-id="${graphIds.preview}"]`);
+  const canvasPreviewNode = page.locator(`.react-flow__node[data-id="${graphIds.preview}"]`);
+  const canvasGenerateNode = page.locator(`.react-flow__node[data-id="${graphIds.generate}"]`);
 
   await page.evaluate(() => {
     window.__MODIFF_E2E__!.startStudioRunForTest({
@@ -2597,6 +5647,48 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
       progress: 20,
       status: 'running',
       phase: 'denoising',
+      message: 'Denoising 2/10',
+    });
+  await expect(canvasGenerateNode).toContainText('Denoising 2/10');
+
+  await setStudioViewMode(page, 'expert');
+  await expect
+    .poll(() =>
+      page.evaluate((generateId) => {
+        const generate = window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === generateId);
+        return {
+          id: generate?.id,
+          status: generate?.executionStatus,
+          progress: generate?.progress,
+          message: generate?.progressMessage,
+        };
+      }, graphIds.generate),
+    )
+    .toEqual({
+      id: graphIds.generate,
+      status: 'running',
+      progress: 20,
+      message: 'Denoising 2/10',
+    });
+
+  await setStudioViewMode(page, 'auto');
+  await expect(canvasGenerateNode).toContainText('Denoising 2/10');
+  await expect
+    .poll(() =>
+      page.evaluate((generateId) => {
+        const generate = window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === generateId);
+        return {
+          id: generate?.id,
+          status: generate?.executionStatus,
+          progress: generate?.progress,
+          message: generate?.progressMessage,
+        };
+      }, graphIds.generate),
+    )
+    .toEqual({
+      id: graphIds.generate,
+      status: 'running',
+      progress: 20,
       message: 'Denoising 2/10',
     });
   await expect(page.getByTestId('run-session-shelf')).toContainText('Mock run', { timeout: 10_000 });
@@ -2667,6 +5759,11 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
   const previewImage = canvasPreviewNode.getByAltText(/Selected_image/i);
   await expect(previewImage).toBeVisible({ timeout: 10_000 });
   await expect(previewImage).toHaveCSS('image-rendering', 'auto');
+  await previewImage.click();
+  await expect(page.getByText('Image preview', { exact: true })).toBeVisible();
+  await expect(page.getByAltText('Image 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close preview' }).click();
+  await expect(page.getByText('Image preview', { exact: true })).toBeHidden();
   const imageLayout = await page.evaluate(({ preview }) => {
     const node = document.querySelector(`[data-id="${preview}"]`) as HTMLElement | null;
     const frame = document.querySelector(
@@ -2674,22 +5771,32 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
     ) as HTMLElement | null;
     const handle = node?.querySelector('.react-flow__handle') as HTMLElement | null;
     const nodeRect = node?.getBoundingClientRect();
-    const frameRect = frame?.getBoundingClientRect();
     const handleRect = handle?.getBoundingClientRect();
     return {
-      frameHeight: frameRect?.height ?? 0,
+      // React Flow scales the entire node after fitView. Use intrinsic layout
+      // dimensions so this assertion does not depend on the current canvas zoom.
+      frameHeight: frame?.offsetHeight ?? 0,
       handleOffset: nodeRect && handleRect ? Math.round(handleRect.top + handleRect.height / 2 - nodeRect.top) : -1,
-      nodeHeight: nodeRect?.height ?? 0,
+      handleBottomGap:
+        nodeRect && handleRect ? Math.round(nodeRect.bottom - (handleRect.top + handleRect.height / 2)) : -1,
+      nodeHeight: node?.offsetHeight ?? 0,
     };
   }, graphIds);
   expect(imageLayout.frameHeight).toBeGreaterThan(120);
   expect(imageLayout.frameHeight).toBeLessThanOrEqual(370);
   expect(imageLayout.nodeHeight).toBeLessThan(560);
   expect(imageLayout.handleOffset).toBeGreaterThanOrEqual(0);
-  const downloadButton = canvasPreviewNode.getByTitle(/Download Selected_image 1/i);
+  const downloadButton = canvasPreviewNode.getByRole('button', {
+    name: /Download Selected_image 1/i,
+    includeHidden: true,
+  });
   await expect(downloadButton).toHaveCount(1);
-  await expect(canvasPreviewNode.getByTitle(/Copy Selected_image 1 URL/i)).toHaveCount(1);
-  await expect(canvasPreviewNode.getByTitle(/Open Selected_image 1 full size/i)).toHaveCount(1);
+  await expect(
+    canvasPreviewNode.getByRole('button', { name: /Copy Selected_image 1 URL/i, includeHidden: true }),
+  ).toHaveCount(1);
+  await expect(
+    canvasPreviewNode.getByRole('button', { name: /Open Selected_image 1 full size/i, includeHidden: true }),
+  ).toHaveCount(1);
   await expect(canvasPreviewNode.getByText('Previous')).toHaveCount(0);
   await expect
     .poll(
@@ -2736,11 +5843,73 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
       { timeout: 10_000 },
     )
     .toBe('completed');
-
-  const downloadPromise = page.waitForEvent('download');
+  await expect
+    .poll(
+      async () => {
+        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+        const generate = current.flow.nodes.find((node) => node.id === graphIds.generate);
+        return {
+          activeTaskId: generate?.activeTaskId ?? null,
+          attemptIndex: generate?.attemptIndex ?? null,
+          executionPhase: generate?.executionPhase ?? null,
+          executionStatus: generate?.executionStatus ?? null,
+          progress: generate?.progress ?? 0,
+          progressMessage: generate?.progressMessage ?? null,
+        };
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      activeTaskId: null,
+      attemptIndex: null,
+      executionPhase: null,
+      executionStatus: null,
+      progress: 0,
+      progressMessage: null,
+    });
   await downloadButton.evaluate((button) => (button as HTMLButtonElement).click());
+  const mediaExportDialog = page.getByTestId('media-export-dialog');
+  await expect(mediaExportDialog).toBeVisible();
+  await expect(mediaExportDialog.getByRole('button', { name: 'Download format' })).toBeEnabled();
+  await page.evaluate(() => {
+    Reflect.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined });
+  });
+  const downloadPromise = page.waitForEvent('download');
+  await mediaExportDialog.getByRole('button', { name: 'Download', exact: true }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('mock-output.png');
+  await page.evaluate(({ generate }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_queued',
+      sid: 'mock-sid',
+      current: {
+        task_id: 'task-current',
+        name: 'Completed queue snapshot',
+        current_node: generate,
+        node_progress: 100,
+        status: 'completed',
+      },
+      queued: {},
+    });
+  }, graphIds);
+  await expect
+    .poll(
+      async () => {
+        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+        const generate = current.flow.nodes.find((node) => node.id === graphIds.generate);
+        return {
+          activeTaskId: generate?.activeTaskId ?? null,
+          executionStatus: generate?.executionStatus ?? null,
+          progress: generate?.progress ?? 0,
+        };
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      activeTaskId: null,
+      executionStatus: null,
+      progress: 0,
+    });
 
   await page.evaluate(({ preview }) => {
     window.__MODIFF_E2E__!.startStudioRunForTest({
@@ -2772,30 +5941,35 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
   await expect(canvasPreviewNode.getByAltText(/Selected_image/i)).toHaveCount(0);
   await expect(waitingPreviewPanel).toBeVisible({ timeout: 10_000 });
   const waitingLayout = await page.evaluate(
-    ({ preview, imageHandleOffset }) => {
+    ({ preview, imageHandleBottomGap }) => {
       const node = document.querySelector(`[data-id="${preview}"]`) as HTMLElement | null;
       const frame = document.querySelector(
         `[data-testid="node-preview-empty-${preview}-selected_image"]`,
       ) as HTMLElement | null;
       const handle = node?.querySelector('.react-flow__handle') as HTMLElement | null;
       const nodeRect = node?.getBoundingClientRect();
-      const frameRect = frame?.getBoundingClientRect();
       const handleRect = handle?.getBoundingClientRect();
       const handleOffset =
         nodeRect && handleRect ? Math.round(handleRect.top + handleRect.height / 2 - nodeRect.top) : -1;
+      const handleBottomGap =
+        nodeRect && handleRect ? Math.round(nodeRect.bottom - (handleRect.top + handleRect.height / 2)) : -1;
       return {
-        frameHeight: frameRect?.height ?? 0,
+        // Intrinsic node layout must remain stable regardless of the canvas
+        // zoom chosen by fitView. Handle-gap checks below intentionally stay
+        // in screen coordinates because they compare two states at one zoom.
+        frameHeight: frame?.offsetHeight ?? 0,
         handleOffset,
-        handleShift: Math.abs(handleOffset - imageHandleOffset),
-        nodeHeight: nodeRect?.height ?? 0,
+        handleBottomGap,
+        handleBottomGapShift: Math.abs(handleBottomGap - imageHandleBottomGap),
+        nodeHeight: node?.offsetHeight ?? 0,
       };
     },
-    { ...graphIds, imageHandleOffset: imageLayout.handleOffset },
+    { ...graphIds, imageHandleBottomGap: imageLayout.handleBottomGap },
   );
   expect(waitingLayout.frameHeight).toBeGreaterThan(120);
   expect(waitingLayout.frameHeight).toBeLessThanOrEqual(370);
   expect(waitingLayout.nodeHeight).toBeLessThan(680);
-  expect(waitingLayout.handleShift).toBeLessThanOrEqual(4);
+  expect(waitingLayout.handleBottomGapShift).toBeLessThanOrEqual(4);
   await expect(canvasPreviewNode.getByText('Previous')).toBeVisible({ timeout: 10_000 });
 
   await page.evaluate(({ preview }) => {
@@ -2841,14 +6015,10 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
       validationSeverity: 'error',
       validationMessage: 'Run failed before producing a new output.',
     });
-  await expect(page.getByRole('button', { name: 'Node error details' }).first()).toHaveAttribute(
-    'title',
-    /Run failed before producing a new output\./,
-    { timeout: 10_000 },
-  );
-  await expect(page.locator(`[data-id="${graphIds.preview}"]`)).not.toContainText(
-    'Run failed before producing a new output.',
-  );
+  await expect(canvasPreviewNode.getByTestId('graph-node-action-Preview')).toHaveClass(/border-modiff-invalid/, {
+    timeout: 10_000,
+  });
+  await expect(canvasPreviewNode).not.toContainText('Run failed before producing a new output.');
   await expect(canvasPreviewNode.getByText('Previous')).toBeVisible();
 
   const longBackendError = `Preview failure details ${'hardware artifact loader trace '.repeat(80)}`;
@@ -2865,30 +6035,867 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
     },
     { ...graphIds, message: longBackendError },
   );
-  await expect(canvasPreviewNode.getByRole('button', { name: 'Node error details' })).toHaveAttribute(
-    'title',
-    longBackendError,
-    { timeout: 10_000 },
-  );
   await expect(canvasPreviewNode).not.toContainText(longBackendError.slice(0, 160));
   const errorLayout = await page.evaluate(
-    ({ preview, waitingHandleOffset }) => {
+    ({ preview, waitingHandleBottomGap }) => {
       const node = document.querySelector(`[data-id="${preview}"]`) as HTMLElement | null;
       const handle = node?.querySelector('.react-flow__handle') as HTMLElement | null;
       const nodeRect = node?.getBoundingClientRect();
       const handleRect = handle?.getBoundingClientRect();
       const handleOffset =
         nodeRect && handleRect ? Math.round(handleRect.top + handleRect.height / 2 - nodeRect.top) : -1;
+      const handleBottomGap =
+        nodeRect && handleRect ? Math.round(nodeRect.bottom - (handleRect.top + handleRect.height / 2)) : -1;
       return {
         handleOffset,
-        handleShift: Math.abs(handleOffset - waitingHandleOffset),
+        handleBottomGap,
+        handleBottomGapShift: Math.abs(handleBottomGap - waitingHandleBottomGap),
         nodeHeight: nodeRect?.height ?? 0,
       };
     },
-    { ...graphIds, waitingHandleOffset: waitingLayout.handleOffset },
+    { preview: graphIds.preview, waitingHandleBottomGap: waitingLayout.handleBottomGap },
   );
   expect(errorLayout.nodeHeight).toBeLessThanOrEqual(waitingLayout.nodeHeight + 8);
-  expect(errorLayout.handleShift).toBeLessThanOrEqual(4);
+  expect(errorLayout.handleBottomGapShift).toBeLessThanOrEqual(4);
+});
+
+test('disconnected supervisor recovery never overlaps queue polls', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
+  let requestCount = 0;
+  await page.route('http://127.0.0.1:65531/queue', async (route) => {
+    requestCount += 1;
+    activeRequests += 1;
+    maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    activeRequests -= 1;
+    if (!route.request().isNavigationRequest()) {
+      await route
+        .fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ current: null, queued: {}, recent: [] }),
+        })
+        .catch(() => undefined);
+    }
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ isConnected: false }));
+  await page.waitForTimeout(2_300);
+  // React's development StrictMode may replay the mount effect once, but the
+  // disposed poll is cancelled before its replacement starts.
+  expect(requestCount).toBeLessThanOrEqual(2);
+  expect(maxActiveRequests).toBe(1);
+});
+
+test('active node execution follows its exact workflow across tabs, notifications, reconnect, and Auto toggles', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const destructiveRequests: string[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/stop' || (request.method() === 'DELETE' && pathname.startsWith('/queue/'))) {
+      destructiveRequests.push(`${request.method()} ${pathname}`);
+    }
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+  });
+
+  const identity = await page.evaluate(() => {
+    const state = window.__MODIFF_E2E__!.getState();
+    const nodeId =
+      state.flow.nodes.find((node) => node.studioRole === 'diffusersImageGenerate')?.id ??
+      state.flow.nodes.find((node) => node.action === 'Generate')?.id;
+    if (!nodeId || !state.studio.activeWorkflowTabId) throw new Error('Managed run origin is missing.');
+    window.__MODIFF_E2E__!.startStudioRunForTest({
+      clientRunId: 'reload-running-client',
+      runInputHash: 'reload-running-hash',
+      taskId: 'reload-running-task',
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_started',
+      sid: 'mock-sid',
+      current: {
+        task_id: 'reload-running-task',
+        client_run_id: 'reload-running-client',
+        run_input_hash: 'reload-running-hash',
+        workflow_tab_id: state.studio.activeWorkflowTabId,
+        current_node: nodeId,
+        status: 'running',
+        progress: 0,
+      },
+      queued: {},
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'reload-running-task',
+      client_run_id: 'reload-running-client',
+      run_input_hash: 'reload-running-hash',
+      workflow_tab_id: state.studio.activeWorkflowTabId,
+      node: nodeId,
+      status: 'running',
+      phase: 'loading',
+      message: 'Loading checkpoint shards 2/9',
+      progress: 22,
+      current_step: 2,
+      total_steps: 9,
+    });
+    return { nodeId, workflowTabId: state.studio.activeWorkflowTabId };
+  });
+
+  const executionState = () =>
+    page.evaluate((nodeId) => {
+      const node = window.__MODIFF_E2E__!.getState().flow.nodes.find((item) => item.id === nodeId);
+      return {
+        activeTaskId: node?.activeTaskId ?? null,
+        status: node?.executionStatus ?? null,
+        progress: node?.progress ?? null,
+        message: node?.progressMessage ?? null,
+      };
+    }, identity.nodeId);
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 22,
+    message: 'Loading checkpoint shards 2/9',
+  });
+  await expect(page.getByTestId('session-run-reload-running-task')).toContainText('Loading checkpoint shards 2/9');
+
+  await page.evaluate(({ nodeId, workflowTabId }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'reload-running-task',
+      client_run_id: 'reload-running-client',
+      run_input_hash: 'reload-running-hash',
+      workflow_tab_id: workflowTabId,
+      node: nodeId,
+      status: 'running',
+      phase: 'denoising',
+      message: 'Denoising after reconnect',
+      progress: 30,
+    });
+  }, identity);
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 30,
+    message: 'Denoising after reconnect',
+  });
+
+  await page.getByTestId('workflow-tab-new').click();
+  const otherWorkflowTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  expect(otherWorkflowTabId).toBeTruthy();
+  expect(otherWorkflowTabId).not.toBe(identity.workflowTabId);
+
+  await page.evaluate(({ nodeId, workflowTabId }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'reload-running-task',
+      client_run_id: 'reload-running-client',
+      run_input_hash: 'reload-running-hash',
+      workflow_tab_id: workflowTabId,
+      node: nodeId,
+      status: 'running',
+      phase: 'loading',
+      message: 'Loading after workflow switch',
+      progress: 0,
+      overall_progress: 31,
+    });
+  }, identity);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        activeWorkflowTabId: window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId,
+        hasForeignProgress: window
+          .__MODIFF_E2E__!.getState()
+          .flow.nodes.some((node) => node.activeTaskId === 'reload-running-task' || node.executionStatus === 'running'),
+        taskNodeProgress: window.__MODIFF_E2E__!.getState().tasks.currentTask?.node_progress,
+      })),
+    )
+    .toEqual({
+      activeWorkflowTabId: otherWorkflowTabId,
+      hasForeignProgress: false,
+      taskNodeProgress: 0,
+    });
+
+  await page.getByTestId(`workflow-tab-${identity.workflowTabId}`).click();
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 0,
+    message: 'Loading after workflow switch',
+  });
+  const activeCanvasNode = page.locator(`.react-flow__node[data-id="${identity.nodeId}"]`);
+  await expect(activeCanvasNode.getByTestId('node-progress-indeterminate')).toBeVisible();
+  await expect(activeCanvasNode.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+
+  await page.evaluate(({ nodeId, workflowTabId }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'foreign-stale-task',
+      client_run_id: 'foreign-stale-client',
+      run_input_hash: 'foreign-stale-hash',
+      workflow_tab_id: workflowTabId,
+      node: nodeId,
+      status: 'running',
+      phase: 'denoising',
+      message: 'Foreign stale progress',
+      progress: 88,
+    });
+  }, identity);
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 0,
+    message: 'Loading after workflow switch',
+  });
+
+  await page.getByTestId(`workflow-tab-${otherWorkflowTabId}`).click();
+  await page.getByTestId('session-run-reload-running-task').click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe(identity.workflowTabId);
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 0,
+    message: 'Loading after workflow switch',
+  });
+  await expect(activeCanvasNode.getByTestId('node-progress-indeterminate')).toBeVisible();
+
+  await page.evaluate(({ nodeId, workflowTabId }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'reload-running-task',
+      client_run_id: 'reload-running-client',
+      run_input_hash: 'reload-running-hash',
+      workflow_tab_id: workflowTabId,
+      node: nodeId,
+      status: 'running',
+      phase: 'denoising',
+      message: 'Denoising after reconnect',
+      progress: 30,
+    });
+  }, identity);
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 30,
+    message: 'Denoising after reconnect',
+  });
+  await expect(activeCanvasNode.getByTestId('node-progress-indeterminate')).toHaveCount(0);
+
+  await setStudioViewMode(page, 'expert');
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 30,
+    message: 'Denoising after reconnect',
+  });
+  await setStudioViewMode(page, 'auto');
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 30,
+    message: 'Denoising after reconnect',
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (workflowTabId) => window.localStorage.getItem('modiff.studio')?.includes(workflowTabId) ?? false,
+        identity.workflowTabId,
+      ),
+    )
+    .toBe(true);
+  await page.route('http://127.0.0.1:65531/queue', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        current: {
+          name: 'Graph execution',
+          task_id: 'reload-running-task',
+          client_run_id: 'reload-running-client',
+          run_input_hash: 'reload-running-hash',
+          workflow_tab_id: identity.workflowTabId,
+          current_node: identity.nodeId,
+          current_node_name: 'modules.DiffusersImage.Generate',
+          status: 'running',
+          phase: 'denoising',
+          message: 'Denoising through supervisor recovery',
+          progress: 30,
+          node_progress: 30,
+        },
+        queued: {},
+        recent: [],
+      }),
+    });
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect
+    .poll(() =>
+      page.evaluate(({ nodeId, workflowTabId }) => {
+        const state = window.__MODIFF_E2E__!.getState();
+        return {
+          activeWorkflowTabId: state.studio.activeWorkflowTabId,
+          nodePresent: state.flow.nodes.some((node) => node.id === nodeId),
+          workflowTabId,
+        };
+      }, identity),
+    )
+    .toEqual({
+      activeWorkflowTabId: identity.workflowTabId,
+      nodePresent: true,
+      workflowTabId: identity.workflowTabId,
+    });
+
+  await expect.poll(executionState).toEqual({
+    activeTaskId: 'reload-running-task',
+    status: 'running',
+    progress: 30,
+    message: 'Denoising through supervisor recovery',
+  });
+
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_completed',
+      sid: 'mock-sid',
+      task_id: 'reload-running-task',
+      client_run_id: 'reload-running-client',
+      run_input_hash: 'reload-running-hash',
+      current: null,
+      queued: {},
+    });
+  });
+  await expect.poll(executionState).toEqual({ activeTaskId: null, status: null, progress: 0, message: null });
+  expect(destructiveRequests).toEqual([]);
+});
+
+test('previous video and audio renders open in-app without replacing the current preview', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
+  mockInstalledRepos.add('ACE-Step/acestep-v15-xl-turbo-diffusers');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    Reflect.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const videoState = await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video');
+    const current = window.__MODIFF_E2E__!.getState();
+    const exporter = current.flow.nodes.find((node) => node.module === 'modules.Video' && node.action === 'Export');
+    if (!exporter) throw new Error('Video export node is missing.');
+    window.__MODIFF_E2E__!.seedStudioOutputsForTest([
+      {
+        id: 'previous-video-render',
+        url: '/cache/history/video.mp4',
+        nodeId: exporter.id,
+        fieldKey: 'preview',
+        workflowTabId: current.studio.activeWorkflowTabId,
+        displayType: 'video',
+        createdAt: Date.now() - 1000,
+      },
+    ]);
+    return { exporterId: exporter.id };
+  });
+
+  const videoStage = page.locator(`.react-flow__node[data-id="${videoState.exporterId}"]`);
+  const emptyVideo = page.getByTestId(`node-preview-empty-${videoState.exporterId}-preview`);
+  await expect(emptyVideo).toBeVisible();
+  await expect(videoStage.getByText('Previous')).toBeVisible();
+  await videoStage.getByTitle(/frames from|Video from/).click();
+  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
+  await expect(page.getByTestId('media-viewer-video')).toBeVisible();
+  await expect(emptyVideo).toBeVisible();
+  await page.getByRole('button', { name: 'Close media viewer' }).click();
+  await expect(page.getByTestId('media-viewer-dialog')).toHaveCount(0);
+  await videoStage.getByTitle(/frames from|Video from/).click();
+  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'Download video' }).click();
+  await expect(page.getByTestId('media-export-dialog')).toBeVisible();
+  await page.getByLabel('Download format').click();
+  await expect(page.getByRole('option', { name: 'MP4 (H.264 + AAC)' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'WebM (VP9 + Opus)' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'MOV (ProRes + PCM)' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Animated GIF' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Close media viewer' }).click();
+
+  await videoStage.getByRole('button', { name: 'Output actions' }).click();
+  const copyUrlAction = page.getByRole('menuitem', { name: 'Copy URL' });
+  await copyUrlAction.hover();
+  await expect(copyUrlAction).toBeVisible();
+  const convertedDownload = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === '/cache/history/video.mp4' && url.searchParams.get('download_format') === 'webm';
+  });
+  await page.getByRole('menuitem', { name: /^Download/ }).click();
+  await expect(page.getByTestId('media-export-dialog')).toBeVisible();
+  await page.getByLabel('Download format').click();
+  await page.getByRole('option', { name: 'WebM (VP9 + Opus)' }).click();
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  await convertedDownload;
+  await expect(page.getByTestId('media-export-dialog')).toHaveCount(0);
+  await expect(copyUrlAction).toHaveCount(0);
+
+  await page.evaluate(({ exporterId }) => {
+    window.__MODIFF_E2E__!.startStudioRunForTest({
+      clientRunId: 'current-video-preview-run',
+      runInputHash: 'current-video-preview-hash',
+      taskId: 'current-video-preview-task',
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'update_value',
+      task_id: 'current-video-preview-task',
+      client_run_id: 'current-video-preview-run',
+      run_input_hash: 'current-video-preview-hash',
+      node: exporterId,
+      key: 'preview',
+      data_type: 'url',
+      value: ['/cache/current/video.mp4'],
+    });
+  }, videoState);
+  const currentVideo = page.getByTestId(`node-preview-video-${videoState.exporterId}-preview`);
+  await expect(currentVideo).toBeVisible();
+  const videoActions = currentVideo.getByRole('button', { name: 'Video actions' });
+  await expect(videoActions).toHaveClass(/rounded-full/);
+  await videoActions.click();
+  await page.getByRole('menuitem', { name: /^Download/ }).click();
+  await expect(page.getByTestId('media-export-dialog')).toBeVisible();
+  await expect(page.getByLabel('Download format')).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByTestId('media-export-dialog')).toHaveCount(0);
+
+  const audioState = await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('ace_step_text_to_audio');
+    const current = window.__MODIFF_E2E__!.getState();
+    const exporter = current.flow.nodes.find((node) => node.module === 'modules.Audio' && node.action === 'Export');
+    if (!exporter) throw new Error('Audio export node is missing.');
+    window.__MODIFF_E2E__!.seedStudioOutputsForTest([
+      {
+        id: 'previous-audio-render',
+        url: '/cache/history/audio.wav',
+        nodeId: exporter.id,
+        fieldKey: 'preview',
+        workflowTabId: current.studio.activeWorkflowTabId,
+        displayType: 'audio',
+        createdAt: Date.now() - 1000,
+      },
+    ]);
+    return { exporterId: exporter.id };
+  });
+
+  const audioStage = page.locator(`.react-flow__node[data-id="${audioState.exporterId}"]`);
+  const emptyAudio = page.getByTestId(`node-preview-empty-${audioState.exporterId}-preview`);
+  await expect(emptyAudio).toBeVisible();
+  await audioStage.getByTitle(/Audio from/).click();
+  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
+  await expect(page.getByTestId('media-viewer-audio')).toBeVisible();
+  await expect(emptyAudio).toBeVisible();
+});
+
+test('startup discovery blocks transient readiness and the compact activity shelf keeps every queue item', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let releaseCapabilities: (() => void) | undefined;
+  const capabilitiesReleased = new Promise<void>((resolve) => {
+    releaseCapabilities = resolve;
+  });
+  await page.route('**/model_capabilities**', async (route) => {
+    await capabilitiesReleased;
+    await route.fallback();
+  });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+
+  const startupGate = page.getByTestId('startup-workspace-gate');
+  await expect(startupGate).toBeVisible();
+  await expect(startupGate).toContainText('Loading workspace');
+  await expect(page.getByRole('dialog', { name: 'Run blocked' })).toHaveCount(0);
+  releaseCapabilities?.();
+  await expect(startupGate).toHaveCount(0, { timeout: 10_000 });
+
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    for (let index = 0; index < 7; index += 1) {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'task_completed',
+        sid: 'mock-sid',
+        task_id: `shelf-history-${index}`,
+        name: `Queue history ${index + 1}`,
+        completed_at: Date.now() / 1000 + index,
+        current: null,
+        queued: {},
+      });
+    }
+  });
+
+  const scrollport = page.getByTestId('run-session-scrollport');
+  await expect(scrollport.locator('[data-testid^="session-run-shelf-history-"]')).toHaveCount(7);
+  const activityHeight = await scrollport.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    overflowY: getComputedStyle(element).overflowY,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(activityHeight.clientHeight).toBeLessThanOrEqual(352);
+  expect(activityHeight.overflowY).toBe('auto');
+  expect(activityHeight.scrollHeight).toBeGreaterThan(activityHeight.clientHeight);
+});
+
+test('session activity and generation notifications open the originating workflow and exact failure', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+  });
+
+  const workflowId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  const runNodeId = await page.evaluate(
+    () =>
+      window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.studioRole === 'preview')?.id ??
+      window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'Preview')?.id,
+  );
+  expect(workflowId).toBeTruthy();
+  expect(runNodeId).toBeTruthy();
+  await page.evaluate(
+    ({ runNodeId, workflowId }) => {
+      window.__MODIFF_E2E__!.startStudioRunForTest({
+        clientRunId: 'notification-success-run',
+        runInputHash: 'notification-success-hash',
+        taskId: 'notification-success-task',
+      });
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'task_completed',
+        sid: 'mock-sid',
+        task_id: 'notification-success-task',
+        client_run_id: 'notification-success-run',
+        workflow_tab_id: workflowId,
+        node_id: runNodeId,
+        name: 'Notification success run',
+        current: null,
+        queued: {},
+      });
+    },
+    { runNodeId, workflowId },
+  );
+
+  const successToast = page
+    .getByRole('status')
+    .getByRole('button', { name: /Open run details/ })
+    .filter({ hasText: 'Generation completed' });
+  await expect(successToast).toBeVisible();
+
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .not.toBe(workflowId);
+  await page.getByTestId('session-run-notification-success-task').click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe(workflowId);
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  await expect(page.getByTestId('workspace-tab-studio')).toHaveAttribute('aria-selected', 'true');
+  await expect
+    .poll(() =>
+      page.evaluate((nodeId) => {
+        const canvas = document.getElementById('workflow-canvas-panel')?.getBoundingClientRect();
+        const node = document.querySelector(`[data-id="${nodeId}"]`)?.getBoundingClientRect();
+        if (!canvas || !node) return Number.POSITIVE_INFINITY;
+        return Math.abs(node.left + node.width / 2 - (canvas.left + canvas.width / 2));
+      }, runNodeId),
+    )
+    .toBeLessThan(220);
+
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await successToast.click();
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  await expect(page.getByTestId('workspace-tab-studio')).toHaveAttribute('aria-selected', 'true');
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe(workflowId);
+
+  const workflowTitle = await page.evaluate(
+    ({ workflowId }) =>
+      window.__MODIFF_E2E__!.getState().studio.workflowTabs.find((tab) => tab.id === workflowId)?.title,
+    { workflowId },
+  );
+  const workflowSnapshot = await page.evaluate(
+    ({ workflowId }) =>
+      (
+        window.__MODIFF_E2E__!.getState().studio.workflowTabs.find((tab) => tab.id === workflowId) as
+          { snapshot?: unknown } | undefined
+      )?.snapshot,
+    { workflowId },
+  );
+  expect(workflowTitle).toBeTruthy();
+  expect(workflowSnapshot).toBeTruthy();
+  await page.evaluate(
+    ({ workflowId }) => {
+      window.__MODIFF_E2E__!.seedStudioOutputsForTest([
+        {
+          id: 'notification-success-output',
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+          taskId: 'notification-success-task',
+          clientRunId: 'notification-success-run',
+          workflowTabId: workflowId,
+          displayType: 'image',
+        },
+      ]);
+    },
+    { workflowId },
+  );
+  await page.getByRole('button', { name: `Close ${workflowTitle}` }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .not.toBe(workflowId);
+  await page.route('**/runs/notification-success-task', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        task: {
+          task_id: 'notification-success-task',
+          client_run_id: 'notification-success-run',
+          workflow_tab_id: workflowId,
+          status: 'completed',
+        },
+        workflow_id: workflowId,
+        workflow_title: workflowTitle,
+        workflow_snapshot: workflowSnapshot,
+        outputs: [],
+      }),
+    });
+  });
+  await page.getByTestId('session-run-notification-success-task').click();
+  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
+  await expect(page.getByTestId('media-viewer-image')).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText(`Output preview - ${workflowTitle}`);
+  await page.getByRole('button', { name: `Open workflow ${workflowTitle}` }).click();
+  await expect(page.getByTestId('media-viewer-dialog')).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe(workflowId);
+
+  const noOutputTaskId = 'notification-no-output-task';
+  await page.route(`**/runs/${noOutputTaskId}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        task: {
+          task_id: noOutputTaskId,
+          client_run_id: 'notification-no-output-run',
+          workflow_tab_id: workflowId,
+          status: 'completed',
+        },
+        workflow_id: workflowId,
+        workflow_title: workflowTitle,
+        workflow_snapshot: workflowSnapshot,
+        outputs: [],
+      }),
+    });
+  });
+  await page.evaluate(
+    ({ noOutputTaskId, workflowId }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'task_completed',
+        sid: 'mock-sid',
+        task_id: noOutputTaskId,
+        client_run_id: 'notification-no-output-run',
+        workflow_tab_id: workflowId,
+        name: 'Graph execution',
+        current: null,
+        queued: {},
+      });
+    },
+    { noOutputTaskId, workflowId },
+  );
+  await page.getByRole('button', { name: `Close ${workflowTitle}` }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ workflowId }) => window.__MODIFF_E2E__!.getState().studio.workflowTabs.some((tab) => tab.id === workflowId),
+        { workflowId },
+      ),
+    )
+    .toBe(false);
+  await page.getByTestId(`session-run-${noOutputTaskId}`).click();
+  await expect(
+    page.getByText('Run completed, but no previewable output was generated. Showing its Queue details.'),
+  ).toBeVisible();
+  await expect(page.getByTestId('workspace-tab-queue')).toHaveAttribute('aria-selected', 'true');
+
+  const successSessionId = await page.evaluate(() => {
+    const run = window
+      .__MODIFF_E2E__!.getState()
+      .tasks.sessionRuns.find((candidate) => candidate.task_id === 'notification-success-task');
+    return run?.id;
+  });
+  expect(successSessionId).toBeTruthy();
+  await page.getByTestId(`queue-session-run-${successSessionId}`).click();
+  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText(`Output preview - ${workflowTitle}`);
+  await page.getByRole('button', { name: 'Close media viewer' }).click();
+
+  const remoteWorkflowId = 'notification-remote-active-workflow';
+  const remoteTaskId = 'notification-remote-active-task';
+  await page.route(`**/runs/${remoteTaskId}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        task: {
+          task_id: remoteTaskId,
+          name: 'Remote active run',
+          status: 'running',
+          progress: 63,
+          node_progress: 37,
+          phase: 'denoising',
+          message: 'Denoising 3/8',
+          current_node: runNodeId,
+          current_node_name: 'Preview Image',
+          client_run_id: 'notification-remote-active-client',
+          workflow_tab_id: remoteWorkflowId,
+        },
+        workflow_id: remoteWorkflowId,
+        workflow_title: 'Remote active workflow',
+        workflow_snapshot: workflowSnapshot,
+        outputs: [],
+      }),
+    });
+  });
+  await page.evaluate(
+    ({ remoteTaskId, remoteWorkflowId, runNodeId }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'task_progress',
+        task_id: remoteTaskId,
+        client_run_id: 'notification-remote-active-client',
+        workflow_tab_id: remoteWorkflowId,
+        current_node: runNodeId,
+        current_node_name: 'Preview Image',
+        status: 'running',
+        progress: 63,
+        node_progress: 37,
+        phase: 'denoising',
+        message: 'Denoising 3/8',
+      });
+    },
+    { remoteTaskId, remoteWorkflowId, runNodeId },
+  );
+  await page.getByTestId(`session-run-${remoteTaskId}`).click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe(remoteWorkflowId);
+  await expect(page.getByTestId('workspace-tab-studio')).toHaveAttribute('aria-selected', 'true');
+  await expect
+    .poll(() =>
+      page.evaluate((nodeId) => {
+        const node = window.__MODIFF_E2E__!.getState().flow.nodes.find((item) => item.id === nodeId);
+        return {
+          activeTaskId: node?.activeTaskId,
+          executionPhase: node?.executionPhase,
+          executionStatus: node?.executionStatus,
+          progress: node?.progress,
+        };
+      }, runNodeId),
+    )
+    .toEqual({
+      activeTaskId: remoteTaskId,
+      executionPhase: 'denoising',
+      executionStatus: 'running',
+      progress: 37,
+    });
+
+  await page.evaluate(
+    ({ workflowId }) => {
+      window.__MODIFF_E2E__!.startStudioRunForTest({
+        clientRunId: 'notification-failure-run',
+        runInputHash: 'notification-failure-hash',
+        taskId: 'notification-failure-task',
+      });
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'task_failed',
+        sid: 'mock-sid',
+        task_id: 'notification-failure-task',
+        client_run_id: 'notification-failure-run',
+        workflow_tab_id: workflowId,
+        name: 'Notification failure run',
+        message: 'A deliberately verbose backend exception that must remain available in the user dialog.',
+        traceback: 'Traceback: internal implementation details',
+        category: 'runtime',
+        current: null,
+        queued: {},
+      });
+    },
+    { workflowId },
+  );
+
+  const failureAlert = page.getByRole('alert');
+  await expect(failureAlert.getByRole('button', { name: /Dismiss notification/ })).toBeVisible();
+  const failureToast = failureAlert.getByRole('button', { name: /Open run details/ });
+  await expect(failureToast).toBeVisible();
+  await failureToast.click();
+  const failureDialog = page.getByTestId('run-failure-dialog');
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog).toContainText('The generation could not finish');
+  await expect(failureDialog).not.toContainText('Traceback');
+  await expect(failureDialog).toContainText('A deliberately verbose backend exception');
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  await failureDialog.locator('footer').getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByTestId('workspace-tab-queue').click();
+  await page.getByTestId('queue-failed-run-notification-failure-task').click();
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog).toContainText('A deliberately verbose backend exception');
 });
 
 test('mocked Studio leaves newly-created Expert Qwen quantization node expanded', async ({ page }) => {
@@ -3042,13 +7049,13 @@ test('mocked Studio builds registered Diffusers edit, inpaint, and control facad
         sourceEdge: true,
         maskEdge: item.needsMask,
         outputEdge: true,
-        managedNodes: item.needsMask ? 5 : 4,
-        managedEdges: item.needsMask ? 4 : 3,
+        managedNodes: item.needsMask ? 7 : 6,
+        managedEdges: item.needsMask ? 6 : 5,
       });
   }
 });
 
-test('mocked Studio wires direct Qwen inpaint graph with source and mask inputs', async ({ page }) => {
+test('mocked Studio wires Qwen inpaint through generic Diffusers image nodes', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-Edit');
   mockDownloadCalls = 0;
@@ -3082,8 +7089,8 @@ test('mocked Studio wires direct Qwen inpaint graph with source and mask inputs'
       async () => {
         const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
         const quantNode = current.flow.nodes.find((node) => node.action === 'QuantizationConfigNode');
-        const pipelineNode = current.flow.nodes.find((node) => node.action === 'LoadInpaintPipeline');
-        const inpaintNode = current.flow.nodes.find((node) => node.action === 'Inpaint');
+        const pipelineNode = current.flow.nodes.find((node) => node.studioRole === 'diffusersImagePipeline');
+        const inpaintNode = current.flow.nodes.find((node) => node.studioRole === 'diffusersImageInpaint');
         const previewNode = current.flow.nodes.find((node) => node.action === 'Preview');
         const sourceNode = current.flow.nodes.find((node) => node.studioRole === 'loadImage');
         const maskNode = current.flow.nodes.find((node) => node.studioRole === 'loadMask');
@@ -3108,6 +7115,7 @@ test('mocked Studio wires direct Qwen inpaint graph with source and mask inputs'
           quantRole: quantNode?.studioRole,
           pipelineRole: pipelineNode?.studioRole,
           inpaintRole: inpaintNode?.studioRole,
+          pipelineClass: pipelineNode?.params?.pipeline_class?.value,
           quantEdge: edgeMatches(quantNode?.id, pipelineNode?.id, 'quantization_config', 'quant_config'),
           pipelineEdge: edgeMatches(pipelineNode?.id, inpaintNode?.id, 'pipeline', 'pipeline'),
           sourceEdge: edgeMatches(sourceNode?.id, inpaintNode?.id, 'image', 'image'),
@@ -3124,19 +7132,20 @@ test('mocked Studio wires direct Qwen inpaint graph with source and mask inputs'
       sourceInput: 'mock-source.png',
       maskInput: 'mock-mask.png',
       quantRole: undefined,
-      pipelineRole: 'qwenInpaintPipeline',
-      inpaintRole: 'qwenInpaint',
+      pipelineRole: 'diffusersImagePipeline',
+      inpaintRole: 'diffusersImageInpaint',
+      pipelineClass: 'QwenImageEditInpaintPipeline',
       quantEdge: false,
       pipelineEdge: true,
       sourceEdge: true,
       maskEdge: true,
       previewEdge: true,
-      managedNodes: 5,
-      managedEdges: 4,
+      managedNodes: 7,
+      managedEdges: 6,
     });
 });
 
-test('mocked Studio wires direct Qwen outpaint graph with generated canvas and mask', async ({ page }) => {
+test('mocked Studio wires generic Qwen outpaint graph with generated canvas and mask', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-Edit');
   mockDownloadCalls = 0;
@@ -3161,7 +7170,9 @@ test('mocked Studio wires direct Qwen outpaint graph with generated canvas and m
     });
   });
 
-  await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+  await expect(page.getByTestId('studio-pinned-graph-inputs')).toHaveCount(0);
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready', { timeout: 30_000 });
   await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
 
@@ -3169,8 +7180,11 @@ test('mocked Studio wires direct Qwen outpaint graph with generated canvas and m
     .poll(
       async () => {
         const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-        const quantNode = current.flow.nodes.find((node) => node.action === 'QuantizationConfigNode');
-        const pipelineNode = current.flow.nodes.find((node) => node.action === 'LoadInpaintPipeline');
+        const quantNode = current.flow.nodes.find((node) => node.action === 'PipelineQuantizationConfigV2');
+        const recipeNode = current.flow.nodes.find((node) => node.action === 'DiffusersExecutionRecipe');
+        const pipelineNode = current.flow.nodes.find(
+          (node) => node.action === 'LoadPipeline' && node.module === 'modules.DiffusersImage',
+        );
         const outpaintNode = current.flow.nodes.find((node) => node.action === 'OutpaintCanvas');
         const inpaintNode = current.flow.nodes.find((node) => node.action === 'Inpaint');
         const previewNode = current.flow.nodes.find((node) => node.action === 'Preview');
@@ -3201,7 +7215,8 @@ test('mocked Studio wires direct Qwen outpaint graph with generated canvas and m
           pipelineRole: pipelineNode?.studioRole,
           outpaintRole: outpaintNode?.studioRole,
           inpaintRole: inpaintNode?.studioRole,
-          quantEdge: edgeMatches(quantNode?.id, pipelineNode?.id, 'quantization_config', 'quant_config'),
+          quantEdge: edgeMatches(quantNode?.id, recipeNode?.id, 'quantization_config', 'quantization_config'),
+          recipeEdge: edgeMatches(recipeNode?.id, pipelineNode?.id, 'execution_recipe', 'execution_recipe'),
           pipelineEdge: edgeMatches(pipelineNode?.id, inpaintNode?.id, 'pipeline', 'pipeline'),
           sourceEdge: edgeMatches(sourceNode?.id, outpaintNode?.id, 'image', 'image'),
           canvasEdge: edgeMatches(outpaintNode?.id, inpaintNode?.id, 'canvas', 'image'),
@@ -3221,18 +7236,19 @@ test('mocked Studio wires direct Qwen outpaint graph with generated canvas and m
       height: 768,
       outpaintLeft: 288,
       outpaintRight: 288,
-      quantRole: undefined,
-      pipelineRole: 'qwenInpaintPipeline',
+      quantRole: 'diffusersQuantization',
+      pipelineRole: 'diffusersImagePipeline',
       outpaintRole: 'qwenOutpaintCanvas',
-      inpaintRole: 'qwenInpaint',
-      quantEdge: false,
+      inpaintRole: 'diffusersImageInpaint',
+      quantEdge: true,
+      recipeEdge: true,
       pipelineEdge: true,
       sourceEdge: true,
       canvasEdge: true,
       maskEdge: true,
       previewEdge: true,
-      managedNodes: 5,
-      managedEdges: 5,
+      managedNodes: 7,
+      managedEdges: 7,
     });
 });
 
@@ -3268,7 +7284,7 @@ test('mocked Studio blocks Qwen outpaint when backend canvas node is missing', a
   await expect(outpaintReadiness).toContainText('Run blocked', { timeout: 30_000 });
   await outpaintReadiness.click();
   const outpaintIssues = page.getByTestId('run-issues-dialog');
-  await expect(outpaintIssues).toContainText('Qwen outpaint needs direct backend canvas and mask support');
+  await expect(outpaintIssues).toContainText('Qwen outpaint needs canvas and mask support');
   await expect(outpaintIssues).toContainText('OutpaintCanvas');
   await expect(page.getByTestId('studio-run')).toBeDisabled();
 });
@@ -3312,6 +7328,157 @@ test('mocked Studio blocks Expert Modular Qwen 4-bit mode when backend quantizat
   await expect(quantizationIssues).toContainText('Expert 4-bit mode needs updated Diffusers backend support');
   await expect(quantizationIssues).toContainText('QuantizationConfigNode');
   await expect(page.getByTestId('studio-run')).toBeDisabled();
+});
+
+test('graph field controls commit without moving or scrolling nodes and preserve values through drag undo-redo', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    window.__MODIFF_E2E__!.addCustomNodeForTest('modules.DiffusersImage.Generate');
+  });
+
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const flow = window.__MODIFF_E2E__!.getState().flow;
+          const generate = flow.nodes.find((node) => node.action === 'Generate');
+          return {
+            generateId: generate?.id ?? null,
+            exactCanvas: document.querySelector(`[data-id="${generate?.id ?? ''}"]`) !== null,
+          };
+        }),
+      { timeout: 30_000 },
+    )
+    .toMatchObject({
+      generateId: expect.any(String),
+      exactCanvas: true,
+    });
+
+  const ids = await page.evaluate(() => {
+    const nodes = window.__MODIFF_E2E__!.getState().flow.nodes;
+    return {
+      generate: nodes.find((node) => node.action === 'Generate')!.id,
+    };
+  });
+  expect(
+    await page.evaluate(() =>
+      window.__MODIFF_E2E__!.setFirstNodePositionByAction('Generate', {
+        x: 420,
+        y: 180,
+      }),
+    ),
+  ).toBe(true);
+  const graphBefore = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const initialGeneratePosition = graphBefore.nodes.find((node) => node.id === ids.generate)!.position;
+  const initialViewport = graphBefore.viewport;
+  const initialHistoryCount = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.historyPast);
+
+  const stepsInput = page.locator(`[id="${ids.generate}-num_inference_steps"]`);
+  await expect(stepsInput).toBeVisible();
+  await expect(stepsInput).toHaveClass(/nodrag/);
+  await stepsInput.dblclick();
+  await stepsInput.fill('7');
+  await stepsInput.press('Enter');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ nodeId }) =>
+          window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.params?.num_inference_steps
+            ?.value,
+        { nodeId: ids.generate },
+      ),
+    )
+    .toBe('7');
+
+  const graphAfterCommit = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  expect(graphAfterCommit.nodes.find((node) => node.id === ids.generate)!.position).toEqual(initialGeneratePosition);
+  expect(graphAfterCommit.viewport).toEqual(initialViewport);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.historyPast)).toBe(initialHistoryCount + 1);
+
+  const generateNode = page.locator(`.react-flow__node[data-id="${ids.generate}"]`);
+  const promptField = generateNode.locator('[data-key="prompt"]');
+  await expect(promptField).toBeVisible();
+  await expect(promptField).toHaveClass(/nodrag/);
+  await expect(promptField).toHaveClass(/nowheel/);
+  await promptField.locator('textarea').hover();
+  await page.mouse.wheel(0, 480);
+  expect((await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).viewport).toEqual(initialViewport);
+
+  const generateHeader = generateNode.locator('header').first();
+  const headerBox = await generateHeader.boundingBox();
+  expect(headerBox).not.toBeNull();
+  await page.mouse.move(headerBox!.x + headerBox!.width / 2, headerBox!.y + headerBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(headerBox!.x + headerBox!.width / 2 + 64, headerBox!.y + headerBox!.height / 2 + 36, {
+    steps: 6,
+  });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => {
+      const graph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+      return graph.nodes.find((node) => node.id === ids.generate)!.position;
+    })
+    .not.toEqual(initialGeneratePosition);
+  const draggedGraph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const draggedPosition = draggedGraph.nodes.find((node) => node.id === ids.generate)!.position;
+  expect(
+    await page.evaluate(
+      ({ nodeId }) =>
+        window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.params?.num_inference_steps
+          ?.value,
+      { nodeId: ids.generate },
+    ),
+  ).toBe('7');
+
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () => {
+      const graph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+      return graph.nodes.find((node) => node.id === ids.generate)!.position;
+    })
+    .toEqual(initialGeneratePosition);
+  expect(
+    await page.evaluate(
+      ({ nodeId }) =>
+        window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.params?.num_inference_steps
+          ?.value,
+      { nodeId: ids.generate },
+    ),
+  ).toBe('7');
+
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(async () => {
+      const graph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+      return graph.nodes.find((node) => node.id === ids.generate)!.position;
+    })
+    .toEqual(draggedPosition);
+  expect(
+    await page.evaluate(
+      ({ nodeId }) =>
+        window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.params?.num_inference_steps
+          ?.value,
+      { nodeId: ids.generate },
+    ),
+  ).toBe('7');
 });
 
 test('mocked dynamic node definitions update node and field metadata without value changes', async ({ page }) => {
@@ -3377,9 +7544,1045 @@ test('mocked dynamic node definitions update node and field metadata without val
     { nodeId: generateNodeId },
   );
 
-  const generateNode = page.locator(`[data-id="${generateNodeId}"]`);
-  await expect(generateNode).toContainText('Dynamic Generate', { timeout: 10_000 });
+  // Auto keeps the exact executable graph. Essential field metadata must
+  // update live on that same node without replacing it with a facade.
+  const generateNode = page.locator(`.react-flow__node[data-id="${generateNodeId}"]`);
   await expect(generateNode.getByText('Dynamic steps', { exact: true })).toBeVisible();
   await expect(generateNode.getByRole('button', { name: 'Decrease Dynamic steps' })).toBeVisible();
   await expect(generateNode.getByRole('button', { name: 'Increase Dynamic steps' })).toBeDisabled();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ nodeId }) => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.label,
+        { nodeId: generateNodeId },
+      ),
+    )
+    .toBe('Dynamic Generate');
+});
+
+test('workflow tabs remain a single horizontally scrollable row with pinned new-tab access', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+
+  const newTab = page.getByTestId('workflow-tab-new');
+  for (let index = 0; index < 20; index += 1) {
+    await newTab.click();
+  }
+
+  const tabList = page.getByTestId('workflow-tabs-scroll');
+  const tabBar = page.getByTestId('workflow-tabs-bar');
+  const geometry = await tabList.evaluate((element) => {
+    const tabs = Array.from(element.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const tabItems = tabs.map((tab) => tab.parentElement).filter((item): item is HTMLElement => Boolean(item));
+    const selectedItem = element.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.parentElement;
+    const listRect = element.getBoundingClientRect();
+    const barRect = element.closest<HTMLElement>('[data-testid="workflow-tabs-bar"]')?.getBoundingClientRect();
+    const selectedRect = selectedItem?.getBoundingClientRect();
+    return {
+      barHeight: barRect?.height ?? 0,
+      clientWidth: element.clientWidth,
+      flexWrap: getComputedStyle(element).flexWrap,
+      nativeScrollbarFootprint: element.offsetHeight - element.clientHeight,
+      nativeScrollbarWidth: getComputedStyle(element).scrollbarWidth,
+      scrollLeft: element.scrollLeft,
+      scrollportHeight: listRect.height,
+      scrollWidth: element.scrollWidth,
+      selectedVisible:
+        Boolean(selectedRect) && selectedRect!.left >= listRect.left - 1 && selectedRect!.right <= listRect.right + 1,
+      tabContentContained: tabItems.every((item) => {
+        const itemRect = item.getBoundingClientRect();
+        const buttonRect = item.querySelector<HTMLElement>('[role="tab"]')?.getBoundingClientRect();
+        return (
+          itemRect.top >= listRect.top - 1 &&
+          itemRect.bottom <= listRect.bottom + 1 &&
+          Boolean(buttonRect) &&
+          buttonRect!.top >= listRect.top - 1 &&
+          buttonRect!.bottom <= listRect.bottom + 1
+        );
+      }),
+      tabRows: new Set(tabs.map((tab) => Math.round(tab.getBoundingClientRect().top))).size,
+    };
+  });
+  await expect(tabBar).toHaveCSS('height', '38px');
+  expect(geometry.barHeight).toBe(38);
+  expect(geometry.flexWrap).toBe('nowrap');
+  expect(geometry.nativeScrollbarFootprint).toBe(0);
+  expect(geometry.nativeScrollbarWidth).toBe('none');
+  expect(geometry.scrollportHeight).toBeGreaterThanOrEqual(36);
+  expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth);
+  expect(geometry.scrollLeft).toBeGreaterThan(0);
+  expect(geometry.selectedVisible).toBe(true);
+  expect(geometry.tabContentContained).toBe(true);
+  expect(geometry.tabRows).toBe(1);
+
+  const overlayScrollbar = page.getByTestId('workflow-tabs-scrollbar');
+  const overlayRail = page.getByTestId('workflow-tabs-scrollbar-rail');
+  const overlayThumb = page.getByTestId('workflow-tabs-scrollbar-thumb');
+  await expect(tabBar.getByRole('scrollbar')).toHaveCount(1);
+  await expect(overlayScrollbar).toBeVisible();
+  await expect(overlayThumb).toBeVisible();
+  expect((await overlayRail.boundingBox())!.height).toBeLessThanOrEqual(4);
+
+  const selectedTab = tabList.locator('[role="tab"][aria-selected="true"]');
+  const readTabVisual = (locator: typeof selectedTab) =>
+    locator.evaluate((element) => {
+      const parseColor = (value: string) => {
+        const channels = value.match(/[\d.]+/g)?.map(Number) ?? [];
+        if (channels.length < 3) return null;
+        return {
+          red: channels[0]!,
+          green: channels[1]!,
+          blue: channels[2]!,
+          alpha: channels[3] ?? 1,
+        };
+      };
+      const luminance = (color: { red: number; green: number; blue: number }) =>
+        [color.red, color.green, color.blue]
+          .map((channel) => {
+            const normalized = channel / 255;
+            return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+          })
+          .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
+      const foreground = parseColor(getComputedStyle(element).color);
+      let backgroundElement: Element | null = element;
+      let background = null;
+      while (backgroundElement && (!background || background.alpha === 0)) {
+        background = parseColor(getComputedStyle(backgroundElement).backgroundColor);
+        backgroundElement = backgroundElement.parentElement;
+      }
+      if (!foreground || !background) throw new Error('Could not resolve workflow tab colors.');
+      const lighter = Math.max(luminance(foreground), luminance(background));
+      const darker = Math.min(luminance(foreground), luminance(background));
+      const styles = getComputedStyle(element);
+      return {
+        background: styles.backgroundColor,
+        color: styles.color,
+        contrast: (lighter + 0.05) / (darker + 0.05),
+        outlineStyle: styles.outlineStyle,
+        outlineWidth: Number.parseFloat(styles.outlineWidth),
+      };
+    });
+
+  const selectedVisual = await readTabVisual(selectedTab);
+  expect(selectedVisual.background).not.toBe('rgba(0, 0, 0, 0)');
+  expect(selectedVisual.contrast).toBeGreaterThanOrEqual(4.5);
+
+  const inactiveTab = tabList.locator('[role="tab"][aria-selected="false"]').first();
+  expect((await readTabVisual(inactiveTab)).contrast).toBeGreaterThanOrEqual(4.5);
+
+  await expect.poll(() => tabList.locator('[data-dirty="true"]').count()).toBeGreaterThan(0);
+  await expect(tabList.locator('[data-dirty="true"]').first().getByRole('tab')).toContainText(/^\* /);
+
+  await expect(newTab).toBeVisible();
+  const newTabBox = (await newTab.boundingBox())!;
+  expect(newTabBox.x + newTabBox.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+
+  await tabList.hover();
+  const beforeWheel = await tabList.evaluate((element) => element.scrollLeft);
+  await page.mouse.wheel(0, -320);
+  await expect.poll(() => tabList.evaluate((element) => element.scrollLeft)).toBeLessThan(beforeWheel);
+  const afterVerticalWheel = await tabList.evaluate((element) => element.scrollLeft);
+  await page.mouse.wheel(-160, 0);
+  await expect.poll(() => tabList.evaluate((element) => element.scrollLeft)).toBeLessThan(afterVerticalWheel);
+
+  await overlayScrollbar.focus();
+  await page.keyboard.press('Home');
+  await expect.poll(() => tabList.evaluate((element) => element.scrollLeft)).toBe(0);
+
+  const trackBox = (await overlayScrollbar.boundingBox())!;
+  await page.mouse.click(trackBox.x + trackBox.width * 0.75, trackBox.y + trackBox.height / 2);
+  await expect.poll(() => tabList.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  const afterTrackClick = await tabList.evaluate((element) => element.scrollLeft);
+
+  const thumbBox = (await overlayThumb.boundingBox())!;
+  const thumbCenter = {
+    x: thumbBox.x + thumbBox.width / 2,
+    y: thumbBox.y + thumbBox.height / 2,
+  };
+  await page.mouse.move(thumbCenter.x, thumbCenter.y);
+  await page.mouse.down();
+  await page.mouse.move(Math.max(trackBox.x + 2, thumbCenter.x - 72), thumbCenter.y, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(() => tabList.evaluate((element) => element.scrollLeft)).toBeLessThan(afterTrackClick);
+
+  await overlayScrollbar.focus();
+  await page.keyboard.press('End');
+  await expect
+    .poll(() =>
+      tabList.evaluate((element) => Math.abs(element.scrollLeft - (element.scrollWidth - element.clientWidth))),
+    )
+    .toBeLessThanOrEqual(1);
+
+  const tabs = tabList.getByRole('tab');
+  await tabs.first().focus();
+  await page.keyboard.press('End');
+  await expect(tabs.last()).toBeFocused();
+  await expect
+    .poll(() =>
+      tabList.evaluate((element) => {
+        const renderedTabs = Array.from(element.querySelectorAll<HTMLElement>('[role="tab"]'));
+        const lastItem = renderedTabs.at(-1)?.parentElement;
+        if (!lastItem) return false;
+        const listRect = element.getBoundingClientRect();
+        const itemRect = lastItem.getBoundingClientRect();
+        return itemRect.left >= listRect.left - 1 && itemRect.right <= listRect.right + 1;
+      }),
+    )
+    .toBe(true);
+  await page.keyboard.press('Home');
+  await expect(tabs.first()).toBeFocused();
+  const focusedVisual = await readTabVisual(tabs.first());
+  expect(focusedVisual.outlineStyle).not.toBe('none');
+  expect(focusedVisual.outlineWidth).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => tabList.evaluate((element) => element.scrollLeft)).toBe(0);
+  await inactiveTab.hover();
+  expect((await readTabVisual(inactiveTab)).contrast).toBeGreaterThanOrEqual(4.5);
+});
+
+test('resizing a node textarea reflows following fields inside the fixed scroll body', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const nodeId = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const nextNodeId = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.DiffusersImage.Generate');
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('Generate', {
+      pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
+      prompt: {
+        label: 'Prompt',
+        type: 'text',
+        display: 'textarea',
+        value: 'A detailed production prompt that remains editable inside the node.',
+      },
+      negative_prompt: {
+        label: 'Negative Prompt',
+        type: 'text',
+        display: 'textarea',
+        value: 'Artifacts, clipping, and unwanted details.',
+      },
+      lyrics: {
+        label: 'Lyrics',
+        type: 'text',
+        display: 'textarea',
+        value: 'First line\\nSecond line',
+      },
+      images: { type: 'image', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.setFirstNodePositionByAction('Generate', { x: 120, y: 40 });
+    window.__MODIFF_E2E__!.setFirstNodeSizeByAction('Generate', { width: 360, height: 340 });
+    return nextNodeId;
+  });
+
+  const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  const body = page.getByTestId(`node-scroll-body-${nodeId}`);
+  const tray = page.getByTestId(`node-connector-tray-${nodeId}`);
+  const promptField = node.locator('[data-key="prompt"]');
+  const promptTextarea = promptField.locator('textarea');
+  const negativeField = node.locator('[data-key="negative_prompt"]');
+  const lyricsField = node.locator('[data-key="lyrics"]');
+
+  await expect(node).toBeVisible();
+  await expect(promptTextarea).toBeVisible();
+  await expect(negativeField).toBeAttached();
+  await expect(lyricsField).toBeAttached();
+  await expect(tray).toBeVisible();
+  await body.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+
+  const measure = () =>
+    node.evaluate((element, expectedNodeId) => {
+      const rect = (target: Element | null) => {
+        if (!target) throw new Error('Expected node field was not rendered.');
+        const bounds = target.getBoundingClientRect();
+        return {
+          bottom: bounds.bottom,
+          height: bounds.height,
+          top: bounds.top,
+        };
+      };
+      const scrollBody = element.querySelector<HTMLElement>(`[data-testid="node-scroll-body-${expectedNodeId}"]`);
+      const connectorTray = element.querySelector<HTMLElement>(`[data-testid="node-connector-tray-${expectedNodeId}"]`);
+      if (!scrollBody || !connectorTray) throw new Error('Expected node layout regions were not rendered.');
+      return {
+        body: {
+          clientHeight: scrollBody.clientHeight,
+          overflowY: getComputedStyle(scrollBody).overflowY,
+          scrollHeight: scrollBody.scrollHeight,
+        },
+        lyrics: rect(element.querySelector('[data-key="lyrics"]')),
+        negative: rect(element.querySelector('[data-key="negative_prompt"]')),
+        node: rect(element),
+        prompt: rect(element.querySelector('[data-key="prompt"]')),
+        promptTextarea: rect(element.querySelector('[data-key="prompt"] textarea')),
+        tray: rect(connectorTray),
+      };
+    }, nodeId);
+
+  const graphBefore = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const historyBefore = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.historyPast);
+  const before = await measure();
+  expect(before.negative.top).toBeGreaterThanOrEqual(before.prompt.bottom - 1);
+  expect(before.lyrics.top).toBeGreaterThanOrEqual(before.negative.bottom - 1);
+
+  const textareaBox = (await promptTextarea.boundingBox())!;
+  await page.mouse.move(textareaBox.x + textareaBox.width - 2, textareaBox.y + textareaBox.height - 2);
+  await page.mouse.down();
+  await page.mouse.move(textareaBox.x + textareaBox.width - 2, textareaBox.y + textareaBox.height + 120, {
+    steps: 8,
+  });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => (await promptTextarea.boundingBox())?.height ?? 0)
+    .toBeGreaterThan(before.promptTextarea.height + 80);
+
+  const after = await measure();
+  const textareaGrowth = after.promptTextarea.height - before.promptTextarea.height;
+  expect(after.prompt.height - before.prompt.height).toBeGreaterThanOrEqual(textareaGrowth - 6);
+  expect(after.negative.top).toBeGreaterThanOrEqual(after.prompt.bottom - 1);
+  expect(after.lyrics.top).toBeGreaterThanOrEqual(after.negative.bottom - 1);
+  expect(after.negative.top - before.negative.top).toBeGreaterThanOrEqual(textareaGrowth - 6);
+  expect(after.lyrics.top - before.lyrics.top).toBeGreaterThanOrEqual(textareaGrowth - 6);
+  expect(after.body.overflowY).toBe('auto');
+  expect(after.body.clientHeight).toBe(before.body.clientHeight);
+  expect(after.body.scrollHeight - before.body.scrollHeight).toBeGreaterThanOrEqual(textareaGrowth - 6);
+  expect(after.node.height).toBe(before.node.height);
+  expect(after.tray.top).toBeCloseTo(before.tray.top, 1);
+  expect(after.tray.bottom).toBeCloseTo(before.tray.bottom, 1);
+
+  await body.evaluate(async (element) => {
+    element.scrollTop = element.scrollHeight;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
+  expect(await body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const afterScroll = await measure();
+  expect(afterScroll.tray.top).toBeCloseTo(before.tray.top, 1);
+  expect(afterScroll.tray.bottom).toBeCloseTo(before.tray.bottom, 1);
+
+  const graphAfter = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  expect(graphAfter.nodes.find((item) => item.id === nodeId)?.position).toEqual(
+    graphBefore.nodes.find((item) => item.id === nodeId)?.position,
+  );
+  expect(graphAfter.viewport).toEqual(graphBefore.viewport);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.historyPast)).toBe(historyBefore);
+});
+
+test('node connector tray keeps typed handles and edges aligned while the body scrolls, resizes, and collapses', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('multi_model_compare');
+  });
+
+  const graph = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  const generate = graph.nodes.find((node) => node.id === 'scenario-model-a');
+  expect(generate).toBeTruthy();
+  const sourceEdge = graph.edges.find((edge) => edge.source === generate!.id && edge.sourceHandle);
+  expect(sourceEdge?.sourceHandle).toBeTruthy();
+  const target = graph.nodes.find((node) => node.id === sourceEdge!.target);
+  expect(target).toBeTruthy();
+  expect(
+    await page.evaluate(() => window.__MODIFF_E2E__!.setFirstNodePositionByAction('ModelsLoader', { x: 120, y: 100 })),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      (action) => window.__MODIFF_E2E__!.setFirstNodePositionByAction(action, { x: 560, y: 100 }),
+      target!.action,
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(() =>
+      window.__MODIFF_E2E__!.setFirstNodeSizeByAction('ModelsLoader', { width: 360, height: 260 }),
+    ),
+  ).toBe(true);
+
+  const node = page.locator(`.react-flow__node[data-id="${generate!.id}"]`);
+  const body = page.getByTestId(`node-scroll-body-${generate!.id}`);
+  const tray = page.getByTestId(`node-connector-tray-${generate!.id}`);
+  const handle = page.getByTestId(`node-handle-${generate!.id}-${sourceEdge!.sourceHandle}`);
+  await expect(node).toBeVisible();
+  await expect(tray).toBeVisible();
+  await expect(handle).toHaveAttribute('data-connection-type', /[a-z]/);
+  await expect(handle).toHaveAttribute('aria-label', /^Output /);
+  await expect(node.locator('.react-flow__handle')).toHaveCount(await tray.locator('.react-flow__handle').count());
+  await expect(body.locator('.react-flow__handle')).toHaveCount(0);
+
+  const measure = () =>
+    page.evaluate(
+      ({ edgeId, handleTestId, nodeId, trayTestId }) => {
+        const nodeElement = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${nodeId}"]`);
+        const trayElement = document.querySelector<HTMLElement>(`[data-testid="${trayTestId}"]`);
+        const handleElement = document.querySelector<HTMLElement>(`[data-testid="${handleTestId}"]`);
+        const pathElement = document.querySelector<SVGPathElement>(
+          `.react-flow__edge[data-id="${edgeId}"] .react-flow__edge-path`,
+        );
+        if (!nodeElement || !trayElement || !handleElement || !pathElement) return null;
+        const nodeRect = nodeElement.getBoundingClientRect();
+        const trayRect = trayElement.getBoundingClientRect();
+        const handleRect = handleElement.getBoundingClientRect();
+        const pathPoint = pathElement.getPointAtLength(0);
+        const matrix = pathElement.getScreenCTM();
+        if (!matrix) return null;
+        const endpoint = new DOMPoint(pathPoint.x, pathPoint.y).matrixTransform(matrix);
+        const handleCenter = {
+          x: handleRect.left + handleRect.width / 2,
+          y: handleRect.top + handleRect.height / 2,
+        };
+        return {
+          endpointDistance: Math.hypot(endpoint.x - handleCenter.x, endpoint.y - handleCenter.y),
+          handleX: handleCenter.x,
+          handleY: handleCenter.y,
+          handleOffsetInTray: handleCenter.y - trayRect.top,
+          nodeBottomGap: Math.abs(nodeRect.bottom - trayRect.bottom),
+          path: pathElement.getAttribute('d'),
+          trayTop: trayRect.top,
+        };
+      },
+      {
+        edgeId: sourceEdge!.id,
+        handleTestId: `node-handle-${generate!.id}-${sourceEdge!.sourceHandle}`,
+        nodeId: generate!.id,
+        trayTestId: `node-connector-tray-${generate!.id}`,
+      },
+    );
+
+  await expect.poll(measure).not.toBeNull();
+  const beforeScroll = (await measure())!;
+  // XYFlow terminates the path at the node boundary while the 12px handle is
+  // centered across that boundary, so a correctly aligned endpoint is one
+  // handle radius from its visual center.
+  expect(beforeScroll.endpointDistance).toBeLessThan(8);
+  expect(beforeScroll.nodeBottomGap).toBeLessThan(2);
+  const scrollState = await body.evaluate(async (element) => {
+    element.scrollTop = element.scrollHeight;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return {
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+    };
+  });
+  expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
+  expect(scrollState.scrollTop).toBeGreaterThan(0);
+  const afterScroll = (await measure())!;
+  expect(afterScroll.handleX).toBeCloseTo(beforeScroll.handleX, 1);
+  expect(afterScroll.handleY).toBeCloseTo(beforeScroll.handleY, 1);
+  expect(afterScroll.path).toBe(beforeScroll.path);
+  expect(afterScroll.endpointDistance).toBeLessThan(8);
+
+  expect(
+    await page.evaluate(() =>
+      window.__MODIFF_E2E__!.setFirstNodeSizeByAction('ModelsLoader', { width: 360, height: 380 }),
+    ),
+  ).toBe(true);
+  await expect.poll(async () => (await measure())?.path).not.toBe(beforeScroll.path);
+  const afterResize = (await measure())!;
+  expect(afterResize.handleOffsetInTray).toBeCloseTo(beforeScroll.handleOffsetInTray, 1);
+  expect(afterResize.nodeBottomGap).toBeLessThan(2);
+  expect(afterResize.endpointDistance).toBeLessThan(8);
+
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.setFirstNodeCollapsedByAction('ModelsLoader', true))).toBe(
+    true,
+  );
+  await expect(body).toContainText('Collapsed');
+  await expect(tray).toBeVisible();
+  await expect(node.locator('.react-flow__handle')).toHaveCount(await tray.locator('.react-flow__handle').count());
+  await expect(body.locator('.react-flow__handle')).toHaveCount(0);
+  await expect.poll(async () => (await measure())?.endpointDistance ?? 100).toBeLessThan(8);
+});
+
+test('managed Auto keeps the exact interactive graph and only contains advanced controls', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
+  });
+
+  const autoGraph = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  const autoGenerate = autoGraph.nodes.find((node) => node.action === 'Generate');
+  expect(autoGenerate).toBeTruthy();
+
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
+  const autoGenerateNode = page.locator(`.react-flow__node[data-id="${autoGenerate!.id}"]`);
+  await expect(autoGenerateNode).toBeVisible();
+  for (const field of ['prompt', 'width', 'height', 'seed', 'num_inference_steps', 'guidance_scale']) {
+    await expect(autoGenerateNode.locator(`[data-key="${field}"]`)).toBeVisible();
+  }
+
+  const autoGenerateAdvanced = page.getByTestId(`node-advanced-controls-${autoGenerate!.id}`);
+  await expect(autoGenerateAdvanced).toBeVisible();
+  await expect(autoGenerateAdvanced.getByRole('button').first()).toHaveAttribute('aria-expanded', 'false');
+
+  const pipelineNode = autoGraph.nodes.find((node) => node.studioRole === 'diffusersImagePipeline');
+  expect(pipelineNode).toBeTruthy();
+  expect(
+    await page.evaluate(
+      ({ action, position }) => window.__MODIFF_E2E__!.setFirstNodePositionByAction(action, position),
+      {
+        action: pipelineNode!.action,
+        position: { x: autoGenerate!.position.x + 500, y: autoGenerate!.position.y },
+      },
+    ),
+  ).toBe(true);
+  const pipeline = page.locator(`.react-flow__node[data-id="${pipelineNode!.id}"]`);
+  const pipelineAdvanced = page.getByTestId(`node-advanced-controls-${pipelineNode!.id}`);
+  await pipelineAdvanced.getByRole('button').first().click();
+  const technicalControl = pipeline.locator('[data-auto-managed-control="dtype"]');
+  await expect(technicalControl).toBeVisible();
+  const technicalEditor = technicalControl.locator('input').first();
+  await expect(technicalEditor).toBeEnabled();
+  await technicalControl.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Auto manages this setting until you edit it');
+  await technicalEditor.click();
+  await technicalEditor.fill('float16');
+  await technicalEditor.blur();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ nodeId }) => {
+          const state = window.__MODIFF_E2E__!.getState();
+          const override = Object.values(state.studio.autoFieldOverrides ?? {}).find(
+            (item) => item.nodeId === nodeId && item.fieldKey === 'dtype',
+          );
+          return {
+            auto: state.studio.form.resourceMode,
+            override: override?.value,
+            value: state.flow.nodes.find((node) => node.id === nodeId)?.params?.dtype?.value,
+          };
+        },
+        { nodeId: pipelineNode!.id },
+      ),
+    )
+    .toEqual({ auto: 'auto', override: 'float16', value: 'float16' });
+  await expect(technicalControl).toHaveAttribute('data-auto-override', 'true');
+  await technicalControl.getByRole('button', { name: 'Reset dtype to Auto' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ nodeId }) => {
+          const state = window.__MODIFF_E2E__!.getState();
+          const override =
+            Object.values(state.studio.autoFieldOverrides ?? {}).find(
+              (item) => item.nodeId === nodeId && item.fieldKey === 'dtype',
+            ) ?? null;
+          return {
+            auto: state.studio.form.resourceMode,
+            override,
+            value: state.flow.nodes.find((node) => node.id === nodeId)?.params?.dtype?.value,
+          };
+        },
+        { nodeId: pipelineNode!.id },
+      ),
+    )
+    .toEqual({ auto: 'auto', override: null, value: 'bfloat16' });
+
+  const autoTopology = {
+    nodeIds: autoGraph.nodes.map((node) => node.id).sort(),
+    edges: autoGraph.edges
+      .map((edge) => `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`)
+      .sort(),
+  };
+  const widthControl = autoGenerateNode.locator('[data-key="width"]');
+  const widthInput = widthControl.locator('input');
+  await expect(widthInput).toBeVisible();
+  await widthInput.fill('960');
+  await widthInput.press('Tab');
+  let consecutiveWidthMatches = 0;
+  await expect
+    .poll(
+      async () => {
+        const widths = await page.evaluate((nodeId) => {
+          const current = window.__MODIFF_E2E__!.getState();
+          return {
+            form: current.studio.form.width,
+            aspectRatio: current.studio.form.aspectRatio,
+            node: current.flow.nodes.find((node) => node.id === nodeId)?.params?.width?.value,
+          };
+        }, autoGenerate!.id);
+        consecutiveWidthMatches =
+          widths.form === 960 && widths.aspectRatio === 'custom' && widths.node === 960
+            ? consecutiveWidthMatches + 1
+            : 0;
+        return consecutiveWidthMatches;
+      },
+      { intervals: [50, 100, 150], timeout: 2_000 },
+    )
+    .toBe(3);
+
+  await page.locator('.react-flow__pane').click({ position: { x: 8, y: 8 } });
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.some((node) => node.selected)))
+    .toBe(false);
+  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+  await expect(page.getByTestId('studio-pinned-graph-inputs')).toHaveCount(0);
+  await expect(page.getByTestId('studio-custom-graph-inspector')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="studio-node-disclosure-"]')).toHaveCount(0);
+  await expect(page.getByTestId('studio-section-toggle-runtime')).toHaveCount(0);
+  expect(
+    await page.evaluate((action) => window.__MODIFF_E2E__!.selectFirstNodeByAction(action), autoGenerate!.action),
+  ).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.some((node) => node.selected)))
+    .toBe(true);
+
+  await setStudioViewMode(page, 'expert');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const current = window.__MODIFF_E2E__!.getState();
+        return current.studio.form.resourceMode === 'expert' && !current.studio.canvasTransition;
+      }),
+    )
+    .toBe(true);
+  await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
+  const expertTopology = await page.evaluate(() => {
+    const graph = window.__MODIFF_E2E__!.getState().flow;
+    return {
+      nodeIds: graph.nodes.map((node) => node.id).sort(),
+      edges: graph.edges
+        .map((edge) => `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`)
+        .sort(),
+    };
+  });
+  expect(expertTopology).toEqual(autoTopology);
+  await expect(page.locator(`.react-flow__node[data-id="${autoGenerate!.id}"]`)).toBeVisible();
+  await expect(page.getByTestId(`node-advanced-controls-${autoGenerate!.id}`)).toHaveCount(0);
+  await expect(pipeline.locator('[data-auto-managed-control]')).toHaveCount(0);
+  await page.locator('.react-flow__pane').click({ position: { x: 8, y: 8 } });
+  await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
+  await expect(page.getByTestId('studio-section-toggle-runtime')).toBeVisible();
+  await page.getByTestId('studio-section-toggle-runtime').click();
+  await expect(page.getByTestId('studio-expert-runtime-controls')).toBeVisible();
+  const graph = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  const generate =
+    graph.nodes.find((node) => node.studioRole === 'diffusersImageGenerate') ??
+    graph.nodes.find((node) => ['Generate', 'Denoise'].includes(node.action));
+  const preview =
+    graph.nodes.find((node) => node.studioRole === 'preview') ?? graph.nodes.find((node) => node.action === 'Preview');
+  expect(generate).toBeTruthy();
+  expect(preview).toBeTruthy();
+  await expect(page.locator(`.react-flow__node[data-id="${generate!.id}"]`)).toBeVisible();
+
+  expect(
+    await page.evaluate((action) => window.__MODIFF_E2E__!.selectFirstNodeByAction(action), generate!.action),
+  ).toBe(true);
+  const generateDisclosure = page.getByTestId(`studio-node-disclosure-${generate!.id}`);
+  await expect(generateDisclosure.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
+  await generateDisclosure.getByRole('button').first().click();
+  await expect(generateDisclosure.getByRole('button').first()).toHaveAttribute('aria-expanded', 'false');
+
+  expect(await page.evaluate((action) => window.__MODIFF_E2E__!.selectFirstNodeByAction(action), preview!.action)).toBe(
+    true,
+  );
+  const previewDisclosure = page.getByTestId(`studio-node-disclosure-${preview!.id}`);
+  await expect(previewDisclosure.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
+  await expect(generateDisclosure).toHaveCount(0);
+  const inspector = page.getByTestId('studio-custom-graph-inspector');
+  await expect(inspector.locator('[data-testid^="node-preview-"]')).toHaveCount(0);
+});
+
+test('Blocks save, expand in place, collapse, and survive library-definition deletion', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    if (!window.localStorage.getItem('modiff-block-e2e-initialized')) {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.localStorage.setItem('modiff-block-e2e-initialized', 'true');
+    }
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+  });
+  const initialNodeCount = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.selectNodesByAction(['Generate', 'Preview']))).toBe(2);
+
+  const createBlock = page.getByTestId('selection-toolbar-create-block');
+  await expect(createBlock).toBeEnabled();
+  await createBlock.click();
+  const createDialog = page.getByTestId('create-user-block-dialog');
+  await expect(createDialog).toBeVisible();
+  await createDialog.getByLabel('Name').fill('Reusable render');
+  await page.getByTestId('confirm-create-user-block').click();
+
+  const blockNode = page.locator('.react-flow__node-block');
+  await expect(blockNode).toHaveCount(1);
+  await expect(blockNode).toContainText('Reusable render');
+  await expect(blockNode.locator('[data-testid^="node-preview-"]').first()).toBeVisible();
+  const collapsedControls = blockNode.locator('[data-testid^="user-block-controls-"]');
+  const collapsedConnectorTray = blockNode.locator('[data-testid^="node-connector-tray-"]');
+  const generateDisclosure = blockNode
+    .locator('[data-testid^="user-block-disclosure-"]')
+    .filter({ hasText: 'Generate' })
+    .first();
+  await expect(collapsedControls).toBeVisible();
+  await expect(collapsedConnectorTray).toBeVisible();
+  await expect(collapsedConnectorTray).toHaveAttribute('data-connector-layout', 'bottom-tray');
+  await expect(blockNode.locator('.react-flow__handle-left')).not.toHaveCount(0);
+  await expect(blockNode.locator('.react-flow__handle-right')).not.toHaveCount(0);
+  await expect(blockNode.locator('.react-flow__handle-bottom')).toHaveCount(0);
+  await expect(generateDisclosure.getByRole('button').first()).toHaveAttribute('aria-expanded', 'false');
+  const collapsedGeometry = await blockNode.evaluate((element) => {
+    const controls = element.querySelector<HTMLElement>('[data-testid^="user-block-controls-"]');
+    const tray = element.querySelector<HTMLElement>('[data-testid^="node-connector-tray-"]');
+    if (!controls || !tray) return null;
+    return {
+      controlsHeight: controls.offsetHeight,
+      trayHeight: tray.offsetHeight,
+    };
+  });
+  expect(collapsedGeometry).not.toBeNull();
+  expect(collapsedGeometry!.controlsHeight).toBeGreaterThan(140);
+  expect(collapsedGeometry!.trayHeight).toBeGreaterThan(0);
+  await generateDisclosure.getByRole('button').first().click();
+  await expect(generateDisclosure.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
+  await expect(generateDisclosure.getByText('Prompt', { exact: true })).toBeVisible();
+  await generateDisclosure.getByRole('button').first().click();
+  await expect(page.getByTestId('selection-toolbar-collapse')).toHaveAccessibleName(
+    'Expand block to edit internal nodes',
+  );
+  const initialBlockBounds = await blockNode.boundingBox();
+  const resizeHandle = blockNode.getByTitle('Drag to resize block');
+  const resizeGripIcon = resizeHandle.getByTestId('node-resize-grip-icon');
+  const resizeBounds = await resizeHandle.boundingBox();
+  expect(initialBlockBounds).toBeTruthy();
+  expect(resizeBounds).toBeTruthy();
+  await expect(resizeGripIcon).toBeVisible();
+  expect(
+    await resizeHandle.evaluate((element) => {
+      const style = window.getComputedStyle(element);
+      const icon = element.querySelector<SVGElement>('[data-testid="node-resize-grip-icon"]');
+      const iconStyle = icon ? window.getComputedStyle(icon) : null;
+      return {
+        backgroundColor: style.backgroundColor,
+        color: style.color,
+        hasContrastingColor: style.backgroundColor !== style.color,
+        iconHeight: Number.parseFloat(iconStyle?.height ?? '0'),
+        iconWidth: Number.parseFloat(iconStyle?.width ?? '0'),
+        opacity: style.opacity,
+      };
+    }),
+  ).toMatchObject({
+    hasContrastingColor: true,
+    iconHeight: 18,
+    iconWidth: 18,
+    opacity: '1',
+  });
+  await page.mouse.move(resizeBounds!.x + resizeBounds!.width / 2, resizeBounds!.y + resizeBounds!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBounds!.x + 90, resizeBounds!.y + 90, { steps: 4 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await blockNode.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(initialBlockBounds!.width + 40);
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () => Math.round((await blockNode.boundingBox())?.width ?? 0))
+    .toBe(Math.round(initialBlockBounds!.width));
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length))
+    .toBe(initialNodeCount - 1);
+
+  await blockNode.getByRole('button', { name: 'Configure block instance' }).click();
+  const configureDialog = page.locator('[data-testid^="configure-user-block-"]');
+  await expect(configureDialog).toBeVisible();
+  await configureDialog.getByLabel('Name').fill('Instance render');
+  const configurableInput = configureDialog.getByLabel(/^Input:/).first();
+  if ((await configurableInput.count()) > 0) {
+    await configurableInput.fill('Instance pipeline');
+  }
+  const editableParameter = configureDialog.getByRole('checkbox').first();
+  if ((await editableParameter.count()) > 0) {
+    await editableParameter.uncheck();
+  }
+  await configureDialog.getByRole('button', { name: 'Apply' }).click();
+  await expect(blockNode).toContainText('Instance render');
+
+  await page.getByTestId('selection-toolbar-collapse').click();
+  await expect(blockNode.getByRole('button', { name: 'Collapse block' })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length))
+    .toBe(initialNodeCount + 1);
+  await expect.poll(async () => (await blockNode.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(1000);
+  await expect(blockNode.locator('[aria-label="Block boundary connectors"]')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const block = graph.nodes.find((node) => node.module === 'modiff.user_blocks');
+        if (!block) return false;
+        const children = new Set(
+          graph.nodes.filter((node) => node.id.startsWith(`${block.id}__`)).map((node) => node.id),
+        );
+        return (
+          graph.edges.every((edge) => edge.source !== block.id && edge.target !== block.id) &&
+          graph.edges.some(
+            (edge) =>
+              (children.has(edge.source) && !children.has(edge.target)) ||
+              (!children.has(edge.source) && children.has(edge.target)),
+          )
+        );
+      }),
+    )
+    .toBe(true);
+
+  await blockNode.getByRole('button', { name: 'Collapse block' }).click();
+  await expect(blockNode.getByRole('button', { name: 'Expand block' })).toBeVisible();
+  await expect(blockNode.locator('[data-testid^="node-preview-"]').first()).toBeVisible();
+  await expect(blockNode.locator('[data-testid^="node-connector-tray-"]')).toBeVisible();
+  await expect(blockNode.getByTitle('Drag to resize block')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length))
+    .toBe(initialNodeCount - 1);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const block = graph.nodes.find((node) => node.module === 'modiff.user_blocks');
+        return block
+          ? {
+              childCount: graph.nodes.filter((node) => node.id.startsWith(`${block.id}__`)).length,
+              expanded: Boolean(block.uiState?.blockExpanded),
+            }
+          : null;
+      }),
+    )
+    .toEqual({ childCount: 0, expanded: false });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = window.localStorage.getItem('modiff.studio');
+        if (!raw) return false;
+        const persisted = JSON.parse(raw) as {
+          state?: {
+            activeWorkflowTabId?: string;
+            workflowTabs?: Array<{
+              id?: string;
+              snapshot?: {
+                nodes?: Array<{ data?: { type?: string; uiState?: { blockExpanded?: boolean } } }>;
+              };
+            }>;
+          };
+        };
+        const active = persisted.state?.workflowTabs?.find((tab) => tab.id === persisted.state?.activeWorkflowTabId);
+        const block = active?.snapshot?.nodes?.find((node) => node.data?.type === 'block');
+        return Boolean(block && block.data?.uiState?.blockExpanded === false);
+      }),
+    )
+    .toBe(true);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const studio = window.__MODIFF_E2E__!.getState().studio;
+        const active = (
+          studio.workflowTabs as Array<{
+            id?: string;
+            snapshot?: { nodes?: Array<{ data?: { type?: string } }> };
+          }>
+        ).find((tab) => tab.id === studio.activeWorkflowTabId);
+        const raw = window.localStorage.getItem('modiff.studio');
+        const persisted = raw
+          ? (JSON.parse(raw) as {
+              state?: {
+                activeWorkflowTabId?: string;
+                workflowTabs?: Array<{
+                  id?: string;
+                  snapshot?: { nodes?: Array<{ data?: { type?: string } }> };
+                }>;
+              };
+            })
+          : null;
+        const persistedActive = persisted?.state?.workflowTabs?.find(
+          (tab) => tab.id === persisted.state?.activeWorkflowTabId,
+        );
+        return {
+          canvasBlocks: window
+            .__MODIFF_E2E__!.getState()
+            .flow.nodes.filter((node) => node.module === 'modiff.user_blocks').length,
+          persistedBlocks: persistedActive?.snapshot?.nodes?.filter((node) => node.data?.type === 'block').length ?? 0,
+          snapshotBlocks: active?.snapshot?.nodes?.filter((node) => node.data?.type === 'block').length ?? 0,
+        };
+      }),
+    )
+    .toEqual({ canvasBlocks: 1, persistedBlocks: 1, snapshotBlocks: 1 });
+  await expect(blockNode).toHaveCount(1);
+  await expect(blockNode.getByRole('button', { name: 'Expand block' })).toBeVisible();
+  await expect(blockNode.locator('[data-testid^="node-preview-"]').first()).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const block = graph.nodes.find((node) => node.module === 'modiff.user_blocks');
+        return block
+          ? {
+              childCount: graph.nodes.filter((node) => node.id.startsWith(`${block.id}__`)).length,
+              expanded: Boolean(block.uiState?.blockExpanded),
+            }
+          : null;
+      }),
+    )
+    .toEqual({ childCount: 0, expanded: false });
+
+  await page.getByTestId('left-tab-nodes').click();
+  const userNodesGroupToggle = page.getByTestId('node-group-User-Nodes').getByRole('button').first();
+  if ((await userNodesGroupToggle.getAttribute('aria-expanded')) !== 'true') {
+    await userNodesGroupToggle.click();
+  }
+  const userBlockRow = page.locator('[data-testid^="user-block-row-"]').filter({ hasText: 'Reusable render' });
+  await expect(userBlockRow).toBeVisible();
+  await expect(userBlockRow).not.toContainText('Instance render');
+  await userBlockRow.click({ button: 'right' });
+  await page.getByTestId('user-block-context-menu').getByText('Delete from User Nodes').click();
+  await page.getByTestId('confirm-delete-user-block').click();
+  await expect(userBlockRow).toHaveCount(0);
+  await expect(blockNode).toHaveCount(1);
+  await blockNode.getByRole('button', { name: 'Expand block' }).click();
+  await expect(blockNode.getByRole('button', { name: 'Collapse block' })).toBeVisible();
+});
+
+test('Collapsed many-output blocks keep preview and editable node disclosures usable', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+  });
+  const selectedCount = await page.evaluate(() => {
+    const actions = [...new Set(window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.action))];
+    return window.__MODIFF_E2E__!.selectNodesByAction(actions);
+  });
+  expect(selectedCount).toBeGreaterThanOrEqual(5);
+
+  await page.getByTestId('selection-toolbar-create-block').click();
+  const createDialog = page.getByTestId('create-user-block-dialog');
+  await createDialog.getByLabel('Name').fill('Complete render block');
+  await page.getByTestId('confirm-create-user-block').click();
+
+  const blockNode = page.locator('.react-flow__node-block');
+  const preview = blockNode.locator('[data-testid^="node-preview-"]').first();
+  const generateDisclosure = blockNode
+    .locator('[data-testid^="user-block-disclosure-"]')
+    .filter({ hasText: 'Generate' })
+    .first();
+
+  await expect(blockNode).toHaveCount(1);
+  await expect(preview).toBeVisible();
+  await expect(generateDisclosure.getByRole('button').first()).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(() => blockNode.locator('.react-flow__handle-right').count()).toBeGreaterThanOrEqual(7);
+  await expect(blockNode.locator('.react-flow__handle-bottom')).toHaveCount(0);
+  expect(
+    await blockNode.evaluate((element) => {
+      const sections = [...element.querySelectorAll<HTMLElement>('[data-block-source-node]')];
+      const generateSection = sections.find((section) => section.textContent?.includes('Generate'));
+      const previewSection = sections.find((section) => section.querySelector('[data-testid^="node-preview-"]'));
+      return Boolean(
+        generateSection &&
+        previewSection &&
+        generateSection.compareDocumentPosition(previewSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }),
+  ).toBe(true);
+  const geometry = await blockNode.evaluate((element) => {
+    const controlsElement = element.querySelector<HTMLElement>('[data-testid^="user-block-controls-"]');
+    const trayElement = element.querySelector<HTMLElement>('[data-testid^="node-connector-tray-"]');
+    const previewElement = element.querySelector<HTMLElement>('[data-testid^="node-preview-"]');
+    if (!controlsElement || !trayElement || !previewElement) return null;
+    return {
+      // Block layout constraints are intrinsic; fitView may legitimately
+      // scale the entire block above or below 1:1 in screen coordinates.
+      controlsHeight: controlsElement.offsetHeight,
+      previewHeight: previewElement.offsetHeight,
+      trayHeight: trayElement.offsetHeight,
+    };
+  });
+  expect(geometry).not.toBeNull();
+  expect(geometry!.controlsHeight).toBeGreaterThan(100);
+  expect(geometry!.previewHeight).toBeLessThanOrEqual(116);
+  expect(geometry!.trayHeight).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      blockNode.evaluate((element) => {
+        const tray = element.querySelector<HTMLElement>('[data-testid^="node-connector-tray-"]');
+        const grip = element.querySelector<HTMLElement>('[data-testid="node-resize-grip"]');
+        if (!tray || !grip) return null;
+        const blockBounds = element.getBoundingClientRect();
+        const trayBounds = tray.getBoundingClientRect();
+        const gripBounds = grip.getBoundingClientRect();
+        const gripBottomDelta = Math.abs(gripBounds.bottom - blockBounds.bottom);
+        return {
+          connectorsInsideBlock: trayBounds.bottom <= blockBounds.bottom + 1,
+          gripAtBlockBottom: gripBottomDelta <= 4,
+        };
+      }),
+    )
+    .toEqual({
+      connectorsInsideBlock: true,
+      gripAtBlockBottom: true,
+    });
+
+  await generateDisclosure.getByRole('button').first().click();
+  const prompt = generateDisclosure.locator('[data-key$="__prompt"] textarea');
+  await prompt.scrollIntoViewIfNeeded();
+  await expect(prompt).toBeVisible();
+  await prompt.fill('Editable prompt from the collapsed block');
+  await prompt.blur();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const block = window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.module === 'modiff.user_blocks');
+        return Object.entries(block?.params ?? {}).find(([key]) => key.endsWith('__prompt'))?.[1]?.value;
+      }),
+    )
+    .toBe('Editable prompt from the collapsed block');
 });

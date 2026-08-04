@@ -12,8 +12,22 @@ dist
 dist-ssr
 artifacts
 output
+
+# Gallery binaries live in the pinned public Hugging Face Dataset. Keep only
+# the small runtime metadata that lets source code resolve and verify them.
+public/template-gallery/**
+!public/template-gallery/manifest.json
+!public/template-gallery/runtime-inputs/
+public/template-gallery/runtime-inputs/**
+!public/template-gallery/runtime-inputs/default-input-bindings.json
+
 playwright-report
+playwright-report-*/
 test-results
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
 *.local
 vite.config.local.ts
 .env

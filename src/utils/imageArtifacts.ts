@@ -1,5 +1,4 @@
 import config from '../../app.config';
-import { requestBlob } from './requestJson';
 
 export type ImageArtifact = {
   url?: string;
@@ -36,6 +35,23 @@ export function absoluteImageUrl(value: string) {
   if (isAbsoluteUrl(value)) return value;
   if (value.startsWith('/')) return `${config.serverAddress}${value}`;
   return value;
+}
+
+function isSafeImageDataUrl(value: string) {
+  const mimeType = /^data:([^;,]+)(?:;[^,]*)?,/i.exec(value)?.[1]?.trim().toLowerCase();
+  return Boolean(mimeType?.startsWith('image/') && mimeType !== 'image/svg+xml');
+}
+
+export function sanitizeImageArtifactUrl(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const candidate = absoluteImageUrl(value.trim());
+  if (/^data:/i.test(candidate)) return isSafeImageDataUrl(candidate) ? candidate : null;
+  try {
+    const parsed = new URL(candidate, config.serverAddress);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? candidate : null;
+  } catch {
+    return null;
+  }
 }
 
 function extensionFromMime(mimeType: string) {
@@ -92,13 +108,15 @@ export function normalizeImageArtifacts(options: {
       if (!url) return null;
 
       const mimeType = artifact.mimeType || options.mimeType;
+      const safeUrl = sanitizeImageArtifactUrl(url);
+      if (!safeUrl) return null;
       const normalized = {
         ...artifact,
         nodeId: artifact.nodeId || options.nodeId,
         fieldKey: artifact.fieldKey || options.fieldKey,
         index: typeof artifact.index === 'number' ? artifact.index : index,
         mimeType,
-        url: absoluteImageUrl(url),
+        url: safeUrl,
       };
 
       return {
@@ -107,28 +125,4 @@ export function normalizeImageArtifacts(options: {
       };
     })
     .filter((image): image is NormalizedImageArtifact => Boolean(image));
-}
-
-export async function downloadImageArtifact(image: NormalizedImageArtifact) {
-  try {
-    const blob = await requestBlob(image.url);
-    const objectUrl = URL.createObjectURL(blob);
-    try {
-      triggerDownload(objectUrl, image.filename);
-    } finally {
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    }
-  } catch {
-    triggerDownload(image.url, image.filename);
-  }
-}
-
-function triggerDownload(url: string, filename: string) {
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = 'noopener noreferrer';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
 }

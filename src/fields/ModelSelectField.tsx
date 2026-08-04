@@ -1,26 +1,37 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
+import { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 
 import { FieldProps } from '../components/NodeContent';
 
 import AutocompleteField from './AutocompleteField';
 
-import { LoaderCircle, RefreshCw } from 'lucide-react';
+import { Download, Library, LoaderCircle, RefreshCw } from 'lucide-react';
+import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
-import { FieldFrame } from '../ui';
-import { cx } from '../utils/classNames';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { useStudioStore } from '../stores/useStudioStore';
+import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { isHfDownloadActive } from '../studio/modelInstall';
+import { getProfileForForm } from '../studio/modelProfiles';
+import {
+  compatibleInstalledHubModels,
+  compatibleInstalledLocalModels,
+  connectedModelFamilyHint,
+  indexedHubModelIsInstalled,
+  modelFamilyHint,
+} from '../studio/modelSelection';
+import { FieldFrame, ModiffButton } from '../ui';
+import { GraphIconButton } from '../ui/GraphControls';
+import { enqueueSnackbar } from '../ui/snackbar';
 
 type HfCacheItem = {
   id?: unknown;
   class_names?: unknown;
+  installed?: unknown;
+  complete?: unknown;
 };
-
-function isHfCacheItem(item: unknown): item is HfCacheItem {
-  return Boolean(item && typeof item === 'object');
-}
-
-function asStringList(items: unknown[]) {
-  return items.filter((item): item is string => typeof item === 'string');
-}
 
 type ModelSource = 'hub' | 'local';
 type ModelFieldValue = { source: ModelSource; value: unknown };
@@ -66,26 +77,68 @@ export default function ModelSelectField(props: FieldProps) {
       : asModelFieldValue(props.value, fallbackSource);
   const sourceType = activeSources.length === 1 ? fallbackSource : propsValue.source;
   const fieldValue = propsValue.value ?? '';
-  const { hfCache, localModels } = useNodesStore.getState();
-  const hfCacheItems = useMemo(() => hfCache.filter(isHfCacheItem), [hfCache]);
-  const localModelItems = useMemo(() => asStringList(localModels), [localModels]);
-  const fetchLocalModels = useNodesStore((state) => state.fetchLocalModels);
-  const fetchHfCache = useNodesStore((state) => state.fetchHfCache);
-  const isLoading = useNodesStore((state) => state.isLoading);
-
-  const [hubOptions, setHubOptions] = useState<string[]>([]);
-  const [localModelOptions, setLocalModelOptions] = useState<string[]>([]);
-  const initialDefaultRef = useRef({
-    defaultValue: props.default,
-    fieldKey: props.fieldKey,
-    source: fallbackSource,
-    updateStore: props.updateStore,
-  });
+  const currentModelId = typeof fieldValue === 'string' ? fieldValue.trim() : '';
+  const { fetchHfCache, fetchLocalModels, hfCache, hfDownloadProgress, installHfModel, isLoading, localModels } =
+    useNodesStore(
+      useShallow((state) => ({
+        fetchHfCache: state.fetchHfCache,
+        fetchLocalModels: state.fetchLocalModels,
+        hfCache: state.hfCache,
+        hfDownloadProgress: state.hfDownloadProgress,
+        installHfModel: state.installHfModel,
+        isLoading: state.isLoading,
+        localModels: state.localModels,
+      })),
+    );
+  const connectedFamily = useFlowStore((state) => connectedModelFamilyHint(state.nodes, state.edges, props.nodeId));
+  const managedFamily = useStudioStore((state) =>
+    state.graphBinding?.managedNodeIds.includes(props.nodeId)
+      ? modelFamilyHint(getProfileForForm(state.form).defaultRepo)
+      : null,
+  );
+  const family = managedFamily ?? connectedFamily;
+  const sid = useWebsocketStore((state) => state.sid);
+  const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
+  const filterRoot = asFilterRecord(props.fieldOptions?.filter);
+  const hubFilter = asFilterRecord(filterRoot.hub);
+  const localFilter = asFilterRecord(filterRoot.local);
+  const hubOptions = useMemo(
+    () =>
+      compatibleInstalledHubModels({
+        classNameFilter: hubFilter.className,
+        family,
+        idFilter: hubFilter.id,
+        items: hfCache,
+      }),
+    [family, hfCache, hubFilter.className, hubFilter.id],
+  );
+  const localModelOptions = useMemo(
+    () =>
+      compatibleInstalledLocalModels({
+        family,
+        idFilter: localFilter.id,
+        items: localModels,
+      }),
+    [family, localFilter.id, localModels],
+  );
+  const currentInstalled = useMemo(() => {
+    if (!currentModelId) return false;
+    if (sourceType === 'local') return localModels.some((item) => item === currentModelId);
+    return hfCache.some(
+      (item) =>
+        Boolean(item && typeof item === 'object') &&
+        typeof (item as HfCacheItem).id === 'string' &&
+        (item as HfCacheItem).id === currentModelId &&
+        indexedHubModelIsInstalled(item as HfCacheItem),
+    );
+  }, [currentModelId, hfCache, localModels, sourceType]);
+  const currentOptions = sourceType === 'hub' ? hubOptions : localModelOptions;
+  const currentCompatible = !currentModelId || currentOptions.includes(currentModelId);
+  const installProgress = currentModelId ? hfDownloadProgress[currentModelId] : undefined;
+  const installActive = isHfDownloadActive(installProgress);
 
   const handleSourceTypeChange = (source: 'hub' | 'local') => {
-    const propsDefault = asModelFieldValue(props.default, source);
-    const value = propsDefault.source === source ? propsDefault.value : null;
-    props.updateStore(props.fieldKey, { ...propsValue, value, source });
+    props.updateStore(props.fieldKey, { ...propsValue, value: '', source });
   };
 
   const handleFieldChange = (key: string, value: unknown) => {
@@ -104,89 +157,33 @@ export default function ModelSelectField(props: FieldProps) {
       await fetchHfCache(true);
       await fetchLocalModels(true);
     } finally {
-      const defaultValue = asModelFieldValue(props.default, sourceType);
-      const value = defaultValue.source === sourceType ? defaultValue.value : '';
-      props.updateStore(props.fieldKey, { ...propsValue, value });
       props.updateStore(props.fieldKey, false, 'disabled');
     }
   };
 
-  const getHubOptions = useCallback(() => {
-    const filterRoot = asFilterRecord(props.fieldOptions?.filter);
-    const hubFilter = asFilterRecord(filterRoot.hub);
-
-    let options = Array.isArray(props.options) ? asStringList(props.options) : [];
-    //const className = Array.isArray(hubFilter.className) ? hubFilter.className : hubFilter.className ? [hubFilter.className] : [];
-    const className = hubFilter.className || [];
-    if (typeof className === 'string') {
-      const cnRegex = new RegExp(className);
-      const cnMatch = hfCacheItems
-        .filter((item) =>
-          Array.isArray(item.class_names)
-            ? item.class_names.some((name) => typeof name === 'string' && cnRegex.test(name))
-            : typeof item.class_names === 'string' && cnRegex.test(item.class_names),
-        )
-        .map((item) => String(item.id));
-      options = Array.from(new Set([...options, ...cnMatch]));
-    } else if (Array.isArray(className) && className.length > 0) {
-      const cnOptions = hfCacheItems
-        .filter((item) =>
-          Array.isArray(item.class_names)
-            ? item.class_names.some((name) => typeof name === 'string' && className.includes(name))
-            : typeof item.class_names === 'string' && className.includes(item.class_names),
-        )
-        .map((item) => String(item.id));
-      options = Array.from(new Set([...options, ...cnOptions]));
-    } else {
-      options = Array.from(new Set([...options, ...hfCacheItems.map((item) => String(item.id))]));
+  const handleInstall = async () => {
+    if (!currentModelId || sourceType !== 'hub' || installActive) return;
+    try {
+      await installHfModel(currentModelId, sid);
+      enqueueSnackbar(`${currentModelId} installed`, { variant: 'success', autoHideDuration: 2200 });
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : `Could not install ${currentModelId}`, {
+        variant: 'error',
+      });
     }
+  };
 
-    const idMatch = typeof hubFilter.id === 'string' ? hubFilter.id : '';
-    if (idMatch) {
-      try {
-        const regex = new RegExp(idMatch);
-        options = options.filter((item) => regex.test(item));
-        //options = Array.from(new Set([...options, ...hubOptions.map((item) => item.id)]));
-      } catch (error) {
-        console.warn('Invalid regex pattern:', idMatch, error);
-      }
-    }
-    setHubOptions(options);
-  }, [hfCacheItems, props.fieldOptions?.filter, props.options]);
-
-  const getLocalOptions = useCallback(() => {
-    let options = Array.isArray(props.options) ? asStringList(props.options) : [];
-    const filterRoot = asFilterRecord(props.fieldOptions?.filter);
-    const localFilter = asFilterRecord(filterRoot.local);
-    const fileMatch = typeof localFilter.id === 'string' ? localFilter.id : '';
-    if (fileMatch) {
-      try {
-        const regex = new RegExp(fileMatch);
-        const localOptions = localModelItems.filter((item) => regex.test(item));
-        options = localOptions;
-      } catch (error) {
-        console.warn('Invalid regex pattern:', fileMatch, error);
-      }
-    } else {
-      options = localModelItems;
-    }
-    setLocalModelOptions(options);
-  }, [localModelItems, props.fieldOptions?.filter, props.options]);
-
-  useEffect(() => {
-    getHubOptions();
-  }, [getHubOptions]);
-
-  useEffect(() => {
-    getLocalOptions();
-  }, [getLocalOptions]);
-
-  useEffect(() => {
-    const initial = initialDefaultRef.current;
-    if (typeof initial.defaultValue === 'string') {
-      initial.updateStore(initial.fieldKey, { source: initial.source, value: initial.defaultValue });
-    }
-  }, []);
+  const handleOpenModels = () => {
+    setModelManagerOpener({
+      nodeId: props.nodeId,
+      fieldKey: props.fieldKey,
+      focus: {
+        repo: currentModelId || undefined,
+        label: props.label,
+        source: 'graph',
+      },
+    });
+  };
 
   return (
     <FieldFrame dataKey={props.fieldKey} hidden={props.hidden} layoutStyle={props.style} className="modiff-field">
@@ -218,20 +215,44 @@ export default function ModelSelectField(props: FieldProps) {
             {...props}
             value={fieldValue}
             disabled={props.disabled || isLoading}
+            fieldOptions={{ ...props.fieldOptions, emptyMessage: 'No compatible installed models' }}
             options={sourceType === 'hub' ? hubOptions : localModelOptions}
             updateStore={handleFieldChange}
           />
         </div>
-        <button
+        <GraphIconButton
           type="button"
           onClick={handleRefresh}
-          className="grid size-7 shrink-0 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-hf-yellow disabled:pointer-events-none disabled:opacity-40"
+          className="shrink-0 hover:text-hf-yellow"
           disabled={props.disabled || isLoading}
-          title="Refresh Models"
-          aria-label="Refresh Models"
+          label="Refresh models"
         >
           {isLoading ? <LoaderCircle size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-        </button>
+        </GraphIconButton>
+        {sourceType === 'hub' && currentModelId && !currentInstalled ? (
+          <GraphIconButton
+            type="button"
+            onClick={handleInstall}
+            disabled={props.disabled || isLoading || installActive}
+            label={`Install ${currentModelId}`}
+          >
+            {installActive ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}
+          </GraphIconButton>
+        ) : null}
+        {currentOptions.length === 0 || !currentCompatible ? (
+          <GraphIconButton
+            type="button"
+            onClick={handleOpenModels}
+            disabled={props.disabled || isLoading}
+            label={
+              currentCompatible
+                ? `Find a compatible ${props.label.toLowerCase()}`
+                : `Choose a compatible replacement for ${currentModelId}`
+            }
+          >
+            <Library size={16} />
+          </GraphIconButton>
+        ) : null}
       </div>
     </FieldFrame>
   );
@@ -251,17 +272,16 @@ function SourceButton({
   title: string;
 }) {
   return (
-    <button
+    <ModiffButton
       type="button"
-      className={cx(
-        'px-2 py-1 text-xs font-semibold transition disabled:pointer-events-none disabled:opacity-40',
-        active ? 'bg-hf-yellow text-black' : 'bg-modiff-bg text-gray-300 hover:bg-white/10 hover:text-white',
-      )}
+      size="compact"
+      tone={active ? 'primary' : 'ghost'}
+      className="nodrag nowheel px-2"
       disabled={disabled}
       onClick={onClick}
       title={title}
     >
       {children}
-    </button>
+    </ModiffButton>
   );
 }

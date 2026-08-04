@@ -1,5 +1,6 @@
 import { type Edge, getIncomers, getOutgoers, type Node } from '@xyflow/react';
 import type { ApiGraphExport, NodeParamValue } from '../types/api';
+import { studioOffloadPlanConflict } from '../studio/deviceOffload';
 import type { NodeData, NodeParams } from './useNodeStore';
 
 export type FlowGraphNode = Node<NodeData, NodeData['type']>;
@@ -46,6 +47,50 @@ function isNodeDisabled(node: FlowGraphNode) {
   return Boolean(node.data.uiState?.disabled);
 }
 
+function hasContainerAncestor(node: FlowGraphNode, ancestorId: string, nodes: FlowGraphNode[]) {
+  let parentId = node.parentId;
+  const visited = new Set<string>();
+  while (parentId && !visited.has(parentId)) {
+    if (parentId === ancestorId) return true;
+    visited.add(parentId);
+    parentId = nodes.find((candidate) => candidate.id === parentId)?.parentId;
+  }
+  return false;
+}
+
+function paramNumber(node: FlowGraphNode, key: string, fallback: number) {
+  const parsed = Number(node.data.params[key]?.value);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
+}
+
+function paramBoolean(node: FlowGraphNode, key: string, fallback: boolean) {
+  const value = node.data.params[key]?.value;
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function assertExecutableDeviceOffloadPlan(node: FlowGraphNode) {
+  const device = node.data.params.device?.value ?? node.data.params.device?.default;
+  if (typeof device !== 'string' || !device.trim()) return;
+  const autoOffload = node.data.params.auto_offload?.value ?? node.data.params.auto_offload?.default;
+  const rawOffloadMode = node.data.params.offload_mode?.value ?? node.data.params.offload_mode?.default;
+  const offloadMode =
+    rawOffloadMode === 'none' ||
+    rawOffloadMode === 'model_cpu' ||
+    rawOffloadMode === 'sequential_cpu' ||
+    rawOffloadMode === 'group_cpu' ||
+    rawOffloadMode === 'group_disk'
+      ? rawOffloadMode
+      : undefined;
+  const conflict = studioOffloadPlanConflict({
+    device,
+    autoOffload: typeof autoOffload === 'boolean' ? autoOffload : undefined,
+    offloadMode,
+  });
+  if (conflict) {
+    throw new Error(`${node.data.label || node.data.action || node.id} cannot be exported: ${conflict}`);
+  }
+}
+
 export function buildApiGraphExport({
   nodes,
   edges,
@@ -55,8 +100,19 @@ export function buildApiGraphExport({
 }: BuildApiGraphExportOptions): ApiGraphExport {
   const sessionId = sid || '';
 
+  const disabledContainers = new Set(
+    nodes
+      .filter((node) => (node.data.type === 'group' || node.data.type === 'loop') && isNodeDisabled(node))
+      .map((node) => node.id),
+  );
   const executableNodes = nodes.filter(
-    (node) => node.data.type !== 'group' && !isNodeDisabled(node) && node.data.module && node.data.action,
+    (node) =>
+      node.data.type !== 'group' &&
+      node.data.type !== 'loop' &&
+      !isNodeDisabled(node) &&
+      ![...disabledContainers].some((containerId) => hasContainerAncestor(node, containerId, nodes)) &&
+      node.data.module &&
+      node.data.action,
   );
 
   if (executableNodes.length === 0) {
@@ -124,6 +180,7 @@ export function buildApiGraphExport({
   }
 
   const filteredExecutableNodes = executableNodes.filter((node) => nodesToInclude.includes(node.id));
+  filteredExecutableNodes.forEach(assertExecutableDeviceOffloadPlan);
   const includedNodeIds = new Set(filteredExecutableNodes.map((node) => node.id));
 
   const nodesExport: ApiGraphExport['nodes'] = {};
@@ -193,9 +250,61 @@ export function buildApiGraphExport({
     });
   }
 
+  const loops = nodes
+    .filter((node) => node.data.type === 'loop' && !isNodeDisabled(node))
+    .map((loopNode) => {
+      const body = filteredExecutableNodes.filter((node) => hasContainerAncestor(node, loopNode.id, nodes));
+      if (body.length === 0) return null;
+      const directBody = body.filter((node) => node.parentId === loopNode.id);
+      const inputs = directBody.filter(
+        (node) => node.data.module === 'modules.WorkflowControl' && node.data.action === 'LoopInput',
+      );
+      const indexes = directBody.filter(
+        (node) => node.data.module === 'modules.WorkflowControl' && node.data.action === 'LoopIndex',
+      );
+      const items = directBody.filter(
+        (node) => node.data.module === 'modules.WorkflowControl' && node.data.action === 'LoopItems',
+      );
+      const results = directBody.filter(
+        (node) => node.data.module === 'modules.WorkflowControl' && node.data.action === 'LoopResult',
+      );
+      if (inputs.length > 1 || indexes.length > 1 || items.length > 1 || results.length !== 1) {
+        throw new Error(
+          `${loopNode.data.label || 'Loop'} needs exactly one Loop Result and at most one Loop Input, Loop Index, and Loop Items node.`,
+        );
+      }
+      const maxIterations = paramNumber(loopNode, 'max_iterations', 100);
+      const iterations = paramNumber(loopNode, 'iterations', 1);
+      const iterationMode: 'count' | 'collection' =
+        loopNode.data.params.iteration_mode?.value === 'collection' ? 'collection' : 'count';
+      if (iterationMode === 'collection' && items.length !== 1) {
+        throw new Error(`${loopNode.data.label || 'Loop'} needs one Loop Items node in collection mode.`);
+      }
+      if (maxIterations < 1 || maxIterations > 10000 || iterations < 1 || iterations > maxIterations) {
+        throw new Error(`${loopNode.data.label || 'Loop'} iterations must be between 1 and its maximum (up to 10000).`);
+      }
+      return {
+        id: loopNode.id,
+        bodyNodeIds: body.map((node) => node.id),
+        iterations,
+        maxIterations,
+        ...(inputs[0] ? { inputNodeId: inputs[0].id } : {}),
+        ...(indexes[0] ? { indexNodeId: indexes[0].id } : {}),
+        ...(items[0] ? { itemNodeId: items[0].id } : {}),
+        resultNodeId: results[0]!.id,
+        iterationMode,
+        carry: paramBoolean(loopNode, 'carry', true),
+        collect: paramBoolean(loopNode, 'collect', true),
+        maxRetries: Math.max(0, Math.min(10, paramNumber(loopNode, 'max_retries', 1))),
+        ...(loopNode.parentId ? { parentLoopId: loopNode.parentId } : {}),
+      };
+    })
+    .filter((loop): loop is NonNullable<typeof loop> => Boolean(loop));
+
   return {
     sid: sessionId,
     nodes: nodesExport,
     paths,
+    ...(loops.length > 0 ? { loops } : {}),
   };
 }

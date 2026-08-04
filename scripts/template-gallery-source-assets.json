@@ -12,14 +12,34 @@
       "negativePrompt": "rain, raindrops on glass, water streaks, wet window, wet street, window condensation, storm, umbrella, night scene, blue velvet, brass lamps, moved furniture, warped room geometry, fisheye distortion, duplicate chairs, people, clutter, signage, text, blown windows, crushed shadows, soft focus"
     },
     {
+      "id": "qwen-wan-amber-vessel-reference",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "wan-amber-vessel-reference-v2.webp",
+      "downstreamTemplates": ["wan_vace_masked_object_replace"],
+      "timeoutMs": 1800000,
+      "prompt": "Photograph one translucent amber square glass vessel as a clean product identity reference. Show the complete rigid open-top vessel in a straight-on three-quarter view on a neutral warm-gray stone tabletop. Preserve four vertical faces, gently rounded square corners, a clearly visible square rim opening, consistent wall thickness, a thick flat base, realistic amber refraction, restrained highlights, and a grounded contact shadow. Soft overcast studio light, sharp material detail, plain defocused background, no liquid, label, lettering, cap, pump, duplicate object, hand, plant, warped rim, melting corner, floating base, illustration, or CGI.",
+      "negativePrompt": "round bottle, cylinder, closed top, lid, cap, pump, liquid, label, lettering, logo, duplicate vessel, extra object, hand, plant, warped glass, melting corner, uneven rim, floating object, illustration, cartoon, CGI"
+    },
+    {
       "id": "qwen-layered-coastal-singer-source",
       "template": "high_quality",
       "mediaType": "image",
       "stagedFilename": "qwen-layered-coastal-singer-source.webp",
-      "downstreamTemplates": ["qwen_layered_portrait", "layer_decomposition"],
+      "downstreamTemplates": ["character_edit"],
       "timeoutMs": 1800000,
       "prompt": "Source-plate objective: create a finished cinematic medium portrait designed for later layer decomposition. Subject: one female singer in her early thirties with an oval face, warm brown skin, shoulder-length windblown black hair with one narrow copper streak, a reflective silver jacket over a charcoal top, and one vintage black microphone held at chest height. Pose and crop: waist-up three-quarter stance on the right third, face turned slightly toward camera, both hands readable, hair flyaways separated against the sky, and generous clean space on the left. Environment: windswept rocky coast at warm late afternoon, sparkling ocean, one distant tall ship, soft haze, and a few defocused amber stage-like practical lights integrated behind the subject. Layer-friendly finish: distinct foreground silhouette, separated hair edge, readable jacket panels, microphone, ocean, sky, ship, haze, and typography-safe negative space; realistic skin, cinematic 50 mm lens, subtle grain, no text.",
       "negativePrompt": "extra people, extra microphone, merged hair and sky, cropped head, hidden hands, plastic skin, jagged silhouette, busy background, duplicate ship, warped jacket, text, logo, watermark, low detail"
+    },
+    {
+      "id": "qwen-layered-observatory-portrait-source",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "qwen-layered-observatory-portrait-source.webp",
+      "downstreamTemplates": ["qwen_layered_portrait"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: make one photorealistic documentary portrait with three clearly separated depth groups for later layer decomposition. Scene: blue hour inside the open observing deck of a real alpine observatory. One adult woman astronomer stands center-right in an ordinary navy field jacket and charcoal trousers, seen from head to below the knee with natural anatomy and both relaxed empty hands fully visible beside her body. A physically separate brass-and-matte-black refractor telescope stands on its own sturdy three-leg tripod in the lower-left foreground; the complete telescope, mount, all three tripod feet, and their contact shadows are visible, with clear air separating every part of it from the woman, her hands, and her clothing. Scale contract: the telescope tube is about seventy percent of the woman’s visible height, its eyepiece is near her waist level, and the tripod is smaller than the standard observatory doorway behind her. Background: one white observatory dome, one standard-height open doorway, a restrained metal safety rail, mountain silhouettes, and a clear deep-blue sky. Camera: eye-level 50 mm perspective, realistic human and architectural proportions, crisp subject edge, natural low-contrast ambient light with one soft warm interior practical, subtle photographic grain. No text, logo, neon, colored glow, fantasy machinery, or theatrical costume.",
+      "negativePrompt": "giant telescope, oversized telescope, tiny telescope, telescope taller than doorway, telescope touching person, hand on telescope, body overlap, intersecting objects, floating tripod, missing tripod foot, warped tripod, extra person, extra telescope, distorted anatomy, cropped feet, fisheye, neon, pink light, green light, CGI, illustration, text, logo, watermark"
     },
     {
       "id": "wan-gallery-subject-front-reference",
@@ -53,6 +73,146 @@
       "negativePrompt": "lamp, person, hand, overlapping object, clutter, multiple clocks, floating clock, warped tabletop, extreme perspective, text, logo, watermark, blown highlights, crushed shadows, soft focus"
     },
     {
+      "id": "qwen-inpaint-field-cup-source",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "qwen-inpaint-field-cup-source.webp",
+      "downstreamTemplates": ["qwen_inpaint_mask_draft"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: photograph a realistic geologist's temporary field desk inside a weathered beige canvas survey tent, with one isolated object prepared for precise replacement. Use a slightly elevated natural 50 mm camera over a scratched birch-plywood table. On the right third place one plain cream enamel camp mug with a dark green rim, compact C-shaped handle, empty unmarked face, correct contact shadow, and at least six centimeters of bare tabletop around its full silhouette. On the left place one closed slate-gray field notebook, one graphite pencil, three distinct palm-sized basalt samples, and one folded topographic map whose markings are too small to read. Keep the tent wall, stitched seams, wooden support pole, and softly blurred dry grass outside the open flap structurally clear. Lighting is soft neutral morning daylight from the left with warm canvas bounce, realistic enamel highlights, wood scratches, stone texture, restrained depth of field, and documentary color. No clock, watch, dial, lamp, cable, bottle, person, hand, readable text, logo, or artificial studio sweep.",
+      "negativePrompt": "clock, watch, dial, clock hands, lamp, cable, bottle, person, hand, readable text, logo, watermark, duplicate mug, oversized mug, floating mug, overlapping prop, warped handle, impossible contact shadow, CGI render, illustration, plastic materials, extreme bokeh"
+    },
+    {
+      "id": "qwen-inpaint-entryway-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "qwen-inpaint-entryway-source-v2.webp",
+      "downstreamTemplates": ["qwen_inpaint_object_replace"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: create a photorealistic lived-in entryway console prepared for one precise object-replacement edit. Show a pale oak console against a warm off-white plaster wall, viewed straight-on with a natural 50 mm camera. Place one compact plain matte-black rounded-square storage box alone on the right third with a clean margin around all edges; it must have no clock face, hands, dial, logo, cable, light, label, or text. On the far left keep one shallow ceramic key bowl and one neatly folded rust-colored scarf; above them show two simple empty wall hooks. A softly open doorway recedes in the background. Use neutral afternoon window light from the left, realistic oak grain, plaster texture, one correct contact shadow and moderate depth of field. Keep the black box fully visible and isolated for masking. No lamp, clock, bottle, plant, person, glowing object, artificial studio sweep or rendered text.",
+      "negativePrompt": "clock, clock hands, dial, lamp, cable, light source, glow, bottle, plant, person, hand, multiple boxes, overlapping object, floating box, warped console, extreme perspective, logo, text, watermark, CGI render, plastic materials, soft focus"
+    },
+    {
+      "id": "qwen-inpaint-entryway-source-v3",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "qwen-inpaint-entryway-source-v3.webp",
+      "downstreamTemplates": ["qwen_inpaint_object_replace"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: create a wide, photorealistic lived-in entryway with one small isolated object prepared for precise replacement. Show the full length of a slim pale-oak console against warm lime-plaster, viewed straight-on at natural eye level with a 50 mm lens. On the right third place one closed matte-charcoal trinket box only fourteen centimeters wide and ten centimeters high, approximately the same size as the shallow ceramic key bowl on the far left. Give the box a simple rectangular silhouette, four centimeters of bare tabletop around every edge, a small realistic contact shadow, and no overlapping prop. Add a folded rust linen scarf beside the key bowl, three dark wall hooks above, a woven shoe basket visible below the console, and an open doorway receding at far left. Use soft neutral afternoon window light from the left, modest warm hallway bounce, realistic oak grain, plaster texture, fabric weave, ordinary perspective, moderate depth of field, and documentary interior photography finish.",
+      "negativePrompt": ""
+    },
+    {
+      "id": "qwen-outpaint-coastal-researcher-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "qwen-outpaint-coastal-researcher-source-v2.webp",
+      "downstreamTemplates": ["qwen_outpaint_aspect_template"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: create a square photorealistic documentary portrait designed for later horizontal outpainting. Show one marine field researcher in their late thirties wearing a practical mustard waterproof jacket and dark knit cap, kneeling beside a tide pool while writing on one small black waterproof slate with one graphite pencil. The slate and pencil are the sole field equipment. Keep both hands anatomically readable, face natural and body fully inside the central sixty percent of frame. Make the uncluttered foreground a continuous expanse of natural basalt rock, seaweed and low coastal grass. Use a chest-height 50 mm camera, level gray sea horizon behind the subject, neutral overcast coastal light, realistic wet fabric, skin and rock texture, and gentle documentary grain. Leave simple natural continuation cues at all side boundaries and keep important features away from the left and right edges.",
+      "negativePrompt": "bottle, flask, vial, sample jar, cup, canteen, container, product photo, red cap, loose equipment, extra person, duplicate equipment, extra fingers, malformed hands, cropped body, tilted horizon, studio sweep, greenhouse, orchids, fantasy glow, oversaturated color, text, logo, watermark, illustration, CGI render"
+    },
+    {
+      "id": "flux-fill-bookbinder-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "flux-fill-bookbinder-source-v2.webp",
+      "downstreamTemplates": ["flux_fill_outpaint"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: create a square photorealistic documentary photograph designed for later horizontal outpainting. Show one traditional bookbinder from chest to hands at a worn maple workbench, folding a cream paper signature with one bone folder. Keep two anatomically correct hands clearly visible, one open unprinted book block, linen thread, a cutting mat and a small steel ruler; no clocks, watches, dials, lamps, cables or glowing objects. Use a natural 50 mm camera, the worker centered in the middle sixty percent, real shelves of paper softly behind, cool window key from the left and warm ambient workshop bounce. Preserve ordinary perspective, believable tool scale, paper fibers, wood wear and documentary grain. Keep the side boundaries simple for continuation and include no readable text, logos or synthetic studio background.",
+      "negativePrompt": "clock, watch, dial, clock hands, lamp, cable, glow, extra fingers, duplicate hands, floating tool, warped ruler, unreadable writing, logo, text, bottle, greenhouse, CGI render, illustration, plastic skin, extreme bokeh"
+    },
+    {
+      "id": "flux-redux-watchmaker-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "flux-redux-watchmaker-source-v2.webp",
+      "downstreamTemplates": ["flux_redux_edit"],
+      "timeoutMs": 1800000,
+      "prompt": "Reference objective: create a natural real-location editorial portrait of one elderly watchmaker seated at a repair bench in a small street workshop. Place the subject on the left third, leaning slightly toward one mechanical wristwatch held between two anatomically correct hands, wearing a charcoal cardigan and pale blue work shirt. His uncovered eyes look directly at the watch. The sole bench tools are one pair of steel tweezers and one shallow tray of brass gears on worn timber. Keep the background spare: plain lime plaster, rows of small unlabelled wooden parts drawers, and one north-facing window with a lowered linen blind and a completely empty sill. Use a chest-height 50 mm documentary camera, soft window light, realistic skin pores, wool, brass and steel, ordinary workshop shadows and restrained film color.",
+      "negativePrompt": "plant, flower, orchid, vase, foliage, greenhouse, wall clock, clock face, visible clock hands, extra fingers, duplicate hands, malformed watch, cream overcoat, centered fashion pose, theatrical light, illustration, animation, CGI render, plastic skin, text, logo, watermark"
+    },
+    {
+      "id": "flux-redux-underpass-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "flux-redux-underpass-source-v2.webp",
+      "downstreamTemplates": ["flux_redux_multi_reference"],
+      "timeoutMs": 1800000,
+      "prompt": "Environment reference objective: photograph an empty real at-grade concrete pedestrian underpass just after rain for a later multi-reference documentary composite. Use a fixed eye-level 35 mm camera looking diagonally through one straight rectangular tunnel. The sole floor plane is a level, continuous asphalt walking-and-cycling lane running uninterrupted from the near edge to the daylight exit. Evenly spaced rectangular concrete columns, ordinary enclosed white fluorescent fixtures, linear drain channels, realistic stains and grounded rain reflections establish strict perspective. Keep the entire center lane open and make every structural edge straight, practical and buildable. Use restrained documentary color and ordinary municipal materials.",
+      "negativePrompt": "stairs, ramp, skate ramp, half-pipe, curved panel, platform, loose object, person, bicycle, greenhouse, orchids, ceramic studio, neon glow, fog, graffiti, readable text, logo, warped columns, impossible reflection, illustration, animation, CGI render, watermark"
+    },
+    {
+      "id": "flux-redux-courier-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "flux-redux-courier-source-v2.webp",
+      "downstreamTemplates": ["flux_redux_multi_reference"],
+      "timeoutMs": 1800000,
+      "prompt": "Subject reference objective: create a clean photorealistic identity and equipment plate for one urban bicycle courier. Show one woman in her early thirties with natural proportions, short dark hair, a practical rust-red waterproof jacket, charcoal trousers and scuffed black shoes, standing beside one dark cargo bicycle with a small non-glowing white headlamp. Keep both hands, both feet, wheels, frame, chain and handlebar fully readable and mechanically plausible. Use neutral overcast street light, chest-height 50 mm camera, plain gray masonry background and honest fabric, skin, rubber and metal texture. No underpass, greenhouse, flowers, fashion pose, extra person, extra bicycle, warped wheel, glowing lamp, text or logo.",
+      "negativePrompt": "extra person, extra bicycle, warped wheel, broken frame, extra limbs, extra fingers, glowing headlamp, fashion pose, greenhouse, orchids, underpass, illustration, animation, CGI render, plastic skin, text, logo, watermark"
+    },
+    {
+      "id": "flux-klein-boot-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "flux-klein-boot-source-v2.webp",
+      "downstreamTemplates": ["flux2_klein_multi_reference"],
+      "timeoutMs": 1800000,
+      "prompt": "Composition reference objective: create one photorealistic worn hiking boot resting naturally on a damp mossy trail rock after rain. Show the complete boot in a low front three-quarter 70 mm view, toe pointing left, with a mechanically plausible lug sole, six pairs of eyelets, correctly threaded laces, leather and canvas panels, mud wear and a grounded contact shadow. Use soft forest overcast light, wet moss, shallow background foliage and realistic material texture. Keep one boot only and no foot, person, glass cube, studio plinth, duplicated lace, bent sole, floating object, logo or text.",
+      "negativePrompt": "pair of boots, extra boot, foot, person, glass cube, studio plinth, broken sole, extra eyelets, impossible laces, floating boot, synthetic shine, illustration, CGI render, logo, text, watermark"
+    },
+    {
+      "id": "flux-klein-textile-source-v2",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "flux-klein-textile-source-v2.webp",
+      "downstreamTemplates": ["flux2_klein_multi_reference"],
+      "timeoutMs": 1800000,
+      "prompt": "Material reference objective: create one perpendicular 100 mm macro photograph of a flat archival material sample. Mount exactly two completely flat rectangular swatches on a neutral gray conservation board. The left rectangle is dense indigo woven canvas; the right rectangle is dark brown waxed leather. Join only their straight vertical inner edges with one straight rust-orange double-stitched sample seam. All eight corners are square, all four outer edges are flat and fully visible, and wide empty gray board surrounds the sample. Make weave direction, thread thickness, stitch spacing and leather grain unambiguous under soft neutral side light. The image contains only the board, the two rectangles and the sample seam.",
+      "negativePrompt": "curved panel, folded leather, finished object, product detail, boot, shoe silhouette, sole, laces, eyelet, metal ring, hole, zipper, person, glass cube, purple glass, decorative pattern, logo, text, letters, plastic fabric, blurry weave, crooked seam, blown highlight, watermark"
+    },
+    {
+      "id": "z-spa-vanity-relight-source",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-spa-vanity-relight-source.webp",
+      "downstreamTemplates": ["qwen_product_relight"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-plate objective: photograph one quiet mineral-spa vanity at blue hour with a clear product-sized landing area for a later relighting edit. Composition: square editorial interior photograph, eye-level 50 mm lens, a long pale honed-limestone counter crossing the lower third, one shallow carved-stone basin on the far left, a slim unlacquered-brass faucet behind it, and a completely empty clean counter area occupying the lower-right quadrant. Background: warm lime-plaster wall, one narrow window at upper left revealing a dim blue coastal horizon, two folded off-white linen towels on a recessed shelf, and one sparse eucalyptus branch in a small wall niche. Lighting: cool window key from upper left, restrained warm concealed shelf light from right, soft realistic contact shadows, balanced highlight detail, natural stone pores and fine photographic grain. Keep the empty right-hand counter uninterrupted, level and at least forty percent of the frame width. No bottle, cosmetics, soap, packaging, glass vessel, candle, text, logo, mirror reflection, people, neon, or decorative clutter.",
+      "negativePrompt": "bottle, cosmetic product, soap dispenser, packaging, glass vessel, candle, text, logo, people, crowded counter, object on right landing area, warped countertop, tilted horizon, extra basin, oversized faucet, mirror reflection, artificial glow, neon, illustration, CGI plastic materials, blown window, low detail"
+    },
+    {
+      "id": "z-sculptural-chair-subject-reference",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-sculptural-chair-subject-reference.webp",
+      "downstreamTemplates": ["reference_fusion"],
+      "timeoutMs": 1800000,
+      "prompt": "Subject-reference objective: one photorealistic design-archive photograph of a single sculptural lounge chair whose geometry can be preserved in a later material-transfer edit. Chair design: broad low curved back flowing continuously into two thick arms, one deep seat cushion, a visible walnut shell around the outer back, and four short splayed brushed-steel feet with mechanically plausible attachment points. Camera: eye-level front three-quarter 70 mm view, entire chair and all feet visible, centered on a seamless neutral warm-gray sweep with generous margins. Lighting: large soft key from upper left, gentle fill, precise contact shadow and crisp edge separation. Upholstery is plain matte light-gray wool so geometry is unambiguous. No room, person, side table, pillow, logo, text, extra chair, floating leg, exaggerated fisheye or decorative pattern.",
+      "negativePrompt": "multiple chairs, sofa, person, room interior, side table, pillow, logo, text, cropped foot, floating leg, broken arm, asymmetrical back, impossible join, busy fabric, velvet, cobalt enamel, distorted perspective, illustration, plastic CGI, watermark"
+    },
+    {
+      "id": "z-touring-bicycle-subject-reference",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-touring-bicycle-subject-reference.webp",
+      "downstreamTemplates": ["qwen_multi_reference_product"],
+      "timeoutMs": 1800000,
+      "prompt": "Subject-reference objective: one photorealistic engineering catalog plate of exactly one full-size diamond-frame road-touring bicycle, designed as a geometry reference for a later multi-reference product composite. Show two equal 700C wheels, a complete double-triangle steel frame, straight fork, level top tube, one saddle, one compact drop handlebar with two brake hoods, front disc brake, crankset, chain, rear cassette, rear derailleur, and one mechanically connected pedal pair. Camera: standing eye-height side three-quarter 70 mm view, entire bicycle visible from tire to tire with generous margins, both circular wheels unobstructed and aligned on one ground line. Materials are neutral matte gray steel and black rubber so later material transfer is clear. Use a seamless warm-gray studio floor, broad soft key, restrained contact shadows, and realistic spoke density. No rider, stand, mudguards, cargo rack, luggage, basket, bottle, motor, logo, letters, duplicate bicycle, extra wheel, bent frame, oval wheel, crossed fork, floating pedal, illustration, or dramatic colored light.",
+      "negativePrompt": "person, rider, duplicate bicycle, extra wheel, unequal wheels, oval wheel, bent frame, missing frame tube, broken fork, impossible chain, extra crank, floating pedal, mudguard, cargo rack, basket, luggage, bottle, motor, logo, text, letters, cropped tire, fisheye, illustration, toy, CGI plastic, watermark"
+    },
+    {
+      "id": "z-canal-bicycle-courtyard-reference",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-canal-bicycle-courtyard-reference.webp",
+      "downstreamTemplates": [],
+      "timeoutMs": 1800000,
+      "prompt": "Location-and-scale-reference objective: one finished photorealistic editorial photograph of a canal-side bicycle repair courtyard at soft overcast morning, prepared for a later in-place product replacement. Composition: a level pale cobblestone foreground, one weathered ochre lime-plaster wall crossing the background, one standard dark timber doorway fully visible at right as a clear two-metre human-scale anchor, a low stone workbench at far left, and a narrow glimpse of calm canal water through the doorway. Place exactly one simple unbranded matte-black adult city bicycle against the central wall as a temporary placement and scale anchor. The bicycle must be fully visible, occupy thirty to forty percent of the image width, have two equal circular wheels each measuring twenty-eight to thirty-eight percent of the doorway height, and touch the same ground plane. Camera: standing eye height, 50 mm lens, square framing, straight verticals, realistic stone joints, chipped plaster, muted daylight, soft contact-shadow direction, and fine documentary grain. No second bicycle, vehicle, person, tools on the ground, signage, text, logo, neon, fantasy architecture, decorative clutter, or warped doorway.",
+      "negativePrompt": "duplicate bicycle, extra wheel, unequal wheels, oval wheel, vehicle, person, text, sign, logo, cluttered ground, loose tools, extra door, tiny doorway, warped doorway, tilted verticals, crowded courtyard, neon, cyberpunk, illustration, plastic materials, blown sky, watermark"
+    },
+    {
       "id": "qwen-logo-mark-source",
       "template": "qwen_text_rendering",
       "mediaType": "image",
@@ -73,6 +233,16 @@
       "negativePrompt": "finished product, logo, text, letters, busy pattern, rust, scratches, fingerprints, bolts, multiple panels, warped perspective, plastic material, flat lighting, blown reflection, low detail"
     },
     {
+      "id": "z-green-marble-brass-material-reference",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-green-marble-brass-material-reference.webp",
+      "downstreamTemplates": ["qwen_logo_texture"],
+      "timeoutMs": 1800000,
+      "prompt": "Material-reference objective: one perpendicular 100 mm macro photograph of a premium architectural inlay sample for a later logo material transfer. Show a large continuous slab of deep forest-green bookmatched marble bordered on one side by a narrow aged-satin-brass bevel. The stone has sparse believable pale mineral veins crossing the center seam, subtle crystalline depth, honed low-gloss reflection and no cracks; the brass has fine directional grain, softened patina and one restrained warm highlight. Keep the material boundaries, vein scale, bevel construction and reflectivity unambiguous. Neutral charcoal surroundings may reflect faintly at the outer edge. No finished object, logo, letters, fasteners, decorative motif, hands, cobalt blue, chrome, enamel, plastic or watermark.",
+      "negativePrompt": "finished product, logo, text, letters, symbol, busy veining, cracked stone, gemstone sparkle, emerald jewel, cobalt blue, chrome, enamel, plastic, bolts, fingerprints, warped perspective, blown highlight, low detail, watermark"
+    },
+    {
       "id": "z-harbor-grayscale-control-still",
       "template": "z_image_quick_concept",
       "mediaType": "image",
@@ -87,20 +257,168 @@
       "template": "z_image_cinematic_contact_sheet",
       "mediaType": "image",
       "stagedFilename": "flux-coastal-pavilion-control-source.webp",
-      "downstreamTemplates": ["flux_control_canny"],
+      "downstreamTemplates": ["flux_control_canny", "flux_depth_control"],
       "timeoutMs": 1800000,
       "prompt": "Control-source objective: create one clean wide architectural visualization whose geometry can be converted into a strict Canny edge map for a later coastal-pavilion render. Architecture: one compact single-story research pavilion on a low dune, long shallow asymmetrical roofline, board-formed concrete service core on the left, transparent glazed working hall on the right, six evenly spaced dark mullions, one recessed entrance, three broad exterior steps, a thin accessible ramp and railing, and a shallow rectangular reflecting pool in the foreground. Composition and geometry: fixed 32 mm eye-level view from front-left, strong two-point perspective, entire building visible with clear margins, low horizon, uncluttered facade divisions, crisp openings, readable stair and pool edges, sparse dune grass kept away from structural contours, and only one tiny distant person. Lighting: soft late-afternoon overcast with a warm horizon break, enough tonal separation for edge detection, realistic materials, no fog obscuring geometry, no text, labels, vehicles, trees crossing the facade, or decorative clutter.",
       "negativePrompt": "curved dome, bottle, product, close crop, extra building, extra floor, busy vegetation, trees crossing edges, crowd, cars, warped roofline, hidden stairs, flat elevation, fisheye, text, labels, logo, watermark, soft focus"
     },
     {
-      "id": "wan-toolbox-courier-source-video",
-      "template": "wan_vace_cinematic_text_to_video",
+      "id": "z-museum-conservation-outpaint-still",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-museum-conservation-outpaint-still.webp",
+      "downstreamTemplates": ["wan_vace_outpaint_reframe"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-frame objective: create one photorealistic documentary photograph designed to be extended laterally into a wider museum-conservation workspace. Center composition: one adult ceramic conservator in a slate-blue cotton work coat sits naturally at a worn oak bench, viewed in side three-quarter profile, using both gloved hands to align two large fragments of one cracked blue-and-white stoneware bowl. Keep the complete person, chair, bowl, hands, bench edge and one articulated task lamp inside the central half of the square frame with clear side margins. Environment: a real museum study room with lime-plaster walls, shallow evidence of tall gray archival shelving at both extreme edges, brown specimen boxes without labels, one folded linen pad, a small brush tray, and a distant frosted window. Camera and light: eye-level 50 mm documentary lens, straight verticals, soft north-window key from the left, restrained warm task-lamp bounce, believable skin, cloth, ceramic, timber and metal texture, grounded chair and feet, fine natural grain. The image must feel like a real occupied workspace with enough architectural lines and shelf rhythm to extend beyond both borders. No text, logo, extra person, extra arm, malformed hand, floating bowl fragment, glowing ceramic, theatrical neon, illustration, CGI sheen, fisheye distortion, or clutter covering the subject.",
+      "negativePrompt": "text, logo, extra person, extra limb, malformed hands, duplicate bowl, floating fragment, glowing object, neon light, illustration, cartoon, CGI, plastic skin, warped shelving, crooked verticals, fisheye, cluttered subject, low detail, watermark"
+    },
+    {
+      "id": "wan-chef-mise-en-place-keyframe-v1",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "wan-chef-mise-en-place-keyframe-v1.webp",
+      "width": 960,
+      "height": 640,
+      "downstreamTemplates": ["wan_22_i2v_seed_vault"],
+      "timeoutMs": 1800000,
+      "prompt": "Opening keyframe for a later five-second photoreal image-to-video shot in a high-end fine-dining restaurant kitchen during dinner service. Show exactly one adult chef at a walnut prep counter in waist-up side three-quarter view, calm and focused, wearing a clean white cotton chef jacket with sleeves below the elbows and one plain charcoal apron. Both complete hands must be clearly visible and anatomically natural: the knife hand holds exactly one ordinary eight-inch stainless chef knife above one straight orange carrot; the guide hand rests in a safe curled claw grip with fingertips tucked behind the knuckles. The carrot lies horizontally on exactly one thick rectangular walnut cutting board, with four already separated uniform carrot rounds in a neat row and an uncut section beneath the raised blade. Place one simple finished white plate beyond the board and one folded white towel at the far counter edge. Background: a real restrained stainless-steel open kitchen with one warm pass light, shallow shelves, copper pans softly out of focus, and no other people. Camera: counter-height 50 mm documentary lens close enough that the hands, knife, carrot and board occupy the foreground while the chef's recognizable face remains sharp in the upper third; straight geometry, realistic pores, cloth weave, timber grain, food texture and metal reflections, natural warm-neutral exposure, moderate depth of field and enough counter edge for lateral parallax. This is a real editorial food photograph, not a posed portrait or advertisement. Exactly two hands, ten total fingers, one knife, one carrot, one cutting board and one plate; no text, logo, branding, hat, extra utensil, liquid, flame, garnish cloud, illustration, CGI, cartoon or fantasy lighting.",
+      "negativePrompt": "deformity, deformed anatomy, deformed limbs, malformed hands, extra fingers, missing fingers, fused fingers, extra hand, extra arm, detached limb, duplicate person, extra person, duplicate knife, extra knife, bent knife, warped knife, unsafe grip, fingers under blade, floating utensil, duplicate carrot, warped carrot, fused food, multiple cutting boards, multiple plates, chef hat, logo, text, watermark, illustration, painting, animation, cartoon, CGI, plastic skin, beauty retouching, neon light, excessive blur, fisheye"
+    },
+    {
+      "id": "z-ltx-rally-car-source",
+      "template": "z_image_quick_concept",
+      "mediaType": "image",
+      "stagedFilename": "z-ltx-rally-car-source.webp",
+      "downstreamTemplates": ["ltx_video_image_to_video", "ltx_video_video_to_video"],
+      "timeoutMs": 1800000,
+      "prompt": "Source-frame objective: create one photorealistic motorsport documentary still designed as the opening frame of a later image-to-video proof. Show one white late-1970s rally coupe entering a wet mountain hairpin, three-quarter front view, with all four wheels physically aligned to the road, correct suspension stance, two round auxiliary lamps and restrained period bodywork. Compose strong depth for tracking motion: close wet road markings and gravel at the lower edge, guardrail posts receding around the bend, and misty conifer ridges in the distance. Use a low roadside 50 mm camera, natural overcast light, realistic rain beads, tire contact patches, reflections and restrained color. No driver close-up, second vehicle, crash, floating wheel, warped body, text, logo, CGI or illustration.",
+      "negativePrompt": "second car, crash, floating wheel, extra wheel, warped body, melted grille, impossible steering, showroom, studio, neon color, CGI, illustration, cartoon, text, logo, watermark"
+    },
+    {
+      "id": "qwen-ltx-boardwalk-opening-reference",
+      "template": "high_quality",
+      "mediaType": "image",
+      "stagedFilename": "ltx-boardwalk-tracking-start.webp",
+      "downstreamTemplates": ["ltx_video_multi_reference"],
+      "timeoutMs": 1800000,
+      "prompt": "Opening keyframe for a later fast tracking video, photographed as a realistic coastal-weather documentary. A low stabilized camera stands at the beginning of one weathered timber boardwalk that runs from the lower center into a deep rightward curve through dense golden dune grass toward a rough slate-gray ocean. Place three close wet planks and two black rope-posts near the lower edges for strong future parallax; keep the complete empty walkway, stable cliff horizon, layered storm clouds, rain haze and wind-bent grass readable. Natural cold overcast exposure, realistic timber, vegetation, water and scale, 28 mm lens, no people, animals, buildings, signs, lettering, logos, fantasy light, illustration or CGI.",
+      "negativePrompt": "person, animal, building, sign, text, logo, duplicate walkway, broken planks, warped horizon, impossible railing, neon, fantasy, illustration, cartoon, CGI, static studio, soft focus, watermark"
+    },
+    {
+      "id": "qwen-ltx-boardwalk-closing-reference",
+      "template": "character_edit",
+      "mediaType": "image",
+      "stagedFilename": "ltx-boardwalk-tracking-end-forward-v3.webp",
+      "referenceImages": ["artifacts/template-gallery/source-assets/ltx-boardwalk-tracking-start.webp"],
+      "downstreamTemplates": ["ltx_video_multi_reference"],
+      "timeoutMs": 1800000,
+      "prompt": "Create the closing keyframe of a substantial forward tracking move through the supplied coastal boardwalk scene without mirroring or redesigning the location. Preserve the same weather, timber, golden grass, lens height and travel direction. The slate-gray ocean must remain on frame left and the cliff headland on frame right. Move the camera roughly twenty-five meters forward along the existing rightward curve: every source foreground post has passed behind the camera, a new run of rope posts crosses the right foreground, nearby planks are visibly larger, and the same headland is substantially closer. Keep one empty continuous walkway with consistent perspective and cold overcast exposure. This must read as physical forward travel, not a zoom. No people, animals, buildings, signs, text, scene flip, new coastline, fantasy light, illustration or CGI.",
+      "negativePrompt": "mirrored scene, ocean on right, cliff on left, different location, reversed direction, person, animal, building, sign, text, logo, duplicate walkway, disconnected planks, warped horizon, impossible railing, neon, fantasy, illustration, cartoon, CGI, soft focus, watermark"
+    },
+    {
+      "id": "qwen-ltx-rescue-pines-keyframe",
+      "template": "character_edit",
+      "mediaType": "image",
+      "stagedFilename": "ltx-rescue-pines-keyframe.webp",
+      "referenceImages": ["public/template-gallery/inputs/ltx_video_image_to_video.before.webp"],
+      "downstreamTemplates": ["ltx_video_long_showcase"],
+      "timeoutMs": 1800000,
+      "prompt": "Create a new photoreal road-thriller keyframe from the supplied car photograph. Preserve the exact compact white late-1970s rally coupe: black hood, two integrated round headlamps, three smaller round auxiliary lamps, black wheels, white rear spoiler, window shape and body proportions. Place this same car climbing left-to-right on a narrow damp asphalt road through dense dark pines, seen from a low rear three-quarter tracking position with close trunks and reflector posts ready for strong parallax. Natural overcast light, all four wheels on the road, one car only, no text, logo, people, collision, illustration or CGI.",
+      "negativePrompt": "different car, changed hood, changed lamp count, missing lamp, extra lamp, extra wheel, duplicate car, warped body, floating tire, showroom, people, text, logo, illustration, cartoon, CGI, watermark"
+    },
+    {
+      "id": "qwen-ltx-rescue-barrier-keyframe",
+      "template": "character_edit",
+      "mediaType": "image",
+      "stagedFilename": "ltx-rescue-barrier-keyframe.webp",
+      "referenceImages": ["public/template-gallery/inputs/ltx_video_image_to_video.before.webp"],
+      "downstreamTemplates": ["ltx_video_long_showcase"],
+      "timeoutMs": 1800000,
+      "prompt": "Create a photoreal road-thriller keyframe from the supplied car photograph. Preserve the exact compact white late-1970s rally coupe with black hood, two integrated round headlamps, three auxiliary round lamps, black wheels, white rear spoiler, windows and rigid body proportions. Build one unmistakable Y-shaped mountain junction viewed from a high roadside three-quarter camera: the wet paved road continues left but is completely blocked by exactly one ordinary red-and-white barrier, while a separate unblocked gravel service lane branches steeply uphill on frame right. Stop the complete car on wet asphalt before the fork, pointed toward the open gravel branch with all four wheels grounded. Keep the single barrier, both road branches and intended maneuver fully readable. Cold wet daylight, no people, impact, machinery, signs, text, logo, illustration or CGI.",
+      "negativePrompt": "different car, changed hood, changed lamp count, extra car, duplicate barrier, second barrier, barrier on gravel lane, blocked service lane, missing road fork, impact, broken barrier, impossible junction, extra wheel, floating tire, people, sign, text, logo, illustration, cartoon, CGI, watermark"
+    },
+    {
+      "id": "qwen-ltx-rescue-snow-keyframe",
+      "template": "character_edit",
+      "mediaType": "image",
+      "stagedFilename": "ltx-rescue-snow-keyframe.webp",
+      "referenceImages": ["public/template-gallery/inputs/ltx_video_image_to_video.before.webp"],
+      "downstreamTemplates": ["ltx_video_long_showcase"],
+      "timeoutMs": 1800000,
+      "prompt": "Create a photoreal road-thriller keyframe from the supplied car photograph. Preserve the exact compact white late-1970s rally coupe through its rigid body proportions, fastback side windows, black wheels, white rear spoiler, black rear bumper and rectangular period taillamps. Use a low rear three-quarter tracking view so the front grille, headlamps and auxiliary lamps are naturally outside the frame and cannot be redesigned. Place the complete car climbing left-to-right above the pine line on a narrow snow-dusted ridge road. One small real weather mast stands far ahead; near snow poles cross both frame edges for later tracking motion. Restrained gray daylight, plausible tire contact and scale, no avalanche, people, second car, text, logo, illustration or CGI.",
+      "negativePrompt": "front view, visible front grille, visible headlamp, visible auxiliary lamp, different car, changed roofline, missing rear spoiler, changed taillamps, extra car, buried wheels, floating tire, avalanche, fantasy tower, people, text, logo, illustration, cartoon, CGI, watermark"
+    },
+    {
+      "id": "qwen-ltx-rescue-station-approach-keyframe",
+      "template": "character_edit",
+      "mediaType": "image",
+      "stagedFilename": "ltx-rescue-station-approach-keyframe.webp",
+      "referenceImages": ["public/template-gallery/inputs/ltx_video_image_to_video.before.webp"],
+      "downstreamTemplates": ["ltx_video_long_showcase"],
+      "timeoutMs": 1800000,
+      "prompt": "Create a new photoreal road-thriller keyframe from the supplied car photograph. Preserve the exact compact white late-1970s rally coupe with black hood, two integrated round headlamps, three auxiliary round lamps, black wheels, white rear spoiler, windows and rigid body proportions. Show the same car driving toward one small stone mountain weather station and ordinary antenna on an exposed ridge road. Use a stabilized rear chase viewpoint with foreground snow poles and dark rocks ready to sweep past; the station must be clearly recognizable ahead. Natural storm light, no people, second car, fantasy structure, text, logo, illustration or CGI.",
+      "negativePrompt": "different car, changed hood, changed lamps, duplicate car, extra wheel, warped station, castle, science fiction, people, text, logo, illustration, cartoon, CGI, watermark"
+    },
+    {
+      "id": "qwen-ltx-rescue-station-arrival-keyframe",
+      "template": "character_edit",
+      "mediaType": "image",
+      "stagedFilename": "ltx-rescue-station-arrival-keyframe.webp",
+      "referenceImages": ["public/template-gallery/inputs/ltx_video_image_to_video.before.webp"],
+      "downstreamTemplates": ["ltx_video_long_showcase"],
+      "timeoutMs": 1800000,
+      "prompt": "Create the final photoreal road-thriller keyframe from the supplied car photograph. Preserve the exact compact white late-1970s rally coupe through its rigid body proportions, fastback side windows, black wheels, white rear spoiler, black rear bumper and rectangular period taillamps. Show a low rear three-quarter view so its front grille and lamps remain naturally outside the frame. The complete car has just entered the wet gravel yard of one small stone mountain weather station and is rolling slowly toward a closed gray equipment door; every car door, hatch and window is visibly closed. The ordinary antenna and one switched-off exterior lamp are readable on the stone wall. Cold gray daylight, four grounded wheels, room ahead to stop, no people, second car, open door, lit lamp, text, logo, illustration or CGI.",
+      "negativePrompt": "front view, visible front grille, visible headlamp, visible auxiliary lamp, different car, changed roofline, missing rear spoiler, changed taillamps, open car door, open building door, lit exterior lamp, duplicate car, extra wheel, floating tire, fantasy building, people, text, logo, illustration, cartoon, CGI, watermark"
+    },
+    {
+      "id": "ltx-night-market-grade-source",
+      "template": "ltx_video_text_to_video",
       "mediaType": "video",
-      "stagedFilename": "wan-toolbox-courier-source-video.mp4",
+      "stagedFilename": "ltx-night-market-grade-source.mp4",
+      "downstreamTemplates": ["wan_vace_video_color_grade"],
+      "timeoutMs": 3600000,
+      "prompt": "Five-second photoreal night-market tracking shot. Motion begins immediately: a shoulder-height camera moves forward past close hanging lanterns and steaming food stalls while one cook tosses noodles over a brief wok flame and customers cross at different depths. Lanterns sweep past both edges, wet pavement reflections slide backward, steam curls, fabric awnings move, and the far aisle opens with strong parallax. Preserve faces, bodies, stall geometry, exposure and screen direction throughout one continuous shot. Natural documentary color, no text or logos.",
+      "negativePrompt": ""
+    },
+    {
+      "id": "ltx-harbor-inpaint-source",
+      "template": "ltx_video_text_to_video",
+      "mediaType": "video",
+      "stagedFilename": "ltx-harbor-inpaint-source.mp4",
       "downstreamTemplates": ["wan_vace_masked_object_replace"],
-      "timeoutMs": 28800000,
-      "prompt": "Source-video objective: one continuous five-second live-action shot designed for a later tracked-object replacement. Subject: one warehouse courier in a charcoal work jacket and dark trousers walks left to right while carrying a single bright-red rectangular steel toolbox in the right hand. Toolbox contract: low rectangular body, black folding handle, two silver latches, fully visible for most frames, consistent size, no logo, and no other red objects nearby. Timeline: open on a medium-wide side view as the courier lifts the toolbox from a waist-high concrete bench, takes four grounded steps across a wet industrial service corridor, then sets it on a second bench. Camera: stabilized chest-height 50 mm parallel dolly, constant speed, no cuts, stable corridor geometry. Lighting: cool skylight, sparse warm practicals, realistic floor reflection, contact shadows, hand occlusion, cloth inertia, and natural motion blur. Preserve a clean margin around the moving toolbox for mask tracking; no other people, no text, no camera shake.",
-      "negativePrompt": "multiple people, multiple toolboxes, changing toolbox shape, hidden toolbox, red clothing, logo, text, floating object, broken grip, sliding feet, pose reset, camera cut, jitter, flicker, warped corridor, exposure pumping, low detail"
+      "timeoutMs": 3600000,
+      "prompt": "Five-second photoreal dawn harbor shot from a low quay. A small safety-red pilot boat travels steadily left to right across the middle distance while three pedestrians walk in the foreground and a large fishing vessel remains behind them. The camera tracks right immediately; bollards sweep past, wakes widen, reflections slide and mist moves. Preserve one red pilot boat, water contact, human scale, hull geometry, horizon and screen direction through one continuous shot. Muted natural color, no text or logos.",
+      "negativePrompt": ""
+    },
+    {
+      "id": "ltx-conservator-outpaint-source",
+      "template": "ltx_video_text_to_video",
+      "mediaType": "video",
+      "stagedFilename": "ltx-conservator-outpaint-source.mp4",
+      "downstreamTemplates": ["wan_vace_outpaint_reframe"],
+      "timeoutMs": 3600000,
+      "prompt": "Five-second photoreal museum-conservation documentary. Center one ceramic conservator in a slate-blue coat at an oak bench, rotating one cracked bowl while an assistant crosses behind carrying a tray. The camera slides right immediately; a task lamp and close tool cart pass with strong parallax while shelves shift against a frosted window. Preserve faces, hands, one bowl, chair contact, bench geometry, verticals and scale throughout one continuous shot. Real north-window light and warm lamp bounce, no text.",
+      "negativePrompt": ""
+    },
+    {
+      "id": "ltx-highland-train-control-source",
+      "template": "ltx_video_text_to_video",
+      "mediaType": "video",
+      "stagedFilename": "ltx-highland-train-control-source.mp4",
+      "downstreamTemplates": ["wan_vace_grayscale_control"],
+      "timeoutMs": 3600000,
+      "prompt": "Five-second photoreal aerial tracking shot of one black steam locomotive pulling four burgundy carriages left to right across a wet stone viaduct in the Scottish Highlands. Motion starts immediately: wheels turn, steam trails backward, foreground bracken sweeps past and the camera tracks beside the train as valley and mountains reveal strong parallax. Preserve locomotive scale, four carriages, connected couplings, wheel cadence, viaduct arches, travel direction and mountain geometry through one continuous shot. Overcast post-rain light, no text.",
+      "negativePrompt": ""
+    },
+    {
+      "id": "ltx-field-robot-v2v-source",
+      "template": "ltx_video_text_to_video",
+      "mediaType": "video",
+      "stagedFilename": "ltx-field-robot-v2v-source.mp4",
+      "downstreamTemplates": ["wan_vace_video_to_video"],
+      "timeoutMs": 3600000,
+      "prompt": "Five-second photoreal engineering documentary of one compact orange tracked field robot crossing a warm rocky plain left to right. Motion begins immediately: both treads rotate, dust peels backward, its camera mast vibrates slightly and the lateral camera tracks beside it. Close stones sweep past while distant dry mountains shift with strong parallax. Preserve one rover, rigid body scale, mast, antenna, tread contact, travel direction, terrain and exposure throughout one continuous shot. Restrained late-afternoon light, no people, text or logos.",
+      "negativePrompt": ""
     }
   ]
 }

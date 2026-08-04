@@ -1,0 +1,21 @@
+{
+  "ltx_video_video_to_video": {
+    "sourceVideo": "artifacts/template-gallery/source-assets/hf-rocket_generated_motion-v1.mp4"
+  },
+  "ltx_video_multi_reference": {
+    "referenceImages": [
+      "artifacts/template-gallery/source-assets/ltx-boardwalk-tracking-start.webp",
+      "artifacts/template-gallery/source-assets/ltx-boardwalk-tracking-end-forward-v3.webp"
+    ]
+  },
+  "ltx_video_long_showcase": {
+    "referenceImages": [
+      "public/template-gallery/inputs/ltx_video_image_to_video.before.webp",
+      "artifacts/template-gallery/source-assets/ltx-rescue-pines-yellow-keyframe-v2.webp",
+      "artifacts/template-gallery/source-assets/ltx-rescue-barrier-keyframe.webp",
+      "artifacts/template-gallery/source-assets/ltx-rescue-snow-keyframe.webp",
+      "artifacts/template-gallery/source-assets/ltx-rescue-station-arrival-keyframe.webp",
+      "artifacts/template-gallery/source-assets/ltx-rescue-station-approach-keyframe.webp"
+    ]
+  }
+}

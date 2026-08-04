@@ -1,7 +1,7 @@
 import { applyEdgeChanges, type Edge, type EdgeChange } from '@xyflow/react';
 import { nanoid } from 'nanoid';
 
-import { dataTypeClass } from '../utils/dataTypeCategory';
+import { decorateConnectionEdge, decorateConnectionEdges } from '../theme/connectionTypes';
 import type { CustomConnection, FlowStore } from './useFlowStore';
 
 type FlowStoreSet = (
@@ -59,7 +59,7 @@ export function handleEdgesChange(changes: EdgeChange<Edge>[], set: FlowStoreSet
       }
     });
 
-  const newEdges = applyEdgeChanges(changes, get().edges);
+  const newEdges = decorateConnectionEdges(get().nodes, applyEdgeChanges(changes, get().edges));
   set({ edges: newEdges });
 
   if (removedEdges.length > 0) {
@@ -69,26 +69,25 @@ export function handleEdgesChange(changes: EdgeChange<Edge>[], set: FlowStoreSet
 }
 
 function buildEdgeFromConnection(conn: CustomConnection, get: FlowStoreGet) {
-  const sourceNode = get().nodes.find((node) => node.id === conn.source);
-  const handleType = sourceNode?.data.params?.[conn.sourceHandle || '']?.type || 'default';
-
-  return {
-    ...conn,
-    id: nanoid(),
-    type: conn.edgeType || 'default',
-    className: dataTypeClass(handleType),
-  };
+  return decorateConnectionEdge(
+    {
+      ...conn,
+      id: nanoid(),
+      type: conn.edgeType || 'default',
+    },
+    get().nodes,
+  );
 }
 
 function updateSpawnReplacement(conn: CustomConnection, edgeToUpdate: Edge, get: FlowStoreGet, set: FlowStoreSet) {
-  const sourceNode = get().nodes.find((node) => node.id === conn.source);
-  const handleType = sourceNode?.data.params?.[conn.sourceHandle || '']?.type || 'default';
-  const updatedEdge = {
-    ...edgeToUpdate,
-    source: conn.source,
-    sourceHandle: conn.sourceHandle,
-    className: dataTypeClass(handleType),
-  };
+  const updatedEdge = decorateConnectionEdge(
+    {
+      ...edgeToUpdate,
+      source: conn.source,
+      sourceHandle: conn.sourceHandle,
+    },
+    get().nodes,
+  );
 
   set({ edges: get().edges.map((edge) => (edge.id === edgeToUpdate.id ? updatedEdge : edge)) });
   get().updateHandleConnectionStatus();

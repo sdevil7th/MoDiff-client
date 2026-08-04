@@ -28,8 +28,8 @@ export function StudioParameterExplainers({ form }: StudioParameterExplainersPro
       <div className="grid gap-1 border border-modiff-border bg-modiff-bg p-2">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-start gap-2 text-xs">
-            <Info size={13} className="mt-0.5 shrink-0 text-hf-gray" />
-            <p className="min-w-0 text-gray-400">
+            <Info size={13} className="mt-0.5 shrink-0 text-modiff-subtle-text" />
+            <p className="min-w-0 text-modiff-subtle-text">
               <span className="font-semibold text-modiff-text">{label}:</span> {value}
             </p>
           </div>

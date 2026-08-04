@@ -5,13 +5,31 @@ import { useRunIssueStore } from '../stores/useRunIssueStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import { ensureStudioGraphReadyForRun } from '../studio/graphBridge';
-import { addLoraWorkflowBlock, addUpscaleWorkflowBlock } from '../studio/controlledWorkflows';
+import {
+  createOrUpdateStudioGraph,
+  ensureStudioGraphReadyForRun,
+  inspectStudioGraphBindingDivergence,
+  validateStudioGraphReadyForRun,
+  waitForStudioGraphFinalization,
+} from '../studio/graphBridge';
+import {
+  addLoraWorkflowBlock,
+  addLyricVideoWorkflowBlock,
+  addQualityVideoSequenceWorkflowBlock,
+  addSoundtrackWorkflowBlock,
+  addUpscaleWorkflowBlock,
+  addVideoSequenceWorkflowBlock,
+} from '../studio/controlledWorkflows';
 import { handleWebsocketMessage } from '../stores/websocketMessageHandler';
 import { inspectCurrentGraph, validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
-import { STUDIO_TEMPLATES } from '../studio/templates';
+import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
+import { materializeTemplateDefaultInputs } from '../studio/templateInputs';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
+import type { UserBlockDefinition } from '../studio/types';
+import { createUserBlockNode, normalizeUserBlockDefinition } from '../studio/userBlocks';
+import { arrangeGraphNodes, waitForGraphNodeMeasurements } from '../workflow/graphLayout';
+import { decorateConnectionEdges } from '../theme/connectionTypes';
 import type {
   StudioFormState,
   StudioImportedAsset,
@@ -25,10 +43,12 @@ type GalleryTemplateSummary = {
   label: string;
   mode: string;
   modelType: string;
+  category?: string;
   exampleStatus: string;
   mediaType: string;
   thumbnailVariant?: string;
   workflowBlocks: string[];
+  runtimeReuseKey?: string;
 };
 
 type GalleryRunResult = {
@@ -47,23 +67,41 @@ type GraphConnectionForTest = {
 };
 
 type GraphScenarioForTest =
-  'empty' | 'no_enabled' | 'outputless' | 'disconnected_output' | 'missing_model' | 'multi_model_compare';
+  | 'empty'
+  | 'no_enabled'
+  | 'outputless'
+  | 'disconnected_output'
+  | 'disconnected_image_output'
+  | 'missing_model'
+  | 'multi_model_compare';
 
 type ModiffE2EHooks = {
   getState: () => unknown;
-  listTemplates: () => GalleryTemplateSummary[];
+  listTemplates: (includePlanning?: boolean) => GalleryTemplateSummary[];
   applyTemplate: (templateId: StudioTemplateId, formOverrides?: Partial<StudioFormState>) => Promise<void>;
   refreshModelIndexes: () => Promise<void>;
-  installHfModel: (repoId: string, repair?: boolean) => Promise<unknown>;
+  installHfModel: (repoId: string, repair?: boolean, files?: string[]) => Promise<unknown>;
   runActiveTemplate: () => Promise<GalleryRunResult>;
   runPreparedTemplateGraph: (graph: APIGraphExport) => Promise<GalleryRunResult>;
   applyNodeDefinitionForAction: (action: string, params: Record<string, unknown>) => boolean;
   inspectCurrentGraph: () => unknown;
+  inspectStudioGraphBindingDivergence: () => unknown;
+  exportWorkflowGraph: () => unknown;
+  prepareWorkflowGraphForExport: () => Promise<unknown>;
+  arrangeWorkflowGraphSnapshot: (graph: {
+    nodes?: CustomNodeType[];
+    edges?: import('@xyflow/react').Edge[];
+  }) => unknown;
   setGraphScenarioForTest: (scenario: GraphScenarioForTest) => void;
+  loadUserBlockForTest: (definition: UserBlockDefinition) => string;
+  toggleUserBlockForTest: (id: string) => void;
   addCustomNodeForTest: (key?: string) => string;
   connectGraph: (connection: GraphConnectionForTest) => void;
   setFirstNodeCollapsedByAction: (action: string, collapsed: boolean) => boolean;
   setFirstNodePositionByAction: (action: string, position: { x: number; y: number }) => boolean;
+  setFirstNodeSizeByAction: (action: string, size: { width: number; height: number }) => boolean;
+  selectFirstNodeByAction: (action: string) => boolean;
+  selectNodesByAction: (actions: string[]) => number;
   setWebsocketConnection: (connection: { sid?: string | null; isConnected?: boolean }) => void;
   startStudioRunForTest: (identity: { clientRunId: string; runInputHash: string; taskId?: string | null }) => {
     clientRunId: string;
@@ -75,6 +113,7 @@ type ModiffE2EHooks = {
     assets: Array<Partial<StudioImportedAsset> & { id: string; url: string; name: string }>,
   ) => void;
   openWorkspacePanelForTest: (tab: WorkspacePanelTab) => void;
+  setWorkspacePanelOpenForTest: (open: boolean) => void;
   sendWebsocketMessage: (message: unknown) => void;
 };
 
@@ -84,41 +123,130 @@ declare global {
   }
 }
 
+// Gallery qualification sometimes performs an explicitly non-exact, low-cost
+// screening run before committing to the template's full locked settings. Auto
+// planning can legitimately replace generation settings while choosing a local
+// artifact, so retain the caller's probe overrides and reapply them only after
+// Auto has finished. This is isolated to the E2E bridge; normal Studio runs keep
+// the selected template and Auto contracts unchanged.
+let pendingGalleryFormOverrides: Partial<StudioFormState> = {};
+
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function listTemplates(): GalleryTemplateSummary[] {
-  return STUDIO_TEMPLATES.map((template) => ({
+function listTemplates(includePlanning = false): GalleryTemplateSummary[] {
+  const templates = includePlanning ? [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES] : STUDIO_TEMPLATES;
+  return templates.map((template) => ({
     id: template.id,
     label: template.label,
     mode: template.mode,
     modelType: template.modelType,
+    category: template.category,
     exampleStatus: template.example?.status ?? 'unverified',
     mediaType: template.example?.mediaType ?? 'image',
     thumbnailVariant: template.thumbnailVariant,
     workflowBlocks: [...(template.workflowBlocks ?? [])],
+    runtimeReuseKey: template.runtimeReuseKey,
   }));
 }
 
 async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partial<StudioFormState> = {}) {
-  const template = STUDIO_TEMPLATES.find((item) => item.id === templateId);
+  const template = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].find((item) => item.id === templateId);
   if (!template) {
     throw new Error(`Unknown Studio template: ${templateId}`);
   }
 
-  useStudioStore.getState().applyTemplate(template);
+  if (!useStudioStore.getState().workflowCanvasHydrated) {
+    useStudioStore.getState().hydrateActiveWorkflowCanvas();
+  }
+  useFlowStore.getState().replaceGraph({
+    nodes: [],
+    edges: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+  useStudioStore.getState().setGraphBinding(null);
+  const inputDefaults = await materializeTemplateDefaultInputs(template);
+  useStudioStore.getState().applyTemplate(template, inputDefaults);
+  pendingGalleryFormOverrides = { ...formOverrides };
   if (Object.keys(formOverrides).length > 0) {
     useStudioStore.getState().updateForm(formOverrides);
   }
-  await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
-  for (const block of template.workflowBlocks ?? []) {
-    if (block === 'lora') {
-      await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora);
-    } else {
-      await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler);
+  const workflowTabId = useStudioStore.getState().activeWorkflowTabId ?? 'e2e-template-workflow';
+  useStudioStore.getState().setCanvasTransition({
+    type: 'template_graph_building',
+    workflowTabId,
+    templateId: template.id,
+    startedAt: Date.now(),
+  });
+  try {
+    await createOrUpdateStudioGraph(useStudioStore.getState().form);
+    const coreFinalized = await waitForStudioGraphFinalization(30_000);
+    if (!coreFinalized) {
+      throw new Error('The template graph did not finish finalizing within 30 seconds.');
+    }
+    for (const block of template.workflowBlocks ?? []) {
+      if (block === 'lora') {
+        await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora);
+      } else if (block === 'upscaler') {
+        await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler);
+      } else if (block === 'video_sequence') {
+        await addVideoSequenceWorkflowBlock(
+          useStudioStore.getState().form,
+          template.workflowBlockSettings?.videoSequence,
+        );
+      } else if (block === 'quality_video_sequence') {
+        await addQualityVideoSequenceWorkflowBlock(
+          useStudioStore.getState().form,
+          template.workflowBlockSettings?.qualityVideoSequence,
+        );
+      } else if (block === 'soundtrack') {
+        await addSoundtrackWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.soundtrack);
+      } else {
+        await addLyricVideoWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lyricVideo);
+      }
+    }
+    const blocksFinalized = await waitForStudioGraphFinalization(30_000);
+    if (!blocksFinalized) {
+      throw new Error('The template workflow blocks did not finish finalizing within 30 seconds.');
+    }
+    const finalization = useStudioStore.getState().graphFinalization;
+    if (finalization?.status === 'error') {
+      throw new Error(finalization.message ?? 'The template graph could not be finalized.');
+    }
+    await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
+    await useFlowStore.getState().arrangeGraph({ history: false });
+    validateStudioGraphReadyForRun(useStudioStore.getState().form);
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+  } catch (error) {
+    if (useFlowStore.getState().nodes.length === 0) {
+      useStudioStore.getState().setGraphBinding(null);
+      useStudioStore.getState().setGraphFinalization(null);
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+    }
+    throw error;
+  } finally {
+    const transition = useStudioStore.getState().canvasTransition;
+    if (transition?.workflowTabId === workflowTabId && transition.templateId === template.id) {
+      useStudioStore.getState().setCanvasTransition(null);
     }
   }
+}
+
+async function prepareWorkflowGraphForExport() {
+  await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
+  await useFlowStore.getState().arrangeGraph({ history: false });
+  return cloneJson(useFlowStore.getState().toObject());
+}
+
+function arrangeWorkflowGraphSnapshot(graph: { nodes?: CustomNodeType[]; edges?: import('@xyflow/react').Edge[] }) {
+  const nodes = cloneJson(graph.nodes ?? []);
+  const edges = cloneJson(graph.edges ?? []);
+  return {
+    ...cloneJson(graph),
+    nodes: arrangeGraphNodes(nodes, edges),
+    edges: decorateConnectionEdges(nodes, edges),
+  };
 }
 
 async function runActiveTemplate(): Promise<GalleryRunResult> {
@@ -139,9 +267,41 @@ async function runActiveTemplate(): Promise<GalleryRunResult> {
       useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
     );
   }
+  if (Object.keys(pendingGalleryFormOverrides).length > 0) {
+    const autoPlan = useStudioStore.getState().autoResourcePlan;
+    const selectedCandidate = autoPlan?.selectedCandidate;
+    const generationOverrides = Object.fromEntries(
+      (['width', 'height', 'steps', 'guidanceScale', 'negativePrompt', 'maxSequenceLength'] as const).flatMap(
+        (field) =>
+          pendingGalleryFormOverrides[field] === undefined ? [] : [[field, pendingGalleryFormOverrides[field]]],
+      ),
+    );
+    const updatedPlan =
+      autoPlan && selectedCandidate && Object.keys(generationOverrides).length > 0
+        ? {
+            ...autoPlan,
+            selectedCandidate: {
+              ...selectedCandidate,
+              generation: {
+                ...selectedCandidate.generation,
+                ...generationOverrides,
+              },
+            },
+          }
+        : autoPlan;
+    if (updatedPlan) {
+      // Gallery screening overrides are generation-only. Commit them through
+      // the same atomic path as a normal Auto run so updateForm's generic
+      // fallback cannot silently replace the selected resource recipe.
+      useStudioStore.getState().applyAutoResourcePlan(updatedPlan, pendingGalleryFormOverrides);
+    } else {
+      useStudioStore.getState().updateForm(pendingGalleryFormOverrides);
+    }
+  }
   // Auto may apply the selected candidate's model, quantization, dimensions, or
-  // offload settings. Those changes schedule a new managed-graph finalization,
-  // so validate only after the post-plan graph is ready as well.
+  // offload settings. Gallery probe overrides may then restore bounded
+  // generation values. Both changes schedule a managed-graph finalization, so
+  // validate only after the final graph is ready as well.
   await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
   const validation = validateCurrentRun({
     sid,
@@ -181,6 +341,18 @@ async function runPreparedTemplateGraph(graph: APIGraphExport): Promise<GalleryR
   if (!sid || !websocket.isConnected) {
     throw new Error('MoDiff websocket is not connected.');
   }
+
+  // Deterministic duplicate capture reuses the exact graph submitted for the
+  // first proof, but Auto admission is intentionally live. Refresh and retain
+  // the app-selected plan so the prepared graph receives current proof and
+  // runtime hints instead of being submitted with an empty Auto contract.
+  const autoReady = await ensureStudioAutoPlanReadyForRun();
+  if (!autoReady) {
+    throw new Error(
+      useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
+    );
+  }
+  await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
 
   useStudioStore.getState().addPromptHistory(useStudioStore.getState().form.prompt);
   const { context, response } = await coordinateGraphRun({
@@ -251,9 +423,13 @@ function setGraphScenarioForTest(scenario: GraphScenarioForTest) {
     graphFinalization: null,
     launcherDismissed: true,
   });
+  const replaceScenarioGraph = (graph: Partial<ReturnType<typeof useFlowStore.getState>>) => {
+    useFlowStore.setState(graph);
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+  };
 
   if (scenario === 'empty') {
-    useFlowStore.setState({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } });
+    replaceScenarioGraph({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } });
     return;
   }
 
@@ -270,7 +446,7 @@ function setGraphScenarioForTest(scenario: GraphScenarioForTest) {
     scenario === 'no_enabled',
   );
   if (scenario === 'outputless' || scenario === 'no_enabled') {
-    useFlowStore.setState({
+    replaceScenarioGraph({
       nodes: scenario === 'outputless' ? [prompt] : [prompt, preview],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -279,8 +455,22 @@ function setGraphScenarioForTest(scenario: GraphScenarioForTest) {
   }
 
   if (scenario === 'disconnected_output') {
-    useFlowStore.setState({
+    replaceScenarioGraph({
       nodes: [prompt, preview],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    });
+    return;
+  }
+
+  if (scenario === 'disconnected_image_output') {
+    const loader = makeGraphScenarioNode('modules.Image.Load', 'scenario-image-load', { x: -360, y: 0 });
+    loader.data.params.file = {
+      ...loader.data.params.file,
+      value: 'data/studio/outputs/fix-contract-input.webp',
+    };
+    replaceScenarioGraph({
+      nodes: [loader, preview],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
     });
@@ -310,7 +500,7 @@ function setGraphScenarioForTest(scenario: GraphScenarioForTest) {
     };
     const firstPreview = makeGraphScenarioNode('modules.Image.Preview', 'scenario-preview-a', { x: 120, y: -120 });
     const secondPreview = makeGraphScenarioNode('modules.Image.Preview', 'scenario-preview-b', { x: 120, y: 220 });
-    useFlowStore.setState({
+    replaceScenarioGraph({
       nodes: [firstModel, secondModel, firstPreview, secondPreview],
       edges: [
         {
@@ -340,7 +530,7 @@ function setGraphScenarioForTest(scenario: GraphScenarioForTest) {
     ...model.data.params.repo_id,
     value: 'missing/GraphModel',
   };
-  useFlowStore.setState({
+  replaceScenarioGraph({
     nodes: [model, preview],
     edges: [
       {
@@ -356,10 +546,27 @@ function setGraphScenarioForTest(scenario: GraphScenarioForTest) {
   });
 }
 
+function loadUserBlockForTest(definition: UserBlockDefinition) {
+  const node = createUserBlockNode(normalizeUserBlockDefinition(definition), { x: 120, y: 100 });
+  useFlowStore.getState().replaceGraph({
+    nodes: [node],
+    edges: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+  return node.id;
+}
+
+function toggleUserBlockForTest(id: string) {
+  useFlowStore.getState().toggleUserBlockExpanded(id);
+}
+
 function addCustomNodeForTest(key = 'modules.Image.Preview') {
   const id = `custom-${Date.now()}`;
   const node = makeGraphScenarioNode(key, id, { x: 720, y: 220 });
   useFlowStore.getState().addNode(node);
+  if (useStudioStore.getState().graphBinding) {
+    useStudioStore.getState().detachManagedGraph();
+  }
   return id;
 }
 
@@ -390,6 +597,39 @@ function setFirstNodePositionByAction(action: string, position: { x: number; y: 
     nodes: state.nodes.map((item) => (item.id === node.id ? { ...item, position } : item)),
   }));
   return true;
+}
+
+function setFirstNodeSizeByAction(action: string, size: { width: number; height: number }) {
+  const node = useFlowStore.getState().nodes.find((item) => item.data.action === action);
+  if (!node) {
+    return false;
+  }
+  useFlowStore.getState().setNodeSize(node.id, size.width, size.height);
+  return true;
+}
+
+function selectFirstNodeByAction(action: string) {
+  const node = useFlowStore.getState().nodes.find((item) => item.data.action === action);
+  if (!node) {
+    return false;
+  }
+  useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((item) => ({ ...item, selected: item.id === node.id })),
+  }));
+  return true;
+}
+
+function selectNodesByAction(actions: string[]) {
+  const selectedActions = new Set(actions);
+  let selectedCount = 0;
+  useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((item) => {
+      const selected = selectedActions.has(item.data.action);
+      if (selected) selectedCount += 1;
+      return { ...item, selected };
+    }),
+  }));
+  return selectedCount;
 }
 
 function setWebsocketConnection(connection: { sid?: string | null; isConnected?: boolean }) {
@@ -519,6 +759,10 @@ function openWorkspacePanelForTest(tab: WorkspacePanelTab) {
   });
 }
 
+function setWorkspacePanelOpenForTest(open: boolean) {
+  useSettingsStore.getState().setRightPanelOpen(open);
+}
+
 function sendWebsocketMessage(message: unknown) {
   handleWebsocketMessage(message as never, {
     sid: useWebsocketStore.getState().sid,
@@ -542,8 +786,11 @@ export function installE2EHooks() {
               : useFlowStore.getState().nodes.length,
           nodes: useFlowStore.getState().nodes.map((node) => ({
             id: node.id,
+            selected: node.selected,
+            position: node.position,
             module: node.data.module,
             action: node.data.action,
+            label: node.data.label,
             params: Object.fromEntries(
               Object.entries(node.data.params).map(([key, param]) => [
                 key,
@@ -577,6 +824,7 @@ export function installE2EHooks() {
           historyFuture: useFlowStore.getState().historyFuture.length,
         },
         studio: {
+          workflowCanvasHydrated: useStudioStore.getState().workflowCanvasHydrated,
           form: useStudioStore.getState().form,
           graphBinding: useStudioStore.getState().graphBinding,
           graphFinalization: useStudioStore.getState().graphFinalization,
@@ -586,6 +834,7 @@ export function installE2EHooks() {
           workflowTabs: useStudioStore.getState().workflowTabs,
           activeWorkflowTabId: useStudioStore.getState().activeWorkflowTabId,
           activeTemplateId: useStudioStore.getState().activeTemplateId,
+          autoFieldOverrides: useStudioStore.getState().autoFieldOverrides,
           currentRunContext: useStudioStore.getState().currentRunContext,
           lastError: useStudioStore.getState().lastError,
         },
@@ -620,22 +869,32 @@ export function installE2EHooks() {
     listTemplates,
     applyTemplate,
     refreshModelIndexes: () => useNodesStore.getState().refreshModelIndexes(true),
-    installHfModel: (repoId: string, repair = false) =>
-      useNodesStore.getState().installHfModel(repoId, useWebsocketStore.getState().sid, { repair }),
+    installHfModel: (repoId: string, repair = false, files: string[] = []) =>
+      useNodesStore.getState().installHfModel(repoId, useWebsocketStore.getState().sid, { repair, files }),
     runActiveTemplate,
     runPreparedTemplateGraph,
     applyNodeDefinitionForAction,
     inspectCurrentGraph: () => cloneJson(inspectCurrentGraph()),
+    inspectStudioGraphBindingDivergence: () => cloneJson(inspectStudioGraphBindingDivergence()),
+    exportWorkflowGraph: () => cloneJson(useFlowStore.getState().toObject()),
+    prepareWorkflowGraphForExport,
+    arrangeWorkflowGraphSnapshot,
     setGraphScenarioForTest,
+    loadUserBlockForTest,
+    toggleUserBlockForTest,
     addCustomNodeForTest,
     connectGraph,
     setFirstNodeCollapsedByAction,
     setFirstNodePositionByAction,
+    setFirstNodeSizeByAction,
+    selectFirstNodeByAction,
+    selectNodesByAction,
     setWebsocketConnection,
     startStudioRunForTest,
     seedStudioOutputsForTest,
     seedImportedAssetsForTest,
     openWorkspacePanelForTest,
+    setWorkspacePanelOpenForTest,
     sendWebsocketMessage,
   };
 

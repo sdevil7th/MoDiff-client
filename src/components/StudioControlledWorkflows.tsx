@@ -203,7 +203,12 @@ export function StudioControlledWorkflows({ disabled = false, form, onChange }: 
                     <h4 className="text-xs font-bold text-modiff-text">{row.title}</h4>
                     <StudioChip tone={statusTone(row.status)}>{statusLabel(row.status)}</StudioChip>
                   </div>
-                  <p className={cx('mt-1 text-xs', row.status === 'blocked' ? 'text-hf-orange' : 'text-gray-400')}>
+                  <p
+                    className={cx(
+                      'mt-1 text-xs',
+                      row.status === 'blocked' ? 'text-hf-orange' : 'text-modiff-subtle-text',
+                    )}
+                  >
                     {row.detail}
                   </p>
                 </div>

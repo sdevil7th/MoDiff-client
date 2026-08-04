@@ -28,7 +28,12 @@ function normalizeModelText(value: string) {
 
 export function cacheContains(cache: unknown[], repo: string) {
   const repoLower = normalizeModelText(repo);
-  return cache.some((item) => normalizeModelText(modelItemText(item)).includes(repoLower));
+  return cache.some((item) => {
+    if (!normalizeModelText(modelItemText(item)).includes(repoLower)) return false;
+    if (!item || typeof item !== 'object') return true;
+    const status = item as { complete?: unknown; installed?: unknown; repair_required?: unknown };
+    return status.complete !== false && status.installed !== false && status.repair_required !== true;
+  });
 }
 
 export function localModelsContain(localModels: unknown[], repo: string) {

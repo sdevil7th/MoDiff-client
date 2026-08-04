@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible MoDiff Client defect.
+title: '[Bug] '
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include Hugging Face tokens, private media, personal paths, or exploit details. Report security issues through the private process in `SECURITY.md`.
+  - type: checkboxes
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched existing issues and tested the current supported branch.
+          required: true
+        - label: I reproduced this with a compatible backend, or identified it as a mocked client-only issue.
+          required: true
+  - type: textarea
+    attributes:
+      label: Problem
+      description: Explain what is wrong and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Minimal reproduction
+      description: List the smallest sequence of actions and include a sanitized workflow only if needed.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: Include client/backend commits, OS, browser, Node version, and whether the backend or network was mocked.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Sanitized evidence
+      description: Attach the smallest useful screenshot or log after removing tokens, prompts, private media, local paths, and account data.

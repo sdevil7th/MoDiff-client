@@ -1,12 +1,15 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { memo, useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { Folder, Home, LoaderCircle, Search } from 'lucide-react';
+import { Folder, Home, LoaderCircle } from 'lucide-react';
 
 import config from '../../app.config';
 import { useDebounce } from '../utils/useDebounce';
 
 import { useFlowStore } from '../stores/useFlowStore';
+import { useStudioStore } from '../stores/useStudioStore';
 import { fileBrowserParams } from '../stores/useSettingsStore';
-import { ModiffButton } from '../ui';
+import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffIconButton, ModiffSearchInput } from '../ui';
 import { cx } from '../utils/classNames';
 import { createLatestRequestGate, requestJson } from '../utils/requestJson';
 
@@ -80,40 +83,75 @@ function formatFileSize(size: number | null): string {
 
 const DirectoryRow = memo(({ file, onPathChange }: { file: FileItem; onPathChange: (path: string) => void }) => (
   <tr
-    className="cursor-pointer border-b border-modiff-border hover:bg-white/10"
+    role="button"
+    tabIndex={0}
+    className="cursor-pointer border-b border-modiff-border hover:bg-modiff-surface-hover"
     onClick={() => onPathChange(file.path)}
+    onKeyDown={(event) => {
+      if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      onPathChange(file.path);
+    }}
   >
     <td className="w-8 p-0 text-center">
       <Folder size={16} className="mx-auto text-hf-yellow" />
     </td>
     <td className="px-2 py-1 text-sm text-modiff-text">{file.name}</td>
-    <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-gray-400" />
-    <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-gray-400">{formatDate(file.modified)}</td>
+    <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-modiff-subtle-text" />
+    <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-modiff-subtle-text">
+      {formatDate(file.modified)}
+    </td>
   </tr>
 ));
+
+type FileRowActivationEvent = Pick<MouseEvent, 'shiftKey' | 'target'>;
 
 const FileRow = memo(
   ({
     file,
     isSelected,
     onFileClick,
+    onFileToggle,
   }: {
     file: FileItem;
     isSelected: boolean;
-    onFileClick: (file: FileItem, e: MouseEvent) => void;
+    onFileClick: (file: FileItem, event: FileRowActivationEvent) => void;
+    onFileToggle: (file: FileItem, checked: boolean) => void;
   }) => (
     <tr
-      className={cx('cursor-pointer border-b border-modiff-border hover:bg-white/10', isSelected && 'bg-modiff-panel')}
+      role="button"
+      tabIndex={0}
+      className={cx(
+        'cursor-pointer border-b border-modiff-border hover:bg-modiff-surface-hover',
+        isSelected && 'bg-modiff-selected-surface',
+      )}
       onClick={(e) => onFileClick(file, e)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        onFileClick(file, event);
+      }}
     >
       <td className="w-8 p-0 text-center">
-        <input type="checkbox" checked={isSelected} tabIndex={-1} readOnly className="size-4 accent-hf-yellow" />
+        <span
+          className="inline-flex"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <ModiffCheckbox
+            checked={isSelected}
+            label={<span className="sr-only">{`Select ${file.name}`}</span>}
+            onCheckedChange={(checked) => onFileToggle(file, checked)}
+          />
+        </span>
       </td>
       <td className="break-all px-2 py-1 text-sm text-modiff-text">{file.name}</td>
-      <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-gray-400">
+      <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-modiff-subtle-text">
         {file.size ? formatFileSize(file.size) : '-'}
       </td>
-      <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-gray-400">{formatDate(file.modified)}</td>
+      <td className="whitespace-nowrap px-2 py-1 text-right text-sm text-modiff-subtle-text">
+        {formatDate(file.modified)}
+      </td>
     </tr>
   ),
 );
@@ -127,7 +165,12 @@ function FileBrowserDialog({
   onClose: () => void;
   onSelect?: (files: string[]) => void;
 }) {
-  const setParam = useFlowStore((state) => state.setParam);
+  const setParam = useFlowStore((state) => state.setParamWithHistory);
+  const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const workflowCanvasEpoch = useStudioStore((state) => state.workflowCanvasEpoch);
+  const ownsCurrentCanvas = Boolean(
+    opener && opener.workflowTabId === activeWorkflowTabId && opener.workflowCanvasEpoch === workflowCanvasEpoch,
+  );
 
   const [currentPath, setCurrentPath] = useState<string>('.');
   const [directoryListing, setDirectoryListing] = useState<DirectoryListing | null>(null);
@@ -137,6 +180,10 @@ function FileBrowserDialog({
   const debouncedSearch = useDebounce(search, 250);
   const multiple = opener?.multiple ?? false;
   const fileTypes = opener?.fileTypes.join(',') ?? '';
+
+  useEffect(() => {
+    if (opener && !ownsCurrentCanvas) onClose();
+  }, [onClose, opener, ownsCurrentCanvas]);
 
   const fetchDirectoryListing = useCallback(
     async (path: string) => {
@@ -174,7 +221,7 @@ function FileBrowserDialog({
   }, [directoryListing, debouncedSearch]);
 
   const handleFileClick = useCallback(
-    (file: FileItem, e: MouseEvent) => {
+    (file: FileItem, e: FileRowActivationEvent) => {
       const target = e.target as HTMLElement;
       const isCheckbox = target.tagName === 'INPUT' && target.getAttribute('type') === 'checkbox';
 
@@ -193,6 +240,17 @@ function FileBrowserDialog({
         }
 
         return [file];
+      });
+    },
+    [multiple],
+  );
+
+  const handleFileToggle = useCallback(
+    (file: FileItem, checked: boolean) => {
+      setSelectedFiles((previous) => {
+        if (!checked) return previous.filter((candidate) => candidate.path !== file.path);
+        if (!multiple) return [file];
+        return previous.some((candidate) => candidate.path === file.path) ? previous : [...previous, file];
       });
     },
     [multiple],
@@ -228,10 +286,6 @@ function FileBrowserDialog({
     }
   }, [opener]);
 
-  if (!opener) {
-    return null;
-  }
-
   const selectedFile = selectedFiles[selectedFiles.length - 1];
   const pathSegments = currentPath.split('/');
   const closeAndReset = () => {
@@ -241,166 +295,163 @@ function FileBrowserDialog({
   };
 
   return (
-    <div className="relative z-50">
-      <div
-        className="fixed inset-0 flex items-center justify-center bg-black/70 p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-label="File browser"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) closeAndReset();
-        }}
-      >
-        <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-surface shadow-modiff-node">
-          <header className="border-b border-modiff-border bg-modiff-panel px-4 py-3">
-            <nav className="flex flex-wrap items-center gap-1 text-sm text-modiff-text">
-              <button
-                type="button"
-                className="grid size-7 place-items-center rounded-modiff-compact text-hf-yellow hover:bg-white/10"
+    <ModiffDialog
+      open={Boolean(opener)}
+      onClose={closeAndReset}
+      title="File browser"
+      panelClassName="max-w-6xl"
+      bodyClassName="!max-h-[78vh] min-h-[60vh] !p-0"
+      footer={
+        <>
+          <ModiffButton onClick={closeAndReset}>Cancel</ModiffButton>
+          <ModiffButton
+            tone="primary"
+            onClick={() => {
+              if (opener && ownsCurrentCanvas) {
+                setParam(
+                  opener.nodeId,
+                  opener.fieldKey,
+                  selectedFiles.map((file) => file.path),
+                );
+              }
+              if (ownsCurrentCanvas) onSelect?.(selectedFiles.map((file) => file.path));
+              closeAndReset();
+            }}
+            disabled={selectedFiles.length === 0}
+          >
+            Select
+          </ModiffButton>
+        </>
+      }
+    >
+      <div className="flex min-h-[60vh] flex-col">
+        <nav
+          className="flex flex-wrap items-center gap-1 border-b border-modiff-border bg-modiff-panel px-4 py-3 text-sm text-modiff-text"
+          aria-label="Current folder"
+        >
+          <ModiffIconButton
+            label="Home"
+            size="compact"
+            className="text-hf-yellow"
+            onClick={() => {
+              setCurrentPath('.');
+              setSelectedFiles([]);
+            }}
+          >
+            <Home size={16} />
+          </ModiffIconButton>
+          {pathSegments.map((segment, index) => {
+            const path = pathSegments.slice(0, index + 1).join('/');
+            const isLast = index === pathSegments.length - 1;
+            return isLast ? (
+              <span key={index} className="px-1 text-modiff-text">
+                {segment}
+              </span>
+            ) : (
+              <ModiffButton
+                key={index}
+                tone="ghost"
+                size="compact"
+                className="h-7 px-1 font-normal"
                 onClick={() => {
-                  setCurrentPath('.');
+                  setCurrentPath(path);
                   setSelectedFiles([]);
                 }}
-                aria-label="Home"
               >
-                <Home size={16} />
-              </button>
-              {pathSegments.map((segment, index) => {
-                const path = pathSegments.slice(0, index + 1).join('/');
-                const isLast = index === pathSegments.length - 1;
-                return isLast ? (
-                  <span key={index} className="px-1 text-gray-300">
-                    {segment}
-                  </span>
-                ) : (
-                  <button
-                    key={index}
-                    type="button"
-                    className="rounded-modiff-compact px-1 text-gray-400 hover:bg-white/10 hover:text-white"
-                    onClick={() => {
+                {segment}
+              </ModiffButton>
+            );
+          })}
+        </nav>
+        <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1fr)_384px]">
+          <div className="relative min-h-0 select-none overflow-auto">
+            {isLoading && (
+              <div className="absolute inset-0 z-[2] grid place-items-center bg-modiff-panel/90">
+                <LoaderCircle className="animate-spin text-hf-yellow" size={28} />
+              </div>
+            )}
+            <table className="w-full border-collapse text-left">
+              <thead className="sticky top-0 z-[1] bg-modiff-panel">
+                <tr className="border-b border-modiff-border">
+                  <th className="w-8 p-0 text-center">
+                    {multiple && (
+                      <ModiffCheckbox
+                        checked={files.length > 0 && selectedFiles.length === files.length}
+                        indeterminate={selectedFiles.length > 0 && selectedFiles.length < files.length}
+                        label={<span className="sr-only">Select all files</span>}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedFiles(files);
+                          } else {
+                            setSelectedFiles([]);
+                          }
+                        }}
+                      />
+                    )}
+                  </th>
+                  <th className="px-2 py-2">
+                    <div className="flex w-full items-center gap-2">
+                      <span className="text-sm font-semibold text-modiff-text">Name</span>
+                      <ModiffSearchInput
+                        aria-label="Filter files"
+                        className="min-w-0 flex-1"
+                        placeholder="Filter"
+                        value={search}
+                        onChange={(event) => setSearch(event.currentTarget.value)}
+                        onClear={() => setSearch('')}
+                      />
+                    </div>
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-2 text-right text-sm font-semibold text-modiff-text">
+                    Size
+                  </th>
+                  <th className="whitespace-nowrap px-2 py-2 text-right text-sm font-semibold text-modiff-text">
+                    Modified
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {directories.map((file) => (
+                  <DirectoryRow
+                    key={file.path}
+                    file={file}
+                    onPathChange={(path) => {
                       setCurrentPath(path);
                       setSelectedFiles([]);
+                      setSearch('');
                     }}
-                  >
-                    {segment}
-                  </button>
-                );
-              })}
-            </nav>
-          </header>
-          <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1fr)_384px]">
-            <div className="relative min-h-0 select-none overflow-auto">
-              {isLoading && (
-                <div className="absolute inset-0 z-[2] grid place-items-center bg-modiff-panel/90">
-                  <LoaderCircle className="animate-spin text-hf-yellow" size={28} />
-                </div>
-              )}
-              <table className="w-full border-collapse text-left">
-                <thead className="sticky top-0 z-[1] bg-modiff-panel">
-                  <tr className="border-b border-modiff-border">
-                    <th className="w-8 p-0 text-center">
-                      {multiple && (
-                        <input
-                          type="checkbox"
-                          className="size-4 accent-hf-yellow"
-                          aria-checked={
-                            selectedFiles.length > 0 && selectedFiles.length < files.length ? 'mixed' : undefined
-                          }
-                          checked={files.length > 0 && selectedFiles.length === files.length}
-                          onChange={(event) => {
-                            if (event.target.checked) {
-                              setSelectedFiles(files);
-                            } else {
-                              setSelectedFiles([]);
-                            }
-                          }}
-                        />
-                      )}
-                    </th>
-                    <th className="px-2 py-2">
-                      <div className="flex w-full items-center gap-2">
-                        <span className="text-sm font-semibold text-modiff-text">Name</span>
-                        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text focus-within:border-hf-yellow">
-                          <Search size={15} className="shrink-0 text-gray-400" />
-                          <input
-                            placeholder="Filter"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-500"
-                          />
-                        </label>
-                      </div>
-                    </th>
-                    <th className="whitespace-nowrap px-2 py-2 text-right text-sm font-semibold text-modiff-text">
-                      Size
-                    </th>
-                    <th className="whitespace-nowrap px-2 py-2 text-right text-sm font-semibold text-modiff-text">
-                      Modified
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {directories.map((file) => (
-                    <DirectoryRow
-                      key={file.path}
-                      file={file}
-                      onPathChange={(path) => {
-                        setCurrentPath(path);
-                        setSelectedFiles([]);
-                        setSearch('');
-                      }}
-                    />
-                  ))}
-                  {files.map((file) => (
-                    <FileRow
-                      key={file.path}
-                      file={file}
-                      isSelected={selectedFiles.some((f) => f.path === file.path)}
-                      onFileClick={handleFileClick}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <aside className="min-h-0 overflow-hidden">
-              {selectedFile && (
-                <img
-                  src={`${config.serverAddress}/preview?file=${encodeURIComponent(selectedFile.path)}&width=384&height=384`}
-                  alt={selectedFile.name}
-                  className="w-full rounded-modiff-compact border border-modiff-border object-contain"
-                />
-              )}
-              <div className="mt-2 space-y-1 text-sm text-gray-300">
-                <div className="font-bold text-modiff-text">{selectedFile ? selectedFile.name : ''}</div>
-                <div>Size: {selectedFile?.size ? formatFileSize(selectedFile.size) : '-'}</div>
-                <div>Modified: {selectedFile?.modified ? formatDate(selectedFile.modified) : '-'}</div>
-                <div>Type: {selectedFile?.type ?? ''}</div>
-              </div>
-            </aside>
+                  />
+                ))}
+                {files.map((file) => (
+                  <FileRow
+                    key={file.path}
+                    file={file}
+                    isSelected={selectedFiles.some((f) => f.path === file.path)}
+                    onFileClick={handleFileClick}
+                    onFileToggle={handleFileToggle}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
-          <footer className="flex justify-end gap-2 border-t border-modiff-border bg-modiff-panel px-4 py-3">
-            <ModiffButton onClick={closeAndReset}>Cancel</ModiffButton>
-            <ModiffButton
-              tone="primary"
-              onClick={() => {
-                if (opener) {
-                  setParam(
-                    opener.nodeId,
-                    opener.fieldKey,
-                    selectedFiles.map((file) => file.path),
-                  );
-                }
-                onSelect?.(selectedFiles.map((file) => file.path));
-                onClose();
-              }}
-              disabled={selectedFiles.length === 0}
-            >
-              Select
-            </ModiffButton>
-          </footer>
+          <aside className="min-h-0 overflow-hidden">
+            {selectedFile && (
+              <img
+                src={`${config.serverAddress}/preview?file=${encodeURIComponent(selectedFile.path)}&width=384&height=384`}
+                alt={selectedFile.name}
+                className="w-full rounded-modiff-compact border border-modiff-border object-contain"
+              />
+            )}
+            <div className="mt-2 space-y-1 text-sm text-modiff-subtle-text">
+              <div className="font-bold text-modiff-text">{selectedFile ? selectedFile.name : ''}</div>
+              <div>Size: {selectedFile?.size ? formatFileSize(selectedFile.size) : '-'}</div>
+              <div>Modified: {selectedFile?.modified ? formatDate(selectedFile.modified) : '-'}</div>
+              <div>Type: {selectedFile?.type ?? ''}</div>
+            </div>
+          </aside>
         </div>
       </div>
-    </div>
+    </ModiffDialog>
   );
 }
 

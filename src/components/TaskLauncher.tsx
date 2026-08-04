@@ -8,7 +8,6 @@ import {
   GitCompareArrows,
   GalleryVerticalEnd,
   Layers,
-  LoaderCircle,
   Network,
   ScanLine,
   SlidersHorizontal,
@@ -20,7 +19,7 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { createOrUpdateStudioGraph } from '../studio/graphBridge';
 import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODE_LABELS } from '../studio/modelProfiles';
 import type { StudioMode } from '../studio/types';
-import { cx } from '../utils/classNames';
+import { ModiffButton } from '../ui';
 
 const launcherModes: { mode: StudioMode; icon: ReactNode }[] = [
   { mode: 'text_to_image', icon: <Sparkles size={18} /> },
@@ -72,17 +71,18 @@ export default function TaskLauncher() {
   return (
     <div
       data-testid="task-launcher"
-      className="absolute inset-0 z-[5] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
+      className="absolute inset-0 z-[5] flex items-center justify-center bg-modiff-dialog-backdrop/50 p-6 backdrop-blur-sm"
     >
       <div className="w-full max-w-[920px] border border-modiff-border bg-modiff-surface p-4 shadow-modiff-node">
         <h1 className="mb-1 text-lg font-bold text-modiff-text">Start with a task</h1>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-modiff-muted">
-            Pick a task mode, browse recipes, or jump straight into the graph.
+          <p className="text-sm text-modiff-subtle-text">
+            Pick a task mode, browse templates, or jump straight into the graph.
           </p>
-          <button
-            type="button"
-            className="inline-flex h-9 items-center gap-2 rounded-modiff-compact bg-hf-yellow px-3 text-sm font-semibold text-black transition hover:bg-hf-orange focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+          <ModiffButton
+            tone="primary"
+            size="normal"
+            icon={<GalleryVerticalEnd size={16} />}
             data-testid="launcher-open-template-browser"
             onClick={() => {
               setTemplateBrowserOpen(true);
@@ -90,9 +90,8 @@ export default function TaskLauncher() {
               setRightPanelTab('studio');
             }}
           >
-            <GalleryVerticalEnd size={16} />
-            Browse recipes
-          </button>
+            Browse templates
+          </ModiffButton>
         </div>
 
         <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]">
@@ -100,30 +99,27 @@ export default function TaskLauncher() {
             const isLoading = loadingMode === mode;
 
             return (
-              <button
+              <ModiffButton
                 key={mode}
-                type="button"
+                tone="secondary"
+                align="left"
+                fullWidth
                 disabled={loadingMode !== null}
+                loading={isLoading}
+                icon={icon}
                 data-testid={`launcher-mode-${mode}`}
                 onClick={() => {
                   void handleModeSelect(mode);
                 }}
-                className={cx(
-                  'flex min-h-24 items-start justify-start gap-3 border border-modiff-border bg-modiff-bg p-3 text-left text-modiff-text transition',
-                  'hover:border-hf-yellow/70 hover:bg-modiff-panel disabled:pointer-events-none disabled:opacity-50',
-                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-                )}
+                className="h-auto min-h-24 items-start gap-3 bg-modiff-bg p-3 hover:bg-modiff-panel"
               >
-                <span className="mt-0.5 grid size-5 flex-none place-items-center text-hf-yellow">
-                  {isLoading ? <LoaderCircle size={18} className="animate-spin" /> : icon}
-                </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-bold">{STUDIO_MODE_LABELS[mode]}</span>
-                  <span className="mt-1 block text-xs leading-5 text-modiff-muted">
+                  <span className="mt-1 block text-xs leading-5 text-modiff-subtle-text">
                     {STUDIO_MODE_DESCRIPTIONS[mode]}
                   </span>
                 </span>
-              </button>
+              </ModiffButton>
             );
           })}
         </div>

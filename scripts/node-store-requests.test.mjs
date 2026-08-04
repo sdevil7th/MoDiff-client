@@ -9,6 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let nodesStoreModule;
 let requestModule;
 let server;
+let studioStoreModule;
 let originalFetch;
 
 function requestStates() {
@@ -34,6 +35,7 @@ before(async () => {
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
+  studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   originalFetch = globalThis.fetch;
 });
@@ -54,6 +56,10 @@ beforeEach(() => {
     customModules: [],
     customModuleError: null,
     discoveryRequests: requestStates(),
+  });
+  studioStoreModule.useStudioStore.setState({
+    autoResourcePlan: null,
+    autoResourcePlans: {},
   });
 });
 
@@ -157,6 +163,41 @@ test('latest endpoint request wins even when an aborted mock resolves late', asy
   assert.equal(state.isLoading, false);
 });
 
+test('concurrent node-registry consumers share and await the startup request', async () => {
+  const registryRequest = deferred();
+  let requestCount = 0;
+  globalThis.fetch = () => {
+    requestCount += 1;
+    return registryRequest.promise;
+  };
+
+  const startupRequest = nodesStoreModule.useNodesStore.getState().fetchNodes();
+  const graphBuilderRequest = nodesStoreModule.useNodesStore.getState().fetchNodes();
+  assert.equal(requestCount, 1);
+
+  registryRequest.resolve(
+    jsonResponse({
+      instance: 'startup-instance',
+      nodes: {
+        'modules.Test.Generate': {
+          type: 'custom',
+          module: 'modules.Test',
+          action: 'Generate',
+          label: 'Generate',
+          category: 'Test',
+          params: {},
+        },
+      },
+    }),
+  );
+  await Promise.all([startupRequest, graphBuilderRequest]);
+
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.nodes.status, 'success');
+  assert.equal(state.instance, 'startup-instance');
+  assert.ok(state.nodesRegistry['modules.Test.Generate']);
+});
+
 test('parallel discovery keeps loading active until every endpoint settles', async () => {
   const calls = new Map();
   globalThis.fetch = (url) => {
@@ -173,6 +214,141 @@ test('parallel discovery keeps loading active until every endpoint settles', asy
   calls.get('localModels').resolve(jsonResponse([{ name: 'local-model' }]));
   await localModels;
   assert.equal(nodesStoreModule.useNodesStore.getState().isLoading, false);
+});
+
+test('runtime discovery normalizes legacy and managed runtime payloads', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ready: true,
+      packages: {
+        torch: {
+          version: '2.test',
+          cuda_available: true,
+          cuda_device_name: 'Legacy CUDA',
+          cuda_device_total_memory: 16 * 1024 ** 3,
+          cuda_memory_free_bytes: 12 * 1024 ** 3,
+        },
+      },
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+
+  let status = nodesStoreModule.useNodesStore.getState().runtimeStatus;
+  assert.equal(status.ready, true);
+  assert.equal(status.runtimeEnvironment.profileVerified, false);
+  assert.equal(status.runtimeEnvironment.executionReady, true);
+  assert.equal(status.runtimeEnvironment.defaultDevice, 'cuda:0');
+  assert.deepEqual(
+    status.runtimeEnvironment.devices.map(({ backend, device }) => ({ backend, device })),
+    [
+      { backend: 'cuda', device: 'cuda:0' },
+      { backend: 'cpu', device: 'cpu:0' },
+    ],
+  );
+
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ready: true,
+      packages: { torch: { version: '2.9.1+rocm7.2', cuda_available: true } },
+      hardware: {
+        schema_version: 1,
+        default_device: 'cuda:0',
+        devices: [
+          {
+            type: 'cuda',
+            device: 'cuda:0',
+            name: 'AMD Radeon',
+            vram_total: 16 * 1024 ** 3,
+            vram_free: 10 * 1024 ** 3,
+          },
+          { type: 'cpu', device: 'cpu:0', name: 'CPU' },
+        ],
+      },
+      runtime_profile: {
+        requested: 'amd-rocm-linux',
+        installed: 'amd-rocm-linux',
+        status: 'setup-required',
+        execution_ready: false,
+        support_tier: 'experimental',
+        repair_command: 'python -m modiff.install --accelerator amd --repair',
+        issues: [null, { message: 42 }, { code: 'reboot-required', severity: 'warning', message: 'Restart the host.' }],
+        installation: {
+          status: 'blocked',
+          current_phase: 'system-preparation',
+          completed_phases: ['detect', 42],
+          reboot_required: true,
+          resume_command: './install.sh --resume',
+          steps: [
+            'invalid',
+            {
+              id: 'gpu-groups',
+              title: 'Add GPU groups',
+              phase: 'system-preparation',
+              status: 'pending',
+              requires_admin: true,
+              requires_reboot: true,
+              command: 'sudo usermod -a -G video,render "$USER"',
+            },
+          ],
+        },
+      },
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+
+  status = nodesStoreModule.useNodesStore.getState().runtimeStatus;
+  const environment = status.runtimeEnvironment;
+  assert.equal(environment.profileVerified, true);
+  assert.equal(environment.executionReady, false);
+  assert.equal(environment.supportTier, 'experimental');
+  assert.equal(environment.devices[0].backend, 'rocm');
+  assert.equal(environment.devices[0].vendor, 'amd');
+  assert.equal(environment.devices[0].memoryTotal, 16 * 1024 ** 3);
+  assert.deepEqual(environment.issues, [
+    { code: 'reboot-required', severity: 'warning', message: 'Restart the host.' },
+  ]);
+  assert.equal(environment.installation.status, 'blocked');
+  assert.deepEqual(environment.installation.completedPhases, ['detect']);
+  assert.equal(environment.installation.steps.length, 1);
+  assert.equal(environment.installation.steps[0].requiresAdmin, true);
+  assert.equal(environment.installation.resumeCommand, './install.sh --resume');
+});
+
+test('runtime fingerprint changes invalidate every cached Auto plan', async () => {
+  const cachedPlan = { status: 'ready', checkedAt: 1 };
+  studioStoreModule.useStudioStore.setState({
+    autoResourcePlan: cachedPlan,
+    autoResourcePlans: { cached: cachedPlan },
+  });
+  nodesStoreModule.useNodesStore.setState({
+    runtimeStatus: {
+      ready: true,
+      runtime_fingerprint: 'sha256:before',
+      runtimeEnvironment: {
+        schemaVersion: 1,
+        profileVerified: false,
+        executionReady: true,
+        requestedProfile: null,
+        installedProfile: null,
+        status: 'unverified',
+        supportTier: 'unverified',
+        repairCommand: null,
+        issues: [],
+        installation: null,
+        defaultDevice: 'cpu:0',
+        devices: [],
+      },
+    },
+  });
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ready: true,
+      runtime_fingerprint: 'sha256:after',
+      packages: {},
+    });
+
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+
+  assert.equal(studioStoreModule.useStudioStore.getState().autoResourcePlan, null);
+  assert.deepEqual(studioStoreModule.useStudioStore.getState().autoResourcePlans, {});
 });
 
 test('one discovery failure does not suppress successful sibling endpoints', async () => {
@@ -282,16 +458,57 @@ test('successful custom-module mutations validate the payload and refresh the no
 });
 
 test('model-install failures use the typed HTTP contract and update progress once', async () => {
-  globalThis.fetch = async () => jsonResponse({ error: 'Access denied for gated/model.' }, 403);
+  let request;
+  globalThis.fetch = async (url, init) => {
+    request = { url: String(url), init };
+    return jsonResponse(
+      { error: 'Access denied for gated/model.', code: 'huggingface_access_required', repo_id: 'gated/model' },
+      403,
+    );
+  };
 
-  await assert.rejects(nodesStoreModule.useNodesStore.getState().installHfModel('gated/model'), (error) => {
-    assert.equal(error.kind, 'http');
-    assert.equal(error.status, 403);
-    assert.equal(error.message, 'Access denied for gated/model.');
-    return true;
+  await assert.rejects(
+    nodesStoreModule.useNodesStore
+      .getState()
+      .installHfModel('gated/model', null, { files: ['weights/model.safetensors'] }),
+    (error) => {
+      assert.equal(error.kind, 'http');
+      assert.equal(error.status, 403);
+      assert.equal(error.message, 'Access denied for gated/model.');
+      return true;
+    },
+  );
+
+  assert.match(request.url, /\/hf_download$/);
+  assert.equal(request.init.method, 'POST');
+  assert.equal(request.init.headers['Content-Type'], 'application/json');
+  assert.deepEqual(JSON.parse(request.init.body), {
+    repo_id: 'gated/model',
+    files: ['weights/model.safetensors'],
   });
 
   const progress = nodesStoreModule.useNodesStore.getState().hfDownloadProgress['gated/model'];
   assert.equal(progress.status, 'error');
   assert.equal(progress.error, 'Access denied for gated/model.');
+  assert.equal(progress.error_code, 'huggingface_access_required');
+});
+
+test('model-install access failures infer the stable code from legacy error text', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse(
+      {
+        error: '403 gated repo: this account is not authorized. Accept the license and configure a token.',
+        repo_id: 'legacy/gated-model',
+      },
+      403,
+    );
+
+  await assert.rejects(
+    nodesStoreModule.useNodesStore.getState().installHfModel('legacy/gated-model'),
+    (error) => error.kind === 'http' && error.status === 403,
+  );
+
+  const progress = nodesStoreModule.useNodesStore.getState().hfDownloadProgress['legacy/gated-model'];
+  assert.equal(progress.status, 'error');
+  assert.equal(progress.error_code, 'huggingface_access_required');
 });

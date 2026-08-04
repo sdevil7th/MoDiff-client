@@ -1,11 +1,15 @@
+/* Derived from cubiq/Mellon-client and modified by the MoDiff project. */
+
 /*
  * Global and third-party styling only.
  * Component visuals belong in src/theme tokens, src/ui primitives, or local component classes.
  */
 
-* {
-  scrollbar-color: rgba(255, 255, 255, 0.25) rgba(0, 0, 0, 0);
-  scrollbar-width: auto;
+@layer base {
+  * {
+    scrollbar-color: color-mix(in srgb, var(--color-modiff-text) 25%, transparent) transparent;
+    scrollbar-width: auto;
+  }
 }
 
 .clear-fix::after {
@@ -34,7 +38,7 @@
 }
 
 .modiff-resize-handle-active {
-  background-color: rgba(255, 255, 255, 0.25);
+  background-color: color-mix(in srgb, var(--color-modiff-focus) 25%, transparent);
 }
 
 @keyframes modiff-progress-indeterminate {

@@ -1,0 +1,379 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { createServer } from 'vite';
+import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
+import { workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+
+const ROOT = process.cwd();
+const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
+const LAYOUT_ALGORITHM = 'modiff-layered-v1';
+const LAYOUT_HORIZONTAL_GAP = 140;
+const LAYOUT_VERTICAL_GAP = 72;
+const LAYOUT_EPSILON = 0.01;
+const manifestPath = join(BACKEND_ROOT, 'data', 'workflow-library-manifest.json');
+if (!existsSync(manifestPath)) throw new Error('Workflow manifest is missing. Run npm run workflows:generate.');
+
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+if (manifest.schemaVersion !== 1) throw new Error(`Unsupported workflow manifest schema: ${manifest.schemaVersion}`);
+const expectedPairCount = Number(manifest.supportedPairCount);
+if (!Number.isInteger(expectedPairCount) || expectedPairCount <= 0) {
+  throw new Error(`Workflow manifest has an invalid supportedPairCount: ${manifest.supportedPairCount}.`);
+}
+if (!Array.isArray(manifest.workflows) || manifest.workflows.length !== expectedPairCount) {
+  throw new Error(
+    `Expected ${expectedPairCount} canonical supported workflows, found ${manifest.workflows?.length ?? 0}.`,
+  );
+}
+
+const pairs = new Set();
+
+function graphLayoutSignature(graph) {
+  return stable(
+    [...(graph?.nodes ?? [])]
+      .map((node) => ({
+        id: node.id,
+        parentId: node.parentId ?? null,
+        position: node.position,
+        width: node.width ?? null,
+        height: node.height ?? null,
+        measured: node.measured ?? null,
+      }))
+      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  );
+}
+
+function graphLayoutHash(graph) {
+  return createHash('sha256')
+    .update(JSON.stringify(graphLayoutSignature(graph)))
+    .digest('hex');
+}
+
+const OUTPUT_NODE_KEYS = new Set([
+  'modules.Audio.Export',
+  'modules.Image.Preview',
+  'modules.Primitive.DataViewer',
+  'modules.Video.Export',
+  'modules.Video.ExportWithAudio',
+]);
+
+function verifyNoDeadWorkflowNodes(workflow, graph) {
+  const nodes = graph.nodes ?? [];
+  const edges = graph.edges ?? [];
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const incoming = new Map(nodes.map((node) => [node.id, []]));
+  const incident = new Set();
+  for (const edge of edges) {
+    if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) continue;
+    incoming.get(edge.target)?.push(edge.source);
+    incident.add(edge.source);
+    incident.add(edge.target);
+  }
+
+  const outputNodes = nodes.filter((node) => OUTPUT_NODE_KEYS.has(`${node?.data?.module}.${node?.data?.action}`));
+  if (outputNodes.length === 0) {
+    throw new Error(`${workflow.id} has no preview, export, or data-viewer output node.`);
+  }
+
+  const used = new Set(outputNodes.map((node) => node.id));
+  const pending = [...used];
+  while (pending.length > 0) {
+    const nodeId = pending.pop();
+    for (const sourceId of incoming.get(nodeId) ?? []) {
+      if (used.has(sourceId)) continue;
+      used.add(sourceId);
+      pending.push(sourceId);
+    }
+  }
+
+  const disabled = nodes.filter((node) => node?.data?.uiState?.disabled === true);
+  if (disabled.length > 0) {
+    throw new Error(
+      `${workflow.id} contains disabled nodes that cannot contribute to execution: ${disabled
+        .map((node) => node.id)
+        .join(', ')}.`,
+    );
+  }
+  const isolated = nodes.filter((node) => !incident.has(node.id));
+  if (isolated.length > 0) {
+    throw new Error(`${workflow.id} contains isolated nodes: ${isolated.map((node) => node.id).join(', ')}.`);
+  }
+  const unreachable = nodes.filter((node) => !used.has(node.id));
+  if (unreachable.length > 0) {
+    throw new Error(
+      `${workflow.id} contains nodes outside every output dependency path: ${unreachable
+        .map((node) => node.id)
+        .join(', ')}.`,
+    );
+  }
+}
+
+function verifyCanonicalLayout(workflow, graph, graphLayout) {
+  const metadata = graph.layout;
+  if (
+    metadata?.algorithm !== LAYOUT_ALGORITHM ||
+    metadata?.horizontalGap !== LAYOUT_HORIZONTAL_GAP ||
+    metadata?.verticalGap !== LAYOUT_VERTICAL_GAP
+  ) {
+    throw new Error(`${workflow.id} is missing canonical ${LAYOUT_ALGORITHM} layout metadata.`);
+  }
+  if (metadata.positionHash !== graphLayoutHash(graph)) {
+    throw new Error(`${workflow.id} canonical layout position hash does not match its nodes.`);
+  }
+
+  const rearranged = graphLayout.arrangeGraphNodes(graph.nodes ?? [], graph.edges ?? []);
+  if (
+    JSON.stringify(graphLayoutSignature({ nodes: rearranged })) !==
+    JSON.stringify(graphLayoutSignature({ nodes: graph.nodes ?? [] }))
+  ) {
+    throw new Error(`${workflow.id} does not equal a deterministic re-layout of its persisted nodes.`);
+  }
+
+  const nodesByParent = new Map();
+  for (const node of graph.nodes ?? []) {
+    const parentId = node.parentId ?? '__root__';
+    nodesByParent.set(parentId, [...(nodesByParent.get(parentId) ?? []), node]);
+  }
+  for (const siblings of nodesByParent.values()) {
+    for (let leftIndex = 0; leftIndex < siblings.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < siblings.length; rightIndex += 1) {
+        const left = siblings[leftIndex];
+        const right = siblings[rightIndex];
+        const leftSize = graphLayout.graphNodeSize(left);
+        const rightSize = graphLayout.graphNodeSize(right);
+        const horizontalClearance = Math.max(
+          right.position.x - (left.position.x + leftSize.width),
+          left.position.x - (right.position.x + rightSize.width),
+        );
+        const verticalClearance = Math.max(
+          right.position.y - (left.position.y + leftSize.height),
+          left.position.y - (right.position.y + rightSize.height),
+        );
+        if (
+          horizontalClearance + LAYOUT_EPSILON < LAYOUT_HORIZONTAL_GAP &&
+          verticalClearance + LAYOUT_EPSILON < LAYOUT_VERTICAL_GAP
+        ) {
+          throw new Error(
+            `${workflow.id} nodes ${left.id} and ${right.id} violate the ${LAYOUT_HORIZONTAL_GAP}px/${LAYOUT_VERTICAL_GAP}px layout clearance.`,
+          );
+        }
+      }
+    }
+  }
+}
+
+function verifyWorkflow(workflow, expectedTier, graphLayout) {
+  if (pairs.has(workflow.id)) throw new Error(`Duplicate canonical workflow: ${workflow.id}`);
+  pairs.add(workflow.id);
+  if (workflow.supportTier !== expectedTier) throw new Error(`${workflow.id} is not in the ${expectedTier} tier.`);
+  if (workflow.graphQualificationStatus !== workflow.qualificationStatus) {
+    throw new Error(`${workflow.id} graph qualification does not match its compatibility status.`);
+  }
+  if (!['unqualified', 'observed-on-recorded-platform'].includes(workflow.runtimeQualificationStatus)) {
+    throw new Error(`${workflow.id} has an invalid runtime qualification status.`);
+  }
+  if (workflow.optimizationQualificationStatus !== 'unqualified') {
+    throw new Error(`${workflow.id} claims optimization qualification without an exact recipe receipt.`);
+  }
+  if (!Array.isArray(workflow.qualifiedRuntimeProfiles)) {
+    throw new Error(`${workflow.id} must declare its qualified runtime-profile coverage.`);
+  }
+  if (workflow.qualificationScope !== 'exact-model-recipe-runtime-hardware') {
+    throw new Error(`${workflow.id} has an invalid qualification scope.`);
+  }
+  const graphPath = join(BACKEND_ROOT, 'data', 'graphs', workflow.graphPath);
+  if (!existsSync(graphPath)) throw new Error(`${workflow.id} graph is missing: ${workflow.graphPath}`);
+  const raw = readFileSync(graphPath, 'utf8');
+  const graph = JSON.parse(raw);
+  verifyCanonicalLayout(workflow, graph, graphLayout);
+  verifyNoDeadWorkflowNodes(workflow, graph);
+  const nodeIds = new Set((graph.nodes ?? []).map((node) => node.id));
+  for (const node of graph.nodes ?? []) {
+    if (node.parentId && !nodeIds.has(node.parentId)) {
+      throw new Error(`${workflow.id} node ${node.id} references missing parent ${node.parentId}.`);
+    }
+    if (node.parentId) {
+      const parent = graph.nodes.find((candidate) => candidate.id === node.parentId);
+      if (parent?.type !== 'loop' && parent?.data?.type !== 'group') {
+        throw new Error(`${workflow.id} node ${node.id} has a non-container parent ${node.parentId}.`);
+      }
+    }
+    if (node?.data?.action === 'DiffusersExecutionRecipe') {
+      const params = node.data.params ?? {};
+      const attentionBackend = params.attention_backend?.value;
+      const device = params.device?.value;
+      if (String(attentionBackend ?? '').startsWith('_native_') && String(device ?? '').startsWith('cpu')) {
+        throw new Error(`${workflow.id} selects accelerator attention ${attentionBackend} on ${device}.`);
+      }
+    }
+    const offloadError = workflowNodeDeviceOffloadError(node);
+    if (offloadError) throw new Error(`${workflow.id} ${offloadError}.`);
+  }
+  if (workflow.mediaKind === 'video') {
+    const pipelineNodes = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'LoadPipeline',
+    );
+    if (pipelineNodes.length === 0) throw new Error(`${workflow.id} video graph has no generic Diffusers pipeline.`);
+    for (const pipeline of pipelineNodes) {
+      const recipeEdge = (graph.edges ?? []).find(
+        (edge) => edge.target === pipeline.id && edge.targetHandle === 'execution_recipe',
+      );
+      if (!recipeEdge) throw new Error(`${workflow.id} video pipeline ${pipeline.id} has no execution recipe.`);
+      const recipe = (graph.nodes ?? []).find((node) => node.id === recipeEdge.source);
+      if (recipe?.data?.action !== 'DiffusersExecutionRecipe' || recipeEdge.sourceHandle !== 'execution_recipe') {
+        throw new Error(`${workflow.id} video pipeline ${pipeline.id} has an invalid execution-recipe edge.`);
+      }
+      const quantizationEdge = (graph.edges ?? []).find(
+        (edge) => edge.target === recipe.id && edge.targetHandle === 'quantization_config',
+      );
+      const quantization = (graph.nodes ?? []).find((node) => node.id === quantizationEdge?.source);
+      if (
+        quantization?.data?.action !== 'PipelineQuantizationConfigV2' ||
+        quantizationEdge?.sourceHandle !== 'quantization_config'
+      ) {
+        throw new Error(`${workflow.id} video execution recipe has no component-selective quantization flow.`);
+      }
+      const recipeParams = recipe.data.params ?? {};
+      if (recipeParams.vae_slicing?.value !== true || typeof recipeParams.vae_tiling?.value !== 'boolean') {
+        throw new Error(`${workflow.id} video execution recipe must enable VAE slicing and explicitly select tiling.`);
+      }
+      const pipelineClass = pipeline.data.params?.pipeline_class?.value;
+      if (['WanPipeline', 'Wan22Pipeline', 'WanTI2VPipeline'].includes(pipelineClass)) {
+        if (
+          recipeParams.attention_backend?.value !== '_native_flash' ||
+          recipeParams.attention_components?.value !== 'transformer'
+        ) {
+          throw new Error(`${workflow.id} Wan text pipeline must select native flash on the transformer.`);
+        }
+      }
+    }
+  }
+  if (workflow.mediaKind === 'image' || workflow.mediaKind === 'audio') {
+    const facadeModule = workflow.mediaKind === 'image' ? 'modules.DiffusersImage' : 'modules.DiffusersAudio';
+    const pipelineNodes = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === facadeModule && node?.data?.action === 'LoadPipeline',
+    );
+    for (const pipeline of pipelineNodes) {
+      const recipeEdge = (graph.edges ?? []).find(
+        (edge) => edge.target === pipeline.id && edge.targetHandle === 'execution_recipe',
+      );
+      const recipe = (graph.nodes ?? []).find((node) => node.id === recipeEdge?.source);
+      const quantizationEdge = (graph.edges ?? []).find(
+        (edge) => edge.target === recipe?.id && edge.targetHandle === 'quantization_config',
+      );
+      const quantization = (graph.nodes ?? []).find((node) => node.id === quantizationEdge?.source);
+      if (
+        recipe?.data?.action !== 'DiffusersExecutionRecipe' ||
+        recipeEdge?.sourceHandle !== 'execution_recipe' ||
+        quantization?.data?.action !== 'PipelineQuantizationConfigV2' ||
+        quantizationEdge?.sourceHandle !== 'quantization_config'
+      ) {
+        throw new Error(
+          `${workflow.id} generic Diffusers pipeline is missing its runtime recipe or quantization flow.`,
+        );
+      }
+    }
+  }
+  if (workflow.mediaKind !== 'video') {
+    const embeddedVideoPipelines = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'LoadPipeline',
+    );
+    for (const pipeline of embeddedVideoPipelines) {
+      const recipeEdge = (graph.edges ?? []).find(
+        (edge) => edge.target === pipeline.id && edge.targetHandle === 'execution_recipe',
+      );
+      const recipe = (graph.nodes ?? []).find((node) => node.id === recipeEdge?.source);
+      const quantizationEdge = (graph.edges ?? []).find(
+        (edge) => edge.target === recipe?.id && edge.targetHandle === 'quantization_config',
+      );
+      const quantization = (graph.nodes ?? []).find((node) => node.id === quantizationEdge?.source);
+      if (
+        recipe?.data?.action !== 'DiffusersExecutionRecipe' ||
+        quantization?.data?.action !== 'PipelineQuantizationConfigV2'
+      ) {
+        throw new Error(`${workflow.id} embedded video pipeline is missing its runtime recipe or quantization flow.`);
+      }
+    }
+  }
+  const expectedPreviewDisplay = {
+    image: 'ui_image',
+    video: 'ui_video',
+    audio: 'ui_audio',
+    text: 'ui_text',
+  }[workflow.mediaKind];
+  if (expectedPreviewDisplay) {
+    const previewFields = (graph.nodes ?? []).flatMap((node) =>
+      Object.entries(node?.data?.params ?? {})
+        .filter(([, param]) => param?.display === expectedPreviewDisplay)
+        .map(([fieldKey, param]) => ({ node, fieldKey, param })),
+    );
+    if (previewFields.length === 0) {
+      throw new Error(`${workflow.id} has no ${expectedPreviewDisplay} output presentation field.`);
+    }
+    for (const { node, fieldKey, param } of previewFields) {
+      if (
+        Object.prototype.hasOwnProperty.call(param, 'value') ||
+        Object.prototype.hasOwnProperty.call(param, 'artifacts')
+      ) {
+        throw new Error(
+          `${workflow.id} persists volatile preview data on ${node.id}.${fieldKey}; only the UI field contract may be saved.`,
+        );
+      }
+      if (param.type !== 'url' && expectedPreviewDisplay !== 'ui_text') {
+        throw new Error(`${workflow.id} has an invalid type on ${node.id}.${fieldKey}.`);
+      }
+      if (typeof param.dataSource !== 'string' || param.dataSource.length === 0) {
+        throw new Error(`${workflow.id} has no output source for ${node.id}.${fieldKey}.`);
+      }
+      const sourceParam = node?.data?.params?.[param.dataSource];
+      if (!sourceParam || sourceParam.display !== 'output') {
+        throw new Error(`${workflow.id} preview ${node.id}.${fieldKey} points to missing output ${param.dataSource}.`);
+      }
+    }
+  }
+  const digest = canonicalJsonHash(graph);
+  if (digest !== workflow.graphHash) throw new Error(`${workflow.id} graph hash does not match its manifest.`);
+  if (
+    /(?:file:\/\/|\/(?:home|Users|root|tmp|mnt|workspace)(?:\/|$)|[A-Za-z]:[\\/]|\\\\|localhost|127\.0\.0\.1|\/cache\/)/i.test(
+      raw,
+    )
+  ) {
+    throw new Error(`${workflow.id} contains machine-specific state.`);
+  }
+  if (/modules\.WanVACE\.(?:LoadPipeline|Generate)/.test(raw)) {
+    throw new Error(`${workflow.id} uses a legacy Wan node instead of the generic video contract.`);
+  }
+}
+
+const layoutModuleServer = await createServer({
+  root: ROOT,
+  configFile: false,
+  logLevel: 'silent',
+  optimizeDeps: { entries: [], noDiscovery: true },
+  server: { middlewareMode: true },
+  appType: 'custom',
+});
+try {
+  const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
+  for (const workflow of manifest.workflows) verifyWorkflow(workflow, 'supported', graphLayout);
+
+  const expectedExperimentalCount = Number(manifest.experimentalWorkflowCount ?? 0);
+  if (!Number.isInteger(expectedExperimentalCount) || expectedExperimentalCount < 0) {
+    throw new Error(`Workflow manifest has an invalid experimentalWorkflowCount.`);
+  }
+  if (
+    !Array.isArray(manifest.experimentalWorkflows) ||
+    manifest.experimentalWorkflows.length !== expectedExperimentalCount
+  ) {
+    throw new Error(
+      `Expected ${expectedExperimentalCount} qualified experimental workflows, found ${manifest.experimentalWorkflows?.length ?? 0}.`,
+    );
+  }
+  for (const workflow of manifest.experimentalWorkflows) verifyWorkflow(workflow, 'experimental', graphLayout);
+
+  process.stdout.write(
+    `Verified ${manifest.workflows.length} supported and ${manifest.experimentalWorkflows.length} qualified experimental portable workflows with deterministic canonical layouts.\n`,
+  );
+} finally {
+  await layoutModuleServer.close();
+}

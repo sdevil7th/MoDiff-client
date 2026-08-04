@@ -18,7 +18,7 @@ export const AnyNodeFrame = forwardRef<HTMLDivElement, AnyNodeFrameProps>(functi
       ref={ref}
       id={id}
       className={cx(
-        'relative flex min-h-full w-full flex-col items-center justify-center bg-transparent outline outline-2 outline-offset-[5px] outline-transparent',
+        'relative flex h-full min-h-0 w-full flex-col items-center justify-between overflow-visible bg-transparent outline outline-2 outline-offset-[5px] outline-transparent',
         className,
       )}
       style={nodeStyle}

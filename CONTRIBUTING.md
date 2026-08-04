@@ -19,7 +19,9 @@ Good first contributions include reproducible bug fixes, accessibility improveme
 1. Fork the public repository, then clone your fork.
 2. Add the canonical repository as an `upstream` remote so you can keep the branch current.
 3. Create a short-lived branch from the latest `upstream/main`.
-4. Install with `npm ci` and reproduce the issue before changing code.
+4. Use the development installer for integrated work, or `npm ci` for UI-only
+   work against an already-running compatible backend, and reproduce the issue
+   before changing code.
 5. Make the smallest coherent change, including tests and docs.
 6. Run the required checks and review the complete diff.
 7. Rebase or merge the current `upstream/main` according to the repository's accepted workflow; resolve conflicts without discarding unrelated work.
@@ -45,7 +47,21 @@ Required client versions:
 - Node.js `24.12.0` (`.nvmrc`)
 - npm `11.6.2` (`packageManager` and `engines` in `package.json`)
 
-Install exactly from the lockfile:
+For integrated development with sibling repositories, install the reviewed
+backend profile, backend test requirements, and exact client lockfile through
+the development installer:
+
+```powershell
+.\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto
+```
+
+```bash
+chmod +x install-dev.sh run-dev.sh stop-dev.sh
+./install-dev.sh --accelerator auto
+```
+
+For UI-only work against an already-installed backend, install only the client
+dependencies exactly from the lockfile:
 
 ```bash
 npm ci
@@ -86,7 +102,8 @@ Read [the architecture guide](docs/modiff-client-architecture.md) before changin
 | `src/workflow`            | Canvas connection/drop/interaction hooks                                                                       |
 | `scripts`                 | Unit/contract, Gallery, style, and bundle tooling                                                              |
 | `tests/e2e`               | Playwright browser coverage                                                                                    |
-| `public/template-gallery` | Published Gallery assets, manifest, inputs, and review/provenance records                                      |
+| `config`                  | Versioned Gallery storage manifest and other source contracts                                                  |
+| `public/template-gallery` | Ignored local/offline Gallery cache; only explicitly retained small metadata belongs in Git                    |
 
 ## Core Architecture Rules
 
@@ -125,11 +142,11 @@ Use `src/theme` as the source of visual constants:
 
 Primary brand tokens:
 
-| Token                                           | Value     | Use                                            |
-| ----------------------------------------------- | --------- | ---------------------------------------------- |
-| `hf-yellow` / `modiffColors.primary`            | `#FFD21E` | Primary actions, selected tabs, and highlights |
-| `hf-orange` / `modiffColors.primaryGradientEnd` | `#FF9D00` | Warning/accent states and gradients            |
-| `hf-gray` / `modiffColors.textMuted`            | `#6B7280` | Muted text and neutral support UI              |
+| Token                                            | Value     | Use                                            |
+| ------------------------------------------------ | --------- | ---------------------------------------------- |
+| `hf-yellow` / `modiffColors.primary`             | `#FFD21E` | Primary actions, selected tabs, and highlights |
+| `hf-orange` / `modiffColors.primaryGradientEnd`  | `#FF9D00` | Warning/accent states and gradients            |
+| `modiff-subtle-text` / `modiffColors.subtleText` | `#94A3B8` | Muted labels, metadata, and helper text        |
 
 Core dark tokens:
 
@@ -313,7 +330,10 @@ Then verify that every repository-relative Markdown link resolves and that every
 - Do not commit `node_modules/`, `dist/`, `artifacts/`, `output/`, `playwright-report/`, `test-results/`, logs, `.env`/`.env.*` secrets, or `vite.config.local.ts`. A deliberately sanitized `.env.example` is the only environment-file exception.
 - Do not commit copied backend `web/` output to this client repository.
 - Commit `package-lock.json` only when the dependency manifest or resolved dependency graph intentionally changes; review install scripts and transitive changes.
-- `public/template-gallery/` is reviewed public source content, not disposable build output. Commit changes there only with matching manifest/review/provenance updates and Gallery verification.
+- Do not commit Gallery media under `public/template-gallery/`. Publish reviewed
+  files to the pinned public Hugging Face Dataset, and commit only the storage
+  manifest, source descriptor, generated bindings, and explicitly retained
+  small Gallery metadata described in the asset guide.
 - Do not add large generated media, model weights, cache snapshots, or runtime evidence outside an accepted public-asset change.
 - Keep screenshots/traces in pull-request attachments rather than the repository unless they are durable, licensed documentation assets.
 

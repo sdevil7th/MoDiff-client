@@ -1,11 +1,25 @@
 import { nanoid } from 'nanoid';
 import type { Edge } from '@xyflow/react';
 import { enqueueSnackbar } from '../ui/snackbar';
+import {
+  settleGraphFinalization,
+  waitForSettledGraphFinalization,
+  type SettledGraphFinalization,
+} from './graphFinalization';
 import type { FieldProps } from '../components/NodeContent';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { type NodeData, type NodeParams, useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  assertWorkflowOperationContext,
+  autoFieldOverrideKey,
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+  WorkflowOperationCancelledError,
+  type WorkflowOperationContext,
+  useStudioStore,
+} from '../stores/useStudioStore';
+import { useWebsocketStore } from '../stores/useWebsocketStore';
 import fieldAction from '../utils/fieldAction';
 import {
   QWEN_CONTROLNET_REPO,
@@ -21,31 +35,46 @@ import {
   FLUX_STUDIO_MODEL_TYPES,
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
+  WAN_22_I2V_A14B_REPO,
+  WAN_22_TI2V_5B_REPO,
+  WAN_T2V_1_3B_REPO,
   WAN_VACE_REVISION,
 } from './modelProfiles';
 import { selectedAutoCandidate } from './autoResource';
+import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
-import type { StudioFormState, StudioGraphBinding, StudioGraphRole, StudioMode, StudioModelType } from './types';
+import { STUDIO_TEMPLATES } from './templates';
+import type {
+  StudioFormState,
+  StudioGraphBinding,
+  StudioGraphFinalizationState,
+  StudioGraphRole,
+  StudioMode,
+  StudioModelType,
+} from './types';
+
+function activeAudioTemplateBaseModel() {
+  const activeTemplateId = useStudioStore.getState().activeTemplateId;
+  if (!activeTemplateId) return undefined;
+  const artifact = STUDIO_TEMPLATES.find((template) => template.id === activeTemplateId)?.workflowBlockSettings?.lora
+    ?.baseModel;
+  return artifact?.source === 'hub' ? artifact.value : undefined;
+}
 
 function resolveGraphResourceForm(form: StudioFormState): StudioFormState {
   const plannedForm = resolveStudioResourceForm(form);
   if (form.resourceMode !== 'auto') return plannedForm;
 
-  const candidate = selectedAutoCandidate(useStudioStore.getState().autoResourcePlan);
+  const candidate = selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, plannedForm);
   if (!candidate) return plannedForm;
 
   const dtype =
     candidate.dtype === 'float16' || candidate.dtype === 'float32' || candidate.dtype === 'bfloat16'
       ? candidate.dtype
       : plannedForm.dtype;
-  const quantizationMode =
-    candidate.quantizationMode === 'none' ||
-    candidate.quantizationMode === 'bnb_4bit' ||
-    candidate.quantizationMode === 'bnb_8bit' ||
-    candidate.quantizationMode === 'quanto_float8' ||
-    candidate.quantizationMode === 'torchao_float8'
-      ? candidate.quantizationMode
-      : plannedForm.quantizationMode;
+  // Auto selection points at an already-created artifact. Never reinterpret
+  // its artifact format as permission to quantize the base model on load.
+  const quantizationMode = 'none';
   const offloadMode =
     candidate.offloadMode === 'none' ||
     candidate.offloadMode === 'model_cpu' ||
@@ -82,14 +111,16 @@ const NODE_KEYS = {
   imageEncode: 'modules.ModularDiffusers.ImageEncode',
   controlnetModel: 'modules.ModularDiffusers.AutoModelLoader',
   controlnet: 'modules.ModularDiffusers.Controlnet',
-  wanPipeline: 'modules.WanVACE.LoadPipeline',
+  diffusersQuantization: 'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
+  diffusersRecipe: 'modules.DiffusersRuntime.DiffusersExecutionRecipe',
+  wanPipeline: 'modules.DiffusersVideo.LoadPipeline',
   loadVideo: 'modules.Video.Load',
   loadControlVideo: 'modules.Video.Load',
   loadMaskVideo: 'modules.Video.Load',
   normalizeVideo: 'modules.VideoConditioning.Normalize',
   alignMaskVideo: 'modules.VideoConditioning.AlignMask',
   videoColor: 'modules.VideoColor.Adjust',
-  wanGenerate: 'modules.WanVACE.Generate',
+  wanGenerate: 'modules.DiffusersVideo.Generate',
   videoExport: 'modules.Video.Export',
   diffusersImagePipeline: 'modules.DiffusersImage.LoadPipeline',
   diffusersImageGenerate: 'modules.DiffusersImage.Generate',
@@ -101,6 +132,8 @@ const NODE_KEYS = {
   loadReferenceAudio: 'modules.Audio.Load',
   audioPipeline: 'modules.DiffusersAudio.LoadPipeline',
   audioGenerate: 'modules.DiffusersAudio.Generate',
+  audioLoudnessMatch: 'modules.Audio.MatchLoudness',
+  audioJoin: 'modules.Audio.Join',
   audioExport: 'modules.Audio.Export',
 } satisfies Record<StudioGraphRole, string>;
 
@@ -122,6 +155,8 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   imageEncode: { x: -160, y: 300 },
   controlnetModel: { x: -160, y: 520 },
   controlnet: { x: 220, y: 300 },
+  diffusersQuantization: { x: -1280, y: -80 },
+  diffusersRecipe: { x: -900, y: -80 },
   wanPipeline: { x: -520, y: -80 },
   loadVideo: { x: -520, y: 260 },
   loadControlVideo: { x: -520, y: 260 },
@@ -141,11 +176,13 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   loadReferenceAudio: { x: -520, y: 560 },
   audioPipeline: { x: -520, y: -80 },
   audioGenerate: { x: -120, y: -80 },
-  audioExport: { x: 300, y: -80 },
+  audioLoudnessMatch: { x: 300, y: -80 },
+  audioJoin: { x: 680, y: -80 },
+  audioExport: { x: 1060, y: -80 },
 };
 
 const REQUIRED_BASE_ROLES: StudioGraphRole[] = ['models', 'prompt', 'denoise', 'decode', 'preview'];
-const VIDEO_BASE_ROLES: StudioGraphRole[] = ['wanPipeline', 'wanGenerate', 'videoExport'];
+const VIDEO_BASE_ROLES: StudioGraphRole[] = ['diffusersRecipe', 'wanPipeline', 'wanGenerate', 'videoExport'];
 
 const IMAGE_MODES: StudioMode[] = [
   'edit_image',
@@ -174,8 +211,8 @@ type FieldGroupWait = {
 };
 
 let graphUpdatePromise: Promise<BridgeResult> | null = null;
-let graphUpdateQueuedForm: StudioFormState | null = null;
-let graphFinalizationPromise: Promise<BridgeResult> | null = null;
+let graphFinalizationPromise: Promise<SettledGraphFinalization<BridgeResult>> | null = null;
+let graphFinalizationContext: WorkflowOperationContext | null = null;
 let graphFinalizationToken = 0;
 
 function cloneStudioFormForGraph(form: StudioFormState): StudioFormState {
@@ -233,6 +270,15 @@ function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBindin
   if (isFluxModel(form.modelType)) return true;
   if (
     !('nodes' in form) &&
+    ((form.modelType === 'QwenImageModularPipeline' &&
+      form.mode === 'text_to_image' &&
+      form.resourceMode !== 'expert') ||
+      (form.modelType === 'QwenImageEditModularPipeline' && (form.mode === 'inpaint' || form.mode === 'outpaint')))
+  ) {
+    return hasDiffusersImageFacadeForMode(form.mode);
+  }
+  if (
+    !('nodes' in form) &&
     form.resourceMode !== 'expert' &&
     form.modelType === 'ZImageModularPipeline' &&
     form.mode === 'text_to_image'
@@ -244,31 +290,30 @@ function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBindin
 
 function usesQwenLowVramQuantization(form: StudioFormState) {
   return (
+    form.resourceMode === 'expert' &&
     STUDIO_MODEL_PROFILES[form.modelType]?.family === 'Qwen Image' &&
     form.quantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE
   );
 }
 
 function usesQwenDirectTextToImage(
-  form: StudioFormState | StudioGraphBinding | Pick<StudioGraphBinding, 'mode' | 'modelType'>,
+  _form: StudioFormState | StudioGraphBinding | Pick<StudioGraphBinding, 'mode' | 'modelType'>,
 ) {
-  const resourceMode = 'resourceMode' in form ? form.resourceMode : undefined;
-  const hasDirectNodes = 'nodes' in form ? Boolean(form.nodes.qwenPipeline || form.nodes.qwenGenerate) : false;
-  const isExistingBinding = 'nodes' in form;
-  return (
-    form.mode === 'text_to_image' &&
-    form.modelType === 'QwenImageModularPipeline' &&
-    resourceMode !== 'expert' &&
-    (!isExistingBinding || hasDirectNodes)
-  );
+  void _form;
+  return false;
 }
 
-function usesQwenDirectInpaint(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType'>) {
-  return form.mode === 'inpaint' && form.modelType === 'QwenImageEditModularPipeline';
+function usesQwenDirectInpaint(
+  _form:
+    StudioFormState | (Pick<StudioGraphBinding, 'mode' | 'modelType'> & Partial<Pick<StudioGraphBinding, 'nodes'>>),
+) {
+  void _form;
+  return false;
 }
 
-function usesQwenDirectOutpaint(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType'>) {
-  return form.mode === 'outpaint' && form.modelType === 'QwenImageEditModularPipeline';
+function usesQwenDirectOutpaint(_form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType'>) {
+  void _form;
+  return false;
 }
 
 function usesQwenDirectInpaintPipeline(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType'>) {
@@ -277,9 +322,18 @@ function usesQwenDirectInpaintPipeline(form: StudioFormState | Pick<StudioGraphB
 
 function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
   if (isAudioMode(form.mode)) {
-    const roles: StudioGraphRole[] = ['audioPipeline', 'audioGenerate', 'audioExport'];
+    const roles: StudioGraphRole[] = [
+      'diffusersQuantization',
+      'diffusersRecipe',
+      'audioPipeline',
+      'audioGenerate',
+      'audioExport',
+    ];
     if (form.mode !== 'text_to_audio') {
       roles.unshift('loadAudio');
+    }
+    if (form.mode === 'audio_continuation') {
+      roles.push('audioLoudnessMatch', 'audioJoin');
     }
     if (form.mode === 'audio_variation' && form.referenceAudio) {
       roles.unshift('loadReferenceAudio');
@@ -288,7 +342,7 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
   }
 
   if (isVideoMode(form.mode)) {
-    const roles = [...VIDEO_BASE_ROLES];
+    const roles: StudioGraphRole[] = ['diffusersQuantization', ...VIDEO_BASE_ROLES];
     if (['video_to_video', 'video_inpaint', 'video_outpaint', 'video_color_edit'].includes(form.mode)) {
       roles.push('loadVideo', 'normalizeVideo');
     }
@@ -298,7 +352,11 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
     if (form.mode === 'video_inpaint' || form.mode === 'video_outpaint') {
       roles.push('loadMaskVideo', 'alignMaskVideo');
     }
-    if (form.mode === 'image_to_video' || form.mode === 'reference_to_video') {
+    if (
+      form.mode === 'image_to_video' ||
+      form.mode === 'reference_to_video' ||
+      (form.modelType === 'WanVACEPipeline' && form.referenceImages.length > 0)
+    ) {
       roles.push('loadImage');
     }
     return roles;
@@ -331,16 +389,27 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
   }
 
   if (usesDiffusersImageFacade(form)) {
+    const runtimeRoles: StudioGraphRole[] = ['diffusersQuantization', 'diffusersRecipe'];
     if (form.mode === 'edit_image' || form.mode === 'multi_image_reference_edit') {
-      return ['diffusersImagePipeline', 'loadImage', 'diffusersImageEdit', 'preview'];
+      return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'diffusersImageEdit', 'preview'];
+    }
+    if (form.mode === 'outpaint' && form.modelType === 'QwenImageEditModularPipeline') {
+      return [
+        ...runtimeRoles,
+        'diffusersImagePipeline',
+        'loadImage',
+        'qwenOutpaintCanvas',
+        'diffusersImageInpaint',
+        'preview',
+      ];
     }
     if (form.mode === 'inpaint' || form.mode === 'outpaint') {
-      return ['diffusersImagePipeline', 'loadImage', 'loadMask', 'diffusersImageInpaint', 'preview'];
+      return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'loadMask', 'diffusersImageInpaint', 'preview'];
     }
     if (form.mode === 'control_image') {
-      return ['diffusersImagePipeline', 'loadImage', 'diffusersImageControl', 'preview'];
+      return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'diffusersImageControl', 'preview'];
     }
-    return ['diffusersImagePipeline', 'diffusersImageGenerate', 'preview'];
+    return [...runtimeRoles, 'diffusersImagePipeline', 'diffusersImageGenerate', 'preview'];
   }
 
   const roles = [...REQUIRED_BASE_ROLES];
@@ -372,7 +441,13 @@ function isString(value: string | undefined): value is string {
 }
 
 function isIgnorableCustomGraphNode(node: CustomNodeType) {
-  return node.type === 'group' || node.data.type === 'group' || node.data.category === 'group';
+  return (
+    node.type === 'group' ||
+    node.type === 'loop' ||
+    node.data.type === 'group' ||
+    node.data.type === 'loop' ||
+    node.data.category === 'group'
+  );
 }
 
 export function inspectStudioGraphBindingDivergence(
@@ -397,9 +472,23 @@ export function inspectStudioGraphBindingDivergence(
     };
   }
 
-  const extraGraphNodes = nodes.filter(
-    (node) => !managedNodes.has(node.id) && !node.data.studioOwned && !isIgnorableCustomGraphNode(node),
-  );
+  const managedRoleOwners = new Map<string, string>();
+  for (const nodeId of managedNodeIds) {
+    const node = nodeById.get(nodeId);
+    const role = node?.data.studioRole;
+    if (typeof role !== 'string' || !role) continue;
+    const existingOwner = managedRoleOwners.get(role);
+    if (existingOwner && existingOwner !== nodeId) {
+      return {
+        kind: 'extra_graph_node',
+        message: 'Custom graph detected.',
+        details: `Multiple nodes claim the managed ${role} role.`,
+      };
+    }
+    managedRoleOwners.set(role, nodeId);
+  }
+
+  const extraGraphNodes = nodes.filter((node) => !managedNodes.has(node.id) && !isIgnorableCustomGraphNode(node));
   if (extraGraphNodes.length > 0) {
     return {
       kind: 'extra_graph_node',
@@ -472,6 +561,105 @@ function findAdoptableNode(role: StudioGraphRole, assignedNodeIds: Set<string>) 
 function getNode(nodeId: string | undefined) {
   if (!nodeId) return undefined;
   return useFlowStore.getState().nodes.find((node) => node.id === nodeId);
+}
+
+const GRAPH_PROOF_PARAM_KEYS: Array<keyof NodeParams> = [
+  'type',
+  'display',
+  'disabled',
+  'hidden',
+  'required',
+  'isInput',
+  'spawn',
+  'optionsSource',
+  'min',
+  'max',
+  'step',
+  'onChange',
+  'onSignal',
+  'dataSource',
+  'fieldOptions',
+];
+
+function orderedGraphProofValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(orderedGraphProofValue);
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entryValue]) => [key, orderedGraphProofValue(entryValue)]),
+  );
+}
+
+function hashGraphProof(value: unknown) {
+  const serialized = JSON.stringify(orderedGraphProofValue(value));
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `graph-v1-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function fieldSchemaHash(binding: StudioGraphBinding, form: StudioFormState) {
+  const nodes = useFlowStore.getState().nodes;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const roles = requiredRolesForForm(resolveGraphResourceForm(form));
+
+  return hashGraphProof({
+    nodes: roles.map((role) => {
+      const nodeId = binding.nodes[role];
+      const node = nodeId ? nodeById.get(nodeId) : undefined;
+      return {
+        role,
+        id: nodeId,
+        module: node?.data.module,
+        action: node?.data.action,
+        params: Object.fromEntries(
+          Object.entries(node?.data.params ?? {})
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, param]) => [
+              key,
+              Object.fromEntries(
+                GRAPH_PROOF_PARAM_KEYS.map((paramKey) => [paramKey, param[paramKey]]).filter(
+                  ([, paramValue]) => paramValue !== undefined,
+                ),
+              ),
+            ]),
+        ),
+      };
+    }),
+  });
+}
+
+function bindingWithFinalizationProof(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  finalizedAt = Date.now(),
+): StudioGraphBinding {
+  const plannedForm = resolveGraphResourceForm(form);
+  return {
+    ...binding,
+    finalizationProof: {
+      schemaVersion: 1,
+      shapeKey: getStudioGraphShapeKey(plannedForm),
+      fieldSchemaHash: fieldSchemaHash(binding, plannedForm),
+      finalizedAt,
+    },
+    updatedAt: finalizedAt,
+  };
+}
+
+function bindingFinalizationProofMatches(binding: StudioGraphBinding, form: StudioFormState) {
+  const proof = binding.finalizationProof;
+  const plannedForm = resolveGraphResourceForm(form);
+  return Boolean(
+    proof?.schemaVersion === 1 &&
+    proof.shapeKey === getStudioGraphShapeKey(plannedForm) &&
+    proof.fieldSchemaHash === fieldSchemaHash(binding, plannedForm),
+  );
 }
 
 function getNodeParam(nodeId: string | undefined, fieldKey: string | undefined) {
@@ -547,6 +735,14 @@ function setParamIfPresent(
 ) {
   const fieldKey = findParamKey(nodeId, candidates);
   if (!nodeId || !fieldKey) return false;
+  const studio = useStudioStore.getState();
+  if (
+    key === 'value' &&
+    studio.form.resourceMode === 'auto' &&
+    studio.autoFieldOverrides[autoFieldOverrideKey(nodeId, fieldKey)]
+  ) {
+    return true;
+  }
   useFlowStore.getState().setParam(nodeId, fieldKey, value, key);
   return true;
 }
@@ -569,7 +765,13 @@ function seedValue(form: StudioFormState) {
 
 function fluxPipelineClassFor(form: StudioFormState, candidatePipelineClass?: string) {
   if (candidatePipelineClass) return candidatePipelineClass;
+  if (form.modelType === 'QwenImageModularPipeline') return 'QwenImagePipeline';
+  if (form.modelType === 'QwenImageEditModularPipeline' && (form.mode === 'inpaint' || form.mode === 'outpaint')) {
+    return 'QwenImageEditInpaintPipeline';
+  }
   if (form.modelType === 'FluxKontextPipeline') return 'FluxKontextPipeline';
+  if (form.modelType === 'FluxReduxPipeline') return 'FluxReduxPipeline';
+  if (form.modelType === 'Flux2KleinPipeline') return 'Flux2KleinPipeline';
   if (form.modelType === 'FluxFillPipeline') return 'FluxFillPipeline';
   if (form.modelType === 'FluxDepthPipeline' || form.modelType === 'FluxCannyPipeline') return 'FluxControlPipeline';
   if (form.mode === 'edit_image' || form.mode === 'multi_image_reference_edit') return 'FluxImg2ImgPipeline';
@@ -712,6 +914,8 @@ function desiredBaseEdgeSpecs(binding: StudioGraphBinding) {
 
 function desiredVideoEdgeSpecs(binding: StudioGraphBinding) {
   const {
+    diffusersQuantization,
+    diffusersRecipe,
     wanPipeline,
     loadVideo,
     loadControlVideo,
@@ -722,12 +926,34 @@ function desiredVideoEdgeSpecs(binding: StudioGraphBinding) {
     wanGenerate,
     videoExport,
   } = binding.nodes;
+  const controlledSequence = useFlowStore
+    .getState()
+    .nodes.find((node) => node.data?.studioRole === 'videoSequence')?.id;
+  const controlledCompose = useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'videoCompose')?.id;
+  const controlledUpscaler = useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'upscaler')?.id;
+  const sequenceDeliverySource = controlledCompose ?? controlledSequence;
+  const preUpscaleDeliverySource = sequenceDeliverySource ?? wanGenerate;
+  const deliverySource = controlledUpscaler ?? sequenceDeliverySource ?? wanGenerate;
   const specs = [
-    makeConnectionSpec(wanPipeline, ['pipeline'], wanGenerate, ['pipeline']),
-    makeConnectionSpec(wanGenerate, ['video_out'], videoExport, ['video']),
+    makeConnectionSpec(diffusersQuantization, ['quantization_config'], diffusersRecipe, ['quantization_config']),
+    makeConnectionSpec(diffusersRecipe, ['execution_recipe'], wanPipeline, ['execution_recipe']),
+    makeConnectionSpec(wanPipeline, ['pipeline'], controlledSequence ?? wanGenerate, ['pipeline']),
+    makeConnectionSpec(controlledSequence, ['clips'], controlledCompose, ['clip_1']),
+    makeConnectionSpec(
+      controlledUpscaler ? preUpscaleDeliverySource : undefined,
+      controlledCompose ? ['video'] : ['video_out'],
+      controlledUpscaler,
+      ['image'],
+    ),
+    makeConnectionSpec(
+      deliverySource,
+      controlledUpscaler ? ['output'] : controlledCompose ? ['video'] : ['video_out'],
+      videoExport,
+      ['video'],
+    ),
   ];
 
-  if (binding.mode === 'image_to_video' || binding.mode === 'reference_to_video') {
+  if (loadImage) {
     specs.push(makeConnectionSpec(loadImage, ['image'], wanGenerate, ['reference_images']));
   }
 
@@ -791,6 +1017,8 @@ function desiredQwenOutpaintEdgeSpecs(binding: StudioGraphBinding) {
 
 function desiredDiffusersImageEdgeSpecs(binding: StudioGraphBinding) {
   const {
+    diffusersQuantization,
+    diffusersRecipe,
     diffusersImagePipeline,
     diffusersImageGenerate,
     diffusersImageEdit,
@@ -798,36 +1026,239 @@ function desiredDiffusersImageEdgeSpecs(binding: StudioGraphBinding) {
     diffusersImageControl,
     loadImage,
     loadMask,
+    qwenOutpaintCanvas,
     preview,
   } = binding.nodes;
   const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
   return [
+    makeConnectionSpec(diffusersQuantization, ['quantization_config'], diffusersRecipe, ['quantization_config']),
+    makeConnectionSpec(diffusersRecipe, ['execution_recipe'], diffusersImagePipeline, ['execution_recipe']),
     makeConnectionSpec(diffusersImagePipeline, ['pipeline'], targetNode, ['pipeline']),
     makeConnectionSpec(loadImage, ['image'], diffusersImageEdit, ['image']),
-    makeConnectionSpec(loadImage, ['image'], diffusersImageInpaint, ['image']),
+    makeConnectionSpec(loadImage, ['image'], qwenOutpaintCanvas, ['image']),
+    makeConnectionSpec(qwenOutpaintCanvas, ['canvas'], diffusersImageInpaint, ['image']),
+    makeConnectionSpec(qwenOutpaintCanvas, ['mask_image'], diffusersImageInpaint, ['mask_image']),
+    makeConnectionSpec(qwenOutpaintCanvas ? undefined : loadImage, ['image'], diffusersImageInpaint, ['image']),
     makeConnectionSpec(loadMask, ['image'], diffusersImageInpaint, ['mask_image']),
     makeConnectionSpec(loadImage, ['image'], diffusersImageControl, ['control_image', 'image']),
     makeConnectionSpec(targetNode, ['images', 'image', 'output'], preview, ['image']),
   ].filter((spec): spec is StudioEdgeSpec => Boolean(spec));
 }
 
-function desiredAudioEdgeSpecs(binding: StudioGraphBinding) {
-  const { audioPipeline, loadAudio, loadReferenceAudio, audioGenerate, audioExport } = binding.nodes;
+function desiredStillUpscaleEdgeSpecs(binding: StudioGraphBinding) {
+  const controlledUpscaler = useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'upscaler')?.id;
+  const controlledPreview = useFlowStore
+    .getState()
+    .nodes.find((node) => node.data?.studioRole === 'upscalePreview')?.id;
+  if (!controlledUpscaler || !controlledPreview) return [];
+
+  const source = usesQwenDirectTextToImage(binding)
+    ? binding.nodes.qwenGenerate
+    : usesQwenDirectInpaint(binding) || usesQwenDirectOutpaint(binding)
+      ? binding.nodes.qwenInpaint
+      : usesDiffusersImageFacade(binding)
+        ? (binding.nodes.diffusersImageInpaint ??
+          binding.nodes.diffusersImageControl ??
+          binding.nodes.diffusersImageEdit ??
+          binding.nodes.diffusersImageGenerate)
+        : binding.nodes.decode;
+
   return [
+    makeConnectionSpec(source, ['images', 'image', 'output'], controlledUpscaler, ['image']),
+    makeConnectionSpec(controlledUpscaler, ['output', 'image'], controlledPreview, ['image']),
+  ].filter((spec): spec is StudioEdgeSpec => Boolean(spec));
+}
+
+function desiredAudioEdgeSpecs(binding: StudioGraphBinding) {
+  const {
+    diffusersQuantization,
+    diffusersRecipe,
+    audioPipeline,
+    loadAudio,
+    loadReferenceAudio,
+    audioGenerate,
+    audioLoudnessMatch,
+    audioJoin,
+    audioExport,
+  } = binding.nodes;
+  return [
+    makeConnectionSpec(diffusersQuantization, ['quantization_config'], diffusersRecipe, ['quantization_config']),
+    makeConnectionSpec(diffusersRecipe, ['execution_recipe'], audioPipeline, ['execution_recipe']),
     makeConnectionSpec(audioPipeline, ['pipeline'], audioGenerate, ['pipeline']),
     makeConnectionSpec(loadAudio, ['audio'], audioGenerate, ['source_audio', 'audio']),
     makeConnectionSpec(loadReferenceAudio, ['audio'], audioGenerate, ['reference_audio']),
-    makeConnectionSpec(audioGenerate, ['audio'], audioExport, ['audio']),
+    makeConnectionSpec(audioGenerate, ['audio'], audioLoudnessMatch ?? audioJoin ?? audioExport, [
+      'audio',
+      'continuation',
+    ]),
+    makeConnectionSpec(loadAudio, ['audio'], audioLoudnessMatch, ['reference']),
+    makeConnectionSpec(audioLoudnessMatch, ['output'], audioJoin ?? audioExport, ['continuation', 'audio']),
+    makeConnectionSpec(loadAudio, ['audio'], audioJoin, ['source']),
+    makeConnectionSpec(audioJoin, ['output'], audioExport, ['audio']),
   ].filter((spec): spec is StudioEdgeSpec => Boolean(spec));
 }
 
 function desiredEdgeSpecs(binding: StudioGraphBinding) {
-  if (usesQwenDirectTextToImage(binding)) return desiredQwenTextToImageEdgeSpecs(binding);
-  if (usesQwenDirectInpaint(binding)) return desiredQwenInpaintEdgeSpecs(binding);
-  if (usesQwenDirectOutpaint(binding)) return desiredQwenOutpaintEdgeSpecs(binding);
+  if (usesQwenDirectTextToImage(binding)) {
+    return [...desiredQwenTextToImageEdgeSpecs(binding), ...desiredStillUpscaleEdgeSpecs(binding)];
+  }
+  if (usesQwenDirectInpaint(binding)) {
+    return [...desiredQwenInpaintEdgeSpecs(binding), ...desiredStillUpscaleEdgeSpecs(binding)];
+  }
+  if (usesQwenDirectOutpaint(binding)) {
+    return [...desiredQwenOutpaintEdgeSpecs(binding), ...desiredStillUpscaleEdgeSpecs(binding)];
+  }
   if (isAudioMode(binding.mode)) return desiredAudioEdgeSpecs(binding);
-  if (usesDiffusersImageFacade(binding)) return desiredDiffusersImageEdgeSpecs(binding);
-  return isVideoMode(binding.mode) ? desiredVideoEdgeSpecs(binding) : desiredBaseEdgeSpecs(binding);
+  if (usesDiffusersImageFacade(binding)) {
+    return [...desiredDiffusersImageEdgeSpecs(binding), ...desiredStillUpscaleEdgeSpecs(binding)];
+  }
+  return isVideoMode(binding.mode)
+    ? desiredVideoEdgeSpecs(binding)
+    : [...desiredBaseEdgeSpecs(binding), ...desiredStillUpscaleEdgeSpecs(binding)];
+}
+
+function minimumDynamicManagedEdgeCount(binding: StudioGraphBinding) {
+  // Modular Diffusers starts with seven core links. Dynamic field actions add
+  // the concrete handles used by these links, so a smaller restored graph is
+  // still a skeleton and must not be treated as finalized.
+  let count = 7;
+  if (binding.nodes.qwenQuantization) count += 1;
+
+  if (
+    binding.mode === 'inpaint' &&
+    binding.nodes.loadImage &&
+    binding.nodes.loadMask &&
+    binding.nodes.applyMask &&
+    binding.nodes.imageEncode
+  ) {
+    count += 6;
+  } else if (binding.nodes.loadImage && binding.nodes.imageEncode) {
+    count += 4;
+  }
+
+  if (binding.nodes.loadImage && binding.nodes.controlnetModel && binding.nodes.controlnet) {
+    count += 4;
+  }
+
+  const controlledRoles = new Set(
+    useFlowStore
+      .getState()
+      .nodes.map((node) => node.data.studioRole)
+      .filter((role): role is string => typeof role === 'string'),
+  );
+  if (controlledRoles.has('upscaler') && controlledRoles.has('upscalePreview')) count += 2;
+  return count;
+}
+
+function nodeHasFieldGroups(nodeId: string | undefined, groups: string[][]) {
+  return Boolean(nodeId && groups.every((group) => Boolean(findParamKey(nodeId, group))));
+}
+
+function legacyDynamicFieldGroupsAreFinalized(binding: StudioGraphBinding) {
+  if (
+    !nodeHasFieldGroups(binding.nodes.prompt, [['prompt'], ['embeddings']]) ||
+    !nodeHasFieldGroups(binding.nodes.denoise, [
+      ['embeddings'],
+      ['latents'],
+      ...(binding.nodes.controlnet ? ([['controlnet_bundle']] as string[][]) : []),
+    ]) ||
+    !nodeHasFieldGroups(binding.nodes.decode, [['latents'], ['images']])
+  ) {
+    return false;
+  }
+  if (binding.nodes.qwenQuantization) {
+    if (!nodeHasFieldGroups(binding.nodes.qwenQuantization, [['model_id'], ['quantization_config']])) return false;
+  }
+  if (binding.nodes.imageEncode) {
+    if (!nodeHasFieldGroups(binding.nodes.imageEncode, [['image'], ['image_latents']])) return false;
+  }
+  if (binding.nodes.controlnet) {
+    if (
+      !nodeHasFieldGroups(binding.nodes.controlnet, [['control_image'], ['controlnet'], ['vae'], ['controlnet_bundle']])
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function restoredManagedGraphIsLocallyFinalized(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  allowLegacyDynamicProof: boolean,
+) {
+  const plannedForm = resolveGraphResourceForm(form);
+  if (
+    binding.mode !== plannedForm.mode ||
+    binding.modelType !== plannedForm.modelType ||
+    binding.fingerprint !== bindingFingerprint(plannedForm)
+  ) {
+    return false;
+  }
+
+  const requiredRoles = requiredRolesForForm(plannedForm);
+  const requiredNodeIds = requiredRoles.map((role) => binding.nodes[role]);
+  if (
+    requiredNodeIds.some((nodeId) => !nodeId) ||
+    new Set(requiredNodeIds).size !== requiredNodeIds.length ||
+    requiredRoles.some((role) => !nodeMatchesRole(binding.nodes[role], role))
+  ) {
+    return false;
+  }
+  if (inspectStudioGraphBindingDivergence(binding)) return false;
+
+  const hasProof = Boolean(binding.finalizationProof);
+  if (hasProof) {
+    return (
+      bindingFinalizationProofMatches(binding, plannedForm) && getStudioGraphRunBlockingMessage(plannedForm) === null
+    );
+  }
+  if (!allowLegacyDynamicProof || !requiresDynamicGraphChannel(plannedForm)) return false;
+
+  const desiredSpecs = desiredEdgeSpecs(binding);
+  const desiredEdgeIds = collectDesiredEdgeIds(desiredSpecs);
+  const trackedEdgeIds = new Set(binding.managedEdgeIds ?? []);
+  if (
+    desiredSpecs.length === 0 ||
+    desiredEdgeIds.length !== desiredSpecs.length ||
+    desiredEdgeIds.some((edgeId) => !trackedEdgeIds.has(edgeId))
+  ) {
+    return false;
+  }
+
+  if (requiresDynamicGraphChannel(plannedForm) && desiredSpecs.length < minimumDynamicManagedEdgeCount(binding)) {
+    return false;
+  }
+  if (!legacyDynamicFieldGroupsAreFinalized(binding)) return false;
+
+  return getStudioGraphRunBlockingMessage(plannedForm) === null;
+}
+
+function restoreFinalizedGraphState(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  previous: StudioGraphFinalizationState | null,
+) {
+  const allowLegacyDynamicProof = !binding.finalizationProof;
+  if (!restoredManagedGraphIsLocallyFinalized(binding, form, allowLegacyDynamicProof)) return false;
+
+  const finalizedBinding = binding.finalizationProof ? binding : bindingWithFinalizationProof(binding, form);
+  const finalizedAt = finalizedBinding.finalizationProof?.finalizedAt ?? Date.now();
+  const studio = useStudioStore.getState();
+  if (finalizedBinding !== binding) studio.setGraphBinding(finalizedBinding);
+  studio.setGraphFinalization({
+    status: 'complete',
+    bindingFingerprint: finalizedBinding.fingerprint,
+    startedAt: previous?.startedAt ?? null,
+    skeletonMs: previous?.skeletonMs,
+    finalizedAt,
+    timedOutGroups: [],
+    managedEdgeCount: finalizedBinding.managedEdgeIds.length,
+    message: 'Restored finalized graph verified.',
+  });
+  studio.setLastError(null);
+  studio.saveActiveWorkflowTab(true);
+  return true;
 }
 
 function hasConnection(
@@ -951,6 +1382,31 @@ function collectManagedNodeEdgeIds(binding: StudioGraphBinding) {
     .map((edge) => edge.id);
 }
 
+function reconcileManagedGraphBinding(
+  binding: StudioGraphBinding,
+  managedExtensionNodeIds: readonly string[] = [],
+): StudioGraphBinding {
+  const { nodes, edges } = useFlowStore.getState();
+  const requestedExtensionIds = new Set(managedExtensionNodeIds);
+  const managedNodeIds = Array.from(
+    new Set([
+      ...(binding.managedNodeIds?.length ? binding.managedNodeIds : Object.values(binding.nodes).filter(isString)),
+      ...nodes
+        .filter((node) => requestedExtensionIds.has(node.id) && node.data.studioOwned === true)
+        .map((node) => node.id),
+    ]),
+  );
+  const managedNodes = new Set(managedNodeIds);
+  return {
+    ...binding,
+    managedNodeIds,
+    managedEdgeIds: edges
+      .filter((edge) => managedNodes.has(edge.source) && managedNodes.has(edge.target))
+      .map((edge) => edge.id),
+    updatedAt: Date.now(),
+  };
+}
+
 function expectedManagedEdgeCount(binding: StudioGraphBinding) {
   return desiredEdgeSpecs(binding).length;
 }
@@ -970,20 +1426,24 @@ function refreshManagedEdgeBinding(binding: StudioGraphBinding) {
   const currentBinding = useStudioStore.getState().graphBinding;
   if (!currentBinding || currentBinding.fingerprint !== binding.fingerprint) return;
 
-  const desiredEdgeIds = collectDesiredEdgeIds(desiredEdgeSpecs(currentBinding));
-  const nodeEdgeIds = collectManagedNodeEdgeIds(currentBinding);
-  const nextEdgeIds = desiredEdgeIds.length > 0 ? desiredEdgeIds : nodeEdgeIds;
-  if (nextEdgeIds.length === 0) return;
+  const reconciledBinding = reconcileManagedGraphBinding(currentBinding);
+  const nextEdgeIds = reconciledBinding.managedEdgeIds;
 
   const currentIds = [...(currentBinding.managedEdgeIds ?? [])].sort().join('|');
   const nextIds = [...nextEdgeIds].sort().join('|');
-  if (currentIds === nextIds) return;
+  const currentNodeIds = [...(currentBinding.managedNodeIds ?? [])].sort().join('|');
+  const nextNodeIds = [...reconciledBinding.managedNodeIds].sort().join('|');
+  if (currentIds === nextIds && currentNodeIds === nextNodeIds) return;
 
-  useStudioStore.getState().setGraphBinding({
-    ...currentBinding,
-    managedEdgeIds: nextEdgeIds,
-    updatedAt: Date.now(),
-  });
+  useStudioStore.getState().setGraphBinding(reconciledBinding);
+}
+
+export function refreshStudioManagedGraphBinding(managedExtensionNodeIds: readonly string[] = []) {
+  const binding = useStudioStore.getState().graphBinding;
+  if (!binding) return null;
+  const refreshed = reconcileManagedGraphBinding(binding, managedExtensionNodeIds);
+  useStudioStore.getState().setGraphBinding(refreshed);
+  return refreshed;
 }
 
 function scheduleManagedEdgeBindingRefresh(binding: StudioGraphBinding) {
@@ -994,6 +1454,37 @@ function scheduleManagedEdgeBindingRefresh(binding: StudioGraphBinding) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function requiresDynamicGraphChannel(form: StudioFormState) {
+  return (
+    !isVideoMode(form.mode) &&
+    !isAudioMode(form.mode) &&
+    !usesDiffusersImageFacade(form) &&
+    !usesQwenDirectTextToImage(form) &&
+    !usesQwenDirectInpaintPipeline(form)
+  );
+}
+
+async function waitForDynamicGraphChannel(timeout = 20_000) {
+  if (typeof WebSocket === 'undefined') return true;
+
+  let websocket = useWebsocketStore.getState();
+  if (websocket.isConnected && websocket.sid) return true;
+  if (!websocket.isConnecting) {
+    websocket.connect();
+  }
+
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    websocket = useWebsocketStore.getState();
+    if (websocket.isConnected && websocket.sid) return true;
+    await delay(50);
+  }
+
+  const message = 'The Studio graph could not initialize because the MoDiff connection is not ready.';
+  useStudioStore.getState().setLastError(message);
+  throw new Error(message);
 }
 
 async function waitForFieldGroups(nodeId: string | undefined, groups: string[][], timeout = 4500) {
@@ -1091,7 +1582,12 @@ function pruneObsoleteManagedNodes(
   const obsoleteNodeIds = previousManagedNodeIds.filter((nodeId) => {
     if (desiredNodeIds.has(nodeId)) return false;
     const node = getNode(nodeId);
-    return Boolean(node?.data.studioOwned);
+    const studioRole = node?.data.studioRole;
+    return Boolean(
+      node?.data.studioOwned &&
+      typeof studioRole === 'string' &&
+      Object.prototype.hasOwnProperty.call(NODE_KEYS, studioRole),
+    );
   });
 
   if (obsoleteNodeIds.length > 0) {
@@ -1104,7 +1600,11 @@ function pruneDuplicateStudioOwnedNodes(nodes: Partial<Record<StudioGraphRole, s
   const obsoleteNodeIds = useFlowStore
     .getState()
     .nodes.filter((node) => node.data.studioOwned && !desiredNodeIds.has(node.id))
-    .filter((node) => !roles.includes(node.data.studioRole as StudioGraphRole) || node.data.studioRole)
+    .filter(
+      (node) =>
+        typeof node.data.studioRole === 'string' &&
+        Object.prototype.hasOwnProperty.call(NODE_KEYS, node.data.studioRole),
+    )
     .map((node) => node.id);
 
   if (obsoleteNodeIds.length > 0) {
@@ -1210,6 +1710,16 @@ async function applyModelType(binding: StudioGraphBinding, modelType: StudioMode
   await fieldAction(props, modelType);
 }
 
+async function applyManagedInputSignal(nodeId: string | undefined, candidates: string[], value: unknown) {
+  const fieldKey = findParamKey(nodeId, candidates);
+  if (!nodeId || !fieldKey) return;
+  const props = buildFieldProps(nodeId, fieldKey);
+  if (!props?.onSignal) return;
+
+  useFlowStore.getState().setParam(nodeId, fieldKey, { direction: 'input', value }, 'signal');
+  await fieldAction(props, value, 'onSignal');
+}
+
 async function applyAutoModelLoaderType(nodeId: string | undefined, loaderType: string) {
   const modelTypeKey = findParamKey(nodeId, ['model_type']);
   if (!nodeId || !modelTypeKey) return;
@@ -1238,6 +1748,30 @@ async function applyControlnetModel(binding: StudioGraphBinding, form: StudioFor
   setParamIfPresent(controlnetModel, ['offload_mode'], form.offloadMode);
   setParamIfPresent(controlnetModel, ['subfolder'], '');
   setParamIfPresent(controlnetModel, ['variant'], '');
+}
+
+function pinControlnetLoaderIdentity(controlnetModel: string | undefined) {
+  if (!controlnetModel) return;
+
+  // The dynamic ControlNet node relays the surrounding pipeline class through
+  // its boundary handles. Connection reconciliation must never let that
+  // QwenImageModularPipeline signal replace AutoModelLoader's component kind:
+  // the latter must remain `controlnet` or ComponentSpec loads the repository
+  // under an invalid component name and only fails after the base pipeline has
+  // spent minutes materializing its weights.
+  setParamIfPresent(controlnetModel, ['model_type'], 'controlnet');
+  const outputKey = findParamKey(controlnetModel, ['model']);
+  const outputParam = getNodeParam(controlnetModel, outputKey);
+  if (outputKey && outputParam?.signal) {
+    useFlowStore
+      .getState()
+      .setParam(
+        controlnetModel,
+        outputKey,
+        { ...outputParam.signal, direction: 'output', value: 'controlnet' },
+        'signal',
+      );
+  }
 }
 
 async function applyControlnetPipelineType(binding: StudioGraphBinding, modelType: StudioModelType) {
@@ -1328,6 +1862,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     qwenGenerate,
     prompt,
     denoise,
+    imageEncode,
     loadImage,
     loadMask,
     controlnetModel,
@@ -1335,6 +1870,8 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     qwenInpaintPipeline,
     qwenOutpaintCanvas,
     qwenInpaint,
+    diffusersQuantization,
+    diffusersRecipe,
     wanPipeline,
     loadVideo,
     loadControlVideo,
@@ -1352,12 +1889,14 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     loadAudio,
     loadReferenceAudio,
     audioGenerate,
+    audioLoudnessMatch,
+    audioJoin,
     audioExport,
   } = binding.nodes;
 
   if (isAudioMode(form.mode)) {
     const autoCandidate =
-      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan) : null;
+      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, form) : null;
     const autoArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
@@ -1371,17 +1910,39 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       autoCandidate?.offloadMode === 'group_disk'
         ? autoCandidate.offloadMode
         : form.offloadMode;
-    const autoGeneration = autoCandidate?.generation ?? {};
-
-    setModelRepo(audioPipeline, autoArtifact ?? capability.defaultRepo);
-    setParamIfPresent(audioPipeline, ['pipeline_class'], autoCandidate?.pipelineClass ?? 'AceStepPipeline');
-    setParamIfPresent(
-      audioPipeline,
-      ['dtype'],
+    // Auto candidates resolve to pre-built artifacts. On-load quantization is
+    // deliberately restricted to Expert graphs where it remains visible.
+    const audioQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
+    const audioDtype =
       autoCandidate?.dtype === 'float16' || autoCandidate?.dtype === 'float32' || autoCandidate?.dtype === 'bfloat16'
         ? autoCandidate.dtype
-        : form.dtype,
-    );
+        : form.dtype;
+    const audioPipelineClass = autoCandidate?.pipelineClass ?? 'AceStepPipeline';
+    const isStableAudioPipeline = audioPipelineClass === 'StableAudioPipeline';
+
+    setParamIfPresent(diffusersQuantization, ['backend'], audioQuantizationMode);
+    setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
+    setParamIfPresent(diffusersQuantization, ['dtype'], audioDtype);
+    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
+    setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
+    setParamIfPresent(diffusersRecipe, ['device'], form.device);
+    setParamIfPresent(diffusersRecipe, ['attention_backend'], autoCandidate?.attentionBackend ?? 'auto');
+    setParamIfPresent(diffusersRecipe, ['attention_components'], '');
+    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
+    setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
+    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
+    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
+    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
+    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
+
+    // An audio LoRA is architecture-specific. Keep its declared base model
+    // authoritative across later Studio graph reconciliation; otherwise the
+    // normal profile sync silently restores the default XL checkpoint and the
+    // adapter fails with tensor-shape mismatches at run time.
+    setModelRepo(audioPipeline, activeAudioTemplateBaseModel() ?? autoArtifact ?? capability.defaultRepo);
+    setParamIfPresent(audioPipeline, ['pipeline_class'], audioPipelineClass);
+    setParamIfPresent(audioPipeline, ['mode'], form.mode);
+    setParamIfPresent(audioPipeline, ['dtype'], audioDtype);
     setParamIfPresent(audioPipeline, ['device'], form.device);
     setParamIfPresent(audioPipeline, ['auto_offload'], autoOffloadMode !== 'none');
     setParamIfPresent(audioPipeline, ['offload_mode'], autoOffloadMode);
@@ -1391,32 +1952,150 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
 
     setParamIfPresent(audioGenerate, ['task_type'], audioTaskForMode(form.mode));
     setParamIfPresent(audioGenerate, ['prompt'], form.prompt);
+    setParamIfPresent(audioGenerate, ['negative_prompt'], form.negativePrompt);
     setParamIfPresent(audioGenerate, ['lyrics'], form.lyrics);
-    setParamIfPresent(audioGenerate, ['audio_duration'], autoGeneration.audioDuration ?? form.audioDuration);
+    // Candidate defaults are reconciled into the Studio form before graph
+    // synchronization. The form then remains authoritative so a user can edit
+    // the main Auto controls without the previous candidate immediately
+    // restoring its defaults.
+    setParamIfPresent(audioGenerate, ['audio_duration'], form.audioDuration);
     setParamIfPresent(audioGenerate, ['extension_duration'], form.extensionDuration);
     setParamIfPresent(audioGenerate, ['vocal_language'], form.vocalLanguage);
     setParamIfPresent(audioGenerate, ['seed'], seedValue(form));
-    setParamIfPresent(audioGenerate, ['num_inference_steps', 'steps'], autoGeneration.steps ?? form.steps);
-    setParamIfPresent(audioGenerate, ['guidance_scale'], autoGeneration.guidanceScale ?? form.guidanceScale);
-    setParamIfPresent(audioGenerate, ['shift'], autoGeneration.shift ?? form.shift);
+    setParamIfPresent(audioGenerate, ['num_inference_steps', 'steps'], form.steps);
+    setParamIfPresent(audioGenerate, ['guidance_scale'], form.guidanceScale);
+    setParamIfPresent(audioGenerate, ['shift'], form.shift);
     setParamIfPresent(audioGenerate, ['bpm'], form.bpm > 0 ? form.bpm : 0);
     setParamIfPresent(audioGenerate, ['keyscale'], form.keyscale);
     setParamIfPresent(audioGenerate, ['timesignature'], form.timesignature);
     setParamIfPresent(audioGenerate, ['repainting_start'], form.repaintingStart);
     setParamIfPresent(audioGenerate, ['repainting_end'], form.repaintingEnd);
     setParamIfPresent(audioGenerate, ['audio_cover_strength'], form.audioCoverStrength);
+    setParamIfPresent(audioGenerate, ['return_continuation_tail'], form.mode === 'audio_continuation');
     setParamIfPresent(audioGenerate, ['sample_rate'], capability.recommendedSampleRate ?? 48000);
+    // DiffusersAudio.Generate is shared by ACE-Step and Stable Audio, but the
+    // two pipelines do not consume the same controls. Keep managed nodes
+    // honest: never show an ACE user controls that this run will ignore.
+    setParamIfPresent(audioGenerate, ['lora_scale'], true, 'hidden');
+    setParamIfPresent(audioGenerate, ['stable_audio_steps'], !isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['stable_audio_guidance'], !isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['num_waveforms'], !isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['negative_prompt'], !isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['lyrics'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['extension_duration'], form.mode !== 'audio_continuation', 'hidden');
+    setParamIfPresent(audioGenerate, ['vocal_language'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['num_inference_steps'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['guidance_scale'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['shift'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['bpm'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['keyscale'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['timesignature'], isStableAudioPipeline, 'hidden');
+    setParamIfPresent(audioGenerate, ['repainting_start'], form.mode !== 'audio_repaint', 'hidden');
+    setParamIfPresent(audioGenerate, ['repainting_end'], form.mode !== 'audio_repaint', 'hidden');
+    setParamIfPresent(audioGenerate, ['audio_cover_strength'], form.mode !== 'audio_variation', 'hidden');
+    setParamIfPresent(audioGenerate, ['return_continuation_tail'], form.mode !== 'audio_continuation', 'hidden');
+    setParamIfPresent(audioLoudnessMatch, ['reference_window_seconds'], 15);
+    setParamIfPresent(audioLoudnessMatch, ['target_peak_dbfs'], -1);
+    setParamIfPresent(audioLoudnessMatch, ['max_adjustment_db'], 12);
+    setParamIfPresent(audioJoin, ['boundary_fade_seconds'], 0.01);
     setParamIfPresent(audioExport, ['sample_rate'], capability.recommendedSampleRate ?? 48000);
     return;
   }
 
   if (isVideoMode(form.mode)) {
-    setModelRepo(wanPipeline, capability.defaultRepo);
-    setParamIfPresent(wanPipeline, ['revision'], WAN_VACE_REVISION);
-    setParamIfPresent(wanPipeline, ['dtype'], form.dtype);
+    const autoCandidate =
+      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, form) : null;
+    const preservationWanMode = form.modelType === 'WanVideoPipeline';
+    const qualityWanImageMode = form.modelType === 'WanImageToVideoPipeline';
+    const qualityWanTextMode = form.modelType === 'WanTI2VPipeline';
+    const wanTextToVideoMode = preservationWanMode && form.mode === 'text_to_video';
+    const pipelineClass =
+      autoCandidate?.pipelineClass ??
+      (form.modelType === 'LTXVideoPipeline'
+        ? 'LTXConditionPipeline'
+        : qualityWanTextMode
+          ? 'WanTI2VPipeline'
+          : qualityWanImageMode
+            ? 'WanImageToVideoPipeline'
+            : preservationWanMode
+              ? wanTextToVideoMode
+                ? 'WanPipeline'
+                : 'WanVideoToVideoPipeline'
+              : 'WanVACEPipeline');
+    const resolvedArtifact =
+      autoCandidate?.resolvedArtifact ??
+      autoCandidate?.artifact ??
+      autoCandidate?.installTarget?.repo ??
+      autoCandidate?.modelRepo ??
+      (qualityWanTextMode
+        ? WAN_22_TI2V_5B_REPO
+        : qualityWanImageMode
+          ? WAN_22_I2V_A14B_REPO
+          : preservationWanMode
+            ? WAN_T2V_1_3B_REPO
+            : capability.defaultRepo);
+    const resolvedOffloadMode = autoCandidate?.offloadMode ?? form.offloadMode;
+    const decodedVideoPixels = form.width * form.height * form.numFrames;
+    const needsVaeTiling =
+      qualityWanImageMode ||
+      form.resourceMode !== 'expert' ||
+      resolvedOffloadMode !== 'none' ||
+      decodedVideoPixels > 40_000_000;
+    const supportsNativeFlash =
+      form.device.startsWith('cuda') &&
+      (pipelineClass === 'WanImageToVideoPipeline' ||
+        pipelineClass === 'WanTI2VPipeline' ||
+        pipelineClass === 'WanPipeline' ||
+        pipelineClass === 'Wan22Pipeline');
+
+    setParamIfPresent(
+      diffusersQuantization,
+      ['backend'],
+      form.resourceMode === 'expert' ? form.quantizationMode : 'none',
+    );
+    setParamIfPresent(
+      diffusersQuantization,
+      ['components'],
+      pipelineClass === 'WanImageToVideoPipeline' ? ['transformer', 'transformer_2'] : ['transformer'],
+    );
+    setParamIfPresent(diffusersQuantization, ['dtype'], autoCandidate?.dtype ?? form.dtype);
+    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
+    setParamIfPresent(diffusersRecipe, ['offload_mode'], resolvedOffloadMode);
+    setParamIfPresent(diffusersRecipe, ['device'], form.device);
+    // LTX cross-attention always carries a text mask. On the qualified ROCm
+    // stack Diffusers' automatic dispatcher selects AITER native flash, whose
+    // masked path raises before the first denoising step. Keep LTX on portable
+    // math SDPA; Wan can still use native flash where its contract allows it.
+    const attentionBackend =
+      autoCandidate?.attentionBackend ??
+      (pipelineClass === 'LTXConditionPipeline' ? '_native_math' : supportsNativeFlash ? '_native_flash' : 'auto');
+    setParamIfPresent(diffusersRecipe, ['attention_backend'], attentionBackend);
+    setParamIfPresent(
+      diffusersRecipe,
+      ['attention_components'],
+      supportsNativeFlash
+        ? pipelineClass === 'WanImageToVideoPipeline'
+          ? 'transformer,transformer_2'
+          : 'transformer'
+        : '',
+    );
+    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
+    // Decode activation pressure can exceed sampling pressure by tens of GiB.
+    // Wan I2V also VAE-encodes an 81-frame padded conditioning tensor before
+    // denoising, which can exceed resident-model headroom even at 768x512.
+    setParamIfPresent(diffusersRecipe, ['vae_tiling'], needsVaeTiling);
+    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
+    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
+    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
+    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
+
+    setModelRepo(wanPipeline, resolvedArtifact);
+    setParamIfPresent(wanPipeline, ['pipeline_class'], pipelineClass);
+    setParamIfPresent(wanPipeline, ['revision'], pipelineClass === 'WanVACEPipeline' ? WAN_VACE_REVISION : '');
+    setParamIfPresent(wanPipeline, ['dtype'], autoCandidate?.dtype ?? form.dtype);
     setParamIfPresent(wanPipeline, ['device'], form.device);
-    setParamIfPresent(wanPipeline, ['auto_offload'], form.autoOffload);
-    setParamIfPresent(wanPipeline, ['offload_mode'], form.offloadMode);
+    setParamIfPresent(wanPipeline, ['auto_offload'], resolvedOffloadMode !== 'none');
+    setParamIfPresent(wanPipeline, ['offload_mode'], resolvedOffloadMode);
 
     if (loadVideo) setParamIfPresent(loadVideo, ['file'], form.sourceVideo);
     if (loadControlVideo) setParamIfPresent(loadControlVideo, ['file'], form.controlVideo);
@@ -1433,9 +2112,11 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     }
     if (alignMaskVideo) {
       setParamIfPresent(alignMaskVideo, ['threshold'], 127);
+      setParamIfPresent(alignMaskVideo, ['grow_pixels'], form.mode === 'video_inpaint' ? 96 : 0);
     }
 
     setParamIfPresent(wanGenerate, ['prompt'], form.prompt);
+    setParamIfPresent(wanGenerate, ['mode'], form.mode);
     setParamIfPresent(wanGenerate, ['negative_prompt'], form.negativePrompt);
     setParamIfPresent(wanGenerate, ['width'], form.width);
     setParamIfPresent(wanGenerate, ['height'], form.height);
@@ -1443,7 +2124,21 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(wanGenerate, ['num_frames'], form.numFrames);
     setParamIfPresent(wanGenerate, ['num_inference_steps'], form.steps);
     setParamIfPresent(wanGenerate, ['guidance_scale'], form.guidanceScale);
+    if (form.modelType === 'WanVideoPipeline' || form.modelType === 'WanTI2VPipeline') {
+      setParamIfPresent(wanGenerate, ['scheduler_flow_shift'], form.shift);
+    }
     setParamIfPresent(wanGenerate, ['conditioning_scale'], form.conditioningScale);
+    // LTX exposes two separate controls for video-to-video: condition strength
+    // keeps the source trajectory attached, while denoise strength determines
+    // how far the generated appearance may move from the source. Reusing one
+    // value for both made those controls fight each other and prevented visible
+    // restyling. Other modes and adapters retain their existing normalized
+    // strength contract.
+    const conditionStrength =
+      form.modelType === 'LTXVideoPipeline' && form.mode === 'video_to_video' ? form.conditioningScale : form.strength;
+    setParamIfPresent(wanGenerate, ['strength'], conditionStrength);
+    setParamIfPresent(wanGenerate, ['denoise_strength'], form.strength);
+    setParamIfPresent(wanGenerate, ['frame_rate'], form.fps);
     setParamIfPresent(wanGenerate, ['guidance_scale_2'], form.guidanceScale2);
     setParamIfPresent(wanGenerate, ['use_guidance_scale_2'], form.guidanceScale2 > 0);
     setParamIfPresent(wanGenerate, ['output_type'], form.outputType);
@@ -1455,7 +2150,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
 
   if (usesDiffusersImageFacade(binding)) {
     const autoCandidate =
-      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan) : null;
+      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, form) : null;
     const autoArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
@@ -1469,33 +2164,42 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       autoCandidate?.offloadMode === 'group_disk'
         ? autoCandidate.offloadMode
         : form.offloadMode;
-    const autoQuantizationMode =
-      autoCandidate?.quantizationMode === 'none' ||
-      autoCandidate?.quantizationMode === 'bnb_4bit' ||
-      autoCandidate?.quantizationMode === 'bnb_8bit' ||
-      autoCandidate?.quantizationMode === 'quanto_float8' ||
-      autoCandidate?.quantizationMode === 'torchao_float8'
-        ? autoCandidate.quantizationMode
-        : form.quantizationMode;
-    const autoGeneration = autoCandidate?.generation ?? {};
+    const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
     const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
-    const pipelineClass = isFluxModel(form.modelType)
-      ? fluxPipelineClassFor(form, autoCandidate?.pipelineClass)
-      : form.modelType === 'ZImageModularPipeline'
-        ? (autoCandidate?.pipelineClass ?? 'ZImagePipeline')
-        : autoCandidate?.pipelineClass;
+    const pipelineClass =
+      isFluxModel(form.modelType) ||
+      form.modelType === 'QwenImageModularPipeline' ||
+      form.modelType === 'QwenImageEditModularPipeline'
+        ? fluxPipelineClassFor(form, autoCandidate?.pipelineClass)
+        : form.modelType === 'ZImageModularPipeline'
+          ? (autoCandidate?.pipelineClass ?? 'ZImagePipeline')
+          : autoCandidate?.pipelineClass;
+    const imageDtype =
+      autoCandidate?.dtype === 'float16' || autoCandidate?.dtype === 'float32' || autoCandidate?.dtype === 'bfloat16'
+        ? autoCandidate.dtype
+        : form.dtype;
+
+    setParamIfPresent(diffusersQuantization, ['backend'], autoQuantizationMode);
+    setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
+    setParamIfPresent(diffusersQuantization, ['dtype'], imageDtype);
+    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
+    setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
+    setParamIfPresent(diffusersRecipe, ['device'], form.device);
+    setParamIfPresent(diffusersRecipe, ['attention_backend'], autoCandidate?.attentionBackend ?? 'auto');
+    setParamIfPresent(diffusersRecipe, ['attention_components'], '');
+    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
+    setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
+    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
+    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
+    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
+    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
 
     setModelRepo(diffusersImagePipeline, autoArtifact ?? capability.defaultRepo);
     if (pipelineClass) {
       setParamIfPresent(diffusersImagePipeline, ['pipeline_class'], pipelineClass);
     }
-    setParamIfPresent(
-      diffusersImagePipeline,
-      ['dtype'],
-      autoCandidate?.dtype === 'float16' || autoCandidate?.dtype === 'float32' || autoCandidate?.dtype === 'bfloat16'
-        ? autoCandidate.dtype
-        : form.dtype,
-    );
+    setParamIfPresent(diffusersImagePipeline, ['mode'], form.mode);
+    setParamIfPresent(diffusersImagePipeline, ['dtype'], imageDtype);
     setParamIfPresent(diffusersImagePipeline, ['device'], form.device);
     setParamIfPresent(diffusersImagePipeline, ['quantization_mode'], autoQuantizationMode);
     setParamIfPresent(
@@ -1516,23 +2220,39 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       setParamIfPresent(loadMask, ['file'], form.maskImage);
       setParamIfPresent(loadMask, ['alpha_channel'], 'remove alpha');
     }
+    if (qwenOutpaintCanvas) {
+      setParamIfPresent(qwenOutpaintCanvas, ['width'], form.width);
+      setParamIfPresent(qwenOutpaintCanvas, ['height'], form.height);
+      setParamIfPresent(qwenOutpaintCanvas, ['left'], form.outpaintLeft);
+      setParamIfPresent(qwenOutpaintCanvas, ['right'], form.outpaintRight);
+      setParamIfPresent(qwenOutpaintCanvas, ['top'], form.outpaintTop);
+      setParamIfPresent(qwenOutpaintCanvas, ['bottom'], form.outpaintBottom);
+      setParamIfPresent(qwenOutpaintCanvas, ['overlap'], form.outpaintOverlap);
+      setParamIfPresent(qwenOutpaintCanvas, ['feather'], form.outpaintFeather);
+      setParamIfPresent(qwenOutpaintCanvas, ['fill_color'], form.outpaintFillColor);
+    }
 
     setParamIfPresent(targetNode, ['prompt'], form.prompt);
-    setParamIfPresent(targetNode, ['negative_prompt'], autoGeneration.negativePrompt ?? form.negativePrompt);
-    setParamIfPresent(targetNode, ['width'], autoGeneration.width ?? form.width);
-    setParamIfPresent(targetNode, ['height'], autoGeneration.height ?? form.height);
+    setParamIfPresent(targetNode, ['negative_prompt'], form.negativePrompt);
+    // Auto resource planning has already reconciled the selected candidate into
+    // the Studio form. The executable graph must preserve that final user-facing
+    // resolution/aspect ratio instead of restoring the candidate's square native
+    // dimensions here.
+    setParamIfPresent(targetNode, ['width'], form.width);
+    setParamIfPresent(targetNode, ['height'], form.height);
     setParamIfPresent(targetNode, ['seed'], seedValue(form));
-    setParamIfPresent(targetNode, ['num_inference_steps', 'steps'], autoGeneration.steps ?? form.steps);
-    setParamIfPresent(targetNode, ['guidance_scale', 'guidance'], autoGeneration.guidanceScale ?? form.guidanceScale);
+    setParamIfPresent(targetNode, ['num_inference_steps', 'steps'], form.steps);
+    setParamIfPresent(targetNode, ['guidance_scale', 'guidance'], form.guidanceScale);
     setParamIfPresent(targetNode, ['strength'], form.strength);
+    setParamIfPresent(targetNode, ['reference_strength'], form.conditioningScale);
     setParamIfPresent(targetNode, ['output_type'], form.outputType);
-    setParamIfPresent(targetNode, ['max_sequence_length'], autoGeneration.maxSequenceLength ?? form.maxSequenceLength);
+    setParamIfPresent(targetNode, ['max_sequence_length'], form.maxSequenceLength);
     return;
   }
 
   if (usesQwenDirectTextToImage(form)) {
     const autoCandidate =
-      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan) : null;
+      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, form) : null;
     const autoArtifact = autoCandidate?.resolvedArtifact ?? autoCandidate?.artifact ?? autoCandidate?.modelRepo;
     const autoOffloadMode =
       autoCandidate?.offloadMode === 'none' ||
@@ -1542,11 +2262,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       autoCandidate?.offloadMode === 'group_disk'
         ? autoCandidate.offloadMode
         : form.offloadMode;
-    const autoQuantizationMode =
-      autoCandidate?.quantizationMode === 'bnb_4bit' || autoCandidate?.quantizationMode === 'none'
-        ? autoCandidate.quantizationMode
-        : form.quantizationMode;
-    const autoGeneration = autoCandidate?.generation ?? {};
+    const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
 
     setModelRepo(qwenPipeline, autoArtifact ?? capability.defaultRepo);
     setParamIfPresent(
@@ -1572,22 +2288,14 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(qwenPipeline, ['bnb_4bit_use_double_quant'], true);
 
     setParamIfPresent(qwenGenerate, ['prompt'], form.prompt);
-    setParamIfPresent(qwenGenerate, ['negative_prompt'], autoGeneration.negativePrompt ?? form.negativePrompt);
+    setParamIfPresent(qwenGenerate, ['negative_prompt'], form.negativePrompt);
     setParamIfPresent(qwenGenerate, ['width'], form.width);
     setParamIfPresent(qwenGenerate, ['height'], form.height);
     setParamIfPresent(qwenGenerate, ['seed'], seedValue(form));
-    setParamIfPresent(qwenGenerate, ['num_inference_steps', 'steps'], autoGeneration.steps ?? form.steps);
-    setParamIfPresent(
-      qwenGenerate,
-      ['true_cfg_scale', 'guidance_scale', 'guidance'],
-      autoGeneration.guidanceScale ?? form.guidanceScale,
-    );
+    setParamIfPresent(qwenGenerate, ['num_inference_steps', 'steps'], form.steps);
+    setParamIfPresent(qwenGenerate, ['true_cfg_scale', 'guidance_scale', 'guidance'], form.guidanceScale);
     setParamIfPresent(qwenGenerate, ['output_type'], form.outputType);
-    setParamIfPresent(
-      qwenGenerate,
-      ['max_sequence_length'],
-      autoGeneration.maxSequenceLength ?? form.maxSequenceLength,
-    );
+    setParamIfPresent(qwenGenerate, ['max_sequence_length'], form.maxSequenceLength);
     return;
   }
 
@@ -1668,6 +2376,14 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
 
   setParamIfPresent(prompt, ['prompt'], form.prompt);
   setParamIfPresent(prompt, ['negative_prompt'], form.negativePrompt);
+  if (form.modelType === 'QwenImageLayeredModularPipeline') {
+    // Qwen-Image-Layered supports two explicit source resolutions. Keep the
+    // generic prompt and image-encode nodes in lockstep so switching 640/1024
+    // cannot silently fall back to the pipeline default on only one branch.
+    const layerResolution = Math.max(form.width, form.height) >= 832 ? 1024 : 640;
+    setParamIfPresent(prompt, ['resolution'], layerResolution);
+    setParamIfPresent(imageEncode, ['resolution'], layerResolution);
+  }
 
   setParamIfPresent(denoise, ['width'], form.width);
   setParamIfPresent(denoise, ['height'], form.height);
@@ -1693,6 +2409,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 
   if (controlnetModel) {
+    pinControlnetLoaderIdentity(controlnetModel);
     setModelRepo(controlnetModel, QWEN_CONTROLNET_REPO);
     setParamIfPresent(controlnetModel, ['dtype'], form.dtype);
     setParamIfPresent(controlnetModel, ['trust_remote_code'], form.trustRemoteCode);
@@ -1713,6 +2430,7 @@ export function syncStudioGraphValues(form: StudioFormState = useStudioStore.get
   const binding = useStudioStore.getState().graphBinding;
   if (!binding) return false;
   applyFormValues(binding, plannedForm);
+  syncManagedFormControlAliases(plannedForm, binding);
   return true;
 }
 
@@ -1735,7 +2453,12 @@ function missingRolesMessage(form: StudioFormState, missingRoles: StudioGraphRol
             : `Missing MoDiff node registry entries: ${missingRoles.map((role) => NODE_KEYS[role]).join(', ')}`;
 }
 
-function createSkeletonGraph(form: StudioFormState, skeletonStartedAt: number): BridgeResult {
+function createSkeletonGraph(
+  form: StudioFormState,
+  skeletonStartedAt: number,
+  context: WorkflowOperationContext,
+): BridgeResult {
+  assertWorkflowOperationContext(context);
   const binding = buildOrReuseBinding(form);
   applyAuxiliaryNodePresentation(binding, form);
   applyFormValues(binding, form);
@@ -1757,11 +2480,43 @@ function createSkeletonGraph(form: StudioFormState, skeletonStartedAt: number): 
     managedEdgeCount: managedEdgeIds.length,
     message: 'Finalizing graph...',
   });
-  scheduleStudioGraphFinalization(updatedBinding, form, Date.now() - skeletonStartedAt);
+  scheduleStudioGraphFinalization(updatedBinding, form, Date.now() - skeletonStartedAt, context);
   return { binding: updatedBinding, warnings: [] };
 }
 
-async function finalizeDirectQwenGraph(binding: StudioGraphBinding, form: StudioFormState, timedOutGroups: string[]) {
+function assertGraphFinalizationActive(token: number) {
+  if (token !== graphFinalizationToken) {
+    throw new WorkflowOperationCancelledError('Studio graph finalization was superseded.');
+  }
+  if (!graphFinalizationContext) {
+    throw new WorkflowOperationCancelledError('Studio graph finalization no longer owns a workflow.');
+  }
+  assertWorkflowOperationContext(graphFinalizationContext);
+}
+
+function workflowOperationContextsMatch(left: WorkflowOperationContext | null, right: WorkflowOperationContext) {
+  return Boolean(
+    left &&
+    left.workflowTabId === right.workflowTabId &&
+    left.canvasEpoch === right.canvasEpoch &&
+    left.formEpoch === right.formEpoch,
+  );
+}
+
+function graphFinalizationOwnerIsCurrent(token: number) {
+  return (
+    token === graphFinalizationToken &&
+    graphFinalizationContext !== null &&
+    workflowOperationContextIsCurrentForGraph(graphFinalizationContext)
+  );
+}
+
+async function finalizeDirectQwenGraph(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  timedOutGroups: string[],
+  token: number,
+) {
   await Promise.all([
     binding.nodes.qwenQuantization
       ? waitForFieldGroupsTracked(
@@ -1815,6 +2570,17 @@ async function finalizeDirectQwenGraph(binding: StudioGraphBinding, form: Studio
     binding.nodes.qwenOutpaintCanvas
       ? waitForFieldGroupsTracked(
           {
+            label: 'outpaint canvas',
+            nodeId: binding.nodes.qwenOutpaintCanvas,
+            groups: [['image'], ['canvas'], ['mask_image']],
+            timeout: 3000,
+          },
+          timedOutGroups,
+        )
+      : Promise.resolve(true),
+    binding.nodes.qwenOutpaintCanvas
+      ? waitForFieldGroupsTracked(
+          {
             label: 'qwen outpaint canvas',
             nodeId: binding.nodes.qwenOutpaintCanvas,
             groups: [['image'], ['canvas'], ['mask_image']],
@@ -1824,6 +2590,7 @@ async function finalizeDirectQwenGraph(binding: StudioGraphBinding, form: Studio
         )
       : Promise.resolve(true),
   ]);
+  assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);
 }
@@ -1832,6 +2599,7 @@ async function finalizeDirectQwenTextToImageGraph(
   binding: StudioGraphBinding,
   form: StudioFormState,
   timedOutGroups: string[],
+  token: number,
 ) {
   await Promise.all([
     waitForFieldGroupsTracked(
@@ -1853,6 +2621,7 @@ async function finalizeDirectQwenTextToImageGraph(
       timedOutGroups,
     ),
   ]);
+  assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);
 }
@@ -1861,6 +2630,7 @@ async function finalizeDiffusersImageGraph(
   binding: StudioGraphBinding,
   form: StudioFormState,
   timedOutGroups: string[],
+  token: number,
 ) {
   const targetNode =
     binding.nodes.diffusersImageInpaint ??
@@ -1909,11 +2679,17 @@ async function finalizeDiffusersImageGraph(
         )
       : Promise.resolve(true),
   ]);
+  assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);
 }
 
-async function finalizeAudioGraph(binding: StudioGraphBinding, form: StudioFormState, timedOutGroups: string[]) {
+async function finalizeAudioGraph(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  timedOutGroups: string[],
+  token: number,
+) {
   await Promise.all([
     waitForFieldGroupsTracked(
       {
@@ -1942,6 +2718,28 @@ async function finalizeAudioGraph(binding: StudioGraphBinding, form: StudioFormS
       },
       timedOutGroups,
     ),
+    binding.nodes.audioLoudnessMatch
+      ? waitForFieldGroupsTracked(
+          {
+            label: 'audio loudness match',
+            nodeId: binding.nodes.audioLoudnessMatch,
+            groups: [['audio'], ['reference'], ['output']],
+            timeout: 5000,
+          },
+          timedOutGroups,
+        )
+      : Promise.resolve(true),
+    binding.nodes.audioJoin
+      ? waitForFieldGroupsTracked(
+          {
+            label: 'audio join',
+            nodeId: binding.nodes.audioJoin,
+            groups: [['source'], ['continuation'], ['output']],
+            timeout: 5000,
+          },
+          timedOutGroups,
+        )
+      : Promise.resolve(true),
     binding.nodes.loadAudio
       ? waitForFieldGroupsTracked(
           {
@@ -1954,14 +2752,30 @@ async function finalizeAudioGraph(binding: StudioGraphBinding, form: StudioFormS
         )
       : Promise.resolve(true),
   ]);
+  assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);
 }
 
-async function finalizeModularGraph(binding: StudioGraphBinding, form: StudioFormState, timedOutGroups: string[]) {
+async function finalizeModularGraph(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  timedOutGroups: string[],
+  token: number,
+) {
   await applyModelType(binding, form.modelType, true);
-  await applyControlnetModel(binding, form);
+  assertGraphFinalizationActive(token);
+  await Promise.all([
+    applyManagedInputSignal(binding.nodes.prompt, ['text_encoders'], form.modelType),
+    applyManagedInputSignal(binding.nodes.denoise, ['unet'], form.modelType),
+    applyManagedInputSignal(binding.nodes.decode, ['vae'], form.modelType),
+    applyManagedInputSignal(binding.nodes.imageEncode, ['vae'], form.modelType),
+  ]);
+  assertGraphFinalizationActive(token);
   await applyControlnetPipelineType(binding, form.modelType);
+  assertGraphFinalizationActive(token);
+  await applyControlnetModel(binding, form);
+  assertGraphFinalizationActive(token);
 
   ensureConnection(binding.nodes.models, ['text_encoders'], binding.nodes.prompt, ['text_encoders']);
   ensureConnection(binding.nodes.models, ['unet_out'], binding.nodes.denoise, ['unet']);
@@ -2035,21 +2849,26 @@ async function finalizeModularGraph(binding: StudioGraphBinding, form: StudioFor
       : Promise.resolve(true),
   ]);
 
+  assertGraphFinalizationActive(token);
   connectBaseGraph(binding);
   if (binding.nodes.imageEncode) {
     const imageConnectionsReady = await reinforceImageConnections(binding);
+    assertGraphFinalizationActive(token);
     if (!imageConnectionsReady) {
       timedOutGroups.push('image input connections');
     }
   }
   if (binding.nodes.controlnet) {
     const controlConnectionsReady = await reinforceControlConnections(binding);
+    assertGraphFinalizationActive(token);
     if (!controlConnectionsReady) {
       timedOutGroups.push('control image connections');
     }
   }
+  assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);
+  pinControlnetLoaderIdentity(binding.nodes.controlnetModel);
 }
 
 async function finalizeStudioGraph(
@@ -2063,21 +2882,24 @@ async function finalizeStudioGraph(
   const warnings: string[] = [];
   try {
     if (usesQwenDirectTextToImage(form)) {
-      await finalizeDirectQwenTextToImageGraph(binding, form, timedOutGroups);
+      await finalizeDirectQwenTextToImageGraph(binding, form, timedOutGroups, token);
     } else if (usesQwenDirectInpaintPipeline(form)) {
-      await finalizeDirectQwenGraph(binding, form, timedOutGroups);
+      await finalizeDirectQwenGraph(binding, form, timedOutGroups, token);
     } else if (isAudioMode(form.mode)) {
-      await finalizeAudioGraph(binding, form, timedOutGroups);
-    } else if (isFluxModel(form.modelType)) {
-      await finalizeDiffusersImageGraph(binding, form, timedOutGroups);
+      await finalizeAudioGraph(binding, form, timedOutGroups, token);
+    } else if (usesDiffusersImageFacade(form)) {
+      await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
     } else if (!isVideoMode(form.mode)) {
-      await finalizeModularGraph(binding, form, timedOutGroups);
+      await finalizeModularGraph(binding, form, timedOutGroups, token);
     } else {
+      assertGraphFinalizationActive(token);
       applyFormValues(binding, form);
       connectBaseGraph(binding);
     }
 
+    assertGraphFinalizationActive(token);
     const settledNodeEdgeIds = await waitForManagedEdges(binding, 750);
+    assertGraphFinalizationActive(token);
     const settledManagedEdgeIds = collectDesiredEdgeIds(desiredEdgeSpecs(binding));
     const managedEdgeIds =
       settledManagedEdgeIds.length > 0
@@ -2085,15 +2907,26 @@ async function finalizeStudioGraph(
         : settledNodeEdgeIds.length > 0
           ? settledNodeEdgeIds
           : collectManagedNodeEdgeIds(binding);
-    const updatedBinding = {
-      ...binding,
+    const currentBinding = useStudioStore.getState().graphBinding;
+    // Controlled template blocks can be added while this background finalizer
+    // waits for dynamic fields. Reconcile from the current binding when it is
+    // still the same managed graph so those already-adopted Studio extensions
+    // are not dropped by this older core-binding snapshot.
+    const reconciliationBinding = currentBinding?.fingerprint === binding.fingerprint ? currentBinding : binding;
+    const updatedBinding = reconcileManagedGraphBinding({
+      ...reconciliationBinding,
       managedEdgeIds,
       updatedAt: Date.now(),
-    };
+    });
+    const finalizedAt = Date.now();
+    const finalizedBinding =
+      timedOutGroups.length === 0
+        ? bindingWithFinalizationProof(updatedBinding, form, finalizedAt)
+        : { ...updatedBinding, finalizationProof: undefined, updatedAt: finalizedAt };
 
-    if (token === graphFinalizationToken) {
-      useStudioStore.getState().setGraphBinding(updatedBinding);
-      scheduleManagedEdgeBindingRefresh(updatedBinding);
+    if (graphFinalizationOwnerIsCurrent(token)) {
+      useStudioStore.getState().setGraphBinding(finalizedBinding);
+      scheduleManagedEdgeBindingRefresh(finalizedBinding);
       useStudioStore.getState().saveActiveWorkflowTab(true);
       const message =
         timedOutGroups.length > 0
@@ -2101,11 +2934,11 @@ async function finalizeStudioGraph(
           : 'Graph finalized.';
       useStudioStore.getState().setGraphFinalization({
         status: timedOutGroups.length > 0 ? 'warning' : 'complete',
-        bindingFingerprint: updatedBinding.fingerprint,
+        bindingFingerprint: finalizedBinding.fingerprint,
         startedAt,
         skeletonMs,
-        finalizedAt: Date.now(),
-        finalizationMs: Date.now() - startedAt,
+        finalizedAt,
+        finalizationMs: finalizedAt - startedAt,
         timedOutGroups,
         managedEdgeCount: managedEdgeIds.length,
         message,
@@ -2117,10 +2950,11 @@ async function finalizeStudioGraph(
       }
     }
 
-    return { binding: updatedBinding, warnings };
+    return { binding: finalizedBinding, warnings };
   } catch (error) {
+    if (isWorkflowOperationCancelled(error)) throw error;
     const message = `Could not finalize Studio graph. ${String(error)}`;
-    if (token === graphFinalizationToken) {
+    if (graphFinalizationOwnerIsCurrent(token)) {
       useStudioStore.getState().setGraphFinalization({
         status: 'error',
         bindingFingerprint: binding.fingerprint,
@@ -2139,90 +2973,205 @@ async function finalizeStudioGraph(
   }
 }
 
-function scheduleStudioGraphFinalization(binding: StudioGraphBinding, form: StudioFormState, skeletonMs: number) {
+function scheduleStudioGraphFinalization(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  skeletonMs: number,
+  context: WorkflowOperationContext,
+) {
+  assertWorkflowOperationContext(context);
   const token = ++graphFinalizationToken;
-  graphFinalizationPromise = finalizeStudioGraph(binding, form, token, skeletonMs)
-    .catch((error) => {
-      console.error('Studio graph finalization failed', error);
-      return { binding, warnings: [String(error)] };
-    })
-    .finally(() => {
-      if (token === graphFinalizationToken) {
-        graphFinalizationPromise = null;
+  graphFinalizationContext = context;
+  const finalization = settleGraphFinalization(finalizeStudioGraph(binding, form, token, skeletonMs));
+  graphFinalizationPromise = finalization.finally(() => {
+    void finalization.then((outcome) => {
+      if (
+        outcome.status === 'error' &&
+        !isWorkflowOperationCancelled(outcome.error) &&
+        graphFinalizationOwnerIsCurrent(token)
+      ) {
+        console.error('Studio graph finalization failed', outcome.error);
       }
     });
+    if (token === graphFinalizationToken) {
+      graphFinalizationPromise = null;
+      graphFinalizationContext = null;
+    }
+  });
+}
+
+function markGraphFinalizationWaitTimedOut(
+  promise: Promise<SettledGraphFinalization<BridgeResult>>,
+  timeout: number,
+  context: WorkflowOperationContext,
+) {
+  if (graphFinalizationPromise !== promise) return;
+  if (
+    !workflowOperationContextsMatch(graphFinalizationContext, context) ||
+    !workflowOperationContextIsCurrentForGraph(context)
+  ) {
+    graphFinalizationToken += 1;
+    graphFinalizationPromise = null;
+    graphFinalizationContext = null;
+    return;
+  }
+  const state = useStudioStore.getState();
+  const current = state.graphFinalization;
+  const message = `Graph preparation is still running after ${Math.max(0, timeout)} ms. It will continue in the background; retry Queue when the graph is ready.`;
+  state.setGraphFinalization({
+    status: 'pending',
+    bindingFingerprint: current?.bindingFingerprint ?? state.graphBinding?.fingerprint ?? null,
+    startedAt: current?.startedAt ?? null,
+    skeletonMs: current?.skeletonMs,
+    timedOutGroups: Array.from(new Set([...(current?.timedOutGroups ?? []), 'overall graph preparation'])),
+    managedEdgeCount: current?.managedEdgeCount ?? 0,
+    message,
+  });
+  state.setLastError(message);
+}
+
+function workflowOperationContextIsCurrentForGraph(context: WorkflowOperationContext) {
+  try {
+    assertWorkflowOperationContext(context);
+    return true;
+  } catch (error) {
+    if (isWorkflowOperationCancelled(error)) return false;
+    throw error;
+  }
 }
 
 async function createOrUpdateStudioGraphInner(
   formInput: StudioFormState = useStudioStore.getState().form,
+  context: WorkflowOperationContext,
 ): Promise<BridgeResult> {
+  assertWorkflowOperationContext(context);
   const skeletonStartedAt = Date.now();
   const form = resolveGraphResourceForm(formInput);
   const roles = requiredRolesForForm(form);
   const missingRoles = await ensureRegistryForRoles(roles);
+  assertWorkflowOperationContext(context);
   if (missingRoles.length > 0) {
     const message = missingRolesMessage(form, missingRoles);
     useStudioStore.getState().setLastError(message);
     throw new Error(message);
   }
 
-  return createSkeletonGraph(form, skeletonStartedAt);
+  if (requiresDynamicGraphChannel(form)) {
+    await waitForDynamicGraphChannel();
+    assertWorkflowOperationContext(context);
+  }
+
+  assertWorkflowOperationContext(context);
+  const flow = useFlowStore.getState();
+  flow.beginHistoryTransaction('Update Studio graph');
+  try {
+    return createSkeletonGraph(form, skeletonStartedAt, context);
+  } finally {
+    flow.commitHistoryTransaction();
+  }
 }
 
 export async function createOrUpdateStudioGraph(
   form: StudioFormState = useStudioStore.getState().form,
+  context: WorkflowOperationContext = captureWorkflowOperationContext(),
 ): Promise<BridgeResult> {
   const requestedForm = cloneStudioFormForGraph(form);
-  if (graphUpdatePromise) {
-    graphUpdateQueuedForm = requestedForm;
-    return graphUpdatePromise;
-  }
-
-  const runGraphUpdate = async (nextForm: StudioFormState) => {
-    useFlowStore.getState().beginHistoryTransaction('Update Studio graph');
-    try {
-      return await createOrUpdateStudioGraphInner(nextForm);
-    } finally {
-      useFlowStore.getState().commitHistoryTransaction();
+  const previousUpdate = graphUpdatePromise;
+  const runGraphUpdate = async () => {
+    if (previousUpdate) await previousUpdate.catch(() => undefined);
+    assertWorkflowOperationContext(context);
+    const result = await createOrUpdateStudioGraphInner(requestedForm, context);
+    const finalized = await waitForStudioGraphFinalization(15_000, context);
+    if (!finalized) {
+      throw new Error(
+        useStudioStore.getState().graphFinalization?.message ?? 'Graph preparation timed out before it was finalized.',
+      );
     }
+    assertWorkflowOperationContext(context);
+    return result;
   };
 
-  graphUpdatePromise = (async () => {
-    let result = await runGraphUpdate(requestedForm);
-    while (graphUpdateQueuedForm) {
-      const nextForm = graphUpdateQueuedForm;
-      graphUpdateQueuedForm = null;
-      result = await runGraphUpdate(nextForm);
-    }
-    return result;
-  })().finally(() => {
-    graphUpdatePromise = null;
-    graphUpdateQueuedForm = null;
-  });
-
-  return graphUpdatePromise;
-}
-
-export async function waitForStudioGraphFinalization(timeout = 9000) {
-  const promise = graphFinalizationPromise;
-  if (!promise) return true;
-
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<false>((resolve) => {
-    timeoutId = globalThis.setTimeout(() => resolve(false), timeout);
-  });
-  const result = await Promise.race([promise.then(() => true), timeoutPromise]);
-  if (timeoutId !== undefined) {
-    globalThis.clearTimeout(timeoutId);
+  const operation = runGraphUpdate();
+  graphUpdatePromise = operation;
+  try {
+    return await operation;
+  } finally {
+    if (graphUpdatePromise === operation) graphUpdatePromise = null;
   }
-  return result;
 }
 
-function qwenEmbeddingReadinessIssue(form: StudioFormState = useStudioStore.getState().form) {
+export async function waitForStudioGraphFinalization(
+  timeout = 9000,
+  context: WorkflowOperationContext = captureWorkflowOperationContext(),
+) {
+  assertWorkflowOperationContext(context);
+  let promise = graphFinalizationPromise;
+  if (promise && !workflowOperationContextsMatch(graphFinalizationContext, context)) {
+    // A finalizer belongs to the document/form that created it. Never await it
+    // from a different tab (including A -> B -> A); detach it and let the
+    // current document resume from its own persisted pending state below.
+    graphFinalizationToken += 1;
+    graphFinalizationPromise = null;
+    graphFinalizationContext = null;
+    promise = null;
+  }
+  if (!promise) {
+    const studio = useStudioStore.getState();
+    const finalization = studio.graphFinalization;
+    const recoverableLegacyTimeout = Boolean(
+      finalization?.status === 'error' &&
+      finalization.timedOutGroups.includes('overall graph preparation') &&
+      finalization.message?.startsWith('Graph preparation timed out after '),
+    );
+    if (
+      studio.graphBinding &&
+      (!finalization || recoverableLegacyTimeout) &&
+      restoreFinalizedGraphState(studio.graphBinding, studio.form, finalization)
+    ) {
+      return true;
+    }
+    if (finalization?.status === 'error') {
+      throw new Error(finalization.message ?? 'Studio graph finalization failed.');
+    }
+    if (finalization?.status === 'pending') {
+      if (!studio.graphBinding) {
+        throw new Error('Studio graph finalization is pending without a managed graph binding.');
+      }
+      scheduleStudioGraphFinalization(studio.graphBinding, studio.form, finalization.skeletonMs ?? 0, context);
+      return waitForStudioGraphFinalization(timeout, context);
+    }
+    if (!finalization && studio.graphBinding) {
+      studio.setGraphFinalization({
+        status: 'pending',
+        bindingFingerprint: studio.graphBinding.fingerprint,
+        startedAt: Date.now(),
+        skeletonMs: 0,
+        timedOutGroups: [],
+        managedEdgeCount: studio.graphBinding.managedEdgeIds.length,
+        message: 'Revalidating restored graph...',
+      });
+      scheduleStudioGraphFinalization(studio.graphBinding, resolveGraphResourceForm(studio.form), 0, context);
+      return waitForStudioGraphFinalization(timeout, context);
+    }
+    return true;
+  }
+
+  const result = await waitForSettledGraphFinalization(promise, timeout);
+  assertWorkflowOperationContext(context);
+  if (result.status === 'timeout') {
+    markGraphFinalizationWaitTimedOut(promise, timeout, context);
+    return false;
+  }
+  if (result.status === 'error') throw result.error;
+  return true;
+}
+
+export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStudioStore.getState().form) {
   const plannedForm = resolveGraphResourceForm(form);
   if (
     STUDIO_MODEL_PROFILES[plannedForm.modelType]?.family !== 'Qwen Image' ||
     isVideoMode(plannedForm.mode) ||
+    usesDiffusersImageFacade(plannedForm) ||
     usesQwenDirectTextToImage(plannedForm) ||
     usesQwenDirectInpaintPipeline(plannedForm)
   ) {
@@ -2245,15 +3194,56 @@ function qwenEmbeddingReadinessIssue(form: StudioFormState = useStudioStore.getS
   return null;
 }
 
-export async function ensureStudioGraphReadyForRun(form: StudioFormState = useStudioStore.getState().form) {
-  await createOrUpdateStudioGraph(form);
-  await waitForStudioGraphFinalization();
+export function validateStudioGraphReadyForRun(form: StudioFormState = useStudioStore.getState().form) {
   syncStudioGraphValues(form);
-  const issue = qwenEmbeddingReadinessIssue(form);
+  const issue = getStudioGraphRunBlockingMessage(form);
   if (issue) {
     useStudioStore.getState().setLastError(issue);
     throw new Error(issue);
   }
+}
+
+export async function ensureStudioGraphReadyForRun(
+  form: StudioFormState = useStudioStore.getState().form,
+  context: WorkflowOperationContext = captureWorkflowOperationContext(),
+) {
+  assertWorkflowOperationContext(context);
+  const validatedAutoPlan = form.resourceMode === 'auto' ? useStudioStore.getState().autoResourcePlan : null;
+  if (!useStudioStore.getState().graphBinding) {
+    throw new Error('Create or open a managed workflow before running it.');
+  }
+  const finalized = await waitForStudioGraphFinalization(9000, context);
+  assertWorkflowOperationContext(context);
+  if (!finalized) {
+    throw new Error(
+      useStudioStore.getState().graphFinalization?.message ??
+        'Graph preparation timed out. Retry the run after the graph is ready.',
+    );
+  }
+  assertWorkflowOperationContext(context);
+  syncStudioGraphValues(form);
+
+  // Dynamic field signals can normalize form values during finalization.
+  // Keep the just-validated Auto plan when it still targets this workflow,
+  // without rebuilding or replacing any graph nodes at Run time.
+  const currentForm = useStudioStore.getState().form;
+  assertWorkflowOperationContext(context);
+  const validatedCandidate = selectedAutoCandidate(validatedAutoPlan, currentForm);
+  if (
+    validatedAutoPlan &&
+    validatedCandidate &&
+    currentForm.resourceMode === 'auto' &&
+    (!validatedCandidate.modelType || validatedCandidate.modelType === currentForm.modelType) &&
+    (!validatedCandidate.mode || validatedCandidate.mode === currentForm.mode)
+  ) {
+    useStudioStore.getState().setAutoResourcePlan(validatedAutoPlan);
+  }
+
+  // Finalization may normalize resource fields (including the Auto-selected
+  // offload/quantization recipe). Re-validating the stale caller snapshot here
+  // would write those old values back into the graph immediately before Run.
+  validateStudioGraphReadyForRun(currentForm);
+  assertWorkflowOperationContext(context);
 }
 
 export { NODE_KEYS as STUDIO_NODE_KEYS };
