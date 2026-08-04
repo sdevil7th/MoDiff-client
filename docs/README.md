@@ -16,16 +16,16 @@ This directory contains durable user, operator, and contributor documentation fo
 
 ## Build And Contribute
 
-| Guide                                                           | Audience                        | What it covers                                                                               |
-| --------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
-| [Contributing](../CONTRIBUTING.md)                              | Contributors                    | Environment setup, change rules, testing, documentation, and pull requests                   |
-| [Client architecture](modiff-client-architecture.md)            | Frontend/backend contributors   | App shell, stores, graph/runtime boundaries, Studio, persistence, and extension points       |
-| [Frontend style guide](frontend-style-guide.md)                 | UI contributors                 | Tokens, components, fields, accessibility, and style enforcement                             |
-| [Auto mode design](auto-mode-design.md)                         | Runtime and Studio contributors | Auto/Expert contract, readiness semantics, model recipe metadata, and onboarding checks      |
-| [Source provenance map](source-provenance.md)                   | Maintainers and legal reviewers | Inherited source baselines, modification headers, and commentless artifact treatment         |
-| [Build and deployment](deployment.md)                           | Maintainers and deployers       | Production builds, backend static-file integration, same-origin hosting, and release checks  |
-| [Template asset storage](template-gallery-assets.md)            | Gallery maintainers             | Public Hugging Face Dataset publication, pinned URLs, integrity checks, and offline cache    |
-| [Template quality schema](template-quality-review.schema.json)  | Gallery maintainers             | Machine-readable quality-review record used by the Gallery verification tooling              |
+| Guide                                                          | Audience                        | What it covers                                                                              |
+| -------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------- |
+| [Contributing](../CONTRIBUTING.md)                             | Contributors                    | Environment setup, change rules, testing, documentation, and pull requests                  |
+| [Client architecture](modiff-client-architecture.md)           | Frontend/backend contributors   | App shell, stores, graph/runtime boundaries, Studio, persistence, and extension points      |
+| [Frontend style guide](frontend-style-guide.md)                | UI contributors                 | Tokens, components, fields, accessibility, and style enforcement                            |
+| [Auto mode design](auto-mode-design.md)                        | Runtime and Studio contributors | Auto/Expert contract, readiness semantics, model recipe metadata, and onboarding checks     |
+| [Source provenance map](source-provenance.md)                  | Maintainers and legal reviewers | Inherited source baselines, modification headers, and commentless artifact treatment        |
+| [Build and deployment](deployment.md)                          | Maintainers and deployers       | Production builds, backend static-file integration, same-origin hosting, and release checks |
+| [Template asset storage](template-gallery-assets.md)           | Gallery maintainers             | Public Hugging Face Dataset publication, pinned URLs, integrity checks, and offline cache   |
+| [Template quality schema](template-quality-review.schema.json) | Gallery maintainers             | Machine-readable quality-review record used by the Gallery verification tooling             |
 
 ## Documentation Standards
 

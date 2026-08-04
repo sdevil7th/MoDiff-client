@@ -183,7 +183,7 @@ const provenanceDigest = sha256Bytes(provenanceBytes);
 const retainedName = `${templateId}.${provenanceDigest.slice(0, 16)}.json`;
 const retainedPath = join(PROVENANCE_DIR, retainedName);
 copyFileSync(provenancePath, retainedPath);
-const retainedProofPath = join('data', 'qualification', 'release', 'template-provenance', retainedName);
+const retainedProofPath = `data/qualification/release/template-provenance/${retainedName}`;
 const retainedReceipt = {
   ...receipt,
   proofPath: retainedProofPath,

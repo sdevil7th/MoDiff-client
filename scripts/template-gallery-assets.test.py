@@ -46,6 +46,16 @@ def asset_record(path: str, payload: bytes) -> dict[str, object]:
 
 
 class TemplateGalleryAssetTests(unittest.TestCase):
+    def create_symlink_or_skip(
+        self, link: Path, target: Path, *, target_is_directory: bool = False
+    ) -> None:
+        try:
+            link.symlink_to(target, target_is_directory=target_is_directory)
+        except OSError as error:
+            if getattr(error, "winerror", None) == 1314:
+                self.skipTest("Creating symlinks requires Windows Developer Mode or elevation")
+            raise
+
     def test_inspection_accepts_windows_handle_ctime_view_difference(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             candidate = Path(temporary) / "asset.bin"
@@ -941,7 +951,7 @@ class TemplateGalleryAssetTests(unittest.TestCase):
             outside = root / "outside.bin"
             outside.write_bytes(b"outside")
             linked = gallery / "linked.bin"
-            linked.symlink_to(outside)
+            self.create_symlink_or_skip(linked, outside)
             safe_record = {
                 "path": "template-gallery/safe.bin",
                 "size": safe.stat().st_size,
@@ -993,7 +1003,9 @@ class TemplateGalleryAssetTests(unittest.TestCase):
             gallery.mkdir(parents=True)
             candidate = gallery / "candidate.bin"
             candidate.write_bytes(b"candidate")
-            (root / "public").symlink_to(outside, target_is_directory=True)
+            self.create_symlink_or_skip(
+                root / "public", outside, target_is_directory=True
+            )
             record = {
                 "path": "template-gallery/candidate.bin",
                 "size": candidate.stat().st_size,

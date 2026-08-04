@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { test } from 'node:test';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   argsForTemplateInputs,
@@ -52,9 +52,9 @@ test('gallery runner reuses the same byte-pinned default inputs as the product',
   const audio = argsForTemplateInputs(base, { id: 'ace_step_audio_variation' });
   const outpaint = argsForTemplateInputs(base, { id: 'wan_vace_outpaint_reframe' });
 
-  assert.match(audio.sourceAudio, /runtime-inputs\/assets\/[0-9a-f]{64}\.wav$/);
-  assert.match(outpaint.sourceVideo, /runtime-inputs\/assets\/[0-9a-f]{64}\.mp4$/);
-  assert.match(outpaint.maskVideo, /runtime-inputs\/assets\/[0-9a-f]{64}\.mp4$/);
+  assert.match(audio.sourceAudio, /runtime-inputs[\\/]assets[\\/][0-9a-f]{64}\.wav$/);
+  assert.match(outpaint.sourceVideo, /runtime-inputs[\\/]assets[\\/][0-9a-f]{64}\.mp4$/);
+  assert.match(outpaint.maskVideo, /runtime-inputs[\\/]assets[\\/][0-9a-f]{64}\.mp4$/);
 });
 
 test('gallery provenance recovers measurements from a queue-restored completion receipt', () => {
@@ -126,7 +126,7 @@ test('LTX long-showcase inputs preserve the authored arrival then antenna-reveal
   ]);
 
   assert.deepEqual(
-    args.templateInputMap.ltx_video_long_showcase.referenceImages.slice(-2).map((path) => path.split('/').at(-1)),
+    args.templateInputMap.ltx_video_long_showcase.referenceImages.slice(-2).map((path) => basename(path)),
     ['ltx-rescue-station-arrival-keyframe.webp', 'ltx-rescue-station-approach-keyframe.webp'],
   );
 });
@@ -334,7 +334,7 @@ test('gallery runner preserves repeated reference images in CLI order', () => {
   ]);
 
   assert.deepEqual(
-    args.referenceImages.map((path) => path.split('/').at(-1)),
+    args.referenceImages.map((path) => basename(path)),
     ['primary.png', 'style.png'],
   );
 });

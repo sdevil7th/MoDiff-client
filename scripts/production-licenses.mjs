@@ -9,6 +9,17 @@ const rootPackage = packages[''] ?? {};
 const outputPath = join(root, 'public', 'THIRD_PARTY_LICENSES.txt');
 const write = process.argv.includes('--write');
 
+function compareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function normalizeText(value) {
+  return value
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+}
+
 function parentPackagePath(packagePath) {
   return packagePath.replace(/(?:^|\/)node_modules\/(?:@[^/]+\/)?[^/]+$/, '');
 }
@@ -59,7 +70,7 @@ function licenseFiles(packageDirectory) {
   return readdirSync(packageDirectory)
     .filter((name) => /^(?:licen[cs]e|copying|notice)(?:[._-].*)?$/i.test(name))
     .filter((name) => existsSync(join(packageDirectory, name)))
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareText);
 }
 
 const records = [...selected]
@@ -73,12 +84,15 @@ const records = [...selected]
     return {
       identity: `${manifest.name}@${manifest.version}`,
       license: manifest.license ?? manifest.licenses ?? 'UNDECLARED',
-      files: files.map((name) => ({ name, text: readFileSync(join(packageDirectory, name), 'utf8').trim() })),
+      files: files.map((name) => ({
+        name,
+        text: normalizeText(readFileSync(join(packageDirectory, name), 'utf8')),
+      })),
     };
   })
-  .sort((left, right) => left.identity.localeCompare(right.identity));
+  .sort((left, right) => compareText(left.identity, right.identity));
 
-const projectNotices = readFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8').trim();
+const projectNotices = normalizeText(readFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'));
 const sections = [
   'MoDiff web client - production dependency licenses',
   '',
@@ -106,7 +120,7 @@ if (write) {
     `Wrote ${records.length} production package license records to public/THIRD_PARTY_LICENSES.txt.\n`,
   );
 } else {
-  const current = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : '';
+  const current = existsSync(outputPath) ? `${normalizeText(readFileSync(outputPath, 'utf8'))}\n` : '';
   if (current !== generated) {
     throw new Error('public/THIRD_PARTY_LICENSES.txt is stale. Run `npm run licenses:generate`.');
   }
