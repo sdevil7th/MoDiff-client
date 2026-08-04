@@ -1,13 +1,30 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
-import { decodedMediaHash, loadTemplateRuntime } from './template-gallery-harness.mjs';
+import {
+  decodedMediaHash,
+  finalizeReviewedDerivative,
+  loadTemplateRuntime,
+  technicalMediaErrors,
+} from './template-gallery-harness.mjs';
 import {
   backendSourceIdentity,
   compareRunProvenance,
@@ -22,6 +39,15 @@ const ARTIFACT_ROOT = join(ROOT, 'artifacts', 'template-gallery');
 const DEFAULT_SERVER = process.env.MODIFF_GALLERY_SERVER || 'http://127.0.0.1:8088';
 const DEFAULT_PORT = Number(process.env.MODIFF_GALLERY_FRONTEND_PORT || 5192);
 const DEFAULT_BACKEND_DIR = process.env.MODIFF_BACKEND_DIR || resolve(ROOT, '..', 'MoDiff');
+const RUNNER_LOCK_PATH = join(ARTIFACT_ROOT, '.runner.lock');
+export const RUNNER_INFRASTRUCTURE_EXIT_CODE = 70;
+const DEFAULT_INPUT_BINDINGS_PATH = join(
+  ROOT,
+  'public',
+  'template-gallery',
+  'runtime-inputs',
+  'default-input-bindings.json',
+);
 const GENERATED_EXTENSION_BY_MIME = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
@@ -41,18 +67,80 @@ const GENERATED_EXTENSION_BY_TYPE = {
 };
 
 function bundledFfmpegPath(backendDir) {
-  const binaries = join(backendDir, '.venv', 'Lib', 'site-packages', 'imageio_ffmpeg', 'binaries');
-  if (!existsSync(binaries)) return null;
-  const executable = readdirSync(binaries).find((name) => /^ffmpeg.*\.exe$/i.test(name));
-  return executable ? join(binaries, executable) : null;
+  const roots = [join(backendDir, '.venv', 'Lib', 'site-packages', 'imageio_ffmpeg', 'binaries')];
+  const libraryRoot = join(backendDir, '.venv', 'lib');
+  if (existsSync(libraryRoot)) {
+    for (const pythonDir of readdirSync(libraryRoot).filter((name) => name.startsWith('python'))) {
+      roots.push(join(libraryRoot, pythonDir, 'site-packages', 'imageio_ffmpeg', 'binaries'));
+    }
+  }
+  for (const binaries of roots) {
+    if (!existsSync(binaries)) continue;
+    const executable = readdirSync(binaries).find((name) => /^ffmpeg(?:-|\.exe|$)/i.test(name));
+    if (executable) return join(binaries, executable);
+  }
+  return null;
 }
 
-function parseArgs(argv) {
+function bundledPythonPath(backendDir) {
+  const candidate =
+    process.platform === 'win32'
+      ? join(backendDir, '.venv', 'Scripts', 'python.exe')
+      : join(backendDir, '.venv', 'bin', 'python');
+  return existsSync(candidate) ? candidate : 'python';
+}
+
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function acquireRunnerLock(lockPath = RUNNER_LOCK_PATH, pid = process.pid) {
+  mkdirSync(dirname(lockPath), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const descriptor = openSync(lockPath, 'wx');
+      writeFileSync(descriptor, `${JSON.stringify({ pid, startedAt: new Date().toISOString() })}\n`);
+      closeSync(descriptor);
+      return () => {
+        try {
+          const owner = JSON.parse(readFileSync(lockPath, 'utf8'));
+          if (owner?.pid === pid) unlinkSync(lockPath);
+        } catch {
+          // A replaced or already-cleaned lock belongs to another process.
+        }
+      };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      let owner = null;
+      try {
+        owner = JSON.parse(readFileSync(lockPath, 'utf8'));
+      } catch {
+        // Invalid lock files are stale and safe to replace.
+      }
+      if (processIsAlive(Number(owner?.pid))) {
+        throw new Error(
+          `Another template-gallery runner is active (PID ${owner.pid}). Wait for it to finish instead of sharing one app execution session.`,
+        );
+      }
+      unlinkSync(lockPath);
+    }
+  }
+  throw new Error('Could not acquire the template-gallery runner lock.');
+}
+
+export function parseArgs(argv) {
   const args = {
     server: DEFAULT_SERVER,
     port: DEFAULT_PORT,
     runs: 2,
     timeoutMs: 15 * 60 * 1000,
+    queueWaitTimeoutMs: 2 * 60 * 1000,
     headless: true,
     publish: false,
     keepFrontend: false,
@@ -60,9 +148,13 @@ function parseArgs(argv) {
     sourceOnly: false,
     noStart: false,
     noBackendStart: false,
+    reuseRuntimeWithinModel: false,
+    reuseExistingRuntimeKey: '',
+    stopOnFailure: false,
     backendDir: DEFAULT_BACKEND_DIR,
     startRun: 1,
     templates: [],
+    referenceImageValues: [],
   };
 
   for (let index = 2; index < argv.length; index += 1) {
@@ -79,6 +171,14 @@ function parseArgs(argv) {
       args.reviewed = true;
       continue;
     }
+    if (entry === '--record-qualification') {
+      args.recordQualification = true;
+      continue;
+    }
+    if (entry === '--record-resource-qualification') {
+      args.recordResourceQualification = true;
+      continue;
+    }
     if (entry === '--keep-frontend') {
       args.keepFrontend = true;
       continue;
@@ -91,12 +191,24 @@ function parseArgs(argv) {
       args.noBackendStart = true;
       continue;
     }
+    if (entry === '--reuse-runtime-within-model') {
+      args.reuseRuntimeWithinModel = true;
+      continue;
+    }
+    if (entry === '--stop-on-failure') {
+      args.stopOnFailure = true;
+      continue;
+    }
     if (entry === '--source-only') {
       args.sourceOnly = true;
       continue;
     }
     if (entry === '--allow-non-exact') {
       args.allowNonExact = true;
+      continue;
+    }
+    if (entry === '--allow-blocked-probe') {
+      args.allowBlockedProbe = true;
       continue;
     }
     if (entry === '--repair-model') {
@@ -124,10 +236,16 @@ function parseArgs(argv) {
         );
       } else if (key === 'runs') {
         args.runs = Number(value ?? 2);
+        args.runsExplicit = true;
       } else if (key === 'timeout-ms') {
         args.timeoutMs = Number(value ?? args.timeoutMs);
+      } else if (key === 'queue-wait-timeout-ms') {
+        args.queueWaitTimeoutMs = Number(value ?? args.queueWaitTimeoutMs);
       } else if (key === 'port') {
         args.port = Number(value ?? args.port);
+      } else if (key === 'reuse-existing-runtime-key') {
+        args.reuseExistingRuntimeKey = String(value ?? '').trim();
+        args.reuseRuntimeWithinModel = true;
       } else if (key === 'backend-dir') {
         args.backendDir = resolve(String(value ?? args.backendDir));
       } else if (key === 'headless') {
@@ -136,16 +254,29 @@ function parseArgs(argv) {
         args.maxTemplates = Number(value);
       } else if (key === 'start-run') {
         args.startRun = Number(value);
+      } else if (key === 'reference-image') {
+        args.referenceImageValues.push(
+          ...String(value ?? '')
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean),
+        );
       } else {
         args[key] = value;
       }
     }
   }
 
-  args.frontendUrl = args['frontend-url'] || `http://127.0.0.1:${args.port}`;
+  args.frontendUrlExplicit = typeof args['frontend-url'] === 'string' && args['frontend-url'].trim().length > 0;
+  args.frontendUrl = args.frontendUrlExplicit ? args['frontend-url'].trim() : `http://127.0.0.1:${args.port}`;
   const minimumRuns = args.sourceOnly || args.reviewed ? 1 : 2;
+  if (args.sourceOnly && !args.runsExplicit) args.runs = 1;
   args.runs = Math.max(minimumRuns, Number.isFinite(args.runs) ? args.runs : 2);
   if (args.reviewed) args.runs = 1;
+  if (args.recordResourceQualification) {
+    args.reviewed = true;
+    args.runs = 1;
+  }
   args.startRun = Math.max(1, Math.min(args.runs, Number.isFinite(args.startRun) ? args.startRun : 1));
   args.resumeMediaDir = args['resume-media-dir'] ? resolve(String(args['resume-media-dir'])) : '';
   if (args.startRun > 1 && !args.resumeMediaDir) {
@@ -156,11 +287,34 @@ function parseArgs(argv) {
     typeof args['negative-prompt-override'] === 'string' ? args['negative-prompt-override'].trim() : '';
   args.outputName = typeof args['output-name'] === 'string' ? safeFileName(args['output-name']) : '';
   args.installModel = typeof args['install-model'] === 'string' ? args['install-model'].trim() : '';
+  args.installModelFiles =
+    typeof args['install-model-file'] === 'string'
+      ? args['install-model-file']
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
   if (args.sourceOnly && args.publish) {
     throw new Error('--source-only cannot be combined with --publish.');
   }
-  if ((args.promptOverride || args.negativePromptOverride) && !args.sourceOnly) {
-    throw new Error('Prompt overrides are allowed only with --source-only.');
+  if (args.allowBlockedProbe && args.publish) {
+    throw new Error('--allow-blocked-probe is qualification-only and cannot be combined with --publish.');
+  }
+  if (args.recordQualification && args.recordResourceQualification) {
+    throw new Error('--record-qualification and --record-resource-qualification cannot be combined.');
+  }
+  if (args.recordResourceQualification && args.publish) {
+    throw new Error('--record-resource-qualification cannot be combined with --publish.');
+  }
+  if (
+    args.recordResourceQualification &&
+    !args['resource-mode'] &&
+    !args['offload-mode'] &&
+    !args['quantization-mode']
+  ) {
+    throw new Error(
+      '--record-resource-qualification requires an explicit resource, offload, or quantization override.',
+    );
   }
   if (args.installModel && (args.sourceOnly || args.publish || args.templates.length > 0)) {
     throw new Error(
@@ -170,15 +324,15 @@ function parseArgs(argv) {
   if (args.repairModel && !args.installModel) {
     throw new Error('--repair-model requires --install-model <repo>.');
   }
+  if (args.installModelFiles.length > 0 && !args.installModel) {
+    throw new Error('--install-model-file requires --install-model <repo>.');
+  }
   const resolveMediaInput = (value) => {
     const normalized = String(value ?? '').trim();
     if (!normalized || /^(?:https?:|data:)/i.test(normalized) || isAbsolute(normalized)) return normalized;
     return resolve(ROOT, normalized);
   };
-  args.referenceImages = String(args['reference-image'] ?? '')
-    .split(',')
-    .map(resolveMediaInput)
-    .filter(Boolean);
+  args.referenceImages = args.referenceImageValues.map(resolveMediaInput).filter(Boolean);
   args.maskImage = resolveMediaInput(args['mask-image']);
   args.controlImage = resolveMediaInput(args['control-image']);
   args.sourceVideo = resolveMediaInput(args['source-video']);
@@ -186,7 +340,32 @@ function parseArgs(argv) {
   args.controlVideo = resolveMediaInput(args['control-video']);
   args.sourceAudio = resolveMediaInput(args['source-audio']);
   args.referenceAudio = resolveMediaInput(args['reference-audio']);
-  args.ffmpeg = String(args.ffmpeg ?? process.env.MODIFF_FFMPEG ?? bundledFfmpegPath(args.backendDir) ?? '').trim();
+  args.templateInputMap = {};
+  const templateInputMapPath = String(args['template-input-map'] ?? '').trim();
+  if (templateInputMapPath) {
+    const parsed = JSON.parse(readFileSync(resolve(templateInputMapPath), 'utf8'));
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      throw new Error('--template-input-map must point to a JSON object keyed by template id.');
+    }
+    for (const [templateId, value] of Object.entries(parsed)) {
+      if (!value || Array.isArray(value) || typeof value !== 'object') {
+        throw new Error(`Template input map entry ${templateId} must be an object.`);
+      }
+      args.templateInputMap[templateId] = {
+        referenceImages: (value.referenceImages ?? []).map(resolveMediaInput).filter(Boolean),
+        maskImage: resolveMediaInput(value.maskImage),
+        controlImage: resolveMediaInput(value.controlImage),
+        sourceVideo: resolveMediaInput(value.sourceVideo),
+        maskVideo: resolveMediaInput(value.maskVideo),
+        controlVideo: resolveMediaInput(value.controlVideo),
+        sourceAudio: resolveMediaInput(value.sourceAudio),
+        referenceAudio: resolveMediaInput(value.referenceAudio),
+      };
+    }
+  }
+  args.ffmpeg = String(
+    args.ffmpeg ?? process.env.MODIFF_FFMPEG ?? bundledFfmpegPath(args.backendDir) ?? 'ffmpeg',
+  ).trim();
   return args;
 }
 
@@ -203,16 +382,24 @@ Use --allow-non-exact only to capture a currently non-exact template after all o
 its model and input locks have been supplied. The resulting evidence must still
 pass the normal two-run comparison and manual quality review before publishing.
 
+Use --allow-blocked-probe only for bounded qualification evidence. It never
+permits direct publishing of a blocked template.
+
 Options:
   --server <url>             Backend URL. Default: ${DEFAULT_SERVER}
   --backend-dir <path>       Backend checkout to start when loopback is unavailable. Default: ${DEFAULT_BACKEND_DIR}
   --no-backend-start         Require an already-running backend.
+  --reuse-runtime-within-model Keep cached nodes only when consecutive templates publish the same loader-contract key.
+  --reuse-existing-runtime-key <key> Reuse an already-resident first-template loader only when its published contract key matches.
   --keep-backend             Keep a backend process started by this script.
   --port <number>            Dev frontend port. Default: ${DEFAULT_PORT}
   --frontend-url <url>       Existing frontend URL instead of the default port URL.
   --template <id[,id]>       Limit to one or more template ids. Repeatable.
   --max-templates <number>   Cap the number of selected templates.
   --reviewed                 Coverage mode: run once, then pause for manual quality review.
+  --record-qualification     Retain successful v2 locked-template runs as release execution evidence.
+  --record-resource-qualification Retain one full locked-workload run as evidence for the explicit resource recipe.
+  --allow-blocked-probe      Run a blocked template for qualification evidence; incompatible with --publish.
   --runs <number>            Runs per gallery template (minimum 2); reviewed/source-only use 1.
   --start-run <number>       Resume at this run number; requires retained proof via --resume-media-dir.
   --resume-media-dir <path>  Reuse a prior run's media/evidence directory without regenerating good outputs.
@@ -226,24 +413,28 @@ Options:
   --control-video <path>     Control video path for control-to-video templates.
   --source-audio <path>      Source audio path for variation/continuation/repaint templates.
   --reference-audio <path>   Optional reference audio path when required by a template.
+  --template-input-map <path> JSON object of per-template media inputs for same-model batch runs.
   --resource-mode <mode>     Optional bounded probe override: auto or expert.
   --quantization-mode <mode> Optional bounded probe override, for example bnb_4bit.
   --offload-mode <mode>      Optional bounded probe override, for example group_cpu.
   --steps <number>           Optional bounded probe inference-step override.
   --width <number>           Optional bounded probe width override.
   --height <number>          Optional bounded probe height override.
+  --num-frames <number>      Optional bounded probe frame-count override.
   --source-only              Capture purpose-built input media; never generate/publish a gallery manifest.
   --prompt-override <text>   Source-only prompt override for creating a purpose-matched input asset.
   --negative-prompt-override <text> Source-only negative-prompt override.
   --output-name <name>       Stable source-only media basename instead of the template id.
   --install-model <repo>     Install one Hugging Face repository through the app model-store action.
+  --install-model-file <paths> Limit installation to a comma-separated set of pinned repository files.
   --repair-model             Repair an incomplete --install-model repository snapshot.
   --ffmpeg <path>            FFmpeg executable for decoded audio/video hashing and video posters.
   --publish                  Pass --publish to gallery:generate after verification.
   --headed                   Show the browser while running.
   --no-start                 Require an already-running frontend.
   --keep-frontend            Do not stop a frontend process started by this script.
-  --timeout-ms <number>      Per-run output wait timeout. Default: 900000.
+  --timeout-ms <number>      Per-run inactivity timeout; live backend progress refreshes it. Default: 900000.
+  --queue-wait-timeout-ms <number> Wait for an earlier app task before starting. Default: 120000.
 `.trim();
 }
 
@@ -299,7 +490,7 @@ function pipeProcessLog(child, logPath, role) {
   });
 }
 
-function stopManagedProcess(child) {
+async function stopManagedProcess(child, timeoutMs = 5_000) {
   if (!child?.pid || child.exitCode !== null) return;
   if (process.platform === 'win32') {
     spawnSync('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
@@ -308,7 +499,38 @@ function stopManagedProcess(child) {
     });
     return;
   }
-  child.kill();
+  const exited = new Promise((resolveExit) => {
+    child.once('close', resolveExit);
+  });
+  child.kill('SIGTERM');
+  const timedOut = await Promise.race([exited.then(() => false), delay(timeoutMs).then(() => true)]);
+  if (timedOut && child.exitCode === null) {
+    child.kill('SIGKILL');
+    await Promise.race([exited, delay(1_000)]);
+  }
+}
+
+export function backendProcessEnv(environment = process.env, rocmRoot = '/opt/rocm') {
+  const childEnv = { ...environment, PYTHONUNBUFFERED: '1' };
+  if (process.platform === 'win32' || !existsSync(rocmRoot)) return childEnv;
+
+  const libraryPaths = [join(rocmRoot, 'lib')];
+  libraryPaths.push(
+    ...readdirSync(rocmRoot)
+      .filter((entry) => entry.startsWith('core-'))
+      .map((entry) => join(rocmRoot, entry, 'lib')),
+  );
+  const existingPaths = libraryPaths.filter((entry) => existsSync(entry));
+  if (existingPaths.length > 0) {
+    childEnv.LD_LIBRARY_PATH = [
+      ...existingPaths,
+      ...(environment.LD_LIBRARY_PATH ? [environment.LD_LIBRARY_PATH] : []),
+    ].join(':');
+    childEnv.ROCM_PATH ||= rocmRoot;
+    childEnv.HIP_PATH ||= rocmRoot;
+    childEnv.TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL ||= '1';
+  }
+  return childEnv;
 }
 
 async function ensureBackend(args, managedProcesses, artifactDir) {
@@ -334,7 +556,7 @@ async function ensureBackend(args, managedProcesses, artifactDir) {
       : join(args.backendDir, '.venv', 'bin', 'python');
   const child = spawn(existsSync(bundledPython) ? bundledPython : 'python', ['main.py'], {
     cwd: args.backendDir,
-    env: { ...process.env, PYTHONUNBUFFERED: '1' },
+    env: backendProcessEnv(),
     shell: false,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -354,9 +576,20 @@ function isPortFree(port) {
   });
 }
 
-async function ensureFrontend(args, managedProcesses) {
+export async function ensureFrontend(args, managedProcesses) {
+  if (args.frontendUrlExplicit) {
+    await waitForHttp(args.frontendUrl);
+    return { started: false, url: args.frontendUrl, explicitlyReused: true };
+  }
   if (!(await isPortFree(args.port))) {
-    return { started: false, url: args.frontendUrl };
+    if (!args.noStart) {
+      throw new Error(
+        `Frontend port ${args.port} is already occupied. Refusing to reuse an unverified app session; ` +
+          'stop that process or pass --frontend-url explicitly.',
+      );
+    }
+    await waitForHttp(args.frontendUrl);
+    return { started: false, url: args.frontendUrl, explicitlyReused: true };
   }
   if (args.noStart) {
     throw new Error(`Frontend is not running on ${args.frontendUrl}, and --no-start was set.`);
@@ -391,8 +624,27 @@ function safeFileName(value) {
 }
 
 export function galleryRunExitCode(results, manifestGeneration = {}) {
+  if (results.some((item) => item?.failureKind === 'infrastructure')) {
+    return RUNNER_INFRASTRUCTURE_EXIT_CODE;
+  }
   if (results.some((item) => item.skipped)) return 1;
   return Number(manifestGeneration.code || 0);
+}
+
+export async function installEphemeralGalleryStorage(page) {
+  await page.addInitScript(() => {
+    const persistentKeys = new Set(['modiff.studio', 'modiff.flow']);
+    const originalSetItem = Storage.prototype.setItem;
+
+    Storage.prototype.setItem = function setEphemeralGalleryItem(key, value) {
+      if (persistentKeys.has(String(key))) return;
+      return originalSetItem.call(this, key, value);
+    };
+
+    for (const key of persistentKeys) {
+      localStorage.removeItem(key);
+    }
+  });
 }
 
 export function galleryGenerateInvocation({
@@ -402,6 +654,7 @@ export function galleryGenerateInvocation({
   provenanceDir,
   ffmpeg,
   beforeMedia,
+  templates = [],
   verification = 'exact',
   publish = false,
 }) {
@@ -420,6 +673,7 @@ export function galleryGenerateInvocation({
   if (provenanceDir) args.push('--provenance-dir', provenanceDir);
   if (ffmpeg) args.push('--ffmpeg', ffmpeg);
   if (beforeMedia) args.push('--before-media', beforeMedia);
+  for (const templateId of templates) args.push('--template', templateId);
   if (publish) args.push('--publish');
   return { command: process.execPath, args };
 }
@@ -451,18 +705,25 @@ function throwForTerminalReceipt(receipt, taskId) {
 
 async function recoverOutputFromBackendCache(page, { receipt, server, taskId, templateId }) {
   if (!receipt?.current_node || !server) return null;
-  const cacheUrl = new URL(`/cache/${receipt.current_node}/output/0?format=WEBP&quality=100`, server).toString();
-  try {
-    const response = await fetch(cacheUrl);
-    if (!response.ok) return null;
-    const contentType = response.headers.get('content-type')?.split(';')[0].toLowerCase() ?? '';
-    if (!contentType.startsWith('image/')) return null;
-  } catch {
-    return null;
+  let recovered = null;
+  for (const fieldKey of ['file', 'output', 'audio', 'preview']) {
+    const query = fieldKey === 'output' ? '?format=WEBP&quality=100' : '';
+    const cacheUrl = new URL(`/cache/${receipt.current_node}/${fieldKey}/0${query}`, server).toString();
+    try {
+      const response = await fetch(cacheUrl);
+      if (!response.ok) continue;
+      const contentType = response.headers.get('content-type')?.split(';')[0].toLowerCase() ?? '';
+      if (!/^(image|video|audio)\//.test(contentType)) continue;
+      recovered = { cacheUrl, contentType, fieldKey };
+      break;
+    } catch {
+      // A completed output node may expose only one of these media fields.
+    }
   }
+  if (!recovered) return null;
 
   return page.evaluate(
-    ({ expectedTaskId, expectedTemplateId, nodeId, url, completedAt, runtimeFingerprint }) => {
+    ({ expectedTaskId, expectedTemplateId, nodeId, url, completedAt, runtimeFingerprint, contentType, fieldKey }) => {
       const state = window.__MODIFF_E2E__?.getState();
       const context = state?.studio?.currentRunContext;
       const form = context?.form ?? state?.studio?.form;
@@ -475,7 +736,7 @@ async function recoverOutputFromBackendCache(page, { receipt, server, taskId, te
         runInputHash: context.runInputHash,
         workflowTabId: context.workflowTabId,
         nodeId,
-        fieldKey: 'preview',
+        fieldKey,
         value: [url],
         url,
         mode: form.mode,
@@ -500,7 +761,7 @@ async function recoverOutputFromBackendCache(page, { receipt, server, taskId, te
         apiGraphSnapshot: apiGraph,
         createdAt: Number(completedAt ?? Date.now() / 1000) * 1000,
         favorite: false,
-        displayType: 'image',
+        displayType: contentType.split('/')[0],
         backendProvenance: { runtimeFingerprint: runtimeFingerprint ?? null },
       };
     },
@@ -508,9 +769,11 @@ async function recoverOutputFromBackendCache(page, { receipt, server, taskId, te
       expectedTaskId: taskId,
       expectedTemplateId: templateId,
       nodeId: receipt.current_node,
-      url: cacheUrl,
+      url: recovered.cacheUrl,
       completedAt: receipt.completed_at,
       runtimeFingerprint: receipt.runtimeFingerprint,
+      contentType: recovered.contentType,
+      fieldKey: recovered.fieldKey,
     },
   );
 }
@@ -544,7 +807,7 @@ export async function waitForTaskTerminal(page, { taskId, server, timeoutMs = 12
   throw new Error(`Timed out waiting for task ${taskId} to become terminal after its output was captured.`);
 }
 
-export async function clearRuntimeBetweenRuns(server, fetchImpl = fetch) {
+async function requestRuntimeCleanup(server, fetchImpl = fetch) {
   const cleanupUrl = new URL('/runtime/gpu_cleanup', server);
   const response = await fetchImpl(cleanupUrl, { method: 'POST' });
   if (!response.ok) {
@@ -554,6 +817,121 @@ export async function clearRuntimeBetweenRuns(server, fetchImpl = fetch) {
   if (payload?.error) {
     throw new Error(payload.message || 'Runtime cleanup reported an error.');
   }
+  return payload;
+}
+
+export async function waitForQueueIdle(server, fetchImpl = fetch, { timeoutMs = 120_000, pollMs = 250 } = {}) {
+  const startedAt = Date.now();
+  const queueUrl = new URL('/queue', server);
+  let lastError = '';
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const remainingMs = Math.max(1, timeoutMs - (Date.now() - startedAt));
+      const response = await fetchImpl(queueUrl, {
+        signal: AbortSignal.timeout(Math.min(10_000, remainingMs)),
+      });
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}`;
+      } else {
+        const payload = await response.json();
+        const queuedCount = Object.keys(payload?.queued ?? {}).length;
+        if (!payload?.current && queuedCount === 0) return payload;
+        lastError = payload?.current
+          ? `task ${payload.current.task_id ?? 'unknown'} is still ${payload.current.status ?? 'running'}`
+          : `${queuedCount} queued task(s) remain`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await delay(pollMs);
+  }
+  throw new Error(
+    `Backend queue did not become idle within ${timeoutMs}ms.${lastError ? ` Last observation: ${lastError}.` : ''}`,
+  );
+}
+
+export function isGalleryInfrastructureFailure(error) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return [
+    /Failed to fetch/i,
+    /fetch failed/i,
+    /ECONNREFUSED/i,
+    /ERR_CONNECTION_REFUSED/i,
+    /backend queue did not become idle/i,
+    /Could not inspect the backend queue/i,
+    /Frontend port \d+ is already occupied/i,
+    /Timed out waiting for .*\/health/i,
+    /websocket.*(?:connect|timeout)/i,
+  ].some((pattern) => pattern.test(message));
+}
+
+export async function prepareRuntimeForTemplate(server, fetchImpl = fetch, waitOptions = undefined) {
+  // A cancelled websocket receipt can arrive while the accelerator is still
+  // finishing its in-flight kernel and clearing the current backend task.
+  // Never release cached nodes or submit the next proof until that teardown is
+  // complete.
+  await waitForQueueIdle(server, fetchImpl, waitOptions);
+  const payload = await requestRuntimeCleanup(server, fetchImpl);
+  if (!Number.isInteger(payload?.released_node_count) || payload.released_node_count < 0) {
+    throw new Error('Runtime cleanup returned an invalid released-node count.');
+  }
+  return payload;
+}
+
+export function shouldPrepareRuntimeForTemplate(previousTemplate, template, reuseRuntimeWithinModel = false) {
+  if (!reuseRuntimeWithinModel || !previousTemplate) return true;
+  // A model family is not a sufficient cache identity: dtype, quantization,
+  // offload mode, artifact and revision can all change loader parameters while
+  // modelType stays constant. Reuse only when the frontend supplies an explicit
+  // loader-contract key proving those values are identical.
+  const previousKey = String(previousTemplate.runtimeReuseKey ?? '');
+  const nextKey = String(template.runtimeReuseKey ?? '');
+  // An `auto-planned` key cannot itself prove that the resident recipe and
+  // loader topology match. The backend now owns that live decision: every Auto
+  // run compares its resolved resource candidate, artifact, dtype/offload
+  // contract, and concrete graph loader topology before preserving anything.
+  // Keep the runner-level cache boundary only when the catalog key changes so
+  // compatible same-family runs can reuse their expensive loader, while an
+  // incompatible Auto graph still tears down inside execute_graph.
+  return !previousKey || previousKey !== nextKey;
+}
+
+export function argsForTemplateInputs(args, template) {
+  const inputs = args.templateInputMap?.[template.id];
+  const selected = inputs ? { ...args, ...inputs } : args;
+  if (!existsSync(DEFAULT_INPUT_BINDINGS_PATH)) return selected;
+  const bindings = JSON.parse(readFileSync(DEFAULT_INPUT_BINDINGS_PATH, 'utf8'))?.[template.id];
+  if (!Array.isArray(bindings) || bindings.length === 0) return selected;
+  let resolved = selected;
+  for (const binding of bindings) {
+    const field = String(binding?.field ?? '');
+    const assets = (binding?.defaultAssets ?? [])
+      .map((asset) => String(asset?.runtimePath ?? '').trim())
+      .filter(Boolean)
+      .map((runtimePath) => resolve(ROOT, 'public', runtimePath.replace(/^\/+/, '')));
+    if (assets.length === 0) continue;
+    if (field === 'referenceImages' && (resolved.referenceImages?.length ?? 0) === 0) {
+      resolved = { ...resolved, referenceImages: assets };
+    } else if (
+      [
+        'maskImage',
+        'controlImage',
+        'sourceVideo',
+        'maskVideo',
+        'controlVideo',
+        'sourceAudio',
+        'referenceAudio',
+      ].includes(field) &&
+      !resolved[field]
+    ) {
+      resolved = { ...resolved, [field]: assets[0] };
+    }
+  }
+  return resolved;
+}
+
+export async function clearRuntimeBetweenRuns(server, fetchImpl = fetch) {
+  const payload = await requestRuntimeCleanup(server, fetchImpl);
   if (!Number.isInteger(payload?.released_node_count) || payload.released_node_count < 1) {
     throw new Error('Runtime cleanup did not prove that any cached node objects were released.');
   }
@@ -561,30 +939,57 @@ export async function clearRuntimeBetweenRuns(server, fetchImpl = fetch) {
 }
 
 export function executionReceiptsForRun(template, output, websocketEvents) {
-  const requiredActions =
-    template.modelType === 'WanVACEPipeline'
+  const requiredActionGroups = template.workflowBlocks?.includes('quality_video_sequence')
+    ? [
+        [['modules.DiffusersVideo', 'GenerateShotJob']],
+        [['modules.Video', 'ExportAsset']],
+        [['modules.Video', 'ConcatenateAssets']],
+      ]
+    : template.workflowBlocks?.includes('lyric_video')
       ? [
-          ['modules.WanVACE', 'Generate'],
-          ['modules.Video', 'Export'],
+          [['modules.DiffusersAudio', 'Generate']],
+          [['modules.DiffusersVideo', 'GenerateSequence']],
+          [['modules.Video', 'ExportWithAudio']],
         ]
-      : template.modelType === 'AceStepAudioPipeline'
+      : ['WanVACEPipeline', 'WanVideoPipeline', 'LTXVideoPipeline'].includes(template.modelType)
         ? [
-            ['modules.DiffusersAudio', 'Generate'],
-            ['modules.Audio', 'Export'],
+            [
+              ['modules.DiffusersVideo', 'Generate'],
+              ['modules.DiffusersVideo', 'GenerateSequence'],
+              ['modules.DiffusersVideo', 'Generate'],
+            ],
+            [['modules.Video', 'Export']],
           ]
-        : [];
-  if (requiredActions.length === 0) return [];
+        : template.modelType === 'AceStepAudioPipeline'
+          ? [[['modules.DiffusersAudio', 'Generate']], [['modules.Audio', 'Export']]]
+          : [];
+  if (requiredActionGroups.length === 0) return [];
   const graphNodes = Array.isArray(output?.apiGraphSnapshot?.nodes)
     ? output.apiGraphSnapshot.nodes
     : Object.entries(output?.apiGraphSnapshot?.nodes ?? {}).map(([id, node]) => ({ id, ...node }));
-  return requiredActions.map(([moduleName, actionName]) => {
+  return requiredActionGroups.map((alternatives) => {
+    const matchedAction = alternatives.find(([moduleName, actionName]) =>
+      graphNodes.some((item) => item?.module === moduleName && item?.action === actionName),
+    );
+    if (!matchedAction) {
+      throw new Error(
+        `Executed graph is missing an accepted action: ${alternatives
+          .map(([moduleName, actionName]) => `${moduleName}.${actionName}`)
+          .join(' or ')}.`,
+      );
+    }
+    const [moduleName, actionName] = matchedAction;
     const node = graphNodes.find((item) => item?.module === moduleName && item?.action === actionName);
-    if (!node?.id) throw new Error(`Executed graph is missing ${moduleName}.${actionName}.`);
-    const receipt = [...websocketEvents]
-      .reverse()
-      .find((event) => event?.type === 'executed' && event?.task_id === output?.taskId && event?.node === node.id);
-    if (!receipt) throw new Error(`No execution receipt was captured for ${moduleName}.${actionName}.`);
-    if (receipt.status === 'cached' || receipt.hasChanged === false) {
+    const receipts = websocketEvents.filter(
+      (event) => event?.type === 'executed' && event?.task_id === output?.taskId && event?.node === node.id,
+    );
+    if (receipts.length === 0) throw new Error(`No execution receipt was captured for ${moduleName}.${actionName}.`);
+    // A branched graph can visit the same upstream node twice in one task: the
+    // first visit executes it and a later branch reuses that result. That is
+    // valid within-run graph reuse, not a vacuous gallery proof. Require at
+    // least one genuinely changed execution for this task and retain it.
+    const receipt = receipts.find((event) => event.status !== 'cached' && event.hasChanged !== false);
+    if (!receipt) {
       throw new Error(`${moduleName}.${actionName} returned cached output; this is not an independent duplicate run.`);
     }
     return { module: moduleName, action: actionName, nodeId: node.id, receipt };
@@ -634,9 +1039,10 @@ async function waitForOutput(
   page,
   { templateId, taskId, startedAt, server, websocketEvents = [], timeoutMs, preferredStudioRole = '' },
 ) {
-  const started = Date.now();
+  let lastActivityAt = Date.now();
+  let lastReceiptProgress = '';
   const replayedUpdates = new Set();
-  while (Date.now() - started < timeoutMs) {
+  while (Date.now() - lastActivityAt < timeoutMs) {
     const capturedUpdate = [...websocketEvents]
       .reverse()
       .find(
@@ -684,6 +1090,11 @@ async function waitForOutput(
     const failureMessage = failureMessageForRun(observation?.failure, { taskId, startedAt });
     if (failureMessage) throw new Error(`Task ${taskId ?? 'unknown'} failed: ${failureMessage}`);
     const receipt = await queueReceiptForTask(server, taskId);
+    const receiptProgress = taskProgressFingerprint(receipt);
+    if (receiptProgress && receiptProgress !== lastReceiptProgress) {
+      lastReceiptProgress = receiptProgress;
+      lastActivityAt = Date.now();
+    }
     throwForTerminalReceipt(receipt, taskId ?? 'unknown');
     if (receipt?.status === 'completed') {
       const recovered = await recoverOutputFromBackendCache(page, { receipt, server, taskId, templateId });
@@ -691,7 +1102,25 @@ async function waitForOutput(
     }
     await delay(1000);
   }
-  throw new Error(`Timed out waiting for output from ${templateId} (${taskId ?? 'no task id'}).`);
+  throw new Error(
+    `Timed out after ${timeoutMs}ms without backend progress while waiting for output from ${templateId} (${taskId ?? 'no task id'}).`,
+  );
+}
+
+export function taskProgressFingerprint(receipt) {
+  if (!receipt || typeof receipt !== 'object') return '';
+  return JSON.stringify([
+    receipt.status ?? null,
+    receipt.updated_at ?? receipt.updatedAt ?? null,
+    receipt.current_node ?? receipt.currentNode ?? null,
+    receipt.current_node_name ?? receipt.currentNodeName ?? null,
+    receipt.progress ?? null,
+    receipt.node_progress ?? receipt.nodeProgress ?? null,
+    receipt.phase ?? null,
+    receipt.message ?? null,
+    receipt.current_step ?? receipt.currentStep ?? null,
+    receipt.total_steps ?? receipt.totalSteps ?? null,
+  ]);
 }
 
 async function findRunOutputByStudioRole(page, { templateId, taskId, startedAt, studioRole }) {
@@ -721,8 +1150,8 @@ async function findRunOutputByStudioRole(page, { templateId, taskId, startedAt, 
   );
 }
 
-function formOverridesForTemplate(template, args) {
-  if (template.exampleStatus === 'blocked') {
+export function formOverridesForTemplate(template, args) {
+  if (template.exampleStatus === 'blocked' && !args.allowBlockedProbe) {
     return { skipReason: `Template is ${template.exampleStatus}.` };
   }
   if (template.exampleStatus === 'non_exact' && !args.allowNonExact) {
@@ -734,6 +1163,9 @@ function formOverridesForTemplate(template, args) {
   const overrides = {};
   if (args.promptOverride) overrides.prompt = args.promptOverride;
   if (args.negativePromptOverride) overrides.negativePrompt = args.negativePromptOverride;
+  if (args['confirmed-community-artifact']) {
+    overrides.confirmedCommunityArtifact = String(args['confirmed-community-artifact']);
+  }
   if (args['resource-mode']) overrides.resourceMode = String(args['resource-mode']);
   if (args['quantization-mode']) overrides.quantizationMode = String(args['quantization-mode']);
   if (args['offload-mode']) {
@@ -744,6 +1176,10 @@ function formOverridesForTemplate(template, args) {
     const value = Number(args[numericField]);
     if (Number.isFinite(value) && value > 0) overrides[numericField] = value;
   }
+  const numFrames = Number(args['num-frames']);
+  if (Number.isInteger(numFrames) && numFrames > 0) overrides.numFrames = numFrames;
+  const seed = Number(args.seed);
+  if (Number.isInteger(seed) && seed >= 0) overrides.seed = seed;
   if (
     [
       'edit_image',
@@ -764,7 +1200,12 @@ function formOverridesForTemplate(template, args) {
     }
     overrides.controlImage = args.controlImage || args.referenceImages[0];
   }
-  if (template.mode === 'inpaint') {
+  if (template.mode === 'outpaint' && template.modelType === 'QwenImageEditModularPipeline') {
+    if (args.referenceImages.length === 0) {
+      return { skipReason: 'Template requires --reference-image.' };
+    }
+    overrides.referenceImages = args.referenceImages;
+  } else if (template.mode === 'inpaint' || template.mode === 'outpaint') {
     if (args.referenceImages.length === 0 || !args.maskImage) {
       return { skipReason: 'Template requires --reference-image and --mask-image.' };
     }
@@ -783,6 +1224,9 @@ function formOverridesForTemplate(template, args) {
     }
     overrides.maskVideo = args.maskVideo;
   }
+  if (template.modelType === 'WanVACEPipeline' && args.referenceImages.length > 0) {
+    overrides.referenceImages = args.referenceImages;
+  }
   if (template.mode === 'control_to_video') {
     if (!args.controlVideo) {
       return { skipReason: 'Template requires --control-video.' };
@@ -797,6 +1241,16 @@ function formOverridesForTemplate(template, args) {
   }
   if (args.referenceAudio) overrides.referenceAudio = args.referenceAudio;
   return { overrides };
+}
+
+export function preferredOutputRoleForTemplate(template) {
+  if (template.workflowBlocks?.includes('lyric_video') || template.workflowBlocks?.includes('soundtrack')) {
+    return 'exportWithAudio';
+  }
+  if (template.mediaType === 'video') return 'videoExport';
+  if (template.workflowBlocks?.includes('upscaler')) return 'upscalePreview';
+  if (template.modelType === 'AceStepAudioPipeline') return 'audioExport';
+  return '';
 }
 
 function stableInputPath(filePath) {
@@ -824,7 +1278,7 @@ function localInputArtifact(role, filePath) {
   };
 }
 
-function inputArtifactsForOverrides(overrides = {}) {
+export function inputArtifactsForOverrides(overrides = {}) {
   const artifacts = [];
   for (const [index, filePath] of (overrides.referenceImages ?? []).entries()) {
     artifacts.push(localInputArtifact(`reference_image_${index + 1}`, filePath));
@@ -843,8 +1297,23 @@ function inputArtifactsForOverrides(overrides = {}) {
   return artifacts;
 }
 
+export function executionReceiptForProvenance(completionEvent, terminalTask) {
+  const recoveredReceipt = completionEvent?.terminalReceipt;
+  return {
+    ...(terminalTask && typeof terminalTask === 'object' ? terminalTask : {}),
+    ...(recoveredReceipt && typeof recoveredReceipt === 'object' ? recoveredReceipt : {}),
+    ...(completionEvent && typeof completionEvent === 'object' ? completionEvent : {}),
+    runtimeMeasurement:
+      completionEvent?.runtimeMeasurement ??
+      recoveredReceipt?.runtimeMeasurement ??
+      terminalTask?.runtimeMeasurement ??
+      null,
+    runtimeHints: completionEvent?.runtimeHints ?? recoveredReceipt?.runtimeHints ?? terminalTask?.runtimeHints ?? null,
+  };
+}
+
 function comparisonBeforeMediaForTemplate(template, args) {
-  if (!['compareSlider', 'hoverDissolve'].includes(template.thumbnailVariant)) return '';
+  if (!['compareSlider', 'hoverDissolve', 'contactSheet'].includes(template.thumbnailVariant)) return '';
   return args.sourceVideo || args.referenceImages[0] || args.controlImage || args.controlVideo || '';
 }
 
@@ -921,6 +1390,20 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
     ({ templateId, formOverrides }) => window.__MODIFF_E2E__?.applyTemplate(templateId, formOverrides),
     { templateId: template.id, formOverrides: overrides ?? {} },
   );
+  if (process.env.MODIFF_GALLERY_DEBUG_STATE === '1') {
+    const debugState = await page.evaluate(() => {
+      const state = window.__MODIFF_E2E__?.getState();
+      return {
+        form: state?.studio?.form,
+        lastError: state?.studio?.lastError,
+        failure: state?.runIssues?.failure,
+        websocket: state?.websocket,
+        tasks: state?.tasks?.sessionRuns,
+        graph: window.__MODIFF_E2E__?.inspectCurrentGraph(),
+      };
+    });
+    console.error(JSON.stringify({ galleryDebugState: debugState }, null, 2));
+  }
   for (let runIndex = args.startRun; runIndex <= args.runs; runIndex += 1) {
     try {
       const run =
@@ -941,7 +1424,16 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
         server: args.server,
         websocketEvents,
         timeoutMs: args.timeoutMs,
-        preferredStudioRole: template.workflowBlocks?.includes('upscaler') ? 'upscalePreview' : '',
+        preferredStudioRole: preferredOutputRoleForTemplate(template),
+      });
+      // Media cache notifications can precede completion of a downstream
+      // delivery node (notably frame-by-frame video upscaling). Bind the proof
+      // to the terminal backend receipt before fetching or hashing any file so
+      // a stale/intermediate cache URL cannot be published as the run result.
+      const terminalTask = await waitForTaskTerminal(page, {
+        taskId: run.taskId,
+        server: args.server,
+        timeoutMs: args.timeoutMs,
       });
       const fetched = await fetchOutput(output, args.frontendUrl);
       const extension = extensionForOutput(output, fetched.contentType);
@@ -949,8 +1441,28 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
       const fileName = `${outputBase}.run${runIndex}${extension}`;
       const filePath = join(mediaDir, fileName);
       writeFileSync(filePath, fetched.buffer);
+      const fetchedOutputs = [{ filePath, fetched, output }];
+      const fetchedUrls = new Set([output.url]);
+      for (const [itemIndex, mediaItem] of (output.mediaItems ?? []).entries()) {
+        if (!mediaItem?.url || fetchedUrls.has(mediaItem.url)) continue;
+        fetchedUrls.add(mediaItem.url);
+        const itemOutput = {
+          ...output,
+          ...mediaItem,
+          url: mediaItem.url,
+          displayType: mediaItem.displayType ?? output.displayType,
+        };
+        const itemFetched = await fetchOutput(itemOutput, args.frontendUrl);
+        if (fetchedOutputs.some(({ fetched: capturedOutput }) => capturedOutput.buffer.equals(itemFetched.buffer))) {
+          continue;
+        }
+        const itemExtension = extensionForOutput(itemOutput, itemFetched.contentType);
+        const itemFilePath = join(mediaDir, `${outputBase}.run${runIndex}.item${itemIndex + 1}${itemExtension}`);
+        writeFileSync(itemFilePath, itemFetched.buffer);
+        fetchedOutputs.push({ filePath: itemFilePath, fetched: itemFetched, output: itemOutput });
+      }
       const runInputArtifacts = [...inputArtifacts];
-      if (template.workflowBlocks?.includes('upscaler')) {
+      if (template.mediaType !== 'video' && template.workflowBlocks?.includes('upscaler')) {
         const baseOutput = await findRunOutputByStudioRole(page, {
           templateId: template.id,
           taskId: run.taskId,
@@ -995,11 +1507,6 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
         });
         generatedComparisonBeforeMedia = baseFilePath;
       }
-      const terminalTask = await waitForTaskTerminal(page, {
-        taskId: run.taskId,
-        server: args.server,
-        timeoutMs: Math.min(args.timeoutMs, 120_000),
-      });
       const taskEvents = websocketEvents.filter((event) => event?.task_id === run.taskId);
       const backendCompletionProven = terminalTask?.status === 'completed' && Number(terminalTask?.progress) === 100;
       if (backendCompletionProven && !taskEvents.some((event) => event?.type === 'graph_completed')) {
@@ -1020,13 +1527,6 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
           terminalReceipt: terminalTask,
         });
       }
-      const executionReceipts = executionReceiptsForRun(template, output, taskEvents);
-      if (!taskEvents.some((event) => event?.type === 'graph_completed')) {
-        throw new Error(`No graph_completed receipt was captured for task ${run.taskId}.`);
-      }
-      if (!taskEvents.some((event) => event?.type === 'task_completed')) {
-        throw new Error(`No task_completed receipt was captured for task ${run.taskId}.`);
-      }
       const evidenceDir = join(mediaDir, 'evidence');
       mkdirSync(evidenceDir, { recursive: true });
       const evidenceBase = `${safeFileName(template.id)}.run${runIndex}`;
@@ -1034,6 +1534,26 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
       const nodesEvidencePath = join(evidenceDir, `${evidenceBase}.nodes.json`);
       const modelEvidencePath = join(evidenceDir, `${evidenceBase}.model-fingerprint.json`);
       const websocketEvidencePath = join(evidenceDir, `${evidenceBase}.websocket-events.json`);
+      // Persist the expensive app run before applying receipt/provenance gates.
+      // If a harness contract changes, the output, executed graph, terminal task,
+      // and raw websocket receipts remain available for audit and repair.
+      writeFileSync(
+        outputEvidencePath,
+        `${JSON.stringify({ runIndex, run, terminalTask, output }, null, 2)}\n`,
+        'utf8',
+      );
+      writeFileSync(
+        websocketEvidencePath,
+        `${JSON.stringify({ taskId: run.taskId, executionReceipts: [], events: taskEvents }, null, 2)}\n`,
+        'utf8',
+      );
+      const executionReceipts = executionReceiptsForRun(template, output, taskEvents);
+      if (!taskEvents.some((event) => event?.type === 'graph_completed')) {
+        throw new Error(`No graph_completed receipt was captured for task ${run.taskId}.`);
+      }
+      if (!taskEvents.some((event) => event?.type === 'task_completed')) {
+        throw new Error(`No task_completed receipt was captured for task ${run.taskId}.`);
+      }
       const resolvedModelRepos = resolvedModelReposFromOutput(output);
       if (resolvedModelRepos.length === 0) {
         throw new Error('The executed graph did not identify its resolved model repository.');
@@ -1057,10 +1577,14 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
           `Could not retain run evidence (nodes HTTP ${nodesResponse.status}, model HTTP ${failedModelResponse?.status ?? 200}).`,
         );
       }
-      const [nodesPayload, modelPayloads, decoded] = await Promise.all([
+      const [nodesPayload, modelPayloads, decodedOutputs] = await Promise.all([
         nodesResponse.json(),
         Promise.all(modelResponses.map((response) => response.json())),
-        decodedMediaHash(filePath, template.mediaType, { ffmpeg: args.ffmpeg }),
+        Promise.all(
+          fetchedOutputs.map(({ filePath: capturedPath }) =>
+            decodedMediaHash(capturedPath, template.mediaType, { ffmpeg: args.ffmpeg }),
+          ),
+        ),
       ]);
       const modelPayload = {
         error: false,
@@ -1078,21 +1602,45 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
       const deterministicEvent = [...taskEvents]
         .reverse()
         .find((event) => event?.type === 'deterministic_execution' && event?.task_id === run.taskId);
-      const encodedSha256 = `sha256:${createHash('sha256').update(fetched.buffer).digest('hex')}`;
+      const completionEvent = [...taskEvents]
+        .reverse()
+        .find((event) => event?.type === 'graph_completed' && event?.task_id === run.taskId);
+      const analyses = fetchedOutputs.map(({ filePath: capturedPath, fetched: capturedOutput }, outputIndex) => {
+        const decoded = decodedOutputs[outputIndex];
+        const errors = technicalMediaErrors(decoded, runtimeTemplate.example?.expectedOutput ?? {}, template.mediaType);
+        return {
+          ...decoded,
+          mediaType: template.mediaType,
+          byteSize: capturedOutput.buffer.byteLength,
+          encodedSha256: `sha256:${createHash('sha256').update(capturedOutput.buffer).digest('hex')}`,
+          decodedSha256: decoded.hash,
+          collectionIndex: outputIndex,
+          capturedFileName: relative(mediaDir, capturedPath),
+          ok: errors.length === 0,
+          errors,
+        };
+      });
       const outputAnalysis = {
-        ok: true,
-        outputCount: 1,
-        analyses: [
-          {
-            ...decoded,
-            mediaType: template.mediaType,
-            byteSize: fetched.buffer.byteLength,
-            encodedSha256,
-            decodedSha256: decoded.hash,
-            ok: true,
-          },
-        ],
+        ok: analyses.every((analysis) => analysis.ok),
+        outputCount: fetchedOutputs.length,
+        analyses,
       };
+      const provenancePath = join(evidenceDir, `${evidenceBase}.provenance.json`);
+      // Retain backend receipts before deriving the stricter publication
+      // provenance. If provenance validation uncovers a harness defect, the
+      // successful and expensive model run must remain auditable/resumable.
+      writeFileSync(
+        outputEvidencePath,
+        `${JSON.stringify({ runIndex, run, terminalTask, output }, null, 2)}\n`,
+        'utf8',
+      );
+      writeFileSync(nodesEvidencePath, `${JSON.stringify(nodesPayload, null, 2)}\n`, 'utf8');
+      writeFileSync(modelEvidencePath, `${JSON.stringify(modelPayload, null, 2)}\n`, 'utf8');
+      writeFileSync(
+        websocketEvidencePath,
+        `${JSON.stringify({ taskId: run.taskId, executionReceipts, events: taskEvents }, null, 2)}\n`,
+        'utf8',
+      );
       // Source-only captures intentionally replace the catalog prompt to create
       // reviewed dependency media. Their proof must describe the executed form,
       // not impersonate the parent template's default prompt/settings lock.
@@ -1123,36 +1671,73 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
         modelIdentities,
         inputArtifacts: runInputArtifacts,
         runtimeFingerprint:
-          deterministicEvent?.runtimeFingerprint ?? output.backendProvenance?.runtimeFingerprint ?? null,
+          deterministicEvent?.runtimeFingerprint ??
+          terminalTask?.runtimeFingerprint ??
+          output.backendProvenance?.runtimeFingerprint ??
+          null,
         deterministicMode: deterministicEvent?.deterministicMode ?? output.apiGraphSnapshot?.deterministicMode,
         backendSource,
         outputAnalysis,
         executedOutput: output,
+        executionReceipt: executionReceiptForProvenance(completionEvent, terminalTask),
         taskId: run.taskId,
+        expectedOutput: runtimeTemplate.example?.expectedOutput,
       });
       if (provenance.blockers.length > 0) {
         throw new Error(`Run provenance is incomplete: ${provenance.blockers.join(' ')}`);
       }
       provenances.push(provenance);
-      const provenancePath = join(evidenceDir, `${evidenceBase}.provenance.json`);
-      writeFileSync(
-        outputEvidencePath,
-        `${JSON.stringify({ runIndex, run, terminalTask, output }, null, 2)}\n`,
-        'utf8',
-      );
-      writeFileSync(nodesEvidencePath, `${JSON.stringify(nodesPayload, null, 2)}\n`, 'utf8');
-      writeFileSync(modelEvidencePath, `${JSON.stringify(modelPayload, null, 2)}\n`, 'utf8');
       writeFileSync(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`, 'utf8');
-      writeFileSync(
-        websocketEvidencePath,
-        `${JSON.stringify({ taskId: run.taskId, executionReceipts, events: taskEvents }, null, 2)}\n`,
-        'utf8',
-      );
+      let collectionFilePaths = fetchedOutputs.map(({ filePath: capturedPath }) => capturedPath);
+      let derivativeProvenancePath = null;
+      if (template.id === 'qwen_layered_portrait') {
+        const expectedLayerCount = Number(output.formSnapshot?.layers ?? 3);
+        if (fetchedOutputs.length !== expectedLayerCount) {
+          throw new Error(
+            `Qwen Layered review sheet requires ${expectedLayerCount} captured layers, got ${fetchedOutputs.length}.`,
+          );
+        }
+        const sourcePath = args.referenceImages[0];
+        if (!sourcePath) throw new Error('Qwen Layered review sheet requires its pinned source image.');
+        const firstLayerPath = join(mediaDir, `${outputBase}.run${runIndex}.item1${extension}`);
+        copyFileSync(filePath, firstLayerPath);
+        collectionFilePaths = [firstLayerPath, ...fetchedOutputs.slice(1).map((item) => item.filePath)];
+        derivativeProvenancePath = join(evidenceDir, `${evidenceBase}.derivative.json`);
+        const recomposedPath = join(mediaDir, `${outputBase}.run${runIndex}.recomposed.png`);
+        const derivative = spawnSync(
+          bundledPythonPath(args.backendDir),
+          [
+            join(ROOT, 'scripts', 'template-gallery-layer-sheet.py'),
+            '--source',
+            sourcePath,
+            '--layers',
+            ...collectionFilePaths,
+            '--output',
+            filePath,
+            '--recomposed-output',
+            recomposedPath,
+            '--run-provenance',
+            provenancePath,
+            '--derivative-provenance',
+            derivativeProvenancePath,
+          ],
+          { cwd: ROOT, encoding: 'utf8' },
+        );
+        if (derivative.error || derivative.status !== 0) {
+          throw new Error(
+            `Could not build the Qwen Layered review sheet: ${derivative.error?.message ?? derivative.stderr ?? `exit ${derivative.status}`}`,
+          );
+        }
+        await finalizeReviewedDerivative(derivativeProvenancePath, filePath, template.mediaType, {
+          ffmpeg: args.ffmpeg,
+        });
+      }
       const captured = {
         runIndex,
         taskId: run.taskId,
         outputId: output.id,
         filePath,
+        collectionFilePaths,
         contentType: fetched.contentType,
         runtimeFingerprint: provenance.runtimeFingerprint,
         modelRevision: provenance.modelRevision,
@@ -1165,6 +1750,7 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
           modelFingerprint: modelEvidencePath,
           websocketEvents: websocketEvidencePath,
           provenance: provenancePath,
+          ...(derivativeProvenancePath ? { derivativeProvenance: derivativeProvenancePath } : {}),
         },
       };
       outputs.push(captured);
@@ -1232,6 +1818,23 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
   };
 }
 
+export function orderTemplatesForRuntimeReuse(templates, enabled = false) {
+  if (!enabled) return templates;
+  const keyOrder = new Map();
+  for (const template of templates) {
+    const key = String(template?.runtimeReuseKey ?? '');
+    if (!keyOrder.has(key)) keyOrder.set(key, keyOrder.size);
+  }
+  return templates
+    .map((template, index) => ({ template, index }))
+    .sort((left, right) => {
+      const leftKey = String(left.template?.runtimeReuseKey ?? '');
+      const rightKey = String(right.template?.runtimeReuseKey ?? '');
+      return (keyOrder.get(leftKey) ?? 0) - (keyOrder.get(rightKey) ?? 0) || left.index - right.index;
+    })
+    .map(({ template }) => template);
+}
+
 function selectedTemplates(allTemplates, args) {
   if (!Array.isArray(allTemplates) || allTemplates.length === 0) {
     throw new Error('Studio exposed zero templates; gallery runs cannot continue.');
@@ -1252,10 +1855,16 @@ function selectedTemplates(allTemplates, args) {
   if (limited.length === 0) {
     throw new Error('Gallery template selection resolved to zero templates.');
   }
-  return limited;
+  return orderTemplatesForRuntimeReuse(limited, args.reuseRuntimeWithinModel);
 }
 
 async function maybeGenerateManifest(args, artifactDir, mediaDir, results) {
+  if (args.allowBlockedProbe) {
+    return {
+      skipped: true,
+      reason: 'Blocked-template probes retain qualification evidence only and never generate gallery manifests.',
+    };
+  }
   const revisionResolution = await resolveModelRevision(args, results);
   if (!revisionResolution.modelRevision) {
     return {
@@ -1280,6 +1889,7 @@ async function maybeGenerateManifest(args, artifactDir, mediaDir, results) {
     provenanceDir: join(mediaDir, 'evidence'),
     ffmpeg: args.ffmpeg,
     beforeMedia,
+    templates: successfulResults.map((item) => item.templateId),
     verification: args.reviewed ? 'reviewed' : 'exact',
     publish: args.publish,
   });
@@ -1412,19 +2022,32 @@ async function main() {
     console.log(usage());
     return;
   }
+  const releaseRunnerLock = acquireRunnerLock();
   const mediaDir = args.resumeMediaDir || join(artifactDirForRun(), 'media');
   const artifactDir = dirname(mediaDir);
   const managedProcesses = [];
   mkdirSync(mediaDir, { recursive: true });
 
   try {
-    const templateRuntime = await loadTemplateRuntime(ROOT);
+    const templateRuntime = await loadTemplateRuntime(ROOT, { includePlanning: args.allowBlockedProbe });
     const backendSource = backendSourceIdentity(args.backendDir);
     const backend = await ensureBackend(args, managedProcesses, artifactDir);
+    // An interrupted capture can leave a valid backend graph running after its
+    // browser exits. Wait for that graph before opening a second app session;
+    // otherwise model loading can delay websocket bootstrap and make session
+    // overlap look like a template failure.
+    await waitForQueueIdle(args.server, fetch, {
+      timeoutMs: args.queueWaitTimeoutMs,
+      pollMs: 1_000,
+    });
     const frontend = await ensureFrontend(args, managedProcesses);
     const browser = await chromium.launch({ headless: args.headless });
     try {
       const page = await browser.newPage();
+      // Gallery qualification is an isolated proof session. Persisting imported
+      // media and workflow state can exceed the browser's per-origin quota before
+      // a graph is submitted, while none of that state is needed after capture.
+      await installEphemeralGalleryStorage(page);
       const websocketEvents = [];
       page.on('websocket', (websocket) => {
         websocket.on('framereceived', (event) => {
@@ -1448,8 +2071,12 @@ async function main() {
 
       if (args.installModel) {
         const installResult = await page.evaluate(
-          ({ repoId, repair }) => window.__MODIFF_E2E__?.installHfModel(repoId, repair),
-          { repoId: args.installModel, repair: Boolean(args.repairModel) },
+          ({ repoId, repair, files }) => window.__MODIFF_E2E__?.installHfModel(repoId, repair, files),
+          {
+            repoId: args.installModel,
+            repair: Boolean(args.repairModel),
+            files: args.installModelFiles,
+          },
         );
         const report = {
           mode: 'install-model',
@@ -1458,6 +2085,7 @@ async function main() {
           backend,
           server: args.server,
           repoId: args.installModel,
+          requestedFiles: args.installModelFiles,
           repair: Boolean(args.repairModel),
           result: installResult,
         };
@@ -1466,28 +2094,146 @@ async function main() {
         return;
       }
 
+      // A freshly started frontend can connect before its initial model-index
+      // discovery has settled. Refresh explicitly so app-installed snapshots are
+      // the readiness source for every proof run.
+      await page.evaluate(() => window.__MODIFF_E2E__?.refreshModelIndexes());
+
       const templates = selectedTemplates(
-        await page.evaluate(() => window.__MODIFF_E2E__?.listTemplates() ?? []),
+        await page.evaluate(
+          (includePlanning) => window.__MODIFF_E2E__?.listTemplates(includePlanning) ?? [],
+          args.allowBlockedProbe,
+        ),
         args,
       );
+      if (
+        args.reuseExistingRuntimeKey &&
+        String(templates[0]?.runtimeReuseKey ?? '') !== args.reuseExistingRuntimeKey
+      ) {
+        throw new Error(
+          `The first template loader key does not match --reuse-existing-runtime-key (${args.reuseExistingRuntimeKey}).`,
+        );
+      }
+      if (
+        !args.sourceOnly &&
+        templates.length > 0 &&
+        templates.every((template) => template.mediaType === 'audio' || template.mediaType === 'video')
+      ) {
+        args.reviewed = true;
+        args.runs = 1;
+      }
       const results = [];
+      let previousTemplate = args.reuseExistingRuntimeKey ? { runtimeReuseKey: args.reuseExistingRuntimeKey } : null;
       for (const template of templates) {
         try {
-          results.push(
-            await runTemplate(page, template, args, mediaDir, websocketEvents, templateRuntime, backendSource),
+          const templateArgs = argsForTemplateInputs(args, template);
+          const shouldPrepare = shouldPrepareRuntimeForTemplate(
+            previousTemplate,
+            template,
+            args.reuseRuntimeWithinModel,
           );
+          const runtimePreparation = shouldPrepare
+            ? await prepareRuntimeForTemplate(args.server, fetch, { timeoutMs: args.queueWaitTimeoutMs })
+            : null;
+          const result = await runTemplate(
+            page,
+            template,
+            templateArgs,
+            mediaDir,
+            websocketEvents,
+            templateRuntime,
+            backendSource,
+          );
+          if (args.recordQualification && !result.sourceOnly && !result.skipped) {
+            const provenancePath = result.outputs?.at(-1)?.evidence?.provenance;
+            if (!provenancePath) {
+              throw new Error(`Template ${template.id} completed without a provenance file to record.`);
+            }
+            const qualification = spawnSync(process.execPath, [join(ROOT, 'scripts', 'template-qualification.mjs')], {
+              cwd: ROOT,
+              encoding: 'utf8',
+              env: {
+                ...process.env,
+                MODIFF_BACKEND_DIR: args.backendDir,
+                MODIFF_TEMPLATE_PROVENANCE: provenancePath,
+              },
+            });
+            if (qualification.error || qualification.status !== 0) {
+              throw new Error(
+                `Could not record ${template.id} qualification: ${
+                  qualification.error?.message ?? qualification.stderr?.trim() ?? `exit ${qualification.status}`
+                }`,
+              );
+            }
+            result.qualification = {
+              recorded: true,
+              provenancePath,
+              message: qualification.stdout.trim(),
+            };
+          }
+          if (args.recordResourceQualification && !result.sourceOnly && !result.skipped) {
+            const provenancePath = result.outputs?.at(-1)?.evidence?.provenance;
+            if (!provenancePath) {
+              throw new Error(
+                `Template ${template.id} completed without a provenance file to record as resource evidence.`,
+              );
+            }
+            const qualification = spawnSync(process.execPath, [join(ROOT, 'scripts', 'resource-qualification.mjs')], {
+              cwd: ROOT,
+              encoding: 'utf8',
+              env: {
+                ...process.env,
+                MODIFF_BACKEND_DIR: args.backendDir,
+                MODIFF_RESOURCE_PROVENANCE: provenancePath,
+              },
+            });
+            if (qualification.error || qualification.status !== 0) {
+              throw new Error(
+                `Could not record ${template.id} resource qualification: ${
+                  qualification.error?.message ?? qualification.stderr?.trim() ?? `exit ${qualification.status}`
+                }`,
+              );
+            }
+            result.resourceQualification = {
+              recorded: true,
+              provenancePath,
+              message: qualification.stdout.trim(),
+            };
+          }
+          if (runtimePreparation) result.runtimePreparation = runtimePreparation;
+          if (!shouldPrepare) {
+            result.runtimeReuse = {
+              modelType: template.modelType,
+              previousTemplateId: previousTemplate?.id ?? null,
+              proof: 'matching-loader-contract-key-and-backend-loader-cache-eligible',
+            };
+          }
+          results.push(result);
+          previousTemplate = template;
         } catch (error) {
           results.push({
             templateId: template.id,
             skipped: true,
             reason: error instanceof Error ? error.message : String(error),
+            failureKind: isGalleryInfrastructureFailure(error) ? 'infrastructure' : 'template',
             outputs: error?.partialOutputs ?? [],
           });
+          previousTemplate = null;
+          if (args.stopOnFailure) break;
         }
       }
       const manifestGeneration = args.sourceOnly
-        ? { skipped: true, reason: 'Source-only capture never generates or publishes a gallery manifest.' }
-        : await maybeGenerateManifest(args, artifactDir, mediaDir, results);
+        ? {
+            skipped: true,
+            reason: 'Source-only capture never generates or publishes a gallery manifest.',
+          }
+        : args.recordQualification || args.recordResourceQualification
+          ? {
+              skipped: true,
+              reason:
+                'Qualification-only capture records execution receipts without generating or publishing gallery media.',
+            }
+          : await maybeGenerateManifest(args, artifactDir, mediaDir, results);
       const report = {
         mode: args.sourceOnly ? 'source-only' : 'run',
         artifactDir,
@@ -1512,8 +2258,9 @@ async function main() {
     for (const managed of managedProcesses.reverse()) {
       if (managed.role === 'frontend' && args.keepFrontend) continue;
       if (managed.role === 'backend' && args.keepBackend) continue;
-      stopManagedProcess(managed.child);
+      await stopManagedProcess(managed.child);
     }
+    releaseRunnerLock();
   }
 }
 
@@ -1521,6 +2268,6 @@ const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(resolv
 if (isMainModule) {
   main().catch((error) => {
     console.error(error);
-    process.exitCode = 1;
+    process.exitCode = RUNNER_INFRASTRUCTURE_EXIT_CODE;
   });
 }

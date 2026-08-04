@@ -1,5 +1,5 @@
 import config from '../../app.config';
-import { isRecord, parseBackendOutputsResponse } from './outputContracts';
+import { isRecord, parseBackendOutputsResponse, type BackendOutputsResponse } from './outputContracts';
 import type { StudioOutput } from './types';
 import { requestJson, RequestError } from '../utils/requestJson';
 
@@ -18,7 +18,10 @@ function parseOutputsResponse(value: unknown, url: string, fallbackMessage: stri
   if ((data.outputs?.length ?? 0) !== value.outputs.length) {
     throw new Error('The Studio output response contains an invalid output.');
   }
-  return data.outputs ?? [];
+  if (Array.isArray(value.previewSlots) && data.previewSlots.length !== value.previewSlots.length) {
+    throw new Error('The Studio output response contains an invalid preview state.');
+  }
+  return data;
 }
 
 function outputRequest(
@@ -28,7 +31,7 @@ function outputRequest(
   signal?: AbortSignal,
 ) {
   const url = `${config.serverAddress}${path}`;
-  return requestJson<StudioOutput[]>(url, {
+  return requestJson<BackendOutputsResponse>(url, {
     ...init,
     signal,
     parse: (value) => parseOutputsResponse(value, url, fallbackMessage),

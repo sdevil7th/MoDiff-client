@@ -29,7 +29,7 @@ export function NumberFieldFrame({
     <div
       className={cx(
         'nodrag flex w-full cursor-default items-center justify-between gap-1 overflow-hidden rounded-modiff-compact bg-modiff-bg px-1 py-1 outline outline-2',
-        focused ? 'outline-hf-yellow' : 'outline-transparent',
+        focused ? 'outline-modiff-focus' : 'outline-transparent',
         className,
       )}
       onDoubleClick={onDoubleClick}

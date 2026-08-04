@@ -24,7 +24,7 @@ function defaultBackendRoot() {
 
 const backendRoot = process.env.MODIFF_BACKEND_DIR || defaultBackendRoot();
 const backendPort = Number(process.env.MODIFF_LIVE_BACKEND_PORT || 8088);
-const frontendPort = Number(process.env.MODIFF_LIVE_FRONTEND_PORT || 5173);
+const frontendPort = Number(process.env.MODIFF_LIVE_FRONTEND_PORT || 5193);
 const backendUrl = `http://127.0.0.1:${backendPort}`;
 const frontendUrl = `http://127.0.0.1:${frontendPort}`;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -153,6 +153,16 @@ export function compareTemplateLock(appliedForm, expectedLockedSettings) {
     comparedFields: Object.keys(expectedLockedSettings ?? {}).length,
     mismatches,
   };
+}
+
+export function backendSourceDriftBlocker(before, after) {
+  if (!before?.fingerprint || !after?.fingerprint) {
+    return 'backend source identity could not be captured at both proof boundaries.';
+  }
+  if (before.fingerprint !== after.fingerprint) {
+    return 'backend source files changed while the live proof was running.';
+  }
+  return null;
 }
 
 function writeJson(name, value) {
@@ -465,18 +475,50 @@ async function main() {
     createdAt: new Date().toISOString(),
   });
   status('starting-backend');
-  const python =
-    process.platform === 'win32'
-      ? path.join(backendRoot, '.venv', 'Scripts', 'python.exe')
-      : path.join(backendRoot, '.venv', 'bin', 'python');
-  start('backend', fs.existsSync(python) ? python : 'python', ['main.py'], backendRoot, {
-    PYTORCH_CUDA_ALLOC_CONF: process.env.PYTORCH_CUDA_ALLOC_CONF || 'expandable_segments:True',
-  });
+  let existingBackend = null;
+  let managedBackendStarted = false;
+  try {
+    existingBackend = await fetchJson(`${backendUrl}/health`, 2500);
+  } catch {
+    // Start the managed backend below.
+  }
+  if (existingBackend?.ready !== true) {
+    const python =
+      process.platform === 'win32'
+        ? path.join(backendRoot, '.venv', 'Scripts', 'python.exe')
+        : path.join(backendRoot, '.venv', 'bin', 'python');
+    if (process.platform === 'win32') {
+      start('backend', fs.existsSync(python) ? python : 'python', ['main.py'], backendRoot, {
+        PYTORCH_CUDA_ALLOC_CONF: process.env.PYTORCH_CUDA_ALLOC_CONF || 'expandable_segments:True',
+      });
+    } else {
+      start('backend', path.join(backendRoot, 'run.sh'), [], backendRoot);
+    }
+    managedBackendStarted = true;
+  } else if (process.env.MODIFF_LIVE_BACKEND_REUSE !== '1') {
+    throw new Error(
+      `A backend is already running at ${backendUrl}. Stop it so the proof can start and pin its own process, ` +
+        'or set MODIFF_LIVE_BACKEND_REUSE=1 for diagnostic-only reuse.',
+    );
+  }
   await waitForHttp(`${backendUrl}/nodes`, 120_000);
 
   status('checking-backend');
   const healthPayload = await fetchJson(`${backendUrl}/health`);
   writeJson('backend-health.json', healthPayload);
+  let backendSourceBefore = null;
+  let backendSourceBeforeError = null;
+  try {
+    backendSourceBefore = backendSourceIdentity(backendRoot);
+  } catch (error) {
+    backendSourceBeforeError = error instanceof Error ? error.message : String(error);
+  }
+  writeJson('backend-source-before.json', {
+    managedBackendStarted,
+    diagnosticReuse: !managedBackendStarted,
+    identity: backendSourceBefore,
+    error: backendSourceBeforeError,
+  });
   const backendWorkDir = healthPayload?.server?.work_dir ?? path.join(backendRoot, 'data');
   const inputArtifacts = [];
   if (template.mode === 'control_image') {
@@ -489,8 +531,8 @@ async function main() {
   const requiredNodes =
     template.modelType === 'QwenImageModularPipeline' && template.mode === 'text_to_image'
       ? [
-          ['modules.QwenImage', 'LoadPipeline'],
-          ['modules.QwenImage', 'Generate'],
+          ['modules.DiffusersImage', 'LoadPipeline'],
+          ['modules.DiffusersImage', 'Generate'],
         ]
       : template.mode === 'control_image'
         ? [
@@ -529,20 +571,33 @@ async function main() {
   }
 
   status('starting-frontend');
-  if (process.platform === 'win32') {
-    start(
-      'frontend',
-      'cmd.exe',
-      ['/d', '/s', '/c', `npm.cmd run dev -- --host 127.0.0.1 --port ${frontendPort}`],
-      clientRoot,
-      {
-        VITE_BACKEND_PROXY_TARGET: backendUrl,
-      },
-    );
+  const reuseFrontend = process.env.MODIFF_LIVE_FRONTEND_REUSE === '1';
+  if (reuseFrontend) {
+    await fetchText(`${frontendUrl}/`, 2500);
   } else {
-    start('frontend', 'npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(frontendPort)], clientRoot, {
-      VITE_BACKEND_PROXY_TARGET: backendUrl,
-    });
+    if (process.platform === 'win32') {
+      start(
+        'frontend',
+        'cmd.exe',
+        ['/d', '/s', '/c', `npm.cmd run dev -- --host 127.0.0.1 --port ${frontendPort} --strictPort`],
+        clientRoot,
+        {
+          MODIFF_GALLERY_STABLE: '1',
+          VITE_BACKEND_PROXY_TARGET: backendUrl,
+        },
+      );
+    } else {
+      start(
+        'frontend',
+        'npm',
+        ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(frontendPort), '--strictPort'],
+        clientRoot,
+        {
+          MODIFF_GALLERY_STABLE: '1',
+          VITE_BACKEND_PROXY_TARGET: backendUrl,
+        },
+      );
+    }
   }
   await waitForHttp(`${frontendUrl}/`, 120_000);
 
@@ -710,13 +765,24 @@ async function main() {
   const deterministicEvent = [...websocketEvents]
     .reverse()
     .find((event) => event?.type === 'deterministic_execution' && event?.task_id === taskId);
-  let backendSource = null;
-  let backendSourceError = null;
+  const completionEvent = [...websocketEvents]
+    .reverse()
+    .find((event) => event?.type === 'graph_completed' && event?.task_id === taskId);
+  let backendSourceAfter = null;
+  let backendSourceAfterError = null;
   try {
-    backendSource = backendSourceIdentity(backendRoot);
+    backendSourceAfter = backendSourceIdentity(backendRoot);
   } catch (error) {
-    backendSourceError = error instanceof Error ? error.message : String(error);
+    backendSourceAfterError = error instanceof Error ? error.message : String(error);
   }
+  const backendSourceDrift = backendSourceDriftBlocker(backendSourceBefore, backendSourceAfter);
+  writeJson('backend-source-after.json', {
+    managedBackendStarted,
+    diagnosticReuse: !managedBackendStarted,
+    identity: backendSourceAfter,
+    error: backendSourceAfterError,
+    driftBlocker: backendSourceDrift,
+  });
   const resolvedModelSet = modelSetIdentity(modelIdentities);
   const resolvedTemplateLockHash =
     resolvedModelSet.count > 0 ? runtime.templateLockHash(template, resolvedModelSet.revisionLock) : null;
@@ -734,13 +800,26 @@ async function main() {
     runtimeFingerprint:
       deterministicEvent?.runtimeFingerprint ?? executedOutput?.backendProvenance?.runtimeFingerprint ?? null,
     deterministicMode: deterministicEvent?.deterministicMode ?? executedOutput?.apiGraphSnapshot?.deterministicMode,
-    backendSource,
+    backendSource: backendSourceBefore,
     outputAnalysis,
     executedOutput,
+    executionReceipt: completionEvent,
     taskId,
+    expectedOutput: template.example?.expectedOutput,
   });
   if (modelResolutionError) runProvenance.blockers.push(`model resolution failed: ${modelResolutionError}`);
-  if (backendSourceError) runProvenance.blockers.push(`backend source capture failed: ${backendSourceError}`);
+  if (backendSourceBeforeError) {
+    runProvenance.blockers.push(`backend source capture failed before execution: ${backendSourceBeforeError}`);
+  }
+  if (backendSourceAfterError) {
+    runProvenance.blockers.push(`backend source capture failed after execution: ${backendSourceAfterError}`);
+  }
+  if (backendSourceDrift) runProvenance.blockers.push(backendSourceDrift);
+  if (!managedBackendStarted) {
+    runProvenance.blockers.push(
+      'backend process was reused, so its loaded source cannot be proven from the current filesystem snapshot.',
+    );
+  }
   writeJson('run-provenance.json', runProvenance);
 
   let baselineProvenance = null;
@@ -855,6 +934,22 @@ async function main() {
 
 const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isMainModule) {
+  if (process.argv.includes('--help')) {
+    console.log(`Run a real MoDiff image proof using environment variables.
+
+MODIFF_LIVE_PROOF_TEMPLATE_ID   Qwen/Z-Image template id
+MODIFF_LIVE_PROOF_MODE          template (default) or smoke
+MODIFF_LIVE_PROOF_ARTIFACT      output directory
+MODIFF_LIVE_PROOF_BASELINE      optional v2 provenance used for duplicate proof
+MODIFF_LIVE_GENERATION_TIMEOUT_MS
+MODIFF_LIVE_FRONTEND_PORT       dedicated stable frontend port (default 5193)
+MODIFF_LIVE_FRONTEND_REUSE=1    explicitly reuse an already-running stable frontend
+MODIFF_LIVE_BACKEND_REUSE=1     reuse a backend for diagnostics; reused processes cannot qualify
+
+Template mode preserves locked settings. Smoke mode requires explicit
+MODIFF_LIVE_PROOF_* generation overrides and never counts as exact proof.`);
+    process.exit(0);
+  }
   fs.mkdirSync(artifactRoot, { recursive: true });
   process.on('SIGINT', () => {
     status('interrupted');

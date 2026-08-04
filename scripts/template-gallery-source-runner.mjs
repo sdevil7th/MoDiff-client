@@ -168,6 +168,9 @@ function main() {
     runnerArgs.push('--reference-image', asset.referenceImages.map((item) => resolve(ROOT, item)).join(','));
   }
   if (asset.negativePrompt) runnerArgs.push('--negative-prompt-override', asset.negativePrompt);
+  if (asset.width) runnerArgs.push('--width', String(asset.width));
+  if (asset.height) runnerArgs.push('--height', String(asset.height));
+  if (asset.steps) runnerArgs.push('--steps', String(asset.steps));
   if (args.server) runnerArgs.push('--server', args.server);
   if (args.port) runnerArgs.push('--port', args.port);
 

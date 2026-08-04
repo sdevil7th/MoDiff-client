@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WebsocketProvider } from './components/WebsocketProvider.tsx';

@@ -1,6 +1,9 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { FieldProps } from '../components/NodeContent';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FieldFrame, RangeSliderFrame } from '../ui';
+import { FieldFrame, ModiffCheckbox, ModiffFieldShell, RangeSliderFrame } from '../ui';
+import { GraphControlInput } from '../ui/GraphControls';
 
 type LayerConfigValue = {
   dropout?: unknown;
@@ -70,10 +73,10 @@ export default function LayerConfigField(props: FieldProps) {
     [currentIndices, fieldKey, fieldValue, updateStore],
   );
 
-  const handleCheckboxChange = (property: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCheckboxChange = (property: string) => (checked: boolean) => {
     const updatedValue = {
       ...fieldValue,
-      [property]: event.target.checked,
+      [property]: checked,
     };
     props.updateStore(props.fieldKey, updatedValue);
   };
@@ -89,13 +92,13 @@ export default function LayerConfigField(props: FieldProps) {
       layoutStyle={props.style}
       className="modiff-field"
     >
-      <div className="nodrag flex w-full flex-col gap-2 rounded-modiff-compact border border-white/15 px-2 py-1">
-        <div className="flex w-full items-center">
-          <span className="min-w-0 flex-1 truncate text-xs text-modiff-text" title={props.label}>
-            {props.label}
-          </span>
-        </div>
-
+      <ModiffFieldShell
+        htmlFor={`${props.nodeId}-${props.fieldKey}`}
+        label={props.label}
+        disabled={props.disabled}
+        labelClassName="font-normal text-modiff-text"
+        className="nodrag nowheel rounded-modiff-compact border border-modiff-border-subtle px-2 py-1"
+      >
         {dropoutVisible && (
           <div className="flex w-full items-center gap-2">
             <RangeSliderFrame
@@ -107,12 +110,13 @@ export default function LayerConfigField(props: FieldProps) {
               min={1}
               max={100}
             />
-            <span className="w-9 text-right text-xs text-gray-400">{getDisplayValue(draftDropout)}</span>
+            <span className="w-9 text-right text-xs text-modiff-subtle-text">{getDisplayValue(draftDropout)}</span>
           </div>
         )}
 
         <div className="flex w-full items-center">
-          <input
+          <GraphControlInput
+            id={`${props.nodeId}-${props.fieldKey}`}
             value={draftIndices}
             onChange={(event) => setDraftIndices(event.target.value)}
             onBlur={(event) => {
@@ -135,7 +139,7 @@ export default function LayerConfigField(props: FieldProps) {
             placeholder="Indices"
             title="Layer Indices"
             disabled={props.disabled}
-            className="min-w-0 flex-1 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 py-1 text-[0.6rem] text-modiff-text outline-none focus:border-hf-yellow disabled:cursor-not-allowed disabled:opacity-50"
+            className="text-modiff-tiny min-w-0 flex-1 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 py-1 text-modiff-text outline-none focus:border-modiff-focus disabled:cursor-not-allowed disabled:opacity-50"
           />
           {skipCheckboxesVisible && (
             <>
@@ -163,7 +167,7 @@ export default function LayerConfigField(props: FieldProps) {
             </>
           )}
         </div>
-      </div>
+      </ModiffFieldShell>
     </FieldFrame>
   );
 }
@@ -178,19 +182,17 @@ function LayerCheckbox({
   checked: boolean;
   disabled?: boolean;
   label: string;
-  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange: (checked: boolean) => void;
   title: string;
 }) {
   return (
-    <label className="ml-1 flex cursor-pointer items-center gap-0.5 text-[0.7rem] text-gray-300" title={title}>
-      <input
-        type="checkbox"
-        className="size-3.5 accent-hf-yellow"
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-      />
-      <span>{label}</span>
-    </label>
+    <ModiffCheckbox
+      aria-label={title}
+      checked={checked}
+      disabled={disabled}
+      label={label}
+      onCheckedChange={onChange}
+      className="text-modiff-label ml-1 gap-0.5"
+    />
   );
 }

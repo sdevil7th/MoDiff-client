@@ -55,19 +55,19 @@ Avoid these anti-patterns:
 
 Use token classes such as `bg-modiff-bg`, `bg-modiff-surface`, `border-modiff-border`, `text-modiff-text`, `bg-hf-yellow`, and `text-hf-orange` instead of literal values in feature code.
 
-| Token            | Value     | Purpose                               |
-| ---------------- | --------- | ------------------------------------- |
-| `hf-yellow`      | `#FFD21E` | Primary action and selected state     |
-| `hf-orange`      | `#FF9D00` | Accent, warning, gradient end         |
-| `hf-gray`        | `#6B7280` | Muted neutral text                    |
-| `modiff-bg`      | `#0B0F19` | App background                        |
-| `modiff-surface` | `#101623` | Panels, dialogs, menus                |
-| `modiff-panel`   | `#141C2E` | Secondary panels and grouped controls |
-| `modiff-border`  | `#1E2939` | Borders and dividers                  |
-| `modiff-text`    | `#F9FAFB` | Primary text                          |
-| `modiff-blue`    | `#3080FF` | Info and graph accents                |
-| `modiff-red`     | `#FB2C36` | Errors and destructive actions        |
-| `modiff-green`   | `#00BAA7` | Success and valid connection states   |
+| Token                | Value     | Purpose                                 |
+| -------------------- | --------- | --------------------------------------- |
+| `hf-yellow`          | `#FFD21E` | Primary action and selected state       |
+| `hf-orange`          | `#FF9D00` | Accent, warning, gradient end           |
+| `modiff-subtle-text` | `#94A3B8` | Muted labels, metadata, and helper text |
+| `modiff-bg`          | `#0B0F19` | App background                          |
+| `modiff-surface`     | `#101623` | Panels, dialogs, menus                  |
+| `modiff-panel`       | `#141C2E` | Secondary panels and grouped controls   |
+| `modiff-border`      | `#1E2939` | Borders and dividers                    |
+| `modiff-text`        | `#F9FAFB` | Primary text                            |
+| `modiff-blue`        | `#3080FF` | Info and graph accents                  |
+| `modiff-red`         | `#FB2C36` | Errors and destructive actions          |
+| `modiff-green`       | `#00BAA7` | Success and valid connection states     |
 
 The Hugging Face-inspired colors are palette tokens only. Do not use Hugging Face logos, mascots, or brand assets.
 
@@ -86,8 +86,10 @@ Fonts are Source Sans Pro for UI and IBM Plex Mono for mono text. Use `rounded-m
 
 Use or extend these before creating feature-local visual systems:
 
-- General controls: `ModiffButton`, `ModiffIconButton`, `StudioButton`, `StudioIconButton`.
-- Headless wrappers: `ModiffDialog`, `ModiffMenu`, and `ModiffMenuItem`.
+- General controls: `ModiffButton`, `ModiffIconButton`, `ModiffInput`, `ModiffSearchInput`, `ModiffNumberInput`, `ModiffTextarea`, and `ModiffFieldShell`.
+- Choice and selection controls: `ModiffSelect`, `ModiffMultiSelect`, `ModiffCombobox`, `ModiffCheckbox`, `ModiffSwitch`, `ModiffRadioGroup`, `ModiffRadioCardGroup`, and `ModiffSlider`.
+- Navigation and overlays: `ModiffTabs`, `ModiffTabList`, `ModiffTab`, `ModiffDialog`, compound `ModiffMenu*` primitives, `ModiffTooltip`, `ModiffPopover`, `ModiffDisclosure`, and `ModiffFileInput`.
+- Metadata: `ModiffBadge` for passive state and `ModiffChip` for interactive filters; interactive chips expose `aria-pressed`.
 - Panels and status: `StatusBox`, `ProgressBar`, `ModiffProgress`, `IssueCard`, `StatusActionChip`.
 - Graph/node frames: `CustomNodeFrame`, `CustomNodeHeaderFrame`, `AnyNodeFrame`, `NodeResizeHandle`, `AnchoredPanel`, `TreeButtonRow`, `TreeStaticRow`.
 - Fields and media: `FieldFrame`, `NumberFieldFrame`, `RangeSliderFrame`, `FileDropFrame`, `ImageFrame`, `ImageCompareFrame`, `SelectOptionGrid`.
@@ -95,6 +97,8 @@ Use or extend these before creating feature-local visual systems:
 - Notifications: `ModiffSnackbarProvider`, `enqueueSnackbar`, `closeSnackbar`, `useSnackbar`.
 
 When a feature needs a repeated visual pattern that is not listed here, add a small primitive to `src/ui` and export it from `src/ui/index.ts`.
+
+Shared primitives own focus, disabled/read-only/required/invalid state, label and description associations, portal layering, and selected-value behavior. Feature and graph wrappers may add domain actions and preserve `nodrag`/`nowheel`, but must not recreate those contracts or import the underlying Headless UI control directly. Standalone actions use the shared 28px compact, 32px dense, 36px normal, or 40px prominent sizes.
 
 ## Headless UI Policy
 

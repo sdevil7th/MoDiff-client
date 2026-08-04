@@ -1,5 +1,5 @@
 import type { RuntimeStatus } from '../stores/useNodeStore';
-import { StatusActionChip } from '../ui';
+import { ModiffButton, StatusActionChip } from '../ui';
 
 function copyText(value: string) {
   void navigator.clipboard?.writeText(value);
@@ -9,7 +9,7 @@ export function RuntimeEnvironmentCard({ error, status }: { error?: string | nul
   const environment = status?.runtimeEnvironment;
   const selected = environment?.devices.find((item) => item.device === environment.defaultDevice);
   const ready = Boolean(status?.ready && environment?.executionReady);
-  const experimental = environment?.supportTier === 'experimental';
+  const preview = environment?.supportTier === 'experimental' || environment?.supportTier === 'preview';
   const installation = environment?.installation;
   const issueSummary = environment?.issues.map((issue) => issue.message).join(' ');
   const visibleSteps =
@@ -30,7 +30,7 @@ export function RuntimeEnvironmentCard({ error, status }: { error?: string | nul
       <div className="mt-2 flex flex-wrap gap-1.5">
         <StatusActionChip
           label={`${environment?.installedProfile ?? 'Profile unverified'} · ${environment?.supportTier ?? 'unverified'}`}
-          tone={experimental || !environment?.profileVerified ? 'warning' : 'neutral'}
+          tone={preview || !environment?.profileVerified ? 'warning' : 'neutral'}
           title={
             environment?.profileVerified
               ? `Requested: ${environment.requestedProfile ?? 'auto'}. Qualification: ${environment.supportTier}.`
@@ -52,11 +52,18 @@ export function RuntimeEnvironmentCard({ error, status }: { error?: string | nul
           title={`Torch ${status?.packages?.torch?.version ?? 'unknown'}`}
         />
       </div>
-      {experimental && (
+      {preview && (
         <p className="mt-2 text-xs text-modiff-warning">
-          Experimental means this host passed local checks but is not an advertised supported platform.
+          This profile passed local checks; model recipes still need physical qualification.
         </p>
       )}
+      {!ready && environment?.issues.length ? (
+        <ul className="mt-2 grid gap-1 text-xs text-modiff-red" data-testid="runtime-profile-issues">
+          {environment.issues.map((issue, index) => (
+            <li key={`${issue.code ?? 'runtime'}-${index}`}>{issue.message}</li>
+          ))}
+        </ul>
+      ) : null}
       {visibleSteps.length > 0 && (
         <ol className="mt-3 grid gap-2" data-testid="runtime-installation-checklist">
           {visibleSteps.map((step, index) => (
@@ -67,47 +74,59 @@ export function RuntimeEnvironmentCard({ error, status }: { error?: string | nul
               <div className="font-semibold">
                 {index + 1}. {step.title ?? step.id}
               </div>
-              {step.explanation && <p className="mt-1 text-modiff-text-muted">{step.explanation}</p>}
+              {step.explanation && <p className="mt-1 text-modiff-subtle-text">{step.explanation}</p>}
               {step.requiresAdmin && <p className="mt-1 text-modiff-warning">Administrator approval required.</p>}
               {step.requiresReboot && (
                 <p className="mt-1 text-modiff-warning">Resume after reboot or complete sign-out.</p>
               )}
               {step.command && (
                 <div className="mt-2 flex items-start gap-2">
-                  <code className="min-w-0 flex-1 select-all break-all text-modiff-text-muted">{step.command}</code>
-                  <button
-                    type="button"
-                    className="rounded-modiff-compact border border-modiff-border px-2 py-1 font-semibold hover:bg-modiff-surface-hover"
+                  <code className="min-w-0 flex-1 select-all break-all text-modiff-subtle-text">{step.command}</code>
+                  <ModiffButton
+                    tone="secondary"
+                    size="compact"
+                    className="h-auto px-2 py-1"
                     onClick={() => copyText(step.command!)}
                   >
                     Copy
-                  </button>
+                  </ModiffButton>
                 </div>
               )}
-              {step.verification && <p className="mt-1 text-modiff-text-muted">Verify: {step.verification}</p>}
-              {step.failureHelp && <p className="mt-1 text-modiff-text-muted">{step.failureHelp}</p>}
+              {step.verification && <p className="mt-1 text-modiff-subtle-text">Verify: {step.verification}</p>}
+              {step.failureHelp && <p className="mt-1 text-modiff-subtle-text">{step.failureHelp}</p>}
             </li>
           ))}
         </ol>
       )}
       {installation?.resumeCommand && installation.status !== 'complete' && (
         <div className="mt-2 flex items-start gap-2">
-          <code className="min-w-0 flex-1 select-all break-all text-xs text-modiff-text-muted">
+          <code className="min-w-0 flex-1 select-all break-all text-xs text-modiff-subtle-text">
             {installation.resumeCommand}
           </code>
-          <button
-            type="button"
-            className="rounded-modiff-compact border border-modiff-border px-2 py-1 text-xs font-semibold hover:bg-modiff-surface-hover"
+          <ModiffButton
+            tone="secondary"
+            size="compact"
+            className="h-auto px-2 py-1 text-xs"
             onClick={() => copyText(installation.resumeCommand!)}
           >
             Copy resume
-          </button>
+          </ModiffButton>
         </div>
       )}
-      {!installation?.resumeCommand && environment?.repairCommand && !ready && (
-        <code className="mt-2 block select-all break-all text-xs text-modiff-text-muted">
-          {environment.repairCommand}
-        </code>
+      {environment?.repairCommand && !ready && (!installation?.resumeCommand || installation.status === 'complete') && (
+        <div className="mt-2 flex items-start gap-2">
+          <code className="min-w-0 flex-1 select-all break-all text-xs text-modiff-subtle-text">
+            {environment.repairCommand}
+          </code>
+          <ModiffButton
+            tone="secondary"
+            size="compact"
+            className="h-auto px-2 py-1 text-xs"
+            onClick={() => copyText(environment.repairCommand!)}
+          >
+            Copy repair
+          </ModiffButton>
+        </div>
       )}
     </section>
   );

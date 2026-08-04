@@ -99,6 +99,7 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
     label: 'a concrete subject, scene, or designed artifact',
     patterns: [
       /\b(subject|scene|product|device|object|character|portrait|person|building|architecture|interior|exterior)\b/i,
+      /\b(worker|keeper|operator|courier|engineer|mechanic|artisan|veterinarian|musician|driver|researcher|watchman)\b/i,
       /\b(bottle|can|radio|camera|poster|logo|packag\w*|lamp|helmet|chair|headphone|observatory|greenhouse)\b/i,
       /\b(train|harbor|gallery|briefcase|coast|orchid|book\w*|speaker|bowl|mascot|carton|mug|cup)\b/i,
     ],
@@ -106,7 +107,7 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
   spatial_design: {
     label: 'composition, camera, or spatial layout',
     patterns: [
-      /\b(composition|layout|frame|crop|camera|angle|view|perspective|center\w*|foreground|background|focal)\b/i,
+      /\b(composition|layout|frame|crop|camera|lens|eye[- ]level|angle|view|perspective|center\w*|foreground|background|focal)\b/i,
       /\b(negative space|grid|close[- ]?up|wide|full[- ]?body|three[- ]quarter|3\/4|front|profile|hero|tabletop|plinth)\b/i,
       /\b(above|below|beside|horizon|cliffside|entrance|interior|exterior|one subject|minimal props|silhouette)\b/i,
     ],
@@ -116,7 +117,7 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
     patterns: [
       /\b(light\w*|shadow\w*|reflection\w*|palette|color|contrast|glow|mist|exposure)\b/i,
       /\b(material\w*|texture\w*|finish|glass|metal|ceramic|paper|fabric|wood|stone)\b/i,
-      /\b(cinematic|realistic|editorial|photograph\w*|depth of field|studio|style|graphic[- ]design|print[- ]ready)\b/i,
+      /\b(cinematic|realistic|photoreal\w*|editorial|photograph\w*|depth of field|studio|style|graphic[- ]design|print[- ]ready)\b/i,
     ],
   },
   source_role: {
@@ -128,6 +129,7 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
     patterns: [
       /\b(chang|transform|edit|replace|recreate|apply|insert|remove|fuse|relight|reinterpret|convert|decompose)\w*\b/i,
       /\b(create|render|generate|extend|fill)\w*\b/i,
+      /\buse\b.{0,80}\b(reference|source)\b/i,
     ],
   },
   preservation: {
@@ -157,6 +159,7 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
     patterns: [
       /\b(continuous|continuity|consistent|stable|unchanged|same session|match\w*|seam|blend)\b/i,
       /\b(across frames|frame to frame|first frame to last|full shot|temporally)\b/i,
+      /\b(preserv|maintain|retain|keep)\w*\b/i,
     ],
   },
   control_structure: {
@@ -166,7 +169,7 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
   control_adherence: {
     label: 'an explicit instruction to follow the control signal',
     patterns: [
-      /\b(preserv|follow|strict|match|align|keep|respect|guided by|without drifting|stay\w*)\b/i,
+      /\b(preserv\w*|follow\w*|strict\w*|match\w*|align\w*|keep\w*|respect\w*|guided by|without drifting|stay\w*)\b/i,
       /\buse the control (image|input|structure)\b/i,
     ],
   },
@@ -181,12 +184,14 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
   temporal_action: {
     label: 'an action or change that unfolds over time',
     patterns: [
-      /\b(video|clip|shot|animate|motion|moving|glide|walk|orbit|track|dolly|push[- ]in|across frames|frame to frame)\w*\b/i,
+      /\b(video|clip|shot|animate|motion|moving|advance|travel|billow|glide|walk|orbit|track|dolly|push[- ]in|play|hurry|gather|fight|strike|step|rise|fall|sway|flow|across frames|frame to frame)\w*\b/i,
     ],
   },
   camera_or_motion: {
     label: 'camera behavior or subject motion',
-    patterns: [/\b(camera|dolly|orbit|tracking|push[- ]in|motion|path|glide|walk|turntable|low street[- ]level)\w*\b/i],
+    patterns: [
+      /\b(camera|POV|travel|dolly|orbit|tracking|push[- ]in|motion|path|glide|walk|turntable|low street[- ]level)\w*\b/i,
+    ],
   },
   musical_identity: {
     label: 'genre, melody, rhythm, harmony, key, or tempo',
@@ -223,6 +228,11 @@ const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSem
 
 export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = [
   {
+    id: 'z-image-turbo-no-negative-input',
+    modelTypes: ['ZImageModularPipeline'],
+    reason: 'Z-Image Turbo has no negative-prompt input; exclusions belong in the positive production brief.',
+  },
+  {
     id: 'flux-native-conditioning',
     modelTypes: [
       'FluxSchnellPipeline',
@@ -233,13 +243,13 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
       'FluxDepthPipeline',
       'FluxCannyPipeline',
       'FluxReduxPipeline',
+      'Flux2KleinPipeline',
     ],
     reason: 'These FLUX recipes may intentionally use native or zeroed negative conditioning.',
   },
   {
     id: 'explicit-cfg-one-image-recipe',
     modelTypes: [
-      'ZImageModularPipeline',
       'QwenImageModularPipeline',
       'QwenImageEditModularPipeline',
       'QwenImageEditPlusModularPipeline',
@@ -255,23 +265,36 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
     reason:
       'The ACE-Step v1.5 Turbo backend has no negative-prompt input and uses guidance-distilled CFG 1; exclusions belong in the production brief.',
   },
+  {
+    id: 'ltx-distilled-no-cfg',
+    modelTypes: ['LTXVideoPipeline'],
+    maxGuidanceScale: 1,
+    reason:
+      'The qualified LTX 13B distilled artifact uses guidance 1 without CFG; exclusions remain explicit in the positive production brief.',
+  },
 ];
 
 const NEGATIVE_CATEGORY_PATTERNS: Record<TemplateNegativeCategory, readonly RegExp[]> = {
   artifact: [
     /\b(blur|blurry|noise|noisy|artifact|compression|flicker|jitter|tearing|watermark|halo|banding)\w*\b/i,
     /\b(clipping|muddy|soft focus|pixelat|phasey|sibilance|silence|low quality|low detail)\w*\b/i,
+    /(模糊|低质量|最差质量|JPEG压缩|静止不动)/i,
   ],
   structure: [
     /\b(warp|deform|extra|duplicate|anatom|geometry|perspective|proportion|shape|limb|hand|face|eye)\w*\b/i,
     /\b(stretch|broken|melt|floating|wrong scale|fold|hinge|silhouette|window count)\w*\b/i,
+    /(多余的手指|手指融合|画得不好的手部|画得不好的脸部|畸形|毁容|肢体|三条腿)/i,
   ],
   task_fidelity: [
     /\b(text|letter|word|title|label|logo|mark|identity|source|control|mask|unmasked|boundary|seam|panel|layout)\w*\b/i,
     /\b(composition|style drift|material|reflection|lighting|shadow|camera|motion|frame|tempo|key|splice|fade|vocal|mix)\w*\b/i,
     /\b(background|subject|product|wardrobe|crop|grid|border|layer|alpha|hair|object|original|central)\w*\b/i,
+    /(字幕|静态|画作|画面|背景|倒着走)/i,
   ],
-  aesthetic: [/\b(clutter|contrast|oversaturat|glare|plastic|overprocess|harsh|flat lighting|busy|messy|ugly)\w*\b/i],
+  aesthetic: [
+    /\b(clutter|contrast|oversaturat|glare|plastic|overprocess|harsh|flat lighting|busy|messy|ugly)\w*\b/i,
+    /(色调艳丽|过曝|整体发灰|丑陋|杂乱)/i,
+  ],
 };
 
 export function classifyTemplateQualityKind(template: Pick<StudioTemplate, 'mode' | 'modelType'>): TemplateQualityKind {
@@ -340,7 +363,7 @@ export function analyzeTemplateNegativePrompt(
   const constraints = Array.from(
     new Set(
       negativePrompt
-        .split(/[,;\n.]+/)
+        .split(/[,;\n.，；。]+/)
         .map((constraint) => constraint.trim().toLowerCase())
         .filter(Boolean),
     ),
@@ -374,13 +397,16 @@ export function auditTemplateQuality(template: StudioTemplate): TemplateQualityA
   const matchedSemanticGroups = requiredSemanticGroups.filter((group) =>
     templatePromptMatchesSemanticGroup(template.prompt, group),
   );
-  const semanticIssues: TemplateQualityIssue[] = requiredSemanticGroups
-    .filter((group) => !matchedSemanticGroups.includes(group))
-    .map((group) => ({
-      code: 'missing_semantic_group',
-      semanticGroup: group,
-      message: `Prompt is missing ${SEMANTIC_GROUPS[group].label}.`,
-    }));
+  const semanticIssues: TemplateQualityIssue[] =
+    template.promptQualityPolicy === 'adapter_reference'
+      ? []
+      : requiredSemanticGroups
+          .filter((group) => !matchedSemanticGroups.includes(group))
+          .map((group) => ({
+            code: 'missing_semantic_group',
+            semanticGroup: group,
+            message: `Prompt is missing ${SEMANTIC_GROUPS[group].label}.`,
+          }));
   const negative = analyzeTemplateNegativePrompt(template);
   const issues = [...semanticIssues, ...negative.issues];
 

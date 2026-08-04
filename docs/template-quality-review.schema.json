@@ -18,15 +18,13 @@
     "reviewedAt",
     "rubric",
     "scores",
-    "referenceSet",
     "hardFailures",
     "objectiveChecks",
     "modalityReview",
-    "parityDecision",
     "summary"
   ],
   "properties": {
-    "schemaVersion": { "const": 2 },
+    "schemaVersion": { "enum": [2, 3, 4] },
     "templateId": { "type": "string", "minLength": 1 },
     "templateLockHash": { "type": "string", "minLength": 1 },
     "promptSettingsHash": { "type": "string", "minLength": 1 },
@@ -37,6 +35,8 @@
     "modelSetHash": { "type": "string" },
     "inputArtifactsHash": { "type": "string" },
     "decodedMediaHash": { "type": "string", "minLength": 1 },
+    "decodedAudioHash": { "type": "string", "minLength": 1 },
+    "audiovisualMediaHash": { "type": "string", "minLength": 1 },
     "reviewStatus": { "const": "approved_reviewed" },
     "reviewer": { "type": "string", "minLength": 1 },
     "reviewedAt": { "type": "string", "format": "date-time" },
@@ -47,22 +47,8 @@
     },
     "scores": {
       "type": "object",
-      "required": ["promptAdherence", "composition", "technicalExecution", "templateUsefulness", "comfyParity"],
+      "required": ["promptAdherence", "composition", "technicalExecution", "templateUsefulness"],
       "additionalProperties": { "type": "number", "minimum": 4, "maximum": 5 }
-    },
-    "referenceSet": {
-      "type": "array",
-      "minItems": 2,
-      "items": {
-        "type": "object",
-        "required": ["templateId", "assetPath", "assetHash", "rationale"],
-        "properties": {
-          "templateId": { "type": "string" },
-          "assetPath": { "type": "string" },
-          "assetHash": { "type": "string" },
-          "rationale": { "type": "string" }
-        }
-      }
     },
     "hardFailures": { "type": "array", "maxItems": 0 },
     "objectiveChecks": {
@@ -79,7 +65,195 @@
         "findings": { "type": "array", "minItems": 1 }
       }
     },
-    "parityDecision": { "const": "not_worse" },
+    "physicalConsistency": {
+      "type": "object",
+      "required": ["status", "checks"],
+      "properties": {
+        "status": { "const": "pass" },
+        "checks": { "type": "array", "minItems": 3, "items": { "type": "string" } }
+      }
+    },
+    "scaleConsistency": {
+      "type": "object",
+      "properties": {
+        "status": { "const": "pass" },
+        "bicycleImageWidthPercent": { "type": "number", "minimum": 85, "maximum": 96 },
+        "wheelDiameterMismatchPercent": { "type": "number", "minimum": 0, "maximum": 8 },
+        "fullBicycleVisible": { "const": true },
+        "completeFrameTriangle": { "const": true },
+        "exactWordmark": { "const": "VELA" }
+      },
+      "required": [
+        "status",
+        "bicycleImageWidthPercent",
+        "wheelDiameterMismatchPercent",
+        "fullBicycleVisible",
+        "completeFrameTriangle",
+        "exactWordmark"
+      ],
+      "additionalProperties": true
+    },
+    "scaleContextReview": {
+      "type": "object",
+      "required": [
+        "status",
+        "anchorMeasurements",
+        "subjectProportionsPlausible",
+        "perspectiveScaleConsistent",
+        "supportAndContact",
+        "supportRationale"
+      ],
+      "properties": {
+        "status": { "const": "pass" },
+        "anchorMeasurements": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["anchor", "observedRelationship", "verdict"],
+            "properties": {
+              "anchor": { "type": "string", "minLength": 1 },
+              "observedRelationship": { "type": "string", "minLength": 1 },
+              "verdict": { "const": "pass" }
+            }
+          }
+        },
+        "subjectProportionsPlausible": { "const": true },
+        "perspectiveScaleConsistent": { "const": true },
+        "supportAndContact": { "enum": ["pass", "not_applicable"] },
+        "supportRationale": { "type": "string", "minLength": 20 }
+      }
+    },
+    "visualDiversity": {
+      "type": "object",
+      "required": ["status", "themeId", "nearestTemplateId", "distinctFromNearest"],
+      "properties": {
+        "status": { "const": "pass" },
+        "themeId": { "type": "string", "minLength": 1 },
+        "nearestTemplateId": { "type": "string", "minLength": 1 },
+        "distinctFromNearest": { "const": true }
+      }
+    },
+    "motionContinuity": {
+      "type": "object",
+      "required": ["status", "fullPlaybackReviewed", "rigidBodyScaleDrift", "geometryMorphing", "temporalGlitches"],
+      "properties": {
+        "status": { "const": "pass" },
+        "fullPlaybackReviewed": { "const": true },
+        "rigidBodyScaleDrift": { "const": "none" },
+        "geometryMorphing": { "const": "none" },
+        "temporalGlitches": { "const": "none" }
+      }
+    },
+    "motionReview": {
+      "type": "object",
+      "required": [
+        "status",
+        "fullPlaybackReviewed",
+        "frameCount",
+        "durationSeconds",
+        "sceneMotionCoveragePercent",
+        "visibleMotionMilestones",
+        "temporalDefects"
+      ],
+      "properties": {
+        "status": { "const": "pass" },
+        "fullPlaybackReviewed": { "const": true },
+        "frameCount": { "type": "integer", "minimum": 81 },
+        "durationSeconds": { "type": "number", "minimum": 5 },
+        "sceneMotionCoveragePercent": { "type": "number", "minimum": 50, "maximum": 100 },
+        "visibleMotionMilestones": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "temporalDefects": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "cardPreviewReview": {
+      "type": "object",
+      "required": ["status", "reviewedAtCardSize", "readsAsMovingVideo", "foregroundMotionMilestones"],
+      "properties": {
+        "status": { "const": "pass" },
+        "reviewedAtCardSize": { "const": true },
+        "readsAsMovingVideo": { "const": true },
+        "foregroundMotionMilestones": { "type": "array", "minItems": 3, "items": { "type": "string" } }
+      }
+    },
+    "temporalGeometryReview": {
+      "type": "object",
+      "required": ["status", "subjectMorphing", "scaleDrift", "contactSliding", "frameGlitches"],
+      "properties": {
+        "status": { "const": "pass" },
+        "subjectMorphing": { "const": "none" },
+        "scaleDrift": { "const": "none" },
+        "contactSliding": { "const": "none" },
+        "frameGlitches": { "const": "none" }
+      }
+    },
+    "sourcePreservationReview": {
+      "type": "object",
+      "required": [
+        "status",
+        "fullSourceCompared",
+        "subjectIdentity",
+        "cameraPath",
+        "unmaskedRegions",
+        "timing",
+        "comparisonMilestones"
+      ],
+      "properties": {
+        "status": { "const": "pass" },
+        "fullSourceCompared": { "const": true },
+        "subjectIdentity": { "const": "preserved" },
+        "cameraPath": { "enum": ["preserved", "not_applicable"] },
+        "unmaskedRegions": { "const": "preserved" },
+        "timing": { "enum": ["preserved", "not_applicable"] },
+        "comparisonMilestones": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "visualIntent": { "enum": ["photoreal", "animation"] },
+    "realismReview": { "type": "object" },
+    "animationReview": { "type": "object" },
+    "userFeedbackResolution": {
+      "type": "object",
+      "required": ["status", "replacementOutput", "resolvedIssues"],
+      "properties": {
+        "status": { "const": "pass" },
+        "replacementOutput": { "const": true },
+        "resolvedIssues": { "type": "array", "minItems": 2, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "lyricSyncReview": {
+      "type": "object",
+      "required": [
+        "status",
+        "fullPlaybackReviewed",
+        "audioAlignmentReviewed",
+        "overlayTextExact",
+        "cueCount",
+        "maximumCueDriftSeconds",
+        "lyricsRemainInSafeArea"
+      ],
+      "properties": {
+        "status": { "const": "pass" },
+        "fullPlaybackReviewed": { "const": true },
+        "audioAlignmentReviewed": { "const": true },
+        "overlayTextExact": { "const": true },
+        "cueCount": { "type": "integer", "minimum": 6 },
+        "maximumCueDriftSeconds": { "type": "number", "minimum": 0, "maximum": 0.25 },
+        "lyricsRemainInSafeArea": { "const": true }
+      }
+    },
+    "typographyReview": {
+      "type": "object",
+      "required": ["status", "allRequiredTextExact"],
+      "properties": { "status": { "const": "pass" }, "allRequiredTextExact": { "const": true } }
+    },
     "summary": { "type": "string", "minLength": 20 },
     "knownLimitations": { "type": "array", "items": { "type": "string" } }
   },

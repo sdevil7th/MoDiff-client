@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useState, useRef } from 'react';
 import { useUpdateNodeInternals } from '@xyflow/react';
 
@@ -9,6 +11,15 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import InputField from './InputField';
 import { FieldFrame, FileDropFrame } from '../ui';
 import { uploadBackendFile } from '../utils/backendUpload';
+import { GraphControlInput, GraphIconButton } from '../ui/GraphControls';
+import { bundledPublicAssetUrl } from '../studio/outputUtils';
+import { inferImportedMediaKind, mediaAcceptString } from '../studio/mediaImport';
+import { enqueueSnackbar } from '../ui/snackbar';
+import {
+  assertWorkflowOperationContext,
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+} from '../stores/useStudioStore';
 
 function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
@@ -28,17 +39,32 @@ export default function FileBrowserField(props: FieldProps) {
   const multiple = Boolean(props.fieldOptions?.multiple);
   const allowImages = allowedFieldTypes.includes('image');
   const allowVideos = allowedFieldTypes.includes('video');
+  const allowAudio = allowedFieldTypes.includes('audio');
 
-  const getAcceptString = () => {
-    const accepts = [];
-    if (allowImages) accepts.push('image/*');
-    if (allowVideos) accepts.push('video/*');
-    return accepts.join(',');
-  };
+  const allowedMediaKinds = [
+    ...(allowImages ? (['image'] as const) : []),
+    ...(allowVideos ? (['video'] as const) : []),
+    ...(allowAudio ? (['audio'] as const) : []),
+  ];
+  const getAcceptString = () => mediaAcceptString(allowedMediaKinds);
 
-  const isImage = (file: string) => file.match(/\.(jpe?g|a?png|webp|gif|bmp|ico|tiff|svg)$/i);
-  const isVideo = (file: string) => file.match(/\.(mp4|webm|ogg)$/i);
+  const isImage = (file: string) => allowImages && Boolean(file.match(/\.(jpe?g|png|webp|avif|gif|bmp|ico|tiff?)$/i));
+  const isVideo = (file: string) =>
+    allowVideos && Boolean(file.match(/\.(mp4|m4v|mov|webm|mkv|avi|mpeg|mpg|ts|mts|m2ts|wmv|flv)$/i));
+  const isAudio = (file: string) =>
+    allowAudio &&
+    !isVideo(file) &&
+    Boolean(file.match(/\.(wav|wave|bwf|aiff?|flac|mp3|m4a|aac|ogg|oga|opus|wma|mp4)$/i));
   const isUrl = (file: string) => file.startsWith('http://') || file.startsWith('https://');
+  const imagePreviewUrl = (file: string) =>
+    bundledPublicAssetUrl(file) ??
+    (isUrl(file) ? file : `${config.serverAddress}/preview?file=${encodeURIComponent(file)}`);
+  const videoPreviewUrl = (file: string) =>
+    bundledPublicAssetUrl(file) ??
+    (isUrl(file) ? file : `${config.serverAddress}/media/preview?file=${encodeURIComponent(file)}&media_kind=video`);
+  const audioPreviewUrl = (file: string) =>
+    bundledPublicAssetUrl(file) ??
+    (isUrl(file) ? file : `${config.serverAddress}/media/preview?file=${encodeURIComponent(file)}&media_kind=audio`);
 
   // if none of the values is empty, add an empty string to allow adding more files
   const baseFieldValue =
@@ -46,16 +72,26 @@ export default function FileBrowserField(props: FieldProps) {
       ? [...currentValues, '']
       : currentValues;
   const fieldValue = baseFieldValue.length > 0 ? baseFieldValue : [''];
-  const displayValue = fieldValue.filter((file: string) => isImage(file) || isVideo(file)) || [];
+  const displayValue = fieldValue.filter((file: string) => isImage(file) || isVideo(file) || isAudio(file)) || [];
   const isTextFieldEditable = props.fieldOptions?.editable !== false;
 
   async function uploadFile(file: File) {
-    const fileType = file.type.startsWith('image/') ? 'images' : 'videos';
+    const context = captureWorkflowOperationContext();
+    const mediaKind = inferImportedMediaKind(file, allowedMediaKinds);
+    if (!mediaKind) {
+      enqueueSnackbar('That file is not a supported media type for this input.', {
+        variant: 'error',
+        autoHideDuration: 5000,
+      });
+      return;
+    }
+    const fileType = mediaKind === 'image' ? 'images' : mediaKind === 'audio' ? 'audio' : 'videos';
     try {
       const newFiles = await uploadBackendFile(file, fileType);
+      assertWorkflowOperationContext(context, { includeForm: false });
       let updatedFiles;
-      if (fileType === 'videos') {
-        // Videos are always single
+      if (fileType === 'videos' || fileType === 'audio') {
+        // Video and audio inputs are always single.
         updatedFiles = newFiles;
       } else {
         updatedFiles = multiple
@@ -64,7 +100,11 @@ export default function FileBrowserField(props: FieldProps) {
       }
       props.updateStore(props.fieldKey, updatedFiles);
     } catch (error) {
-      console.error(error);
+      if (isWorkflowOperationCancelled(error)) return;
+      enqueueSnackbar(error instanceof Error ? error.message : 'The media file could not be imported.', {
+        variant: 'error',
+        autoHideDuration: 6000,
+      });
     }
   }
 
@@ -72,13 +112,12 @@ export default function FileBrowserField(props: FieldProps) {
     e.preventDefault();
     e.stopPropagation();
     setIsDropActive(false);
-    const files = [...e.dataTransfer.files].filter(
-      (file) => (allowImages && file.type.startsWith('image/')) || (allowVideos && file.type.startsWith('video/')),
-    );
+    const files = [...e.dataTransfer.files].filter((file) => inferImportedMediaKind(file, allowedMediaKinds));
     if (files.length > 0) {
       const firstFile = files[0];
       if (!firstFile) return;
-      if (firstFile.type.startsWith('video/')) {
+      const firstKind = inferImportedMediaKind(firstFile, allowedMediaKinds);
+      if (firstKind === 'video' || firstKind === 'audio') {
         await uploadFile(firstFile);
       } else {
         // Handle multiple image uploads if enabled
@@ -100,7 +139,7 @@ export default function FileBrowserField(props: FieldProps) {
     if (files && files.length > 0) {
       const file = files.item(0);
       if (!file) return;
-      if ((allowImages && file.type.startsWith('image/')) || (allowVideos && file.type.startsWith('video/'))) {
+      if (inferImportedMediaKind(file, allowedMediaKinds)) {
         await uploadFile(file);
       }
     }
@@ -164,35 +203,37 @@ export default function FileBrowserField(props: FieldProps) {
             : fieldValue.map((file: string, index: number) => (
                 <div
                   key={index}
-                  className="flex-grow break-all rounded-modiff-compact bg-modiff-bg px-2 py-1 text-sm text-gray-400"
+                  className="flex-grow break-all rounded-modiff-compact bg-modiff-bg px-2 py-1 text-sm text-modiff-subtle-text"
                 >
                   {file}
                 </div>
               ))}
         </div>
-        <button
-          type="button"
-          className="ml-1 grid size-8 shrink-0 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-hf-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow disabled:pointer-events-none disabled:opacity-40"
-          title="Open file browser"
-          aria-label="Open file browser"
+        <GraphIconButton
+          label="Open file browser"
+          size="dense"
+          className="ml-1 shrink-0 hover:text-hf-yellow"
           disabled={props.disabled}
-          onClick={() =>
+          onClick={() => {
+            const context = captureWorkflowOperationContext();
             setFileBrowserOpener({
+              workflowTabId: context.workflowTabId,
+              workflowCanvasEpoch: context.canvasEpoch,
               nodeId: props.nodeId,
               fieldKey: props.fieldKey,
               fileTypes: allowedFieldTypes,
               path: currentPath,
               multiple,
               initialValues: currentValues,
-            })
-          }
+            });
+          }}
         >
           <FolderOpen size={16} />
-        </button>
+        </GraphIconButton>
       </div>
 
       {/* Hidden file input for OS file dialog */}
-      <input
+      <GraphControlInput
         ref={fileInputRef}
         type="file"
         accept={getAcceptString()}
@@ -203,6 +244,8 @@ export default function FileBrowserField(props: FieldProps) {
 
       {/** File drop area */}
       <FileDropFrame
+        activationLabel="Upload files"
+        disabled={props.disabled}
         onClick={() => fileInputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -222,7 +265,7 @@ export default function FileBrowserField(props: FieldProps) {
               {isImage(file) ? (
                 <img
                   className="mx-auto block h-auto max-h-[1024px] w-full max-w-[360px] object-contain"
-                  src={isUrl(file) ? file : `${config.serverAddress}/preview?file=${encodeURIComponent(file)}`}
+                  src={imagePreviewUrl(file)}
                   alt={file}
                   onLoad={handleMediaLoad}
                   onError={(e) => {
@@ -232,8 +275,8 @@ export default function FileBrowserField(props: FieldProps) {
                 />
               ) : isVideo(file) ? (
                 <video
-                  className="mx-auto block h-auto max-h-[1080px] w-full max-w-[1920px] object-contain"
-                  src={isUrl(file) ? file : `${config.serverAddress}/stream?file=${encodeURIComponent(file)}`}
+                  className="pointer-events-auto mx-auto block h-auto max-h-[1080px] w-full max-w-[1920px] object-contain"
+                  src={videoPreviewUrl(file)}
                   //src={`${config.serverAddress}/cache/${props.nodeId}/${props.fieldKey}`}
                   controls
                   onClick={(e) => {
@@ -248,22 +291,30 @@ export default function FileBrowserField(props: FieldProps) {
                       "data:image/svg+xml;utf8,<svg width='512' height='512' xmlns='http://www.w3.org/2000/svg'><defs><pattern id='checker' width='32' height='32' patternUnits='userSpaceOnUse'><rect width='32' height='32' fill='%23ffffff11'/><rect x='0' y='0' width='16' height='16' fill='%23ffffff33'/><rect x='16' y='16' width='16' height='16' fill='%23ffffff33'/></pattern></defs><rect width='512' height='512' fill='url(%23checker)'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='24' fill='%23FAFAFA' font-family='IBM Plex Mono, monospace'>Video not found</text></svg>";
                   }}
                 />
+              ) : isAudio(file) ? (
+                <audio
+                  className="pointer-events-auto mx-auto block min-w-64 max-w-full"
+                  src={audioPreviewUrl(file)}
+                  controls
+                  preload="metadata"
+                  onClick={(event) => event.stopPropagation()}
+                  onLoadedMetadata={handleMediaLoad}
+                />
               ) : null}
-              <button
-                type="button"
+              <GraphIconButton
+                label="Remove media"
                 onClick={(e) => {
                   e.stopPropagation();
                   removeMedia(file);
                 }}
-                title="Remove image"
-                className="absolute right-1 top-1 grid size-7 place-items-center rounded-modiff-compact bg-black/40 text-gray-200 transition hover:bg-black/70 hover:text-modiff-red focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                className="pointer-events-auto absolute right-1 top-1 bg-modiff-media-backdrop/40 text-modiff-text hover:bg-modiff-media-backdrop/70 hover:text-modiff-red"
               >
                 <X size={14} />
-              </button>
+              </GraphIconButton>
             </div>
           ))
         ) : (
-          <div className="text-sm text-gray-400">Drop files here to upload</div>
+          <div className="text-sm text-modiff-subtle-text">Drop files here to upload</div>
         )}
       </FileDropFrame>
     </FieldFrame>

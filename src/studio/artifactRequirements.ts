@@ -159,8 +159,8 @@ export function getStudioWorkflowArtifactRequirements({
 
   if (includePipeline) {
     if (form.resourceMode === 'auto') {
-      const installTarget = autoResourceInstallTarget(autoResourcePlan);
-      const candidate = selectedAutoCandidate(autoResourcePlan);
+      const installTarget = autoResourceInstallTarget(autoResourcePlan, form);
+      const candidate = selectedAutoCandidate(autoResourcePlan, form);
       const repo =
         installTarget?.repo ??
         candidate?.resolvedArtifact ??
@@ -174,7 +174,7 @@ export function getStudioWorkflowArtifactRequirements({
         candidate?.proof?.message ??
         autoResourcePlan?.blockingReason ??
         autoResourcePlan?.willNotWorkReason ??
-        (autoPlanIsReady(autoResourcePlan) ? 'Auto-selected artifact is ready.' : undefined);
+        (autoPlanIsReady(autoResourcePlan, form) ? 'Auto-selected artifact is ready.' : undefined);
       requirements.push(
         requirementFromRepo({
           details,

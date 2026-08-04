@@ -1,0 +1,25 @@
+{
+  "qwen_character_angles": {
+    "referenceImages": ["artifacts/template-gallery/2026-07-14T00-10-03-815Z-run/media/character_edit.run1.webp"]
+  },
+  "qwen_tile_extract": {
+    "referenceImages": ["public/template-gallery/z_image_cinematic_contact_sheet.webp"]
+  },
+  "character_edit": {
+    "referenceImages": ["artifacts/template-gallery/source-assets/qwen-layered-coastal-singer-source.webp"]
+  },
+  "qwen_outpaint_aspect_template": {
+    "referenceImages": ["artifacts/template-gallery/source-assets/qwen-outpaint-coastal-researcher-source-v2.webp"]
+  },
+  "qwen_inpaint_object_replace": {
+    "referenceImages": ["artifacts/template-gallery/source-assets/qwen-inpaint-entryway-source-v3.webp"],
+    "maskImage": "artifacts/template-gallery/source-assets/qwen-inpaint-entryway-mask-v3.png"
+  },
+  "qwen_inpaint_mask_draft": {
+    "referenceImages": ["artifacts/template-gallery/source-assets/qwen-inpaint-field-cup-source.webp"],
+    "maskImage": "artifacts/template-gallery/source-assets/qwen-inpaint-field-cup-mask.png"
+  },
+  "qwen_outpaint_draft": {
+    "referenceImages": ["public/template-gallery/high_quality.webp"]
+  }
+}

@@ -1,5 +1,6 @@
 import type { Edge, Viewport } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
+import { rebaseGraphDevices } from './deviceRebase';
 import {
   DEFAULT_STUDIO_FORM,
   QWEN_OUTPAINT_CANVAS_NODE_KEY,
@@ -10,7 +11,14 @@ import {
   normalizeStudioOffloadMode,
 } from './modelProfiles';
 import { normalizeStudioResourceMode } from './resourcePlanner';
-import type { StudioFormState, StudioMode, StudioModelType, WorkflowTabSnapshot } from './types';
+import type {
+  StudioFormState,
+  StudioGraphBinding,
+  StudioGraphRole,
+  StudioMode,
+  StudioModelType,
+  WorkflowTabSnapshot,
+} from './types';
 
 type GraphLike = {
   nodes?: unknown[];
@@ -20,10 +28,14 @@ type GraphLike = {
 
 type NodeLike = {
   id?: string;
+  type?: string;
   data?: {
+    type?: string;
     module?: string;
     action?: string;
+    category?: string;
     studioRole?: string;
+    studioOwned?: boolean;
     params?: Record<string, { value?: unknown; default?: unknown }>;
   };
 };
@@ -86,6 +98,198 @@ function findNodes(nodes: NodeLike[], predicate: (node: NodeLike) => boolean) {
   return nodes.filter(predicate);
 }
 
+type ManagedWorkflowAdoption = {
+  nodes: CustomNodeType[];
+  binding: StudioGraphBinding;
+};
+
+type CanonicalNodeSpec = {
+  module: string;
+  action: string;
+  role: StudioGraphRole;
+};
+
+type CanonicalEdgeSpec = {
+  sourceRole: StudioGraphRole;
+  sourceHandle: string;
+  targetRole: StudioGraphRole;
+  targetHandle: string;
+};
+
+const MODULAR_TEXT_TO_IMAGE_NODES: CanonicalNodeSpec[] = [
+  { module: 'modules.ModularDiffusers', action: 'ModelsLoader', role: 'models' },
+  { module: 'modules.ModularDiffusers', action: 'EncodePrompt', role: 'prompt' },
+  { module: 'modules.ModularDiffusers', action: 'Denoise', role: 'denoise' },
+  { module: 'modules.ModularDiffusers', action: 'DecodeLatents', role: 'decode' },
+  { module: 'modules.Image', action: 'Preview', role: 'preview' },
+];
+
+const MODULAR_TEXT_TO_IMAGE_EDGES: CanonicalEdgeSpec[] = [
+  { sourceRole: 'models', sourceHandle: 'text_encoders', targetRole: 'prompt', targetHandle: 'text_encoders' },
+  { sourceRole: 'models', sourceHandle: 'unet_out', targetRole: 'denoise', targetHandle: 'unet' },
+  { sourceRole: 'models', sourceHandle: 'vae_out', targetRole: 'decode', targetHandle: 'vae' },
+  { sourceRole: 'models', sourceHandle: 'scheduler', targetRole: 'denoise', targetHandle: 'scheduler' },
+  { sourceRole: 'prompt', sourceHandle: 'embeddings', targetRole: 'denoise', targetHandle: 'embeddings' },
+  { sourceRole: 'denoise', sourceHandle: 'latents', targetRole: 'decode', targetHandle: 'latents' },
+  { sourceRole: 'decode', sourceHandle: 'images', targetRole: 'preview', targetHandle: 'image' },
+];
+
+function isGraphContainer(node: NodeLike) {
+  return (
+    node.type === 'group' ||
+    node.type === 'loop' ||
+    node.data?.type === 'group' ||
+    node.data?.type === 'loop' ||
+    node.data?.category === 'group'
+  );
+}
+
+function bindingForManagedNodes(
+  nodes: CustomNodeType[],
+  edges: Edge[],
+  form: StudioFormState,
+  roleNodeIds: Partial<Record<StudioGraphRole, string>>,
+): StudioGraphBinding {
+  const managedNodeIds = nodes.map((node) => node.id);
+  const managedNodeSet = new Set(managedNodeIds);
+  return {
+    mode: form.mode,
+    modelType: form.modelType,
+    nodes: roleNodeIds,
+    managedNodeIds,
+    managedEdgeIds: edges
+      .filter((edge) => managedNodeSet.has(edge.source) && managedNodeSet.has(edge.target))
+      .map((edge) => edge.id),
+    fingerprint: `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+    // Inferred bindings must be deterministic so normalizing the same backend
+    // record cannot create a new content signature and trigger a save loop.
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
+
+function adoptRoleMarkedWorkflow(
+  nodes: CustomNodeType[],
+  edges: Edge[],
+  form: StudioFormState,
+): ManagedWorkflowAdoption | null {
+  const executableNodes = nodes.filter((node) => !isGraphContainer(node));
+  const roleNodes = executableNodes.filter((node) => typeof node.data.studioRole === 'string');
+  if (roleNodes.length === 0) return null;
+  if (executableNodes.some((node) => node.data.studioOwned !== true && typeof node.data.studioRole !== 'string')) {
+    return null;
+  }
+
+  const roleNodeIds: Partial<Record<StudioGraphRole, string>> = {};
+  for (const node of roleNodes) {
+    const role = node.data.studioRole as StudioGraphRole;
+    if (roleNodeIds[role]) return null;
+    roleNodeIds[role] = node.id;
+  }
+
+  const managedNodeSet = new Set(executableNodes.map((node) => node.id));
+  if (edges.some((edge) => !managedNodeSet.has(edge.source) || !managedNodeSet.has(edge.target))) return null;
+
+  const executableNodeIds = new Set(executableNodes.map((node) => node.id));
+  const adoptedManagedNodes = executableNodes.map((node) => ({
+    ...node,
+    data: { ...node.data, studioOwned: true },
+  }));
+  const adoptedNodes = nodes.map((node) => {
+    const managed = adoptedManagedNodes.find((candidate) => candidate.id === node.id);
+    return managed ?? node;
+  });
+  return {
+    nodes: adoptedNodes,
+    binding: bindingForManagedNodes(
+      adoptedManagedNodes.filter((node) => executableNodeIds.has(node.id)),
+      edges,
+      form,
+      roleNodeIds,
+    ),
+  };
+}
+
+function canonicalEdgeKey(
+  source: string,
+  sourceHandle: string | null | undefined,
+  target: string,
+  targetHandle: string | null | undefined,
+) {
+  return `${source}:${sourceHandle ?? ''}->${target}:${targetHandle ?? ''}`;
+}
+
+function adoptCanonicalModularTextToImageWorkflow(
+  nodes: CustomNodeType[],
+  edges: Edge[],
+  form: StudioFormState,
+): ManagedWorkflowAdoption | null {
+  if (form.mode !== 'text_to_image' || nodes.length !== MODULAR_TEXT_TO_IMAGE_NODES.length) return null;
+  if (edges.length !== MODULAR_TEXT_TO_IMAGE_EDGES.length) return null;
+
+  const roleNodeIds: Partial<Record<StudioGraphRole, string>> = {};
+  for (const spec of MODULAR_TEXT_TO_IMAGE_NODES) {
+    const matches = nodes.filter((node) => node.data.module === spec.module && node.data.action === spec.action);
+    const matchedNodeId = matches[0]?.id;
+    if (matches.length !== 1 || !matchedNodeId) return null;
+    roleNodeIds[spec.role] = matchedNodeId;
+  }
+  if (new Set(Object.values(roleNodeIds)).size !== nodes.length) return null;
+
+  const expectedEdges = new Set(
+    MODULAR_TEXT_TO_IMAGE_EDGES.map((spec) =>
+      canonicalEdgeKey(
+        roleNodeIds[spec.sourceRole] ?? '',
+        spec.sourceHandle,
+        roleNodeIds[spec.targetRole] ?? '',
+        spec.targetHandle,
+      ),
+    ),
+  );
+  const actualEdges = edges.map((edge) =>
+    canonicalEdgeKey(edge.source, edge.sourceHandle, edge.target, edge.targetHandle),
+  );
+  if (new Set(actualEdges).size !== actualEdges.length) return null;
+  if (actualEdges.some((edge) => !expectedEdges.has(edge))) return null;
+
+  const roleByNodeId = new Map(Object.entries(roleNodeIds).map(([role, nodeId]) => [nodeId, role as StudioGraphRole]));
+  const adoptedNodes = nodes.map((node) => ({
+    ...node,
+    data: {
+      ...node.data,
+      studioRole: roleByNodeId.get(node.id),
+      studioOwned: true,
+    },
+  }));
+  return {
+    nodes: adoptedNodes,
+    binding: bindingForManagedNodes(adoptedNodes, edges, form, roleNodeIds),
+  };
+}
+
+/**
+ * Recover MoDiff's managed Studio contract only when provenance or topology is
+ * unambiguous. Role-marked generated workflows are authoritative. For older
+ * graph-library files without roles, the complete five-node/seven-edge modular
+ * pipeline must match exactly; arbitrary and partially similar imports remain
+ * custom graphs.
+ */
+export function adoptManagedWorkflowGraph(
+  nodesInput: unknown[],
+  edgesInput: Edge[],
+  form: StudioFormState,
+): ManagedWorkflowAdoption | null {
+  const nodes = nodesInput.filter(isNodeLike) as CustomNodeType[];
+  if (nodes.length !== nodesInput.length || nodes.some((node) => typeof node.id !== 'string' || !node.id)) {
+    return null;
+  }
+  if (edgesInput.some((edge) => typeof edge.id !== 'string' || !edge.id)) return null;
+  return (
+    adoptRoleMarkedWorkflow(nodes, edgesInput, form) ??
+    adoptCanonicalModularTextToImageWorkflow(nodes, edgesInput, form)
+  );
+}
+
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
   const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
   if (explicit) return explicit;
@@ -98,7 +302,7 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
 function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
-  const hasWan = keys.has('modules.WanVACE.LoadPipeline') || keys.has('modules.WanVACE.Generate');
+  const hasWan = keys.has('modules.DiffusersVideo.LoadPipeline') || keys.has('modules.DiffusersVideo.Generate');
   if (hasWan || modelType === 'WanVACEPipeline') {
     if (roles.has('loadMaskVideo') || roles.has('alignMaskVideo')) return 'video_inpaint';
     if (roles.has('loadControlVideo')) return 'control_to_video';
@@ -135,7 +339,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
 
   if (roles.has('controlnet') || keys.has('modules.ModularDiffusers.Controlnet')) return 'control_image';
   if (roles.has('qwenOutpaintCanvas') || keys.has(QWEN_OUTPAINT_CANVAS_NODE_KEY)) return 'outpaint';
-  if (roles.has('qwenInpaint') || keys.has('modules.QwenImage.Inpaint')) return 'inpaint';
+  if (roles.has('qwenInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
   if (roles.has('applyMask') || roles.has('loadMask') || keys.has('modules.Image.ApplyMask')) return 'inpaint';
   if (modelType === 'QwenImageLayeredModularPipeline') return 'layer_decomposition';
   if (modelType === 'QwenImageEditPlusModularPipeline') return 'multi_image_reference_edit';
@@ -316,17 +520,20 @@ export function workflowSnapshotFromGraph(
   edgeType: string,
   fallback: StudioFormState = DEFAULT_STUDIO_FORM,
 ): WorkflowTabSnapshot {
-  const nodes = cloneJson((Array.isArray(graph.nodes) ? graph.nodes : []) as CustomNodeType[]);
+  const portableGraph = rebaseGraphDevices(cloneJson(graph), fallback.device);
+  const nodes = cloneJson((Array.isArray(portableGraph.nodes) ? portableGraph.nodes : []) as CustomNodeType[]);
+  const edges = cloneJson(Array.isArray(portableGraph.edges) ? portableGraph.edges : []).map((edge) => ({
+    ...edge,
+    type: edge.type ?? edgeType,
+  }));
   const form = inferStudioFormFromWorkflow(nodes, fallback);
+  const adopted = adoptManagedWorkflowGraph(nodes, edges, form);
   return {
-    nodes,
-    edges: cloneJson(Array.isArray(graph.edges) ? graph.edges : []).map((edge) => ({
-      ...edge,
-      type: edge.type ?? edgeType,
-    })),
-    viewport: cloneJson(graph.viewport ?? { x: 0, y: 0, zoom: 1 }),
+    nodes: adopted?.nodes ?? nodes,
+    edges,
+    viewport: cloneJson(portableGraph.viewport ?? { x: 0, y: 0, zoom: 1 }),
     studioForm: form,
-    studioGraphBinding: null,
+    studioGraphBinding: adopted?.binding ?? null,
     selectedMode: form.mode,
     activeTemplateId: null,
     sourceOutputId: null,

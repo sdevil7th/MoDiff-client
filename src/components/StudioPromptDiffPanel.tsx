@@ -90,23 +90,19 @@ export function StudioPromptDiffPanel({
         }
       />
       <StudioSelect
+        aria-label="Prompt version to compare"
         value={selectedSource?.id || ''}
-        onChange={(event) => setSelectedSourceId(event.target.value)}
+        onValueChange={setSelectedSourceId}
+        options={diffSources.map((source) => ({ value: source.id, label: source.label }))}
         className="mb-2 w-full"
-      >
-        {diffSources.map((source) => (
-          <option key={source.id} value={source.id}>
-            {source.label}
-          </option>
-        ))}
-      </StudioSelect>
+      />
       <div className="max-h-40 overflow-y-auto border border-modiff-border bg-modiff-bg p-2">
         {diff.map((token, index) => (
           <span
             key={`${token.text}-${index}`}
             className={cx(
               'mb-1 mr-1 inline-block rounded-modiff-compact px-1 text-xs',
-              token.kind === 'same' && 'text-gray-400',
+              token.kind === 'same' && 'text-modiff-subtle-text',
               token.kind === 'added' && 'bg-modiff-green/10 text-modiff-green',
               token.kind === 'removed' && 'bg-modiff-red/10 text-modiff-red line-through',
             )}

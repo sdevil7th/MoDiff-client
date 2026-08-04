@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 export function formatMemory(memoryUsage: number) {
   if (memoryUsage < 1024) {
     return `${memoryUsage} B`;

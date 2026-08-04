@@ -1,8 +1,8 @@
-import { nanoid } from 'nanoid';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
 import { useStudioStore } from '../stores/useStudioStore';
+import { useTaskStore, type Task } from '../stores/useTaskStore';
 import { getStudioModelCacheStatus } from './modelCache';
 import {
   getGraphWorkflowArtifactRequirements,
@@ -11,7 +11,6 @@ import {
 } from './artifactRequirements';
 import {
   getProfileForForm,
-  getStudioModelArtifactNote,
   getStudioModelDisplayName,
   normalizeStudioOffloadMode,
   offloadModeIsSupported,
@@ -28,12 +27,28 @@ import {
   STUDIO_OFFLOAD_LABELS,
 } from './modelProfiles';
 import { resolveStudioResourceForm } from './resourcePlanner';
-import { autoPlanIsReady, autoResourceInstallTarget, selectedAutoCandidate } from './autoResource';
-import type { GraphInspectionSummary, RunReadinessIssue, StudioFormState, StudioModelProfile } from './types';
-import type { RuntimeCudaDevice, RuntimeMpsDevice, RuntimeStatus } from '../stores/useNodeStore';
+import {
+  autoProofIsReady,
+  autoPlanHasRuntimeIssue,
+  autoPlanIsReady,
+  autoResourceCompatibility,
+  autoResourceInstallTarget,
+  selectedAutoCandidate,
+} from './autoResource';
+import { studioOffloadPlanConflict } from './deviceOffload';
+import type {
+  GraphInspectionSummary,
+  RunReadinessDecision,
+  RunReadinessIssue,
+  StudioFormState,
+  StudioModelProfile,
+} from './types';
+import { runtimeOptionValues } from './runtimeOptions';
+import type { RuntimeCudaDevice, RuntimeMpsDevice, RuntimeStatus, RuntimeXpuDevice } from '../stores/useNodeStore';
+import type { RuntimeResourceSnapshot } from './runtimeResources';
+import { getStudioGraphRunBlockingMessage } from './graphBridge';
 
 const GIB = 1024 ** 3;
-export const QWEN_MIN_CUDA_TOTAL_BYTES = 20 * GIB;
 const MODEL_PARAM_HINTS = [
   'repo',
   'repository',
@@ -52,9 +67,56 @@ const HF_REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
 const LOCAL_PATH_PREFIX_PATTERN = /^(?:\.{1,2}\/|\/|[a-z]:|models\/|checkpoints\/|loras\/|vae\/|controlnet\/)/i;
 
 function issue(values: Omit<RunReadinessIssue, 'id'> & { id?: string }): RunReadinessIssue {
+  const stableId = [
+    values.code ?? '',
+    values.category,
+    values.nodeId ?? '',
+    values.repoId ?? '',
+    values.modelPath ?? '',
+    values.action ?? '',
+    values.message,
+  ]
+    .join(':')
+    .toLowerCase()
+    .replace(/[^a-z0-9:_./-]+/g, '-');
   return {
-    id: values.id ?? nanoid(),
+    id: values.id ?? stableId,
     ...values,
+  };
+}
+
+export function buildRunReadinessDecision(
+  issues: RunReadinessIssue[],
+  options: { preparing?: boolean } = {},
+): RunReadinessDecision {
+  const blockingIssues = issues.filter((item) => item.blocking);
+  const warningIssues = issues.filter((item) => !item.blocking && item.severity === 'warning');
+  const infoIssues = issues.filter((item) => !item.blocking && item.severity === 'info');
+  const primaryIssue = blockingIssues[0] ?? warningIssues[0] ?? infoIssues[0] ?? issues[0] ?? null;
+  const state = options.preparing
+    ? 'preparing'
+    : blockingIssues.length > 0
+      ? 'blocked'
+      : warningIssues.length > 0
+        ? 'ready_with_warnings'
+        : 'ready';
+
+  return {
+    state,
+    issues,
+    blockingIssues,
+    warningIssues,
+    primaryIssue,
+    canRun: state === 'ready' || state === 'ready_with_warnings',
+    title:
+      state === 'preparing'
+        ? 'Preparing graph'
+        : state === 'blocked'
+          ? 'Run blocked'
+          : state === 'ready_with_warnings'
+            ? 'Ready with warnings'
+            : 'Ready',
+    message: primaryIssue?.message ?? (state === 'preparing' ? 'Preparing graph' : 'Ready'),
   };
 }
 
@@ -103,10 +165,24 @@ function collectNodeModelReferences(node: ReturnType<typeof useFlowStore.getStat
   const params = node.data.params || {};
 
   Object.entries(params).forEach(([paramKey, param]) => {
-    const value = compactModelString(repoValueFromParam(param.value ?? param.default));
+    const rawValue = param.value ?? param.default;
+    const value = compactModelString(repoValueFromParam(rawValue));
     if (!value || value === 'undefined' || value === 'null') return;
     const modelRelated = paramLooksModelRelated(paramKey, param);
-    if (isHfRepoId(value) && (modelRelated || paramKey === 'repo_id' || paramKey === 'model_id')) {
+    const source =
+      rawValue && typeof rawValue === 'object' && 'source' in rawValue
+        ? String((rawValue as { source?: unknown }).source ?? '')
+        : '';
+    const hubFileRepo =
+      source === 'hub' && MODEL_FILE_PATTERN.test(value) && value.split('/').length >= 3
+        ? value.split('/').slice(0, 2).join('/')
+        : '';
+    if (hubFileRepo && modelRelated) {
+      // A modelselect Hub value may pin a single file as
+      // owner/repo/path/to/model.pth. Its readiness is governed by the
+      // app-managed repository snapshot, not by the legacy local-model index.
+      references.push({ kind: 'repo', value: hubFileRepo, paramKey });
+    } else if (isHfRepoId(value) && (modelRelated || paramKey === 'repo_id' || paramKey === 'model_id')) {
       references.push({ kind: 'repo', value, paramKey });
     } else if (modelRelated && isModelFilePath(value)) {
       references.push({ kind: 'path', value, paramKey });
@@ -134,7 +210,11 @@ export function isMpsDevice(device: string) {
   return /^mps(?::\d+)?$/i.test(device.trim());
 }
 
-function indexFromDevice(device: string, prefix: 'cuda' | 'mps') {
+export function isXpuDevice(device: string) {
+  return /^xpu(?::\d+)?$/i.test(device.trim());
+}
+
+function indexFromDevice(device: string, prefix: 'cuda' | 'mps' | 'xpu') {
   const match = device.trim().match(new RegExp(`^${prefix}(?::(\\d+))?$`, 'i'));
   if (!match) return null;
   return match[1] ? Number(match[1]) : 0;
@@ -180,9 +260,25 @@ export function getRuntimeMpsDevice(status: RuntimeStatus | null, device: string
   };
 }
 
+export function getRuntimeXpuDevice(status: RuntimeStatus | null, device: string): RuntimeXpuDevice | null {
+  const index = indexFromDevice(device, 'xpu');
+  const torchStatus = status?.packages?.torch;
+  if (index === null || !torchStatus?.xpu_available) return null;
+
+  const listedDevice = torchStatus.xpu_devices?.find((item) => item.index === index);
+  if (listedDevice) return listedDevice;
+  if (index !== 0) return null;
+
+  return {
+    index: 0,
+    name: 'Intel XPU',
+  };
+}
+
 export function getPreferredRuntimeDevice(status: RuntimeStatus | null) {
   const torchStatus = status?.packages?.torch;
   if (torchStatus?.cuda_available) return 'cuda:0';
+  if (torchStatus?.xpu_available) return 'xpu:0';
   if (torchStatus?.mps_available) return 'mps:0';
   return 'cpu:0';
 }
@@ -191,6 +287,7 @@ export function runtimeDeviceIsAvailable(status: RuntimeStatus | null, device: s
   if (!status) return true;
   const normalized = device.trim().toLowerCase();
   if (normalized.startsWith('cuda')) return Boolean(getRuntimeCudaDevice(status, device));
+  if (normalized.startsWith('xpu')) return Boolean(getRuntimeXpuDevice(status, device));
   if (normalized.startsWith('mps')) return Boolean(getRuntimeMpsDevice(status, device));
   if (normalized.startsWith('cpu')) return true;
   return false;
@@ -201,12 +298,94 @@ function cudaTotalBytes(status: RuntimeStatus | null, device: string) {
   return cudaDevice?.memory_total_bytes ?? cudaDevice?.total_memory ?? null;
 }
 
+function cudaAvailableBytes(status: RuntimeStatus | null, device: string) {
+  const cudaDevice = getRuntimeCudaDevice(status, device);
+  return cudaDevice?.memory_free_bytes ?? cudaDevice?.memory_total_bytes ?? cudaDevice?.total_memory ?? null;
+}
+
+function positiveByteRequirement(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function getStudioCudaRecipePressureIssue(
+  form: StudioFormState,
+  autoCandidate: ReturnType<typeof selectedAutoCandidate>,
+  status: RuntimeStatus | null = useNodesStore.getState().runtimeStatus,
+  resources: RuntimeResourceSnapshot | null = useNodesStore.getState().runtimeResources,
+  queueContext: {
+    activeWorkflowTabId?: string | null;
+    currentTask?: Task;
+  } = {
+    activeWorkflowTabId: useStudioStore.getState().activeWorkflowTabId,
+    currentTask: useTaskStore.getState().currentTask,
+  },
+) {
+  if (!isCudaDevice(form.device)) return null;
+
+  const profile = getProfileForForm(form);
+  const currentTask = queueContext.currentTask;
+  const currentTaskIsActive = Boolean(
+    currentTask && !['completed', 'failed', 'cancelled'].includes(currentTask.status ?? 'running'),
+  );
+  const currentTaskBelongsToThisWorkflow = Boolean(
+    currentTask?.workflow_tab_id && currentTask.workflow_tab_id === queueContext.activeWorkflowTabId,
+  );
+  if (currentTaskIsActive && !currentTaskBelongsToThisWorkflow) {
+    const currentRunLabel = currentTask?.workflow_title || currentTask?.name || 'the current run';
+    return {
+      category: 'hardware_fit',
+      severity: 'info',
+      blocking: false,
+      message: `${getStudioModelDisplayName(profile)} will run after ${currentRunLabel}.`,
+      details:
+        'Accelerator memory used by the active MoDiff run is temporary. Auto evaluates projected memory after that run and performs eligible cache cleanup before this queued run starts.',
+    } satisfies Omit<RunReadinessIssue, 'id'>;
+  }
+  // The active graph already owns this allocation. Its execution state is
+  // rendered on the nodes and in Session activity; it is not pre-run pressure
+  // for a second admission decision.
+  if (currentTaskIsActive) return null;
+  // Auto compatibility is owned by the backend planner. Queue ordering above
+  // is UI state, but local memory thresholds below are Expert-only estimates.
+  if (form.resourceMode === 'auto') return null;
+  const liveAccelerator =
+    resources?.accelerators.find((item) => item.device.toLowerCase() === form.device.toLowerCase()) ??
+    resources?.accelerators.find((item) => item.active);
+  const rawAvailableBytes = liveAccelerator?.memoryFreeBytes ?? cudaAvailableBytes(status, form.device);
+  const reclaimableBytes = currentTaskIsActive ? 0 : (liveAccelerator?.reservedBytes ?? 0);
+  const totalBytes = liveAccelerator?.memoryTotalBytes ?? cudaTotalBytes(status, form.device);
+  const availableBytes = rawAvailableBytes
+    ? Math.min(totalBytes ?? Number.POSITIVE_INFINITY, rawAvailableBytes + reclaimableBytes)
+    : null;
+  const candidateBytes = positiveByteRequirement(autoCandidate?.requirements?.vramBytes);
+  const expertBytes =
+    profile.family !== 'Qwen Image'
+      ? null
+      : form.autoOffload
+        ? 10 * GIB
+        : form.quantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE
+          ? 24 * GIB
+          : 80 * GIB;
+  const requiredBytes = candidateBytes ?? expertBytes;
+  if (!availableBytes || !requiredBytes || requiredBytes < availableBytes) return null;
+
+  const planLabel = form.autoOffload ? 'current offload recipe' : 'current resident recipe';
+  return {
+    category: 'hardware_fit',
+    severity: 'warning',
+    blocking: false,
+    action: 'apply_low_vram_preset',
+    message: `${getStudioModelDisplayName(profile)} may exceed currently available accelerator memory.`,
+    details: `${planLabel} requires about ${formatVram(requiredBytes)}; ${formatVram(availableBytes)} is projected to be available before the run${reclaimableBytes > 0 ? ` after reclaiming ${formatVram(reclaimableBytes)} of MoDiff cache` : ''}. Use Auto, release accelerator cache, or choose a lower-memory recipe if pressure persists.`,
+  } satisfies Omit<RunReadinessIssue, 'id'>;
+}
+
 function isQwenQuantizedLowVram(form: StudioFormState) {
   return form.quantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE;
 }
 
 function expectedLoaderNodeKey(form: StudioFormState) {
-  if (form.modelType === 'WanVACEPipeline') return 'modules.WanVACE.LoadPipeline';
+  if (form.modelType === 'WanVACEPipeline') return 'modules.DiffusersVideo.LoadPipeline';
   if (form.modelType === 'AceStepAudioPipeline') return 'modules.DiffusersAudio.LoadPipeline';
   if (form.modelType.startsWith('Flux')) return 'modules.DiffusersImage.LoadPipeline';
   if (
@@ -238,7 +417,7 @@ function registryParamOptions(
   const param = registryParam(registry, nodeKey, paramKey);
   if (!param || typeof param !== 'object' || !('options' in param)) return [];
   const options = (param as { options?: unknown }).options;
-  return Array.isArray(options) ? options.map(String) : [];
+  return runtimeOptionValues(options);
 }
 
 export function getStudioCudaCapacityIssue(
@@ -246,13 +425,15 @@ export function getStudioCudaCapacityIssue(
   status: RuntimeStatus | null = useNodesStore.getState().runtimeStatus,
 ) {
   const resolvedForm = resolveStudioResourceForm(form, { runtimeStatus: status });
+  if (resolvedForm.resourceMode !== 'expert') return null;
   const profile = getProfileForForm(resolvedForm);
   if (profile.family !== 'Qwen Image' || cudaIndexFromDevice(resolvedForm.device) === null) return null;
 
   const modelName = getStudioModelDisplayName(profile);
+  const totalBytes = cudaTotalBytes(status, resolvedForm.device);
   if (resolvedForm.resourceMode === 'expert' && resolvedForm.dtype === 'float32') {
     return {
-      category: 'device',
+      category: 'hardware_fit',
       severity: 'error',
       blocking: true,
       action: 'apply_low_vram_preset',
@@ -261,9 +442,13 @@ export function getStudioCudaCapacityIssue(
     } satisfies Omit<RunReadinessIssue, 'id'>;
   }
 
-  if (resolvedForm.resourceMode === 'expert' && !resolvedForm.autoOffload) {
+  const hasSafeResidentBudget =
+    Boolean(totalBytes) &&
+    ((resolvedForm.quantizationMode === 'bnb_4bit' && totalBytes! >= 24 * GIB) ||
+      (resolvedForm.quantizationMode === 'none' && totalBytes! >= 80 * GIB));
+  if (resolvedForm.resourceMode === 'expert' && !resolvedForm.autoOffload && !hasSafeResidentBudget) {
     return {
-      category: 'device',
+      category: 'hardware_fit',
       severity: 'error',
       blocking: true,
       action: 'apply_low_vram_preset',
@@ -272,16 +457,7 @@ export function getStudioCudaCapacityIssue(
     } satisfies Omit<RunReadinessIssue, 'id'>;
   }
 
-  const totalBytes = cudaTotalBytes(status, resolvedForm.device);
-  if (!totalBytes || totalBytes >= QWEN_MIN_CUDA_TOTAL_BYTES || resolvedForm.resourceMode === 'expert') return null;
-
-  return {
-    category: 'device',
-    severity: 'info',
-    blocking: false,
-    message: `${modelName} Auto will choose a local plan for this ${formatVram(totalBytes)} CUDA device.`,
-    details: `Auto does not reject this GPU by size alone. It checks installed artifacts and hardware metadata, then runs the selected plan visibly through the graph. ${getStudioModelArtifactNote(profile)}.`,
-  } satisfies Omit<RunReadinessIssue, 'id'>;
+  return null;
 }
 
 export function getStudioQuantizationCapabilityIssue(
@@ -327,7 +503,7 @@ export function getStudioQuantizationCapabilityIssue(
   if (missing.length === 0) return null;
 
   return {
-    category: 'backend',
+    category: 'package',
     severity: 'error',
     blocking: true,
     action: 'open_setup',
@@ -345,7 +521,7 @@ export function getStudioOffloadCapabilityIssue(
   const offloadMode = normalizeStudioOffloadMode(resolvedForm.offloadMode);
   if (!offloadModeIsSupported(profile, offloadMode)) {
     return {
-      category: 'device',
+      category: 'hardware_fit',
       severity: 'error',
       blocking: true,
       action: 'open_setup',
@@ -363,7 +539,7 @@ export function getStudioOffloadCapabilityIssue(
   const offloadParam = registryParam(registry, loaderNodeKey, 'offload_mode');
   if (!offloadParam) {
     return {
-      category: 'backend',
+      category: 'package',
       severity: 'error',
       blocking: true,
       action: 'open_setup',
@@ -376,7 +552,7 @@ export function getStudioOffloadCapabilityIssue(
   const legacyModelCpuOk = offloadMode === 'model_cpu' && options.includes('auto_cpu');
   if (options.length > 0 && !options.includes(offloadMode) && !legacyModelCpuOk) {
     return {
-      category: 'backend',
+      category: 'package',
       severity: 'error',
       blocking: true,
       action: 'open_setup',
@@ -388,12 +564,37 @@ export function getStudioOffloadCapabilityIssue(
   return null;
 }
 
+export function getStudioDeviceOffloadIssue(form: StudioFormState) {
+  const details = studioOffloadPlanConflict({
+    device: form.device,
+    autoOffload: form.autoOffload,
+    offloadMode: form.offloadMode,
+  });
+  if (!details) return null;
+  return {
+    category: 'hardware_fit',
+    severity: 'error',
+    blocking: true,
+    action: 'open_setup',
+    message: `${form.device} cannot run with ${STUDIO_OFFLOAD_LABELS[form.offloadMode]}.`,
+    details,
+  } satisfies Omit<RunReadinessIssue, 'id'>;
+}
+
 export function getStudioQwenInpaintCapabilityIssue(
   form: StudioFormState,
   registry = useNodesStore.getState().nodesRegistry,
 ) {
   if (!['inpaint', 'outpaint'].includes(form.mode) || form.modelType !== 'QwenImageEditModularPipeline') return null;
   if (Object.keys(registry).length === 0) return null;
+
+  if (
+    form.mode === 'inpaint' &&
+    registry['modules.DiffusersImage.LoadPipeline'] &&
+    registry['modules.DiffusersImage.Inpaint']
+  ) {
+    return null;
+  }
 
   const requiredNodes =
     form.mode === 'outpaint'
@@ -403,15 +604,15 @@ export function getStudioQwenInpaintCapabilityIssue(
   if (missing.length === 0) return null;
 
   return {
-    category: 'backend',
+    category: 'package',
     severity: 'error',
     blocking: true,
     action: 'open_setup',
     message:
       form.mode === 'outpaint'
-        ? 'Qwen outpaint needs direct backend canvas and mask support.'
-        : 'Qwen inpaint needs direct backend mask execution support.',
-    details: `This backend did not expose ${missing.join(', ')}. Restart or update the MoDiff backend with direct Qwen Image ${form.mode} nodes, or use an edit workflow without a generated mask.`,
+        ? 'Qwen outpaint needs canvas and mask support.'
+        : 'Qwen inpaint needs backend mask execution support.',
+    details: `This backend did not expose ${missing.join(', ')}. Restart or update MoDiff's generic image nodes, or use an edit workflow without a generated mask.`,
   } satisfies Omit<RunReadinessIssue, 'id'>;
 }
 
@@ -421,31 +622,31 @@ export function getStudioMpsCompatibilityIssue(form: StudioFormState) {
   const profile = getProfileForForm(form);
   if (profile.family === 'Qwen Image') {
     return {
-      category: 'device',
-      severity: 'error',
-      blocking: true,
+      category: 'hardware_fit',
+      severity: 'warning',
+      blocking: false,
       action: form.mode === 'text_to_image' ? 'switch_to_z_image' : 'open_setup',
       message: `${profile.label} is not certified on Apple MPS.`,
       details:
-        'This Studio profile is guarded on Apple Silicon until a real MPS run proves the model contract and memory behavior. Use a CUDA backend, choose CPU only for a very slow experiment, or switch to Z-Image Turbo for local text-to-image smoke testing.',
+        'This exact recipe has not been qualified on Apple Silicon. The run is allowed; use a CUDA backend or switch to Z-Image Turbo if MPS reports an unsupported operation or memory failure.',
     } satisfies Omit<RunReadinessIssue, 'id'>;
   }
 
-  if (profile.family === 'Wan Video') {
+  if (profile.outputKind === 'video') {
     return {
-      category: 'device',
-      severity: 'error',
-      blocking: true,
+      category: 'hardware_fit',
+      severity: 'warning',
+      blocking: false,
       action: 'open_setup',
       message: `${profile.label} is not certified on Apple MPS.`,
       details:
-        'Wan video workflows are CUDA-oriented and remain blocked on Apple Silicon until an end-to-end MPS video run is validated.',
+        'This exact video recipe has not been qualified on Apple Silicon. The run is allowed, but it may be slow or encounter an unsupported MPS operation; choose another device if that occurs.',
     } satisfies Omit<RunReadinessIssue, 'id'>;
   }
 
   if (profile.family === 'Z-Image') {
     return {
-      category: 'device',
+      category: 'hardware_fit',
       severity: 'warning',
       blocking: false,
       action: 'open_setup',
@@ -469,7 +670,14 @@ function getModelRepoFromNode(nodeId: string) {
 
 function collectGraphModelIssues(): RunReadinessIssue[] {
   const { nodes } = useFlowStore.getState();
-  const { hfCache, localModels, modelCacheDiagnostics } = useNodesStore.getState();
+  const { hfCache, localModels, modelCacheDiagnostics, discoveryRequests } = useNodesStore.getState();
+  const modelDiscoveryStarted =
+    discoveryRequests.hfCache.status !== 'idle' || discoveryRequests.localModels.status !== 'idle';
+  const modelIndexesReady =
+    discoveryRequests.hfCache.status === 'success' && discoveryRequests.localModels.status === 'success';
+  // Empty or stale indexes while startup discovery is running are not proof
+  // that an installed graph model is missing.
+  if (modelDiscoveryStarted && !modelIndexesReady) return [];
   const graphReferences: WorkflowGraphArtifactReference[] = [];
 
   nodes.forEach((node) => {
@@ -511,7 +719,7 @@ function collectGraphModelIssues(): RunReadinessIssue[] {
     .filter((requirement) => !requirement.status.runnable)
     .map((requirement) =>
       issue({
-        category: 'model',
+        category: requirement.primaryAction === 'Repair' ? 'model_integrity' : 'model',
         severity: 'error',
         nodeId: requirement.nodeId,
         repoId: requirement.modelPath ? undefined : requirement.repo,
@@ -529,12 +737,50 @@ function collectGraphModelIssues(): RunReadinessIssue[] {
     );
 }
 
+function nodeParamValue(node: ReturnType<typeof enabledExecutableNodes>[number], key: string) {
+  const param = node.data.params?.[key];
+  return param?.value ?? param?.default;
+}
+
+export function collectGraphDeviceOffloadIssues(): RunReadinessIssue[] {
+  return enabledExecutableNodes().flatMap((node) => {
+    const device = nodeParamValue(node, 'device');
+    if (typeof device !== 'string' || !device.trim()) return [];
+    const autoOffload = nodeParamValue(node, 'auto_offload');
+    const offloadMode = nodeParamValue(node, 'offload_mode');
+    const details = studioOffloadPlanConflict({
+      device,
+      autoOffload: typeof autoOffload === 'boolean' ? autoOffload : undefined,
+      offloadMode:
+        offloadMode === 'model_cpu' ||
+        offloadMode === 'sequential_cpu' ||
+        offloadMode === 'group_cpu' ||
+        offloadMode === 'group_disk'
+          ? offloadMode
+          : 'none',
+    });
+    if (!details) return [];
+    return [
+      issue({
+        category: 'hardware_fit',
+        severity: 'error',
+        blocking: true,
+        action: 'inspect_node',
+        nodeId: node.id,
+        message: `${node.data.label || node.data.action} has an invalid device/offload plan.`,
+        details,
+      }),
+    ];
+  });
+}
+
 function enabledExecutableNodes() {
   return useFlowStore
     .getState()
     .nodes.filter(
       (node) =>
         node.data.type !== 'group' &&
+        node.data.type !== 'loop' &&
         !node.data.uiState?.disabled &&
         Boolean(node.data.module) &&
         Boolean(node.data.action),
@@ -629,7 +875,7 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
       ...reference,
     }));
   });
-  const issues = [...collectGraphStructureIssues(), ...collectGraphModelIssues()];
+  const issues = [...collectGraphStructureIssues(), ...collectGraphModelIssues(), ...collectGraphDeviceOffloadIssues()];
 
   return {
     nodeCount: nodes.length,
@@ -657,33 +903,58 @@ function describeInpaintContract(profile: StudioModelProfile) {
 function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   const issues: RunReadinessIssue[] = [];
   const { hfCache, localModels, modelCacheDiagnostics } = useNodesStore.getState();
-  const { graphBinding, autoResourcePlan } = useStudioStore.getState();
+  const { graphBinding, autoResourcePlan, autoResourceCheck } = useStudioStore.getState();
   const profile = getProfileForForm(form);
   const modelStatus = getStudioModelCacheStatus(profile, hfCache, localModels, modelCacheDiagnostics);
-  const autoCandidate = form.resourceMode === 'auto' ? selectedAutoCandidate(autoResourcePlan) : null;
-  const autoInstallTarget = form.resourceMode === 'auto' ? autoResourceInstallTarget(autoResourcePlan) : null;
+  const autoCandidate = form.resourceMode === 'auto' ? selectedAutoCandidate(autoResourcePlan, form) : null;
+  const autoInstallTarget = form.resourceMode === 'auto' ? autoResourceInstallTarget(autoResourcePlan, form) : null;
+  const autoCompatibility = autoResourceCompatibility(autoResourcePlan, form);
 
-  if (form.resourceMode === 'auto' && autoResourcePlan && !autoPlanIsReady(autoResourcePlan)) {
+  if (form.resourceMode === 'auto' && (!autoResourcePlan || !autoPlanIsReady(autoResourcePlan, form))) {
+    const transientPlannerFailure = autoResourcePlan?.error === true;
+    const runtimeIssue = autoPlanHasRuntimeIssue(autoResourcePlan);
+    const autoIssueCategory = transientPlannerFailure
+      ? 'backend'
+      : runtimeIssue
+        ? 'environment'
+        : autoInstallTarget?.repair || autoResourcePlan?.repairRequired
+          ? 'model_integrity'
+          : autoResourcePlan?.issue?.category === 'package'
+            ? 'package'
+            : autoResourcePlan?.issue?.category === 'device'
+              ? 'hardware_fit'
+              : 'model';
     issues.push(
       issue({
-        category: 'model',
-        severity: 'error',
-        nodeId:
-          graphBinding?.nodes.models ??
-          graphBinding?.nodes.diffusersImagePipeline ??
-          graphBinding?.nodes.audioPipeline ??
-          graphBinding?.nodes.wanPipeline,
-        repoId: autoInstallTarget?.repo ?? profile.defaultRepo,
+        code: 'auto_plan_not_ready',
+        category: autoIssueCategory,
+        severity: autoCompatibility.severity,
+        nodeId: runtimeIssue
+          ? undefined
+          : (graphBinding?.nodes.models ??
+            graphBinding?.nodes.diffusersImagePipeline ??
+            graphBinding?.nodes.audioPipeline ??
+            graphBinding?.nodes.wanPipeline),
+        repoId: runtimeIssue
+          ? undefined
+          : (autoCompatibility.action?.repo ?? autoInstallTarget?.repo ?? profile.defaultRepo),
         blocking: true,
-        action: autoInstallTarget ? 'install_model' : 'open_setup',
-        message: autoInstallTarget
-          ? `${autoInstallTarget.actionLabel ?? 'Install Auto artifact'}: ${autoInstallTarget.repo}`
-          : `Auto cannot choose a runnable local plan for ${profile.label}.`,
+        action: transientPlannerFailure
+          ? undefined
+          : autoInstallTarget
+            ? 'install_model'
+            : autoResourcePlan
+              ? 'open_setup'
+              : undefined,
+        message: autoCompatibility.summary,
         details:
           autoInstallTarget?.reason ??
-          autoResourcePlan.blockingReason ??
-          autoResourcePlan.message ??
-          'Switch to Expert to inspect or create a custom graph.',
+          autoResourcePlan?.repairAction?.command ??
+          autoCompatibility.detail ??
+          (autoResourceCheck.status === 'checking'
+            ? autoResourceCheck.message
+            : 'Wait for hardware and installed-model discovery before running this graph.') ??
+          'Wait for Auto planning to finish.',
       }),
     );
   } else if (form.resourceMode !== 'auto' && !modelStatus.runnable) {
@@ -708,7 +979,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     if (repo && autoCandidate.installed === false) {
       issues.push(
         issue({
-          category: 'model',
+          category: autoCandidate.repairRequired ? 'model_integrity' : 'model',
           severity: 'error',
           nodeId:
             graphBinding?.nodes.models ??
@@ -720,6 +991,26 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
           action: 'install_model',
           message: `${repo} is the selected Auto artifact and is not installed.`,
           details: autoCandidate.proof?.message ?? 'Install the Auto-selected artifact, then refresh model status.',
+        }),
+      );
+    } else if (!autoProofIsReady(autoCandidate.proof)) {
+      issues.push(
+        issue({
+          code: 'auto_plan_unqualified',
+          category: 'hardware_fit',
+          severity: 'warning',
+          nodeId:
+            graphBinding?.nodes.models ??
+            graphBinding?.nodes.diffusersImagePipeline ??
+            graphBinding?.nodes.audioPipeline ??
+            graphBinding?.nodes.wanPipeline,
+          repoId: repo || undefined,
+          blocking: false,
+          action: 'open_setup',
+          message: `${profile.label} is runnable, but this exact Auto configuration is not qualified on the current runtime.`,
+          details:
+            autoCandidate.proof?.message ??
+            'You can run it now. If it fails, MoDiff will identify the responsible node and suggest a compatible device, offload, quantization, or model change.',
         }),
       );
     }
@@ -737,7 +1028,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     if (status.runnable) return;
     issues.push(
       issue({
-        category: 'model',
+        category: requirement.primaryAction === 'Repair' ? 'model_integrity' : 'model',
         severity: 'error',
         nodeId: graphBinding?.nodes.controlnetModel,
         repoId: requirement.repo,
@@ -753,7 +1044,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (requirements.includes('referenceImages') && !form.referenceImages.some((image) => image.trim())) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -764,7 +1055,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (requirements.includes('maskImage') && !form.maskImage.trim()) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -775,7 +1066,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (requirements.includes('controlImage') && !(form.controlImage.trim() || form.referenceImages[0]?.trim())) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -788,7 +1079,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (videoRequirements.includes('sourceVideo') && !form.sourceVideo.trim()) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -799,7 +1090,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (videoRequirements.includes('maskVideo') && !form.maskVideo.trim()) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -810,7 +1101,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (videoRequirements.includes('controlVideo') && !form.controlVideo.trim()) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -823,7 +1114,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (audioRequirements.includes('sourceAudio') && !form.sourceAudio.trim()) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -834,7 +1125,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (audioRequirements.includes('referenceAudio') && !form.referenceAudio.trim()) {
     issues.push(
       issue({
-        category: 'input',
+        category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
@@ -848,7 +1139,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     const contractDetails = describeInpaintContract(profile);
     issues.push(
       issue({
-        category: 'backend',
+        category: 'package',
         severity: 'error',
         blocking: true,
         action: 'open_setup',
@@ -858,25 +1149,12 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     );
   }
 
-  const cudaCapacityIssue = getStudioCudaCapacityIssue(form);
+  const cudaCapacityIssue = form.resourceMode === 'expert' ? getStudioCudaCapacityIssue(form) : null;
   if (cudaCapacityIssue) {
     issues.push(issue(cudaCapacityIssue));
-  } else if (
-    profile.family === 'Qwen Image' &&
-    form.device.startsWith('cuda') &&
-    form.width * form.height >= 1024 * 1024 &&
-    form.steps >= 40
-  ) {
-    issues.push(
-      issue({
-        category: 'device',
-        severity: 'warning',
-        blocking: false,
-        action: 'apply_low_vram_preset',
-        message: `${getStudioModelDisplayName(profile)} at ${form.width}x${form.height} for ${form.steps} steps is a high-VRAM CUDA run.`,
-        details: `If this OOMs, use Auto, release accelerator cache, or switch to Z-Image Turbo. MoDiff will send backend runtime hints before execution.`,
-      }),
-    );
+  } else {
+    const cudaRecipePressureIssue = getStudioCudaRecipePressureIssue(form, autoCandidate);
+    if (cudaRecipePressureIssue) issues.push(issue(cudaRecipePressureIssue));
   }
 
   const quantizationCapabilityIssue = getStudioQuantizationCapabilityIssue(form);
@@ -888,44 +1166,39 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (offloadCapabilityIssue) {
     issues.push(issue(offloadCapabilityIssue));
   }
+  const deviceOffloadIssue = getStudioDeviceOffloadIssue(form);
+  if (deviceOffloadIssue) {
+    issues.push(issue(deviceOffloadIssue));
+  }
 
   const qwenInpaintCapabilityIssue = getStudioQwenInpaintCapabilityIssue(form);
   if (qwenInpaintCapabilityIssue) {
     issues.push(issue(qwenInpaintCapabilityIssue));
   }
 
-  if (profile.family === 'Wan Video' && form.device.startsWith('cuda')) {
-    if (form.width * form.height > 832 * 480 || form.numFrames > 81 || form.steps > 50) {
-      issues.push(
-        issue({
-          category: 'device',
-          severity: 'warning',
-          blocking: false,
-          action: 'apply_low_vram_preset',
-          message: `${profile.label} is above the 16GB-safe video preset.`,
-          details: `Use Video preview or Video low VRAM if this run OOMs. Current request: ${form.width}x${form.height}, ${form.numFrames} frames, ${form.steps} steps.`,
-        }),
-      );
-    }
-    if (form.dtype === 'float32') {
-      issues.push(
-        issue({
-          category: 'device',
-          severity: 'warning',
-          blocking: false,
-          action: 'apply_low_vram_preset',
-          message: 'float32 video generation is memory-heavy.',
-          details: 'bfloat16 with auto-offload is the recommended Wan VACE setting for 16GB VRAM.',
-        }),
-      );
-    }
+  if (
+    profile.outputKind === 'video' &&
+    form.device.startsWith('cuda') &&
+    form.resourceMode !== 'auto' &&
+    form.dtype === 'float32'
+  ) {
+    issues.push(
+      issue({
+        category: 'hardware_fit',
+        severity: 'warning',
+        blocking: false,
+        action: 'apply_low_vram_preset',
+        message: `${profile.label} float32 video generation is memory-heavy.`,
+        details:
+          'Use Auto or a supported lower-precision dtype with offload if the projected memory check reports pressure.',
+      }),
+    );
   }
 
-  const mpsCompatibilityIssue = getStudioMpsCompatibilityIssue(form);
+  const mpsCompatibilityIssue = form.resourceMode === 'expert' ? getStudioMpsCompatibilityIssue(form) : null;
   if (mpsCompatibilityIssue) {
     issues.push(issue(mpsCompatibilityIssue));
   }
-
   return issues;
 }
 
@@ -936,6 +1209,22 @@ export function collectRunReadinessIssues(options: {
 }) {
   const issues: RunReadinessIssue[] = [];
   const studioState = useStudioStore.getState();
+  if (
+    studioState.canvasTransition?.type === 'template_graph_building' &&
+    studioState.canvasTransition.workflowTabId === studioState.activeWorkflowTabId
+  ) {
+    return [
+      issue({
+        id: 'template-graph-preparing',
+        category: 'graph',
+        severity: 'info',
+        blocking: true,
+        action: 'inspect_node',
+        message: 'Preparing graph',
+        details: 'Run becomes available after the template graph is finalized and arranged.',
+      }),
+    ];
+  }
   const customGraphContext = !studioState.graphBinding && useFlowStore.getState().nodes.length > 0;
   if (!options.sid || !options.isConnected) {
     issues.push(
@@ -965,10 +1254,24 @@ export function collectRunReadinessIssues(options: {
         }),
       );
     }
+    const managedGraphIssue = getStudioGraphRunBlockingMessage(studioState.form);
+    if (managedGraphIssue) {
+      issues.push(
+        issue({
+          category: 'graph',
+          severity: 'warning',
+          blocking: true,
+          action: 'inspect_node',
+          message: managedGraphIssue,
+          details: 'Run becomes available after the managed graph exposes and connects its required fields.',
+        }),
+      );
+    }
   }
 
   issues.push(...collectGraphStructureIssues());
   issues.push(...collectGraphModelIssues());
+  issues.push(...collectGraphDeviceOffloadIssues());
   const unique = new Map<string, RunReadinessIssue>();
   issues.forEach((item) => {
     const key = `${item.nodeId ?? ''}:${item.repoId ?? ''}:${item.modelPath ?? ''}:${item.message}`;
@@ -997,13 +1300,12 @@ export function validateCurrentRun(options: {
 }) {
   const issues = collectRunReadinessIssues(options);
   applyRunReadinessToGraph(issues);
-  const blocking = issues.filter((item) => item.blocking);
-  if (blocking.length > 0 && options.showDialog !== false) {
+  const decision = buildRunReadinessDecision(issues);
+  if (decision.blockingIssues.length > 0 && options.showDialog !== false) {
     useRunIssueStore.getState().showIssues(issues);
   }
   return {
-    issues,
-    blocking,
-    canRun: blocking.length === 0,
+    ...decision,
+    blocking: decision.blockingIssues,
   };
 }

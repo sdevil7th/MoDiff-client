@@ -4,6 +4,9 @@ These rules apply to Codex, Copilot-style agents, and any AI tool editing this r
 
 ## Non-Negotiable Rules
 
+- Diffusers and Modular Diffusers are the only supported model execution layer. Do not add a hosted inference
+  provider, alternate model driver, second graph executor, or browser-side model runtime. Supporting libraries may
+  assist a Diffusers pipeline but must not become an independent execution path.
 - New UI work is Tailwind/headless-first. Do not reintroduce MUI, Emotion, notistack, styled-components, CSS modules, or another UI framework.
 - Use `src/theme` for MoDiff colors, Hugging Face-inspired tokens, typography, radii, shadows, z-index values, category colors, style sanitizers, and React Flow helpers.
 - Use `src/ui` primitives before writing repeated panel, status, field, image, toast, dialog, menu, tab, or toolbar styling.
@@ -32,14 +35,14 @@ These rules apply to Codex, Copilot-style agents, and any AI tool editing this r
 Run these before claiming a maintainability or UI change is complete:
 
 ```powershell
-npm run lint
-npm run style:audit
-npm run test:styles
-npm run build
+npm run check
 ```
 
 Run relevant Playwright tests when behavior or layout-sensitive surfaces are touched:
 
 ```powershell
-npm run e2e:studio:mocked
+npm run check:ui
 ```
+
+For a release candidate, run `npm run check:acceptance`; report any intentionally skipped live hardware or model
+qualification separately instead of treating static or mocked checks as equivalent proof.

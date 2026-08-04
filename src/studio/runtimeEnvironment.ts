@@ -1,12 +1,12 @@
-export type AcceleratorBackend = 'cuda' | 'rocm' | 'mps' | 'cpu' | 'unknown';
-export type AcceleratorVendor = 'nvidia' | 'amd' | 'apple' | 'cpu' | 'unknown';
+export type AcceleratorBackend = 'cuda' | 'rocm' | 'xpu' | 'mps' | 'cpu' | 'unknown';
+export type AcceleratorVendor = 'nvidia' | 'amd' | 'intel' | 'apple' | 'cpu' | 'unknown';
 
 export type RuntimeDevice = {
   device: string;
   backend: AcceleratorBackend;
   vendor: AcceleratorVendor;
   architecture: string | null;
-  memoryKind: 'dedicated' | 'unified' | 'system' | 'unknown';
+  memoryKind: 'dedicated' | 'shared' | 'unified' | 'system' | 'unknown';
   memoryTotal: number | null;
   memoryFree: number | null;
   name: string;
@@ -66,22 +66,26 @@ const boolean = (value: unknown) => (typeof value === 'boolean' ? value : null);
 
 function backend(value: unknown, profile: string | null): AcceleratorBackend {
   if (value === 'cuda' && profile?.startsWith('amd-')) return 'rocm';
-  return value === 'cuda' || value === 'rocm' || value === 'mps' || value === 'cpu' ? value : 'unknown';
+  return value === 'cuda' || value === 'rocm' || value === 'xpu' || value === 'mps' || value === 'cpu'
+    ? value
+    : 'unknown';
 }
 
 function vendor(value: unknown, resolvedBackend: AcceleratorBackend): AcceleratorVendor {
-  if (value === 'nvidia' || value === 'amd' || value === 'apple' || value === 'cpu') return value;
+  if (value === 'nvidia' || value === 'amd' || value === 'intel' || value === 'apple' || value === 'cpu') return value;
   if (resolvedBackend === 'cuda') return 'nvidia';
   if (resolvedBackend === 'rocm') return 'amd';
+  if (resolvedBackend === 'xpu') return 'intel';
   if (resolvedBackend === 'mps') return 'apple';
   if (resolvedBackend === 'cpu') return 'cpu';
   return 'unknown';
 }
 
 function memoryKind(value: unknown, resolvedBackend: AcceleratorBackend): RuntimeDevice['memoryKind'] {
-  if (value === 'dedicated' || value === 'unified' || value === 'system') return value;
+  if (value === 'dedicated' || value === 'shared' || value === 'unified' || value === 'system') return value;
   if (resolvedBackend === 'cuda' || resolvedBackend === 'rocm') return 'dedicated';
   if (resolvedBackend === 'mps') return 'unified';
+  if (resolvedBackend === 'xpu') return 'shared';
   if (resolvedBackend === 'cpu') return 'system';
   return 'unknown';
 }
@@ -176,6 +180,17 @@ export function parseRuntimeEnvironment(value: unknown): RuntimeEnvironment {
         memoryTotal: number(torch.cuda_device_total_memory ?? torch.cuda_memory_total_bytes),
         memoryFree: number(torch.cuda_memory_free_bytes),
         name: text(torch.cuda_device_name) ?? (resolvedBackend === 'rocm' ? 'AMD ROCm' : 'CUDA'),
+      });
+    } else if (torch?.xpu_available === true) {
+      devices.push({
+        device: 'xpu:0',
+        backend: 'xpu',
+        vendor: 'intel',
+        architecture: null,
+        memoryKind: 'shared',
+        memoryTotal: null,
+        memoryFree: null,
+        name: 'Intel XPU',
       });
     } else if (torch?.mps_available === true) {
       devices.push({

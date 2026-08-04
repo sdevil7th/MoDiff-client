@@ -1,14 +1,19 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { TemplateBrowserCategoryId } from '../studio/templateBrowser';
 import type { FocusedModelManagerTarget, StudioViewMode, WorkspacePanelTab } from '../studio/types';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
+import type { MediaKind } from '../studio/mediaCapabilities';
 
 const LEFT_PANEL_WIDTH_MIN = 240;
 const RIGHT_PANEL_WIDTH_MIN = 320;
 
 export interface fileBrowserParams {
+  workflowTabId: string | null;
+  workflowCanvasEpoch: number;
   nodeId: string;
   fieldKey: string;
   fileTypes: string[];
@@ -35,6 +40,7 @@ interface SettingsState {
 
   edgeType: 'default' | 'smoothstep';
   studioSectionOpen: Record<string, boolean>;
+  modelTermsAcknowledgements: Record<string, number>;
 }
 
 export type LightboxOpener = {
@@ -43,6 +49,49 @@ export type LightboxOpener = {
   currentIndex: number;
   dataType: string | null;
   mimeType: string | null;
+  comparison?: {
+    beforeUrl: string;
+    beforeLabel?: string;
+    afterLabel?: string;
+  };
+} | null;
+
+export type MediaViewerItem = {
+  id: string;
+  kind: 'image' | 'video' | 'audio' | 'text';
+  label: string;
+  url?: string;
+  text?: string;
+  downloadName?: string;
+};
+
+export type MediaViewerOpener = {
+  title: string;
+  items: MediaViewerItem[];
+  currentIndex: number;
+  workflow?: {
+    taskId: string;
+    clientRunId?: string | null;
+    workflowTabId: string;
+    nodeId?: string | null;
+    name: string;
+  };
+} | null;
+
+export type MediaExportOpener = {
+  source: string;
+  kind: Exclude<MediaKind, 'text'>;
+  filename: string;
+  title?: string;
+  defaultFormat?: string;
+  defaultSampleRate?: number | null;
+} | null;
+
+export type WorkflowFocusRequest = {
+  workflowTabId: string;
+  nodeId: string | null;
+  requestId: number;
+  requestedAt: number;
 } | null;
 
 // values not saved to localStorage. TODO: make this a separate store?
@@ -60,6 +109,10 @@ interface SettingsStateVolatile {
   } | null;
   settingsOpener: boolean | null;
   lightboxOpener: LightboxOpener;
+  mediaViewerOpener: MediaViewerOpener;
+  mediaExportOpener: MediaExportOpener;
+  workflowFocusRequest: WorkflowFocusRequest;
+  runActivityPendingTaskId: string | null;
   templateBrowserOpen: boolean;
   templateBrowserInitialCategory: TemplateBrowserCategoryId | null;
   galleryLibraryOpen: boolean;
@@ -82,6 +135,7 @@ interface SettingsActions {
 
   setEdgeType: (type: 'default' | 'smoothstep') => void;
   setStudioSectionOpen: (section: string, open: boolean) => void;
+  acknowledgeModelTerms: (key: string) => void;
 
   setFileBrowserOpener: (opener: fileBrowserParams | null) => void;
   setModelManagerOpener: (
@@ -100,6 +154,10 @@ interface SettingsActions {
   setSettingsOpener: (opener: boolean | null) => void;
   setRunningState: (state: 'one_shot' | 'auto_queue' | 'loop') => void;
   setLightboxOpener: (opener: LightboxOpener) => void;
+  setMediaViewerOpener: (opener: MediaViewerOpener) => void;
+  setMediaExportOpener: (opener: MediaExportOpener) => void;
+  setWorkflowFocusRequest: (request: WorkflowFocusRequest) => void;
+  setRunActivityPendingTaskId: (taskId: string | null) => void;
   setTemplateBrowserOpen: (open: boolean) => void;
   openTemplateBrowser: (category?: TemplateBrowserCategoryId | null) => void;
   clearTemplateBrowserInitialCategory: () => void;
@@ -121,6 +179,7 @@ const defaultState: SettingsState = {
   nodeGroupBy: 'module',
   edgeType: 'default',
   studioSectionOpen: {},
+  modelTermsAcknowledgements: {},
 };
 
 const defaultVolatileState: SettingsStateVolatile = {
@@ -129,6 +188,10 @@ const defaultVolatileState: SettingsStateVolatile = {
   alertOpener: null,
   settingsOpener: null,
   lightboxOpener: null,
+  mediaViewerOpener: null,
+  mediaExportOpener: null,
+  workflowFocusRequest: null,
+  runActivityPendingTaskId: null,
   templateBrowserOpen: false,
   templateBrowserInitialCategory: null,
   galleryLibraryOpen: false,
@@ -174,6 +237,13 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
             [section]: open,
           },
         })),
+      acknowledgeModelTerms: (key: string) =>
+        set((state) => ({
+          modelTermsAcknowledgements: {
+            ...state.modelTermsAcknowledgements,
+            [key]: Date.now(),
+          },
+        })),
 
       setFileBrowserOpener: (opener: fileBrowserParams | null) => set({ fileBrowserOpener: opener }),
       setModelManagerOpener: (
@@ -192,6 +262,10 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       setSettingsOpener: (opener: boolean | null) => set({ settingsOpener: opener }),
       setRunningState: (state: 'one_shot' | 'auto_queue' | 'loop') => set({ runningState: state }),
       setLightboxOpener: (opener: LightboxOpener) => set({ lightboxOpener: opener }),
+      setMediaViewerOpener: (opener: MediaViewerOpener) => set({ mediaViewerOpener: opener }),
+      setMediaExportOpener: (opener: MediaExportOpener) => set({ mediaExportOpener: opener }),
+      setWorkflowFocusRequest: (request: WorkflowFocusRequest) => set({ workflowFocusRequest: request }),
+      setRunActivityPendingTaskId: (taskId: string | null) => set({ runActivityPendingTaskId: taskId }),
       setTemplateBrowserOpen: (open: boolean) => set({ templateBrowserOpen: open }),
       openTemplateBrowser: (category?: TemplateBrowserCategoryId | null) =>
         set({
@@ -213,6 +287,10 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
           ...current,
           ...value,
           studioViewMode: legacyMode === 'manual' || legacyMode === 'expert' ? 'expert' : 'auto',
+          modelTermsAcknowledgements:
+            value.modelTermsAcknowledgements && typeof value.modelTermsAcknowledgements === 'object'
+              ? value.modelTermsAcknowledgements
+              : {},
         };
       },
       partialize: (state) => {

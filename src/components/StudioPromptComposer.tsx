@@ -64,7 +64,7 @@ export function StudioPromptComposer({ form, template, onChange }: PromptCompose
       <div className="grid gap-2">
         {sections.map(([label, values]) => (
           <fieldset key={label}>
-            <legend className="mb-1 text-xs font-semibold uppercase text-hf-gray">{label}</legend>
+            <legend className="mb-1 text-xs font-semibold uppercase text-modiff-subtle-text">{label}</legend>
             <div className="flex flex-wrap gap-1">
               {values.map((value) => (
                 <StudioChip
@@ -80,7 +80,7 @@ export function StudioPromptComposer({ form, template, onChange }: PromptCompose
         ))}
         {negativeChips.length > 0 && (
           <fieldset>
-            <legend className="mb-1 text-xs font-semibold uppercase text-hf-gray">Avoid</legend>
+            <legend className="mb-1 text-xs font-semibold uppercase text-modiff-subtle-text">Avoid</legend>
             <div className="flex flex-wrap gap-1">
               {negativeChips.map((value) => (
                 <StudioChip
@@ -97,7 +97,7 @@ export function StudioPromptComposer({ form, template, onChange }: PromptCompose
         {hints.length > 0 && (
           <div className="grid gap-1 border border-modiff-border bg-modiff-bg p-2" aria-label="Prompt guidance">
             {hints.map((hint) => (
-              <p key={hint} className="text-xs text-gray-400">
+              <p key={hint} className="text-xs text-modiff-subtle-text">
                 {hint}
               </p>
             ))}

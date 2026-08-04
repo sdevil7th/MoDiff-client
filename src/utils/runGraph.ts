@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { enqueueSnackbar } from '../ui/snackbar';
 import config from '../../app.config';
 import { useFlowStore, type APIGraphExport } from '../stores/useFlowStore';

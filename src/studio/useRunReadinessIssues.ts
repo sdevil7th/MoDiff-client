@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
-import { collectRunReadinessIssues } from './runReadiness';
+import { useTaskStore } from '../stores/useTaskStore';
+import { buildRunReadinessDecision, collectRunReadinessIssues } from './runReadiness';
 import type { RunReadinessIssue } from './types';
 
 type RunReadinessOptions = {
@@ -14,14 +15,13 @@ type RunReadinessOptions = {
 export type RunReadinessSummaryTone = 'success' | 'warning' | 'error' | 'info';
 
 export function summarizeRunReadinessIssues(issues: RunReadinessIssue[]) {
-  const blockingIssues = issues.filter((item) => item.blocking);
-  const warningIssues = issues.filter((item) => !item.blocking && item.severity === 'warning');
+  const decision = buildRunReadinessDecision(issues);
+  const { blockingIssues, warningIssues, primaryIssue } = decision;
   const infoIssues = issues.filter((item) => !item.blocking && item.severity === 'info');
-  const primaryIssue = blockingIssues[0] ?? warningIssues[0] ?? infoIssues[0] ?? issues[0] ?? null;
   const tone: RunReadinessSummaryTone =
-    blockingIssues.length > 0
+    decision.state === 'blocked'
       ? 'error'
-      : warningIssues.length > 0
+      : decision.state === 'ready_with_warnings'
         ? 'warning'
         : infoIssues.length > 0
           ? 'info'
@@ -29,8 +29,8 @@ export function summarizeRunReadinessIssues(issues: RunReadinessIssue[]) {
 
   return {
     tone,
-    title: blockingIssues.length > 0 ? 'Run blocked' : warningIssues.length > 0 ? 'Setup needed' : 'Ready',
-    message: primaryIssue?.message ?? 'Ready',
+    title: decision.title,
+    message: decision.message,
     details: primaryIssue?.details,
     primaryIssue,
     issueCount: issues.length,
@@ -62,11 +62,27 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
   const form = useStudioStore((state) => state.form);
   const graphBinding = useStudioStore((state) => state.graphBinding);
   const graphFinalization = useStudioStore((state) => state.graphFinalization);
+  const canvasTransition = useStudioStore((state) => state.canvasTransition);
+  const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const isPreparing =
+    canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId;
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
   const hfCache = useNodesStore((state) => state.hfCache);
   const localModels = useNodesStore((state) => state.localModels);
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
+  const modelDiscoveryRevision = useNodesStore(
+    (state) =>
+      `${state.discoveryRequests.hfCache.status}:${state.discoveryRequests.hfCache.requestId ?? ''}|${state.discoveryRequests.localModels.status}:${state.discoveryRequests.localModels.requestId ?? ''}`,
+  );
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
+  const runtimeResources = useNodesStore((state) => state.runtimeResources);
+  const queueRevision = useTaskStore((state) => state.queueRevision);
+  const currentTaskFingerprint = useTaskStore((state) => {
+    const task = state.currentTask;
+    return task
+      ? `${task.task_id ?? ''}:${task.status ?? 'running'}:${task.workflow_tab_id ?? ''}:${task.updated_at ?? ''}`
+      : 'idle';
+  });
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const readinessRevision = useMemo(
     () =>
@@ -77,11 +93,42 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
         graphBindingFingerprint: graphBinding?.fingerprint,
         graphBindingNodeCount: graphBinding?.managedNodeIds.length ?? 0,
         graphFinalization,
-        hfCacheCount: hfCache.length,
-        localModelCount: localModels.length,
+        isPreparing,
+        hfCache: hfCache
+          .map((item) =>
+            typeof item === 'string'
+              ? item
+              : item && typeof item === 'object'
+                ? String((item as { id?: unknown }).id ?? JSON.stringify(item))
+                : String(item),
+          )
+          .sort(),
+        localModels: localModels
+          .map((item) =>
+            typeof item === 'string'
+              ? item
+              : item && typeof item === 'object'
+                ? String(
+                    (item as { id?: unknown; path?: unknown }).id ??
+                      (item as { path?: unknown }).path ??
+                      JSON.stringify(item),
+                  )
+                : String(item),
+          )
+          .sort(),
+        modelDiscoveryRevision,
         modelCacheDiagnostics,
         nodesRegistryKeys: Object.keys(nodesRegistry).sort(),
         runtimeStatus,
+        runtimeResourceSample: runtimeResources
+          ? {
+              sampledAt: runtimeResources.sampledAt,
+              activeDevice: runtimeResources.activeDevice,
+              free: runtimeResources.accelerators.map((item) => [item.device, item.memoryFreeBytes]),
+            }
+          : null,
+        queueRevision,
+        currentTaskFingerprint,
       }),
     [
       autoResourcePlan,
@@ -89,27 +136,30 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
       form,
       graphBinding,
       graphFinalization,
-      hfCache.length,
-      localModels.length,
+      isPreparing,
+      hfCache,
+      localModels,
+      modelDiscoveryRevision,
       modelCacheDiagnostics,
       nodesRegistry,
       runtimeStatus,
+      runtimeResources,
+      queueRevision,
+      currentTaskFingerprint,
     ],
   );
 
   const issues = useMemo(() => {
     void readinessRevision;
+    // A template graph is assembled, finalized, and laid out as one atomic
+    // transition. Do not classify its intentionally incomplete hidden states.
+    if (isPreparing) return [];
     return collectRunReadinessIssues({ sid, isConnected, includeStudio });
-  }, [includeStudio, isConnected, readinessRevision, sid]);
-  const blockingIssues = useMemo(() => issues.filter((item) => item.blocking), [issues]);
-  const warningIssues = useMemo(() => issues.filter((item) => !item.blocking && item.severity === 'warning'), [issues]);
-  const primaryIssue = blockingIssues[0] ?? warningIssues[0] ?? issues[0] ?? null;
+  }, [includeStudio, isConnected, isPreparing, readinessRevision, sid]);
+  const decision = useMemo(() => buildRunReadinessDecision(issues, { preparing: isPreparing }), [isPreparing, issues]);
 
   return {
-    issues,
-    blockingIssues,
-    warningIssues,
-    primaryIssue,
-    canRun: blockingIssues.length === 0,
+    ...decision,
+    isPreparing,
   };
 }

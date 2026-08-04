@@ -2,13 +2,28 @@ import { enqueueSnackbar } from '../ui/snackbar';
 import { syncStudioGraphValues } from '../studio/graphBridge';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
-import { isWebsocketMessage, type WebsocketMessage } from '../types/api';
+import { collapsedUserBlockPreviewTarget, runtimeProgressTarget } from '../studio/userBlocks';
+import { executionProgressFrom } from '../studio/executionProgress';
+import { normalizeGenericModelLoaderParams } from '../studio/modelSelection';
+import {
+  backendWorkflowTab,
+  forgetBackendWorkflow,
+  isWorkflowTabClosed,
+  markBackendWorkflow,
+} from '../studio/useWorkflowBackendSync';
+import { isWebsocketMessage, type TaskWebsocketMessage, type WebsocketMessage } from '../types/api';
 import { useFlowStore } from './useFlowStore';
 import { NodeParams, useNodesStore } from './useNodeStore';
 import { useRunIssueStore } from './useRunIssueStore';
 import { useSettingsStore } from './useSettingsStore';
-import { useStudioStore } from './useStudioStore';
-import { coerceTask, coerceTaskRecord, useTaskStore } from './useTaskStore';
+import {
+  captureWorkflowOperationContext,
+  findStudioRunContext,
+  isWorkflowOperationCancelled,
+  useStudioStore,
+  workflowOperationContextIsCurrent,
+} from './useStudioStore';
+import { coerceTask, coerceTaskRecord, type Task, useTaskStore } from './useTaskStore';
 
 export type WebsocketMessageHandlerContext = {
   sid: string | null;
@@ -17,6 +32,20 @@ export type WebsocketMessageHandlerContext = {
   setSid: (sid: string | null) => void;
   setLoopTimer: (timer: NodeJS.Timeout) => void;
 };
+
+const TERMINAL_NODE_PROGRESS_TASK_LIMIT = 64;
+const terminalNodeProgressTaskIds = new Set<string>();
+
+function markNodeProgressTaskTerminal(taskId?: string | null) {
+  if (!taskId) return;
+  terminalNodeProgressTaskIds.delete(taskId);
+  terminalNodeProgressTaskIds.add(taskId);
+  while (terminalNodeProgressTaskIds.size > TERMINAL_NODE_PROGRESS_TASK_LIMIT) {
+    const oldestTaskId = terminalNodeProgressTaskIds.values().next().value;
+    if (!oldestTaskId) break;
+    terminalNodeProgressTaskIds.delete(oldestTaskId);
+  }
+}
 
 export function parseWebsocketMessage(data: unknown): WebsocketMessage | null {
   try {
@@ -36,12 +65,69 @@ function isTaskCompletionFieldArgs(value: unknown): value is { node: string; key
   );
 }
 
+function taskWithMessageMetadata(task: Task | undefined, message: TaskWebsocketMessage): Task | undefined {
+  const taskId = message.task_id ?? task?.task_id;
+  if (!task && !taskId) return undefined;
+  return coerceTask({
+    ...(task ?? {}),
+    name: message.name || task?.name || taskId || 'Graph execution',
+    task_id: taskId,
+    sid: message.sid ?? task?.sid,
+    client_run_id: message.client_run_id ?? task?.client_run_id,
+    run_input_hash: message.run_input_hash ?? task?.run_input_hash,
+    workflow_tab_id: message.workflow_tab_id ?? task?.workflow_tab_id,
+    node_id: message.node_id ?? task?.node_id,
+    queued_at: message.queued_at ?? task?.queued_at,
+    started_at: message.started_at ?? task?.started_at,
+    completed_at: message.completed_at ?? task?.completed_at,
+    updated_at: message.updated_at ?? task?.updated_at,
+    progress: message.progress ?? task?.progress,
+    node_progress: message.node_progress ?? task?.node_progress,
+    attempt_index: message.attempt_index ?? task?.attempt_index,
+    current_node: message.current_node ?? message.node ?? task?.current_node,
+    current_node_name: message.current_node_name ?? message.node_name ?? task?.current_node_name,
+    phase: message.phase ?? task?.phase,
+    current_step: message.current_step ?? task?.current_step,
+    total_steps: message.total_steps ?? task?.total_steps,
+    component: message.component ?? task?.component,
+    shard_current: message.shard_current ?? task?.shard_current,
+    shard_total: message.shard_total ?? task?.shard_total,
+    eta_seconds: message.eta_seconds ?? task?.eta_seconds,
+    average_step_seconds: message.average_step_seconds ?? task?.average_step_seconds,
+    elapsed_seconds: message.elapsed_seconds ?? task?.elapsed_seconds,
+    last_heartbeat_at: message.last_heartbeat_at ?? task?.last_heartbeat_at,
+    resource_snapshot: message.resource_snapshot ?? task?.resource_snapshot,
+    phase_timings: message.phase_timings ?? task?.phase_timings,
+    status: message.status ?? task?.status,
+    error: message.error ?? task?.error,
+    message: message.message ?? task?.message,
+    exception_type: message.exception_type ?? task?.exception_type,
+    category: message.category ?? task?.category,
+    error_code: message.error_code ?? task?.error_code,
+    recovery_hint: message.recovery_hint ?? task?.recovery_hint,
+    oom: message.oom ?? task?.oom,
+  });
+}
+
+function taskWithMatchingMessageMetadata(task: Task | undefined, message: TaskWebsocketMessage): Task | undefined {
+  if (!task) return undefined;
+  if (task?.task_id && message.task_id && task.task_id !== message.task_id) return task;
+  return taskWithMessageMetadata(task, message);
+}
+
 function assertNeverMessage(message: never): never {
   throw new Error(`Unhandled websocket message type: ${JSON.stringify(message)}`);
 }
 
 function applyNodeExecutionStatus(message: WebsocketMessage) {
   if (!('node' in message) || !message.node || !('status' in message) || !message.status) return;
+  const flow = useFlowStore.getState();
+  const targetNodeId = runtimeProgressTarget(
+    flow.nodes,
+    message.node,
+    'name' in message && typeof message.name === 'string' ? message.name : null,
+  );
+  if (!targetNodeId) return;
   const statusMessage =
     message.status === 'running'
       ? 'Running'
@@ -50,7 +136,7 @@ function applyNodeExecutionStatus(message: WebsocketMessage) {
         : message.status === 'failed'
           ? 'Failed'
           : 'Completed';
-  useFlowStore.getState().setNodeUiState(message.node, {
+  flow.setNodeUiState(targetNodeId, {
     validationSeverity: message.status === 'failed' ? 'error' : message.status === 'running' ? 'info' : 'success',
     validationMessage: statusMessage,
   });
@@ -60,7 +146,18 @@ function shouldAcceptNodeProgress(message: WebsocketMessage) {
   if (!('node' in message) || !message.node) return false;
   const taskId = 'task_id' in message ? message.task_id : undefined;
   const clientRunId = 'client_run_id' in message ? message.client_run_id : undefined;
-  if ((taskId || clientRunId) && !useStudioStore.getState().shouldApplyRunUpdateToActiveWorkflow(taskId, clientRunId)) {
+  if (
+    taskId &&
+    terminalNodeProgressTaskIds.has(taskId) &&
+    (message.type === 'progress' || message.type === 'executed')
+  ) {
+    return false;
+  }
+  const workflowTabId = 'workflow_tab_id' in message ? message.workflow_tab_id : undefined;
+  if (
+    (taskId || clientRunId) &&
+    !useStudioStore.getState().shouldApplyRunUpdateToActiveWorkflow(taskId, clientRunId, workflowTabId)
+  ) {
     return false;
   }
   const currentTaskId = useTaskStore.getState().currentTask?.task_id;
@@ -69,15 +166,71 @@ function shouldAcceptNodeProgress(message: WebsocketMessage) {
 
   const attemptIndex = 'attempt_index' in message ? message.attempt_index : undefined;
   if (typeof attemptIndex === 'number') {
-    const node = useFlowStore.getState().nodes.find((item) => item.id === message.node);
+    const flow = useFlowStore.getState();
+    const targetNodeId = runtimeProgressTarget(
+      flow.nodes,
+      message.node,
+      'name' in message && typeof message.name === 'string' ? message.name : null,
+    );
+    const node = flow.nodes.find((item) => item.id === targetNodeId);
     const currentAttempt = node?.data.attemptIndex;
     if (typeof currentAttempt === 'number' && attemptIndex < currentAttempt) return false;
   }
   return true;
 }
 
+function shouldApplyWorkflowCanvasMutation(
+  message: WebsocketMessage,
+  context?: Pick<WebsocketMessageHandlerContext, 'sid'>,
+) {
+  if (message.sid && context?.sid && message.sid !== context.sid) return false;
+
+  const studio = useStudioStore.getState();
+  const taskId = 'task_id' in message ? message.task_id : undefined;
+  const clientRunId = 'client_run_id' in message ? message.client_run_id : undefined;
+  const workflowTabId = 'workflow_tab_id' in message ? message.workflow_tab_id : undefined;
+  const canvasEpoch = 'workflow_canvas_epoch' in message ? message.workflow_canvas_epoch : undefined;
+  const runContext = findStudioRunContext(taskId, clientRunId);
+  if (runContext) {
+    return studio.shouldApplyRunUpdateToActiveWorkflow(taskId, clientRunId, workflowTabId);
+  }
+
+  // A captured run's epoch identifies the graph it was submitted from. Once
+  // that exact graph is restored, its context is structurally verified and
+  // rebound to the new canvas epoch. Uncorrelated messages retain the raw
+  // epoch guard so an old document can never mutate its replacement.
+  if (typeof canvasEpoch === 'number' && canvasEpoch !== studio.workflowCanvasEpoch) return false;
+  if (workflowTabId) {
+    return studio.shouldApplyRunUpdateToActiveWorkflow(taskId, clientRunId, workflowTabId);
+  }
+
+  if (typeof canvasEpoch === 'number') return true;
+
+  // Older backends did not include workflow ownership on dynamic field
+  // messages. Retain that contract only when there is no multi-tab ambiguity.
+  return studio.workflowTabs.length <= 1;
+}
+
 function nodeExecutionMetadata(message: WebsocketMessage) {
   if (!('node' in message)) return undefined;
+  const executionProgress = executionProgressFrom({
+    status: 'status' in message ? message.status : undefined,
+    phase: 'phase' in message ? message.phase : undefined,
+    message: 'message' in message ? message.message : undefined,
+    component: 'component' in message ? message.component : undefined,
+    shard_current: 'shard_current' in message ? message.shard_current : undefined,
+    shard_total: 'shard_total' in message ? message.shard_total : undefined,
+    current_step: 'current_step' in message ? message.current_step : undefined,
+    total_steps: 'total_steps' in message ? message.total_steps : undefined,
+    average_step_seconds: 'average_step_seconds' in message ? message.average_step_seconds : undefined,
+    eta_seconds: 'eta_seconds' in message ? message.eta_seconds : undefined,
+    elapsed_seconds: 'elapsed_seconds' in message ? message.elapsed_seconds : undefined,
+    attempt_index: 'attempt_index' in message ? message.attempt_index : undefined,
+    last_heartbeat_at: 'last_heartbeat_at' in message ? message.last_heartbeat_at : undefined,
+    updated_at: 'updated_at' in message ? message.updated_at : undefined,
+    resource_snapshot: 'resource_snapshot' in message ? message.resource_snapshot : undefined,
+    phase_timings: 'phase_timings' in message ? message.phase_timings : undefined,
+  });
   return {
     activeTaskId: 'task_id' in message ? (message.task_id ?? null) : null,
     attemptIndex:
@@ -85,13 +238,56 @@ function nodeExecutionMetadata(message: WebsocketMessage) {
     executionStatus: 'status' in message ? message.status : undefined,
     executionPhase: 'phase' in message ? message.phase : undefined,
     progressMessage: 'message' in message ? message.message : undefined,
+    executionProgress,
+  };
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function capturedPreviewDescriptor(
+  taskId: string | null | undefined,
+  clientRunId: string | null | undefined,
+  nodeId: string,
+  fieldKey: string,
+) {
+  const runContext = findStudioRunContext(taskId, clientRunId);
+  if (!runContext) return null;
+  const node = runContext.graph.nodes.map(recordValue).find((candidate) => candidate?.id === nodeId);
+  const data = recordValue(node?.data);
+  const params = recordValue(data?.params);
+  const param = recordValue(params?.[fieldKey]);
+  return {
+    found: Boolean(node),
+    module: typeof data?.module === 'string' ? data.module : undefined,
+    action: typeof data?.action === 'string' ? data.action : undefined,
+    display: typeof param?.display === 'string' ? param.display : undefined,
+    hidden: param?.hidden === true,
   };
 }
 
 function isGeneratedPreviewUpdate(message: WebsocketMessage) {
   if (!('node' in message) || !message.node || !('key' in message) || !message.key) return false;
+  const taskId = 'task_id' in message ? message.task_id : undefined;
+  const clientRunId = 'client_run_id' in message ? message.client_run_id : undefined;
+  const captured = capturedPreviewDescriptor(taskId, clientRunId, message.node, message.key);
+  if (captured) {
+    if (!captured.found) return false;
+    if (captured.hidden) return false;
+    if (captured.module === 'modules.Audio' && captured.action === 'Load') return false;
+    return (
+      captured.display === 'ui_image' ||
+      captured.display === 'ui_video' ||
+      captured.display === 'ui_audio' ||
+      captured.display === 'ui_text'
+    );
+  }
+
   const node = useFlowStore.getState().nodes.find((item) => item.id === message.node);
+  if (node?.data.module === 'modules.Audio' && node.data.action === 'Load') return false;
   const display = node?.data.params?.[message.key]?.display;
+  if (node?.data.params?.[message.key]?.hidden) return false;
   return display === 'ui_image' || display === 'ui_video' || display === 'ui_audio' || display === 'ui_text';
 }
 
@@ -172,6 +368,27 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       } else {
         void useTaskStore.getState().fetchTasks();
       }
+      // Output records and their current-preview pointers are backend-owned.
+      // Rehydrate them on every reconnect so work completed while this socket
+      // was unavailable is reflected without relying on a canvas snapshot.
+      void useStudioStore.getState().fetchBackendOutputs();
+      break;
+    }
+    case 'workflow_updated': {
+      const workflow = backendWorkflowTab(message.workflow);
+      if (workflow) {
+        markBackendWorkflow(workflow);
+        if (!isWorkflowTabClosed(workflow.id)) {
+          useStudioStore.getState().mergeBackendWorkflow(workflow);
+        }
+      }
+      break;
+    }
+    case 'workflow_deleted': {
+      if (message.workflow_id) {
+        forgetBackendWorkflow(message.workflow_id);
+        useStudioStore.getState().removeBackendWorkflow(message.workflow_id);
+      }
       break;
     }
     case 'executed':
@@ -181,39 +398,55 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       }
       if (!shouldAcceptNodeProgress(message)) return;
       applyNodeExecutionStatus(message);
-      useFlowStore.getState().updateProgress(message.node, 100, nodeExecutionMetadata(message));
-      useFlowStore
-        .getState()
-        .setNodeCached(
-          message.node,
+      {
+        const flow = useFlowStore.getState();
+        const targetNodeId = runtimeProgressTarget(flow.nodes, message.node, message.label);
+        if (!targetNodeId) break;
+        flow.updateProgress(targetNodeId, 100, nodeExecutionMetadata(message));
+        flow.setNodeCached(
+          targetNodeId,
           true,
           message.hasChanged ? message.memoryUsage : undefined,
           message.hasChanged ? message.executionTime : undefined,
         );
-      scheduleNodeProgressClear(message.node, message.task_id, message.attempt_index);
+        scheduleNodeProgressClear(targetNodeId, message.task_id, message.attempt_index);
+      }
       break;
     case 'graph_completed': {
       console.info('Graph completed in', message.executionTime, 'ms');
+      const completedRunContext = findStudioRunContext(message.task_id, message.client_run_id);
+      markNodeProgressTaskTerminal(message.task_id);
       useStudioStore.getState().markRunContextStatus(message.task_id, message.client_run_id, 'completed');
       if (message.runtimeFingerprint) {
         console.info('Graph runtime fingerprint', message.runtimeFingerprint);
       }
       useFlowStore.getState().lastExecutionTime = message.executionTime ?? 0;
+      useFlowStore.getState().resetExecutionProgress(message.task_id);
       const runningState = useSettingsStore.getState().runningState;
       const taskCount = useTaskStore.getState().taskCount;
 
       if (runningState === 'loop' && context.sid !== null && taskCount === 1) {
+        const workflowTabId = completedRunContext?.workflowTabId ?? useStudioStore.getState().activeWorkflowTabId;
         const loopTimer = setTimeout(() => {
           void (async () => {
             const sid = context.sid;
             if (!sid) return;
-            if (useStudioStore.getState().graphBinding) {
-              const autoReady = await ensureStudioAutoPlanReadyForRun();
-              if (!autoReady) return;
-              await coordinateGraphRun({ sid, studioContext: {} });
-              return;
+            const studio = useStudioStore.getState();
+            if (studio.activeWorkflowTabId !== workflowTabId) return;
+            const workflowContext = captureWorkflowOperationContext();
+            try {
+              if (studio.graphBinding) {
+                const autoReady = await ensureStudioAutoPlanReadyForRun(workflowContext);
+                if (!autoReady) return;
+                await coordinateGraphRun({ sid, studioContext: {}, workflowContext });
+                return;
+              }
+              await coordinateGraphRun({ sid, workflowContext });
+            } catch (error) {
+              if (!isWorkflowOperationCancelled(error)) {
+                console.error('Could not queue the next loop run', error);
+              }
             }
-            await coordinateGraphRun({ sid });
           })();
         }, 517);
         context.setLoopTimer(loopTimer);
@@ -233,6 +466,52 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
     case 'resource_retry_cleanup':
       console.info('Resource retry cleanup', message);
       break;
+    case 'auto_resource_plan_applied':
+      console.info('Auto resource plan applied', message);
+      if (message.message) {
+        enqueueSnackbar(message.message, { variant: 'info', autoHideDuration: 3200 });
+      }
+      break;
+    case 'auto_resource_cleanup': {
+      console.info('Auto resource cleanup', message);
+      if (message.performed) {
+        const reason = message.reasons?.filter(Boolean).join('; ');
+        enqueueSnackbar(reason ? `Released stale runtime resources: ${reason}` : 'Released stale runtime resources.', {
+          variant: 'info',
+          autoHideDuration: 4500,
+        });
+      }
+      break;
+    }
+    case 'auto_retry_requires_approval': {
+      const recoveryHint = message.message || 'A safer Auto retry needs approval for pinned workflow fields.';
+      const ownsActiveCanvas = shouldApplyWorkflowCanvasMutation(message, context);
+      if (ownsActiveCanvas) {
+        useStudioStore.getState().setLastError(recoveryHint);
+      }
+      useRunIssueStore.getState().reportFailure(
+        {
+          taskId: message.task_id ?? null,
+          clientRunId: message.client_run_id ?? null,
+          workflowTabId: message.workflow_tab_id ?? null,
+          runInputHash: message.run_input_hash ?? null,
+          nodeId: message.node ?? message.node_id ?? null,
+          message: recoveryHint,
+          category: 'auto_resource',
+          errorCode: 'auto_retry_requires_override_approval',
+          recoveryHint,
+          runtimeHints: { retryPlans: message.retryPlans ?? [] },
+        },
+        ownsActiveCanvas,
+      );
+      if (ownsActiveCanvas) {
+        enqueueSnackbar(recoveryHint, { variant: 'warning', persist: true });
+      }
+      break;
+    }
+    case 'runtime_loader_reused':
+      console.info('Runtime loader reused', message);
+      break;
     case 'error':
       console.error('Websocket error', message.error);
       break;
@@ -240,8 +519,11 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       if (message.node) {
         if (!shouldAcceptNodeProgress(message)) return;
         applyNodeExecutionStatus(message);
-        useFlowStore.getState().updateProgress(message.node, 0, nodeExecutionMetadata(message));
-        useFlowStore.getState().setNodeUiState(message.node, {
+        const flow = useFlowStore.getState();
+        const targetNodeId = runtimeProgressTarget(flow.nodes, message.node, message.label);
+        if (!targetNodeId) break;
+        flow.updateProgress(targetNodeId, 0, nodeExecutionMetadata(message));
+        flow.setNodeUiState(targetNodeId, {
           validationSeverity: 'error',
           validationMessage: message.message || message.error || 'Node failed.',
           errorMessage: message.message || message.error || 'Node failed.',
@@ -256,14 +538,29 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       }
       const generatedPreviewUpdate = isGeneratedPreviewUpdate(message);
       const studio = useStudioStore.getState();
+      if (message.preview_slot && typeof message.preview_state_revision === 'number') {
+        studio.mergePreviewState([message.preview_slot], message.preview_state_revision);
+      }
       if (generatedPreviewUpdate && !studio.shouldAcceptRunOutputUpdate(message.task_id, message.client_run_id)) {
         return;
       }
       const value = message.value ?? null;
       const correlatedRunUpdate = Boolean(message.task_id || message.client_run_id);
-      if (!correlatedRunUpdate || studio.shouldApplyRunUpdateToActiveWorkflow(message.task_id, message.client_run_id)) {
-        useFlowStore.getState().setParam(message.node, message.key, value);
-        useFlowStore.getState().setParam(message.node, message.key, message.artifacts, 'artifacts');
+      const activeTaskId = useTaskStore.getState().currentTask?.task_id;
+      const belongsToActiveBackendTask = !message.task_id || !activeTaskId || message.task_id === activeTaskId;
+      if (
+        !correlatedRunUpdate ||
+        (belongsToActiveBackendTask &&
+          studio.shouldApplyRunUpdateToActiveWorkflow(message.task_id, message.client_run_id, message.workflow_tab_id))
+      ) {
+        const flow = useFlowStore.getState();
+        flow.setParam(message.node, message.key, value);
+        flow.setParam(message.node, message.key, message.artifacts, 'artifacts');
+        const blockPreview = collapsedUserBlockPreviewTarget(flow.nodes, message.node, message.key);
+        if (blockPreview) {
+          flow.setParam(blockPreview.nodeId, blockPreview.fieldKey, value);
+          flow.setParam(blockPreview.nodeId, blockPreview.fieldKey, message.artifacts, 'artifacts');
+        }
       }
       if (generatedPreviewUpdate) {
         studio.recordOutputFromUpdate(message.node, message.key, value, {
@@ -274,7 +571,12 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
           runtimeFingerprint: message.runtimeFingerprint,
           dataType: message.data_type,
           artifacts: message.artifacts,
+          outputId: message.output_id,
         });
+        const currentOutputId = message.preview_slot?.currentOutputId;
+        if (currentOutputId && !useStudioStore.getState().outputs.some((output) => output.id === currentOutputId)) {
+          void useStudioStore.getState().fetchBackendOutputs();
+        }
       }
       break;
     }
@@ -283,36 +585,46 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         console.error('Invalid websocket message: progress without node');
         return;
       }
-      if (!shouldAcceptNodeProgress(message)) return;
-      applyNodeExecutionStatus(message);
-      useFlowStore.getState().updateProgress(message.node, message.progress ?? 0, nodeExecutionMetadata(message));
       if (message.task_id) {
         const currentTask = useTaskStore.getState().currentTask;
-        const overallProgress = message.overall_progress ?? currentTask?.progress;
-        if (typeof overallProgress === 'number') {
+        const ownsCurrentTask = currentTask?.task_id === message.task_id;
+        const isTerminalUpdate = terminalNodeProgressTaskIds.has(message.task_id);
+        const overallProgress = message.overall_progress ?? currentTask?.progress ?? 0;
+        if (ownsCurrentTask && !isTerminalUpdate) {
           useTaskStore.getState().updateProgress(message.task_id, overallProgress, message.message, {
+            client_run_id: message.client_run_id,
+            run_input_hash: message.run_input_hash,
+            workflow_tab_id: message.workflow_tab_id,
+            node_id: message.node_id,
             node_progress: message.progress,
             current_node: message.node,
+            attempt_index: message.attempt_index,
             phase: message.phase,
-            current_step: message.current_step,
-            total_steps: message.total_steps,
-            elapsed_seconds: message.elapsed_seconds,
-            average_step_seconds: message.average_step_seconds,
-            eta_seconds: message.eta_seconds,
+            current_step: message.current_step ?? undefined,
+            total_steps: message.total_steps ?? undefined,
+            component: message.component ?? undefined,
+            shard_current: message.shard_current ?? undefined,
+            shard_total: message.shard_total ?? undefined,
+            elapsed_seconds: message.elapsed_seconds ?? undefined,
+            average_step_seconds: message.average_step_seconds ?? undefined,
+            eta_seconds: message.eta_seconds ?? undefined,
+            last_heartbeat_at: message.last_heartbeat_at,
+            resource_snapshot: message.resource_snapshot ?? undefined,
+            phase_timings: message.phase_timings,
             updated_at: message.updated_at,
           });
-        } else if (message.message) {
-          useTaskStore.getState().recordTaskSnapshot(
-            {
-              ...(currentTask ?? {}),
-              task_id: message.task_id,
-              name: currentTask?.name || message.task_id,
-              message: message.message,
-              status: 'running',
-            },
-            'running',
-            message.message,
-          );
+        }
+      }
+      // Progress for an inactive workflow still belongs in the task/session
+      // record so its notification can restore and animate the owning graph.
+      // Only the currently visible canvas mutation is workflow-gated.
+      if (!shouldAcceptNodeProgress(message)) return;
+      applyNodeExecutionStatus(message);
+      {
+        const flow = useFlowStore.getState();
+        const targetNodeId = runtimeProgressTarget(flow.nodes, message.node, message.label);
+        if (targetNodeId) {
+          flow.updateProgress(targetNodeId, message.progress ?? 0, nodeExecutionMetadata(message));
         }
       }
       break;
@@ -320,57 +632,107 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
     case 'task_cancelled':
     case 'task_started':
     case 'task_completed': {
-      if (!message.queued && !message.current) {
+      if (message.preview_slots && typeof message.preview_state_revision === 'number') {
+        useStudioStore.getState().mergePreviewState(message.preview_slots, message.preview_state_revision);
+      }
+      const hasQueueSnapshot = message.queued !== undefined || message.current !== undefined;
+      if (!hasQueueSnapshot && (message.type === 'task_queued' || message.type === 'task_started')) {
         console.error('Invalid task websocket message.');
         return;
       }
       const taskStore = useTaskStore.getState();
+      const originatingRun = findStudioRunContext(message.task_id, message.client_run_id);
       const previousCurrent = taskStore.currentTask;
-      const currentTask = coerceTask(message.current);
-      const queuedTasks = coerceTaskRecord(message.queued);
+      const coercedCurrentTask = hasQueueSnapshot ? coerceTask(message.current) : undefined;
+      const currentTask = taskWithMatchingMessageMetadata(coercedCurrentTask, message);
+      let queuedTasks = hasQueueSnapshot ? coerceTaskRecord(message.queued) : taskStore.queuedTasks;
+      if (message.task_id && queuedTasks[message.task_id]) {
+        const queuedEventTask = taskWithMatchingMessageMetadata(queuedTasks[message.task_id], message);
+        if (queuedEventTask) queuedTasks = { ...queuedTasks, [message.task_id]: queuedEventTask };
+      }
+      const recentTasks = (message.recent ?? []).flatMap((snapshot) => {
+        const task = coerceTask(snapshot);
+        return task ? [task] : [];
+      });
+      const terminalTaskId = message.task_id ?? previousCurrent?.task_id ?? null;
+      const eventStatus =
+        message.type === 'task_queued'
+          ? 'queued'
+          : message.type === 'task_started'
+            ? 'running'
+            : message.type === 'task_completed'
+              ? 'completed'
+              : 'cancelled';
+      const eventSnapshot = message.task_id
+        ? [currentTask, queuedTasks[message.task_id], previousCurrent].find((task) => task?.task_id === message.task_id)
+        : previousCurrent;
+      const eventTask = taskWithMessageMetadata(eventSnapshot, { ...message, status: eventStatus });
 
       if (message.type === 'task_completed') {
-        const completedTask =
-          currentTask ??
-          (message.task_id
-            ? {
-                task_id: message.task_id,
-                sid: message.sid ?? undefined,
-                name: message.name || previousCurrent?.name || 'Graph execution',
-                status: 'completed' as const,
-              }
-            : previousCurrent);
+        const completedTask = eventTask ?? taskWithMessageMetadata(undefined, { ...message, status: 'completed' });
         if (completedTask) {
           taskStore.markTaskCompleted(completedTask);
         }
       } else if (message.type === 'task_cancelled') {
         const cancelledTask =
-          currentTask ??
+          eventTask ??
           (message.task_id
-            ? {
-                task_id: message.task_id,
-                sid: message.sid ?? undefined,
-                name: message.name || 'Graph execution',
-                status: 'cancelled' as const,
-                completed_at: Date.now() / 1000,
-              }
+            ? taskWithMessageMetadata(undefined, {
+                ...message,
+                status: 'cancelled',
+                completed_at: message.completed_at ?? Date.now() / 1000,
+              })
             : undefined);
         if (cancelledTask) {
           taskStore.recordTaskSnapshot(cancelledTask, 'cancelled', message.message);
         }
       }
 
-      useTaskStore.getState().setTasks(currentTask, queuedTasks);
+      if (hasQueueSnapshot) {
+        useTaskStore.getState().setTasks(currentTask, queuedTasks, recentTasks);
+      } else if (message.type === 'task_cancelled') {
+        const remainingQueued = { ...queuedTasks };
+        if (terminalTaskId) delete remainingQueued[terminalTaskId];
+        useTaskStore
+          .getState()
+          .setTasks(previousCurrent?.task_id === terminalTaskId ? undefined : previousCurrent, remainingQueued);
+      }
       if (message.type === 'task_started') {
-        useStudioStore.getState().markRunContextStatus(message.task_id, message.client_run_id, 'running');
-        useFlowStore.getState().resetExecutionProgress();
-        if (currentTask) {
-          useTaskStore.getState().recordTaskSnapshot(currentTask, 'running', message.message);
+        if (message.task_id) terminalNodeProgressTaskIds.delete(message.task_id);
+        const studio = useStudioStore.getState();
+        studio.markRunContextStatus(message.task_id, message.client_run_id, 'running');
+        const activatedRun = studio.activateRunContext(message.task_id, message.client_run_id);
+        if (activatedRun?.binding) {
+          studio.clearChangedPreviewFieldsForRun(activatedRun.runInputHash);
+        }
+        if (activatedRun || !originatingRun) {
+          useFlowStore.getState().resetExecutionProgress();
+        }
+        if (eventTask) {
+          useTaskStore.getState().recordTaskSnapshot(eventTask, 'running', message.message);
         }
       }
       if (message.type === 'task_completed') {
+        markNodeProgressTaskTerminal(terminalTaskId);
+        useFlowStore.getState().resetExecutionProgress(terminalTaskId);
         useStudioStore.getState().markRunContextStatus(message.task_id, message.client_run_id, 'completed');
+        if (message.task_id && (originatingRun || message.workflow_tab_id)) {
+          enqueueSnackbar('Generation completed', {
+            variant: 'success',
+            autoHideDuration: 8000,
+            action: {
+              type: 'open_task_run',
+              taskId: message.task_id,
+              clientRunId: message.client_run_id,
+              workflowTabId: message.workflow_tab_id || originatingRun?.workflowTabId,
+              nodeId: message.node_id || message.node,
+              outcome: 'completed',
+            },
+          });
+        }
       } else if (message.type === 'task_cancelled') {
+        markNodeProgressTaskTerminal(terminalTaskId);
+        useFlowStore.getState().resetExecutionProgress(terminalTaskId);
         useStudioStore.getState().markRunContextStatus(message.task_id, message.client_run_id, 'cancelled');
       }
 
@@ -379,7 +741,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         if (!isTaskCompletionFieldArgs(args)) {
           return;
         }
-        if (args.queue) {
+        if (args.queue && shouldApplyWorkflowCanvasMutation(message, context)) {
           useFlowStore.getState().setParam(args.node, args.key, false, 'disabled');
         }
       }
@@ -387,44 +749,85 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       break;
     }
     case 'task_failed': {
+      if (message.preview_slots && typeof message.preview_state_revision === 'number') {
+        useStudioStore.getState().mergePreviewState(message.preview_slots, message.preview_state_revision);
+      }
+      const originatingRun = findStudioRunContext(message.task_id, message.client_run_id);
+      markNodeProgressTaskTerminal(message.task_id);
       useSettingsStore.getState().setRunningState('one_shot');
       if (message.node && shouldAcceptNodeProgress(message)) {
-        useFlowStore.getState().updateProgress(message.node, 0, nodeExecutionMetadata(message));
-        useFlowStore.getState().setNodeUiState(message.node, {
-          validationSeverity: 'error',
-          validationMessage: message.message || message.error || 'Run failed.',
-          errorMessage: message.message || message.error || 'Run failed.',
+        const flow = useFlowStore.getState();
+        const targetNodeId = runtimeProgressTarget(flow.nodes, message.node, message.name);
+        if (targetNodeId) {
+          flow.updateProgress(targetNodeId, 0, nodeExecutionMetadata(message));
+          flow.setNodeUiState(targetNodeId, {
+            validationSeverity: 'error',
+            validationMessage: message.message || message.error || 'Run failed.',
+            errorMessage: message.message || message.error || 'Run failed.',
+          });
+        }
+      }
+      const failedTask = taskWithMessageMetadata(undefined, {
+        ...message,
+        status: 'failed',
+        completed_at: message.completed_at ?? Date.now() / 1000,
+        error: message.message || message.error || 'Run failed.',
+      });
+      if (failedTask) useTaskStore.getState().markTaskFailed(failedTask);
+      useFlowStore.getState().resetExecutionProgress(message.task_id);
+      useStudioStore.getState().markRunContextStatus(message.task_id, message.client_run_id, 'failed');
+      useRunIssueStore.getState().reportFailure(
+        {
+          taskId: message.task_id ?? null,
+          clientRunId: message.client_run_id ?? originatingRun?.clientRunId ?? null,
+          workflowTabId: message.workflow_tab_id ?? originatingRun?.workflowTabId ?? null,
+          runInputHash: message.run_input_hash ?? originatingRun?.runInputHash ?? null,
+          nodeId: message.node ?? null,
+          nodeName: message.node_name ?? null,
+          message: message.message || message.error || 'Run failed.',
+          exceptionType: message.exception_type ?? null,
+          category: message.category ?? null,
+          errorCode: message.error_code ?? null,
+          recoveryHint: message.recovery_hint ?? null,
+          traceback: message.traceback ?? null,
+          oom: Boolean(message.oom),
+          memorySummary: message.memory_summary ?? null,
+          cudaMemorySnapshot: message.cuda_memory_snapshot ?? null,
+          gpuProcesses: message.gpu_processes ?? null,
+          runtimeHints: message.runtime_hints ?? null,
+          runtimeBudget: message.runtime_budget ?? null,
+          loaderDiagnostics: message.loader_diagnostics ?? null,
+        },
+        false,
+      );
+      if (message.task_id) {
+        enqueueSnackbar(message.message || message.error || 'Generation failed', {
+          variant: 'error',
+          persist: true,
+          action: {
+            type: 'open_task_run',
+            taskId: message.task_id,
+            clientRunId: message.client_run_id,
+            workflowTabId: message.workflow_tab_id || originatingRun?.workflowTabId,
+            nodeId: message.node_id || message.node,
+            outcome: 'failed',
+          },
         });
       }
-      useTaskStore.getState().markTaskFailed({
-        task_id: message.task_id,
-        sid: message.sid ?? undefined,
-        name: message.name || 'Graph execution',
-        error: message.message || message.error || 'Run failed.',
-        status: 'failed',
-      });
-      useStudioStore.getState().markRunContextStatus(message.task_id, message.client_run_id, 'failed');
-      useRunIssueStore.getState().reportFailure({
-        taskId: message.task_id ?? null,
-        nodeId: message.node ?? null,
-        nodeName: message.node_name ?? null,
-        message: message.message || message.error || 'Run failed.',
-        exceptionType: message.exception_type ?? null,
-        category: message.category ?? null,
-        errorCode: message.error_code ?? null,
-        recoveryHint: message.recovery_hint ?? null,
-        traceback: message.traceback ?? null,
-        oom: Boolean(message.oom),
-        memorySummary: message.memory_summary ?? null,
-        cudaMemorySnapshot: message.cuda_memory_snapshot ?? null,
-        gpuProcesses: message.gpu_processes ?? null,
-        runtimeHints: message.runtime_hints ?? null,
-        runtimeBudget: message.runtime_budget ?? null,
-        loaderDiagnostics: message.loader_diagnostics ?? null,
-      });
       useStudioStore.getState().clearPreviewFieldsForFailedRun(message.task_id, message.client_run_id);
       if (message.queued || message.current !== undefined) {
-        useTaskStore.getState().setTasks(coerceTask(message.current), coerceTaskRecord(message.queued));
+        const recentTasks = (message.recent ?? []).flatMap((snapshot) => {
+          const task = coerceTask(snapshot);
+          return task ? [task] : [];
+        });
+        const currentTask = coerceTask(message.current);
+        useTaskStore
+          .getState()
+          .setTasks(
+            taskWithMatchingMessageMetadata(currentTask, message),
+            coerceTaskRecord(message.queued),
+            recentTasks,
+          );
       }
       break;
     }
@@ -433,13 +836,36 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         console.error('Invalid websocket message: task_progress without task_id or progress');
         return;
       }
-      useTaskStore.getState().updateProgress(message.task_id, message.progress ?? 0, message.message);
+      useTaskStore.getState().updateProgress(message.task_id, message.progress ?? 0, message.message, {
+        client_run_id: message.client_run_id,
+        run_input_hash: message.run_input_hash,
+        workflow_tab_id: message.workflow_tab_id,
+        node_id: message.node_id,
+        current_node: message.current_node ?? message.node,
+        current_node_name: message.current_node_name ?? message.node_name,
+        node_progress: message.node_progress,
+        attempt_index: message.attempt_index,
+        phase: message.phase,
+        current_step: message.current_step ?? undefined,
+        total_steps: message.total_steps ?? undefined,
+        component: message.component ?? undefined,
+        shard_current: message.shard_current ?? undefined,
+        shard_total: message.shard_total ?? undefined,
+        eta_seconds: message.eta_seconds ?? undefined,
+        average_step_seconds: message.average_step_seconds ?? undefined,
+        elapsed_seconds: message.elapsed_seconds ?? undefined,
+        last_heartbeat_at: message.last_heartbeat_at,
+        resource_snapshot: message.resource_snapshot ?? undefined,
+        phase_timings: message.phase_timings,
+        updated_at: message.updated_at,
+      });
       break;
     case 'node_definition': {
       if (!message.node || !message.params) {
         console.error('Invalid websocket message: node_definition without node');
         return;
       }
+      if (!shouldApplyWorkflowCanvasMutation(message, context)) return;
 
       const node = useFlowStore.getState().nodes.find((n) => n.id === message.node);
       if (!node) {
@@ -458,7 +884,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         param.value = param.value ?? param.default;
       });
 
-      const newParams = { ...defaultDef.params, ...definitionParams };
+      let newParams = { ...defaultDef.params, ...definitionParams };
       Object.keys(newParams).forEach((key) => {
         const currentParam = node.data.params[key];
         const incomingParam = newParams[key];
@@ -466,6 +892,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
           newParams[key] = preserveCurrentParamValue(currentParam, incomingParam);
         }
       });
+      newParams = normalizeGenericModelLoaderParams(node.data.module, node.data.action, newParams);
       useFlowStore.getState().replaceNodeParams(node.id, newParams);
       const updatedNodes = useFlowStore.getState().nodes.map((n) =>
         n.id !== node.id
@@ -490,6 +917,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         console.error('Invalid websocket message: set_field_visibility without node or fields');
         return;
       }
+      if (!shouldApplyWorkflowCanvasMutation(message, context)) return;
       const nodeId = message.node;
       const visibility = message.fields as Record<string, boolean>;
       Object.keys(visibility).forEach((key) => {
@@ -502,6 +930,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         console.error('Invalid websocket message: set_field_value without node or fields');
         return;
       }
+      if (!shouldApplyWorkflowCanvasMutation(message, context)) return;
       const nodeId = message.node;
       const values = message.fields;
       Object.keys(values).forEach((key) => {
@@ -514,9 +943,11 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         console.error('Invalid websocket message: set_field_params without node, field or params');
         return;
       }
+      if (!shouldApplyWorkflowCanvasMutation(message, context)) return;
       const nodeId = message.node;
       const field = message.field;
       const params = message.params;
+      const workflowContext = captureWorkflowOperationContext();
 
       useFlowStore.getState().setParam(nodeId, field, true, 'disabled');
       Object.keys(params).forEach((key) => {
@@ -537,6 +968,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         useFlowStore.getState().setParam(nodeId, field, updatedValue, key as keyof NodeParams);
       });
       queueMicrotask(() => {
+        if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: false })) return;
         useFlowStore.getState().setParam(nodeId, field, false, 'disabled');
       });
 
@@ -592,7 +1024,13 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         ? message.autoHideDuration || Math.max(message.message.length * 80, 3000)
         : undefined;
 
-      enqueueSnackbar(message.message, { variant, autoHideDuration, persist });
+      const action =
+        message.action?.type === 'open_task_run' &&
+        typeof message.action.taskId === 'string' &&
+        (message.action.outcome === 'completed' || message.action.outcome === 'failed')
+          ? message.action
+          : undefined;
+      enqueueSnackbar(message.message, { variant, autoHideDuration, persist, action });
       break;
     }
     default:

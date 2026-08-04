@@ -1,0 +1,998 @@
+{
+  "ace_step_audio_continuation": [
+    {
+      "id": "ace_step_audio_continuation-source-audio-defaults",
+      "label": "Included 75-second source audio",
+      "mediaType": "audio",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "sourceAudio",
+      "defaultAssets": [
+        {
+          "id": "ace_step_audio_continuation-source-audio",
+          "label": "75-second 3/4 source song",
+          "mediaType": "audio",
+          "previewPath": "/template-gallery/ace_step_text_to_audio.current.wav",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230.wav",
+          "runtimeSha256": "sha256:bytes:3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230",
+          "fileName": "ace_step_audio_continuation.source_audio.wav"
+        }
+      ]
+    }
+  ],
+  "ace_step_audio_repaint": [
+    {
+      "id": "ace_step_audio_repaint-source-audio-defaults",
+      "label": "Reviewed source audio",
+      "mediaType": "audio",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "sourceAudio",
+      "defaultAssets": [
+        {
+          "id": "ace_step_audio_repaint-source-audio",
+          "label": "Reviewed source audio",
+          "mediaType": "audio",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7.wav",
+          "runtimeSha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
+          "fileName": "ace_step_audio_repaint.source_audio.wav"
+        }
+      ]
+    }
+  ],
+  "ace_step_audio_variation": [
+    {
+      "id": "ace_step_audio_variation-source-audio-defaults",
+      "label": "Reviewed source audio",
+      "mediaType": "audio",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "sourceAudio",
+      "defaultAssets": [
+        {
+          "id": "ace_step_audio_variation-source-audio",
+          "label": "Reviewed source audio",
+          "mediaType": "audio",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7.wav",
+          "runtimeSha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
+          "fileName": "ace_step_audio_variation.source_audio.wav"
+        }
+      ]
+    }
+  ],
+  "character_edit": [
+    {
+      "id": "character_edit-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "character_edit-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/character_edit.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab.webp",
+          "runtimeSha256": "sha256:bytes:b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab",
+          "fileName": "character_edit.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "flux2_klein_edit": [
+    {
+      "id": "flux2_klein_edit-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux2_klein_edit-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux2_klein_edit.before.png",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24.png",
+          "runtimeSha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+          "fileName": "flux2_klein_edit.reference_image_1.png"
+        }
+      ]
+    }
+  ],
+  "flux2_klein_multi_reference": [
+    {
+      "id": "flux2_klein_multi_reference-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux2_klein_multi_reference-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux2_klein_multi_reference.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/1d993540e914f0e2d230f1133b57ae14bb837829237a53c89613fcdef6699995.webp",
+          "runtimeSha256": "sha256:bytes:1d993540e914f0e2d230f1133b57ae14bb837829237a53c89613fcdef6699995",
+          "fileName": "flux2_klein_multi_reference.reference_image_1.webp"
+        },
+        {
+          "id": "flux2_klein_multi_reference-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/fc326ed56f9e5de83262a0a1bc4ce85f4b4b291d654a05efa4a32fc133f97a3f.webp",
+          "runtimeSha256": "sha256:bytes:fc326ed56f9e5de83262a0a1bc4ce85f4b4b291d654a05efa4a32fc133f97a3f",
+          "fileName": "flux2_klein_multi_reference.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "flux_control_canny": [
+    {
+      "id": "flux_control_canny-control-image-defaults",
+      "label": "Reviewed control image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "controlImage",
+      "defaultAssets": [
+        {
+          "id": "flux_control_canny-control-image",
+          "label": "Reviewed control image",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_control_canny.before.png",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339.png",
+          "runtimeSha256": "sha256:bytes:3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339",
+          "fileName": "flux_control_canny.control_image.png"
+        }
+      ]
+    }
+  ],
+  "flux_depth_control": [
+    {
+      "id": "flux_depth_control-control-image-defaults",
+      "label": "Reviewed control image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "controlImage",
+      "defaultAssets": [
+        {
+          "id": "flux_depth_control-control-image",
+          "label": "Reviewed control image",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_depth_control.before.png",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e.png",
+          "runtimeSha256": "sha256:bytes:2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e",
+          "fileName": "flux_depth_control.control_image.png"
+        }
+      ]
+    }
+  ],
+  "flux_fill_inpaint": [
+    {
+      "id": "flux_fill_inpaint-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux_fill_inpaint-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_fill_inpaint.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/b7c221b367738177e32fece56067d743df96282a6ccb2afd040ee89ea0a8f678.webp",
+          "runtimeSha256": "sha256:bytes:b7c221b367738177e32fece56067d743df96282a6ccb2afd040ee89ea0a8f678",
+          "fileName": "flux_fill_inpaint.reference_image_1.webp"
+        }
+      ]
+    },
+    {
+      "id": "flux_fill_inpaint-mask-image-defaults",
+      "label": "Reviewed mask image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "maskImage",
+      "defaultAssets": [
+        {
+          "id": "flux_fill_inpaint-mask-image",
+          "label": "Reviewed mask image",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/16f6ea27b5d7cfaed106e2e694572bbe92b7c7e2a43835b3f4313a748f510f74.png",
+          "runtimeSha256": "sha256:bytes:16f6ea27b5d7cfaed106e2e694572bbe92b7c7e2a43835b3f4313a748f510f74",
+          "fileName": "flux_fill_inpaint.mask_image.png"
+        }
+      ]
+    }
+  ],
+  "flux_fill_outpaint": [
+    {
+      "id": "flux_fill_outpaint-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux_fill_outpaint-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_fill_outpaint.before.png",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/bf4dbaa55b83b19ca56c691e9d1a10d3b838ff2fec926aaea6b526561c68f8e6.png",
+          "runtimeSha256": "sha256:bytes:bf4dbaa55b83b19ca56c691e9d1a10d3b838ff2fec926aaea6b526561c68f8e6",
+          "fileName": "flux_fill_outpaint.reference_image_1.png"
+        }
+      ]
+    },
+    {
+      "id": "flux_fill_outpaint-mask-image-defaults",
+      "label": "Reviewed mask image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "maskImage",
+      "defaultAssets": [
+        {
+          "id": "flux_fill_outpaint-mask-image",
+          "label": "Reviewed mask image",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/799d82b016a108d4b6902500b4226afd5d2391f4a7b0693af75255425c943a5e.png",
+          "runtimeSha256": "sha256:bytes:799d82b016a108d4b6902500b4226afd5d2391f4a7b0693af75255425c943a5e",
+          "fileName": "flux_fill_outpaint.mask_image.png"
+        }
+      ]
+    }
+  ],
+  "flux_kontext_edit": [
+    {
+      "id": "flux_kontext_edit-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux_kontext_edit-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_kontext_edit.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
+          "runtimeSha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+          "fileName": "flux_kontext_edit.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "flux_kontext_multi_reference": [
+    {
+      "id": "flux_kontext_multi_reference-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux_kontext_multi_reference-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_kontext_multi_reference.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
+          "runtimeSha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+          "fileName": "flux_kontext_multi_reference.reference_image_1.webp"
+        },
+        {
+          "id": "flux_kontext_multi_reference-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897.webp",
+          "runtimeSha256": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
+          "fileName": "flux_kontext_multi_reference.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "flux_redux_edit": [
+    {
+      "id": "flux_redux_edit-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux_redux_edit-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_redux_edit.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/2e0ec8892660785e322468d0153fd2dadf7a4d920fce2d7d4a0b686a8fe8515d.webp",
+          "runtimeSha256": "sha256:bytes:2e0ec8892660785e322468d0153fd2dadf7a4d920fce2d7d4a0b686a8fe8515d",
+          "fileName": "flux_redux_edit.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "flux_redux_multi_reference": [
+    {
+      "id": "flux_redux_multi_reference-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "flux_redux_multi_reference-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/flux_redux_multi_reference.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/7f1ea58485fa7802765b9fbbf0e6957e8607261c91669fdcc44cbed80c6fb309.webp",
+          "runtimeSha256": "sha256:bytes:7f1ea58485fa7802765b9fbbf0e6957e8607261c91669fdcc44cbed80c6fb309",
+          "fileName": "flux_redux_multi_reference.reference_image_1.webp"
+        },
+        {
+          "id": "flux_redux_multi_reference-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/4b800b6a362c9ad7755858a3ec2affbda8706c5a71578ced35b80432fd234741.webp",
+          "runtimeSha256": "sha256:bytes:4b800b6a362c9ad7755858a3ec2affbda8706c5a71578ced35b80432fd234741",
+          "fileName": "flux_redux_multi_reference.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "ltx_video_image_to_video": [
+    {
+      "id": "ltx_video_image_to_video-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "ltx_video_image_to_video-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/ltx_video_image_to_video.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26.webp",
+          "runtimeSha256": "sha256:bytes:930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26",
+          "fileName": "ltx_video_image_to_video.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "ltx_video_long_showcase": [
+    {
+      "id": "ltx_video_long_showcase-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "ltx_video_long_showcase-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26.webp",
+          "runtimeSha256": "sha256:bytes:930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26",
+          "fileName": "ltx_video_long_showcase.reference_image_1.webp"
+        },
+        {
+          "id": "ltx_video_long_showcase-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/ddaccd06100d51494e5aaaecedab7b27eaeeda5290d453498d3e1cb9460ad474.webp",
+          "runtimeSha256": "sha256:bytes:ddaccd06100d51494e5aaaecedab7b27eaeeda5290d453498d3e1cb9460ad474",
+          "fileName": "ltx_video_long_showcase.reference_image_2.webp"
+        },
+        {
+          "id": "ltx_video_long_showcase-reference-image-3",
+          "label": "Reviewed reference image 3",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/88a7ada5cb91a6ef86de0ff7c26c6b4683df25cc0baa18382371ce0748cd0bd6.webp",
+          "runtimeSha256": "sha256:bytes:88a7ada5cb91a6ef86de0ff7c26c6b4683df25cc0baa18382371ce0748cd0bd6",
+          "fileName": "ltx_video_long_showcase.reference_image_3.webp"
+        },
+        {
+          "id": "ltx_video_long_showcase-reference-image-4",
+          "label": "Reviewed reference image 4",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/c810699838c636767d2a5b25fb457df94a4b76a70da9a77e77009681779acbf2.webp",
+          "runtimeSha256": "sha256:bytes:c810699838c636767d2a5b25fb457df94a4b76a70da9a77e77009681779acbf2",
+          "fileName": "ltx_video_long_showcase.reference_image_4.webp"
+        },
+        {
+          "id": "ltx_video_long_showcase-reference-image-5",
+          "label": "Reviewed reference image 5",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/38a6f334f89048effe579fc473d6fb38437eb579f324ac399d1ec0f6509f74d9.webp",
+          "runtimeSha256": "sha256:bytes:38a6f334f89048effe579fc473d6fb38437eb579f324ac399d1ec0f6509f74d9",
+          "fileName": "ltx_video_long_showcase.reference_image_5.webp"
+        },
+        {
+          "id": "ltx_video_long_showcase-reference-image-6",
+          "label": "Reviewed reference image 6",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/d49908e24c58d144f4264f4028cb0f7f2e72fb02b315443fd021715ebed1e737.webp",
+          "runtimeSha256": "sha256:bytes:d49908e24c58d144f4264f4028cb0f7f2e72fb02b315443fd021715ebed1e737",
+          "fileName": "ltx_video_long_showcase.reference_image_6.webp"
+        }
+      ]
+    }
+  ],
+  "ltx_video_multi_reference": [
+    {
+      "id": "ltx_video_multi_reference-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "ltx_video_multi_reference-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/ltx_video_multi_reference.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/73123a5bb6e8c1367eced6a7fbee6b0e5500ecbabf769ba9d9c18fd10623e36e.webp",
+          "runtimeSha256": "sha256:bytes:73123a5bb6e8c1367eced6a7fbee6b0e5500ecbabf769ba9d9c18fd10623e36e",
+          "fileName": "ltx_video_multi_reference.reference_image_1.webp"
+        },
+        {
+          "id": "ltx_video_multi_reference-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d.webp",
+          "runtimeSha256": "sha256:bytes:52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d",
+          "fileName": "ltx_video_multi_reference.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "ltx_video_video_to_video": [
+    {
+      "id": "ltx_video_video_to_video-source-video-defaults",
+      "label": "Reviewed source video",
+      "mediaType": "video",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "sourceVideo",
+      "defaultAssets": [
+        {
+          "id": "ltx_video_video_to_video-source-video",
+          "label": "Reviewed source video",
+          "mediaType": "video",
+          "previewPath": "/template-gallery/inputs/ltx_video_video_to_video.before.mp4",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/233d1b3a123fceb4f3b68d2d3a9f5b4129627073b8235fe7248ae6ebdeecb554.mp4",
+          "runtimeSha256": "sha256:bytes:233d1b3a123fceb4f3b68d2d3a9f5b4129627073b8235fe7248ae6ebdeecb554",
+          "fileName": "ltx_video_video_to_video.source_video.mp4"
+        }
+      ]
+    }
+  ],
+  "qwen_character_angles": [
+    {
+      "id": "qwen_character_angles-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_character_angles-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_character_angles.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/4b1b8d9e351abd437f2ffff90cc6a958160a87863ba4d8e85a0aa80a37e7a10e.webp",
+          "runtimeSha256": "sha256:bytes:4b1b8d9e351abd437f2ffff90cc6a958160a87863ba4d8e85a0aa80a37e7a10e",
+          "fileName": "qwen_character_angles.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_control_image_layout": [
+    {
+      "id": "qwen_control_image_layout-control-image-defaults",
+      "label": "Reviewed control image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "controlImage",
+      "defaultAssets": [
+        {
+          "id": "qwen_control_image_layout-control-image",
+          "label": "Reviewed control image",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_control_image_layout.before.png",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67.png",
+          "runtimeSha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+          "fileName": "qwen_control_image_layout.control_image.png"
+        }
+      ]
+    }
+  ],
+  "qwen_edit_plus_single_image": [
+    {
+      "id": "qwen_edit_plus_single_image-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_edit_plus_single_image-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_edit_plus_single_image.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/e90e99e27cdd9b6ab7478a05199df2fdf7dce650d700ef2ceb55da7fb206b715.webp",
+          "runtimeSha256": "sha256:bytes:e90e99e27cdd9b6ab7478a05199df2fdf7dce650d700ef2ceb55da7fb206b715",
+          "fileName": "qwen_edit_plus_single_image.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_edit_strength_sweep": [
+    {
+      "id": "qwen_edit_strength_sweep-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_edit_strength_sweep-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_edit_strength_sweep.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/a6d165bd87e2c57ab8cf71fa15de9d8724fccf5782c16c34c25dc77934751676.webp",
+          "runtimeSha256": "sha256:bytes:a6d165bd87e2c57ab8cf71fa15de9d8724fccf5782c16c34c25dc77934751676",
+          "fileName": "qwen_edit_strength_sweep.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_inpaint_mask_draft": [
+    {
+      "id": "qwen_inpaint_mask_draft-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_inpaint_mask_draft-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_inpaint_mask_draft.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/a2f8ac6f5937d6e618b48ce9947153b8233ff7a82dcf67f28766d20b9917d730.webp",
+          "runtimeSha256": "sha256:bytes:a2f8ac6f5937d6e618b48ce9947153b8233ff7a82dcf67f28766d20b9917d730",
+          "fileName": "qwen_inpaint_mask_draft.reference_image_1.webp"
+        }
+      ]
+    },
+    {
+      "id": "qwen_inpaint_mask_draft-mask-image-defaults",
+      "label": "Reviewed mask image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "maskImage",
+      "defaultAssets": [
+        {
+          "id": "qwen_inpaint_mask_draft-mask-image",
+          "label": "Reviewed mask image",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/29722ed072feec11cd36adce7b6cb48483bff3f05776048b93f960b5554ab533.png",
+          "runtimeSha256": "sha256:bytes:29722ed072feec11cd36adce7b6cb48483bff3f05776048b93f960b5554ab533",
+          "fileName": "qwen_inpaint_mask_draft.mask_image.png"
+        }
+      ]
+    }
+  ],
+  "qwen_inpaint_object_replace": [
+    {
+      "id": "qwen_inpaint_object_replace-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_inpaint_object_replace-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_inpaint_object_replace.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/9f9f9685db5e9f8e1c162a0515151b03912c84777727b38682b65839db501ae6.webp",
+          "runtimeSha256": "sha256:bytes:9f9f9685db5e9f8e1c162a0515151b03912c84777727b38682b65839db501ae6",
+          "fileName": "qwen_inpaint_object_replace.reference_image_1.webp"
+        }
+      ]
+    },
+    {
+      "id": "qwen_inpaint_object_replace-mask-image-defaults",
+      "label": "Reviewed mask image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "maskImage",
+      "defaultAssets": [
+        {
+          "id": "qwen_inpaint_object_replace-mask-image",
+          "label": "Reviewed mask image",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/e14e0fb4bccace254e3430bbddd49728980e5445b988eff1ae8164f135d1cc8d.png",
+          "runtimeSha256": "sha256:bytes:e14e0fb4bccace254e3430bbddd49728980e5445b988eff1ae8164f135d1cc8d",
+          "fileName": "qwen_inpaint_object_replace.mask_image.png"
+        }
+      ]
+    }
+  ],
+  "qwen_layered_portrait": [
+    {
+      "id": "qwen_layered_portrait-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_layered_portrait-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de.webp",
+          "runtimeSha256": "sha256:bytes:965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de",
+          "fileName": "qwen_layered_portrait.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_logo_texture": [
+    {
+      "id": "qwen_logo_texture-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_logo_texture-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_logo_texture.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c.webp",
+          "runtimeSha256": "sha256:bytes:124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c",
+          "fileName": "qwen_logo_texture.reference_image_1.webp"
+        },
+        {
+          "id": "qwen_logo_texture-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/9328061557396ef591a9f4a6242abf1cdd61082846518726c3114f746ccedd63.webp",
+          "runtimeSha256": "sha256:bytes:9328061557396ef591a9f4a6242abf1cdd61082846518726c3114f746ccedd63",
+          "fileName": "qwen_logo_texture.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_multi_reference_product": [
+    {
+      "id": "qwen_multi_reference_product-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_multi_reference_product-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_multi_reference_product.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/47e56fd165fd2610f34e952191d74e061269b9703ae9fd7f571491f38ce4992c.webp",
+          "runtimeSha256": "sha256:bytes:47e56fd165fd2610f34e952191d74e061269b9703ae9fd7f571491f38ce4992c",
+          "fileName": "qwen_multi_reference_product.reference_image_1.webp"
+        },
+        {
+          "id": "qwen_multi_reference_product-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/39428f00f67b49fc6d624617df2964c9f869de21e7e188ef5b231ae04c4aeacc.webp",
+          "runtimeSha256": "sha256:bytes:39428f00f67b49fc6d624617df2964c9f869de21e7e188ef5b231ae04c4aeacc",
+          "fileName": "qwen_multi_reference_product.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_outpaint_aspect_template": [
+    {
+      "id": "qwen_outpaint_aspect_template-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_outpaint_aspect_template-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_outpaint_aspect_template.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/d898e00f3be4b28e237f71acf8024ad3715a657e1fcf3aeaf57279468dff7a76.webp",
+          "runtimeSha256": "sha256:bytes:d898e00f3be4b28e237f71acf8024ad3715a657e1fcf3aeaf57279468dff7a76",
+          "fileName": "qwen_outpaint_aspect_template.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_outpaint_draft": [
+    {
+      "id": "qwen_outpaint_draft-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_outpaint_draft-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_outpaint_draft.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/862e292caa1759156fffde5cfccda8b97ec622514258f81986188cf63a836ea9.webp",
+          "runtimeSha256": "sha256:bytes:862e292caa1759156fffde5cfccda8b97ec622514258f81986188cf63a836ea9",
+          "fileName": "qwen_outpaint_draft.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_packaging_dieline": [
+    {
+      "id": "qwen_packaging_dieline-control-image-defaults",
+      "label": "Reviewed control image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "controlImage",
+      "defaultAssets": [
+        {
+          "id": "qwen_packaging_dieline-control-image",
+          "label": "Reviewed control image",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_packaging_dieline.before.png",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67.png",
+          "runtimeSha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+          "fileName": "qwen_packaging_dieline.control_image.png"
+        }
+      ]
+    }
+  ],
+  "qwen_product_ad_composite": [
+    {
+      "id": "qwen_product_ad_composite-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_product_ad_composite-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/e0ab22f77f5d966d7868f8950f79702dc6d156d0eaef3e06205097558d5c5bb2.webp",
+          "runtimeSha256": "sha256:bytes:e0ab22f77f5d966d7868f8950f79702dc6d156d0eaef3e06205097558d5c5bb2",
+          "fileName": "qwen_product_ad_composite.reference_image_1.webp"
+        },
+        {
+          "id": "qwen_product_ad_composite-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_product_ad_composite.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
+          "runtimeSha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+          "fileName": "qwen_product_ad_composite.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_product_relight": [
+    {
+      "id": "qwen_product_relight-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_product_relight-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_product_relight.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/f791a809c0df307cd7dafa8c54ae86bbe4c53d73afdacb2183ff8cdbeac994c2.webp",
+          "runtimeSha256": "sha256:bytes:f791a809c0df307cd7dafa8c54ae86bbe4c53d73afdacb2183ff8cdbeac994c2",
+          "fileName": "qwen_product_relight.reference_image_1.webp"
+        },
+        {
+          "id": "qwen_product_relight-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
+          "runtimeSha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+          "fileName": "qwen_product_relight.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "qwen_tile_extract": [
+    {
+      "id": "qwen_tile_extract-reference-images-defaults",
+      "label": "Reviewed reference image",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "qwen_tile_extract-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/qwen_tile_extract.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e.webp",
+          "runtimeSha256": "sha256:bytes:6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e",
+          "fileName": "qwen_tile_extract.reference_image_1.webp"
+        }
+      ]
+    }
+  ],
+  "reference_fusion": [
+    {
+      "id": "reference_fusion-reference-images-defaults",
+      "label": "Reviewed reference images",
+      "mediaType": "image",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "referenceImages",
+      "defaultAssets": [
+        {
+          "id": "reference_fusion-reference-image-1",
+          "label": "Reviewed reference image 1",
+          "mediaType": "image",
+          "previewPath": "/template-gallery/inputs/reference_fusion.before.webp",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/283b1cfb32b15fe6b31a29dce1f2b96026c1ad0826bf3f24aebebf4b6f9a4f07.webp",
+          "runtimeSha256": "sha256:bytes:283b1cfb32b15fe6b31a29dce1f2b96026c1ad0826bf3f24aebebf4b6f9a4f07",
+          "fileName": "reference_fusion.reference_image_1.webp"
+        },
+        {
+          "id": "reference_fusion-reference-image-2",
+          "label": "Reviewed reference image 2",
+          "mediaType": "image",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/39428f00f67b49fc6d624617df2964c9f869de21e7e188ef5b231ae04c4aeacc.webp",
+          "runtimeSha256": "sha256:bytes:39428f00f67b49fc6d624617df2964c9f869de21e7e188ef5b231ae04c4aeacc",
+          "fileName": "reference_fusion.reference_image_2.webp"
+        }
+      ]
+    }
+  ],
+  "wan_vace_grayscale_control": [
+    {
+      "id": "wan_vace_grayscale_control-control-video-defaults",
+      "label": "Reviewed control video",
+      "mediaType": "video",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "controlVideo",
+      "defaultAssets": [
+        {
+          "id": "wan_vace_grayscale_control-control-video",
+          "label": "Reviewed control video",
+          "mediaType": "video",
+          "previewPath": "/template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/e0f19676addbba6fe954711c235878ef43495e8066b84ed70b5c240a8512b026.mp4",
+          "runtimeSha256": "sha256:bytes:e0f19676addbba6fe954711c235878ef43495e8066b84ed70b5c240a8512b026",
+          "fileName": "wan_vace_grayscale_control.control_video.mp4"
+        }
+      ]
+    }
+  ],
+  "wan_vace_outpaint_reframe": [
+    {
+      "id": "wan_vace_outpaint_reframe-source-video-defaults",
+      "label": "Reviewed source video",
+      "mediaType": "video",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "sourceVideo",
+      "defaultAssets": [
+        {
+          "id": "wan_vace_outpaint_reframe-source-video",
+          "label": "Reviewed source video",
+          "mediaType": "video",
+          "previewPath": "/template-gallery/inputs/wan_vace_outpaint_reframe.before.mp4",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/101d50449cc4d74257e88e87fb750363bfe538c58b601b340fb3ce9031c2ed03.mp4",
+          "runtimeSha256": "sha256:bytes:101d50449cc4d74257e88e87fb750363bfe538c58b601b340fb3ce9031c2ed03",
+          "fileName": "wan_vace_outpaint_reframe.source_video.mp4"
+        }
+      ]
+    },
+    {
+      "id": "wan_vace_outpaint_reframe-mask-video-defaults",
+      "label": "Reviewed mask video",
+      "mediaType": "video",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "maskVideo",
+      "defaultAssets": [
+        {
+          "id": "wan_vace_outpaint_reframe-mask-video",
+          "label": "Reviewed mask video",
+          "mediaType": "video",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/3c4d3a7a58a7be7f8d8920106dcfea30e28b4af115ce406bcf5b16cec4b4297a.mp4",
+          "runtimeSha256": "sha256:bytes:3c4d3a7a58a7be7f8d8920106dcfea30e28b4af115ce406bcf5b16cec4b4297a",
+          "fileName": "wan_vace_outpaint_reframe.mask_video.mp4"
+        }
+      ]
+    }
+  ],
+  "wan_vace_video_color_grade": [
+    {
+      "id": "wan_vace_video_color_grade-source-video-defaults",
+      "label": "Reviewed source video",
+      "mediaType": "video",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "sourceVideo",
+      "defaultAssets": [
+        {
+          "id": "wan_vace_video_color_grade-source-video",
+          "label": "Reviewed source video",
+          "mediaType": "video",
+          "previewPath": "/template-gallery/inputs/wan_vace_video_color_grade.before.mp4",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/d86b921f1be36360b5b660b8a5b9d0e9165e888be8a06fe2d8f362e87de40429.mp4",
+          "runtimeSha256": "sha256:bytes:d86b921f1be36360b5b660b8a5b9d0e9165e888be8a06fe2d8f362e87de40429",
+          "fileName": "wan_vace_video_color_grade.source_video.mp4"
+        }
+      ]
+    }
+  ],
+  "wan_vace_video_to_video": [
+    {
+      "id": "wan_vace_video_to_video-source-video-defaults",
+      "label": "Reviewed source video",
+      "mediaType": "video",
+      "origin": "template",
+      "requiredAt": "workflow_start",
+      "field": "sourceVideo",
+      "defaultAssets": [
+        {
+          "id": "wan_vace_video_to_video-source-video",
+          "label": "Reviewed source video",
+          "mediaType": "video",
+          "previewPath": "/template-gallery/inputs/wan_vace_video_to_video.before.mp4",
+          "runtimePath": "/template-gallery/runtime-inputs/assets/218d83e0706fec201097582a6e5e00dc79f2d7d1ecb0badba2214c5ecaae1866.mp4",
+          "runtimeSha256": "sha256:bytes:218d83e0706fec201097582a6e5e00dc79f2d7d1ecb0badba2214c5ecaae1866",
+          "fileName": "wan_vace_video_to_video.source_video.mp4"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "wan_vace_video_color_grade": {
+    "sourceVideo": "artifacts/template-gallery/source-assets/wan-press-color-source-v1.mp4"
+  },
+  "wan_vace_masked_object_replace": {
+    "sourceVideo": "artifacts/template-gallery/source-assets/wan-glass-orbit-source-v2.mp4",
+    "maskVideo": "artifacts/template-gallery/source-assets/wan-glass-orbit-mask-v2.mp4",
+    "referenceImages": ["artifacts/template-gallery/source-assets/wan-amber-vessel-reference-v2.webp"]
+  },
+  "wan_vace_outpaint_reframe": {
+    "sourceVideo": "artifacts/template-gallery/source-assets/wan-lab-robot-outpaint-source-v1.mp4",
+    "maskVideo": "artifacts/template-gallery/source-assets/wan-lab-robot-outpaint-mask-v1.mp4"
+  },
+  "wan_vace_grayscale_control": {
+    "controlVideo": "artifacts/template-gallery/source-assets/wan-city-cycle-grayscale-control-v1.mp4"
+  },
+  "wan_vace_video_to_video": {
+    "sourceVideo": "artifacts/template-gallery/source-assets/wan-cat-courtyard-v2v-source-v1.mp4"
+  },
+  "wan_22_i2v_seed_vault": {
+    "referenceImages": ["artifacts/template-gallery/source-assets/wan-chef-mise-en-place-keyframe-v1.webp"]
+  }
+}

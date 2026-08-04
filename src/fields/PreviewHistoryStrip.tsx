@@ -1,17 +1,22 @@
-import { Clock3, Copy, Download, ExternalLink, History, RotateCcw } from 'lucide-react';
+import { Clock3, Copy, Download, FileText, History, MoreHorizontal, Music2, RotateCcw } from 'lucide-react';
 import { useMemo } from 'react';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import { studioPreviewSlotKey, useStudioStore } from '../stores/useStudioStore';
 import type { StudioOutput } from '../studio/types';
-import { cx } from '../utils/classNames';
 import { normalizeImageArtifacts, type ImageArtifact } from '../utils/imageArtifacts';
 import { enqueueSnackbar } from '../ui/snackbar';
-import { requestBlob } from '../utils/requestJson';
+import { GraphControlButton, GraphIconButton } from '../ui/GraphControls';
+import { ModiffMenuAction, ModiffMenuRoot, ModiffMenuSurface, ModiffMenuTrigger } from '../ui/menus';
+import { cx } from '../utils/classNames';
+import { previousOutputsForPreview } from '../studio/previewState';
 
 type PreviewHistoryStripProps = {
   nodeId: string;
   fieldKey: string;
   currentUrls?: string[];
+  onSelectImage?: (url: string) => void;
+  selectedUrl?: string | null;
+  audioDownloadSampleRate?: number | null;
 };
 
 function outputUrl(output: StudioOutput) {
@@ -31,10 +36,19 @@ function outputLabel(output: StudioOutput) {
   return 'Output';
 }
 
-function openTextOutput(output: StudioOutput) {
-  const text = typeof output.value === 'string' ? output.value : JSON.stringify(output.value, null, 2);
-  const url = `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
-  window.open(url, '_blank', 'noopener,noreferrer');
+function outputText(output: StudioOutput) {
+  return typeof output.value === 'string' ? output.value : JSON.stringify(output.value, null, 2);
+}
+
+function downloadTextOutput(output: StudioOutput) {
+  const blobUrl = URL.createObjectURL(new Blob([outputText(output)], { type: 'text/plain;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = `modiff-${output.nodeId}-${output.fieldKey}.txt`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 async function copyUrl(url: string) {
@@ -46,56 +60,44 @@ async function copyUrl(url: string) {
   }
 }
 
-function triggerDownload(url: string, filename: string) {
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = 'noopener noreferrer';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-}
-
-async function downloadOutput(output: StudioOutput) {
-  const url = outputUrl(output);
-  const filename =
-    output.mediaItems?.[0]?.backendPath?.split('/').pop() ??
-    `modiff-${output.nodeId}-${output.fieldKey}-${output.createdAt}`;
-  try {
-    const blob = await requestBlob(url);
-    const objectUrl = URL.createObjectURL(blob);
-    try {
-      triggerDownload(objectUrl, filename);
-    } finally {
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    }
-  } catch {
-    triggerDownload(url, filename);
-  }
-}
-
-export function PreviewHistoryStrip({ nodeId, fieldKey, currentUrls = [] }: PreviewHistoryStripProps) {
+export function PreviewHistoryStrip({
+  nodeId,
+  fieldKey,
+  currentUrls = [],
+  onSelectImage,
+  selectedUrl,
+  audioDownloadSampleRate,
+}: PreviewHistoryStripProps) {
   const outputs = useStudioStore((state) => state.outputs);
   const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const previewSlot = useStudioStore(
+    (state) => state.previewSlots[studioPreviewSlotKey(nodeId, fieldKey, activeWorkflowTabId)] ?? null,
+  );
   const currentRunContext = useStudioStore((state) => state.currentRunContext);
   const restoreWorkflowFromOutput = useStudioStore((state) => state.restoreWorkflowFromOutput);
   const setLightboxOpener = useSettingsStore((state) => state.setLightboxOpener);
+  const setMediaViewerOpener = useSettingsStore((state) => state.setMediaViewerOpener);
+  const setMediaExportOpener = useSettingsStore((state) => state.setMediaExportOpener);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
 
   const currentUrlSet = useMemo(() => new Set(currentUrls), [currentUrls]);
-  const history = useMemo(
-    () =>
-      outputs
-        .filter((output) => output.nodeId === nodeId && output.fieldKey === fieldKey)
-        .filter(
-          (output) => !activeWorkflowTabId || !output.workflowTabId || output.workflowTabId === activeWorkflowTabId,
-        )
-        .filter((output) => !output.clientRunId || output.clientRunId !== currentRunContext?.clientRunId)
-        .filter((output) => !currentUrlSet.has(outputUrl(output)))
-        .slice(0, 6),
-    [activeWorkflowTabId, currentRunContext?.clientRunId, currentUrlSet, fieldKey, nodeId, outputs],
-  );
+  const history = useMemo(() => {
+    const candidates = previousOutputsForPreview(
+      outputs,
+      activeWorkflowTabId,
+      nodeId,
+      fieldKey,
+      previewSlot?.currentOutputId ?? null,
+    );
+    return (
+      previewSlot
+        ? candidates
+        : candidates
+            .filter((output) => !output.clientRunId || output.clientRunId !== currentRunContext?.clientRunId)
+            .filter((output) => !currentUrlSet.has(outputUrl(output)))
+    ).slice(0, 6);
+  }, [activeWorkflowTabId, currentRunContext?.clientRunId, currentUrlSet, fieldKey, nodeId, outputs, previewSlot]);
 
   if (history.length === 0) return null;
 
@@ -137,26 +139,65 @@ export function PreviewHistoryStrip({ nodeId, fieldKey, currentUrls = [] }: Prev
       return;
     }
     if (type === 'text' || output.displayType === 'text') {
-      openTextOutput(output);
+      setMediaViewerOpener({
+        title: 'Previous text render',
+        currentIndex: 0,
+        items: [
+          {
+            id: output.id,
+            kind: 'text',
+            label: outputLabel(output),
+            text: outputText(output),
+            downloadName: `modiff-${output.nodeId}-${output.fieldKey}.txt`,
+          },
+        ],
+      });
       return;
     }
-    window.open(outputUrl(output), '_blank', 'noopener,noreferrer');
+    if (type === 'video' || type === 'audio') {
+      const mediaItems =
+        output.mediaItems && output.mediaItems.length > 0
+          ? output.mediaItems
+          : [
+              {
+                index: 0,
+                url: outputUrl(output),
+                displayType: type,
+              },
+            ];
+      setMediaViewerOpener({
+        title: type === 'video' ? 'Previous video render' : 'Previous audio render',
+        currentIndex: 0,
+        items: mediaItems
+          .filter((item) => item.url)
+          .map((item, index) => ({
+            id: `${output.id}:${item.index ?? index}`,
+            kind: type,
+            label: item.label || `${outputLabel(output)} ${mediaItems.length > 1 ? index + 1 : ''}`.trim(),
+            url: item.url,
+            downloadName:
+              item.backendPath?.split('/').pop() ??
+              `modiff-${output.nodeId}-${output.fieldKey}-${index + 1}.${type === 'video' ? 'mp4' : 'wav'}`,
+          })),
+      });
+      return;
+    }
   };
 
   return (
     <div className="nodrag mb-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg/80 p-2">
-      <div className="mb-2 flex items-center justify-between gap-2 text-xs text-modiff-muted">
+      <div className="mb-2 flex items-center justify-between gap-2 text-xs text-modiff-subtle-text">
         <span className="inline-flex items-center gap-1 font-semibold text-modiff-text">
           <History size={13} />
           Previous
         </span>
-        <button
+        <GraphControlButton
           type="button"
-          className="text-modiff-muted transition hover:text-hf-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+          className="min-h-7 px-1 text-modiff-subtle-text transition hover:text-hf-yellow"
           onClick={openGallery}
         >
           Gallery
-        </button>
+        </GraphControlButton>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {history.map((output) => {
@@ -167,10 +208,19 @@ export function PreviewHistoryStrip({ nodeId, fieldKey, currentUrls = [] }: Prev
               key={output.id}
               className="group/history relative min-w-[96px] max-w-[120px] overflow-hidden rounded-modiff-compact border border-modiff-border bg-modiff-panel"
             >
-              <button
+              <GraphControlButton
                 type="button"
-                className="block h-16 w-full overflow-hidden text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
-                onClick={() => openOutput(output)}
+                className={cx(
+                  'block h-16 w-full overflow-hidden border-2 border-transparent text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-modiff-focus',
+                  selectedUrl === url && 'border-hf-yellow',
+                )}
+                aria-pressed={type === 'image' && onSelectImage ? selectedUrl === url : undefined}
+                onClick={() => {
+                  if (type === 'image' && onSelectImage) {
+                    onSelectImage(url);
+                  }
+                  openOutput(output);
+                }}
                 title={`${outputLabel(output)} from ${new Date(output.createdAt).toLocaleTimeString()}`}
               >
                 {type === 'image' ? (
@@ -179,53 +229,85 @@ export function PreviewHistoryStrip({ nodeId, fieldKey, currentUrls = [] }: Prev
                     alt={outputLabel(output)}
                     className="h-full w-full object-cover modiff-generated-image"
                   />
+                ) : type === 'video' ? (
+                  <video
+                    src={url}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    aria-label={outputLabel(output)}
+                    className="pointer-events-none h-full w-full object-cover"
+                  />
+                ) : type === 'audio' ? (
+                  <span className="flex h-full w-full flex-col items-center justify-center gap-1 bg-modiff-surface px-2 text-center text-xs font-semibold text-modiff-subtle-text">
+                    <Music2 size={20} className="text-hf-yellow" />
+                    {outputLabel(output)}
+                  </span>
+                ) : type === 'text' ? (
+                  <span className="flex h-full w-full items-start gap-1 overflow-hidden bg-modiff-surface p-2 text-left text-xs text-modiff-subtle-text">
+                    <FileText size={14} className="mt-0.5 shrink-0 text-hf-yellow" />
+                    <span className="line-clamp-3">{outputText(output)}</span>
+                  </span>
                 ) : (
-                  <span className="flex h-full w-full items-center justify-center bg-modiff-surface px-2 text-center text-xs font-semibold text-modiff-muted">
+                  <span className="flex h-full w-full items-center justify-center bg-modiff-surface px-2 text-center text-xs font-semibold text-modiff-subtle-text">
                     {outputLabel(output)}
                   </span>
                 )}
-              </button>
-              <div className="flex items-center gap-1 border-t border-modiff-border px-1 py-1 text-[11px] text-modiff-muted">
+              </GraphControlButton>
+              <div className="text-modiff-label flex items-center gap-1 border-t border-modiff-border px-1 py-1 text-modiff-subtle-text">
                 <Clock3 size={11} />
                 <span className="min-w-0 flex-1 truncate">{new Date(output.createdAt).toLocaleTimeString()}</span>
               </div>
-              <div className="absolute right-1 top-1 hidden gap-1 rounded-modiff-compact border border-modiff-border bg-modiff-panel/90 p-1 group-hover/history:flex group-focus-within/history:flex">
-                {[
-                  {
-                    label: 'Download output',
-                    icon: <Download size={12} />,
-                    action: () => {
-                      void downloadOutput(output);
-                    },
-                  },
-                  {
-                    label: 'Copy output URL',
-                    icon: <Copy size={12} />,
-                    action: () => {
-                      void copyUrl(url);
-                    },
-                  },
-                  { label: 'Open output', icon: <ExternalLink size={12} />, action: () => openOutput(output) },
-                  {
-                    label: 'Restore settings',
-                    icon: <RotateCcw size={12} />,
-                    action: () => restoreWorkflowFromOutput(output),
-                  },
-                ].map((action) => (
-                  <button
-                    key={action.label}
-                    type="button"
-                    aria-label={action.label}
-                    title={action.label}
-                    className={cx(
-                      'grid size-6 place-items-center rounded-modiff-compact text-modiff-muted transition',
-                      'hover:bg-modiff-surface hover:text-hf-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-                    )}
-                    onClick={action.action}
-                  >
-                    {action.icon}
-                  </button>
-                ))}
+              <div className="absolute right-1 top-1">
+                <ModiffMenuRoot>
+                  <ModiffMenuTrigger>
+                    <GraphIconButton
+                      label="Output actions"
+                      className="border border-modiff-border bg-modiff-panel/90 hover:bg-modiff-surface hover:text-hf-yellow"
+                    >
+                      <MoreHorizontal size={14} />
+                    </GraphIconButton>
+                  </ModiffMenuTrigger>
+                  <ModiffMenuSurface layer="graph" anchor="bottom end" className="min-w-44">
+                    <ModiffMenuAction
+                      icon={<Download size={14} />}
+                      onClick={() => {
+                        if (type === 'text') {
+                          downloadTextOutput(output);
+                          return;
+                        }
+                        if (type === 'video' || type === 'audio' || type === 'image') {
+                          setMediaExportOpener({
+                            source: url,
+                            kind: type,
+                            filename:
+                              output.mediaItems?.[0]?.backendPath?.split('/').pop() ??
+                              `modiff-${output.nodeId}-${output.fieldKey}-${output.createdAt}.${
+                                type === 'audio' ? 'wav' : type === 'video' ? 'mp4' : 'webp'
+                              }`,
+                            title: `Download ${type}`,
+                            defaultFormat: type === 'audio' ? 'wav' : type === 'video' ? 'mp4' : 'png',
+                            defaultSampleRate: type === 'audio' ? audioDownloadSampleRate : undefined,
+                          });
+                        }
+                      }}
+                      disabled={type === 'unknown'}
+                    >
+                      Download…
+                    </ModiffMenuAction>
+                    <ModiffMenuAction
+                      icon={<Copy size={14} />}
+                      onClick={() => {
+                        void copyUrl(url);
+                      }}
+                    >
+                      Copy URL
+                    </ModiffMenuAction>
+                    <ModiffMenuAction icon={<RotateCcw size={14} />} onClick={() => restoreWorkflowFromOutput(output)}>
+                      Restore settings
+                    </ModiffMenuAction>
+                  </ModiffMenuSurface>
+                </ModiffMenuRoot>
               </div>
             </div>
           );

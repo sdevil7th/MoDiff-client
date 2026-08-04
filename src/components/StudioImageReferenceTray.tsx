@@ -2,14 +2,29 @@ import { ArrowDown, ArrowUp, FolderOpen, ImagePlus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  advanceWorkflowOperationContext,
+  assertWorkflowOperationContext,
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+  useStudioStore,
+} from '../stores/useStudioStore';
 import { syncStudioGraphValues } from '../studio/graphBridge';
 import { resolveStudioImageUrl } from '../studio/outputUtils';
 import type { StudioFormState } from '../studio/types';
 import { enqueueSnackbar } from '../ui/snackbar';
-import { ImageFrame, SectionHeader, Spinner, StudioIconButton, StudioSelect, StudioTextInput } from '../ui';
+import {
+  ImageFrame,
+  ModiffFileInput,
+  SectionHeader,
+  Spinner,
+  StudioIconButton,
+  StudioSelect,
+  StudioTextInput,
+} from '../ui';
 import { formatRequestError } from '../utils/requestJson';
 import { uploadBackendFile } from '../utils/backendUpload';
+import { mediaAcceptString } from '../studio/mediaImport';
 
 export function StudioImageReferenceTray() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -21,6 +36,7 @@ export function StudioImageReferenceTray() {
     replaceReferenceImage,
     removeReferenceImage,
     moveReferenceImage,
+    setReferenceImages,
     alphaMode,
     updateForm,
   } = useStudioStore(
@@ -31,6 +47,7 @@ export function StudioImageReferenceTray() {
       replaceReferenceImage: state.replaceReferenceImage,
       removeReferenceImage: state.removeReferenceImage,
       moveReferenceImage: state.moveReferenceImage,
+      setReferenceImages: state.setReferenceImages,
       updateForm: state.updateForm,
     })),
   );
@@ -41,20 +58,21 @@ export function StudioImageReferenceTray() {
     queueMicrotask(() => syncStudioGraphValues());
   };
 
-  const uploadFile = async (file: File) => {
-    const paths = await uploadBackendFile(file, 'images');
-    paths.forEach((path) => addReferenceImage(path));
-  };
-
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    const context = captureWorkflowOperationContext();
     setIsUploading(true);
     try {
+      const uploadedPaths: string[] = [];
       for (const file of Array.from(files)) {
-        await uploadFile(file);
+        uploadedPaths.push(...(await uploadBackendFile(file, 'images')));
+        assertWorkflowOperationContext(context);
       }
+      setReferenceImages([...useStudioStore.getState().form.referenceImages, ...uploadedPaths]);
+      advanceWorkflowOperationContext(context);
       syncStudioGraphValues();
     } catch (error) {
+      if (isWorkflowOperationCancelled(error)) return;
       enqueueSnackbar(formatRequestError(error, 'Could not upload the reference image.'), {
         variant: 'error',
         autoHideDuration: 5000,
@@ -74,10 +92,10 @@ export function StudioImageReferenceTray() {
           </StudioIconButton>
         }
       />
-      <input
+      <ModiffFileInput
         ref={fileInputRef}
-        type="file"
-        accept="image/*"
+        aria-label="Upload reference images"
+        accept={mediaAcceptString(['image'])}
         multiple
         hidden
         onChange={(event) => {
@@ -86,6 +104,7 @@ export function StudioImageReferenceTray() {
       />
       <div className="mb-2 flex gap-2">
         <StudioTextInput
+          aria-label="Reference image path or URL"
           value={pathValue}
           onChange={(event) => setPathValue(event.target.value)}
           placeholder="Image path or URL"
@@ -96,17 +115,19 @@ export function StudioImageReferenceTray() {
         </StudioIconButton>
       </div>
       <StudioSelect
+        aria-label="Reference image alpha handling"
         value={alphaMode}
-        onChange={(event) => {
-          updateForm({ alphaMode: event.target.value as StudioFormState['alphaMode'] });
+        onValueChange={(value) => {
+          updateForm({ alphaMode: value as StudioFormState['alphaMode'] });
           queueMicrotask(() => syncStudioGraphValues());
         }}
+        options={[
+          { value: 'ignore', label: 'Alpha: ignore' },
+          { value: 'add alpha', label: 'Alpha: add alpha' },
+          { value: 'remove alpha', label: 'Alpha: remove alpha' },
+        ]}
         className="mb-2 w-full"
-      >
-        <option value="ignore">Alpha: ignore</option>
-        <option value="add alpha">Alpha: add alpha</option>
-        <option value="remove alpha">Alpha: remove alpha</option>
-      </StudioSelect>
+      />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(86px,1fr))] gap-2">
         {referenceImages.map((image, index) => (
@@ -118,13 +139,14 @@ export function StudioImageReferenceTray() {
               aspectRatio="1 / 1"
               bordered={false}
             />
-            <input
+            <StudioTextInput
+              aria-label={`Reference image ${index + 1} path`}
               value={image}
               onChange={(event) => {
                 replaceReferenceImage(index, event.target.value);
                 queueMicrotask(() => syncStudioGraphValues());
               }}
-              className="h-7 w-full bg-transparent px-1 text-xs text-modiff-text outline-none"
+              className="h-7 w-full border-0 bg-transparent px-1 text-xs"
             />
             <div className="flex justify-between">
               <StudioIconButton

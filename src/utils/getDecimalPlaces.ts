@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 const getDecimalPlaces = (value: number | undefined) => {
   if (!value) return 1;
   const str = value.toString();

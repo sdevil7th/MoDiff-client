@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import {
   ArrowLeftRight,
@@ -17,7 +17,11 @@ import {
   Upload,
 } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+  useStudioStore,
+} from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { STUDIO_MODE_LABELS } from '../studio/modelProfiles';
 import { validateCurrentRun } from '../studio/runReadiness';
@@ -30,7 +34,7 @@ import {
   downloadPngWithWorkflowMetadata,
   readWorkflowPackageFile,
 } from '../studio/workflowPackage';
-import { ImageFrame, ModiffButton } from '../ui';
+import { ImageFrame, ModiffBadge, ModiffButton, ModiffChip, ModiffFileInput, ModiffIconButton } from '../ui';
 import { cx } from '../utils/classNames';
 
 type FilterId = 'all' | 'favorites' | StudioModelType;
@@ -40,13 +44,6 @@ type GalleryAssetKind = 'generated' | 'imported';
 function copyMetadata(output: StudioOutput) {
   void navigator.clipboard.writeText(JSON.stringify(output, null, 2));
   enqueueSnackbar('Metadata copied', { variant: 'success', autoHideDuration: 1800 });
-}
-
-function downloadImage(output: StudioOutput) {
-  const anchor = document.createElement('a');
-  anchor.href = output.url;
-  anchor.download = `modiff-${output.modelType}-${output.id}${isAudioOutput(output) ? '.wav' : isVideoOutput(output) ? '.mp4' : '.png'}`;
-  anchor.click();
 }
 
 function downloadOutputPackage(output: StudioOutput) {
@@ -111,7 +108,11 @@ function GalleryMedia({
         <video
           src={output.url}
           controls
-          className={cx('block h-full w-full bg-black object-contain', maxHeight ? 'max-h-[460px]' : false)}
+          controlsList="nodownload noremoteplayback"
+          className={cx(
+            'block h-full w-full bg-modiff-media-backdrop object-contain',
+            maxHeight ? 'max-h-[460px]' : false,
+          )}
         />
       </div>
     );
@@ -169,6 +170,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setGalleryLibraryOpen = useSettingsStore((state) => state.setGalleryLibraryOpen);
   const setLightboxOpener = useSettingsStore((state) => state.setLightboxOpener);
+  const setMediaExportOpener = useSettingsStore((state) => state.setMediaExportOpener);
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
 
@@ -224,9 +226,9 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
 
   const importButton = (
     <>
-      <input
+      <ModiffFileInput
         ref={importInputRef}
-        type="file"
+        aria-label="Import workflow package"
         accept="application/json,.json,image/png,.png"
         className="sr-only"
         data-testid="gallery-import-workflow-input"
@@ -253,12 +255,18 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
     }
 
     restoreWorkflowFromOutput(output);
-    const autoReady = await ensureStudioAutoPlanReadyForRun();
-    if (!autoReady) return;
-    await coordinateGraphRun({ sid, studioContext: {} });
-    setGalleryLibraryOpen(false);
-    setRightPanelOpen(true);
-    setRightPanelTab('queue');
+    const context = captureWorkflowOperationContext();
+    try {
+      const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+      if (!autoReady) return;
+      await coordinateGraphRun({ sid, studioContext: {}, workflowContext: context });
+      setGalleryLibraryOpen(false);
+      setRightPanelOpen(true);
+      setRightPanelTab('queue');
+    } catch (error) {
+      if (isWorkflowOperationCancelled(error)) return;
+      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 7000 });
+    }
   };
 
   const galleryStatusLabel =
@@ -295,7 +303,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
           </GalleryIconButton>
           {importButton}
         </div>
-        <p className="text-xs text-gray-400">Generated and imported media appear here.</p>
+        <p className="text-xs text-modiff-subtle-text">Generated and imported media appear here.</p>
         {galleryBackendError && <p className="mt-1 text-xs text-modiff-red">{galleryBackendError}</p>}
       </section>
     );
@@ -402,6 +410,25 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
         <ImportedAssetGrid
           assets={importedAssets}
           onDelete={deleteImportedAsset}
+          onDownload={(asset) => {
+            if (asset.displayType === 'unknown') {
+              const anchor = document.createElement('a');
+              anchor.href = asset.url;
+              anchor.download = asset.name;
+              anchor.rel = 'noopener noreferrer';
+              document.body.append(anchor);
+              anchor.click();
+              anchor.remove();
+              return;
+            }
+            setMediaExportOpener({
+              source: asset.url,
+              filename: asset.name,
+              kind: asset.displayType,
+              defaultFormat: asset.displayType === 'audio' ? 'wav' : asset.displayType === 'video' ? 'mp4' : 'png',
+              title: `Download ${asset.displayType}`,
+            });
+          }}
           onUse={(asset) => {
             sendImportedAssetToReference(asset);
             setRightPanelTab('studio');
@@ -409,7 +436,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
           }}
         />
       ) : filteredOutputs.length === 0 ? (
-        <p className="text-xs text-gray-400">No gallery items match this filter.</p>
+        <p className="text-xs text-modiff-subtle-text">No gallery items match this filter.</p>
       ) : view === 'inspect' && inspectedOutput ? (
         <GalleryInspect output={inspectedOutput} />
       ) : view === 'compare' ? (
@@ -528,7 +555,18 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                             : 'Download image'
                       }
                       data-testid={`gallery-download-image-${index}`}
-                      onClick={() => downloadImage(output)}
+                      onClick={() => {
+                        const kind = isAudioOutput(output) ? 'audio' : isVideoOutput(output) ? 'video' : 'image';
+                        setMediaExportOpener({
+                          source: output.url,
+                          filename: `modiff-${output.modelType}-${output.id}${
+                            kind === 'audio' ? '.wav' : kind === 'video' ? '.mp4' : '.png'
+                          }`,
+                          kind,
+                          defaultFormat: kind === 'audio' ? 'wav' : kind === 'video' ? 'mp4' : 'png',
+                          title: `Download ${kind}`,
+                        });
+                      }}
                     >
                       <Download size={15} />
                     </GalleryIconButton>
@@ -643,7 +681,8 @@ function ImportedAssetMedia({ asset }: { asset: StudioImportedAsset }) {
       <video
         src={asset.url}
         controls
-        className="block aspect-video w-full border border-modiff-border bg-black object-contain"
+        controlsList="nodownload noremoteplayback"
+        className="block aspect-video w-full border border-modiff-border bg-modiff-media-backdrop object-contain"
       />
     );
   }
@@ -653,15 +692,17 @@ function ImportedAssetMedia({ asset }: { asset: StudioImportedAsset }) {
 function ImportedAssetGrid({
   assets,
   onDelete,
+  onDownload,
   onUse,
 }: {
   assets: StudioImportedAsset[];
   onDelete: (id: string) => void;
+  onDownload: (asset: StudioImportedAsset) => void;
   onUse: (asset: StudioImportedAsset) => void;
 }) {
   if (assets.length === 0) {
     return (
-      <div className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-xs text-gray-400">
+      <div className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-xs text-modiff-subtle-text">
         No imported media yet.
       </div>
     );
@@ -679,7 +720,7 @@ function ImportedAssetGrid({
           <div className="flex items-center justify-between gap-2 p-2">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-modiff-text">{asset.name}</p>
-              <p className="flex min-w-0 items-center gap-1 text-xs text-gray-400">
+              <p className="flex min-w-0 items-center gap-1 text-xs text-modiff-subtle-text">
                 <span>{asset.displayType}</span>
                 <GalleryPill
                   active={asset.storage === 'backend'}
@@ -705,12 +746,7 @@ function ImportedAssetGrid({
               <GalleryIconButton
                 title="Download asset"
                 data-testid={`gallery-imported-download-${index}`}
-                onClick={() => {
-                  const anchor = document.createElement('a');
-                  anchor.href = asset.url;
-                  anchor.download = asset.name;
-                  anchor.click();
-                }}
+                onClick={() => onDownload(asset)}
               >
                 <Download size={15} />
               </GalleryIconButton>
@@ -737,64 +773,75 @@ function GalleryPill({
   onClick,
   ...props
 }: {
+  'data-testid'?: string;
   active?: boolean;
   children: ReactNode;
   error?: boolean;
   icon?: ReactNode;
   onClick?: () => void;
-} & HTMLAttributes<HTMLButtonElement | HTMLSpanElement>) {
-  const className = cx(
-    'inline-flex min-h-6 items-center gap-1 rounded-modiff-compact border px-2 text-xs font-semibold',
-    error
-      ? 'border-modiff-red/70 bg-modiff-red/10 text-modiff-text'
-      : active
-        ? 'border-hf-yellow bg-hf-yellow text-black'
-        : 'border-modiff-border bg-modiff-bg text-gray-300',
-    onClick && 'cursor-pointer transition hover:border-hf-yellow hover:text-white',
-  );
+  title?: string;
+}) {
+  const className = 'inline-flex items-center gap-1 rounded-modiff-compact px-2 text-xs font-semibold';
   if (!onClick) {
     return (
-      <span className={className} {...props}>
+      <ModiffBadge
+        className={cx(className, 'min-h-6')}
+        tone={error ? 'error' : active ? 'success' : 'default'}
+        {...props}
+      >
         {icon}
         {children}
-      </span>
+      </ModiffBadge>
     );
   }
   return (
-    <button type="button" className={className} onClick={onClick} {...props}>
+    <ModiffChip
+      active={active}
+      tone={error ? 'error' : 'default'}
+      className={cx(className, 'min-h-7')}
+      onClick={onClick}
+      {...props}
+    >
       {icon}
       {children}
-    </button>
+    </ModiffChip>
   );
 }
 
-function GalleryIconButton({ children, className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+function GalleryIconButton({
+  children,
+  className,
+  title,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { title: string }) {
   return (
-    <button
-      type="button"
-      className={cx(
-        'grid size-7 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-hf-yellow disabled:pointer-events-none disabled:opacity-35',
-        className,
-      )}
+    <ModiffIconButton
+      label={title}
+      size="compact"
+      className={cx('text-modiff-subtle-text hover:bg-modiff-surface-hover hover:text-hf-yellow', className)}
       {...props}
     >
       {children}
-    </button>
+    </ModiffIconButton>
   );
 }
 
 function GalleryMeta({ output }: { output: StudioOutput }) {
   return (
     <>
-      <p className="text-xs text-gray-400">{outputSubtitle(output)}</p>
-      <p className="break-all text-xs text-gray-400">
+      <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output)}</p>
+      <p className="break-all text-xs text-modiff-subtle-text">
         {new Date(output.createdAt).toLocaleString()} | Run {output.runId || 'untracked'} | Task{' '}
         {output.taskId || 'untracked'}
       </p>
-      {output.backendImagePath && <p className="break-all text-xs text-gray-400">Stored: {output.backendImagePath}</p>}
-      {output.backendMediaPath && <p className="break-all text-xs text-gray-400">Stored: {output.backendMediaPath}</p>}
+      {output.backendImagePath && (
+        <p className="break-all text-xs text-modiff-subtle-text">Stored: {output.backendImagePath}</p>
+      )}
+      {output.backendMediaPath && (
+        <p className="break-all text-xs text-modiff-subtle-text">Stored: {output.backendMediaPath}</p>
+      )}
       {output.mediaItems && output.mediaItems.length > 1 && (
-        <p className="break-all text-xs text-gray-400">
+        <p className="break-all text-xs text-modiff-subtle-text">
           Media items: {output.mediaItems.length} | Hash: {output.mediaCollectionHash || output.mediaHash || 'pending'}
         </p>
       )}
@@ -804,7 +851,7 @@ function GalleryMeta({ output }: { output: StudioOutput }) {
         </p>
       )}
       {(output.sourceOutputId || output.referenceImages.length > 0) && (
-        <p className="break-all text-xs text-gray-400">
+        <p className="break-all text-xs text-modiff-subtle-text">
           Source: {output.sourceOutputId || output.referenceImages.join(', ')}
         </p>
       )}
@@ -818,15 +865,15 @@ function GalleryInspect({ output }: { output: StudioOutput }) {
       <GalleryMedia output={output} maxHeight={460} />
       <div className="p-2">
         <h2 className="text-sm font-bold text-modiff-text">{outputSubtitle(output)}</h2>
-        <p className="break-all text-xs text-gray-400">
+        <p className="break-all text-xs text-modiff-subtle-text">
           {new Date(output.createdAt).toLocaleString()} | Run {output.runId || 'untracked'} | Task{' '}
           {output.taskId || 'untracked'}
         </p>
-        <p className="break-all text-xs text-gray-400">
+        <p className="break-all text-xs text-modiff-subtle-text">
           Repo: {output.repo} | Node: {output.nodeId}:{output.fieldKey}
         </p>
         <p className="mt-2 text-sm text-modiff-text">{output.prompt || 'No prompt recorded'}</p>
-        <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 font-mono text-xs text-gray-300">
+        <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 font-mono text-xs text-modiff-subtle-text">
           {JSON.stringify(
             {
               seed: output.seed,
@@ -891,9 +938,11 @@ function GallerySettingsDiff({ left, right }: { left: StudioOutput; right: Studi
               key={label}
               className="grid gap-1 border border-modiff-border bg-modiff-bg p-2 text-xs sm:grid-cols-[90px_1fr_1fr]"
             >
-              <span className={changed ? 'font-semibold text-hf-orange' : 'font-semibold text-hf-gray'}>{label}</span>
-              <span className="min-w-0 break-words text-gray-300">{leftValue}</span>
-              <span className="min-w-0 break-words text-gray-300">{rightValue}</span>
+              <span className={changed ? 'font-semibold text-hf-orange' : 'font-semibold text-modiff-subtle-text'}>
+                {label}
+              </span>
+              <span className="min-w-0 break-words text-modiff-subtle-text">{leftValue}</span>
+              <span className="min-w-0 break-words text-modiff-subtle-text">{rightValue}</span>
             </div>
           );
         })}
@@ -907,7 +956,7 @@ function GalleryCompareCard({ output }: { output: StudioOutput }) {
     <article className="border border-modiff-border bg-modiff-surface">
       <GalleryMedia output={output} aspectRatio="1 / 1" />
       <div className="p-2">
-        <p className="text-xs text-gray-400">{outputSubtitle(output)}</p>
+        <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output)}</p>
         {output.variationGroupId && (
           <p className="text-xs text-hf-orange">
             {output.variationLabel || 'Sweep variant'} | {output.variationGroupId}
@@ -921,14 +970,16 @@ function GalleryCompareCard({ output }: { output: StudioOutput }) {
 
 function LineageButton({ output, onClick }: { output: StudioOutput; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      className="rounded-modiff-compact border border-transparent px-2 py-1 text-left text-xs text-gray-300 transition hover:border-modiff-border hover:bg-white/10 hover:text-white"
+    <ModiffButton
+      tone="ghost"
+      align="left"
+      size="compact"
+      className="h-auto border border-transparent px-2 py-1 text-xs text-modiff-subtle-text hover:border-modiff-border"
       onClick={onClick}
     >
       {output.variationGroupId ? 'Sweep' : output.parentId ? 'Branch' : 'Root'} |{' '}
       {output.variationLabel || output.modelLabel} | {new Date(output.createdAt).toLocaleString()} |{' '}
       {output.prompt || output.id}
-    </button>
+    </ModiffButton>
   );
 }

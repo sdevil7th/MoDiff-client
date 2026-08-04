@@ -1,7 +1,9 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { FieldProps } from '../components/NodeContent';
 import { useEffect, useMemo, useState } from 'react';
 
-import { FieldFrame, RangeSliderFrame } from '../ui';
+import { FieldFrame, ModiffFieldShell, RangeSliderFrame } from '../ui';
 import { deepEqual } from '../utils/deepEqual';
 
 type RangeValue = number | [number, number];
@@ -33,39 +35,39 @@ export default function RangeField(props: FieldProps) {
       layoutStyle={props.style}
       className="modiff-field"
     >
-      <div className="relative flex w-full items-center justify-between">
-        {valueText.start !== undefined ? (
-          <span className="rounded-modiff-compact bg-modiff-bg px-2 py-1 text-[13px] leading-none text-modiff-text">
-            {valueText.start}
-          </span>
-        ) : (
-          <span />
-        )}
-        <span
-          className="absolute left-1/2 max-w-[60%] -translate-x-1/2 truncate px-2 py-1 text-[13px] leading-none text-gray-400"
-          title={props.label}
-        >
-          {props.label}
-        </span>
-        <span className="rounded-modiff-compact bg-modiff-bg px-2 py-1 text-[13px] leading-none text-modiff-text">
-          {valueText.end}
-        </span>
-      </div>
-      <RangeSliderFrame
-        className="nodrag"
+      <ModiffFieldShell
+        htmlFor={`${props.nodeId}-${props.fieldKey}`}
+        label={props.label}
         disabled={props.disabled}
-        value={draftValue}
-        onChange={setDraftValue}
-        onCommit={(value) => props.updateStore(props.fieldKey, value)}
-        min={props.min}
-        max={props.max}
-        step={props.step}
-        marks={
-          Array.isArray(props.fieldOptions?.marks) || typeof props.fieldOptions?.marks === 'boolean'
-            ? props.fieldOptions.marks
-            : false
-        }
-      />
+        labelClassName="px-2 pt-1 font-normal"
+        className="rounded-modiff-compact bg-modiff-bg"
+      >
+        <div className="flex w-full items-center justify-between px-2">
+          {valueText.start !== undefined ? (
+            <output className="text-modiff-control leading-none text-modiff-text">{valueText.start}</output>
+          ) : (
+            <span />
+          )}
+          <output className="text-modiff-control leading-none text-modiff-text">{valueText.end}</output>
+        </div>
+        <RangeSliderFrame
+          id={`${props.nodeId}-${props.fieldKey}`}
+          aria-label={props.label}
+          className="nodrag nowheel"
+          disabled={props.disabled}
+          value={draftValue}
+          onChange={setDraftValue}
+          onCommit={(value) => props.updateStore(props.fieldKey, value)}
+          min={props.min}
+          max={props.max}
+          step={props.step}
+          marks={
+            Array.isArray(props.fieldOptions?.marks) || typeof props.fieldOptions?.marks === 'boolean'
+              ? props.fieldOptions.marks
+              : false
+          }
+        />
+      </ModiffFieldShell>
     </FieldFrame>
   );
 }

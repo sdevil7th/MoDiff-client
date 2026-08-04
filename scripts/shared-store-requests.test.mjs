@@ -7,6 +7,7 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let autoResourceModule;
+let flowStoreModule;
 let server;
 let taskStoreModule;
 let userBlockStoreModule;
@@ -26,6 +27,7 @@ before(async () => {
     appType: 'custom',
   });
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
+  flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   userBlockStoreModule = await server.ssrLoadModule('/src/stores/useUserBlockStore.ts');
   autoResourceModule = await server.ssrLoadModule('/src/studio/autoResource.ts');
   originalFetch = globalThis.fetch;
@@ -40,6 +42,10 @@ beforeEach(() => {
     taskCount: 0,
     queueRevision: 0,
     fetchState: { status: 'idle', error: null, requestId: null },
+  });
+  flowStoreModule.useFlowStore.setState({
+    nodes: [],
+    edges: [],
   });
   userBlockStoreModule.useUserBlockStore.setState({
     blocks: [],
@@ -107,6 +113,99 @@ test('queue response validation reports an endpoint error and a later retry reco
   const state = taskStoreModule.useTaskStore.getState();
   assert.equal(state.fetchState.status, 'success');
   assert.equal(state.queuedTasks.next.task_id, 'next');
+});
+
+test('supervisor fallback restores active node progress and clears it on terminal recovery', async () => {
+  flowStoreModule.useFlowStore.setState({
+    nodes: [
+      {
+        id: 'generate',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'custom',
+          module: 'modules.DiffusersImage',
+          action: 'Generate',
+          label: 'Generate',
+          params: {},
+        },
+      },
+    ],
+    edges: [],
+  });
+  const snapshots = [
+    {
+      current: {
+        name: 'Graph execution',
+        task_id: 'run-1',
+        status: 'running',
+        current_node: 'generate',
+        current_node_name: 'modules.DiffusersImage.Generate',
+        node_progress: 37,
+        phase: 'denoising',
+        workflow_tab_id: 'workflow-1',
+      },
+      queued: {},
+      recent: [],
+    },
+    {
+      current: null,
+      queued: {},
+      recent: [
+        {
+          name: 'Graph execution',
+          task_id: 'run-1',
+          status: 'cancelled',
+          current_node: 'generate',
+          workflow_tab_id: 'workflow-1',
+          message: 'Execution stopped by the supervisor control plane.',
+        },
+      ],
+    },
+  ];
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse(snapshots.shift());
+  };
+
+  await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+  let taskState = taskStoreModule.useTaskStore.getState();
+  let node = flowStoreModule.useFlowStore.getState().nodes[0];
+  assert.match(requests[0], /:8089\/queue$/);
+  assert.equal(taskState.currentTask.task_id, 'run-1');
+  assert.equal(node.data.progress, 37);
+  assert.equal(node.data.activeTaskId, 'run-1');
+  assert.equal(node.data.executionStatus, 'running');
+
+  await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+  taskState = taskStoreModule.useTaskStore.getState();
+  node = flowStoreModule.useFlowStore.getState().nodes[0];
+  assert.equal(taskState.currentTask, undefined);
+  assert.equal(taskState.sessionRuns.find((run) => run.id === 'run-1').status, 'cancelled');
+  assert.equal(node.data.progress, 0);
+  assert.equal(node.data.activeTaskId, null);
+  assert.equal(node.data.executionStatus, undefined);
+});
+
+test('an older supervisor response cannot overwrite a newer websocket queue snapshot', async () => {
+  const call = deferred();
+  globalThis.fetch = () => call.promise;
+
+  const fetchPromise = taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+  taskStoreModule.useTaskStore
+    .getState()
+    .setTasks({ name: 'Websocket task', task_id: 'websocket-live', status: 'running' }, {});
+  call.resolve(
+    jsonResponse({
+      current: { name: 'Stale supervisor task', task_id: 'supervisor-stale', status: 'running' },
+      queued: {},
+      recent: [],
+    }),
+  );
+  await fetchPromise;
+
+  assert.equal(taskStoreModule.useTaskStore.getState().currentTask.task_id, 'websocket-live');
 });
 
 test('a delayed block fetch cannot overwrite a newer optimistic local block', async () => {

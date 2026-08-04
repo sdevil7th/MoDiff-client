@@ -8,21 +8,22 @@ export type CustomNodeFrameProps = {
   headerColor?: string;
   id: string;
   isError?: boolean;
-  maxHeight: number;
   maxWidth: number;
+  minWidth?: number;
   nodeStyle?: ModiffNodeStyle;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   testId?: string;
 };
 
 export const CustomNodeFrame = forwardRef<HTMLDivElement, CustomNodeFrameProps>(function CustomNodeFrame(
-  { children, className, id, isError = false, maxHeight, maxWidth, nodeStyle, onContextMenu, testId },
+  { children, className, id, isError = false, maxWidth, minWidth, nodeStyle, onContextMenu, testId },
   ref,
 ) {
   const frameStyle: CSSProperties = {
-    maxHeight,
     maxWidth,
+    minWidth,
     ...nodeStyle,
+    maxHeight: 'none',
   };
 
   return (
@@ -31,9 +32,9 @@ export const CustomNodeFrame = forwardRef<HTMLDivElement, CustomNodeFrameProps>(
       id={id}
       data-testid={testId}
       className={cx(
-        'relative flex min-h-full w-full min-w-[200px] flex-col items-center justify-between border bg-modiff-surface outline outline-2 outline-offset-[5px] outline-transparent',
+        'relative flex h-full min-h-0 w-full flex-col items-center justify-between border bg-modiff-surface outline outline-2 outline-offset-[5px] outline-transparent',
         isError
-          ? 'border-modiff-red shadow-[0_0_0_2px_var(--color-modiff-red)]'
+          ? 'border-modiff-invalid shadow-[0_0_0_2px_var(--color-modiff-invalid)]'
           : 'border-modiff-border shadow-modiff-node',
         className,
       )}
@@ -48,7 +49,7 @@ export const CustomNodeFrame = forwardRef<HTMLDivElement, CustomNodeFrameProps>(
 export function CustomNodeHeaderFrame({ children, headerColor }: { children: ReactNode; headerColor?: string }) {
   return (
     <header
-      className="flex w-full items-center justify-between border-b border-white/10 border-t-[5px] border-t-hf-gray bg-modiff-bg p-2 pl-3 text-white"
+      className="flex w-full items-center justify-between border-b border-modiff-border-subtle border-t-[5px] border-t-modiff-border-subtle bg-modiff-bg p-2 pl-3 text-modiff-text"
       style={{
         backgroundColor: headerColor,
         borderTopColor: headerColor,

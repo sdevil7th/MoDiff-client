@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
+import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
 type GetParam = <K extends keyof NodeParams>(id: string, param: string, key: K) => NodeParams[K] | null;
@@ -33,14 +34,6 @@ type UseWorkflowConnectionsOptions = {
 
 function toTypeArray(value: unknown) {
   return Array.isArray(value) ? value : [value];
-}
-
-function typesAreCompatible(sourceType: unknown, targetType: unknown) {
-  const sourceTypes = toTypeArray(sourceType);
-  const targetTypes = toTypeArray(targetType);
-  return (
-    targetTypes.includes('any') || sourceTypes.includes('any') || sourceTypes.some((type) => targetTypes.includes(type))
-  );
 }
 
 function matchingHandleForDrop(node: NodeData, dropHandle: DropHandle) {
@@ -79,6 +72,7 @@ export function useWorkflowConnections({
   const [anchorPosition, setAnchorPosition] = useState<{ top: number; left: number } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnectionValid, setIsConnectionValid] = useState<boolean | null>(null);
+  const [connectionDataType, setConnectionDataType] = useState<string | string[] | null>(null);
   const connectionTypeRef = useRef<string | string[] | null>(null);
   const dropHandleRef = useRef<DropHandle | null>(null);
 
@@ -159,7 +153,7 @@ export function useWorkflowConnections({
 
       const sourceType = getParam(conn.source, conn.sourceHandle, 'type') || 'default';
       const targetType = getParam(conn.target, conn.targetHandle, 'type') || 'default';
-      return typesAreCompatible(sourceType, targetType);
+      return connectionTypesAreCompatible(sourceType, targetType);
     },
     [getParam],
   );
@@ -180,7 +174,7 @@ export function useWorkflowConnections({
       }
 
       const targetType = getParam(nodeId, fieldKey, 'type');
-      setIsConnectionValid(typesAreCompatible(connectionTypeRef.current, targetType));
+      setIsConnectionValid(connectionTypesAreCompatible(connectionTypeRef.current, targetType));
     },
     [getParam],
   );
@@ -192,6 +186,7 @@ export function useWorkflowConnections({
     ) => {
       event.preventDefault();
       setIsConnecting(true);
+      setConnectionDataType(null);
 
       if (!params.nodeId || !params.handleId) {
         return;
@@ -199,6 +194,7 @@ export function useWorkflowConnections({
 
       const sourceType = getParam(params.nodeId, params.handleId, 'type') || 'default';
       connectionTypeRef.current = sourceType;
+      setConnectionDataType(sourceType);
       dropHandleRef.current = null;
       document.addEventListener('mousemove', handleMouseMove);
     },
@@ -249,7 +245,7 @@ export function useWorkflowConnections({
 
       const sourceType = getParam(conn.fromNode.id, conn.fromHandle.id, 'type');
       const targetType = getParam(nodeId, fieldKey, 'type');
-      if (!typesAreCompatible(sourceType, targetType)) {
+      if (!connectionTypesAreCompatible(sourceType, targetType)) {
         return false;
       }
 
@@ -272,6 +268,7 @@ export function useWorkflowConnections({
       event.preventDefault();
       setIsConnecting(false);
       connectionTypeRef.current = null;
+      setConnectionDataType(null);
       document.removeEventListener('mousemove', handleMouseMove);
 
       if (conn.isValid) {
@@ -305,6 +302,7 @@ export function useWorkflowConnections({
   return {
     anchorPosition,
     closeNodeSearchDialog,
+    connectionDataType,
     handleConnect,
     handleConnectEnd,
     handleConnectStart,

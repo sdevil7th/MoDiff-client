@@ -13,13 +13,15 @@ export type { ImageCompareFrameProps } from './ImageCompareFrame';
 export { ImageCompareFrame } from './ImageCompareFrame';
 export type { ImageFrameProps } from './ImageFrame';
 export { ImageFrame } from './ImageFrame';
+export type { ModiffHorizontalScrollbarProps } from './HorizontalScrollbar';
+export { ModiffHorizontalScrollbar } from './HorizontalScrollbar';
 export type { IssueCardTone } from './IssueCard';
 export { IssueCard } from './IssueCard';
 export type { ModiffSnackbarProviderProps } from './ModiffSnackbarProvider';
 export { ModiffSnackbarProvider } from './ModiffSnackbarProvider';
 export type { SnackbarKey, SnackbarOptions, SnackbarVariant } from './snackbar';
 export { closeSnackbar, enqueueSnackbar, useSnackbar } from './snackbar';
-export { NodeResizeHandle } from './NodeResizeHandle';
+export { NodeResizeGrip, NodeResizeHandle } from './NodeResizeHandle';
 export type { NumberFieldFrameProps } from './NumberFieldFrame';
 export { NumberFieldFrame } from './NumberFieldFrame';
 export type { ProgressBarProps } from './ProgressBar';
@@ -41,7 +43,13 @@ export type { StatusActionChipAction, StatusActionChipProps, StatusActionChipTon
 export { StatusActionChip } from './StatusActionChip';
 export type { StudioSectionProps } from './StudioSection';
 export { StudioSection } from './StudioSection';
-export type { StatusTone, StudioButtonTone } from './StudioControls';
+export type {
+  StatusTone,
+  StudioButtonTone,
+  StudioMultiSelectProps,
+  StudioSelectProps,
+  StudioSliderProps,
+} from './StudioControls';
 export {
   SectionHeader,
   Spinner,
@@ -52,19 +60,91 @@ export {
   StudioDivider,
   StudioIconButton,
   StudioInput,
+  StudioMultiSelect,
+  StudioNumberInput,
+  StudioPasswordInput,
+  StudioRadioGroup,
+  StudioSearchInput,
   StudioSelect,
   StudioSlider,
+  StudioSwitch,
+  StudioTabs,
+  StudioTextarea,
   StudioTextInput,
 } from './StudioControls';
 export type { TreeButtonRowProps, TreeStaticRowProps } from './TreeRows';
 export { TreeButtonRow, TreeChildrenPanel, TreeStaticRow } from './TreeRows';
+export type {
+  ModiffBadgeProps,
+  ModiffBadgeTone,
+  ModiffCheckboxProps,
+  ModiffChipProps,
+  ModiffComboboxOption,
+  ModiffComboboxProps,
+  ModiffDisclosureProps,
+  ModiffFieldShellProps,
+  ModiffFileInputProps,
+  ModiffInputProps,
+  ModiffMultiSelectProps,
+  ModiffNumberInputProps,
+  ModiffPasswordInputProps,
+  ModiffRadioGroupProps,
+  ModiffRadioOption,
+  ModiffRadioCardGroupProps,
+  ModiffRadioCardOption,
+  ModiffSearchInputProps,
+  ModiffSelectOption,
+  ModiffSelectProps,
+  ModiffSliderProps,
+  ModiffSwitchProps,
+  ModiffTabListProps,
+  ModiffTabOption,
+  ModiffTabProps,
+  ModiffTabsProps,
+  ModiffTextareaProps,
+} from './controls';
 export {
-  ModiffButton,
-  ModiffDialog,
-  ModiffIconButton,
+  ModiffBadge,
+  ModiffCheckbox,
+  ModiffChip,
+  ModiffCombobox,
+  ModiffDisclosure,
+  ModiffFieldShell,
+  ModiffFileInput,
   ModiffInput,
+  ModiffMultiSelect,
+  ModiffNumberInput,
+  ModiffPasswordInput,
+  ModiffRadioGroup,
+  ModiffRadioCardGroup,
+  ModiffSearchInput,
+  ModiffSelect,
+  ModiffSlider,
+  ModiffSwitch,
+  ModiffTab,
+  ModiffTabList,
+  ModiffTabs,
+  ModiffTextarea,
+} from './controls';
+export { controlHeightClasses, controlMinHeightClasses } from './controlStyles';
+export type { ModiffControlSize } from './controlStyles';
+export {
   ModiffMenu,
+  ModiffMenuAction,
   ModiffMenuItem,
-  ModiffProgress,
-} from './primitives';
-export type { ModiffButtonProps, ModiffIconButtonProps, ModiffInputProps } from './primitives';
+  ModiffMenuRoot,
+  ModiffMenuSeparator,
+  ModiffMenuSurface,
+  ModiffMenuTrigger,
+} from './menus';
+export type { ModiffMenuActionProps, ModiffMenuRootProps, ModiffMenuSurfaceProps } from './menus';
+export { ModiffButton, ModiffDialog, ModiffIconButton, ModiffProgress } from './primitives';
+export type { ModiffActionTone } from './actionStyles';
+export type { ModiffButtonProps, ModiffIconButtonProps } from './primitives';
+export { ModiffPopover, ModiffTooltip } from './overlays';
+export type {
+  ModiffOverlayAnchor,
+  ModiffOverlayPlacement,
+  ModiffPopoverProps,
+  ModiffTooltipTriggerProps,
+} from './overlays';

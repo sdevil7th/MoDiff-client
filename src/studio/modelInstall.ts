@@ -1,6 +1,15 @@
 import type { HfDownloadProgress } from '../stores/useNodeStore';
 
-const ACTIVE_HF_DOWNLOAD_STATUSES = new Set(['queued', 'joined', 'planning', 'starting', 'downloading', 'verifying']);
+const ACTIVE_HF_DOWNLOAD_STATUSES = new Set([
+  'queued',
+  'joined',
+  'planning',
+  'starting',
+  'downloading',
+  'retrying',
+  'repairing_from_verified_source',
+  'verifying',
+]);
 const COMPLETE_HF_DOWNLOAD_STATUSES = new Set(['complete', 'completed']);
 
 export type HfDownloadFailureKind = 'access' | 'network' | 'cache' | 'unknown';
@@ -115,7 +124,7 @@ export function formatDownloadProgress(progress?: HfDownloadProgress) {
     : `${progress.file_count ?? 0} files seen`;
   const percent = getDownloadPercent(progress);
   const percentText = percent !== null ? ` | ${percent}%` : '';
-  const eta = formatDownloadEta(progress.eta_seconds);
+  const eta = formatDownloadEta(progress.eta_seconds ?? undefined);
   const speed = progress.bytes_per_second ? ` | ${formatDownloadBytes(progress.bytes_per_second)}/s` : '';
   const currentFile = progress.current_file ? ` | ${progress.current_file}` : '';
   const error = progress.error ? ` | ${progress.error}` : '';

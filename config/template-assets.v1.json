@@ -1,0 +1,3611 @@
+{
+  "schemaVersion": 1,
+  "assetVersion": "v1",
+  "assets": [
+    {
+      "path": "template-gallery/ace_step_audio_continuation.wav",
+      "size": 2880044,
+      "sha256": "sha256:bytes:4348daf61934c9e27379efcdabe7891d2a258f2a11d346726f221e35ae954e83",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ace_step_audio_repaint.card-poster.png",
+      "size": 1978151,
+      "sha256": "sha256:bytes:b5f8a9b7bfdde34f30a83d9ef61f77fca9142a272d7c04179e7d34ca11a92277",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ace_step_audio_repaint.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:dffe1277ff9b72c952abfd6e2e869f6db595de834649db78bffbf6ae1ec42c44",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ace_step_audio_variation.card-poster.png",
+      "size": 2310463,
+      "sha256": "sha256:bytes:44528d90f6448a2b65b6b730928ad4a9c97020aff6157458a8773fecdf96b65a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ace_step_audio_variation.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:9cfcf80ef850634fa6f74c06609949b0f0a513e77d782409db8db48751bbe03a",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ace_step_chinese_new_year_lora.card-poster.png",
+      "size": 1988985,
+      "sha256": "sha256:bytes:07e8b0d24daa8d36858e9d1ea4e3865f7ee11f2c39e0c77956c895f6150a4dcd",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ace_step_chinese_new_year_lora.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:d45c1cbc3875a0c04374d4d5d328ecc89c11a4e18ad81fab61afde85acfced72",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ace_step_custom_lora.card-poster.png",
+      "size": 2357614,
+      "sha256": "sha256:bytes:f6cbb0134950c584d72ef36cfa0db8df8ecf97019cb994ff07e720d3a29b45af",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ace_step_lyric_music_video.card-poster.png",
+      "size": 2358193,
+      "sha256": "sha256:bytes:f178e4beb0e61b77b1a1574778cd027d664e76516dad5ff4b32648fe075417b0",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ace_step_lyric_music_video.card-preview.mp4",
+      "size": 443873,
+      "sha256": "sha256:bytes:840295a75bcaa7dec5a3ab33a997ceb7c58043543463c7a2ea26fb45c0a91b7e",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ace_step_lyric_music_video.mp4",
+      "size": 221077208,
+      "sha256": "sha256:bytes:f2005a050e59405481db1f5a9b24f1b6de8912c92818112bfdc8cf3f8a50bbbb",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ace_step_lyric_music_video.poster.png",
+      "size": 2368114,
+      "sha256": "sha256:bytes:edd5ca052421a6033a794a9b86028cf551279090cb78c63d510323343ba6b514",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/ace_step_text_to_audio.card-poster.png",
+      "size": 1711332,
+      "sha256": "sha256:bytes:347049143fc37458a7935be3a54f9a6633fe44e8081fb78e67c48ee41eb58f16",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ace_step_text_to_audio.current.wav",
+      "size": 14400044,
+      "sha256": "sha256:bytes:3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ]
+    },
+    {
+      "path": "template-gallery/ace_step_text_to_audio.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ]
+    },
+    {
+      "path": "template-gallery/character_edit.webp",
+      "size": 245424,
+      "sha256": "sha256:bytes:2f06039573ec8997f9a871577fcd27bbc302a61b40b8107291e61de4aacb3254",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/fast_lora.card-poster.webp",
+      "size": 211346,
+      "sha256": "sha256:bytes:071786ad9b3120c3d5981e70c4617cbc9c1ab946bd6aafc7a0e055df02fc27ae",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/fast_lora.webp",
+      "size": 141476,
+      "sha256": "sha256:bytes:1e25d905f57caa98f22475aa9f031beebf34c37df18c0362cb9fbdff07a7183c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux2_klein_edit.webp",
+      "size": 167360,
+      "sha256": "sha256:bytes:bf9acaad6fb3458f9688b71dfe7e7b5128570934a19801e6211b4a416c5da0ca",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux2_klein_multi_reference.webp",
+      "size": 318536,
+      "sha256": "sha256:bytes:9806aac19e5e4d6de3d9d3b2e0e005b3b827197d23fd9cb9f7d1f8388bc568ac",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux2_klein_text_to_image.webp",
+      "size": 324546,
+      "sha256": "sha256:bytes:a2e67ad72f797df5dae567e0b05f217483ab2eb6c525686b2767392f4326718a",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_control_canny.webp",
+      "size": 191804,
+      "sha256": "sha256:bytes:a804cb1321c87b86298ebc4697af4d52628c29615ccda38bfa38eb2c7fc566c3",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_depth_control.webp",
+      "size": 551212,
+      "sha256": "sha256:bytes:0251b217bc148491321ae32f1298965127cd193edc348042e42deca3bb2aea9f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_dev_expert_text_to_image.card-poster.webp",
+      "size": 408558,
+      "sha256": "sha256:bytes:13c815eb6d245685e543d000e499036aad973bea6c0d4fff01c670580db08206",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_dev_expert_text_to_image.webp",
+      "size": 408558,
+      "sha256": "sha256:bytes:13c815eb6d245685e543d000e499036aad973bea6c0d4fff01c670580db08206",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_fill_inpaint.webp",
+      "size": 210382,
+      "sha256": "sha256:bytes:a0b1a20336f5a068497be656dbf86a9b48cac36777ddb317cce55191f2dc41a9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_fill_outpaint.webp",
+      "size": 344252,
+      "sha256": "sha256:bytes:465ba287ed383289877edbcbd3618da81f4971b9935b3161a44ca8d59a25df7b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_kontext_edit.webp",
+      "size": 248650,
+      "sha256": "sha256:bytes:dd459c5d656e4fd85d42513a615110842ee2784bd13becc94bc3fa9ecd743cd6",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_kontext_multi_reference.webp",
+      "size": 205582,
+      "sha256": "sha256:bytes:c20e1c377c9ac7c4ea657daea23c6e3a9c494535e8f9c2a438fa32402eea50c9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_krea_text_to_image.webp",
+      "size": 270072,
+      "sha256": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_cinematic_octane_3d.card-poster.webp",
+      "size": 193932,
+      "sha256": "sha256:bytes:76d5c8873a12ba7f11366bff658c8d3ed257c557a9ae681c84708b3f52f0f74e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_film_noir.card-poster.webp",
+      "size": 188542,
+      "sha256": "sha256:bytes:a447504091a2b6bba4a220d950771f7812b2bdf950f3f07df28c73adc499487f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_film_noir.webp",
+      "size": 232496,
+      "sha256": "sha256:bytes:5ae8246396c0052258704b7ac405e7259986d0780ef7effcfd37fb4310368006",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_ghibli_story.card-poster.webp",
+      "size": 188540,
+      "sha256": "sha256:bytes:f4d50d5340cf24a1a8cb24b3feb986a9fd9fb892f86604ecb442b8316430d8f7",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/flux_lora_ghibli_story.webp",
+      "size": 363214,
+      "sha256": "sha256:bytes:cc07164563ac3cd3c38ea657ce96cd32e6cf9648bdb2cf2ef08af1d337b712b7",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/flux_lora_oil_painting.card-poster.webp",
+      "size": 363766,
+      "sha256": "sha256:bytes:f34c7d8a787a16dbdea073fd9658571f6371d0d79887b0fc14b1637fe63b7e03",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_oil_painting.webp",
+      "size": 380032,
+      "sha256": "sha256:bytes:9f3f08e474c5bf3cf310ec16356df24867640bf9ac9d8ac8b628d7a281d2cbbf",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_paper_cutout.card-poster.webp",
+      "size": 341582,
+      "sha256": "sha256:bytes:e0d9bc89d960b9831be5021c8ca8f49743b27772c99bf0054cce369899fbd1c1",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_paper_cutout.webp",
+      "size": 421816,
+      "sha256": "sha256:bytes:ec1486ef19c6220ddbbfc31313cc13752c957e860aa2e9b2c11be52a4f64699e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_photoreal_documentary.card-poster.webp",
+      "size": 279462,
+      "sha256": "sha256:bytes:a5d8512a21313ef4b7efc902020516844c9c9203ca04a2a2a6fbc2ce90a4680e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_photoreal_documentary.webp",
+      "size": 258492,
+      "sha256": "sha256:bytes:fee9159c34ddcd3e2026610e5826f5a397f8e155e8a4047115bb85f5ce236510",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_retro_comic.card-poster.webp",
+      "size": 452056,
+      "sha256": "sha256:bytes:2135eac6e596b94192705700d7ad021b5eabc579b4075de4c821907fd0e00515",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_retro_comic.webp",
+      "size": 684938,
+      "sha256": "sha256:bytes:b0a7fc4f480faa92d33f506b751cddfc4b7937ae82d258548efb547445353cef",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_watercolor.card-poster.webp",
+      "size": 406974,
+      "sha256": "sha256:bytes:3861280c52dd017ea4996673cd3922f5e25351eccab2aa65b90960fd37a4d03d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_watercolor.webp",
+      "size": 382120,
+      "sha256": "sha256:bytes:55b05b1cee751203d37fa6166f82c9743e7a202f46bead8f19ed70e77cf5ce85",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_redux_edit.webp",
+      "size": 270600,
+      "sha256": "sha256:bytes:56174da5ed300722ee96edfd0b80149d869081cee801e8dbac517734dc56e4bf",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_redux_multi_reference.webp",
+      "size": 293786,
+      "sha256": "sha256:bytes:ea050772cf672d0b115310b1feac79bd435c7538ffcbdb36b83f9e3b219f324a",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_schnell_text_to_image.webp",
+      "size": 468788,
+      "sha256": "sha256:bytes:fd58754609ae68c0378ce5c9bc66f4b35dfbf36f039177ffbd53d5d33347c236",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/high_quality.webp",
+      "size": 296084,
+      "sha256": "sha256:bytes:862e292caa1759156fffde5cfccda8b97ec622514258f81986188cf63a836ea9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/character_edit.before.webp",
+      "size": 329508,
+      "sha256": "sha256:bytes:b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux2_klein_edit.before.png",
+      "size": 266188,
+      "sha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/flux2_klein_multi_reference.before.webp",
+      "size": 281216,
+      "sha256": "sha256:bytes:1d993540e914f0e2d230f1133b57ae14bb837829237a53c89613fcdef6699995",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_control_canny.before.png",
+      "size": 22013,
+      "sha256": "sha256:bytes:3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/inputs/flux_depth_control.before.png",
+      "size": 157468,
+      "sha256": "sha256:bytes:2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_fill_inpaint.before.webp",
+      "size": 142192,
+      "sha256": "sha256:bytes:b7c221b367738177e32fece56067d743df96282a6ccb2afd040ee89ea0a8f678",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_fill_outpaint.before.png",
+      "size": 1032894,
+      "sha256": "sha256:bytes:bf4dbaa55b83b19ca56c691e9d1a10d3b838ff2fec926aaea6b526561c68f8e6",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_kontext_edit.before.webp",
+      "size": 196402,
+      "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_kontext_multi_reference.before.webp",
+      "size": 196402,
+      "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_redux_edit.before.webp",
+      "size": 330492,
+      "sha256": "sha256:bytes:2e0ec8892660785e322468d0153fd2dadf7a4d920fce2d7d4a0b686a8fe8515d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_redux_multi_reference.before.webp",
+      "size": 477366,
+      "sha256": "sha256:bytes:7f1ea58485fa7802765b9fbbf0e6957e8607261c91669fdcc44cbed80c6fb309",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx_boardwalk_tracking.end.webp",
+      "size": 62370,
+      "sha256": "sha256:bytes:52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx_boardwalk_tracking.start.webp",
+      "size": 440656,
+      "sha256": "sha256:bytes:73123a5bb6e8c1367eced6a7fbee6b0e5500ecbabf769ba9d9c18fd10623e36e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx_video_image_to_video.before.webp",
+      "size": 301384,
+      "sha256": "sha256:bytes:930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx_video_multi_reference.before.webp",
+      "size": 440656,
+      "sha256": "sha256:bytes:73123a5bb6e8c1367eced6a7fbee6b0e5500ecbabf769ba9d9c18fd10623e36e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx_video_video_to_video.before.mp4",
+      "size": 257812,
+      "sha256": "sha256:bytes:496fde9e4410d1b1b0ea659fbf0b29d486537d56eefa43f61052a5c6d1808de8",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/qwen-carton-layout-control.png",
+      "size": 11137,
+      "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+      "contentType": "image/png",
+      "purposes": [
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_character_angles.before.webp",
+      "size": 388454,
+      "sha256": "sha256:bytes:4b1b8d9e351abd437f2ffff90cc6a958160a87863ba4d8e85a0aa80a37e7a10e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_control_image_layout.before.png",
+      "size": 11137,
+      "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_edit_plus_single_image.before.webp",
+      "size": 32852,
+      "sha256": "sha256:bytes:e90e99e27cdd9b6ab7478a05199df2fdf7dce650d700ef2ceb55da7fb206b715",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_edit_strength_sweep.before.webp",
+      "size": 262892,
+      "sha256": "sha256:bytes:a6d165bd87e2c57ab8cf71fa15de9d8724fccf5782c16c34c25dc77934751676",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_inpaint_mask_draft.before.webp",
+      "size": 331300,
+      "sha256": "sha256:bytes:a2f8ac6f5937d6e618b48ce9947153b8233ff7a82dcf67f28766d20b9917d730",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_inpaint_object_replace.before.webp",
+      "size": 154818,
+      "sha256": "sha256:bytes:9f9f9685db5e9f8e1c162a0515151b03912c84777727b38682b65839db501ae6",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_logo_texture.before.webp",
+      "size": 57604,
+      "sha256": "sha256:bytes:124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_multi_reference_product.before.webp",
+      "size": 145418,
+      "sha256": "sha256:bytes:47e56fd165fd2610f34e952191d74e061269b9703ae9fd7f571491f38ce4992c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_outpaint_aspect_template.before.webp",
+      "size": 433928,
+      "sha256": "sha256:bytes:d898e00f3be4b28e237f71acf8024ad3715a657e1fcf3aeaf57279468dff7a76",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_outpaint_draft.before.webp",
+      "size": 296084,
+      "sha256": "sha256:bytes:862e292caa1759156fffde5cfccda8b97ec622514258f81986188cf63a836ea9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_packaging_dieline.before.png",
+      "size": 11137,
+      "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_product_ad_composite.before.webp",
+      "size": 196402,
+      "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_product_relight.before.webp",
+      "size": 215222,
+      "sha256": "sha256:bytes:f791a809c0df307cd7dafa8c54ae86bbe4c53d73afdacb2183ff8cdbeac994c2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_tile_extract.before.webp",
+      "size": 223184,
+      "sha256": "sha256:bytes:6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/inputs/qwen_upscale_finish.before.webp",
+      "size": 298444,
+      "sha256": "sha256:bytes:d13a97a9003a7c53e5220010a56e402e4a987cfdfef0c53b7204295dcfa2fefb",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/reference_fusion.before.webp",
+      "size": 102088,
+      "sha256": "sha256:bytes:283b1cfb32b15fe6b31a29dce1f2b96026c1ad0826bf3f24aebebf4b6f9a4f07",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
+      "size": 289576,
+      "sha256": "sha256:bytes:748b164fd91bc2eed97f7c1d1125a04496a056f29cc016d7cc0da3734c2303b7",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_vace_outpaint_reframe.before.mp4",
+      "size": 521627,
+      "sha256": "sha256:bytes:a8f28e04d03c9a6a2ba0b3ba4bf7db08f6ec99c45d962877cbc91aad5f3ad318",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_vace_video_color_grade.before.mp4",
+      "size": 351753,
+      "sha256": "sha256:bytes:934b4494442c732bfc27f3de1e1a8e99adf0eb96572bd6405f1a9c72da148289",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_vace_video_to_video.before.mp4",
+      "size": 1164611,
+      "sha256": "sha256:bytes:1f5cd051f787fc878bed50d3c26cce840abe00c942d32e49492e544ac2f88cff",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/low_vram.webp",
+      "size": 230440,
+      "sha256": "sha256:bytes:596a2bd9334ac38ebd9f56b3a897d11e1371a658504eca427fe09163b2b5e673",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/ltx_video_animated_story.card-poster.png",
+      "size": 2259121,
+      "sha256": "sha256:bytes:fcd07a3c5a3e8df1890f1dd98f72746a67025a7bf3c4f6559026b24a8afa445c",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ltx_video_animated_story.card-preview.mp4",
+      "size": 493622,
+      "sha256": "sha256:bytes:e73844b15d89acf4ee20fa7c9b3a374951016fabdd117f86cdf6c1b35b5c0d00",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_animated_story.mp4",
+      "size": 4548147,
+      "sha256": "sha256:bytes:974e2d08f28bb2613e6f4195dd016d0c9fc87e8a6d39f677b0afdcc6a00b0950",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_animated_story.poster.png",
+      "size": 2139783,
+      "sha256": "sha256:bytes:fb7d322ad8d64ea7b34acf5ac99822dfb089b160dce07857409a305d984cb662",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/ltx_video_image_to_video.card-preview.mp4",
+      "size": 942563,
+      "sha256": "sha256:bytes:e1065266a98cf1d2ef4679607aafaa9ba56e1f3eab98f1aa726a2ef0a3f85457",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_image_to_video.mp4",
+      "size": 4340159,
+      "sha256": "sha256:bytes:ae231645ef33dcde428ee04087d4408c56596bcc9ba0b1082fa4b45b56b5ea4d",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_image_to_video.poster.png",
+      "size": 1530457,
+      "sha256": "sha256:bytes:f1b007220fbecc2ea40814d88ebab427f81a53a50ada4b109a39fd220f325fbe",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/ltx_video_long_showcase.card-poster.png",
+      "size": 2687100,
+      "sha256": "sha256:bytes:a0b0f93ebf1558f7a8b7c96bb2024bdb55909a54c1362d9d1027ccc24614bdd5",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ltx_video_long_showcase.card-preview.mp4",
+      "size": 452347,
+      "sha256": "sha256:bytes:c3868d87687b20cbe2df2187da05c0eb6ce7feeb3150b395ad29ed26b178e07d",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_long_showcase.mp4",
+      "size": 24799133,
+      "sha256": "sha256:bytes:e4adfedfc81f21dae0d5a415698a17aabcbadf2ccc8f63550a1e24539b00997a",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_long_showcase.poster.png",
+      "size": 1611293,
+      "sha256": "sha256:bytes:a82c4ec15dea4ab6cc2fc5cc85cfa4e4f21abac8b230920fa7964b01acba965c",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/ltx_video_multi_reference.card-poster.png",
+      "size": 2987012,
+      "sha256": "sha256:bytes:95a7196b97f24cc113918a0d989a5b88ed4b29cb551a799c00a83f9b91acf8af",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ltx_video_multi_reference.card-preview.mp4",
+      "size": 583149,
+      "sha256": "sha256:bytes:92ed6de4481e1b240dd74f510d6431eef70eb0c5cfcca6c420d73c6e22e5c3c9",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_multi_reference.mp4",
+      "size": 1981325,
+      "sha256": "sha256:bytes:1abc0dc5217b912ca5c9febefa0c1ce9e221b513370fcb3106b4afbece3a1ced",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_multi_reference.poster.png",
+      "size": 1853850,
+      "sha256": "sha256:bytes:6260afa6e9efda984a7a75e4420b3d7f7583a6cccdd532b964ca6213b4eb185c",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/ltx_video_text_to_video.card-poster.png",
+      "size": 2308944,
+      "sha256": "sha256:bytes:e131e2f676e04382117e77deeede145851fff469819d173073354cc5033b116d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ltx_video_text_to_video.card-preview.mp4",
+      "size": 875572,
+      "sha256": "sha256:bytes:89be8cfd064fd3c81ab2310ed05d7d8660a875f78c132a7b8d01100d547a5ea7",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_text_to_video.mp4",
+      "size": 2917726,
+      "sha256": "sha256:bytes:ba1659c0c3c1a5864dfcd6c01f471a731b84cc9523aaa9e4009863ee61714f44",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_text_to_video.poster.png",
+      "size": 2016741,
+      "sha256": "sha256:bytes:85f93dcd6f8e051abb28509284c154585dbc133ce0bc7ed0acd57dbe68781884",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/ltx_video_video_to_video.card-poster.png",
+      "size": 2728925,
+      "sha256": "sha256:bytes:e5a259b5ab8a0b21b31cb8ba23ae7c0d45a7c9de193e76c1b2608c5709d0fe8c",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/ltx_video_video_to_video.card-preview.mp4",
+      "size": 116837,
+      "sha256": "sha256:bytes:2b50fa4dbb61316914b39c6ac0990e2f8b069186f7f4012ea5b5342b000b6ce3",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_video_to_video.mp4",
+      "size": 498170,
+      "sha256": "sha256:bytes:b6ab8245f0546512215b6eb271d2ef51bd34fa6ac6e22c126c8f359e0be28fdc",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx_video_video_to_video.poster.png",
+      "size": 368903,
+      "sha256": "sha256:bytes:26d96f8085457388b724d4fc962cdbae3acc2b49be1aecf47b3a0efebac9abba",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/manifest.json",
+      "size": 180959,
+      "sha256": "sha256:bytes:bcc48de0f85d8a815364b3abfbaf2379b88686ba7e34b4c5d0a568efdf5dbbc4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/qwen_character_angles.webp",
+      "size": 203184,
+      "sha256": "sha256:bytes:8dfcb7d31adbab7528a702df93eb70cb92491f822145af38ba8cdd1262195e58",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_control_image_layout.webp",
+      "size": 103296,
+      "sha256": "sha256:bytes:f4ec212d15e923c3f82e9c3d09d9491a3da411f87e95751619fb06cd75809c9b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/qwen_edit_plus_single_image.webp",
+      "size": 163116,
+      "sha256": "sha256:bytes:3156bbe36229159f789855cd951d8a224b6485752e50104822a696870a13bc46",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_edit_strength_sweep.webp",
+      "size": 211152,
+      "sha256": "sha256:bytes:0f785808b47a1d08dc63928a6730eb49825e2655271f8e8f2717c8f6db337a69",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_inpaint_mask_draft.webp",
+      "size": 324782,
+      "sha256": "sha256:bytes:b9cfc1e839e7604789fd0598b4f1810796c92b3c17fb106b411901078cf0fb2c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_inpaint_object_replace.webp",
+      "size": 158158,
+      "sha256": "sha256:bytes:5ccd7adeac6f6ddb1d988de1aec90e75ba53a94ed27a1d32eafd3aec2e2531c9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_layered_portrait.webp",
+      "size": 230522,
+      "sha256": "sha256:bytes:6429d7f3d201d2d160cccf9911bcf124bcc03ae63ca4419503bceeb7ff4e71cb",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1108
+    },
+    {
+      "path": "template-gallery/qwen_logo_texture.webp",
+      "size": 261230,
+      "sha256": "sha256:bytes:0b55d7f2b6c913996965242f0d71b0ddef713a5cca582bdfcf8dfaee8f1ea577",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_low_vram_poster_layout.webp",
+      "size": 264472,
+      "sha256": "sha256:bytes:e0b7e1a33ced6d1503ea8877d6ab152959a7334c3d976d2620641bb3c2719c99",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_low_vram_product_concept.webp",
+      "size": 113248,
+      "sha256": "sha256:bytes:252309e17982b7ac462daf69ec6e26031aa3cbdd58f58d75620e42612008fa05",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/qwen_low_vram_text_rendering.webp",
+      "size": 242606,
+      "sha256": "sha256:bytes:817a486368f274cb9d8870fe2e894964c276ff31ca4aae1cc1c5df1bb47abc98",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_multi_reference_product.webp",
+      "size": 195330,
+      "sha256": "sha256:bytes:7acc91f678a731bf91d0d7fbee7085894eb1165884ed66aa178911b0925d4bde",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_outpaint_aspect_template.webp",
+      "size": 403554,
+      "sha256": "sha256:bytes:6dbd61c93050c6b565923580971be27d3d26360386c92494a5836dc4e19187d2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/qwen_outpaint_draft.webp",
+      "size": 286502,
+      "sha256": "sha256:bytes:776cc1d7953e252a676e8ce9c733945f79e3ef3f5aa41281cf072077d1a67581",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/qwen_packaging_dieline.webp",
+      "size": 147874,
+      "sha256": "sha256:bytes:88f242e5ad09fbad113c1bbebd9190baf6ab355d59fd22d825e7895cefd30c34",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/qwen_poster_logo_text.webp",
+      "size": 261816,
+      "sha256": "sha256:bytes:e0ab22f77f5d966d7868f8950f79702dc6d156d0eaef3e06205097558d5c5bb2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 768,
+      "height": 1344
+    },
+    {
+      "path": "template-gallery/qwen_product_ad_composite.webp",
+      "size": 194110,
+      "sha256": "sha256:bytes:4b55c8e4d6603d58139d98e9450fcfa5cb62dafa0bbdc12fef0ccd37f2157153",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_product_mockup.webp",
+      "size": 196402,
+      "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_product_relight.webp",
+      "size": 198082,
+      "sha256": "sha256:bytes:a77aead151d72398d73d93719dc258fd797e75d6409a0de80208d43816057c2a",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_text_rendering.webp",
+      "size": 229832,
+      "sha256": "sha256:bytes:ee80cfdbd3538e6865313be658299f9c460a2726977c126dab7499fc67827b8d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_tile_extract.webp",
+      "size": 85542,
+      "sha256": "sha256:bytes:66005c52bdbf800764f4de443586346c7bf75a1fd5ebc4255df405d1180c3b00",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/qwen_upscale_finish.webp",
+      "size": 883636,
+      "sha256": "sha256:bytes:9ddf91ae8f655b8cb44f087115eff24c791ddbee26753d9f328354f738a423ce",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 2048,
+      "height": 2048
+    },
+    {
+      "path": "template-gallery/reference_fusion.webp",
+      "size": 324236,
+      "sha256": "sha256:bytes:cb5621c2927bdb58ecc595e71d258b9eee2ef2ca164242474846db825cdb2cb1",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_audio_continuation.quality-review.json",
+      "size": 3147,
+      "sha256": "sha256:bytes:e58e802eec1e2fc312f1eddf271416d9617c99c315972c35b99f98441a4b5783",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_audio_continuation.reviewed-provenance.json",
+      "size": 44824,
+      "sha256": "sha256:bytes:bda2779dfd6ab8e96bb8ccfaab474f9fe989e3cad14320798132045f3a598d1f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_audio_repaint.quality-review.json",
+      "size": 3110,
+      "sha256": "sha256:bytes:d2cbe043e6636bb17cc55b0c24149e01067077815e2f17a664df39f9ad4e62a4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_audio_repaint.reviewed-provenance.json",
+      "size": 44702,
+      "sha256": "sha256:bytes:82d0994007d3c2c447a9f3cae6065db34e494eb9f0353c4cfafa9d0ed473c91c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_audio_variation.quality-review.json",
+      "size": 3106,
+      "sha256": "sha256:bytes:b20bf6bd7042d9214f72db5125ff6e0ef3a686ed2ee15143739efe2e50051bb9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_audio_variation.reviewed-provenance.json",
+      "size": 44904,
+      "sha256": "sha256:bytes:f31768feb3e080c0e83ed8a0a982399fa64a38258620ba43214cc7514251948d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_lyric_music_video.quality-review.json",
+      "size": 8439,
+      "sha256": "sha256:bytes:4f51cfb385ed654b88b0cecb6b064b4a7c50d884a575b9d89c2224cf0916032d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_lyric_music_video.reviewed-provenance.json",
+      "size": 93784,
+      "sha256": "sha256:bytes:ff73d620c0d459d7cd4e7e69e237ac9d805d579ad75813dedab3445f60326d65",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_text_to_audio.quality-review.json",
+      "size": 3229,
+      "sha256": "sha256:bytes:696f5bffb19a0ccda790e668da102797391c665603354e638ac5d937f65c792e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ace_step_text_to_audio.reviewed-provenance.json",
+      "size": 42808,
+      "sha256": "sha256:bytes:e60169416922a2e516557f9ce5c958412c32472db9592119b4f1ccba6afbba36",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/character_edit.quality-review.json",
+      "size": 5058,
+      "sha256": "sha256:bytes:10700042aceac7d071fb5aa3a3f1d26c3cbdef462352a167e7dbbcc1d53ef00f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/character_edit.reviewed-provenance.json",
+      "size": 46906,
+      "sha256": "sha256:bytes:cc6d3832032ef61930d18c38f0042ffc3dc80452b035853f07449a25fa36b625",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/fast_lora.quality-review.json",
+      "size": 4189,
+      "sha256": "sha256:bytes:07534b76dc0cc8b226d1ba705b7d6ae870d7c2387ea1905f258c9f7fc5743744",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/fast_lora.reviewed-provenance.json",
+      "size": 53422,
+      "sha256": "sha256:bytes:4551fed821f30828ad61a225ee30d0b69de3cd9f0ed71aa14470b7604f946523",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_klein_edit.duplicate-provenance.json",
+      "size": 78923,
+      "sha256": "sha256:bytes:add0a827b5c9f3d85e926056e717046ed008a9b74eff152e3e2c904893aa3bf3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_klein_edit.quality-review.json",
+      "size": 1353,
+      "sha256": "sha256:bytes:e870456c2d1ce28d0423f5efbb2a0c674c289be57ac2245a2cc08297834d55a1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_klein_multi_reference.quality-review.json",
+      "size": 4131,
+      "sha256": "sha256:bytes:7a90fab4fbc67f092eab6c32485ad218b84a2d159c9a4f12e0f5d68574560420",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_klein_multi_reference.reviewed-provenance.json",
+      "size": 41769,
+      "sha256": "sha256:bytes:8a20fadb16da5e8dcb0799ea2a847d000236c729ab29908f2805d04b1e044df5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_klein_text_to_image.quality-review.json",
+      "size": 3965,
+      "sha256": "sha256:bytes:ed1cafafb9e68f3198424a6e2f29838cff4cce5bf99f882c4c6df37454ff5aa2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_klein_text_to_image.reviewed-provenance.json",
+      "size": 38796,
+      "sha256": "sha256:bytes:2ad992337bfa52ad337944508c63e0d7ad97921585f6f28ffb729f39a6d48f24",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_control_canny.quality-review.json",
+      "size": 4414,
+      "sha256": "sha256:bytes:cb7b1e20f93d5ea6f796c7d2cc030f76d2327ae4d50cffef3cedc6ef1356dbfd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_control_canny.reviewed-provenance.json",
+      "size": 41982,
+      "sha256": "sha256:bytes:761b42bfc3e6c95d884a560a6b2188b8a4a018ee51616857ee02b538b1e9c387",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_control.quality-review.json",
+      "size": 4189,
+      "sha256": "sha256:bytes:2976a4ac98fe2fcb0ca30ec3f17a853bd5d5e17150a5a80fb259ed6f87e304dd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_control.reviewed-provenance.json",
+      "size": 41179,
+      "sha256": "sha256:bytes:a89189e3ba9f648a9b087d3dba78bffe7e7fbcf02734e494535b7e9f414a1f1f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_dev_expert_text_to_image.quality-review.json",
+      "size": 3853,
+      "sha256": "sha256:bytes:5848e398fe3095e3b5ff4576567249038021bf1c551530c1feac66d18a37ac21",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_dev_expert_text_to_image.reviewed-provenance.json",
+      "size": 49961,
+      "sha256": "sha256:bytes:736a0bb30b5d47745e5cc871c07c5c77ade430ccd25d251854bc306d8057d86c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_fill_inpaint.quality-review.json",
+      "size": 4118,
+      "sha256": "sha256:bytes:8a963ab2e9a56174cf2ad78c00b5c2aa9b30209ef4ef475e50204b6ecfd393a6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_fill_inpaint.reviewed-provenance.json",
+      "size": 43884,
+      "sha256": "sha256:bytes:f627d4cce50a72239069596ecdb183842ca96d5d2bdf691f63f5773220086bf0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_fill_outpaint.quality-review.json",
+      "size": 4082,
+      "sha256": "sha256:bytes:bfe72fb5245dc022e878d57972d21ec11b5576f1d204fe95aba599843a22f9a9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_fill_outpaint.reviewed-provenance.json",
+      "size": 43436,
+      "sha256": "sha256:bytes:a28f45de914552bca7f191510ed3f1fedf91b562708adc339610a7c9ec67402a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_edit.quality-review.json",
+      "size": 4452,
+      "sha256": "sha256:bytes:30230abb20489156c64b2ef814908ecf37df4420c640ad93f3b38f17a2c7b6fa",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_edit.reviewed-provenance.json",
+      "size": 40285,
+      "sha256": "sha256:bytes:1365b82eaf2be81ba3b798c0653ecce7fe7258ead2e5536523ac7f0100872d83",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_multi_reference.quality-review.json",
+      "size": 4584,
+      "sha256": "sha256:bytes:4b38ec98a5f21801d6adf939a96705352dff3fa0005a46b193f152d850cf82e5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_multi_reference.reviewed-provenance.json",
+      "size": 40954,
+      "sha256": "sha256:bytes:2366ddac33df43abb21095bd51ba395a29a69d7911568fc3ed4036195c3899cf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_krea_text_to_image.quality-review.json",
+      "size": 3961,
+      "sha256": "sha256:bytes:79c50447e19b09ec091bc0fbd2986c75001a525f7ea060c6a347d5ae52b15872",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_krea_text_to_image.reviewed-provenance.json",
+      "size": 37803,
+      "sha256": "sha256:bytes:3c59ae43a99b7946adea634976786e5105ac537516b3f74c4ca73d1d885fa567",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_film_noir.quality-review.json",
+      "size": 3112,
+      "sha256": "sha256:bytes:f8d8308daa26454b809312b43a96956470a2c8143ee6967b4262e2336d1f5851",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_film_noir.reviewed-provenance.json",
+      "size": 52218,
+      "sha256": "sha256:bytes:833d29919af899c20fa213c4dfd0f75e239c66631f746fee9b46e7328a4eec67",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_ghibli_story.quality-review.json",
+      "size": 3389,
+      "sha256": "sha256:bytes:6009868ad3e76b584a12eb4193daf7680a0f224224bcda917c2ebbe8f543d1a5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_ghibli_story.reviewed-provenance.json",
+      "size": 53038,
+      "sha256": "sha256:bytes:f87545939eb878e8655640f7563f6ddb93b355ba72c716959fb61c39806fa8a3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_oil_painting.quality-review.json",
+      "size": 3127,
+      "sha256": "sha256:bytes:b62c3ba1c98b557dd1bee81d7c2c85371ebfe8fe261af18690729f623a1a2ecd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_oil_painting.reviewed-provenance.json",
+      "size": 52151,
+      "sha256": "sha256:bytes:8adce5953e160687b1b714c225ec78a2fae584e7038264d7766305edecfdcf7c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_paper_cutout.quality-review.json",
+      "size": 3177,
+      "sha256": "sha256:bytes:045e4480718e933637e16d026c8731d879f038d174d7f40f57009bf43eaab51d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_paper_cutout.reviewed-provenance.json",
+      "size": 52276,
+      "sha256": "sha256:bytes:8fac1a77c1eeab9e791bd350294f04a322d51c6c5a8b5cfcf16aa940f6adfab5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_photoreal_documentary.quality-review.json",
+      "size": 3246,
+      "sha256": "sha256:bytes:bc6c3a241cf0fa9a1336717b6d05b2c7a6e50b1a94911088e559e9d1dba69507",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_photoreal_documentary.reviewed-provenance.json",
+      "size": 52433,
+      "sha256": "sha256:bytes:e7c4fcd6b52af6e45867d22c3adb1416adef0463802cd1d7890ec36129ba234c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_retro_comic.quality-review.json",
+      "size": 3307,
+      "sha256": "sha256:bytes:259d069f67a64529bd2c67a542e988edc231c776724996a12a33083f02d4bf15",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_retro_comic.reviewed-provenance.json",
+      "size": 52797,
+      "sha256": "sha256:bytes:07f76c1b55b52a8419ed33561a1050e8692b8d9a087ce339958c9ddcf7d68ff2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_watercolor.quality-review.json",
+      "size": 3441,
+      "sha256": "sha256:bytes:d3bd65fb0179f57dd516cc80cbb7124e4a0e868c5880853e06900b65214d31e7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_watercolor.reviewed-provenance.json",
+      "size": 52678,
+      "sha256": "sha256:bytes:c80ee9c29331e71e067fb681c0af5d0979680928f957d422047fde5177120174",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_redux_edit.quality-review.json",
+      "size": 4321,
+      "sha256": "sha256:bytes:ecd1f9a9365ddf28ae4c200e4c040d3f2f48c0429d380f35f099f85530dc617b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_redux_edit.reviewed-provenance.json",
+      "size": 42445,
+      "sha256": "sha256:bytes:73c4395d30e0db765215ff48dd521c269c6b58d1e3fdc42e030ca230f51a2477",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_redux_multi_reference.quality-review.json",
+      "size": 4379,
+      "sha256": "sha256:bytes:6d1a2b1cd59643e756167a31b4b7fb96242f3775317f05c9139883468cff5c93",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_redux_multi_reference.reviewed-provenance.json",
+      "size": 53054,
+      "sha256": "sha256:bytes:0e30224ab60a14f2d040e4104454f3cf1867ebf3fb152e7554ee295b9cc69914",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_schnell_text_to_image.quality-review.json",
+      "size": 4094,
+      "sha256": "sha256:bytes:cfe3bfedd9deb4b3a502597bd82a0e539c9ddecacb8c788cc2135256908d5a95",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_schnell_text_to_image.reviewed-provenance.json",
+      "size": 40307,
+      "sha256": "sha256:bytes:dd197dbb499c97643aec8991e72978d48ef6880f951a10fb5dc042454d22ccf9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/high_quality.quality-review.json",
+      "size": 3806,
+      "sha256": "sha256:bytes:fe086593792f639371424b347f3bb1d7cc390b1d996630104e08d19d2efd4832",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/high_quality.reviewed-provenance.json",
+      "size": 37809,
+      "sha256": "sha256:bytes:5013cd17a686b40e7f1747578b2a235e2f2bfb5ef881fe1d8260208f130daa0f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/low_vram.quality-review.json",
+      "size": 3850,
+      "sha256": "sha256:bytes:eaf768e868d48ee76bad96c02f835d2d20abd9e46adcdcd2c36e6b853f82c59b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/low_vram.reviewed-provenance.json",
+      "size": 38909,
+      "sha256": "sha256:bytes:04028d85f3f3e840000b89077d8ceaafc608141a176ff4d071264ee4ec3f9c9b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_animated_story.quality-review.json",
+      "size": 5696,
+      "sha256": "sha256:bytes:7520a8a1a714f7ed2943abd482189e83593bfa2a85afe48701c65505986d036b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_animated_story.reviewed-provenance.json",
+      "size": 62383,
+      "sha256": "sha256:bytes:42d1d53a66c603446963ff929f1493eea420dca97c45f225bd7d100ab64d6982",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_image_to_video.quality-review.json",
+      "size": 7012,
+      "sha256": "sha256:bytes:201d59e66d2e38c2691ca60021885268583ba4769b554b79b02ebaaad853f4db",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_image_to_video.reviewed-provenance.json",
+      "size": 60427,
+      "sha256": "sha256:bytes:a98d60755d3a230c52c41f7ee6f0a7cb64403ec866c4558f30142955ff839f4c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_long_showcase.quality-review.json",
+      "size": 8425,
+      "sha256": "sha256:bytes:9522f4f25ec827402e5e0ce1e2a0c9058d518ffa9c5c33c3a77f5f789bab4692",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_long_showcase.reviewed-provenance.json",
+      "size": 74319,
+      "sha256": "sha256:bytes:dac558b12c55e74678c33785a4f0d8affd542b96c0bcc70c9a10bf0dfdca4d33",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_multi_reference.quality-review.json",
+      "size": 7831,
+      "sha256": "sha256:bytes:a581122ee28f58c36624af785c0a6741cf94bf69303d68aa21dabfbf1c16b846",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_multi_reference.reviewed-provenance.json",
+      "size": 60742,
+      "sha256": "sha256:bytes:6a7413901c5e35628bbc371d3c5c3729a5486d28383f00195adb7f6a9db12446",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_text_to_video.quality-review.json",
+      "size": 6741,
+      "sha256": "sha256:bytes:0edfcb8a27a65f218f1b42d4d139515cf9ebfbb0b530e2e15122c3b57fe16552",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_text_to_video.reviewed-provenance.json",
+      "size": 57954,
+      "sha256": "sha256:bytes:2967b15d52914d901b0afd4bf90e267c4762639426ccf9826130f5ef477b89ea",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_video_to_video.quality-review.json",
+      "size": 7626,
+      "sha256": "sha256:bytes:940e6bab9cef2842792c9ebb5e2302f438a77acb8ee360ad17807183b932895f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_video_video_to_video.reviewed-provenance.json",
+      "size": 62144,
+      "sha256": "sha256:bytes:45a8dd0c6cf29dc699b20d391c087aac8c62364715a84fb9b123427574e802b0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_character_angles.quality-review.json",
+      "size": 4132,
+      "sha256": "sha256:bytes:7597e87870f035c267b65d8c5c56e5d1563e432719a6752b5eac41608f9b1147",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_character_angles.reviewed-provenance.json",
+      "size": 41104,
+      "sha256": "sha256:bytes:6ecd897a6b422e73e97ba6ee17af28f9448531af356852e7a3239f27afcf337f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_image_layout.duplicate-provenance.json",
+      "size": 99461,
+      "sha256": "sha256:bytes:88cf4c98bff0bcfc6b73692b8385f8fd4fd6df5f05e1fa1d4423c3615d99c551",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_image_layout.quality-review.json",
+      "size": 3927,
+      "sha256": "sha256:bytes:945dac5914322567ef3040e21c46709a7a262f2b2bcd0fcdd668d6c2d195971c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_edit_plus_single_image.duplicate-provenance.json",
+      "size": 82296,
+      "sha256": "sha256:bytes:dd76a3ef7b084e4b419ac4742834c16cbfffd24413a2484c5190eaa933a41f7f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_edit_plus_single_image.quality-review.json",
+      "size": 1583,
+      "sha256": "sha256:bytes:0b438037b118e2b5865e6dfa2ba7c3c06d7dc7f24224886f01777be7f2b2e23b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_edit_strength_sweep.quality-review.json",
+      "size": 4164,
+      "sha256": "sha256:bytes:496a280901eb5ca3cd80d222d0226537befd1ce050d05ed56fa5ce233b7e7af3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_edit_strength_sweep.reviewed-provenance.json",
+      "size": 38475,
+      "sha256": "sha256:bytes:7ed8775e68ea0323457286de63b0bdf828b57b9ca20e871708f4fdfca533762d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_inpaint_mask_draft.quality-review.json",
+      "size": 4826,
+      "sha256": "sha256:bytes:7a61235df3be93a58bde11c0fb112e266ade8d3d4422f75e118007515c6ae29e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_inpaint_mask_draft.reviewed-provenance.json",
+      "size": 45735,
+      "sha256": "sha256:bytes:8853df637247dc212985e40d9a1ab4b751e18c0c7fad647cd2eef22994dd1876",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_inpaint_object_replace.quality-review.json",
+      "size": 4203,
+      "sha256": "sha256:bytes:27aa406a3b4226b341e30b216811782d0bfdd18683b89b29564ecf07e301ce47",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_inpaint_object_replace.reviewed-provenance.json",
+      "size": 44712,
+      "sha256": "sha256:bytes:61958d9a47301ee3d2fb83283d5f2ba7bffab3c49bfcfe93402bc64697f95fa4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_layered_portrait.quality-review.json",
+      "size": 6007,
+      "sha256": "sha256:bytes:01804ef72a061832915725a6aeff8385850f3347489fdec7c1592c313710db76",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_layered_portrait.reviewed-provenance.json",
+      "size": 46147,
+      "sha256": "sha256:bytes:ee99d6eff080c78f00846a5dc8123d02ec3dfd84b1b48909873b35fb4447f2e9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_logo_texture.quality-review.json",
+      "size": 4525,
+      "sha256": "sha256:bytes:4671b5e55420dab7ed9fdd700b806ddd6f57a2782ef2a1e89931db6805f58e9e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_logo_texture.reviewed-provenance.json",
+      "size": 46983,
+      "sha256": "sha256:bytes:7cdb2104446f3083e04d29643c264c4fe9ceeecfd0e359424b8e135711adc21f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_low_vram_poster_layout.quality-review.json",
+      "size": 3957,
+      "sha256": "sha256:bytes:fc98a7a192d1ed561eb5b31c2371c5fe006d578682c0b2450550bd1589f34850",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_low_vram_poster_layout.reviewed-provenance.json",
+      "size": 37899,
+      "sha256": "sha256:bytes:d1dcc5a590d7ef0d4dee3942998830f13edf7b49ad07f01634f335001a7e490c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_low_vram_product_concept.duplicate-provenance.json",
+      "size": 53269,
+      "sha256": "sha256:bytes:584fe2513facf95e22cdd8c6893e9ffd99d6562ca4fe33d3f11d12d16f428cec",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_low_vram_product_concept.quality-review.json",
+      "size": 1524,
+      "sha256": "sha256:bytes:923b20299ac0f009693e40c701abe51dc96cd94dbdc81dbf987a7b1680c5f4e9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_low_vram_text_rendering.duplicate-provenance.json",
+      "size": 47639,
+      "sha256": "sha256:bytes:6309e9156e073135633f96d4eb276d8d8889329ddaaa92a198f2accba59fc0e6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_low_vram_text_rendering.quality-review.json",
+      "size": 1515,
+      "sha256": "sha256:bytes:051df72430a51a5bdc367d4ba6f4bf67ec9cc1d8eb312148a1c4c7db64c94746",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_multi_reference_product.quality-review.json",
+      "size": 5028,
+      "sha256": "sha256:bytes:395c6c3e058b55d78d3adbc09d9fe3aa6f1f14c4af845e55b79c0e2a82dc9b68",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_multi_reference_product.reviewed-provenance.json",
+      "size": 49298,
+      "sha256": "sha256:bytes:9a49f077f6eaefb162e4cf1b2a12801b3ed36bb11e782b80b0d13a654499c131",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_outpaint_aspect_template.quality-review.json",
+      "size": 4059,
+      "sha256": "sha256:bytes:2b83ee76cb0393da3228eef42396dd7fc07a7a42fa594d9cf53a1c73b408556a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_outpaint_aspect_template.reviewed-provenance.json",
+      "size": 43638,
+      "sha256": "sha256:bytes:0dc29edc25438f4b451df5c1f5fda03ebbca50f04e2cad9e73073f72aaef2fbf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_outpaint_draft.quality-review.json",
+      "size": 4917,
+      "sha256": "sha256:bytes:7018012c3a5ba1544271df1b3f802f806b3c03f1fa774572b6336ded97faceaf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_outpaint_draft.reviewed-provenance.json",
+      "size": 43793,
+      "sha256": "sha256:bytes:348d1c3fedae6c17387002e6c6e2e4dfa193cb55bc5db82bb81ae7ff430955ef",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_packaging_dieline.duplicate-provenance.json",
+      "size": 99305,
+      "sha256": "sha256:bytes:b941eae359a788818b579925327c244af3115375ff312d58a109a929be7cd6fa",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_packaging_dieline.quality-review.json",
+      "size": 1477,
+      "sha256": "sha256:bytes:ede440811cbc3e403a5f4603d2f5bc16fc56b541ba6d29a7425c84f96647d4b5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_poster_logo_text.quality-review.json",
+      "size": 3661,
+      "sha256": "sha256:bytes:3a06af0cf6c43da9b6974f1049304b765b4d08fb207fcd98f27b5748aed46b0a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_poster_logo_text.reviewed-provenance.json",
+      "size": 37731,
+      "sha256": "sha256:bytes:faa7eb4618f418ac601ff1ec3a43ec287881c30495c531d2563a53159f72952c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_product_ad_composite.quality-review.json",
+      "size": 4979,
+      "sha256": "sha256:bytes:49eab3a43671aa04a445c7cb38aab25a3c3628a1aaf378dc3a23a5ff9b834234",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_product_ad_composite.reviewed-provenance.json",
+      "size": 48107,
+      "sha256": "sha256:bytes:39b1f417ec7f7fe2672404d6ba52c9c8ac2707d52e41c911ca7ba8e4ac014430",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_product_mockup.duplicate-provenance.json",
+      "size": 71946,
+      "sha256": "sha256:bytes:362dfe44ab510d78a7e6ec1ae96514eb43923680866177ee3989b71487c5687a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_product_mockup.quality-review.json",
+      "size": 1764,
+      "sha256": "sha256:bytes:fbffcc634fb20aefe8a1f36398a5bd8e5ead26dacde2bc37ccaeb28d33fb2302",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_product_relight.quality-review.json",
+      "size": 4413,
+      "sha256": "sha256:bytes:753786d3770b00a95f1dad1e2296c37421e794565e0941384582ad9e06f4c542",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_product_relight.reviewed-provenance.json",
+      "size": 48693,
+      "sha256": "sha256:bytes:43b244fc27e57b7b8a2e1723628ea9aeb0bf364b76bfa7c81ec9408d7c88bfba",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_text_rendering.duplicate-provenance.json",
+      "size": 69145,
+      "sha256": "sha256:bytes:ccdbb1a61c3b83eae8fbf2d3a23869c774b55c7b31929d18f8311541952c9f6d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_text_rendering.quality-review.json",
+      "size": 1768,
+      "sha256": "sha256:bytes:6ef4157557d2a161d4746a011b5367b63e94f984bd175f58b94416b3bf7f165e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_tile_extract.quality-review.json",
+      "size": 4031,
+      "sha256": "sha256:bytes:34c6b47a541749a745738ce15452fd85b2f2bb4883d325f43f70854750b662a1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_tile_extract.reviewed-provenance.json",
+      "size": 40954,
+      "sha256": "sha256:bytes:4eb7ec4d1ce6925dac29fba4d929cae2a2815f5c39c81d92c17f07ad0d81f3fc",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_upscale_finish.quality-review.json",
+      "size": 4584,
+      "sha256": "sha256:bytes:bf07ca5560e2f6a1489a4c5f0b48a49d8d4c7c73b22dee78e364c6f563878345",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_upscale_finish.reviewed-provenance.json",
+      "size": 44413,
+      "sha256": "sha256:bytes:b6f91a9080fbbb535879b11f4e19dad257df897740f04c271e0f355d1f988987",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/reference_fusion.quality-review.json",
+      "size": 4266,
+      "sha256": "sha256:bytes:dc9e6e9fac8d2e1fb11786e7b3027ffac58e4436e10a5f6658958ea20437b94a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/reference_fusion.reviewed-provenance.json",
+      "size": 47402,
+      "sha256": "sha256:bytes:bc56957f55d2b4200c31df83ee548a8b50ebf1cf3b6493bc881b25032d12355f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_22_ti2v_5b_seed_vault.quality-review.json",
+      "size": 8097,
+      "sha256": "sha256:bytes:119627f8cbd5751af0bf7cbf7dc7f5fa6a22ce28000438e0e49fc7569a493596",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_22_ti2v_5b_seed_vault.reviewed-provenance.json",
+      "size": 79278,
+      "sha256": "sha256:bytes:260b3901159d64efad800ec39e72a1ac893e0b1f717551b572288f2a10efe1e8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_cinematic_text_to_video.quality-review.json",
+      "size": 6217,
+      "sha256": "sha256:bytes:e7c7f1a212e20d0aba6dd29b4d4f799f4b32f07fd0ef91a45073a30874c59830",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_cinematic_text_to_video.reviewed-provenance.json",
+      "size": 58734,
+      "sha256": "sha256:bytes:0c12b78137241cbce6851ae3221254f9e751964c96d4a1dff0792a99f1cf06e8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_grayscale_control.quality-review.json",
+      "size": 6963,
+      "sha256": "sha256:bytes:d135d69159418aecc6d0956b1ec64f2c7fc76137445679a4d4b11a54629c0932",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_grayscale_control.reviewed-provenance.json",
+      "size": 64317,
+      "sha256": "sha256:bytes:0366fae2e916bf0c67a90b8e898b9b0f1a2ff66680bcd789b160566e5a462070",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_outpaint_reframe.quality-review.json",
+      "size": 6916,
+      "sha256": "sha256:bytes:d6a2b3843f4581565adc30b9d16ee4a17f84751f0ef11d8b0b9b505ff5d57f66",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_outpaint_reframe.reviewed-provenance.json",
+      "size": 67904,
+      "sha256": "sha256:bytes:c4cb91db649df41db5276bb58ea85257d77de542f6349942d07f7f5675788dec",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_video_color_grade.quality-review.json",
+      "size": 7054,
+      "sha256": "sha256:bytes:8aa386e846e98c6da6ed93369ff02ac9044df43af03a9e5fc109f0ae3e50c629",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_video_color_grade.reviewed-provenance.json",
+      "size": 64258,
+      "sha256": "sha256:bytes:96b36b2d5b4a9212016d943b486240e0454ce2d30131a4bd39c83d932f865c88",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_video_to_video.quality-review.json",
+      "size": 6952,
+      "sha256": "sha256:bytes:88168ad146f317c2fd68f5a0db8f369dd398cbbf87073af8fdc6c680e7384a90",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_video_to_video.reviewed-provenance.json",
+      "size": 63294,
+      "sha256": "sha256:bytes:ee0ba628fb26f4789bfd9729bb534c11479aa170e489fbc3a7174c9c460d3cc2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.duplicate-provenance.json",
+      "size": 72723,
+      "sha256": "sha256:bytes:1771c206a72c99013f8926742ddf0d95510aa416522d30381d286e4399bee7b4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.quality-review.json",
+      "size": 1784,
+      "sha256": "sha256:bytes:371847c70bebac46cd8012df74ba670cd4a6a2f6d833928ae801db932e3dc69b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_lora_style.quality-review.json",
+      "size": 3873,
+      "sha256": "sha256:bytes:f8060ea3170c43a2c1d791dc523ef952bfb7370621e186dd7ed07302bb71f6d1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_lora_style.reviewed-provenance.json",
+      "size": 52848,
+      "sha256": "sha256:bytes:eb43b7402fd7d59116557f04030467f34c4e819792a9587053de3791739b6bfd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_poster.duplicate-provenance.json",
+      "size": 78654,
+      "sha256": "sha256:bytes:13f18ac3e02e6189ec541a2f9bedc405d56b24030a612811daad1742e8f2d923",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_poster.quality-review.json",
+      "size": 1540,
+      "sha256": "sha256:bytes:f8415337bd646aa621e669290e8d2d393b2247062d7b71c30ed278d6066bf2ce",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_product_mockup.duplicate-provenance.json",
+      "size": 77638,
+      "sha256": "sha256:bytes:ef1a624bf0e8839b550fa17e907906903d39b4fe7d9f5cc8e3c262d3b5f77441",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_product_mockup.quality-review.json",
+      "size": 1847,
+      "sha256": "sha256:bytes:e8559afb5ba539822a0d65dfc9445b8e3e9b37f78edfaece154e1056e2ab7601",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_quick_concept.duplicate-provenance.json",
+      "size": 78504,
+      "sha256": "sha256:bytes:7be6361c9817b09d656f9ee4fffbc36030e3055e8fe6de4ddd9e57cbf0046102",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/z_image_quick_concept.quality-review.json",
+      "size": 1586,
+      "sha256": "sha256:bytes:1de8e435dbae4e7d7ef50f8a2cb8b33007e620d5a03a94e76be75e01e06518c7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/101d50449cc4d74257e88e87fb750363bfe538c58b601b340fb3ce9031c2ed03.mp4",
+      "size": 684528,
+      "sha256": "sha256:bytes:101d50449cc4d74257e88e87fb750363bfe538c58b601b340fb3ce9031c2ed03",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c.webp",
+      "size": 57604,
+      "sha256": "sha256:bytes:124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/16f6ea27b5d7cfaed106e2e694572bbe92b7c7e2a43835b3f4313a748f510f74.png",
+      "size": 3890,
+      "sha256": "sha256:bytes:16f6ea27b5d7cfaed106e2e694572bbe92b7c7e2a43835b3f4313a748f510f74",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/1d993540e914f0e2d230f1133b57ae14bb837829237a53c89613fcdef6699995.webp",
+      "size": 281216,
+      "sha256": "sha256:bytes:1d993540e914f0e2d230f1133b57ae14bb837829237a53c89613fcdef6699995",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/218d83e0706fec201097582a6e5e00dc79f2d7d1ecb0badba2214c5ecaae1866.mp4",
+      "size": 1312979,
+      "sha256": "sha256:bytes:218d83e0706fec201097582a6e5e00dc79f2d7d1ecb0badba2214c5ecaae1866",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/233d1b3a123fceb4f3b68d2d3a9f5b4129627073b8235fe7248ae6ebdeecb554.mp4",
+      "size": 240426,
+      "sha256": "sha256:bytes:233d1b3a123fceb4f3b68d2d3a9f5b4129627073b8235fe7248ae6ebdeecb554",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/283b1cfb32b15fe6b31a29dce1f2b96026c1ad0826bf3f24aebebf4b6f9a4f07.webp",
+      "size": 102088,
+      "sha256": "sha256:bytes:283b1cfb32b15fe6b31a29dce1f2b96026c1ad0826bf3f24aebebf4b6f9a4f07",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/29722ed072feec11cd36adce7b6cb48483bff3f05776048b93f960b5554ab533.png",
+      "size": 10170,
+      "sha256": "sha256:bytes:29722ed072feec11cd36adce7b6cb48483bff3f05776048b93f960b5554ab533",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/2e0ec8892660785e322468d0153fd2dadf7a4d920fce2d7d4a0b686a8fe8515d.webp",
+      "size": 330492,
+      "sha256": "sha256:bytes:2e0ec8892660785e322468d0153fd2dadf7a4d920fce2d7d4a0b686a8fe8515d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e.png",
+      "size": 157468,
+      "sha256": "sha256:bytes:2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230.wav",
+      "size": 14400044,
+      "sha256": "sha256:bytes:3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/38a6f334f89048effe579fc473d6fb38437eb579f324ac399d1ec0f6509f74d9.webp",
+      "size": 303584,
+      "sha256": "sha256:bytes:38a6f334f89048effe579fc473d6fb38437eb579f324ac399d1ec0f6509f74d9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/39428f00f67b49fc6d624617df2964c9f869de21e7e188ef5b231ae04c4aeacc.webp",
+      "size": 193748,
+      "sha256": "sha256:bytes:39428f00f67b49fc6d624617df2964c9f869de21e7e188ef5b231ae04c4aeacc",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/3c4d3a7a58a7be7f8d8920106dcfea30e28b4af115ce406bcf5b16cec4b4297a.mp4",
+      "size": 60165,
+      "sha256": "sha256:bytes:3c4d3a7a58a7be7f8d8920106dcfea30e28b4af115ce406bcf5b16cec4b4297a",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339.png",
+      "size": 22013,
+      "sha256": "sha256:bytes:3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/47e56fd165fd2610f34e952191d74e061269b9703ae9fd7f571491f38ce4992c.webp",
+      "size": 145418,
+      "sha256": "sha256:bytes:47e56fd165fd2610f34e952191d74e061269b9703ae9fd7f571491f38ce4992c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/4b1b8d9e351abd437f2ffff90cc6a958160a87863ba4d8e85a0aa80a37e7a10e.webp",
+      "size": 388454,
+      "sha256": "sha256:bytes:4b1b8d9e351abd437f2ffff90cc6a958160a87863ba4d8e85a0aa80a37e7a10e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/4b800b6a362c9ad7755858a3ec2affbda8706c5a71578ced35b80432fd234741.webp",
+      "size": 452222,
+      "sha256": "sha256:bytes:4b800b6a362c9ad7755858a3ec2affbda8706c5a71578ced35b80432fd234741",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d.webp",
+      "size": 62370,
+      "sha256": "sha256:bytes:52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e.webp",
+      "size": 223184,
+      "sha256": "sha256:bytes:6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/73123a5bb6e8c1367eced6a7fbee6b0e5500ecbabf769ba9d9c18fd10623e36e.webp",
+      "size": 440656,
+      "sha256": "sha256:bytes:73123a5bb6e8c1367eced6a7fbee6b0e5500ecbabf769ba9d9c18fd10623e36e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/799d82b016a108d4b6902500b4226afd5d2391f4a7b0693af75255425c943a5e.png",
+      "size": 6258,
+      "sha256": "sha256:bytes:799d82b016a108d4b6902500b4226afd5d2391f4a7b0693af75255425c943a5e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/7f1ea58485fa7802765b9fbbf0e6957e8607261c91669fdcc44cbed80c6fb309.webp",
+      "size": 477366,
+      "sha256": "sha256:bytes:7f1ea58485fa7802765b9fbbf0e6957e8607261c91669fdcc44cbed80c6fb309",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/862e292caa1759156fffde5cfccda8b97ec622514258f81986188cf63a836ea9.webp",
+      "size": 296084,
+      "sha256": "sha256:bytes:862e292caa1759156fffde5cfccda8b97ec622514258f81986188cf63a836ea9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/88a7ada5cb91a6ef86de0ff7c26c6b4683df25cc0baa18382371ce0748cd0bd6.webp",
+      "size": 369210,
+      "sha256": "sha256:bytes:88a7ada5cb91a6ef86de0ff7c26c6b4683df25cc0baa18382371ce0748cd0bd6",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26.webp",
+      "size": 301384,
+      "sha256": "sha256:bytes:930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/9328061557396ef591a9f4a6242abf1cdd61082846518726c3114f746ccedd63.webp",
+      "size": 325508,
+      "sha256": "sha256:bytes:9328061557396ef591a9f4a6242abf1cdd61082846518726c3114f746ccedd63",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de.webp",
+      "size": 298906,
+      "sha256": "sha256:bytes:965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897.webp",
+      "size": 270072,
+      "sha256": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/9f9f9685db5e9f8e1c162a0515151b03912c84777727b38682b65839db501ae6.webp",
+      "size": 154818,
+      "sha256": "sha256:bytes:9f9f9685db5e9f8e1c162a0515151b03912c84777727b38682b65839db501ae6",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/a2f8ac6f5937d6e618b48ce9947153b8233ff7a82dcf67f28766d20b9917d730.webp",
+      "size": 331300,
+      "sha256": "sha256:bytes:a2f8ac6f5937d6e618b48ce9947153b8233ff7a82dcf67f28766d20b9917d730",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/a6d165bd87e2c57ab8cf71fa15de9d8724fccf5782c16c34c25dc77934751676.webp",
+      "size": 262892,
+      "sha256": "sha256:bytes:a6d165bd87e2c57ab8cf71fa15de9d8724fccf5782c16c34c25dc77934751676",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
+      "size": 196402,
+      "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67.png",
+      "size": 11137,
+      "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/b7c221b367738177e32fece56067d743df96282a6ccb2afd040ee89ea0a8f678.webp",
+      "size": 142192,
+      "sha256": "sha256:bytes:b7c221b367738177e32fece56067d743df96282a6ccb2afd040ee89ea0a8f678",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab.webp",
+      "size": 329508,
+      "sha256": "sha256:bytes:b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/bf4dbaa55b83b19ca56c691e9d1a10d3b838ff2fec926aaea6b526561c68f8e6.png",
+      "size": 1032894,
+      "sha256": "sha256:bytes:bf4dbaa55b83b19ca56c691e9d1a10d3b838ff2fec926aaea6b526561c68f8e6",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/c810699838c636767d2a5b25fb457df94a4b76a70da9a77e77009681779acbf2.webp",
+      "size": 319584,
+      "sha256": "sha256:bytes:c810699838c636767d2a5b25fb457df94a4b76a70da9a77e77009681779acbf2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/d49908e24c58d144f4264f4028cb0f7f2e72fb02b315443fd021715ebed1e737.webp",
+      "size": 265914,
+      "sha256": "sha256:bytes:d49908e24c58d144f4264f4028cb0f7f2e72fb02b315443fd021715ebed1e737",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24.png",
+      "size": 266188,
+      "sha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/d86b921f1be36360b5b660b8a5b9d0e9165e888be8a06fe2d8f362e87de40429.mp4",
+      "size": 444129,
+      "sha256": "sha256:bytes:d86b921f1be36360b5b660b8a5b9d0e9165e888be8a06fe2d8f362e87de40429",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/d898e00f3be4b28e237f71acf8024ad3715a657e1fcf3aeaf57279468dff7a76.webp",
+      "size": 433928,
+      "sha256": "sha256:bytes:d898e00f3be4b28e237f71acf8024ad3715a657e1fcf3aeaf57279468dff7a76",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/ddaccd06100d51494e5aaaecedab7b27eaeeda5290d453498d3e1cb9460ad474.webp",
+      "size": 170884,
+      "sha256": "sha256:bytes:ddaccd06100d51494e5aaaecedab7b27eaeeda5290d453498d3e1cb9460ad474",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/e0ab22f77f5d966d7868f8950f79702dc6d156d0eaef3e06205097558d5c5bb2.webp",
+      "size": 261816,
+      "sha256": "sha256:bytes:e0ab22f77f5d966d7868f8950f79702dc6d156d0eaef3e06205097558d5c5bb2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 1344
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/e0f19676addbba6fe954711c235878ef43495e8066b84ed70b5c240a8512b026.mp4",
+      "size": 479597,
+      "sha256": "sha256:bytes:e0f19676addbba6fe954711c235878ef43495e8066b84ed70b5c240a8512b026",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/e14e0fb4bccace254e3430bbddd49728980e5445b988eff1ae8164f135d1cc8d.png",
+      "size": 3340,
+      "sha256": "sha256:bytes:e14e0fb4bccace254e3430bbddd49728980e5445b988eff1ae8164f135d1cc8d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/e90e99e27cdd9b6ab7478a05199df2fdf7dce650d700ef2ceb55da7fb206b715.webp",
+      "size": 32852,
+      "sha256": "sha256:bytes:e90e99e27cdd9b6ab7478a05199df2fdf7dce650d700ef2ceb55da7fb206b715",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/f791a809c0df307cd7dafa8c54ae86bbe4c53d73afdacb2183ff8cdbeac994c2.webp",
+      "size": 215222,
+      "sha256": "sha256:bytes:f791a809c0df307cd7dafa8c54ae86bbe4c53d73afdacb2183ff8cdbeac994c2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/fc326ed56f9e5de83262a0a1bc4ce85f4b4b291d654a05efa4a32fc133f97a3f.webp",
+      "size": 535240,
+      "sha256": "sha256:bytes:fc326ed56f9e5de83262a0a1bc4ce85f4b4b291d654a05efa4a32fc133f97a3f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/runtime-inputs/default-input-bindings.json",
+      "size": 43140,
+      "sha256": "sha256:bytes:84f8c3bd524f5a1b72d4c2fc166d670f1435c506a845356a9a83b2916eb1359c",
+      "contentType": "application/json",
+      "purposes": [
+        "tooling"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png",
+      "size": 2904091,
+      "sha256": "sha256:bytes:fd3dbd225c9cd6d1a07b0bcfd80724b60b235f4287423a234c0a56017cd1d3b2",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_22_i2v_seed_vault.card-poster.png",
+      "size": 2628728,
+      "sha256": "sha256:bytes:d2a566526d5779d3002ac1f8364d88643e6f34c256c360b0a2217cced0c91602",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_22_ti2v_5b_seed_vault.card-poster.png",
+      "size": 2624421,
+      "sha256": "sha256:bytes:58d411a5a1a4b4f827eb6b32a74d26af79b0c3556549958bb1faf8244a66e00f",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_22_ti2v_5b_seed_vault.card-preview.mp4",
+      "size": 284590,
+      "sha256": "sha256:bytes:f610ee34c08aa97e5b2a42e029c7e4acfe2e22f5a73431dcd9ce875ec4dd1145",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_22_ti2v_5b_seed_vault.mp4",
+      "size": 36803514,
+      "sha256": "sha256:bytes:2056b7fb1da71b48ebad25a95d8ea7fb124ba7eb884df940520224f8f488da7b",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_22_ti2v_5b_seed_vault.poster.png",
+      "size": 999205,
+      "sha256": "sha256:bytes:5c9d7a7553921204ceca0ac74d5405d6ce81909e230e81e9edffaf0f2ffc50c6",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1280,
+      "height": 704
+    },
+    {
+      "path": "template-gallery/wan_vace_cinematic_text_to_video.card-poster.png",
+      "size": 2220363,
+      "sha256": "sha256:bytes:50ddf968f99584f43293e02746d3629fc3dd315a238a6aabc29bb680f3609f6e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_vace_cinematic_text_to_video.card-preview.mp4",
+      "size": 935858,
+      "sha256": "sha256:bytes:58c230e968510c26bc2ea6131e64791a057d31ee3e3bd0fe6d7a062b0545b356",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_cinematic_text_to_video.mp4",
+      "size": 3509355,
+      "sha256": "sha256:bytes:47a2f29152a5239d52d8625c8abe3b431d7ae6d834c0d6cd0c0b852071eec171",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_cinematic_text_to_video.poster.png",
+      "size": 1742463,
+      "sha256": "sha256:bytes:427b6012590b1f010c3b77ee72bd350e84a4fccc84c65a8b0c5607d115adac55",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/wan_vace_direct_text_to_video.card-poster.png",
+      "size": 2442609,
+      "sha256": "sha256:bytes:096c3dc1fe798daf6008f58f20f261e94d40e932889e6c7f5460a4a7996124c7",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_vace_grayscale_control.card-poster.png",
+      "size": 2111100,
+      "sha256": "sha256:bytes:d82b76951d227d7bc6e7daf962a1f832238251dbb87f18e70ee7ebac59d75eba",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_vace_grayscale_control.card-preview.mp4",
+      "size": 201263,
+      "sha256": "sha256:bytes:1ca73ab55f51fbe4eb08d4de5a2fa0c1c9654cf77909f2626aab0414a35f5985",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_grayscale_control.mp4",
+      "size": 957106,
+      "sha256": "sha256:bytes:4a011e34131e9c3bc9b05621184a520f6fb85c282031acd35e2988dda105ff62",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_grayscale_control.poster.png",
+      "size": 1080262,
+      "sha256": "sha256:bytes:81a77bbc5882c22ab8e76fce76d7a2084e57b938fff42e842e5e9894dbc3010d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/wan_vace_masked_object_replace.poster.png",
+      "size": 919982,
+      "sha256": "sha256:bytes:3f1fc98dc6dc4cc1419fb82322d382e196e1857a6f7f89af45c5e7f10f61bb6a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/wan_vace_outpaint_reframe.card-poster.png",
+      "size": 2793095,
+      "sha256": "sha256:bytes:42c36b6d4c0b60f76c681429b7a9b1bac78bc22832f60911e8cac3dee4538c52",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_vace_outpaint_reframe.card-preview.mp4",
+      "size": 324218,
+      "sha256": "sha256:bytes:37c1f4b3a9787c6c6dac081ed3cabd2a42d2d0a9c2db10f1ac33a7a98e1ecea2",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_outpaint_reframe.mp4",
+      "size": 1352471,
+      "sha256": "sha256:bytes:f899d1af73bd95da7f3babe30c03d834b93c68c3f939eac0b8fb98df094c4d98",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_outpaint_reframe.poster.png",
+      "size": 763693,
+      "sha256": "sha256:bytes:df7f715aaadf49fa3df62ef0eb4238e19befadfee6910970ba8eab9e80128f01",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/wan_vace_video_color_grade.card-poster.png",
+      "size": 2407640,
+      "sha256": "sha256:bytes:b7ecb4e84b0284f59f37f9e20f814435fbd08619f6af85fffa0fd56d94a2b612",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_vace_video_color_grade.card-preview.mp4",
+      "size": 127148,
+      "sha256": "sha256:bytes:aaa8905d5b7e2b1c0cd8b7d7bf62d334db0ec6a8d2a943f73bc82f17026fa9bd",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_video_color_grade.mp4",
+      "size": 569543,
+      "sha256": "sha256:bytes:72a7538470942630455723c7ccd1725d29ed662276e05ef647f4304e16e44d63",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_video_color_grade.poster.png",
+      "size": 572909,
+      "sha256": "sha256:bytes:5cb855c7951e6aa0e42b04e5583165f02e9fcc978cbcfe5c23b041d92f94f554",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/wan_vace_video_to_video.card-poster.png",
+      "size": 3102314,
+      "sha256": "sha256:bytes:dc49d059f34c6823cb5c02b8dd09899f5f53f81947bbbce35afb1418e70f3b62",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/wan_vace_video_to_video.card-preview.mp4",
+      "size": 355050,
+      "sha256": "sha256:bytes:7c0738aa477caae0852e7f4fad7fcfb36e9281dd1dbdc0ca091477876d38a074",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_video_to_video.mp4",
+      "size": 1542178,
+      "sha256": "sha256:bytes:99ccd9e6863e53c76f0a959b6b8953db3001cf3bf90b728d840b3d3a3e48e541",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_video_to_video.poster.png",
+      "size": 1768482,
+      "sha256": "sha256:bytes:a893c3eab103355212373709510267ecfa831a2d0b46dfd9e8ca795e06503782",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/wan_video_long_showcase.card-poster.png",
+      "size": 1831264,
+      "sha256": "sha256:bytes:c3e65e089c4b2bf72269114ac5699701ffd71a6c10c8e3f6f2d13eb25e517dc9",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "path": "template-gallery/z_image_cinematic_contact_sheet.webp",
+      "size": 223184,
+      "sha256": "sha256:bytes:6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/z_image_lora_style.card-poster.webp",
+      "size": 379002,
+      "sha256": "sha256:bytes:9c5b2bb60e66147e786b28a0283a41817e74929981c1265bc941e2191f2578dd",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/z_image_lora_style.webp",
+      "size": 350962,
+      "sha256": "sha256:bytes:027a7fb3657066a6ccca2f0e56d1e74c6771f89e5396e2c7e38f6bbb683242c7",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/z_image_poster.webp",
+      "size": 243272,
+      "sha256": "sha256:bytes:4ada0a09ff88ca792ee007269811f94fa09232ceb54fcfad82be0b86522f9aa4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 1344
+    },
+    {
+      "path": "template-gallery/z_image_product_mockup.webp",
+      "size": 160078,
+      "sha256": "sha256:bytes:951142f49008e9a26d799065766c1627f63b9f108d3fe7d284f56d1618f2ebb5",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/z_image_quick_concept.webp",
+      "size": 277588,
+      "sha256": "sha256:bytes:800de87d2bb49e3fc068ebac0c81a21a5722541900aba83992ed51a6f6865b7f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    }
+  ],
+  "assetSetId": "sha256:canonical-json:ec61fbc1b76da02110e4a0cddc4e222026e911a6e00451f85678f66d2b32ec85",
+  "status": "ready",
+  "assetCount": 360,
+  "totalBytes": 488731153,
+  "missingAssets": []
+}

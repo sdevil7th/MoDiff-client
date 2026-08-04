@@ -1,26 +1,5 @@
 @import 'tailwindcss';
-
-@theme {
-  --font-sans: 'Source Sans Pro', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-
-  --color-hf-yellow: #ffd21e;
-  --color-hf-orange: #ff9d00;
-  --color-hf-gray: #6b7280;
-  --color-modiff-bg: #0b0f19;
-  --color-modiff-surface: #101623;
-  --color-modiff-panel: #141c2e;
-  --color-modiff-muted: #6a7282;
-  --color-modiff-text: #f9fafb;
-  --color-modiff-border: #1e2939;
-  --color-modiff-blue: #3080ff;
-  --color-modiff-red: #fb2c36;
-  --color-modiff-green: #00baa7;
-
-  --radius-modiff-compact: 4px;
-  --radius-modiff-panel: 6px;
-  --shadow-modiff-node: 0 10px 24px rgb(0 0 0 / 35%);
-}
+@import './semantic-tokens.generated.css';
 
 @layer base {
   :root {
@@ -44,9 +23,179 @@
     font: inherit;
   }
 
+  button,
+  input,
+  textarea {
+    accent-color: var(--color-hf-yellow);
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-hf-yellow) 35%, transparent);
+    color: var(--color-modiff-text);
+  }
+
   select option,
   select optgroup {
     background: var(--color-modiff-bg);
     color: var(--color-modiff-text);
+  }
+}
+
+@layer components {
+  .modiff-overlay-scrollport-x {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .modiff-overlay-scrollport-x::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .modiff-scrollbar-thin {
+    scrollbar-color: color-mix(in srgb, var(--color-modiff-text) 30%, transparent) transparent;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+
+  .modiff-scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .modiff-scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .modiff-scrollbar-thin::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-modiff-text) 30%, transparent);
+  }
+
+  .modiff-scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-modiff-text) 45%, transparent);
+  }
+
+  .modiff-slider {
+    appearance: none;
+    background: transparent;
+  }
+
+  .modiff-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border: 1px solid var(--color-modiff-border-subtle);
+    border-radius: 999px;
+    background: var(--color-modiff-disabled);
+  }
+
+  .modiff-slider::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+    margin-top: -6px;
+    appearance: none;
+    border: 2px solid var(--color-modiff-bg);
+    border-radius: 999px;
+    background: var(--color-hf-yellow);
+    box-shadow: 0 0 0 1px var(--color-modiff-border-subtle);
+    transition:
+      background-color 120ms ease,
+      transform 120ms ease;
+  }
+
+  .modiff-slider::-moz-range-track {
+    height: 4px;
+    border: 1px solid var(--color-modiff-border-subtle);
+    border-radius: 999px;
+    background: var(--color-modiff-disabled);
+  }
+
+  .modiff-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--color-modiff-bg);
+    border-radius: 999px;
+    background: var(--color-hf-yellow);
+    box-shadow: 0 0 0 1px var(--color-modiff-border-subtle);
+    transition:
+      background-color 120ms ease,
+      transform 120ms ease;
+  }
+
+  .modiff-slider:not(:disabled):not([aria-readonly='true']):active::-webkit-slider-thumb {
+    background: var(--color-modiff-primary-pressed);
+    transform: scale(0.94);
+  }
+
+  .modiff-slider:not(:disabled):not([aria-readonly='true']):active::-moz-range-thumb {
+    background: var(--color-modiff-primary-pressed);
+    transform: scale(0.94);
+  }
+
+  .modiff-slider[aria-invalid='true']::-webkit-slider-runnable-track {
+    border-color: var(--color-modiff-invalid);
+  }
+
+  .modiff-slider[aria-invalid='true']::-moz-range-track {
+    border-color: var(--color-modiff-invalid);
+  }
+
+  .modiff-slider[aria-readonly='true']::-webkit-slider-thumb {
+    background: var(--color-modiff-subtle-text);
+  }
+
+  .modiff-slider[aria-readonly='true']::-moz-range-thumb {
+    background: var(--color-modiff-subtle-text);
+  }
+
+  .modiff-range-slider::-webkit-slider-runnable-track {
+    height: 16px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .modiff-range-slider::-moz-range-track {
+    height: 16px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .modiff-range-slider::-webkit-slider-thumb {
+    pointer-events: auto;
+    margin-top: 0;
+  }
+
+  .modiff-range-slider::-moz-range-thumb {
+    pointer-events: auto;
+  }
+
+  .modiff-file-input::file-selector-button {
+    min-height: 32px;
+    margin-right: 12px;
+    border: 1px solid var(--color-modiff-border);
+    border-radius: var(--radius-modiff-compact);
+    background: var(--color-modiff-panel);
+    color: var(--color-modiff-text);
+    font: inherit;
+    font-weight: 600;
+    padding: 0 12px;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease;
+  }
+
+  .modiff-file-input:not(:disabled)::file-selector-button:hover {
+    border-color: var(--color-hf-yellow);
+    background: var(--color-modiff-surface-hover);
+  }
+
+  .modiff-file-input:disabled::file-selector-button {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 }

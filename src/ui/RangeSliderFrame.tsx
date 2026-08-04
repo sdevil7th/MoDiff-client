@@ -1,6 +1,6 @@
 import { useId } from 'react';
-import { modiffColors, modiffOverlays } from '../theme';
 import { cx } from '../utils/classNames';
+import { useModiffFieldControl } from './fieldContext';
 
 type RangeValue = number | [number, number];
 
@@ -12,19 +12,27 @@ type Mark =
     };
 
 export type RangeSliderFrameProps = {
+  'aria-describedby'?: string;
+  'aria-errormessage'?: string;
+  'aria-label'?: string;
+  'aria-invalid'?: boolean | 'false' | 'true';
   className?: string;
   disabled?: boolean;
+  id?: string;
+  invalid?: boolean;
   marks?: boolean | Mark[];
   max?: number;
   min?: number;
   onChange: (value: RangeValue) => void;
   onCommit?: (value: RangeValue) => void;
+  readOnly?: boolean;
+  required?: boolean;
   step?: number;
   value: number | number[];
 };
 
 const rangeInputClassName =
-  'pointer-events-none absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 appearance-none bg-transparent accent-hf-yellow disabled:opacity-40 [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-hf-yellow [&::-webkit-slider-runnable-track]:h-4 [&::-webkit-slider-runnable-track]:appearance-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-hf-yellow';
+  'modiff-slider modiff-range-slider pointer-events-none absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 bg-transparent disabled:opacity-40 focus-visible:rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-modiff-focus/35 aria-[invalid=true]:focus-visible:ring-modiff-invalid/35';
 
 function toFiniteNumber(value: unknown, fallback: number) {
   const numeric = Number(value);
@@ -43,17 +51,34 @@ function normalizeMarks(marks: boolean | Mark[] | undefined) {
 }
 
 export function RangeSliderFrame({
+  'aria-describedby': ariaDescribedBy,
+  'aria-errormessage': ariaErrorMessage,
+  'aria-invalid': ariaInvalid,
+  'aria-label': ariaLabel = 'Range',
   className,
-  disabled = false,
+  disabled,
+  id,
+  invalid,
   marks,
   max = 100,
   min = 0,
   onChange,
   onCommit,
+  readOnly,
+  required,
   step,
   value,
 }: RangeSliderFrameProps) {
   const datalistId = useId();
+  const field = useModiffFieldControl({
+    ariaDescribedBy,
+    ariaErrorMessage,
+    disabled,
+    id,
+    invalid: Boolean(invalid || ariaInvalid === true || ariaInvalid === 'true'),
+    readOnly,
+    required,
+  });
   const normalizedMarks = normalizeMarks(marks);
   const hasMarks = normalizedMarks.length > 0;
   const isDual = Array.isArray(value);
@@ -63,30 +88,38 @@ export function RangeSliderFrame({
   const upperValue = isDual ? clamp(toFiniteNumber(value[1], max), min, max) : singleValue;
   const startPercent = (((isDual ? lowerValue : min) - min) / range) * 100;
   const endPercent = ((upperValue - min) / range) * 100;
-  const background = `linear-gradient(to right, ${modiffOverlays.transparentLight} 0%, ${modiffOverlays.transparentLight} ${startPercent}%, ${modiffColors.primary} ${startPercent}%, ${modiffColors.primary} ${endPercent}%, ${modiffOverlays.transparentLight} ${endPercent}%, ${modiffOverlays.transparentLight} 100%)`;
+  const background = `linear-gradient(to right, transparent 0%, transparent ${startPercent}%, var(--color-hf-yellow) ${startPercent}%, var(--color-hf-yellow) ${endPercent}%, transparent ${endPercent}%, transparent 100%)`;
   const stepValue = step ?? 1;
   const listId = hasMarks ? datalistId : undefined;
   const commitValue = (nextValue: RangeValue) => {
-    onCommit?.(nextValue);
+    if (!field.readOnly) onCommit?.(nextValue);
   };
 
   return (
     <div className={cx('px-4 pb-1 pt-2', className)}>
       <div className="relative h-5">
-        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/15" />
+        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-modiff-disabled/30" />
         <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full" style={{ background }} />
         {isDual ? (
           <>
             <input
               type="range"
+              id={field.id}
+              aria-label={`Lower ${ariaLabel}`}
+              aria-describedby={field.ariaDescribedBy}
+              aria-errormessage={field.ariaErrorMessage}
+              aria-invalid={field.invalid || undefined}
+              aria-readonly={field.readOnly || undefined}
+              aria-required={field.required || undefined}
               className={rangeInputClassName}
               min={min}
               max={max}
               step={stepValue}
               value={lowerValue}
-              disabled={disabled}
+              disabled={field.disabled}
               list={listId}
               onChange={(event) => {
+                if (field.readOnly) return;
                 const next = Math.min(toFiniteNumber(event.target.value, lowerValue), upperValue);
                 onChange([next, upperValue]);
               }}
@@ -101,14 +134,22 @@ export function RangeSliderFrame({
             />
             <input
               type="range"
+              id={field.id ? `${field.id}-upper` : undefined}
+              aria-label={`Upper ${ariaLabel}`}
+              aria-describedby={field.ariaDescribedBy}
+              aria-errormessage={field.ariaErrorMessage}
+              aria-invalid={field.invalid || undefined}
+              aria-readonly={field.readOnly || undefined}
+              aria-required={field.required || undefined}
               className={rangeInputClassName}
               min={min}
               max={max}
               step={stepValue}
               value={upperValue}
-              disabled={disabled}
+              disabled={field.disabled}
               list={listId}
               onChange={(event) => {
+                if (field.readOnly) return;
                 const next = Math.max(toFiniteNumber(event.target.value, upperValue), lowerValue);
                 onChange([lowerValue, next]);
               }}
@@ -125,14 +166,23 @@ export function RangeSliderFrame({
         ) : (
           <input
             type="range"
+            id={field.id}
+            aria-label={ariaLabel}
+            aria-describedby={field.ariaDescribedBy}
+            aria-errormessage={field.ariaErrorMessage}
+            aria-invalid={field.invalid || undefined}
+            aria-readonly={field.readOnly || undefined}
+            aria-required={field.required || undefined}
             className={rangeInputClassName}
             min={min}
             max={max}
             step={stepValue}
             value={singleValue}
-            disabled={disabled}
+            disabled={field.disabled}
             list={listId}
-            onChange={(event) => onChange(toFiniteNumber(event.target.value, singleValue))}
+            onChange={(event) => {
+              if (!field.readOnly) onChange(toFiniteNumber(event.target.value, singleValue));
+            }}
             onPointerUp={(event) => commitValue(toFiniteNumber(event.currentTarget.value, singleValue))}
             onBlur={(event) => commitValue(toFiniteNumber(event.currentTarget.value, singleValue))}
           />

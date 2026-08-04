@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import type { NodeData, NodeParams } from './useNodeStore';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { deepEqual } from '../utils/deepEqual';
+import { normalizeGenericModelLoaderParams } from '../studio/modelSelection';
 import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 
@@ -22,7 +23,12 @@ export function applyFlowNodeChanges(changes: NodeChange<CustomNodeType>[], set:
 }
 
 export function addFlowNode(node: CustomNodeType, set: FlowStoreSet, get: FlowStoreGet) {
-  set({ nodes: [...get().nodes, node] });
+  set({
+    nodes: [...get().nodes, node].map((item) => {
+      const params = normalizeGenericModelLoaderParams(item.data.module, item.data.action, item.data.params);
+      return params === item.data.params ? item : { ...item, data: { ...item.data, params } };
+    }),
+  });
 }
 
 export function removeFlowNodes(ids: string | string[], set: FlowStoreSet, get: FlowStoreGet) {
@@ -188,6 +194,9 @@ export function clearFlowNodeUiStates(set: FlowStoreSet) {
         if (!node.data.uiState) return node;
         const nextUiState = {
           collapsed: node.data.uiState.collapsed,
+          blockExpanded: node.data.uiState.blockExpanded,
+          blockCollapsedWidth: node.data.uiState.blockCollapsedWidth,
+          blockCollapsedHeight: node.data.uiState.blockCollapsedHeight,
           disabled: node.data.uiState.disabled,
         };
         const compactUiState = Object.fromEntries(
@@ -323,9 +332,112 @@ export function groupFlowNodes(ids: string[], set: FlowStoreSet) {
   });
 }
 
+export function loopFlowNodes(ids: string[], set: FlowStoreSet) {
+  set((state) => {
+    const nodes = state.nodes.filter(
+      (node) => ids.includes(node.id) && node.data.type !== 'group' && node.data.type !== 'loop' && !node.parentId,
+    );
+    if (nodes.length === 0) return state;
+
+    const minX = Math.min(...nodes.map((node) => node.position.x));
+    const minY = Math.min(...nodes.map((node) => node.position.y));
+    const maxX = Math.max(...nodes.map((node) => node.position.x + (node.measured?.width ?? node.width ?? 220)));
+    const maxY = Math.max(...nodes.map((node) => node.position.y + (node.measured?.height ?? node.height ?? 140)));
+    const loopNode: CustomNodeType = {
+      id: nanoid(),
+      type: 'loop',
+      width: Math.max(360, maxX - minX + 56),
+      height: Math.max(240, maxY - minY + 92),
+      data: {
+        type: 'loop',
+        label: 'Loop',
+        category: 'workflow-control',
+        module: '',
+        action: '',
+        params: {
+          iterations: { type: 'int', label: 'Iterations', value: 2, default: 2, min: 1, max: 100 },
+          iteration_mode: {
+            type: 'string',
+            label: 'Repeat by',
+            value: 'count',
+            default: 'count',
+            options: ['count', 'collection'],
+          },
+          max_iterations: { type: 'int', label: 'Maximum', value: 100, default: 100, min: 1, max: 10000 },
+          carry: { type: 'bool', label: 'Carry result', value: true, default: true },
+          collect: { type: 'bool', label: 'Collect results', value: true, default: true },
+          max_retries: { type: 'int', label: 'Retries', value: 1, default: 1, min: 0, max: 10 },
+        },
+        resizable: true,
+      },
+      position: { x: minX - 28, y: minY - 64 },
+      style: { zIndex: -1 },
+    };
+    const updatedNodes = state.nodes.map((node) =>
+      nodes.some((selected) => selected.id === node.id)
+        ? {
+            ...node,
+            parentId: loopNode.id,
+            extent: undefined,
+            position: {
+              x: node.position.x - minX + 28,
+              y: node.position.y - minY + 64,
+            },
+          }
+        : node,
+    );
+    return { nodes: [loopNode, ...updatedNodes] };
+  });
+}
+
+export function setFlowNodeLoopParent(nodeId: string, loopId: string | null, set: FlowStoreSet) {
+  set((state) => {
+    const node = state.nodes.find((item) => item.id === nodeId);
+    if (!node || node.data.type === 'group') return state;
+    const currentParent = node.parentId ? state.nodes.find((item) => item.id === node.parentId) : undefined;
+    const target = loopId ? state.nodes.find((item) => item.id === loopId && item.data.type === 'loop') : undefined;
+    if (loopId && !target) return state;
+    if (target?.id === node.id) return state;
+    let ancestorId = target?.parentId;
+    const visited = new Set<string>();
+    while (ancestorId && !visited.has(ancestorId)) {
+      if (ancestorId === node.id) return state;
+      visited.add(ancestorId);
+      ancestorId = state.nodes.find((item) => item.id === ancestorId)?.parentId;
+    }
+    if ((target?.id ?? null) === (currentParent?.data.type === 'loop' ? currentParent.id : null)) return state;
+    if (currentParent && currentParent.data.type !== 'loop') return state;
+
+    const absolutePosition = currentParent
+      ? {
+          x: currentParent.position.x + node.position.x,
+          y: currentParent.position.y + node.position.y,
+        }
+      : node.position;
+    const position = target
+      ? {
+          x: absolutePosition.x - target.position.x,
+          y: absolutePosition.y - target.position.y,
+        }
+      : absolutePosition;
+    return {
+      nodes: state.nodes.map((item) =>
+        item.id === nodeId
+          ? {
+              ...item,
+              parentId: target?.id,
+              extent: undefined,
+              position,
+            }
+          : item,
+      ),
+    };
+  });
+}
+
 export function ungroupFlowNodes(id: string, set: FlowStoreSet) {
   set((state) => {
-    const group = state.nodes.find((node) => node.id === id && node.type === 'group');
+    const group = state.nodes.find((node) => node.id === id && (node.type === 'group' || node.type === 'loop'));
     if (!group) return state;
     return {
       nodes: state.nodes
@@ -416,7 +528,15 @@ export function updateFlowNodeProgress(
   progress: number,
   metadata:
     | Partial<
-        Pick<NodeData, 'activeTaskId' | 'attemptIndex' | 'executionStatus' | 'executionPhase' | 'progressMessage'>
+        Pick<
+          NodeData,
+          | 'activeTaskId'
+          | 'attemptIndex'
+          | 'executionStatus'
+          | 'executionPhase'
+          | 'progressMessage'
+          | 'executionProgress'
+        >
       >
     | undefined,
   set: FlowStoreSet,
@@ -426,6 +546,12 @@ export function updateFlowNodeProgress(
     if (!node) {
       return state;
     }
+    const retireOtherActiveNodes = metadata?.executionStatus === 'running';
+    const isActiveExecutionNode = (item: CustomNodeType) =>
+      item.data.executionStatus === 'running' ||
+      (Boolean(item.data.activeTaskId) && typeof item.data.progress === 'number' && item.data.progress !== 0);
+    const hasPreviousActiveNode =
+      retireOtherActiveNodes && state.nodes.some((item) => item.id !== id && isActiveExecutionNode(item));
     const nextData = {
       ...node.data,
       progress,
@@ -437,45 +563,85 @@ export function updateFlowNodeProgress(
       node.data.attemptIndex === nextData.attemptIndex &&
       node.data.executionStatus === nextData.executionStatus &&
       node.data.executionPhase === nextData.executionPhase &&
-      node.data.progressMessage === nextData.progressMessage
+      node.data.progressMessage === nextData.progressMessage &&
+      node.data.executionProgress === nextData.executionProgress &&
+      !hasPreviousActiveNode
     ) {
       return state;
     }
 
     return {
-      nodes: state.nodes.map((item) => (item.id === id ? { ...item, data: nextData } : item)),
+      nodes: state.nodes.map((item) => {
+        if (item.id === id) return { ...item, data: nextData };
+        if (!retireOtherActiveNodes || !isActiveExecutionNode(item)) {
+          return item;
+        }
+        return {
+          ...item,
+          data: {
+            ...item.data,
+            progress: 0,
+            activeTaskId: null,
+            attemptIndex: undefined,
+            executionStatus: undefined,
+            executionPhase: undefined,
+            progressMessage: undefined,
+            executionProgress: undefined,
+          },
+        };
+      }),
     };
   });
 }
 
 export function resetFlowStatus(cachedIds: string | string[], set: FlowStoreSet, get: FlowStoreGet) {
-  get().updateCacheStatus(cachedIds);
-
-  get().nodes.forEach((node) => {
-    if ((node.data.progress && node.data.progress !== 0) || node.data.executionStatus || node.data.progressMessage) {
-      get().updateProgress(node.id, 0, {
-        activeTaskId: null,
-        attemptIndex: undefined,
-        executionStatus: undefined,
-        executionPhase: undefined,
-        progressMessage: undefined,
-      });
-    }
-  });
-
-  const currentNodes = get().nodes;
-  const currentEdges = get().edges;
-  const currentViewport = get().viewport;
-  set({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 }, lastExecutionTime: 0 });
-  queueMicrotask(() => {
-    set({ nodes: currentNodes, edges: currentEdges, viewport: currentViewport });
+  void get;
+  const cachedSet = new Set(toArray(cachedIds));
+  set((state) => {
+    let changed = state.lastExecutionTime !== 0;
+    const nodes = state.nodes.map((node) => {
+      const isCached = cachedSet.has(node.id);
+      const hasExecutionState = Boolean(
+        node.data.progress ||
+        node.data.executionStatus ||
+        node.data.executionPhase ||
+        node.data.progressMessage ||
+        node.data.executionProgress ||
+        node.data.activeTaskId ||
+        node.data.attemptIndex !== undefined,
+      );
+      if (Boolean(node.data.isCached) === isCached && !hasExecutionState) return node;
+      changed = true;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          isCached,
+          progress: 0,
+          activeTaskId: null,
+          attemptIndex: undefined,
+          executionStatus: undefined,
+          executionPhase: undefined,
+          progressMessage: undefined,
+          executionProgress: undefined,
+        },
+      };
+    });
+    return changed ? { nodes, lastExecutionTime: 0 } : state;
   });
 }
 
-export function resetFlowExecutionProgress(set: FlowStoreSet) {
+export function resetFlowExecutionProgress(set: FlowStoreSet, taskId?: string | null) {
   set((state) => ({
     nodes: state.nodes.map((node) =>
-      node.data.progress || node.data.executionStatus || node.data.progressMessage || node.data.activeTaskId
+      (!taskId || node.data.activeTaskId === taskId) &&
+      (node.data.progress ||
+        node.data.executionStatus ||
+        node.data.executionPhase ||
+        node.data.progressMessage ||
+        node.data.executionProgress ||
+        node.data.activeTaskId ||
+        node.data.attemptIndex !== undefined)
         ? {
             ...node,
             data: {
@@ -486,6 +652,7 @@ export function resetFlowExecutionProgress(set: FlowStoreSet) {
               executionStatus: undefined,
               executionPhase: undefined,
               progressMessage: undefined,
+              executionProgress: undefined,
             },
           }
         : node,

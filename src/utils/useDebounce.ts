@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useState, useEffect } from 'react';
 
 export function useDebounce<T>(value: T, delay: number): T {

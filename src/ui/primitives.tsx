@@ -1,48 +1,60 @@
-import {
-  Dialog,
-  DialogBackdrop,
-  DialogPanel,
-  DialogTitle,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-} from '@headlessui/react';
-import { Check, ChevronDown, X } from 'lucide-react';
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
+import { LoaderCircle, X } from 'lucide-react';
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { cx } from '../utils/classNames';
-
-type Tone = 'primary' | 'secondary' | 'danger' | 'ghost';
-
-const toneClasses: Record<Tone, string> = {
-  primary: 'bg-hf-yellow text-black hover:bg-hf-orange focus-visible:outline-hf-yellow',
-  secondary:
-    'border border-modiff-border bg-modiff-panel text-modiff-text hover:border-hf-yellow/70 hover:text-white focus-visible:outline-hf-yellow',
-  danger: 'bg-modiff-red text-white hover:brightness-110 focus-visible:outline-modiff-red',
-  ghost: 'text-gray-300 hover:bg-white/10 hover:text-white focus-visible:outline-hf-yellow',
-};
+import { modiffActionToneClasses, type ModiffActionTone } from './actionStyles';
+import { ModiffInput, type ModiffInputProps } from './controls';
+import { controlHeightClasses, type ModiffControlSize } from './controlStyles';
+import { ModiffTooltip } from './overlays';
 
 export type ModiffButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  tone?: Tone;
+  align?: 'center' | 'left';
+  fullWidth?: boolean;
+  tone?: ModiffActionTone;
   icon?: ReactNode;
+  loading?: boolean;
+  size?: ModiffControlSize;
 };
 
 export const ModiffButton = forwardRef<HTMLButtonElement, ModiffButtonProps>(function ModiffButton(
-  { className, tone = 'secondary', icon, children, type = 'button', ...props },
+  {
+    align = 'center',
+    className,
+    tone = 'secondary',
+    fullWidth = false,
+    icon,
+    loading = false,
+    size = 'dense',
+    children,
+    disabled,
+    type = 'button',
+    ...props
+  },
   ref,
 ) {
   return (
     <button
       ref={ref}
       type={type}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
       className={cx(
-        'inline-flex h-8 items-center justify-center gap-1.5 rounded-modiff-compact px-3 text-sm font-semibold leading-none transition disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
-        toneClasses[tone],
+        'inline-flex items-center gap-1.5 rounded-modiff-compact px-3 font-semibold leading-none transition disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
+        controlHeightClasses[size],
+        fullWidth && 'w-full',
+        align === 'center' ? 'justify-center text-center' : 'justify-start whitespace-normal text-left',
+        modiffActionToneClasses[tone],
         className,
       )}
       {...props}
     >
-      {icon ? <span className="grid size-4 place-items-center">{icon}</span> : null}
+      {loading ? (
+        <span className="grid size-4 shrink-0 place-items-center">
+          <LoaderCircle size={15} className="animate-spin" aria-hidden="true" />
+        </span>
+      ) : icon ? (
+        <span className="grid size-4 shrink-0 place-items-center">{icon}</span>
+      ) : null}
       {children}
     </button>
   );
@@ -51,52 +63,98 @@ export const ModiffButton = forwardRef<HTMLButtonElement, ModiffButtonProps>(fun
 export type ModiffIconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
   active?: boolean;
+  isRound?: boolean;
+  size?: ModiffControlSize;
+  tone?: ModiffActionTone;
 };
 
 export const ModiffIconButton = forwardRef<HTMLButtonElement, ModiffIconButtonProps>(function ModiffIconButton(
-  { className, label, active = false, children, type = 'button', ...props },
+  {
+    'aria-describedby': ariaDescribedBy,
+    active = false,
+    children,
+    className,
+    isRound = false,
+    label,
+    onBlur,
+    onFocus,
+    onPointerEnter,
+    onPointerLeave,
+    size = 'dense',
+    title,
+    tone = 'ghost',
+    type = 'button',
+    ...props
+  },
   ref,
 ) {
+  const tooltipLabel = title || label;
+
   return (
-    <button
-      ref={ref}
-      type={type}
-      aria-label={label}
-      title={label}
-      className={cx(
-        'grid size-8 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-        active && 'bg-hf-yellow text-black hover:bg-hf-yellow hover:text-black',
-        className,
+    <ModiffTooltip<HTMLButtonElement> content={tooltipLabel}>
+      {(tooltipProps) => (
+        <button
+          ref={ref}
+          type={type}
+          aria-label={label}
+          aria-describedby={[ariaDescribedBy, tooltipProps['aria-describedby']].filter(Boolean).join(' ') || undefined}
+          className={cx(
+            'grid shrink-0 place-items-center text-modiff-subtle-text transition hover:bg-modiff-surface-hover hover:text-modiff-text active:bg-modiff-surface-pressed disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-modiff-focus',
+            isRound ? 'rounded-full' : 'rounded-modiff-compact',
+            size === 'compact' && 'size-7',
+            size === 'dense' && 'size-8',
+            size === 'normal' && 'size-9',
+            size === 'prominent' && 'size-10',
+            modiffActionToneClasses[tone],
+            active &&
+              'bg-hf-yellow text-modiff-on-accent hover:bg-hf-yellow hover:text-modiff-on-accent active:bg-modiff-primary-pressed',
+            'data-[open]:bg-modiff-selected-surface data-[open]:text-hf-yellow',
+            className,
+          )}
+          onPointerEnter={(event) => {
+            tooltipProps.onPointerEnter(event);
+            onPointerEnter?.(event);
+          }}
+          onPointerLeave={(event) => {
+            tooltipProps.onPointerLeave(event);
+            onPointerLeave?.(event);
+          }}
+          onFocus={(event) => {
+            tooltipProps.onFocus(event);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            tooltipProps.onBlur(event);
+            onBlur?.(event);
+          }}
+          {...props}
+        >
+          {children}
+        </button>
       )}
-      {...props}
-    >
-      {children}
-    </button>
+    </ModiffTooltip>
   );
 });
 
-export type ModiffInputProps = InputHTMLAttributes<HTMLInputElement>;
-
-export const ModiffInput = forwardRef<HTMLInputElement, ModiffInputProps>(function ModiffInput(
-  { className, ...props },
-  ref,
-) {
-  return (
-    <input
-      ref={ref}
-      className={cx(
-        'h-8 w-full rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text placeholder:text-gray-500 focus:border-hf-yellow focus:outline-none',
-        className,
-      )}
-      {...props}
-    />
-  );
-});
-
-export function ModiffProgress({ value, className }: { value: number; className?: string }) {
+export function ModiffProgress({
+  value,
+  className,
+  label = 'Progress',
+}: {
+  value: number;
+  className?: string;
+  label?: string;
+}) {
   const clamped = Math.max(0, Math.min(100, value));
   return (
-    <div className={cx('h-1.5 overflow-hidden rounded-full bg-white/10', className)}>
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={clamped}
+      className={cx('h-1.5 overflow-hidden rounded-full bg-modiff-disabled/30', className)}
+    >
       <div className="h-full bg-hf-yellow transition-[width]" style={{ width: `${clamped}%` }} />
     </div>
   );
@@ -123,7 +181,7 @@ export function ModiffDialog({
 }) {
   return (
     <Dialog open={open} onClose={onClose} className="relative z-50">
-      <DialogBackdrop className="fixed inset-0 bg-black/70" />
+      <DialogBackdrop className="fixed inset-0 bg-modiff-dialog-backdrop/70" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
           data-testid={testId}
@@ -133,7 +191,9 @@ export function ModiffDialog({
           )}
         >
           <header className="flex items-center justify-between gap-3 border-b border-modiff-border px-4 py-3">
-            <DialogTitle className="min-w-0 truncate text-base font-semibold text-white">{title}</DialogTitle>
+            <DialogTitle className="min-w-0 truncate text-modiff-modal-title font-semibold text-modiff-text">
+              {title}
+            </DialogTitle>
             <ModiffIconButton label="Close" onClick={onClose}>
               <X size={16} />
             </ModiffIconButton>
@@ -148,44 +208,5 @@ export function ModiffDialog({
   );
 }
 
-export function ModiffMenu({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <Menu as="div" className="relative inline-block text-left">
-      <MenuButton className="inline-flex h-8 items-center gap-1 rounded-modiff-compact border border-modiff-border bg-modiff-panel px-2 text-sm text-gray-200 hover:border-hf-yellow/70">
-        {label}
-        <ChevronDown size={14} />
-      </MenuButton>
-      <MenuItems className="absolute right-0 z-40 mt-1 min-w-44 rounded-modiff-panel border border-modiff-border bg-modiff-surface p-1 shadow-modiff-node focus:outline-none">
-        {children}
-      </MenuItems>
-    </Menu>
-  );
-}
-
-export function ModiffMenuItem({
-  children,
-  onClick,
-  active,
-}: {
-  children: ReactNode;
-  onClick?: () => void;
-  active?: boolean;
-}) {
-  return (
-    <MenuItem>
-      {({ focus }) => (
-        <button
-          type="button"
-          onClick={onClick}
-          className={cx(
-            'flex w-full items-center gap-2 rounded-modiff-compact px-2 py-1.5 text-left text-sm text-gray-200',
-            focus && 'bg-white/10 text-white',
-          )}
-        >
-          <span className="grid size-4 place-items-center">{active ? <Check size={14} /> : null}</span>
-          {children}
-        </button>
-      )}
-    </MenuItem>
-  );
-}
+export { ModiffInput };
+export type { ModiffInputProps };

@@ -1,0 +1,79 @@
+MODIFF TEMPLATE GALLERY MIXED ASSET TERMS v1.0
+Effective: 2026-08-03
+
+1. Mixed collection; no blanket license
+
+The MoDiff Template Gallery Dataset is a collection of separately sourced and
+licensed files. The Dataset-level `license: other` declaration does not place
+every file under one license and does not grant rights that a contributor,
+model provider, source-media provider, or other rightsholder has not granted.
+
+2. Controlling per-file record
+
+The file `_modiff/template-asset-rights.v1.json` is incorporated into these
+terms. It identifies every published file by path and SHA-256 digest. For each
+file, its `assetLicense`, `sourceLicense`, `modelTerms`, and
+`requiredAttribution` fields state the applicable permissions, restrictions,
+and notices. If a path or digest is absent from that ledger, no permission to
+reuse that file is granted by the Dataset publisher.
+
+3. Standard licenses
+
+Where a ledger record names a standard license, that file is offered under the
+named license, subject to the record's additional upstream terms and required
+attribution:
+
+- Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+- Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International:
+  https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+- CreativeML Open RAIL-M: https://huggingface.co/spaces/CompVis/stable-diffusion-license
+
+An upstream license remains controlling for third-party source material. This
+Dataset does not relicense model weights or adapters and does not include them.
+
+4. MoDiff Gallery Restricted Asset Terms
+
+Where `assetLicense` is `MoDiff-Gallery-Restricted-1.0`, the Dataset publisher
+grants a non-exclusive, worldwide, royalty-free permission to download,
+reproduce, and publicly display the exact file solely for non-commercial use
+with the MoDiff application, for documentation, or for research and evaluation.
+Redistribution is permitted only without modification and together with this
+LICENSE and the exact SHA-bound rights record. Commercial use, model training,
+fine-tuning, distillation, removal of required attribution, endorsement claims,
+and uses prohibited by the recorded upstream terms are not permitted.
+
+This grant is cumulative with, and limited by, the source and model terms in
+the file's ledger record. When those upstream terms are more restrictive, they
+control. When a ledger record says `upstream-terms-only`, the Dataset publisher
+makes no additional license grant for that file.
+
+5. AI-generated media and third-party rights
+
+AI-generated media is identified in the ledger. Model providers may claim no
+ownership in output while still imposing use conditions. Users must follow the
+recorded model terms. No permission is granted to use a person's likeness,
+trademark, character, music, or other third-party material merely because it
+appears in generated media. Users are responsible for evaluating those rights
+for their use.
+
+6. Attribution and notices
+
+Users must preserve this LICENSE, the Dataset card, the per-file rights record,
+and all attribution listed in `requiredAttribution` when redistributing a file.
+Modified files may be distributed only when the applicable per-file license
+allows modification, and modifications must be clearly identified.
+
+7. No endorsement; no warranty
+
+Names, marks, and model references identify provenance only and do not imply
+endorsement. To the maximum extent permitted by applicable law, the Dataset and
+all files are provided "AS IS", without warranties or conditions of any kind.
+The Dataset publisher is not liable for claims or damages arising from use of
+the Dataset. These terms do not limit obligations or remedies that cannot be
+limited under applicable law.
+
+8. Takedowns
+
+Rights, privacy, attribution, or consent concerns may be reported through the
+MoDiff Client security-reporting process:
+https://github.com/sdevil7th/MoDiff-client/security/policy

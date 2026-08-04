@@ -22,11 +22,11 @@ export type StatusActionChipProps = {
 };
 
 const toneClasses: Record<StatusActionChipTone, string> = {
-  neutral: 'border-modiff-border bg-modiff-surface text-modiff-muted hover:border-hf-yellow/70',
-  info: 'border-modiff-blue/70 bg-modiff-blue/10 text-modiff-text hover:border-modiff-blue',
-  success: 'border-modiff-green/60 bg-modiff-green/10 text-modiff-green hover:border-modiff-green',
-  warning: 'border-hf-orange/70 bg-hf-orange/10 text-hf-orange hover:border-hf-orange',
-  error: 'border-modiff-red/70 bg-modiff-red/10 text-modiff-red hover:border-modiff-red',
+  neutral: 'border-modiff-border bg-modiff-surface text-modiff-subtle-text',
+  info: 'border-modiff-blue/70 bg-modiff-blue/10 text-modiff-text',
+  success: 'border-modiff-green/60 bg-modiff-green/10 text-modiff-green',
+  warning: 'border-modiff-warning/70 bg-modiff-warning/10 text-modiff-warning',
+  error: 'border-modiff-invalid/70 bg-modiff-invalid/10 text-modiff-invalid',
 };
 
 function iconFor(action: StatusActionChipAction | undefined, tone: StatusActionChipTone) {
@@ -64,6 +64,7 @@ export function StatusActionChip({
     'inline-flex min-h-8 items-center gap-2 rounded-modiff-compact border px-3 py-1.5 text-sm font-semibold transition-colors',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-modiff-focus focus-visible:ring-offset-2 focus-visible:ring-offset-modiff-bg',
     toneClasses[tone],
+    onClick && 'hover:border-hf-yellow/70 hover:bg-modiff-surface-hover active:bg-modiff-surface-pressed',
     disabled && 'cursor-not-allowed opacity-60 hover:border-modiff-border',
     action === 'installing' && 'cursor-progress',
     className,

@@ -10,10 +10,9 @@ import {
   RotateCcw,
   Save,
   Settings,
-  X,
 } from 'lucide-react';
 
-import { StudioButton, StudioIconButton, StudioTextInput } from '../ui';
+import { ModiffDialog, StudioButton, StudioSearchInput } from '../ui';
 
 type CommandItem = {
   id: string;
@@ -194,10 +193,6 @@ export function StudioCommandPalette({
         event.preventDefault();
         onRun();
       }
-      if (event.key === 'Escape') {
-        setOpen(false);
-        setQuery('');
-      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -209,59 +204,55 @@ export function StudioCommandPalette({
     setOpen(false);
     setQuery('');
   };
+  const closePalette = () => {
+    setOpen(false);
+    setQuery('');
+  };
 
   return (
     <>
       <StudioButton tone="ghost" fullWidth icon={<GalleryVerticalEnd size={15} />} onClick={() => setOpen(true)}>
         Command palette
       </StudioButton>
-      {open && (
-        <div
-          className="fixed inset-0 z-50 bg-modiff-bg/80 p-3"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Studio command palette"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setOpen(false);
-              setQuery('');
-            }
-          }}
-        >
-          <div className="mx-auto mt-16 max-w-xl border border-modiff-border bg-modiff-surface p-2 shadow-modiff-node">
-            <div className="mb-2 flex items-center gap-2">
-              <StudioTextInput
-                autoFocus
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search commands"
-                className="flex-1"
-              />
-              <StudioIconButton title="Close command palette" onClick={() => setOpen(false)}>
-                <X size={15} />
-              </StudioIconButton>
-            </div>
-            <div className="grid gap-1">
-              {filteredCommands.map((command) => (
-                <button
-                  key={command.id}
-                  type="button"
-                  disabled={command.disabled}
-                  onClick={() => runCommand(command)}
-                  className="flex items-center gap-2 border border-transparent px-2 py-2 text-left transition hover:border-hf-yellow hover:bg-modiff-bg disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <span className="grid size-7 shrink-0 place-items-center text-hf-yellow">{command.icon}</span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-bold text-modiff-text">{command.label}</span>
-                    <span className="block text-xs text-gray-400">{command.detail}</span>
-                  </span>
-                </button>
-              ))}
-              {filteredCommands.length === 0 && <p className="p-2 text-xs text-gray-400">No matching commands.</p>}
-            </div>
-          </div>
+      <ModiffDialog
+        open={open}
+        onClose={closePalette}
+        title="Command palette"
+        panelClassName="max-w-xl"
+        bodyClassName="!p-2"
+      >
+        <StudioSearchInput
+          autoFocus
+          aria-label="Search commands"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onClear={() => setQuery('')}
+          placeholder="Search commands"
+          className="mb-2"
+        />
+        <div className="grid gap-1">
+          {filteredCommands.map((command) => (
+            <StudioButton
+              key={command.id}
+              tone="ghost"
+              align="left"
+              fullWidth
+              disabled={command.disabled}
+              onClick={() => runCommand(command)}
+              className="h-auto border border-transparent px-2 py-2 hover:border-hf-yellow hover:bg-modiff-bg"
+            >
+              <span className="grid size-7 shrink-0 place-items-center text-hf-yellow">{command.icon}</span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-modiff-text">{command.label}</span>
+                <span className="block text-xs text-modiff-subtle-text">{command.detail}</span>
+              </span>
+            </StudioButton>
+          ))}
+          {filteredCommands.length === 0 && (
+            <p className="p-2 text-xs text-modiff-subtle-text">No matching commands.</p>
+          )}
         </div>
-      )}
+      </ModiffDialog>
     </>
   );
 }

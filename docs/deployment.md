@@ -15,16 +15,38 @@ Build from the client root:
 ```bash
 npm ci
 npm run check
-npm run build
+npm run release:assets:gate
 ```
+
+The checked-in `src/studio/templateAssetSource.json` must be in `huggingface` mode
+with a public Dataset repository, an immutable 40-character commit SHA, and a
+verified asset-set identity before producing a release. Run
+`npm run release:assets:gate` to preflight the checked source, build, compare
+the build's emitted source identity with that checked source, and reject any
+bundled Gallery payload. `npm run test:asset-storage` remains the lightweight
+unit/contract gate and deliberately permits local mode during migration and
+offline development.
 
 The build command runs TypeScript project compilation and Vite. Its output is written to `dist/` and includes:
 
 - `index.html` and `favicon.ico`
 - bundled JavaScript, styles, fonts, and brand assets under `assets/`
-- the checked-in template Gallery manifest, media, inputs, and review records under `template-gallery/`
+
+The source release build must not contain `dist/template-gallery`. The MoDiff
+installer subsequently downloads the exact pinned Dataset, verifies every
+SHA-256 digest, and performs a local-mode client build into the backend's
+`web/template-gallery`. Normal installed-app reads are therefore same-origin
+disk reads rather than Hub requests. See
+[Template Gallery asset storage](template-gallery-assets.md).
 
 `dist/` is generated and ignored by Git. Do not commit it to the client repository.
+
+Release qualification fingerprints the backend's actual installer inputs:
+`pyproject.toml`, `modiff/compatibility/accelerators.v1.json`, and every profile
+requirements file named by that manifest. The backend intentionally declares
+`[tool.uv] managed = false`; its accelerator-aware installer owns the executable
+environment, so there is no repository `uv.lock` and the client release contract
+must not require or synthesize one.
 
 ## Inspect The Build
 
@@ -46,19 +68,15 @@ npm run bundle:check
 
 The MoDiff backend serves the integrated application from its `web/` directory. Replace generated client content, but preserve backend/user-owned content that is not produced by this client checkout.
 
-PowerShell example from `MoDiff-client`:
+PowerShell example from `MoDiff-client`. `robocopy` exit codes below 8 are
+success:
 
 ```powershell
 npm run build
 $backend = Resolve-Path '..\MoDiff'
-
-Remove-Item -LiteralPath "$backend\web\assets" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath "$backend\web\template-gallery" -Recurse -Force -ErrorAction SilentlyContinue
-
-Copy-Item -LiteralPath '.\dist\index.html' -Destination "$backend\web\index.html" -Force
-Copy-Item -LiteralPath '.\dist\favicon.ico' -Destination "$backend\web\favicon.ico" -Force
-Copy-Item -LiteralPath '.\dist\assets' -Destination "$backend\web\assets" -Recurse -Force
-Copy-Item -LiteralPath '.\dist\template-gallery' -Destination "$backend\web\template-gallery" -Recurse -Force
+robocopy .\dist "$backend\web" /MIR /XD user
+if ($LASTEXITCODE -ge 8) { throw "Client mirror failed with exit code $LASTEXITCODE" }
+if (Test-Path "$backend\web\template-gallery") { throw 'Remote build unexpectedly contains Gallery assets.' }
 ```
 
 Bash example from `MoDiff-client`:
@@ -66,23 +84,26 @@ Bash example from `MoDiff-client`:
 ```bash
 npm run build
 backend="$(cd ../MoDiff && pwd)"
-
-rm -rf "$backend/web/assets" "$backend/web/template-gallery"
-cp dist/index.html "$backend/web/index.html"
-cp dist/favicon.ico "$backend/web/favicon.ico"
-cp -R dist/assets "$backend/web/assets"
-cp -R dist/template-gallery "$backend/web/template-gallery"
+rsync -a --delete --exclude '/user/' dist/ "$backend/web/"
+test ! -e "$backend/web/template-gallery"
 ```
 
 Before running either example, verify that the resolved backend path is the intended checkout. Do not delete the entire backend `web/` directory: a deployment may contain backend-owned or user-provided content such as `web/user/` custom fields.
 
+These manual commands create the lightweight source-release build. The normal
+backend `install.sh` / `install.ps1` flow instead verifies or downloads the
+complete Gallery before building, bundles it into `web/template-gallery`, and
+fails installation if that exact snapshot cannot be prepared.
+
 ## Run The Integrated Build
 
-Start the backend from its repository:
+Start the managed backend from its repository:
 
 ```bash
-uv run main.py
+./run.sh
 ```
+
+On Windows use `.\run.ps1`.
 
 Then open `http://127.0.0.1:8088/`. The backend should serve the client and API/websocket routes from one origin.
 
@@ -93,10 +114,12 @@ curl -fsS http://127.0.0.1:8088/ > /dev/null
 curl -fsS http://127.0.0.1:8088/health > /dev/null
 curl -fsS http://127.0.0.1:8088/nodes > /dev/null
 curl -fsS http://127.0.0.1:8088/runtime/status > /dev/null
-curl -fsS http://127.0.0.1:8088/template-gallery/manifest.json > /dev/null
 ```
 
-Also load the UI in a browser, confirm the websocket connects, create a lightweight graph, open Gallery, and verify that an image and a video preview use the expected content types.
+Also load the UI in a browser, confirm the websocket connects, create a
+lightweight graph, and open Gallery. In browser network tools, verify its
+manifest, an image, audio, video, and a default input resolve from the expected
+public Dataset commit without authentication; no request may use `main`.
 
 ## Separate-Origin Hosting
 
@@ -116,12 +139,15 @@ MoDiff does not currently provide the authentication boundary required for an in
 Before publishing a client/backend pair:
 
 1. Run `npm ci`, `npm run check`, and `npm run check:ui` in the client.
-2. Run `npm run gallery:verify` and `npm run gallery:coverage` if Gallery content changed.
+2. Run `npm run test:asset-storage`, `npm run gallery:verify`, and
+   `npm run gallery:coverage` if Gallery metadata or content changed, then run
+   `npm run release:assets:gate` for every release build.
 3. Build and copy the client into the exact backend revision being released.
 4. Run the backend test and preflight commands documented by that backend revision.
 5. Start the integrated backend from a clean process and verify the endpoints above.
 6. Confirm the built bundle contains no personal paths, credentials, private repository URLs, or stale product names.
-7. Confirm the Gallery manifest references files that exist and that provenance intended for publication is redacted.
+7. Confirm the pinned public Dataset manifest is anonymously readable, every
+   referenced file matches its SHA-256, and published provenance is redacted.
 8. Confirm user/custom files in `web/` were not deleted by the sync.
 9. Document which model paths were mocked, schema-validated, or live-run; do not collapse those proof levels into one support claim.
 10. Keep the server on localhost unless the deployment has the controls listed under separate-origin hosting.

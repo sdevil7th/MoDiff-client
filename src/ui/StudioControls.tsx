@@ -1,7 +1,34 @@
 import { LoaderCircle } from 'lucide-react';
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import { forwardRef, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 import { cx } from '../utils/classNames';
+import {
+  ModiffBadge,
+  ModiffCheckbox,
+  ModiffChip,
+  ModiffFieldShell,
+  ModiffMultiSelect,
+  ModiffNumberInput,
+  ModiffPasswordInput,
+  ModiffRadioGroup,
+  ModiffSearchInput,
+  ModiffSelect,
+  ModiffSlider,
+  ModiffSwitch,
+  ModiffTabs,
+  ModiffTextarea,
+  type ModiffNumberInputProps,
+  type ModiffMultiSelectProps,
+  type ModiffPasswordInputProps,
+  type ModiffRadioGroupProps,
+  type ModiffSearchInputProps,
+  type ModiffSelectProps,
+  type ModiffSliderProps,
+  type ModiffSwitchProps,
+  type ModiffTabsProps,
+  type ModiffTextareaProps,
+} from './controls';
+import { ModiffButton, ModiffIconButton, ModiffInput, type ModiffIconButtonProps } from './primitives';
 
 export function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
@@ -18,70 +45,103 @@ export function StudioInput({
   onChange,
   multiline = false,
   disabled = false,
+  readOnly = false,
+  description,
+  error,
+  required = false,
 }: {
   label: string;
   value: string | number;
   onChange: (value: string) => void;
   multiline?: boolean;
   disabled?: boolean;
+  readOnly?: boolean;
+  description?: ReactNode;
+  error?: ReactNode;
+  required?: boolean;
 }) {
+  const id = useId();
+
   return (
-    <label className="block border border-modiff-border bg-modiff-bg">
-      <span className="block px-2 pt-1.5 text-xs text-gray-400">{label}</span>
+    <ModiffFieldShell
+      htmlFor={id}
+      label={label}
+      description={description}
+      error={error}
+      disabled={disabled}
+      readOnly={readOnly}
+      required={required}
+    >
       {multiline ? (
-        <textarea
+        <ModiffTextarea
+          id={id}
           value={value}
           disabled={disabled}
+          readOnly={readOnly}
           rows={4}
           onChange={(event) => onChange(event.target.value)}
-          className="min-h-24 w-full resize-y bg-transparent px-2 pb-2 pt-1 text-sm text-modiff-text outline-none placeholder:text-gray-500 disabled:opacity-50"
+          invalid={Boolean(error)}
+          className="min-h-24"
         />
       ) : (
-        <input
+        <ModiffInput
+          id={id}
           value={value}
           disabled={disabled}
+          readOnly={readOnly}
           onChange={(event) => onChange(event.target.value)}
-          className="h-8 w-full bg-transparent px-2 text-sm text-modiff-text outline-none placeholder:text-gray-500 disabled:opacity-50"
+          invalid={Boolean(error)}
         />
       )}
-    </label>
+    </ModiffFieldShell>
   );
 }
 
 export function StudioTextInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cx(
-        'h-8 min-w-0 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text outline-none placeholder:text-gray-500 focus:border-hf-yellow disabled:opacity-50',
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <ModiffInput className={cx('min-w-0', className)} {...props} />;
 }
 
-export function StudioSelect({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      className={cx(
-        'h-8 min-w-0 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text outline-none focus:border-hf-yellow disabled:opacity-50',
-        className,
-      )}
-      {...props}
-    >
-      {children}
-    </select>
-  );
+export const StudioSearchInput = forwardRef<HTMLInputElement, ModiffSearchInputProps>(function StudioSearchInput(
+  { className, controlSize = 'dense', ...props },
+  ref,
+) {
+  return <ModiffSearchInput ref={ref} className={cx('min-w-0', className)} controlSize={controlSize} {...props} />;
+});
+
+export const StudioNumberInput = forwardRef<HTMLInputElement, ModiffNumberInputProps>(function StudioNumberInput(
+  { className, controlSize = 'dense', ...props },
+  ref,
+) {
+  return <ModiffNumberInput ref={ref} className={cx('min-w-0', className)} controlSize={controlSize} {...props} />;
+});
+
+export const StudioPasswordInput = forwardRef<HTMLInputElement, ModiffPasswordInputProps>(function StudioPasswordInput(
+  { className, controlSize = 'dense', ...props },
+  ref,
+) {
+  return <ModiffPasswordInput ref={ref} className={cx('min-w-0', className)} controlSize={controlSize} {...props} />;
+});
+
+export const StudioTextarea = forwardRef<HTMLTextAreaElement, ModiffTextareaProps>(function StudioTextarea(
+  { className, ...props },
+  ref,
+) {
+  return <ModiffTextarea ref={ref} className={cx('min-w-0', className)} {...props} />;
+});
+
+export type StudioSelectProps = Omit<ModiffSelectProps, 'size'>;
+
+export function StudioSelect(props: StudioSelectProps) {
+  return <ModiffSelect size="dense" {...props} />;
+}
+
+export type StudioMultiSelectProps = Omit<ModiffMultiSelectProps, 'size'>;
+
+export function StudioMultiSelect(props: StudioMultiSelectProps) {
+  return <ModiffMultiSelect size="dense" {...props} />;
 }
 
 export type StudioButtonTone = 'primary' | 'secondary' | 'ghost' | 'danger';
-
-const buttonToneClasses: Record<StudioButtonTone, string> = {
-  primary: 'bg-hf-yellow text-black hover:bg-hf-orange',
-  secondary: 'border border-modiff-border bg-modiff-panel text-modiff-text hover:border-hf-yellow/70 hover:text-white',
-  ghost: 'text-gray-300 hover:bg-white/10 hover:text-white',
-  danger: 'bg-modiff-red text-white hover:brightness-110',
-};
 
 export function StudioButton({
   align = 'center',
@@ -99,20 +159,17 @@ export function StudioButton({
   tone?: StudioButtonTone;
 }) {
   return (
-    <button
+    <ModiffButton
       type={type}
-      className={cx(
-        'inline-flex min-h-8 items-center gap-1.5 rounded-modiff-compact px-3 py-1 text-sm font-semibold transition disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-        fullWidth && 'w-full',
-        align === 'center' ? 'justify-center text-center' : 'justify-start text-left whitespace-normal',
-        buttonToneClasses[tone],
-        className,
-      )}
+      align={align}
+      fullWidth={fullWidth}
+      icon={icon}
+      tone={tone}
+      className={className}
       {...props}
     >
-      {icon ? <span className="grid size-4 shrink-0 place-items-center">{icon}</span> : null}
       {children}
-    </button>
+    </ModiffButton>
   );
 }
 
@@ -122,20 +179,11 @@ export function StudioIconButton({
   title,
   type = 'button',
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { title: string }) {
+}: Omit<ModiffIconButtonProps, 'label'> & { title: string }) {
   return (
-    <button
-      type={type}
-      title={title}
-      aria-label={title}
-      className={cx(
-        'grid size-8 shrink-0 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-        className,
-      )}
-      {...props}
-    >
+    <ModiffIconButton type={type} label={title} className={className} {...props}>
       {children}
-    </button>
+    </ModiffIconButton>
   );
 }
 
@@ -149,30 +197,28 @@ export function StudioChip({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   active?: boolean;
-  tone?: 'default' | 'success' | 'error';
+  tone?: 'default' | 'success' | 'error' | 'warning';
 }) {
-  const classes = cx(
-    'inline-flex min-h-6 items-center rounded-modiff-compact border px-2 py-0.5 text-xs font-semibold transition',
-    active && 'border-hf-yellow bg-hf-yellow text-black',
-    !active && tone === 'success' && 'border-modiff-green/60 bg-modiff-green/10 text-modiff-green',
-    !active && tone === 'error' && 'border-modiff-red/60 bg-modiff-red/10 text-modiff-red',
-    !active && tone === 'default' && 'border-modiff-border bg-modiff-panel text-gray-300',
-    onClick && 'hover:border-hf-yellow/70 hover:text-white',
-    className,
-  );
-
   if (!onClick) {
     return (
-      <span className={classes} title={title}>
+      <ModiffBadge className={className} title={title} tone={tone}>
         {children}
-      </span>
+      </ModiffBadge>
     );
   }
 
   return (
-    <button type="button" className={classes} onClick={onClick} title={title} {...props}>
+    <ModiffChip
+      type="button"
+      active={active}
+      className={className}
+      onClick={onClick}
+      title={title}
+      tone={tone}
+      {...props}
+    >
       {children}
-    </button>
+    </ModiffChip>
   );
 }
 
@@ -180,48 +226,34 @@ export function StudioCheckbox({
   checked,
   label,
   onChange,
+  disabled = false,
 }: {
   checked: boolean;
   label: ReactNode;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
-  return (
-    <label className="inline-flex items-center gap-2 text-xs text-gray-300">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="size-4 accent-hf-yellow"
-      />
-      {label}
-    </label>
-  );
+  return <ModiffCheckbox checked={checked} disabled={disabled} label={label} onCheckedChange={onChange} />;
 }
 
-export function StudioSlider({
-  max,
-  min,
-  onChange,
-  step,
-  value,
-}: {
-  max: number;
-  min: number;
+export type StudioSliderProps = Omit<ModiffSliderProps, 'onValueChange'> & {
   onChange: (value: number) => void;
-  step?: number;
-  value: number;
-}) {
-  return (
-    <input
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(event) => onChange(Number.isFinite(Number(event.target.value)) ? Number(event.target.value) : value)}
-      className="w-full accent-hf-yellow"
-    />
-  );
+};
+
+export function StudioSlider({ onChange, ...props }: StudioSliderProps) {
+  return <ModiffSlider {...props} onValueChange={onChange} />;
+}
+
+export function StudioSwitch(props: ModiffSwitchProps) {
+  return <ModiffSwitch {...props} />;
+}
+
+export function StudioRadioGroup(props: ModiffRadioGroupProps) {
+  return <ModiffRadioGroup {...props} />;
+}
+
+export function StudioTabs(props: ModiffTabsProps) {
+  return <ModiffTabs {...props} />;
 }
 
 export function StudioDivider() {
@@ -236,9 +268,9 @@ export type StatusTone = 'success' | 'error' | 'warning' | 'secondary';
 
 const statusTextClasses: Record<StatusTone, string> = {
   success: 'text-modiff-green',
-  error: 'text-modiff-red',
-  warning: 'text-hf-orange',
-  secondary: 'text-gray-400',
+  error: 'text-modiff-invalid',
+  warning: 'text-modiff-warning',
+  secondary: 'text-modiff-subtle-text',
 };
 
 export function StatusLine({

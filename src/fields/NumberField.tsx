@@ -1,9 +1,12 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useRef, useState, useEffect, useCallback } from 'react';
 
 import { FieldProps } from '../components/NodeContent';
 import getDecimalPlaces from '../utils/getDecimalPlaces';
 
-import { FieldFrame, NumberFieldFrame } from '../ui';
+import { FieldFrame, ModiffFieldShell, NumberFieldFrame } from '../ui';
+import { GraphControlInput, GraphIconButton } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -21,6 +24,7 @@ export default function NumberField(props: FieldProps) {
   const maxValue = props.max !== undefined ? props.max : Number.MAX_SAFE_INTEGER;
   const decimals = props.dataType === 'float' ? getDecimalPlaces(props.step) : 0;
   const increment = props.step !== undefined ? props.step : props.dataType === 'float' ? 0.1 : 1;
+  const inputId = `${props.nodeId}-${props.fieldKey}`;
 
   const formatValue = useCallback(
     (value: number | string, force: boolean = false) => {
@@ -232,45 +236,48 @@ export default function NumberField(props: FieldProps) {
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
       >
-        <button
+        <GraphIconButton
           type="button"
           disabled={Number(props.value) <= minValue}
           onClick={() => handleChevronClick('left')}
-          className="grid size-6 shrink-0 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-35"
-          aria-label={`Decrease ${props.label}`}
+          className="shrink-0 disabled:opacity-35"
+          label={`Decrease ${props.label}`}
         >
           <ChevronLeft size={16} />
-        </button>
-        <div className="pointer-events-none max-w-[50%] pr-1">
-          <span className="block truncate text-[13px] text-gray-400" title={props.label}>
-            {props.label}
-          </span>
-        </div>
-        <input
-          ref={inputRef}
-          value={draftValue}
+        </GraphIconButton>
+        <ModiffFieldShell
+          htmlFor={inputId}
+          label={props.label}
+          layout="inline"
           disabled={props.disabled}
-          onChange={(event) => setDraftValue(event.target.value)}
-          autoComplete="off"
-          className={cx(
-            'nodrag min-w-0 flex-1 cursor-default bg-transparent p-0 text-right text-sm text-modiff-text outline-none disabled:cursor-not-allowed',
-          )}
-          onFocus={() => {
-            setIsFocused(true);
-            setDraftValue(String(committedValue));
-          }}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-        />
-        <button
+          className="min-w-0 flex-1"
+          labelClassName="text-modiff-control pointer-events-none max-w-[50%] truncate pr-1 font-normal"
+        >
+          <GraphControlInput
+            ref={inputRef}
+            value={draftValue}
+            onChange={(event) => setDraftValue(event.target.value)}
+            autoComplete="off"
+            className={cx(
+              'nodrag min-w-0 flex-1 cursor-default bg-transparent p-0 text-right text-sm text-modiff-text outline-none disabled:cursor-not-allowed',
+            )}
+            onFocus={() => {
+              setIsFocused(true);
+              setDraftValue(String(committedValue));
+            }}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+          />
+        </ModiffFieldShell>
+        <GraphIconButton
           type="button"
           disabled={Number(props.value) >= maxValue}
           onClick={() => handleChevronClick('right')}
-          className="grid size-6 shrink-0 place-items-center rounded-modiff-compact text-gray-300 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-35"
-          aria-label={`Increase ${props.label}`}
+          className="shrink-0 disabled:opacity-35"
+          label={`Increase ${props.label}`}
         >
           <ChevronRight size={16} />
-        </button>
+        </GraphIconButton>
       </NumberFieldFrame>
     </FieldFrame>
   );

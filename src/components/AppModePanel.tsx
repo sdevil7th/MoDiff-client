@@ -2,7 +2,11 @@ import { Play, Plus, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { useFlowStore } from '../stores/useFlowStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+  useStudioStore,
+} from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { syncStudioGraphValues } from '../studio/graphBridge';
 import { coordinateGraphRun } from '../studio/runCoordinator';
@@ -11,6 +15,7 @@ import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { AppModeConfig, AppModeInput, StudioFormState } from '../studio/types';
 import {
   SectionHeader,
+  ModiffFieldShell,
   StudioButton,
   StudioCheckbox,
   StudioChip,
@@ -112,7 +117,6 @@ export default function AppModePanel() {
   const setActiveAppModeConfig = useStudioStore((state) => state.setActiveAppModeConfig);
   const switchWorkflowTab = useStudioStore((state) => state.switchWorkflowTab);
   const updateForm = useStudioStore((state) => state.updateForm);
-  const graphBinding = useStudioStore((state) => state.graphBinding);
   const nodes = useFlowStore((state) => state.nodes);
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
@@ -171,7 +175,7 @@ export default function AppModePanel() {
 
   const updateGraphInput = (input: AppModeInput, value: string) => {
     if (input.kind !== 'graph-param' || !input.nodeId || !input.paramKey) return;
-    useFlowStore.getState().setParam(input.nodeId, input.paramKey, value);
+    useFlowStore.getState().setParamWithHistory(input.nodeId, input.paramKey, value);
   };
 
   const runApp = async () => {
@@ -192,17 +196,25 @@ export default function AppModePanel() {
     if (selectedConfig.workflowTabId !== activeWorkflowTabId) {
       switchWorkflowTab(selectedConfig.workflowTabId);
     }
-    if (graphBinding) {
-      const autoReady = await ensureStudioAutoPlanReadyForRun();
-      if (!autoReady) return;
+    const context = captureWorkflowOperationContext();
+    const managedGraph = Boolean(useStudioStore.getState().graphBinding);
+    try {
+      if (managedGraph) {
+        const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+        if (!autoReady) return;
+      }
+      const validation = validateCurrentRun({ sid, isConnected, includeStudio: managedGraph, showDialog: true });
+      if (!validation.canRun) return;
+      await coordinateGraphRun({
+        sid,
+        studioContext: { applyRuntimeMetadata: managedGraph },
+        workflowContext: context,
+      });
+      enqueueSnackbar('Run as app queued', { variant: 'success', autoHideDuration: 2200 });
+    } catch (error) {
+      if (isWorkflowOperationCancelled(error)) return;
+      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 7000 });
     }
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: Boolean(graphBinding), showDialog: true });
-    if (!validation.canRun) return;
-    await coordinateGraphRun({
-      sid,
-      studioContext: { applyRuntimeMetadata: Boolean(graphBinding) },
-    });
-    enqueueSnackbar('Run as app queued', { variant: 'success', autoHideDuration: 2200 });
   };
 
   return (
@@ -226,17 +238,16 @@ export default function AppModePanel() {
       </section>
 
       {appModeConfigs.length > 0 && (
-        <StudioSelect value={selectedConfig?.id ?? ''} onChange={(event) => setActiveAppModeConfig(event.target.value)}>
-          {appModeConfigs.map((config) => (
-            <option key={config.id} value={config.id}>
-              {config.name}
-            </option>
-          ))}
-        </StudioSelect>
+        <StudioSelect
+          aria-label="Saved app configuration"
+          value={selectedConfig?.id ?? ''}
+          onValueChange={setActiveAppModeConfig}
+          options={appModeConfigs.map((config) => ({ value: config.id, label: config.name }))}
+        />
       )}
 
       {!selectedConfig ? (
-        <div className="border border-modiff-border bg-modiff-bg p-3 text-xs text-gray-400">
+        <div className="border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
           Create Run as app from the active graph.
         </div>
       ) : (
@@ -288,10 +299,7 @@ export default function AppModePanel() {
                   const current = form[input.formKey];
                   if (input.formKey === 'guidanceScale' || input.formKey === 'strength') {
                     return (
-                      <div key={input.id}>
-                        <p className="mb-1 text-xs text-gray-400">
-                          {input.label}: {String(current)}
-                        </p>
+                      <ModiffFieldShell key={input.id} label={`${input.label}: ${String(current)}`}>
                         <StudioSlider
                           min={0}
                           max={input.formKey === 'strength' ? 1 : 12}
@@ -299,7 +307,7 @@ export default function AppModePanel() {
                           value={typeof current === 'number' ? current : 0}
                           onChange={(value) => updateFormInput(input, String(value))}
                         />
-                      </div>
+                      </ModiffFieldShell>
                     );
                   }
                   return (

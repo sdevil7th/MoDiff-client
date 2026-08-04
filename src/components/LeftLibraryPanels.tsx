@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   Boxes,
   ChevronDown,
+  Eraser,
   GalleryVerticalEnd,
   HardDrive,
   Image,
   LayoutTemplate,
+  LoaderCircle,
   Music,
   PlaySquare,
   Settings,
@@ -17,8 +19,10 @@ import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { scopedOutputsForWorkflow, useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { useTaskStore } from '../stores/useTaskStore';
 import {
   autoPlanKeyForForm,
+  autoResourceCompatibility,
   autoResourceInstallTarget,
   fetchAutoResourcePlans,
   type StudioAutoResourceInstallTarget,
@@ -26,7 +30,6 @@ import {
 } from '../studio/autoResource';
 import { getStudioWorkflowArtifactRequirements } from '../studio/artifactRequirements';
 import { getStudioModelCacheStatus } from '../studio/modelCache';
-import { getStudioModelHardwareFit } from '../studio/modelHardware';
 import {
   getDownloadPercent,
   hasHfDownloadFailed,
@@ -43,22 +46,26 @@ import {
 import { TEMPLATE_BROWSER_CATEGORIES, templateCategoryId } from '../studio/templateBrowser';
 import { STUDIO_TEMPLATES } from '../studio/templates';
 import type { StudioImportedAsset } from '../studio/types';
-import { ModiffButton, StatusActionChip, type StatusActionChipTone } from '../ui';
+import { ModiffButton, ModiffFileInput, StatusActionChip, type StatusActionChipTone } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { cx } from '../utils/classNames';
 import { uploadBackendFile } from '../utils/backendUpload';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
+import { cleanupTemporaryMedia } from '../utils/serverActions';
+import { inferImportedMediaKind, mediaAcceptString } from '../studio/mediaImport';
 
 function LibraryShell({
   action,
+  actionPlacement = 'inline',
   children,
   icon,
   meta,
   title,
 }: {
   action?: ReactNode;
+  actionPlacement?: 'inline' | 'stacked';
   children: ReactNode;
   icon: ReactNode;
   meta: string;
@@ -68,17 +75,18 @@ function LibraryShell({
     <div className="flex h-full flex-col">
       <header className="border-b border-modiff-border bg-modiff-surface px-3 py-3">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <span className="grid size-8 shrink-0 place-items-center rounded-modiff-compact border border-modiff-border bg-modiff-bg text-hf-yellow">
               {icon}
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">{title}</h2>
-              <p className="truncate text-xs text-modiff-muted">{meta}</p>
+              <p className="truncate text-xs text-modiff-subtle-text">{meta}</p>
             </div>
           </div>
-          {action}
+          {actionPlacement === 'inline' ? action : null}
         </div>
+        {actionPlacement === 'stacked' && action ? <div className="mt-3 min-w-0">{action}</div> : null}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">{children}</div>
     </div>
@@ -94,27 +102,36 @@ function LibraryCard({
   className?: string;
   onClick?: () => void;
 }) {
-  const Component = onClick ? 'button' : 'div';
+  if (onClick) {
+    return (
+      <ModiffButton
+        align="left"
+        className={cx('h-auto min-h-0 w-full bg-modiff-surface p-3 text-sm font-normal', className)}
+        fullWidth
+        onClick={onClick}
+        tone="secondary"
+      >
+        {children}
+      </ModiffButton>
+    );
+  }
+
   return (
-    <Component
-      type={onClick ? 'button' : undefined}
-      onClick={onClick}
+    <div
       className={cx(
         'w-full rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-left text-sm text-modiff-text',
-        onClick &&
-          'transition hover:border-hf-yellow/70 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
         className,
       )}
     >
       {children}
-    </Component>
+    </div>
   );
 }
 
 function Metric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2">
-      <div className="text-xs font-semibold uppercase text-modiff-muted">{label}</div>
+      <div className="text-xs font-semibold uppercase text-modiff-subtle-text">{label}</div>
       <div className="mt-1 text-base font-bold text-modiff-text">{value}</div>
     </div>
   );
@@ -158,7 +175,7 @@ function StatusPill({
                 ? 'missing'
                 : 'details'
       }
-      className="min-h-6 px-2 py-0.5 text-xs"
+      className="min-h-7 px-2 py-0.5 text-xs"
       disabled={disabled}
       label={children}
       onClick={onClick}
@@ -273,7 +290,7 @@ function profileForInstalledModel(item: unknown) {
 function loaderCandidatesForModel(item: unknown) {
   const profile = profileForInstalledModel(item);
   if (profile?.modelType === 'WanVACEPipeline') {
-    return { profile, keys: ['modules.WanVACE.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
+    return { profile, keys: ['modules.DiffusersVideo.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
   }
   if (profile?.modelType === 'AceStepAudioPipeline') {
     return { profile, keys: ['modules.DiffusersAudio.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
@@ -293,7 +310,7 @@ function loaderCandidatesForModel(item: unknown) {
   if (group === 'Audio')
     return { profile, keys: ['modules.DiffusersAudio.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
   if (group === 'Video')
-    return { profile, keys: ['modules.WanVACE.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
+    return { profile, keys: ['modules.DiffusersVideo.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
   return { profile, keys: ['modules.DiffusersImage.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
 }
 
@@ -348,25 +365,13 @@ function mediaIcon(displayType: string | undefined) {
 }
 
 function importedDisplayType(file: File): StudioImportedAsset['displayType'] {
-  if (file.type.startsWith('image/')) return 'image';
-  if (file.type.startsWith('video/')) return 'video';
-  if (file.type.startsWith('audio/')) return 'audio';
-  return 'unknown';
+  return inferImportedMediaKind(file, ['image', 'video', 'audio']) ?? 'unknown';
 }
 
 function importedBackendType(displayType: StudioImportedAsset['displayType']) {
   if (displayType === 'audio') return 'audio';
   if (displayType === 'video') return 'videos';
   return 'images';
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error('Could not import asset.'));
-    reader.readAsDataURL(file);
-  });
 }
 
 async function uploadImportedAsset(file: File, displayType: StudioImportedAsset['displayType']) {
@@ -401,19 +406,9 @@ async function importedAssetsFromFiles(files: FileList | null): Promise<StudioIm
           storage: 'backend' as const,
         };
       } catch (error) {
-        console.warn('Imported asset backend persistence failed, using browser fallback.', error);
-        return {
-          id,
-          kind: 'imported' as const,
-          name: file.name,
-          url: await fileToDataUrl(file),
-          displayType,
-          mimeType: file.type,
-          byteSize: file.size,
-          createdAt: Date.now() - index,
-          source: 'upload' as const,
-          storage: 'browser' as const,
-        };
+        throw new Error(
+          `${file.name}: ${error instanceof Error ? error.message : 'The backend could not validate this media file.'}`,
+        );
       }
     }),
   );
@@ -467,28 +462,30 @@ export function TemplateLibraryPanel() {
           <Metric label="Templates" value={STUDIO_TEMPLATES.length} />
           <Metric label="Planning" value={blockedCount} />
         </div>
-        <LibraryCard onClick={() => setTemplateBrowserOpen(true)}>
-          <div className="mb-2 flex items-center gap-2 font-semibold">
+        <LibraryCard className="flex-col items-stretch gap-2" onClick={() => setTemplateBrowserOpen(true)}>
+          <div className="flex items-center gap-2 font-semibold">
             <LayoutTemplate size={16} className="text-hf-yellow" />
             Template browser
           </div>
-          <p className="text-xs leading-5 text-modiff-muted">
+          <p className="text-xs leading-5 text-modiff-subtle-text">
             Search by task, model, inputs, media type, and backend requirement.
           </p>
         </LibraryCard>
         <div className="grid gap-1">
           {visibleCategories.map((category) => (
-            <button
+            <ModiffButton
               key={category.id}
-              type="button"
-              className="flex min-h-9 items-center justify-between gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-left text-sm text-modiff-text transition hover:border-hf-yellow/70 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+              align="left"
+              className="min-h-9 justify-between bg-modiff-bg px-2 font-normal"
+              fullWidth
               onClick={() => openTemplateBrowser(category.id)}
+              tone="secondary"
             >
               <span className="truncate">{category.label}</span>
-              <span className="rounded-modiff-compact border border-modiff-border bg-modiff-surface px-1.5 py-0.5 text-xs font-semibold text-modiff-muted">
+              <span className="rounded-modiff-compact border border-modiff-border bg-modiff-surface px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text">
                 {categoryCounts.get(category.id) ?? 0}
               </span>
-            </button>
+            </ModiffButton>
           ))}
         </div>
       </div>
@@ -504,6 +501,8 @@ export function AssetsLibraryPanel() {
   const sendImportedAssetToReference = useStudioStore((state) => state.useImportedAssetAsReference);
   const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const taskCount = useTaskStore((state) => state.taskCount);
+  const [isCleaning, setIsCleaning] = useState(false);
   const workflowOutputs = useMemo(
     () => scopedOutputsForWorkflow(outputs, activeWorkflowTabId),
     [activeWorkflowTabId, outputs],
@@ -518,9 +517,30 @@ export function AssetsLibraryPanel() {
       const assets = await importedAssetsFromFiles(files);
       addImportedAssets(assets);
     } catch (error) {
-      console.error(error);
+      enqueueSnackbar(error instanceof Error ? error.message : 'The selected media could not be imported.', {
+        variant: 'error',
+        autoHideDuration: 6000,
+      });
     } finally {
       if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const handleCleanup = async () => {
+    if (isCleaning || taskCount > 0) return;
+    setIsCleaning(true);
+    try {
+      const result = await cleanupTemporaryMedia();
+      enqueueSnackbar(
+        result.removed.length === 0
+          ? 'No unprotected temporary media to clean'
+          : `Removed ${result.removed.length} temporary media ${result.removed.length === 1 ? 'file' : 'files'}`,
+        { variant: 'success', autoHideDuration: 3000 },
+      );
+    } catch (error) {
+      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 });
+    } finally {
+      setIsCleaning(false);
     }
   };
 
@@ -529,9 +549,10 @@ export function AssetsLibraryPanel() {
       title="Assets"
       meta={`${workflowOutputs.length} generated, ${importedAssets.length} imported`}
       icon={<GalleryVerticalEnd size={18} />}
+      actionPlacement="stacked"
       action={
-        <div className="flex items-center gap-1">
-          <input
+        <div className="grid min-w-0 grid-cols-3 gap-1">
+          <ModiffFileInput
             ref={importInputRef}
             aria-label="Import assets"
             className="hidden"
@@ -539,11 +560,21 @@ export function AssetsLibraryPanel() {
             onChange={(event) => {
               void handleImportFiles(event.currentTarget.files);
             }}
-            type="file"
-            accept="image/*,video/*,audio/*"
+            accept={mediaAcceptString(['image', 'video', 'audio'])}
           />
           <ModiffButton
-            className="h-8 px-2 text-xs"
+            className="h-8 min-w-0 px-1.5 text-xs"
+            data-testid="left-clean-temporary-media"
+            disabled={isCleaning || taskCount > 0}
+            icon={isCleaning ? <LoaderCircle size={14} className="animate-spin" /> : <Eraser size={14} />}
+            onClick={() => void handleCleanup()}
+            tone="secondary"
+            title={taskCount > 0 ? 'Wait for the active generation to finish' : 'Remove unprotected temporary media'}
+          >
+            Clean
+          </ModiffButton>
+          <ModiffButton
+            className="h-8 min-w-0 px-1.5 text-xs"
             data-testid="left-import-assets"
             icon={<Upload size={14} />}
             onClick={() => importInputRef.current?.click()}
@@ -553,7 +584,7 @@ export function AssetsLibraryPanel() {
             Import
           </ModiffButton>
           <ModiffButton
-            className="h-8 px-2 text-xs"
+            className="h-8 min-w-0 px-1.5 text-xs"
             data-testid="left-open-gallery-library"
             icon={<GalleryVerticalEnd size={14} />}
             onClick={() => setGalleryLibraryOpen(true)}
@@ -571,25 +602,25 @@ export function AssetsLibraryPanel() {
           <Metric label="Videos" value={videoCount} />
           <Metric label="Audio" value={audioCount} />
         </div>
-        <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-muted">
+        <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-subtle-text">
           <span>Generated</span>
           <StatusPill tone="default">{workflowOutputs.length}</StatusPill>
         </div>
         <div className="grid grid-cols-3 gap-1" data-testid="left-gallery-thumbnails">
           {recentOutputs.length === 0 ? (
-            <div className="col-span-3 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-muted">
+            <div className="col-span-3 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
               No outputs yet.
             </div>
           ) : (
             recentOutputs.map((output, index) => (
-              <button
+              <ModiffButton
                 key={output.id}
-                type="button"
                 data-testid={`left-gallery-output-${index}`}
                 title={`${output.modelLabel}${output.prompt ? ` | ${output.prompt}` : ''}`}
                 aria-label={`Open gallery item from ${output.modelLabel}`}
-                className="aspect-square overflow-hidden rounded-modiff-compact border border-modiff-border bg-modiff-bg text-left transition hover:border-hf-yellow/70 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                className="aspect-square h-auto min-h-0 overflow-hidden bg-modiff-bg !p-0"
                 onClick={() => setGalleryLibraryOpen(true)}
+                tone="secondary"
               >
                 {output.displayType === 'audio' || output.displayType === 'video' ? (
                   <span className="grid h-full w-full place-items-center text-hf-yellow">
@@ -598,34 +629,36 @@ export function AssetsLibraryPanel() {
                 ) : (
                   <img src={output.url} alt="" className="h-full w-full object-cover" />
                 )}
-              </button>
+              </ModiffButton>
             ))
           )}
         </div>
-        <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-muted">
+        <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-subtle-text">
           <span>Imported</span>
           <StatusPill tone="default">{importedAssets.length}</StatusPill>
         </div>
         <div className="grid grid-cols-3 gap-1" data-testid="left-imported-thumbnails">
           {recentImported.length === 0 ? (
-            <button
-              type="button"
-              className="col-span-3 rounded-modiff-compact border border-dashed border-modiff-border bg-modiff-bg p-3 text-left text-xs font-semibold text-modiff-muted transition hover:border-hf-yellow/70 hover:text-modiff-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+            <ModiffButton
+              align="left"
+              className="col-span-3 h-auto min-h-0 border-dashed bg-modiff-bg p-3 text-xs text-modiff-subtle-text"
+              fullWidth
               onClick={() => importInputRef.current?.click()}
+              tone="secondary"
               title="Import local media. Assets are persisted through the backend when connected."
             >
               Import assets
-            </button>
+            </ModiffButton>
           ) : (
             recentImported.map((asset, index) => (
-              <button
+              <ModiffButton
                 key={asset.id}
-                type="button"
                 data-testid={`left-imported-asset-${index}`}
                 title={asset.name}
                 aria-label={`Use imported asset ${asset.name}`}
-                className="aspect-square overflow-hidden rounded-modiff-compact border border-modiff-border bg-modiff-bg text-left transition hover:border-hf-yellow/70 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                className="aspect-square h-auto min-h-0 overflow-hidden bg-modiff-bg !p-0"
                 onClick={() => sendImportedAssetToReference(asset)}
+                tone="secondary"
               >
                 {asset.displayType === 'image' ? (
                   <img src={asset.url} alt="" className="h-full w-full object-cover" />
@@ -634,7 +667,7 @@ export function AssetsLibraryPanel() {
                     {mediaIcon(asset.displayType)}
                   </span>
                 )}
-              </button>
+              </ModiffButton>
             ))
           )}
         </div>
@@ -656,7 +689,6 @@ export function ModelsLibraryPanel() {
   const hfCache = useNodesStore((state) => state.hfCache);
   const localModels = useNodesStore((state) => state.localModels);
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
-  const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const installHfModel = useNodesStore((state) => state.installHfModel);
@@ -855,7 +887,7 @@ export function ModelsLibraryPanel() {
       <div className="grid gap-2">
         {visibleDownloads.length > 0 ? (
           <section className="grid gap-1" data-testid="left-model-downloads">
-            <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-muted">
+            <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-subtle-text">
               <span>Downloads</span>
               <span>{visibleDownloads.filter(isHfDownloadActive).length} active</span>
             </div>
@@ -877,12 +909,11 @@ export function ModelsLibraryPanel() {
         ) : null}
         {hasWorkflowModelContext && workflowProfile ? (
           <section className="grid gap-1" data-testid="left-model-current">
-            <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-muted">
+            <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-subtle-text">
               <span>Current</span>
             </div>
             <SupportedModelRow
               autoPlan={autoResourcePlans[autoPlanKeyForForm(form)]}
-              hardwareFit={getStudioModelHardwareFit(workflowProfile, runtimeStatus)}
               installProgress={hfDownloadProgress}
               onInstall={handleInstall}
               onOpenSetup={openSetup}
@@ -915,11 +946,11 @@ export function ModelsLibraryPanel() {
           </section>
         ) : null}
         <section className="grid gap-1" data-testid="left-model-installed">
-          <div className="px-1 text-xs font-semibold uppercase text-modiff-muted">
+          <div className="px-1 text-xs font-semibold uppercase text-modiff-subtle-text">
             Installed ({installedItems.length})
           </div>
           {installedItems.length === 0 || visibleInstalledGroups.length === 0 ? (
-            <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-muted">
+            <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
               No visible model artifacts indexed yet.
             </div>
           ) : (
@@ -928,44 +959,50 @@ export function ModelsLibraryPanel() {
               const isOpen = openModelGroups.has(groupId);
               return (
                 <div key={group} className="rounded-modiff-compact border border-modiff-border bg-modiff-bg">
-                  <button
-                    type="button"
-                    className="flex min-h-9 w-full items-center justify-between gap-2 px-2 text-left text-sm font-semibold text-modiff-text transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                  <ModiffButton
+                    align="left"
+                    className="min-h-9 justify-between rounded-none border-0 bg-transparent px-2"
+                    fullWidth
+                    tone="ghost"
                     onClick={() => toggleModelGroup(groupId)}
                   >
                     <span className="truncate">{group}</span>
-                    <span className="flex shrink-0 items-center gap-2 text-xs text-modiff-muted">
+                    <span className="flex shrink-0 items-center gap-2 text-xs text-modiff-subtle-text">
                       {items.length}
                       <ChevronDown size={15} className={cx('transition-transform', isOpen && 'rotate-180')} />
                     </span>
-                  </button>
+                  </ModiffButton>
                   {isOpen ? (
                     <div className="grid gap-1 border-t border-modiff-border p-1">
                       {items.slice(0, studioViewMode === 'expert' ? items.length : 6).map(({ item, source }) => (
-                        <button
-                          type="button"
+                        <ModiffButton
+                          align="left"
+                          fullWidth
                           key={`${source}-${modelItemText(item)}`}
                           title={modelItemText(item)}
                           onClick={() => handleInsertInstalledModel(item, source)}
-                          className="flex min-h-10 items-center justify-between gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-left transition hover:border-hf-yellow/70 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                          className="min-h-10 justify-between bg-modiff-bg p-2 font-normal"
+                          tone="secondary"
                         >
                           <span className="flex min-w-0 items-center gap-2">
-                            <HardDrive size={15} className="shrink-0 text-modiff-muted" />
+                            <HardDrive size={15} className="shrink-0 text-modiff-subtle-text" />
                             <span className="min-w-0 truncate text-sm font-semibold text-modiff-text">
                               {modelItemLabel(item)}
                             </span>
                           </span>
-                          <span className="shrink-0 text-xs font-semibold text-modiff-muted">{source}</span>
-                        </button>
+                          <span className="shrink-0 text-xs font-semibold text-modiff-subtle-text">{source}</span>
+                        </ModiffButton>
                       ))}
                       {studioViewMode !== 'expert' && items.length > 6 ? (
-                        <button
-                          type="button"
-                          className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-left text-xs font-semibold text-modiff-muted transition hover:border-hf-yellow/70 hover:text-modiff-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                        <ModiffButton
+                          align="left"
+                          className="h-auto min-h-0 bg-modiff-bg p-2 text-xs text-modiff-subtle-text"
+                          fullWidth
                           onClick={() => setModelManagerOpener({ nodeId: null, fieldKey: null })}
+                          tone="secondary"
                         >
                           View {items.length - 6} more {group.toLowerCase()} artifacts
-                        </button>
+                        </ModiffButton>
                       ) : null}
                     </div>
                   ) : null}
@@ -976,7 +1013,7 @@ export function ModelsLibraryPanel() {
         </section>
         {missingSupportedProfiles.length > 0 ? (
           <section className="grid gap-1" data-testid="left-model-supported">
-            <div className="px-1 text-xs font-semibold uppercase text-modiff-muted">
+            <div className="px-1 text-xs font-semibold uppercase text-modiff-subtle-text">
               Available ({missingSupportedProfiles.length})
             </div>
             {supportedGroups.map(([group, profiles]) => {
@@ -984,17 +1021,19 @@ export function ModelsLibraryPanel() {
               const isOpen = openModelGroups.has(groupId);
               return (
                 <div key={group} className="rounded-modiff-compact border border-modiff-border bg-modiff-bg">
-                  <button
-                    type="button"
-                    className="flex min-h-9 w-full items-center justify-between gap-2 px-2 text-left text-sm font-semibold text-modiff-text transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+                  <ModiffButton
+                    align="left"
+                    className="min-h-9 justify-between rounded-none border-0 bg-transparent px-2"
+                    fullWidth
                     onClick={() => toggleModelGroup(groupId)}
+                    tone="ghost"
                   >
                     <span className="truncate">{group}</span>
-                    <span className="flex shrink-0 items-center gap-2 text-xs text-modiff-muted">
+                    <span className="flex shrink-0 items-center gap-2 text-xs text-modiff-subtle-text">
                       {profiles.length}
                       <ChevronDown size={15} className={cx('transition-transform', isOpen && 'rotate-180')} />
                     </span>
-                  </button>
+                  </ModiffButton>
                   {isOpen ? (
                     <div className="grid gap-1 border-t border-modiff-border p-1">
                       {profiles.map((profile) => {
@@ -1003,7 +1042,6 @@ export function ModelsLibraryPanel() {
                           <SupportedModelRow
                             key={profile.modelType}
                             autoPlan={autoResourcePlans[planKey]}
-                            hardwareFit={getStudioModelHardwareFit(profile, runtimeStatus)}
                             installProgress={hfDownloadProgress}
                             onInstall={handleInstall}
                             onOpenSetup={openSetup}
@@ -1026,7 +1064,6 @@ export function ModelsLibraryPanel() {
 
 function SupportedModelRow({
   autoPlan,
-  hardwareFit,
   installProgress,
   onInstall,
   onOpenSetup,
@@ -1034,7 +1071,6 @@ function SupportedModelRow({
   status,
 }: {
   autoPlan?: StudioAutoResourcePlan;
-  hardwareFit: ReturnType<typeof getStudioModelHardwareFit>;
   installProgress: ReturnType<typeof useNodesStore.getState>['hfDownloadProgress'];
   onInstall: (target: StudioAutoResourceInstallTarget) => Promise<void>;
   onOpenSetup: () => void;
@@ -1047,9 +1083,10 @@ function SupportedModelRow({
     actionLabel: 'Install',
   };
   const progress = installProgress[installTarget.repo];
+  const compatibility = autoResourceCompatibility(autoPlan);
   const installing =
     progress?.status === 'queued' || progress?.status === 'running' || progress?.status === 'downloading';
-  const blocked = hardwareFit.status === 'blocked' && !status.runnable;
+  const blocked = compatibility.state === 'unsuitable' && !status.runnable;
   const tone = blocked ? 'error' : 'warning';
   const statusLabel = installing ? 'Installing' : (installTarget.actionLabel ?? 'Install');
   const statusTitle = installTarget.reason || `Install ${installTarget.repo}`;
@@ -1060,15 +1097,16 @@ function SupportedModelRow({
       className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
     >
       <div className="flex items-start justify-between gap-2">
-        <button
-          type="button"
-          className="min-w-0 flex-1 text-left"
-          title={`${profile.defaultRepo} | ${hardwareFit.message}${hardwareFit.details ? ` | ${hardwareFit.details}` : ''}`}
+        <ModiffButton
+          align="left"
+          className="h-auto min-h-0 min-w-0 flex-1 bg-transparent p-0 font-normal"
+          tone="ghost"
+          title={`${profile.defaultRepo} | ${compatibility.summary} | ${compatibility.detail}`}
           onClick={onOpenSetup}
         >
           <div className="truncate text-sm font-semibold text-modiff-text">{profile.label}</div>
-          <div className="mt-0.5 truncate text-xs text-modiff-muted">{profile.family}</div>
-        </button>
+          <div className="mt-0.5 truncate text-xs text-modiff-subtle-text">{profile.family}</div>
+        </ModiffButton>
         {!status.runnable && (
           <StatusPill
             tone={tone}

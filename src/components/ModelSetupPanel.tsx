@@ -13,16 +13,17 @@ import {
   isHfDownloadComplete,
 } from '../studio/modelInstall';
 import { getStudioModelCacheStatus } from '../studio/modelCache';
-import { getStudioModelHardwareFit } from '../studio/modelHardware';
 import { STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
 import {
   getGraphWorkflowArtifactRequirements,
   getStudioWorkflowArtifactRequirements,
   type WorkflowArtifactRequirement,
 } from '../studio/artifactRequirements';
+import { inspectStudioGraphBindingDivergence } from '../studio/graphBridge';
 import {
   autoPlanIsReady,
   autoPlanKeyForForm,
+  autoResourceCompatibility,
   autoResourceHealthBadge,
   autoResourceInstallTarget,
   clearAutoResourceHistory,
@@ -31,20 +32,28 @@ import {
   type StudioAutoResourceInstallTarget,
   type StudioAutoResourcePlan,
 } from '../studio/autoResource';
-import { getPreferredRuntimeDevice, inspectCurrentGraph } from '../studio/runReadiness';
+import { inspectCurrentGraph } from '../studio/runReadiness';
 import { useRunReadinessIssues } from '../studio/useRunReadinessIssues';
-import type { GraphInspectionSummary, RunReadinessIssue, RunReadinessIssueCategory } from '../studio/types';
-import type { StudioModelProfile } from '../studio/types';
+import type {
+  GraphInspectionSummary,
+  RunReadinessIssue,
+  RunReadinessIssueCategory,
+  StudioFormState,
+  StudioModelProfile,
+} from '../studio/types';
 import {
   ActionStatusRow,
   IssueCard,
   ModiffButton,
+  ModiffDisclosure,
   StatusActionChip,
   type IssueCardTone,
   type StatusActionChipTone,
 } from '../ui';
 import { cx } from '../utils/classNames';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
+import { RuntimeEnvironmentCard } from './RuntimeEnvironmentCard';
+import RuntimeOptimizationsCard from './RuntimeOptimizationsCard';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
 
 function formatBytes(bytes?: number) {
@@ -72,13 +81,27 @@ function graphModelCount(summary: GraphInspectionSummary) {
   return new Set(summary.modelRefs.map((reference) => `${reference.kind}:${reference.value}`)).size;
 }
 
-const ISSUE_CATEGORY_ORDER: RunReadinessIssueCategory[] = ['backend', 'model', 'graph', 'input', 'device'];
+const ISSUE_CATEGORY_ORDER: RunReadinessIssueCategory[] = [
+  'environment',
+  'package',
+  'backend',
+  'model_integrity',
+  'model',
+  'hardware_fit',
+  'asset',
+  'user_input',
+  'graph',
+];
 const ISSUE_CATEGORY_LABELS: Record<RunReadinessIssueCategory, string> = {
+  environment: 'Environment',
+  package: 'Packages',
   backend: 'Backend',
+  model_integrity: 'Model integrity',
   model: 'Models',
+  hardware_fit: 'Hardware fit',
+  asset: 'Assets',
+  user_input: 'Inputs',
   graph: 'Graph',
-  input: 'Inputs',
-  device: 'Device',
 };
 
 function issueTone(severity: RunReadinessIssue['severity']): IssueCardTone {
@@ -102,7 +125,7 @@ function DetailLine({
       data-testid={testId}
       className={cx(
         'break-words text-xs leading-5',
-        tone === 'muted' && 'text-modiff-muted',
+        tone === 'muted' && 'text-modiff-subtle-text',
         tone === 'success' && 'text-modiff-green',
         tone === 'error' && 'text-modiff-red',
         tone === 'warning' && 'text-hf-orange',
@@ -145,7 +168,7 @@ function StatusPill({
                 ? 'missing'
                 : 'details'
       }
-      className="min-h-6 px-2 py-0.5 text-xs"
+      className="min-h-7 px-2 py-0.5 text-xs"
       disabled={disabled}
       label={children}
       onClick={onClick}
@@ -205,23 +228,15 @@ export default function ModelSetupPanel() {
   const visibleDownloads = Object.entries(hfDownloadProgress).filter(
     ([, progress]) => isHfDownloadActive(progress) || hasHfDownloadFailed(progress) || isHfDownloadComplete(progress),
   );
-  const torchStatus = runtimeStatus?.packages?.torch;
-  const preferredDevice = getPreferredRuntimeDevice(runtimeStatus);
-  const cudaMemoryText = torchStatus?.cuda_memory_total_bytes
-    ? `, ${formatBytes(torchStatus.cuda_memory_free_bytes)} free / ${formatBytes(torchStatus.cuda_memory_total_bytes)} total`
-    : '';
-  const mpsText = torchStatus?.mps_available
-    ? `available (${torchStatus.mps_devices?.[0]?.name ?? `${torchStatus.mps_device_count ?? 1} device(s)`})`
-    : torchStatus?.mps_built
-      ? 'built but unavailable'
-      : 'not available';
   void graphInspectionSignature;
   const graphInspection = inspectCurrentGraph();
   const hasWorkflowModelContext = Boolean(activeTemplateId || graphBinding || sourceOutputId);
+  const graphBindingDivergence = graphBinding ? inspectStudioGraphBindingDivergence(graphBinding) : null;
   const hasCustomGraphContext =
-    !hasWorkflowModelContext &&
-    !graphBinding &&
-    (graphInspection.nodeCount > 0 || graphInspection.blockingIssues.length > 0);
+    Boolean(graphBindingDivergence) ||
+    (!hasWorkflowModelContext &&
+      !graphBinding &&
+      (graphInspection.nodeCount > 0 || graphInspection.blockingIssues.length > 0));
   const workflowAutoPlanKey = autoPlanKeyForForm(form);
   const workflowProfile = STUDIO_MODEL_PROFILES[form.modelType];
   const profiles =
@@ -232,7 +247,6 @@ export default function ModelSetupPanel() {
             mode: form.mode,
             status: getStudioModelCacheStatus(workflowProfile, hfCache, localModels, modelCacheDiagnostics),
             backendCapability: studioModelCapabilities.find((item) => item.modelType === workflowProfile.modelType),
-            hardwareFit: getStudioModelHardwareFit(workflowProfile, runtimeStatus, preferredDevice),
             autoPlanKey: workflowAutoPlanKey,
             autoPlan: autoResourcePlans[workflowAutoPlanKey],
           },
@@ -442,6 +456,9 @@ export default function ModelSetupPanel() {
         </div>
       </div>
 
+      <RuntimeEnvironmentCard error={runtimeError} status={runtimeStatus} />
+      <RuntimeOptimizationsCard />
+
       {currentIssueGroups.length > 0 && (
         <section
           className="grid gap-3 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
@@ -457,7 +474,7 @@ export default function ModelSetupPanel() {
           </div>
           {currentIssueGroups.map((group) => (
             <div key={group.category} className="grid gap-2">
-              <h4 className="text-xs font-bold uppercase text-modiff-muted">
+              <h4 className="text-xs font-bold uppercase text-modiff-subtle-text">
                 {group.label} ({group.issues.length})
               </h4>
               <div className="grid gap-2">
@@ -503,273 +520,211 @@ export default function ModelSetupPanel() {
         </section>
       )}
 
-      {(runtimeError ||
-        (runtimeStatus?.missing_required_packages?.length ?? 0) > 0 ||
-        runtimeStatus?.ready === false) && (
-        <section
-          className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
-          data-testid="setup-runtime-status"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-bold text-modiff-text">Backend runtime</h3>
-            <StatusPill
-              tone={runtimeStatus?.ready ? 'success' : 'error'}
-              title={
-                runtimeStatus?.ready
-                  ? 'Runtime is connected and ready.'
-                  : runtimeError || 'Runtime needs attention before generation.'
-              }
-            >
-              {runtimeStatus?.ready ? 'Ready' : 'Needs attention'}
-            </StatusPill>
-          </div>
-          {runtimeError ? (
-            <div className="mt-2">
-              <StatusPill tone="error" title={runtimeError}>
-                Runtime error
-              </StatusPill>
-            </div>
-          ) : (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <StatusPill
-                tone="default"
-                title={`${runtimeStatus?.server?.scheme ?? 'http'}://${runtimeStatus?.server?.host ?? '127.0.0.1'}:${runtimeStatus?.server?.port ?? 8088} | Python ${runtimeStatus?.python?.version?.split(' ')[0] ?? 'unknown'}`}
-              >
-                Server
-              </StatusPill>
-              <StatusPill
-                tone="default"
-                title={`HF cache: ${runtimeStatus?.config?.hf_cache_dir || 'default'} | HF token: ${runtimeStatus?.config?.hf_token_configured ? 'configured' : 'not configured'}`}
-              >
-                Cache
-              </StatusPill>
-              <StatusPill
-                tone={runtimeStatus?.packages?.torch?.cuda_available ? 'success' : 'warning'}
-                title={`Torch ${torchStatus?.version ?? 'unknown'} | CUDA ${torchStatus?.cuda_available ? `available (${torchStatus.cuda_device_name || `${torchStatus.cuda_device_count ?? 0} device(s)`}${cudaMemoryText})` : 'not available'}`}
-              >
-                CUDA
-              </StatusPill>
-              <StatusPill
-                tone={runtimeStatus?.packages?.torch?.mps_available ? 'success' : 'default'}
-                title={`Apple MPS ${mpsText} | Preferred device: ${preferredDevice}`}
-              >
-                {preferredDevice}
-              </StatusPill>
-              {(runtimeStatus?.missing_required_packages?.length ?? 0) > 0 && (
-                <StatusPill
-                  tone="error"
-                  title={`Missing required packages: ${runtimeStatus?.missing_required_packages?.join(', ')}`}
-                >
-                  Packages
-                </StatusPill>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      <details
+      <ModiffDisclosure
         className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
         data-testid="setup-advanced-diagnostics"
+        label={
+          <span className="flex items-center gap-2">
+            <FolderSearch size={15} className="text-hf-yellow" />
+            Advanced diagnostics
+          </span>
+        }
+        buttonClassName="p-0"
+        panelClassName="mt-3 grid gap-3"
       >
-        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-bold text-modiff-text">
-          <FolderSearch size={15} className="text-hf-yellow" />
-          Advanced diagnostics
-        </summary>
-        <div className="mt-3 grid gap-3">
-          {hasCustomGraphContext ? (
-            <section className="grid gap-2" data-testid="setup-workflow-model-health">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-modiff-text">Current graph</h3>
-                <StatusPill tone="default" title="Models referenced by the visible canvas graph are shown here.">
-                  Contextual
-                </StatusPill>
-              </div>
-              <IssueCard
-                tone={graphBlockingIssue || graphArtifactRequirements.length > 0 ? 'error' : 'success'}
-                title={graphBlockingIssue ? 'Graph needs attention' : 'Graph model checks'}
-                meta={
-                  graphIssueMessage(graphBlockingIssue) ||
-                  `${graphInspection.nodeCount} nodes, ${graphInspection.outputPathCount} connected output path${graphInspection.outputPathCount === 1 ? '' : 's'}.`
-                }
-                testId="setup-current-graph-health"
-              >
-                <div className="grid gap-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    <StatusPill
-                      tone={graphInspection.outputPathCount > 0 ? 'success' : 'error'}
-                      title={`${graphInspection.outputPathCount} connected output path${graphInspection.outputPathCount === 1 ? '' : 's'}.`}
-                    >
-                      {graphInspection.outputPathCount} outputs
-                    </StatusPill>
-                    <StatusPill
-                      tone={graphArtifactRequirements.length > 0 ? 'warning' : 'success'}
-                      title={`${graphModels} detected model reference${graphModels === 1 ? '' : 's'}.`}
-                    >
-                      {graphModels} models
-                    </StatusPill>
-                  </div>
-                  {graphArtifactRequirements.length > 0 && (
-                    <div className="grid gap-2 border-t border-modiff-border pt-2">
-                      {graphArtifactRequirements.map((requirement) => (
-                        <WorkflowArtifactRequirementRow
-                          key={requirement.id}
-                          activeInstallCount={activeInstallCount}
-                          actionTestId={`setup-install-graph-requirement-${requirement.id}`}
-                          installProgress={hfDownloadProgress}
-                          onInstall={(target) => handleInstall(target)}
-                          onUseLocal={(requirementItem) =>
-                            setModelManagerOpener({
-                              nodeId: null,
-                              fieldKey: null,
-                              focus: {
-                                label: requirementItem.label,
-                                repo: requirementItem.repo,
-                                requirementId: requirementItem.id,
-                                source: 'setup',
-                              },
-                            })
-                          }
-                          requirement={requirement}
-                          testId={`setup-graph-requirement-${requirement.id}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </IssueCard>
-            </section>
-          ) : hasWorkflowModelContext ? (
-            <section className="grid gap-2" data-testid="setup-workflow-model-health">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-modiff-text">Workflow model</h3>
-                <StatusPill tone="default" title="Only models used by the current workflow are shown here.">
-                  Contextual
-                </StatusPill>
-              </div>
-              {profiles.map(({ autoPlan, backendCapability, hardwareFit, profile, status }) => (
-                <ModelProfileCard
-                  key={profile.modelType}
-                  activeInstallCount={activeInstallCount}
-                  autoPlan={autoPlan}
-                  backendCapability={backendCapability}
-                  hardwareFit={hardwareFit}
-                  hfDownloadProgress={hfDownloadProgress}
-                  onInstall={handleInstall}
-                  onUseLocal={(requirement) =>
-                    setModelManagerOpener({
-                      nodeId: null,
-                      fieldKey: null,
-                      focus: {
-                        label: requirement.label,
-                        repo: requirement.repo,
-                        requirementId: requirement.id,
-                        source: 'setup',
-                      },
-                    })
-                  }
-                  onClearHistory={handleClearHistory}
-                  profile={profile}
-                  requirements={workflowRequirements}
-                  status={status}
-                />
-              ))}
-            </section>
-          ) : (
-            <section
-              className="flex items-center gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-xs text-modiff-muted"
-              data-testid="setup-workflow-model-empty"
+        {hasCustomGraphContext ? (
+          <section className="grid gap-2" data-testid="setup-workflow-model-health">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-modiff-text">Current graph</h3>
+              <StatusPill tone="default" title="Models referenced by the visible canvas graph are shown here.">
+                Contextual
+              </StatusPill>
+            </div>
+            <IssueCard
+              tone={graphBlockingIssue || graphArtifactRequirements.length > 0 ? 'error' : 'success'}
+              title={graphBlockingIssue ? 'Graph needs attention' : 'Graph model checks'}
+              meta={
+                graphIssueMessage(graphBlockingIssue) ||
+                `${graphInspection.nodeCount} nodes, ${graphInspection.outputPathCount} connected output path${graphInspection.outputPathCount === 1 ? '' : 's'}.`
+              }
+              testId="setup-current-graph-health"
             >
-              <Info size={15} className="shrink-0 text-modiff-muted" />
-              <span>Workflow model checks appear after you create, update, or restore a workflow.</span>
-            </section>
-          )}
+              <div className="grid gap-2">
+                <div className="flex flex-wrap gap-1.5">
+                  <StatusPill
+                    tone={graphInspection.outputPathCount > 0 ? 'success' : 'error'}
+                    title={`${graphInspection.outputPathCount} connected output path${graphInspection.outputPathCount === 1 ? '' : 's'}.`}
+                  >
+                    {graphInspection.outputPathCount} outputs
+                  </StatusPill>
+                  <StatusPill
+                    tone={graphArtifactRequirements.length > 0 ? 'warning' : 'success'}
+                    title={`${graphModels} detected model reference${graphModels === 1 ? '' : 's'}.`}
+                  >
+                    {graphModels} models
+                  </StatusPill>
+                </div>
+                {graphArtifactRequirements.length > 0 && (
+                  <div className="grid gap-2 border-t border-modiff-border pt-2">
+                    {graphArtifactRequirements.map((requirement) => (
+                      <WorkflowArtifactRequirementRow
+                        key={requirement.id}
+                        activeInstallCount={activeInstallCount}
+                        actionTestId={`setup-install-graph-requirement-${requirement.id}`}
+                        installProgress={hfDownloadProgress}
+                        onInstall={(target) => handleInstall(target)}
+                        onUseLocal={(requirementItem) =>
+                          setModelManagerOpener({
+                            nodeId: null,
+                            fieldKey: null,
+                            focus: {
+                              label: requirementItem.label,
+                              repo: requirementItem.repo,
+                              requirementId: requirementItem.id,
+                              source: 'setup',
+                            },
+                          })
+                        }
+                        requirement={requirement}
+                        testId={`setup-graph-requirement-${requirement.id}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </IssueCard>
+          </section>
+        ) : hasWorkflowModelContext ? (
+          <section className="grid gap-2" data-testid="setup-workflow-model-health">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-modiff-text">Workflow model</h3>
+              <StatusPill tone="default" title="Only models used by the current workflow are shown here.">
+                Contextual
+              </StatusPill>
+            </div>
+            {profiles.map(({ autoPlan, backendCapability, profile, status }) => (
+              <ModelProfileCard
+                key={profile.modelType}
+                activeInstallCount={activeInstallCount}
+                autoPlan={autoPlan}
+                form={form}
+                backendCapability={backendCapability}
+                hfDownloadProgress={hfDownloadProgress}
+                onInstall={handleInstall}
+                onUseLocal={(requirement) =>
+                  setModelManagerOpener({
+                    nodeId: null,
+                    fieldKey: null,
+                    focus: {
+                      label: requirement.label,
+                      repo: requirement.repo,
+                      requirementId: requirement.id,
+                      source: 'setup',
+                    },
+                  })
+                }
+                onClearHistory={handleClearHistory}
+                profile={profile}
+                requirements={workflowRequirements}
+                status={status}
+              />
+            ))}
+          </section>
+        ) : (
+          <section
+            className="flex items-center gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-xs text-modiff-subtle-text"
+            data-testid="setup-workflow-model-empty"
+          >
+            <Info size={15} className="shrink-0 text-modiff-subtle-text" />
+            <span>Workflow model checks appear after you create, update, or restore a workflow.</span>
+          </section>
+        )}
 
-          {modelCacheDiagnostics && (
-            <details className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
-              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-bold text-modiff-text">
+        {modelCacheDiagnostics && (
+          <ModiffDisclosure
+            className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3"
+            label={
+              <span className="flex items-center gap-2">
                 <FolderSearch size={15} className="text-hf-yellow" />
                 Diagnostics and scanned locations
-              </summary>
-              <div className="mt-3 grid gap-3">
-                <section>
-                  <h3 className="mb-1 text-sm font-bold">Scanned model locations</h3>
-                  {(modelCacheDiagnostics.locations || []).map((location) => {
-                    const foundCount = location.repo_count ?? location.file_count ?? 0;
-                    const foundLabel =
-                      location.repo_count !== undefined ? `${foundCount} repos` : `${foundCount} files`;
-                    const externalBits = [
-                      location.external_package_count ? `${location.external_package_count} external packages` : null,
-                      location.compatible_hf_repo_count
-                        ? `${location.compatible_hf_repo_count} HF-compatible repos`
-                        : null,
-                      location.model_file_bytes ? `${formatBytes(location.model_file_bytes)} model weights` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' | ');
-                    return (
-                      <div
-                        key={`${location.label}-${location.path}`}
-                        className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
-                      >
-                        <DetailLine tone={location.exists ? 'muted' : 'warning'}>
-                          {location.label}: {location.path || 'default'} | {location.exists ? 'exists' : 'missing'} |{' '}
-                          {foundLabel} | {location.runnable === false ? 'discovered but not runnable' : 'runnable'}
-                        </DetailLine>
-                        {externalBits && (
-                          <DetailLine>
-                            {externalBits} | {formatExtensionCounts(location.extension_counts)}
-                          </DetailLine>
-                        )}
-                        {location.reason && location.runnable === false && (
-                          <DetailLine tone="warning">{location.reason}</DetailLine>
-                        )}
-                        {location.error && <DetailLine tone="error">{location.error}</DetailLine>}
-                      </div>
-                    );
-                  })}
-                </section>
-                {(modelCacheDiagnostics.external_model_packages?.length ?? 0) > 0 && (
-                  <section data-testid="setup-external-models">
-                    <h3 className="mb-1 text-sm font-bold">Detected external packages</h3>
-                    <div className="grid gap-2">
-                      {modelCacheDiagnostics.external_model_packages?.slice(0, 8).map((item) => (
-                        <IssueCard
-                          key={`${item.source}-${item.path}`}
-                          tone={item.runnable ? 'success' : 'warning'}
-                          title={item.label}
-                          meta={`${item.format} | ${item.file_count ?? 0} files | ${formatBytes(item.model_file_bytes)}`}
-                        >
-                          <DetailLine>{item.path}</DetailLine>
-                          <DetailLine tone={item.runnable ? 'success' : 'warning'}>{item.reason}</DetailLine>
-                        </IssueCard>
-                      ))}
-                    </div>
-                  </section>
-                )}
-                {(modelCacheDiagnostics.hf_compatible_external_repos?.length ?? 0) > 0 && (
-                  <section data-testid="setup-external-hf-repos">
-                    <h3 className="mb-1 text-sm font-bold">HF-compatible external repos</h3>
-                    <div className="grid gap-2">
-                      {modelCacheDiagnostics.hf_compatible_external_repos?.slice(0, 8).map((item) => (
-                        <IssueCard
-                          key={`${item.source}-${item.path}`}
-                          tone="warning"
-                          title={item.repo_id}
-                          meta={item.source}
-                        >
-                          <DetailLine>{item.path}</DetailLine>
-                          <DetailLine tone="warning">{item.reason}</DetailLine>
-                        </IssueCard>
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </div>
-            </details>
-          )}
-        </div>
-      </details>
+              </span>
+            }
+            buttonClassName="p-0"
+            panelClassName="mt-3 grid gap-3"
+          >
+            <section>
+              <h3 className="mb-1 text-sm font-bold">Scanned model locations</h3>
+              {(modelCacheDiagnostics.locations || []).map((location) => {
+                const foundCount = location.repo_count ?? location.file_count ?? 0;
+                const foundLabel = location.repo_count !== undefined ? `${foundCount} repos` : `${foundCount} files`;
+                const externalBits = [
+                  location.external_package_count ? `${location.external_package_count} external packages` : null,
+                  location.compatible_hf_repo_count ? `${location.compatible_hf_repo_count} HF-compatible repos` : null,
+                  location.model_file_bytes ? `${formatBytes(location.model_file_bytes)} model weights` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' | ');
+                return (
+                  <div
+                    key={`${location.label}-${location.path}`}
+                    className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
+                  >
+                    <DetailLine tone={location.exists ? 'muted' : 'warning'}>
+                      {location.label}: {location.path || 'default'} | {location.exists ? 'exists' : 'missing'} |{' '}
+                      {foundLabel} | {location.runnable === false ? 'discovered but not runnable' : 'runnable'}
+                    </DetailLine>
+                    {externalBits && (
+                      <DetailLine>
+                        {externalBits} | {formatExtensionCounts(location.extension_counts)}
+                      </DetailLine>
+                    )}
+                    {location.reason && location.runnable === false && (
+                      <DetailLine tone="warning">{location.reason}</DetailLine>
+                    )}
+                    {location.error && <DetailLine tone="error">{location.error}</DetailLine>}
+                  </div>
+                );
+              })}
+            </section>
+            {(modelCacheDiagnostics.external_model_packages?.length ?? 0) > 0 && (
+              <section data-testid="setup-external-models">
+                <h3 className="mb-1 text-sm font-bold">Detected external packages</h3>
+                <div className="grid gap-2">
+                  {modelCacheDiagnostics.external_model_packages?.slice(0, 8).map((item) => (
+                    <IssueCard
+                      key={`${item.source}-${item.path}`}
+                      tone={item.runnable ? 'success' : 'warning'}
+                      title={item.label}
+                      meta={`${item.format} | ${item.file_count ?? 0} files | ${formatBytes(item.model_file_bytes)}`}
+                    >
+                      <DetailLine>{item.path}</DetailLine>
+                      <DetailLine tone={item.runnable ? 'success' : 'warning'}>{item.reason}</DetailLine>
+                    </IssueCard>
+                  ))}
+                </div>
+              </section>
+            )}
+            {(modelCacheDiagnostics.hf_compatible_external_repos?.length ?? 0) > 0 && (
+              <section data-testid="setup-external-hf-repos">
+                <h3 className="mb-1 text-sm font-bold">HF-compatible external repos</h3>
+                <div className="grid gap-2">
+                  {modelCacheDiagnostics.hf_compatible_external_repos?.slice(0, 8).map((item) => (
+                    <IssueCard
+                      key={`${item.source}-${item.path}`}
+                      tone="warning"
+                      title={item.repo_id}
+                      meta={item.source}
+                    >
+                      <DetailLine>{item.path}</DetailLine>
+                      <DetailLine tone="warning">{item.reason}</DetailLine>
+                    </IssueCard>
+                  ))}
+                </div>
+              </section>
+            )}
+          </ModiffDisclosure>
+        )}
+      </ModiffDisclosure>
     </div>
   );
 }
@@ -777,8 +732,8 @@ export default function ModelSetupPanel() {
 function ModelProfileCard({
   activeInstallCount,
   autoPlan,
+  form,
   backendCapability,
-  hardwareFit,
   hfDownloadProgress,
   onClearHistory,
   onInstall,
@@ -789,8 +744,8 @@ function ModelProfileCard({
 }: {
   activeInstallCount: number;
   autoPlan?: StudioAutoResourcePlan;
+  form: StudioFormState;
   backendCapability: { modes?: string[]; inpaintContract?: StudioModelProfile['inpaintContract'] } | undefined;
-  hardwareFit: ReturnType<typeof getStudioModelHardwareFit>;
   hfDownloadProgress: ReturnType<typeof useNodesStore.getState>['hfDownloadProgress'];
   onClearHistory: (profile: StudioModelProfile) => Promise<void>;
   onInstall: (target: StudioAutoResourceInstallTarget) => Promise<void>;
@@ -799,20 +754,17 @@ function ModelProfileCard({
   requirements: WorkflowArtifactRequirement[];
   status: ReturnType<typeof getStudioModelCacheStatus>;
 }) {
-  const autoInstallTarget = autoResourceInstallTarget(autoPlan);
-  const autoCandidate = selectedAutoCandidate(autoPlan);
-  const autoReady = autoPlanIsReady(autoPlan);
+  const autoInstallTarget = autoResourceInstallTarget(autoPlan, form);
+  const autoCandidate = selectedAutoCandidate(autoPlan, form);
+  const autoReady = autoPlanIsReady(autoPlan, form);
   const ready = autoPlan ? autoReady : status.runnable;
   const installRepo = autoInstallTarget?.repo ?? profile.defaultRepo;
   const progress = hfDownloadProgress[installRepo];
   const installing = isHfDownloadActive(progress);
   const inpaintContract = backendCapability?.inpaintContract ?? profile.inpaintContract;
-  const healthBadge = autoResourceHealthBadge(autoPlan);
-  const tone = ready
-    ? 'success'
-    : healthBadge === 'Will not work on this machine' || hardwareFit.status === 'blocked'
-      ? 'error'
-      : 'warning';
+  const healthBadge = autoResourceHealthBadge(autoPlan, form);
+  const compatibility = autoResourceCompatibility(autoPlan, form);
+  const tone = ready ? 'success' : compatibility.state === 'unsuitable' ? 'error' : 'warning';
   const pillTone = ready ? 'success' : tone === 'error' ? 'error' : 'warning';
   const meta =
     autoCandidate?.resolvedArtifact ?? autoCandidate?.artifact ?? autoInstallTarget?.repo ?? profile.defaultRepo;
@@ -878,10 +830,18 @@ function ModelProfileCard({
             Backend
           </StatusPill>
           <StatusPill
-            tone={hardwareFit.status === 'ready' ? 'success' : hardwareFit.status === 'blocked' ? 'error' : 'warning'}
-            title={`${hardwareFit.message}${hardwareFit.details ? ` ${hardwareFit.details}` : ''}`}
+            tone={
+              compatibility.severity === 'success'
+                ? 'success'
+                : compatibility.severity === 'error'
+                  ? 'error'
+                  : compatibility.severity === 'info'
+                    ? 'default'
+                    : 'warning'
+            }
+            title={`${compatibility.summary} ${compatibility.detail}`}
           >
-            {hardwareFit.label}
+            Compatibility
           </StatusPill>
           {inpaintContract && (
             <StatusPill

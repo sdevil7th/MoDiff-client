@@ -13,6 +13,17 @@ The current application is intended for one trusted user on a trusted workstatio
 
 Do not expose MoDiff to an untrusted network without authentication, TLS, authorization, request limits, origin controls, filesystem isolation, audit logging, and a reviewed reverse-proxy policy.
 
+For SSH development, keep both services on loopback and forward the client port
+through the authenticated tunnel instead of using `--host 0.0.0.0`:
+
+```bash
+ssh -L 5173:127.0.0.1:5173 <user>@<host>
+```
+
+Run `./run-dev.sh --no-browser` on the remote host, then open
+`http://127.0.0.1:5173` on the local machine. Change both occurrences of
+`5173` if the launcher selects a different frontend port.
+
 ## Browser Data
 
 The client persists state in the browser origin's local storage:

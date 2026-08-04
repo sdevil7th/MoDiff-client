@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 /**
  * Formats execution time in seconds to a human-readable string
  * @param timeInSeconds - Execution time in seconds

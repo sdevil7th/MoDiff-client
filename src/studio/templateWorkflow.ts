@@ -1,10 +1,33 @@
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useFlowStore } from '../stores/useFlowStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  advanceWorkflowOperationContext,
+  assertWorkflowOperationContext,
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+  useStudioStore,
+  type WorkflowOperationContext,
+} from '../stores/useStudioStore';
 import { diffStudioFormValues, publishStudioChange } from './presetDiff';
-import { createOrUpdateStudioGraph } from './graphBridge';
+import { createOrUpdateStudioGraph, waitForStudioGraphFinalization } from './graphBridge';
+import {
+  autoPlanIsReady,
+  autoPlanKeyForForm,
+  fetchAutoResourcePlan,
+  formPatchForAutoCandidate,
+  selectedAutoCandidate,
+} from './autoResource';
 import { getTemplateLockedSettings } from './templateExactness';
-import { addLoraWorkflowBlock, addUpscaleWorkflowBlock } from './controlledWorkflows';
+import { materializeTemplateDefaultInputs } from './templateInputs';
+import { waitForGraphNodeMeasurements } from '../workflow/graphLayout';
+import {
+  addLoraWorkflowBlock,
+  addLyricVideoWorkflowBlock,
+  addQualityVideoSequenceWorkflowBlock,
+  addSoundtrackWorkflowBlock,
+  addUpscaleWorkflowBlock,
+  addVideoSequenceWorkflowBlock,
+} from './controlledWorkflows';
 import type { StudioFormState, StudioTemplate, StudioTemplateWorkflowBlock } from './types';
 
 export type TemplateWorkflowResult = {
@@ -13,12 +36,59 @@ export type TemplateWorkflowResult = {
   warnings: string[];
 };
 
-async function applyWorkflowBlock(block: StudioTemplateWorkflowBlock, form: StudioFormState, template: StudioTemplate) {
+async function applyWorkflowBlock(
+  block: StudioTemplateWorkflowBlock,
+  form: StudioFormState,
+  template: StudioTemplate,
+  options: { notify?: boolean; workflowContext?: WorkflowOperationContext } = {},
+) {
   if (block === 'lora') {
-    await addLoraWorkflowBlock(form, template.workflowBlockSettings?.lora);
+    await addLoraWorkflowBlock(form, template.workflowBlockSettings?.lora, options);
     return;
   }
-  await addUpscaleWorkflowBlock(form, template.workflowBlockSettings?.upscaler);
+  if (block === 'upscaler') {
+    await addUpscaleWorkflowBlock(form, template.workflowBlockSettings?.upscaler, options);
+    return;
+  }
+  if (block === 'video_sequence') {
+    await addVideoSequenceWorkflowBlock(form, template.workflowBlockSettings?.videoSequence, options);
+    return;
+  }
+  if (block === 'quality_video_sequence') {
+    await addQualityVideoSequenceWorkflowBlock(form, template.workflowBlockSettings?.qualityVideoSequence, options);
+    return;
+  }
+  if (block === 'soundtrack') {
+    await addSoundtrackWorkflowBlock(form, template.workflowBlockSettings?.soundtrack, options);
+    return;
+  }
+  await addLyricVideoWorkflowBlock(form, template.workflowBlockSettings?.lyricVideo, options);
+}
+
+export async function reconcileTemplateWorkflowBlocks(
+  template: StudioTemplate,
+  form: StudioFormState,
+  context: WorkflowOperationContext = captureWorkflowOperationContext(),
+) {
+  assertWorkflowOperationContext(context);
+  const failures: string[] = [];
+  for (const block of template.workflowBlocks ?? []) {
+    try {
+      await applyWorkflowBlock(block, form, template, { notify: false, workflowContext: context });
+      assertWorkflowOperationContext(context);
+    } catch (error) {
+      if (isWorkflowOperationCancelled(error)) throw error;
+      failures.push(`${block}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const finalized = await waitForStudioGraphFinalization(15_000, context);
+  assertWorkflowOperationContext(context);
+  if (!finalized) {
+    throw new Error('Template workflow block preparation timed out. Retry the Auto/Expert mode change.');
+  }
+  if (failures.length > 0) {
+    throw new Error(`Could not reconcile template workflow blocks: ${failures.join('; ')}`);
+  }
 }
 
 function waitForTemplateCanvasPaint() {
@@ -43,6 +113,7 @@ function blankCurrentCanvas() {
 export async function createWorkflowFromTemplate(template: StudioTemplate): Promise<TemplateWorkflowResult> {
   const studio = useStudioStore.getState();
   const workflowTabId = studio.createWorkflowTab(template.label, undefined, 'template', template.id);
+  const context = captureWorkflowOperationContext();
   useStudioStore.getState().setCanvasTransition({
     type: 'template_graph_building',
     workflowTabId,
@@ -50,29 +121,71 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     startedAt: Date.now(),
   });
   const before = useStudioStore.getState().form;
-  useStudioStore.getState().applyTemplate(template);
-  const after = useStudioStore.getState().form;
+  let after = before;
 
   let graphCreated = false;
   let graphError: string | undefined;
   let warnings: string[] = [];
 
   try {
+    const inputDefaults = await materializeTemplateDefaultInputs(template);
+    assertWorkflowOperationContext(context);
+    useStudioStore.getState().applyTemplate(template, inputDefaults);
+    advanceWorkflowOperationContext(context);
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    after = useStudioStore.getState().form;
+    if (after.resourceMode === 'auto') {
+      const initialPlanKey = autoPlanKeyForForm(after);
+      const cachedPlan = useStudioStore.getState().autoResourcePlans[initialPlanKey];
+      const plan = cachedPlan ?? (await fetchAutoResourcePlan(after));
+      assertWorkflowOperationContext(context);
+      if (!plan.error) {
+        useStudioStore.getState().setAutoResourcePlans({ [initialPlanKey]: plan });
+      }
+      useStudioStore.getState().setAutoResourcePlan(plan);
+      if (autoPlanIsReady(plan, after)) {
+        const patch = formPatchForAutoCandidate(selectedAutoCandidate(plan, after), after);
+        useStudioStore.getState().applyAutoResourcePlan(plan, patch);
+        advanceWorkflowOperationContext(context);
+        after = useStudioStore.getState().form;
+      }
+    }
     await waitForTemplateCanvasPaint();
-    const result = await createOrUpdateStudioGraph(after);
+    assertWorkflowOperationContext(context);
+    const result = await createOrUpdateStudioGraph(after, context);
+    assertWorkflowOperationContext(context);
     graphCreated = true;
     warnings = result.warnings;
     for (const block of template.workflowBlocks ?? []) {
       try {
-        await applyWorkflowBlock(block, after, template);
+        await applyWorkflowBlock(block, after, template, { workflowContext: context });
+        assertWorkflowOperationContext(context);
       } catch (error) {
+        if (isWorkflowOperationCancelled(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
         warnings.push(`${template.label} could not add the ${block} block: ${message}`);
       }
     }
+    const finalized = await waitForStudioGraphFinalization(15_000, context);
+    assertWorkflowOperationContext(context);
+    if (!finalized) {
+      throw new Error(`${template.label} graph preparation timed out. No incomplete graph was kept; try again.`);
+    }
+    await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
+    assertWorkflowOperationContext(context);
+    await useFlowStore.getState().arrangeGraph({ history: false });
+    assertWorkflowOperationContext(context);
+    await waitForTemplateCanvasPaint();
+    assertWorkflowOperationContext(context);
+    useStudioStore.getState().saveActiveWorkflowTab(true);
   } catch (error) {
+    if (isWorkflowOperationCancelled(error)) throw error;
+    assertWorkflowOperationContext(context);
     graphError = error instanceof Error ? error.message : String(error);
     blankCurrentCanvas();
+    useStudioStore.getState().setGraphBinding(null);
+    useStudioStore.getState().setGraphFinalization(null);
+    useStudioStore.getState().saveActiveWorkflowTab(true);
   } finally {
     const transition = useStudioStore.getState().canvasTransition;
     if (transition?.workflowTabId === workflowTabId && transition.templateId === template.id) {

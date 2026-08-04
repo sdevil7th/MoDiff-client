@@ -4,12 +4,15 @@ Studio is MoDiff's guided layer over the visible backend graph. It helps choose 
 
 ## Start The App
 
-Follow the [project quick start](../README.md#quick-start) to run the client and backend together. When the page opens, confirm the top-right connection button reports **Connected** before trying to load registry nodes, install models, or run a graph.
+Follow the [project installation guide](../README.md#install-and-run-modiff) to
+run the client and backend together. When the page opens, confirm the top-right
+connection button reports **Connected**, then open **Setup** and resolve any
+environment repair blocker before trying to install models or run a graph.
 
 The normal local addresses are:
 
-- Backend: `http://127.0.0.1:8088`
-- Client: first available port starting at `http://127.0.0.1:5173`
+- Installed app: `http://127.0.0.1:8088` (backend and bundled client)
+- Development client: first available port starting at `http://127.0.0.1:5173`
 
 The launcher prints the actual client URL. A different Vite port is normal when `5173` is occupied.
 
@@ -38,11 +41,17 @@ The model list is filtered by task. A model profile being visible means the clie
 ### Top Bar
 
 - **New** opens a clean local workflow tab.
+- **Save** writes the active snapshot to the backend **My workflows** library. Its menu provides Save as and a JSON
+  file copy; `Ctrl+S` saves the current name and `Ctrl+Shift+S` opens Save as.
 - **Export** provides a workflow package, latest-output package, and Gallery shortcut. Expert also exposes raw workflow/API graph JSON.
 - The **Auto** switch changes the resource/control surface between Auto and Expert.
-- **Run** validates and submits the current graph. Its menu also contains continuous **Auto** and **Loop** run behaviors; use those only when repeated execution is intentional.
+- **Fix** opens a review dialog only when the client has deterministic graph repairs. Inspect the proposed changes
+  before applying them; the tool does not guess at model or creative intent.
+- **Run** validates and submits the current graph. While any work is active or waiting, the same one-shot action is labeled **Queue** and appends an immutable graph snapshot without interrupting the current run. Its menu also contains continuous **Auto** and **Loop** behaviors; use those only when repeated execution is intentional.
 - **Stop** asks the backend to interrupt execution and resets repeated-run state.
 - The progress badge opens queue context.
+- The compact resource monitor reports the backend's current CPU, memory, disk active time, and accelerator snapshot; disk capacity remains in the expanded storage details. It is monitoring
+  evidence, not proof that the selected model will fit.
 - **Models**, **Templates**, **Settings**, **Gallery**, and the connection button open their respective tools.
 
 The Auto switch and the Run menu's Auto item have different roles: the switch selects a hardware-aware resource recipe, while the run item reruns after graph parameter edits. Prefer one-shot **Run** until you understand the repeated modes.
@@ -67,13 +76,17 @@ Workflow tabs sit above the canvas and are local-first:
 - Imported graphs, templates, Gallery restores, and output packages can open new tabs.
 - A dirty marker means the local snapshot changed; tabs are not automatically backend workflow files.
 
-Browser local storage is not a backup. Export important workflows before clearing site data or switching browser profiles.
+Browser local storage is not a backup. Save important workflows to **My workflows** or export a JSON/package before
+clearing site data or switching browser profiles.
 
 ### Right Workspace
 
 - **Studio** contains guided task/model/form controls and graph-aware readiness.
 - **Queue** shows current and recent task progress, cancellation, and errors.
 - **Setup** reports backend runtime, capability metadata, model/cache state, and install diagnostics.
+- **Setup → Runtime optimizations** shows supported optimization packages, isolated environments, qualification
+  receipts, activation, and rollback. Install or activate only entries supported by the current backend profile, and
+  do not treat an unqualified probe as production evidence.
 - **Run as app** appears in Expert for graphs with a recognized input/output surface.
 
 ## Build And Edit A Guided Workflow
@@ -104,6 +117,19 @@ Auto requests a backend plan for the current form. A ready plan can select:
 - A bounded lower-memory retry after a user-started run
 
 Auto does not load a model or generate media merely to decide readiness. A plan must identify a compatible local artifact and carry the backend's current evidence. If no known recipe matches, Run remains blocked and the UI explains the install, package, resource, or support gap.
+
+A ready plan means the backend considers the recipe runnable; it is not a speed
+rating. Shared system memory exposed to an integrated GPU is not equivalent to
+the same capacity of discrete VRAM. A first run may spend substantial time in
+download, validation, pipeline loading, or weight placement before it reports a
+denoising step.
+
+Keeping the same prompt and generation parameters does not require keeping the
+same runtime recipe. A later run can sometimes use a qualified pre-quantized
+artifact, attention backend, compile/cache path, or different device placement.
+Those choices require pipeline reload and cannot safely optimize work already
+in progress. Auto uses only qualified choices; Expert availability alone is not
+runtime qualification.
 
 ### Expert
 
@@ -169,6 +195,16 @@ The Queue panel and session shelf use HTTP snapshots plus websocket updates. Dep
 
 Not every library exposes incremental model-loading or generation callbacks. An indeterminate phase with liveness evidence is more honest than a fabricated percentage.
 
+When a run is already active, choose **Queue** in the Run menu and submit the current graph. MoDiff keeps the active task running and appends the new graph snapshot to the serial FIFO queue. The active run retains canvas ownership until the queued task starts, and the button returns to **Run** when no active or queued work remains.
+
+When a run seems slow, check its active phase, last update, step counter, logs,
+and resource monitor. Continued step progress or accelerator activity normally
+means slow-but-live execution. A static phase with no websocket heartbeat, log
+activity, or resource activity for an extended period is more likely to need
+recovery. During denoising, completed-step duration gives a useful rough
+estimate for the remaining steps. See [Troubleshooting](troubleshooting.md#a-run-is-taking-much-longer-than-expected)
+for phase-specific checks.
+
 **Stop** requests interruption; some native library calls may not stop until control returns to the backend. Do not terminate the process during a model write unless recovery requires it.
 
 ## Gallery And Imported Media
@@ -196,6 +232,8 @@ Common output actions:
 - Delete the record
 
 Backend Studio history persists output metadata and managed media so Gallery can recover after browser state is cleared. The client keeps a bounded recent view rather than an unlimited in-memory history. Deleting a record is not a secure-erasure guarantee for logs, caches, backups, or previously downloaded exports.
+
+The main node preview remains the most recently completed output for that workflow and field across workflow-tab changes, browser-tab changes, and refresh. It moves into Previous only after the backend accepts another run that can produce that same preview field. Queueing work never cancels the active run. If the accepted run fails, is cancelled, or completes without an output, the prior record remains in history and is not silently promoted back to current.
 
 Imported media is uploaded through the backend when connected. If backend persistence fails, the browser can use a temporary object-URL fallback for that session. Importing a workflow package accepts MoDiff JSON or a PNG with compatible embedded workflow metadata.
 

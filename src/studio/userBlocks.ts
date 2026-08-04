@@ -3,6 +3,9 @@ import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import type { AppModeInput, UserBlockDefinition, UserBlockPort, WorkflowBlueprint } from './types';
+import { classifyManagedControl } from './managedControlPolicy';
+import { normalizeGenericModelLoaderParams } from './modelSelection';
+import { arrangeGraphNodes } from '../workflow/graphLayout';
 
 type FlowGraph = {
   nodes: CustomNodeType[];
@@ -10,8 +13,19 @@ type FlowGraph = {
 };
 
 export const USER_BLOCK_DRAG_PREFIX = 'modiff-user-block:';
+export const USER_BLOCK_CHILD_LEFT = 32;
+export const USER_BLOCK_CHILD_TOP = 64;
+export const USER_BLOCK_HORIZONTAL_PADDING = 64;
+export const USER_BLOCK_VERTICAL_PADDING = 96;
+export const USER_BLOCK_COLLAPSED_WIDTH = 340;
+export const USER_BLOCK_COLLAPSED_HEIGHT = 360;
+export const USER_BLOCK_INPUT_BRIDGE_PREFIX = '__block_input__';
+export const USER_BLOCK_OUTPUT_BRIDGE_PREFIX = '__block_output__';
+export const USER_BLOCK_PREVIEW_PREFIX = '__block_preview__';
 
-type BlockSelectionResult =
+const USER_BLOCK_PREVIEW_DISPLAYS = new Set(['ui_image', 'ui_video', 'ui_audio', 'ui_text', 'ui_imagecompare']);
+
+export type BlockSelectionResult =
   | { ok: true; block: UserBlockDefinition; blockNode: CustomNodeType; nodes: CustomNodeType[]; edges: Edge[] }
   | { ok: false; reason: string };
 
@@ -47,7 +61,7 @@ function editableParamEntries(node: CustomNodeType) {
 }
 
 function selectedActionNodes(nodes: CustomNodeType[]) {
-  return nodes.filter((node) => node.selected && node.data.type !== 'group');
+  return nodes.filter((node) => node.selected && node.data.type !== 'group' && node.data.type !== 'loop');
 }
 
 function selectedNodeSet(nodes: CustomNodeType[]) {
@@ -115,15 +129,338 @@ function dedupePorts(ports: UserBlockPort[]) {
   });
 }
 
-function exposedParamsForNodes(nodes: CustomNodeType[]): AppModeInput[] {
+function paramDirection(param: NodeParams): 'input' | 'output' | null {
+  const display = param.isInput ? 'input' : param.display;
+  return display === 'input' || display === 'output' ? display : null;
+}
+
+function portIdentity(port: Pick<UserBlockPort, 'nodeId' | 'paramKey'>) {
+  return `${port.nodeId}\u0000${port.paramKey}`;
+}
+
+function uniquePortId(nodeId: string, paramKey: string, direction: 'input' | 'output', usedIds: Set<string>) {
+  const base = `${safeHandle(nodeId, direction)}__${safeHandle(paramKey, direction)}`;
+  let id = base;
+  let suffix = 2;
+  while (usedIds.has(id)) {
+    id = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function edgeHandle(edge: unknown, direction: 'input' | 'output') {
+  if (!isRecord(edge)) return null;
+  const value = direction === 'input' ? edge.targetHandle : edge.sourceHandle;
+  return typeof value === 'string' && value ? value : null;
+}
+
+function internalHandleIdentities(edges: unknown[], direction: 'input' | 'output') {
+  const identities = new Set<string>();
+  edges.forEach((edge) => {
+    if (!isRecord(edge)) return;
+    const nodeId = direction === 'input' ? edge.target : edge.source;
+    const handle = edgeHandle(edge, direction);
+    if (typeof nodeId === 'string' && handle) identities.add(`${nodeId}\u0000${handle}`);
+  });
+  return identities;
+}
+
+function normalizedBoundaryPorts(
+  nodes: CustomNodeType[],
+  edges: unknown[],
+  existing: UserBlockPort[],
+  direction: 'input' | 'output',
+) {
+  const usedIds = new Set<string>();
+  const byIdentity = new Map<string, UserBlockPort>();
+  const internallyConnected = internalHandleIdentities(edges, direction);
+  existing.forEach((port) => {
+    if (!port?.nodeId || !port?.paramKey || byIdentity.has(portIdentity(port))) return;
+    if (direction === 'input' && internallyConnected.has(portIdentity(port))) return;
+    let id = safeHandle(port.id, `${direction}-${byIdentity.size + 1}`);
+    if (usedIds.has(id)) id = uniquePortId(port.nodeId, port.paramKey, direction, usedIds);
+    else usedIds.add(id);
+    byIdentity.set(portIdentity(port), { ...cloneJson(port), id });
+  });
+
+  nodes.forEach((node) => {
+    Object.entries(node.data.params ?? {}).forEach(([paramKey, param]) => {
+      if (param.hidden || paramDirection(param) !== direction) return;
+      const identity = `${node.id}\u0000${paramKey}`;
+      // Inputs already supplied by an internal edge are not valid block
+      // injection points. Outputs remain exposable because graph outputs can
+      // fan out even when another internal node already consumes them.
+      if ((direction === 'input' && internallyConnected.has(identity)) || byIdentity.has(identity)) return;
+      byIdentity.set(identity, {
+        id: uniquePortId(node.id, paramKey, direction, usedIds),
+        label: paramLabel(node, paramKey),
+        nodeId: node.id,
+        paramKey,
+        type: param.type,
+      });
+    });
+  });
+  return [...byIdentity.values()];
+}
+
+function normalizedBlockNodePositions(nodes: CustomNodeType[]) {
+  const roots = nodes.filter((node) => !node.parentId);
+  if (roots.length === 0) return nodes;
+  const minX = Math.min(...roots.map((node) => node.position.x));
+  const minY = Math.min(...roots.map((node) => node.position.y));
+  if (minX === 0 && minY === 0) return nodes;
+  return nodes.map((node) =>
+    node.parentId
+      ? node
+      : {
+          ...node,
+          position: {
+            x: node.position.x - minX,
+            y: node.position.y - minY,
+          },
+        },
+  );
+}
+
+/**
+ * Repairs legacy block definitions and derives the sockets a closed selected
+ * subgraph can expose. A concrete internal handle is a block boundary handle
+ * when no internal edge consumes it (input) or leaves it (output).
+ */
+export function normalizeUserBlockDefinition(block: UserBlockDefinition): UserBlockDefinition {
+  const cloned = cloneJson(block);
+  const sourceNodes = cloned.nodes.filter(isFlowNodeLike).map((node) => node as CustomNodeType);
+  const repairLegacyLayout =
+    sourceNodes.length > 1 && (cloned.inputs?.length ?? 0) === 0 && (cloned.outputs?.length ?? 0) === 0;
+  const laidOutNodes = repairLegacyLayout
+    ? arrangeGraphNodes(
+        sourceNodes.map((node) => ({ ...node, parentId: undefined })),
+        cloned.edges.filter(isRecord).map((edge) => edge as unknown as Edge),
+      )
+    : sourceNodes;
+  const nodes = normalizedBlockNodePositions(laidOutNodes).map((node) => {
+    const params = normalizeGenericModelLoaderParams(node.data.module, node.data.action, node.data.params);
+    return params === node.data.params ? node : { ...node, data: { ...node.data, params } };
+  });
+  return {
+    ...cloned,
+    nodes,
+    inputs: normalizedBoundaryPorts(nodes, cloned.edges, cloned.inputs ?? [], 'input'),
+    outputs: normalizedBoundaryPorts(nodes, cloned.edges, cloned.outputs ?? [], 'output'),
+  };
+}
+
+export function userBlockPreviewParamId(nodeId: string, paramKey: string) {
+  return `${USER_BLOCK_PREVIEW_PREFIX}${safeHandle(nodeId, 'node')}__${safeHandle(paramKey, 'preview')}`;
+}
+
+export function userBlockPreviewSource(
+  blockNodeId: string,
+  blockFieldKey: string,
+  fieldOptions: Record<string, unknown> | undefined,
+) {
+  const sourceNodeId =
+    typeof fieldOptions?.userBlockSourceNodeId === 'string' ? fieldOptions.userBlockSourceNodeId : null;
+  const sourceFieldKey =
+    typeof fieldOptions?.userBlockSourceFieldKey === 'string' ? fieldOptions.userBlockSourceFieldKey : blockFieldKey;
+  return {
+    nodeId: sourceNodeId ? instanceChildId(blockNodeId, sourceNodeId) : blockNodeId,
+    fieldKey: sourceFieldKey,
+  };
+}
+
+export function collapsedUserBlockPreviewTarget(
+  nodes: CustomNodeType[],
+  runtimeNodeId: string,
+  fieldKey: string,
+): { nodeId: string; fieldKey: string } | null {
+  for (const blockNode of nodes) {
+    if (blockNode.data.type !== 'block' || blockNode.data.uiState?.blockExpanded) continue;
+    const definition = blockNode.data.userBlockSnapshot
+      ? normalizeUserBlockDefinition(blockNode.data.userBlockSnapshot)
+      : null;
+    if (!definition) continue;
+    const source = definition.nodes
+      .filter(isFlowNodeLike)
+      .map((node) => node as CustomNodeType)
+      .find(
+        (node) =>
+          instanceChildId(blockNode.id, node.id) === runtimeNodeId &&
+          USER_BLOCK_PREVIEW_DISPLAYS.has(node.data.params?.[fieldKey]?.display ?? ''),
+      );
+    if (!source) continue;
+    return {
+      nodeId: blockNode.id,
+      fieldKey: userBlockPreviewParamId(source.id, fieldKey),
+    };
+  }
+  return null;
+}
+
+export function runtimeProgressTarget(nodes: CustomNodeType[], runtimeNodeId: string, currentNodeName?: string | null) {
+  if (nodes.some((node) => node.id === runtimeNodeId)) return runtimeNodeId;
+
+  for (const blockNode of nodes) {
+    if (blockNode.data.type !== 'block' || blockNode.data.uiState?.blockExpanded) continue;
+    const definition = blockNode.data.userBlockSnapshot
+      ? normalizeUserBlockDefinition(blockNode.data.userBlockSnapshot)
+      : null;
+    if (!definition) continue;
+    const ownsRuntimeNode = definition.nodes
+      .filter(isFlowNodeLike)
+      .some((node) => instanceChildId(blockNode.id, node.id) === runtimeNodeId);
+    if (ownsRuntimeNode) return blockNode.id;
+  }
+
+  const normalizedName = String(currentNodeName ?? '').trim();
+  if (!normalizedName) return null;
+  const exactMatches = nodes.filter(
+    (node) => `${node.data.module}.${node.data.action}` === normalizedName || node.data.label === normalizedName,
+  );
+  return exactMatches.length === 1 ? exactMatches[0]!.id : null;
+}
+
+function previewParamsForNodes(nodes: CustomNodeType[]) {
   return nodes.flatMap((node) =>
-    editableParamEntries(node).map(([key, param]) => ({
-      id: `${node.id}__${key}`,
-      kind: 'graph-param' as const,
-      label: `${nodeLabel(node)} / ${param.label || key}`,
-      nodeId: node.id,
-      paramKey: key,
-    })),
+    Object.entries(node.data.params ?? {})
+      .filter(([, param]) => USER_BLOCK_PREVIEW_DISPLAYS.has(param.display ?? ''))
+      .map(([paramKey, param]) => {
+        const id = userBlockPreviewParamId(node.id, paramKey);
+        return [
+          id,
+          {
+            ...cloneJson(param),
+            label: param.label || nodeLabel(node),
+            fieldOptions: {
+              ...(param.fieldOptions ?? {}),
+              compactPreview: true,
+              userBlockSourceNodeId: node.id,
+              userBlockSourceFieldKey: paramKey,
+            },
+          } satisfies NodeParams,
+        ] as const;
+      }),
+  );
+}
+
+export type UserBlockContentGroup = {
+  id: string;
+  label: string;
+  module: string;
+  action: string;
+  controlParams: Record<string, NodeParams>;
+  previewParams: Record<string, NodeParams>;
+};
+
+function blockNodesInExecutionOrder(definition: UserBlockDefinition) {
+  const nodes = definition.nodes.filter(isFlowNodeLike).map((node) => node as CustomNodeType);
+  const ids = new Set(nodes.map((item) => item.id));
+  const index = new Map(nodes.map((item, order) => [item.id, order]));
+  const incoming = new Map(nodes.map((item) => [item.id, 0]));
+  const outgoing = new Map(nodes.map((item) => [item.id, [] as string[]]));
+
+  definition.edges.forEach((value) => {
+    if (!isRecord(value) || typeof value.source !== 'string' || typeof value.target !== 'string') return;
+    if (!ids.has(value.source) || !ids.has(value.target)) return;
+    outgoing.get(value.source)?.push(value.target);
+    incoming.set(value.target, (incoming.get(value.target) ?? 0) + 1);
+  });
+
+  const ready = nodes.filter((item) => incoming.get(item.id) === 0);
+  const ordered: CustomNodeType[] = [];
+  while (ready.length > 0) {
+    ready.sort((left, right) => (index.get(left.id) ?? 0) - (index.get(right.id) ?? 0));
+    const current = ready.shift();
+    if (!current) break;
+    ordered.push(current);
+    outgoing.get(current.id)?.forEach((targetId) => {
+      const nextCount = (incoming.get(targetId) ?? 1) - 1;
+      incoming.set(targetId, nextCount);
+      if (nextCount === 0) {
+        const target = nodes.find((item) => item.id === targetId);
+        if (target) ready.push(target);
+      }
+    });
+  }
+
+  const included = new Set(ordered.map((item) => item.id));
+  return [...ordered, ...nodes.filter((item) => !included.has(item.id))];
+}
+
+export function userBlockCollapsedContentGroups(
+  definition: UserBlockDefinition,
+  params: Record<string, NodeParams>,
+): UserBlockContentGroup[] {
+  const exposedByNode = new Map<string, typeof definition.exposedParams>();
+  definition.exposedParams.forEach((input) => {
+    if (!input.nodeId) return;
+    const current = exposedByNode.get(input.nodeId) ?? [];
+    current.push(input);
+    exposedByNode.set(input.nodeId, current);
+  });
+  const previewsByNode = new Map<string, Record<string, NodeParams>>();
+  Object.entries(params).forEach(([key, param]) => {
+    if (!key.startsWith(USER_BLOCK_PREVIEW_PREFIX)) return;
+    const sourceNodeId =
+      typeof param.fieldOptions?.userBlockSourceNodeId === 'string' ? param.fieldOptions.userBlockSourceNodeId : null;
+    if (!sourceNodeId) return;
+    const current = previewsByNode.get(sourceNodeId) ?? {};
+    current[key] = param;
+    previewsByNode.set(sourceNodeId, current);
+  });
+
+  return blockNodesInExecutionOrder(definition).flatMap((sourceNode) => {
+    const inputs = exposedByNode.get(sourceNode.id) ?? [];
+    const controlParams = Object.fromEntries(
+      inputs.flatMap((input) => {
+        const blockParam = params[input.id];
+        if (!blockParam || !input.paramKey) return [];
+        const sourceParam = sourceNode.data.params?.[input.paramKey];
+        return [
+          [
+            input.id,
+            {
+              ...blockParam,
+              label:
+                sourceParam?.label ??
+                input.paramKey.charAt(0).toUpperCase() + input.paramKey.slice(1).replace(/_/g, ' '),
+            },
+          ],
+        ];
+      }),
+    );
+    const previewParams = previewsByNode.get(sourceNode.id) ?? {};
+    if (Object.keys(controlParams).length === 0 && Object.keys(previewParams).length === 0) return [];
+    return [
+      {
+        id: sourceNode.id,
+        label: sourceNode.data.label || `${sourceNode.data.module}.${sourceNode.data.action}`,
+        module: sourceNode.data.module,
+        action: sourceNode.data.action,
+        controlParams,
+        previewParams,
+      },
+    ];
+  });
+}
+
+function exposedParamsForNodes(nodes: CustomNodeType[], includeAdvanced = false): AppModeInput[] {
+  return nodes.flatMap((node) =>
+    editableParamEntries(node)
+      .filter(([key, param]) => {
+        if (!node.data.studioRole) return true;
+        const surface = classifyManagedControl(node.data.studioRole, key, param).surface;
+        return surface === 'main' || (includeAdvanced && surface === 'advanced');
+      })
+      .map(([key, param]) => ({
+        id: `${node.id}__${key}`,
+        kind: 'graph-param' as const,
+        label: `${nodeLabel(node)} / ${param.label || key}`,
+        nodeId: node.id,
+        paramKey: key,
+      })),
   );
 }
 
@@ -138,11 +475,17 @@ function exposedParamToNodeParam(nodesById: Map<string, CustomNodeType>, input: 
   };
 }
 
-export function createUserBlockNode(block: UserBlockDefinition, position: CustomNodeType['position']): CustomNodeType {
-  const nodesById = new Map(block.nodes.filter(isFlowNodeLike).map((node) => [node.id, node as CustomNodeType]));
+export function createUserBlockNode(
+  block: UserBlockDefinition,
+  position: CustomNodeType['position'],
+  id = nanoid(),
+): CustomNodeType {
+  const normalizedBlock = normalizeUserBlockDefinition(block);
+  const sourceNodes = normalizedBlock.nodes.filter(isFlowNodeLike).map((node) => node as CustomNodeType);
+  const nodesById = new Map(sourceNodes.map((node) => [node.id, node]));
   const params: Record<string, NodeParams> = {};
 
-  block.inputs.forEach((port) => {
+  normalizedBlock.inputs.forEach((port) => {
     params[port.id] = {
       label: port.label,
       display: 'input',
@@ -150,11 +493,14 @@ export function createUserBlockNode(block: UserBlockDefinition, position: Custom
       isConnected: false,
     };
   });
-  block.exposedParams.forEach((input) => {
+  previewParamsForNodes(sourceNodes).forEach(([id, param]) => {
+    params[id] = param;
+  });
+  normalizedBlock.exposedParams.forEach((input) => {
     const param = exposedParamToNodeParam(nodesById, input);
     if (param) params[input.id] = param;
   });
-  block.outputs.forEach((port) => {
+  normalizedBlock.outputs.forEach((port) => {
     params[port.id] = {
       label: port.label,
       display: 'output',
@@ -164,20 +510,28 @@ export function createUserBlockNode(block: UserBlockDefinition, position: Custom
   });
 
   return {
-    id: nanoid(),
-    type: 'custom',
+    id,
+    type: 'block',
     position,
     selected: true,
+    width: USER_BLOCK_COLLAPSED_WIDTH,
+    height: USER_BLOCK_COLLAPSED_HEIGHT,
     data: {
-      type: 'custom',
+      type: 'block',
       module: 'modiff.user_blocks',
-      action: block.id,
-      label: block.name,
+      action: normalizedBlock.id,
+      label: normalizedBlock.name,
       category: 'User Nodes',
       description: 'Reusable user block',
       params,
       resizable: true,
-      userBlockId: block.id,
+      userBlockId: normalizedBlock.id,
+      userBlockSnapshot: normalizedBlock,
+      uiState: {
+        blockExpanded: false,
+        blockCollapsedWidth: USER_BLOCK_COLLAPSED_WIDTH,
+        blockCollapsedHeight: USER_BLOCK_COLLAPSED_HEIGHT,
+      },
       style: {},
     },
   };
@@ -187,68 +541,341 @@ function isFlowNodeLike(value: unknown): value is { id: string; data?: unknown; 
   return isRecord(value) && typeof value.id === 'string' && isRecord(value.data);
 }
 
-export function validateUserBlockSelection(graph: FlowGraph) {
-  const selectedNodes = selectedActionNodes(graph.nodes);
+function blockDefinitionForNode(
+  node: CustomNodeType,
+  blocks: Map<string, UserBlockDefinition>,
+): UserBlockDefinition | undefined {
+  if (node.data.userBlockSnapshot) return normalizeUserBlockDefinition(node.data.userBlockSnapshot);
+  const definition = node.data.userBlockId ? blocks.get(node.data.userBlockId) : undefined;
+  return definition ? normalizeUserBlockDefinition(definition) : undefined;
+}
+
+function stripBlockInstanceData(node: CustomNodeType, sourceId: string, position: CustomNodeType['position']) {
+  const data = { ...cloneJson(node.data) };
+  const clonedNode = cloneJson(node);
+  delete clonedNode.measured;
+  delete data.userBlockInstanceId;
+  delete data.userBlockSourceNodeId;
+  return {
+    ...clonedNode,
+    id: sourceId,
+    parentId: undefined,
+    extent: undefined,
+    expandParent: undefined,
+    selected: false,
+    dragging: false,
+    position,
+    data,
+  } satisfies CustomNodeType;
+}
+
+function stripBlockEdgeData(edge: Edge) {
+  const data = isRecord(edge.data) ? { ...edge.data } : undefined;
+  if (data) {
+    delete data.userBlockInstanceId;
+    delete data.userBlockBridge;
+    delete data.userBlockInternal;
+  }
+  return {
+    ...cloneJson(edge),
+    data: data && Object.keys(data).length > 0 ? data : undefined,
+  } satisfies Edge;
+}
+
+function isBlockBridgeEdge(edge: Edge, instanceId?: string) {
+  return Boolean(
+    isRecord(edge.data) &&
+    edge.data.userBlockBridge === true &&
+    (!instanceId || edge.data.userBlockInstanceId === instanceId),
+  );
+}
+
+function isBlockInternalEdge(edge: Edge, instanceId?: string) {
+  return Boolean(
+    isRecord(edge.data) &&
+    edge.data.userBlockInternal === true &&
+    (!instanceId || edge.data.userBlockInstanceId === instanceId),
+  );
+}
+
+function sourceNodeId(node: CustomNodeType) {
+  return node.data.userBlockSourceNodeId || node.id;
+}
+
+function instanceChildId(instanceId: string, definitionNodeId: string) {
+  return remapId(instanceId, definitionNodeId);
+}
+
+function materializedBlockChildren(
+  graph: FlowGraph,
+  blockNode: CustomNodeType,
+  definition: UserBlockDefinition,
+  options: { selected?: boolean; absolute?: boolean } = {},
+) {
+  const existingChildren = graph.nodes.filter((node) => node.data.userBlockInstanceId === blockNode.id);
+  if (existingChildren.length > 0) {
+    return existingChildren.map((node) => {
+      const rootChild = !node.parentId || node.parentId === blockNode.id;
+      return {
+        ...cloneJson(node),
+        selected: options.selected ?? node.selected,
+        parentId: rootChild ? (options.absolute ? blockNode.parentId : blockNode.id) : node.parentId,
+        position:
+          options.absolute && rootChild
+            ? {
+                x: blockNode.position.x + node.position.x,
+                y: blockNode.position.y + node.position.y,
+              }
+            : node.position,
+      };
+    });
+  }
+
+  return definition.nodes.filter(isFlowNodeLike).map((value) => {
+    const source = cloneJson(value) as CustomNodeType;
+    const params = cloneJson(source.data.params ?? {});
+    definition.exposedParams.forEach((input) => {
+      if (input.nodeId !== source.id || !input.paramKey) return;
+      const blockParam = blockNode.data.params?.[input.id];
+      if (!blockParam || !params[input.paramKey]) return;
+      params[input.paramKey] = {
+        ...params[input.paramKey],
+        value: blockParam.value,
+      };
+    });
+    return {
+      ...source,
+      id: instanceChildId(blockNode.id, source.id),
+      parentId: source.parentId
+        ? instanceChildId(blockNode.id, source.parentId)
+        : options.absolute
+          ? blockNode.parentId
+          : blockNode.id,
+      extent: undefined,
+      expandParent: options.absolute ? undefined : true,
+      selected: options.selected ?? false,
+      position: source.parentId
+        ? source.position
+        : options.absolute
+          ? {
+              x: blockNode.position.x + USER_BLOCK_CHILD_LEFT + (source.position?.x ?? 0),
+              y: blockNode.position.y + USER_BLOCK_CHILD_TOP + (source.position?.y ?? 0),
+            }
+          : {
+              x: USER_BLOCK_CHILD_LEFT + (source.position?.x ?? 0),
+              y: USER_BLOCK_CHILD_TOP + (source.position?.y ?? 0),
+            },
+      data: {
+        ...source.data,
+        params,
+        userBlockInstanceId: blockNode.id,
+        userBlockSourceNodeId: source.id,
+      },
+    } satisfies CustomNodeType;
+  });
+}
+
+function materializedBlockInternalEdges(
+  graph: FlowGraph,
+  blockNode: CustomNodeType,
+  definition: UserBlockDefinition,
+  children: CustomNodeType[],
+) {
+  const childIds = new Set(children.map((node) => node.id));
+  const existing = graph.edges.filter(
+    (edge) =>
+      isBlockInternalEdge(edge, blockNode.id) ||
+      (!isBlockBridgeEdge(edge, blockNode.id) && childIds.has(edge.source) && childIds.has(edge.target)),
+  );
+  if (existing.length > 0) return existing.map(cloneJson);
+  const idBySource = new Map(children.map((node) => [sourceNodeId(node), node.id]));
+  return definition.edges.flatMap((value) => {
+    if (!isRecord(value) || typeof value.source !== 'string' || typeof value.target !== 'string') return [];
+    const source = idBySource.get(value.source);
+    const target = idBySource.get(value.target);
+    if (!source || !target) return [];
+    const edge = cloneJson(value) as Edge;
+    return [
+      {
+        ...edge,
+        id: nanoid(),
+        source,
+        target,
+        data: {
+          ...(isRecord(edge.data) ? edge.data : {}),
+          userBlockInstanceId: blockNode.id,
+          userBlockInternal: true,
+        },
+      },
+    ];
+  });
+}
+
+function expandedBlockExternalEdges(
+  graph: FlowGraph,
+  blockNode: CustomNodeType,
+  definition: UserBlockDefinition,
+  children: CustomNodeType[],
+) {
+  const idBySource = new Map(children.map((node) => [sourceNodeId(node), node.id]));
+  const childIds = new Set(children.map((node) => node.id));
+  const result: Edge[] = [];
+  graph.edges
+    .filter((edge) => {
+      if (isBlockBridgeEdge(edge, blockNode.id) || isBlockInternalEdge(edge, blockNode.id)) return false;
+      const sourceChild = childIds.has(edge.source);
+      const targetChild = childIds.has(edge.target);
+      return sourceChild !== targetChild && edge.source !== blockNode.id && edge.target !== blockNode.id;
+    })
+    .forEach((edge) => result.push(cloneJson(edge)));
+  graph.edges
+    .filter(
+      (edge) =>
+        !isBlockBridgeEdge(edge, blockNode.id) &&
+        !isBlockInternalEdge(edge, blockNode.id) &&
+        (edge.source === blockNode.id || edge.target === blockNode.id),
+    )
+    .forEach((edge) => {
+      if (edge.source === blockNode.id) {
+        const port = definition.outputs.find((item) => item.id === edge.sourceHandle);
+        const source = port ? idBySource.get(port.nodeId) : undefined;
+        if (source) {
+          result.push({ ...cloneJson(edge), id: nanoid(), source, sourceHandle: port?.paramKey ?? edge.sourceHandle });
+        }
+        return;
+      }
+      const port = definition.inputs.find((item) => item.id === edge.targetHandle);
+      const target = port ? idBySource.get(port.nodeId) : undefined;
+      if (target) {
+        result.push({ ...cloneJson(edge), id: nanoid(), target, targetHandle: port?.paramKey ?? edge.targetHandle });
+      }
+    });
+  return result;
+}
+
+function flattenSelectedBlockNodes(graph: FlowGraph, blocks: UserBlockDefinition[]) {
+  const blockMap = new Map(blocks.map((block) => [block.id, block]));
+  let next = graph;
+  const selectedBlockIds = graph.nodes
+    .filter((node) => node.selected && node.data.type === 'block' && node.data.userBlockId)
+    .map((node) => node.id);
+
+  selectedBlockIds.forEach((blockNodeId) => {
+    const blockNode = next.nodes.find((node) => node.id === blockNodeId);
+    if (!blockNode) return;
+    const definition = blockDefinitionForNode(blockNode, blockMap);
+    if (!definition) return;
+    const children = materializedBlockChildren(next, blockNode, definition, { selected: true, absolute: true });
+    const internal = materializedBlockInternalEdges(next, blockNode, definition, children);
+    const childIds = new Set(
+      next.nodes.filter((node) => node.data.userBlockInstanceId === blockNode.id).map((node) => node.id),
+    );
+    const external = expandedBlockExternalEdges(next, blockNode, definition, children);
+    const flattenedChildren = children.map((node) => {
+      const data = { ...node.data };
+      delete data.userBlockInstanceId;
+      delete data.userBlockSourceNodeId;
+      return { ...node, parentId: undefined, expandParent: undefined, data };
+    });
+    next = {
+      nodes: [...next.nodes.filter((node) => node.id !== blockNode.id && !childIds.has(node.id)), ...flattenedChildren],
+      edges: [
+        ...next.edges.filter(
+          (edge) =>
+            edge.source !== blockNode.id &&
+            edge.target !== blockNode.id &&
+            !childIds.has(edge.source) &&
+            !childIds.has(edge.target) &&
+            !isBlockBridgeEdge(edge, blockNode.id) &&
+            !isBlockInternalEdge(edge, blockNode.id),
+        ),
+        ...internal.map((edge) => stripBlockEdgeData(edge)),
+        ...external,
+      ],
+    };
+  });
+  return next;
+}
+
+export function validateUserBlockSelection(graph: FlowGraph, blocks: UserBlockDefinition[] = []) {
+  const flattened = flattenSelectedBlockNodes(graph, blocks);
+  const selectedNodes = selectedActionNodes(flattened.nodes);
   if (selectedNodes.length === 0) return 'Select nodes first';
-  if (!connectedSelection(selectedNodes, graph.edges)) return 'Selection has separate islands';
+  if (
+    selectedNodes.some(
+      (node) =>
+        node.parentId && flattened.nodes.some((parent) => parent.id === node.parentId && parent.data.type === 'block'),
+    )
+  ) {
+    return 'Select the whole block before creating another block';
+  }
+  if (!connectedSelection(selectedNodes, flattened.edges)) return 'Selection has separate islands';
   return null;
 }
 
-export function createUserBlockFromSelection(graph: FlowGraph, name?: string): BlockSelectionResult {
-  const reason = validateUserBlockSelection(graph);
+export function createUserBlockFromSelection(
+  graph: FlowGraph,
+  name?: string,
+  blocks: UserBlockDefinition[] = [],
+): BlockSelectionResult {
+  const flattened = flattenSelectedBlockNodes(graph, blocks);
+  const reason = validateUserBlockSelection(flattened);
   if (reason) return { ok: false, reason };
 
-  const selectedNodes = selectedActionNodes(graph.nodes);
+  const selectedNodes = selectedActionNodes(flattened.nodes);
   const selectedIds = selectedNodeSet(selectedNodes);
-  const internalEdges = graph.edges.filter((edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target));
-  const incomingEdges = graph.edges.filter((edge) => !selectedIds.has(edge.source) && selectedIds.has(edge.target));
-  const outgoingEdges = graph.edges.filter((edge) => selectedIds.has(edge.source) && !selectedIds.has(edge.target));
+  const internalEdges = flattened.edges.filter((edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target));
+  const incomingEdges = flattened.edges.filter((edge) => !selectedIds.has(edge.source) && selectedIds.has(edge.target));
+  const outgoingEdges = flattened.edges.filter((edge) => selectedIds.has(edge.source) && !selectedIds.has(edge.target));
   const selectedById = new Map(selectedNodes.map((node) => [node.id, node]));
   const bounds = boundsForNodes(selectedNodes);
   const blockId = nanoid();
   const createdAt = Date.now();
   const blockName = name?.trim() || `User Block ${createdAt.toString().slice(-4)}`;
-  const normalizedNodes = cloneJson(selectedNodes).map((node) => ({
-    ...node,
-    selected: false,
-    dragging: false,
-    position: {
-      x: node.position.x - bounds.left,
-      y: node.position.y - bounds.top,
-    },
-  }));
+  const normalizedNodes = arrangeGraphNodes(
+    cloneJson(selectedNodes).map((node) =>
+      stripBlockInstanceData(node, sourceNodeId(node), {
+        x: node.position.x - bounds.left,
+        y: node.position.y - bounds.top,
+      }),
+    ),
+    internalEdges,
+  );
 
-  const inputPorts = incomingEdges.map((edge, index) =>
+  const crossingInputPorts = incomingEdges.map((edge, index) =>
     portFromEdge(selectedById.get(edge.target)!, edge.targetHandle, 'input', index),
   );
-  const outputPorts = outgoingEdges.map((edge, index) =>
+  const crossingOutputPorts = outgoingEdges.map((edge, index) =>
     portFromEdge(selectedById.get(edge.source)!, edge.sourceHandle, 'output', index),
   );
 
-  const block: UserBlockDefinition = {
+  const block = normalizeUserBlockDefinition({
     id: blockId,
     name: blockName,
     version: 1,
     nodes: normalizedNodes,
     edges: cloneJson(internalEdges),
-    inputs: dedupePorts(inputPorts),
-    outputs: dedupePorts(outputPorts),
+    inputs: dedupePorts(crossingInputPorts),
+    outputs: dedupePorts(crossingOutputPorts),
     exposedParams: exposedParamsForNodes(selectedNodes),
     createdAt,
     updatedAt: createdAt,
-  };
+  });
 
   const blockNode = createUserBlockNode(block, {
     x: bounds.left + Math.max(0, bounds.width / 2 - 140),
     y: bounds.top + Math.max(0, bounds.height / 2 - 80),
   });
 
-  const nextEdges: Edge[] = graph.edges
+  const nextEdges: Edge[] = flattened.edges
     .filter((edge) => !selectedIds.has(edge.source) && !selectedIds.has(edge.target))
     .map(cloneJson);
 
   incomingEdges.forEach((edge, index) => {
-    const port = inputPorts[index];
+    const crossingPort = crossingInputPorts[index];
+    const port = block.inputs.find(
+      (candidate) => candidate.nodeId === crossingPort?.nodeId && candidate.paramKey === crossingPort?.paramKey,
+    );
     if (!port) return;
     nextEdges.push({
       ...cloneJson(edge),
@@ -258,7 +885,10 @@ export function createUserBlockFromSelection(graph: FlowGraph, name?: string): B
     });
   });
   outgoingEdges.forEach((edge, index) => {
-    const port = outputPorts[index];
+    const crossingPort = crossingOutputPorts[index];
+    const port = block.outputs.find(
+      (candidate) => candidate.nodeId === crossingPort?.nodeId && candidate.paramKey === crossingPort?.paramKey,
+    );
     if (!port) return;
     nextEdges.push({
       ...cloneJson(edge),
@@ -269,11 +899,354 @@ export function createUserBlockFromSelection(graph: FlowGraph, name?: string): B
   });
 
   const nextNodes = [
-    ...graph.nodes.filter((node) => !selectedIds.has(node.id)).map((node) => ({ ...node, selected: false })),
+    ...flattened.nodes.filter((node) => !selectedIds.has(node.id)).map((node) => ({ ...node, selected: false })),
     blockNode,
   ] as CustomNodeType[];
 
   return { ok: true, block, blockNode, nodes: nextNodes, edges: nextEdges };
+}
+
+export function blockInputBridgeHandle(portId: string) {
+  return `${USER_BLOCK_INPUT_BRIDGE_PREFIX}${portId}`;
+}
+
+export function blockOutputBridgeHandle(portId: string) {
+  return `${USER_BLOCK_OUTPUT_BRIDGE_PREFIX}${portId}`;
+}
+
+function blockInstanceChildren(graph: FlowGraph, instanceId: string) {
+  return graph.nodes.filter((node) => node.data.userBlockInstanceId === instanceId);
+}
+
+export function isUserBlockExpandedInstance(graph: FlowGraph, instanceId: string) {
+  const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!blockNode) return false;
+  return Boolean(blockNode.data.uiState?.blockExpanded || blockInstanceChildren(graph, instanceId).length > 0);
+}
+
+function blockExpandedSize(children: CustomNodeType[]) {
+  const right = Math.max(
+    USER_BLOCK_COLLAPSED_WIDTH,
+    ...children.map(
+      (node) => node.position.x + (node.measured?.width ?? node.width ?? 260) + USER_BLOCK_HORIZONTAL_PADDING,
+    ),
+  );
+  const bottom = Math.max(
+    USER_BLOCK_COLLAPSED_HEIGHT,
+    ...children.map(
+      (node) => node.position.y + (node.measured?.height ?? node.height ?? 160) + USER_BLOCK_VERTICAL_PADDING,
+    ),
+  );
+  return {
+    width: Math.ceil(right),
+    height: Math.ceil(bottom),
+  };
+}
+
+function alignBlockChildren(children: CustomNodeType[]) {
+  if (children.length === 0) {
+    return {
+      children,
+      shiftX: 0,
+      shiftY: 0,
+      size: {
+        width: USER_BLOCK_COLLAPSED_WIDTH,
+        height: USER_BLOCK_COLLAPSED_HEIGHT,
+      },
+    };
+  }
+  const minX = Math.min(...children.map((node) => node.position.x));
+  const minY = Math.min(...children.map((node) => node.position.y));
+  const shiftX = minX - USER_BLOCK_CHILD_LEFT;
+  const shiftY = minY - USER_BLOCK_CHILD_TOP;
+  const alignedChildren =
+    shiftX || shiftY
+      ? children.map((node) => ({
+          ...node,
+          position: {
+            x: node.position.x - shiftX,
+            y: node.position.y - shiftY,
+          },
+        }))
+      : children;
+  return {
+    children: alignedChildren,
+    shiftX,
+    shiftY,
+    size: blockExpandedSize(alignedChildren),
+  };
+}
+
+export function expandUserBlockInstance(
+  graph: FlowGraph,
+  instanceId: string,
+  blocks: UserBlockDefinition[],
+): FlowGraph {
+  const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!blockNode || isUserBlockExpandedInstance(graph, instanceId)) return graph;
+  const definition = blockDefinitionForNode(blockNode, new Map(blocks.map((block) => [block.id, block])));
+  if (!definition) return graph;
+
+  const materializedChildren = materializedBlockChildren(graph, blockNode, definition);
+  const { children, size } = alignBlockChildren(materializedChildren);
+  const internalEdges = materializedBlockInternalEdges(graph, blockNode, definition, children);
+  const externalEdges = expandedBlockExternalEdges(graph, blockNode, definition, children);
+  const parent = {
+    ...blockNode,
+    width: size.width,
+    height: size.height,
+    data: {
+      ...blockNode.data,
+      userBlockSnapshot: definition,
+      uiState: {
+        ...blockNode.data.uiState,
+        blockExpanded: true,
+        blockCollapsedWidth: blockNode.width ?? USER_BLOCK_COLLAPSED_WIDTH,
+        blockCollapsedHeight: blockNode.height ?? USER_BLOCK_COLLAPSED_HEIGHT,
+      },
+    },
+  } satisfies CustomNodeType;
+
+  return {
+    nodes: [
+      ...graph.nodes.map((node) => (node.id === instanceId ? parent : node)),
+      ...children.filter((child) => !graph.nodes.some((node) => node.id === child.id)),
+    ],
+    edges: [
+      ...graph.edges.filter(
+        (edge) =>
+          edge.source !== instanceId &&
+          edge.target !== instanceId &&
+          !isBlockBridgeEdge(edge, instanceId) &&
+          !isBlockInternalEdge(edge, instanceId),
+      ),
+      ...internalEdges.map((edge) => ({
+        ...edge,
+        data: {
+          ...(isRecord(edge.data) ? edge.data : {}),
+          userBlockInstanceId: instanceId,
+          userBlockInternal: true,
+        },
+      })),
+      ...externalEdges,
+    ],
+  };
+}
+
+function snapshotExpandedBlock(
+  blockNode: CustomNodeType,
+  definition: UserBlockDefinition,
+  children: CustomNodeType[],
+  edges: Edge[],
+) {
+  const idByInstance = new Map(children.map((node) => [node.id, sourceNodeId(node)]));
+  const nodes = children.map((node) =>
+    stripBlockInstanceData(node, sourceNodeId(node), {
+      x: node.position.x - USER_BLOCK_CHILD_LEFT,
+      y: node.position.y - USER_BLOCK_CHILD_TOP,
+    }),
+  );
+  const internalEdges = edges
+    .filter(
+      (edge) =>
+        !isBlockBridgeEdge(edge, blockNode.id) && idByInstance.has(edge.source) && idByInstance.has(edge.target),
+    )
+    .map((edge) => ({
+      ...stripBlockEdgeData(edge),
+      id: nanoid(),
+      source: idByInstance.get(edge.source)!,
+      target: idByInstance.get(edge.target)!,
+    }));
+  const nextDefinition = normalizeUserBlockDefinition({
+    ...cloneJson(definition),
+    nodes,
+    edges: internalEdges,
+    updatedAt: Date.now(),
+  });
+  const replacementParams = createUserBlockNode(nextDefinition, blockNode.position, blockNode.id).data.params;
+  const params = Object.fromEntries(
+    Object.entries(replacementParams).map(([key, param]) => [
+      key,
+      blockNode.data.params[key]
+        ? {
+            ...param,
+            value: blockNode.data.params[key].value,
+            artifacts: blockNode.data.params[key].artifacts,
+          }
+        : param,
+    ]),
+  );
+  nextDefinition.exposedParams.forEach((input) => {
+    if (!input.nodeId || !input.paramKey) return;
+    const parentParam = params[input.id];
+    if (!parentParam) return;
+    const child = children.find((node) => sourceNodeId(node) === input.nodeId);
+    const childParam = child?.data.params?.[input.paramKey];
+    if (childParam) parentParam.value = childParam.value;
+  });
+  children.forEach((child) => {
+    Object.entries(child.data.params ?? {}).forEach(([paramKey, childParam]) => {
+      if (!USER_BLOCK_PREVIEW_DISPLAYS.has(childParam.display ?? '')) return;
+      const preview = params[userBlockPreviewParamId(sourceNodeId(child), paramKey)];
+      if (!preview) return;
+      preview.value = childParam.value;
+      preview.artifacts = childParam.artifacts;
+    });
+  });
+  return { definition: nextDefinition, params };
+}
+
+export function collapseUserBlockInstance(
+  graph: FlowGraph,
+  instanceId: string,
+  blocks: UserBlockDefinition[],
+): FlowGraph {
+  const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!blockNode || !isUserBlockExpandedInstance(graph, instanceId)) return graph;
+  const definition = blockDefinitionForNode(blockNode, new Map(blocks.map((block) => [block.id, block])));
+  if (!definition) return graph;
+  const children = blockInstanceChildren(graph, instanceId);
+  const childIds = new Set(children.map((node) => node.id));
+  const snapshot = snapshotExpandedBlock(blockNode, definition, children, graph.edges);
+  const sourceIdByChild = new Map(children.map((node) => [node.id, sourceNodeId(node)]));
+  const collapsedExternalEdges = graph.edges.flatMap((edge) => {
+    if (isBlockBridgeEdge(edge, instanceId) || isBlockInternalEdge(edge, instanceId)) return [];
+    const sourceNodeId = sourceIdByChild.get(edge.source);
+    const targetNodeId = sourceIdByChild.get(edge.target);
+    if (sourceNodeId && targetNodeId) return [];
+    if (sourceNodeId) {
+      const port = snapshot.definition.outputs.find(
+        (candidate) => candidate.nodeId === sourceNodeId && candidate.paramKey === edge.sourceHandle,
+      );
+      return port ? [{ ...cloneJson(edge), source: instanceId, sourceHandle: port.id }] : [];
+    }
+    if (targetNodeId) {
+      const port = snapshot.definition.inputs.find(
+        (candidate) => candidate.nodeId === targetNodeId && candidate.paramKey === edge.targetHandle,
+      );
+      return port ? [{ ...cloneJson(edge), target: instanceId, targetHandle: port.id }] : [];
+    }
+    return [cloneJson(edge)];
+  });
+  const parent = {
+    ...blockNode,
+    width: blockNode.data.uiState?.blockCollapsedWidth ?? USER_BLOCK_COLLAPSED_WIDTH,
+    height: blockNode.data.uiState?.blockCollapsedHeight ?? USER_BLOCK_COLLAPSED_HEIGHT,
+    data: {
+      ...blockNode.data,
+      params: snapshot.params,
+      userBlockSnapshot: snapshot.definition,
+      uiState: {
+        ...blockNode.data.uiState,
+        blockExpanded: false,
+      },
+    },
+  } satisfies CustomNodeType;
+
+  return {
+    nodes: graph.nodes.filter((node) => !childIds.has(node.id)).map((node) => (node.id === instanceId ? parent : node)),
+    edges: collapsedExternalEdges,
+  };
+}
+
+export function fitUserBlockInstance(graph: FlowGraph, instanceId: string): FlowGraph {
+  const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!blockNode || !isUserBlockExpandedInstance(graph, instanceId)) return graph;
+  const children = blockInstanceChildren(graph, instanceId);
+  if (children.length === 0) return graph;
+  const { children: alignedChildren, shiftX, shiftY, size } = alignBlockChildren(children);
+  const sameWidth = Math.abs((blockNode.width ?? 0) - size.width) < 0.5;
+  const sameHeight = Math.abs((blockNode.height ?? 0) - size.height) < 0.5;
+  if (!shiftX && !shiftY && sameWidth && sameHeight) return graph;
+  const childById = new Map(alignedChildren.map((node) => [node.id, node]));
+  return {
+    nodes: graph.nodes.map((node) => {
+      if (node.id === instanceId) {
+        return {
+          ...node,
+          position: {
+            x: node.position.x + shiftX,
+            y: node.position.y + shiftY,
+          },
+          width: size.width,
+          height: size.height,
+        };
+      }
+      return childById.get(node.id) ?? node;
+    }),
+    edges: graph.edges,
+  };
+}
+
+export function userBlockAvailableExposedParams(definition: UserBlockDefinition) {
+  return exposedParamsForNodes(
+    definition.nodes.filter(isFlowNodeLike).map((node) => node as CustomNodeType),
+    true,
+  );
+}
+
+export function connectionCrossesUserBlockBoundary(nodes: CustomNodeType[], sourceId: string, targetId: string) {
+  const sourceInstanceId = nodes.find((node) => node.id === sourceId)?.data.userBlockInstanceId ?? null;
+  const targetInstanceId = nodes.find((node) => node.id === targetId)?.data.userBlockInstanceId ?? null;
+  return Boolean(sourceInstanceId || targetInstanceId) && sourceInstanceId !== targetInstanceId;
+}
+
+export function configureUserBlockInstance(
+  graph: FlowGraph,
+  instanceId: string,
+  blocks: UserBlockDefinition[],
+  changes: {
+    name: string;
+    inputLabels: Record<string, string>;
+    outputLabels: Record<string, string>;
+    exposedParamIds: Set<string>;
+  },
+): FlowGraph {
+  const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!blockNode) return graph;
+  const definition = blockDefinitionForNode(blockNode, new Map(blocks.map((block) => [block.id, block])));
+  if (!definition) return graph;
+  const available = userBlockAvailableExposedParams(definition);
+  const nextDefinition: UserBlockDefinition = {
+    ...definition,
+    name: changes.name.trim() || definition.name,
+    inputs: definition.inputs.map((port) => ({
+      ...port,
+      label: changes.inputLabels[port.id]?.trim() || port.label,
+    })),
+    outputs: definition.outputs.map((port) => ({
+      ...port,
+      label: changes.outputLabels[port.id]?.trim() || port.label,
+    })),
+    exposedParams: available.filter((input) => changes.exposedParamIds.has(input.id)),
+    updatedAt: Date.now(),
+  };
+  const replacement = createUserBlockNode(nextDefinition, blockNode.position, blockNode.id);
+  const existingParams = blockNode.data.params;
+  replacement.data.params = Object.fromEntries(
+    Object.entries(replacement.data.params).map(([key, param]) => [
+      key,
+      existingParams[key]
+        ? {
+            ...param,
+            value: existingParams[key].value,
+            artifacts: existingParams[key].artifacts,
+          }
+        : param,
+    ]),
+  );
+  replacement.data.uiState = {
+    ...blockNode.data.uiState,
+  };
+  replacement.width = blockNode.width;
+  replacement.height = blockNode.height;
+  replacement.selected = blockNode.selected;
+  replacement.parentId = blockNode.parentId;
+  replacement.extent = blockNode.extent;
+  return {
+    nodes: graph.nodes.map((node) => (node.id === instanceId ? replacement : node)),
+    edges: graph.edges,
+  };
 }
 
 export function workflowBlueprintToUserBlock(blueprint: WorkflowBlueprint): UserBlockDefinition {
@@ -309,84 +1282,41 @@ function remapId(blockNodeId: string, id: string) {
 }
 
 function expandOnePass(graph: FlowGraph, blocks: Map<string, UserBlockDefinition>): FlowGraph {
-  const nextNodes: CustomNodeType[] = [];
-  const nextEdges: Edge[] = [];
-  const blockNodes = graph.nodes.filter((node) => node.data.userBlockId && blocks.has(node.data.userBlockId));
+  const blockNodes = graph.nodes.filter((node) => node.data.type === 'block' && blockDefinitionForNode(node, blocks));
+  if (blockNodes.length === 0) return graph;
   const blockIds = new Set(blockNodes.map((node) => node.id));
+  const materializedChildIds = new Set(
+    graph.nodes
+      .filter((node) => node.data.userBlockInstanceId && blockIds.has(node.data.userBlockInstanceId))
+      .map((node) => node.id),
+  );
+  const nextNodes = graph.nodes.filter((node) => !blockIds.has(node.id) && !materializedChildIds.has(node.id));
+  const nextEdges = graph.edges
+    .filter(
+      (edge) =>
+        !blockIds.has(edge.source) &&
+        !blockIds.has(edge.target) &&
+        !materializedChildIds.has(edge.source) &&
+        !materializedChildIds.has(edge.target) &&
+        !isBlockBridgeEdge(edge) &&
+        !isBlockInternalEdge(edge),
+    )
+    .map(stripBlockEdgeData);
 
-  graph.nodes.forEach((node) => {
-    const block = node.data.userBlockId ? blocks.get(node.data.userBlockId) : undefined;
-    if (!block) {
-      nextNodes.push(node);
-      return;
-    }
-
-    block.nodes.filter(isFlowNodeLike).forEach((inner) => {
-      const innerNode = cloneJson(inner) as CustomNodeType;
-      const params = cloneJson(innerNode.data.params ?? {});
-      block.exposedParams.forEach((input) => {
-        if (input.nodeId !== innerNode.id || !input.paramKey) return;
-        const blockParam = node.data.params?.[input.id];
-        if (!blockParam || !params[input.paramKey]) return;
-        params[input.paramKey] = {
-          ...params[input.paramKey],
-          value: blockParam.value,
-        };
-      });
-      nextNodes.push({
-        ...innerNode,
-        id: remapId(node.id, innerNode.id),
-        selected: false,
-        position: {
-          x: node.position.x + (innerNode.position?.x ?? 0),
-          y: node.position.y + (innerNode.position?.y ?? 0),
-        },
-        data: {
-          ...innerNode.data,
-          params,
-        },
-      });
-    });
-
-    block.edges.forEach((edge) => {
-      if (!isRecord(edge) || typeof edge.source !== 'string' || typeof edge.target !== 'string') return;
-      nextEdges.push({
-        ...(cloneJson(edge) as Edge),
-        id: nanoid(),
-        source: remapId(node.id, edge.source),
-        target: remapId(node.id, edge.target),
-      });
-    });
-  });
-
-  graph.edges.forEach((edge) => {
-    if (blockIds.has(edge.source)) {
-      const blockNode = blockNodes.find((node) => node.id === edge.source);
-      const block = blockNode?.data.userBlockId ? blocks.get(blockNode.data.userBlockId) : undefined;
-      const port = block?.outputs.find((item) => item.id === edge.sourceHandle);
-      if (!blockNode || !port) return;
-      nextEdges.push({
-        ...cloneJson(edge),
-        id: nanoid(),
-        source: remapId(blockNode.id, port.nodeId),
-        sourceHandle: port.paramKey,
-      });
-      return;
-    }
-    if (blockIds.has(edge.target)) {
-      const blockNode = blockNodes.find((node) => node.id === edge.target);
-      const block = blockNode?.data.userBlockId ? blocks.get(blockNode.data.userBlockId) : undefined;
-      const port = block?.inputs.find((item) => item.id === edge.targetHandle);
-      if (!blockNode || !port) return;
-      nextEdges.push({
-        ...cloneJson(edge),
-        id: nanoid(),
-        target: remapId(blockNode.id, port.nodeId),
-        targetHandle: port.paramKey,
-      });
-      return;
-    }
-    nextEdges.push(edge);
+  blockNodes.forEach((blockNode) => {
+    const definition = blockDefinitionForNode(blockNode, blocks);
+    if (!definition) return;
+    const children = materializedBlockChildren(graph, blockNode, definition, { absolute: true });
+    nextNodes.push(
+      ...children.map((node) => ({
+        ...stripBlockInstanceData(node, node.id, node.position),
+        parentId: node.parentId,
+      })),
+    );
+    nextEdges.push(
+      ...materializedBlockInternalEdges(graph, blockNode, definition, children).map(stripBlockEdgeData),
+      ...expandedBlockExternalEdges(graph, blockNode, definition, children).map(stripBlockEdgeData),
+    );
   });
 
   return { nodes: nextNodes, edges: nextEdges };
@@ -396,8 +1326,10 @@ export function expandUserBlockGraph(nodes: CustomNodeType[], edges: Edge[], blo
   const blockMap = new Map(blocks.map((block) => [block.id, block]));
   let graph: FlowGraph = { nodes, edges };
   for (let depth = 0; depth < 6; depth += 1) {
-    if (!graph.nodes.some((node) => node.data.userBlockId && blockMap.has(node.data.userBlockId))) break;
-    graph = expandOnePass(graph, blockMap);
+    if (!graph.nodes.some((node) => node.data.type === 'block' && blockDefinitionForNode(node, blockMap))) break;
+    const expanded = expandOnePass(graph, blockMap);
+    if (expanded === graph) break;
+    graph = expanded;
   }
   return graph;
 }

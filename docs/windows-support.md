@@ -8,8 +8,6 @@ This repository supports a local Windows setup where the MoDiff backend and Vite
 - Git
 - PowerShell 5.1 or PowerShell 7+
 - Node.js `24.12.0` and npm `11.6.2`
-- Python 3.12
-- [`uv`](https://docs.astral.sh/uv/) for the backend environment
 - A current NVIDIA driver for CUDA workflows
 - Sufficient disk space for model caches, outputs, and optional offload files
 
@@ -30,14 +28,21 @@ C:\path\to\projects\
 From the backend checkout:
 
 ```powershell
-uv sync --frozen
-uv run python -m modiff.preflight --json --check-port 8088 --fail-on-error
+.\install.ps1 -Accelerator auto
+.\.venv\Scripts\python.exe -m modiff.preflight --json --check-port 8088 --fail-on-error
 ```
 
-Install only the optional groups required by your workflows. For example:
+Use `-Accelerator nvidia`, `-Accelerator intel`, or `-Accelerator cpu` to make
+the choice explicit. The Intel choice installs the preview PyTorch XPU profile
+for supported Arc and integrated graphics and must pass a real `xpu:0` tensor;
+integrated devices share system memory and use direct residency without
+CUDA-only CPU-offload hooks. The AMD Windows profile represents AMD's official
+selected-hardware path but remains blocked until MoDiff pins and validates the
+complete SDK wheel set; do not let pip resolve the CUDA profile on an AMD
+machine. Inspect the plan without changing the machine with:
 
 ```powershell
-uv sync --frozen --extra cuda --extra quantization
+.\install.ps1 -Accelerator auto -DryRun -SystemCheck -Json
 ```
 
 The backend defaults to `127.0.0.1:8088` and local data paths. To customize them:
@@ -53,14 +58,14 @@ Copy-Item config.example.ini config.ini
 From `MoDiff-client`:
 
 ```powershell
-npm ci
+.\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto
 .\run-dev.ps1
 ```
 
 The launcher:
 
 - detects the sibling backend or accepts `-BackendPath`
-- uses the backend `.venv\Scripts\python.exe`, `uv`, or `python` in that order
+- uses and validates the backend's managed `.venv\Scripts\python.exe`
 - runs the backend preflight before starting a new backend
 - starts the backend in a dedicated PowerShell window
 - starts Vite in a second window with the backend proxy configured
@@ -133,10 +138,14 @@ npm run check:ui
 Backend smoke:
 
 ```powershell
-uv run python -m modiff.preflight --json --check-port 8088 --fail-on-error
+.\.venv\Scripts\python.exe -m modiff.preflight --json --check-port 8088 --fail-on-error
 Invoke-RestMethod http://127.0.0.1:8088/health
 Invoke-RestMethod http://127.0.0.1:8088/runtime/status
 Invoke-RestMethod http://127.0.0.1:8088/nodes | Out-Null
 ```
+
+Before calling the Gallery functional, also run `npm run test:asset-storage`
+and `npm run release:assets:gate`, then confirm its pinned Dataset requests
+succeed in a browser where you are not signed into Hugging Face.
 
 For integrated static serving, follow [Build and deployment](deployment.md). For listener, connection, download, and accelerator recovery, see [Troubleshooting](troubleshooting.md).

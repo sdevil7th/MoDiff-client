@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import config from '../../app.config';
 import type { UserBlockDefinition } from '../studio/types';
+import { normalizeUserBlockDefinition } from '../studio/userBlocks';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { createLatestRequestGate, formatRequestError, requestJson } from '../utils/requestJson';
 
@@ -26,18 +27,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function safeBlocks(value: unknown): UserBlockDefinition[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (item): item is UserBlockDefinition =>
-      isRecord(item) &&
-      typeof item.id === 'string' &&
-      typeof item.name === 'string' &&
-      item.version === 1 &&
-      Array.isArray(item.nodes) &&
-      Array.isArray(item.edges) &&
-      Array.isArray(item.inputs) &&
-      Array.isArray(item.outputs) &&
-      Array.isArray(item.exposedParams),
-  );
+  return value
+    .filter(
+      (item): item is UserBlockDefinition =>
+        isRecord(item) &&
+        typeof item.id === 'string' &&
+        typeof item.name === 'string' &&
+        item.version === 1 &&
+        Array.isArray(item.nodes) &&
+        Array.isArray(item.edges) &&
+        Array.isArray(item.inputs) &&
+        Array.isArray(item.outputs) &&
+        Array.isArray(item.exposedParams),
+    )
+    .map(normalizeUserBlockDefinition);
 }
 
 function responseRecord(value: unknown, fallbackMessage: string) {
@@ -80,15 +83,24 @@ export const useUserBlockStore = create<UserBlockStore>()((set, get) => ({
   error: null,
   revision: 0,
 
-  setBlocks: (blocks) => set((state) => ({ blocks, loaded: true, error: null, revision: state.revision + 1 })),
-
-  upsertLocalBlock: (block) =>
+  setBlocks: (blocks) =>
     set((state) => ({
-      blocks: [block, ...state.blocks.filter((item) => item.id !== block.id)],
+      blocks: blocks.map(normalizeUserBlockDefinition),
       loaded: true,
       error: null,
       revision: state.revision + 1,
     })),
+
+  upsertLocalBlock: (block) =>
+    set((state) => {
+      const normalized = normalizeUserBlockDefinition(block);
+      return {
+        blocks: [normalized, ...state.blocks.filter((item) => item.id !== normalized.id)],
+        loaded: true,
+        error: null,
+        revision: state.revision + 1,
+      };
+    }),
 
   fetchBlocks: async () => {
     const ticket = blockFetchGate.begin('blocks');
@@ -109,20 +121,30 @@ export const useUserBlockStore = create<UserBlockStore>()((set, get) => ({
   },
 
   saveBlock: async (block) => {
-    const mutation = beginBlockMutation(block.id);
-    get().upsertLocalBlock(block);
+    const normalizedBlock = normalizeUserBlockDefinition(block);
+    const mutation = beginBlockMutation(normalizedBlock.id);
+    const previousBlock = get().blocks.find((item) => item.id === normalizedBlock.id);
+    get().upsertLocalBlock(normalizedBlock);
     try {
       const saved = await requestJson(`${config.serverAddress}/studio/blocks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(block),
+        body: JSON.stringify(normalizedBlock),
         parse: parseSavedBlockResponse,
       });
       if (mutation.isLatest()) get().upsertLocalBlock(saved);
       return saved;
     } catch (error) {
       const message = formatRequestError(error, 'Could not save user block.');
-      if (mutation.isLatest()) set({ error: message });
+      if (mutation.isLatest()) {
+        set((state) => ({
+          blocks: previousBlock
+            ? [previousBlock, ...state.blocks.filter((item) => item.id !== normalizedBlock.id)]
+            : state.blocks.filter((item) => item.id !== normalizedBlock.id),
+          error: message,
+          revision: state.revision + 1,
+        }));
+      }
       enqueueSnackbar(message, { variant: 'error', autoHideDuration: 3600 });
       throw error;
     } finally {

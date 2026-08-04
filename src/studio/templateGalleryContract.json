@@ -1,0 +1,27 @@
+{
+  "video": {
+    "minimumDurationSeconds": 5,
+    "minimumFrames": 81,
+    "minimumShortEdge": 480,
+    "minimumLongEdge": 768,
+    "durationToleranceSeconds": 0.2,
+    "beforePreview": {
+      "muted": true,
+      "videoCodec": "libx264",
+      "codecName": "h264",
+      "pixelFormat": "yuv420p",
+      "crf": 20
+    },
+    "cardPreview": {
+      "durationSeconds": 5.06,
+      "minimumDurationSeconds": 4,
+      "maximumDurationSeconds": 6,
+      "width": 640,
+      "muted": true,
+      "videoCodec": "libx264",
+      "codecName": "h264",
+      "pixelFormat": "yuv420p",
+      "crf": 24
+    }
+  }
+}

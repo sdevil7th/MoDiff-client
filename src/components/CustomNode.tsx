@@ -1,3 +1,5 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { NodeProps, useStoreApi } from '@xyflow/react';
 import {
   memo,
@@ -5,11 +7,10 @@ import {
   useEffect,
   useRef,
   useState,
-  type ButtonHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Circle,
   CircleHelp,
@@ -38,15 +39,31 @@ import { dataTypeClass, normalizeDataType } from '../utils/dataTypeCategory';
 import { formatExecutionTime } from '../utils/formatExecutionTime';
 import { formatMemory } from '../utils/formatMemory';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
-import { AnchoredPanel, CustomNodeFrame, CustomNodeHeaderFrame, ModiffProgress } from '../ui';
+import {
+  CustomNodeFrame,
+  CustomNodeHeaderFrame,
+  ModiffButton,
+  ModiffIconButton,
+  ModiffPopover,
+  ModiffProgress,
+  ModiffTooltip,
+  NodeResizeGrip,
+} from '../ui';
 import { cx } from '../utils/classNames';
 import ErrorBoundary from './ErrorBoundary';
 import NodeContent from './NodeContent';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { deleteNodeCache } from '../utils/serverActions';
+import { syncManagedNodeControlChange } from '../studio/managedControlSync';
+import {
+  GraphMenuAction,
+  GraphMenuDivider as SharedGraphMenuDivider,
+  type GraphMenuActionProps,
+} from '../ui/GraphMenuAction';
+import { executionProgressDetail } from '../studio/executionProgress';
+import type { ExecutionProgress } from '../studio/types';
 
 const MAX_NODE_WIDTH = modiffLayout.maxNodeWidth;
-const MAX_NODE_HEIGHT = modiffLayout.maxNodeHeight;
 
 type PanelAnchor = { left: number; top: number };
 
@@ -95,7 +112,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
   const label = node.data.label || `${node.data.module} ${node.data.action}`;
-  const setParam = useFlowStore((state) => state.setParam);
+  const hasAudioPlayer = Object.values(node.data.params).some((param) => param.display === 'ui_audio');
+  const minimumNodeWidth = hasAudioPlayer ? modiffLayout.audioPreviewNodeMinWidth : modiffLayout.nodeMinWidth;
+  const setParam = useFlowStore((state) => state.setParamWithHistory);
   const setNodeSize = useFlowStore((state) => state.setNodeSize);
   const beginHistoryTransaction = useFlowStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useFlowStore((state) => state.commitHistoryTransaction);
@@ -116,6 +135,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     cachedNodeIds: string[];
   } | null>(null);
   const runningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const contextMenuReturnFocusRef = useRef<HTMLElement | null>(null);
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const reactFlowStore = useStoreApi();
@@ -130,6 +150,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const handleUpdateStore = useCallback(
     (param: string, value: unknown, key?: keyof NodeParams) => {
       setParam(node.id, param, value, key);
+      syncManagedNodeControlChange(node.id, param, value, key);
 
       const currentRunningState = useSettingsStore.getState().runningState;
 
@@ -158,10 +179,18 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     }
   }, [node.id, setNodeCached]);
 
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+    window.requestAnimationFrame(() => contextMenuReturnFocusRef.current?.focus());
+  }, []);
 
   const handleContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
+    const currentFocus = document.activeElement;
+    contextMenuReturnFocusRef.current =
+      currentFocus instanceof HTMLElement && currentFocus !== document.body
+        ? currentFocus
+        : event.currentTarget.querySelector<HTMLElement>('button, [href], input, [tabindex]:not([tabindex="-1"])');
     setContextMenu(contextMenuAnchor(event));
   }, []);
 
@@ -205,11 +234,11 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       const zoomLevel = reactFlowStore.getState().transform[2];
 
       const onMouseMove = (moveEvent: globalThis.MouseEvent) => {
-        const newWidth = Math.min(MAX_NODE_WIDTH, initialWidth + Math.round((moveEvent.clientX - startX) / zoomLevel));
-        const newHeight = Math.min(
-          MAX_NODE_HEIGHT,
-          initialHeight + Math.round((moveEvent.clientY - startY) / zoomLevel),
+        const newWidth = Math.max(
+          minimumNodeWidth,
+          Math.min(MAX_NODE_WIDTH, initialWidth + Math.round((moveEvent.clientX - startX) / zoomLevel)),
         );
+        const newHeight = Math.max(160, initialHeight + Math.round((moveEvent.clientY - startY) / zoomLevel));
         setNodeSize(node.id, newWidth, newHeight);
         scheduleNodeLayoutSync();
       };
@@ -230,6 +259,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       node.id,
       node.width,
       node.height,
+      minimumNodeWidth,
       reactFlowStore,
       scheduleNodeLayoutSync,
       setNodeSize,
@@ -258,7 +288,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       )}
       nodeStyle={style}
       maxWidth={MAX_NODE_WIDTH}
-      maxHeight={MAX_NODE_HEIGHT}
+      minWidth={minimumNodeWidth}
       isError={isError}
       onContextMenu={handleContextMenu}
     >
@@ -271,45 +301,42 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
         <div className="nodrag flex items-center gap-1">
           {validationMessage && (
             <>
-              <button
-                type="button"
-                className={cx(
-                  'grid size-7 place-items-center rounded-modiff-compact transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-                  isError ? 'text-modiff-red' : 'text-hf-orange',
-                )}
+              <ModiffIconButton
+                size="compact"
+                className={cx('nodrag', isError ? 'text-modiff-red' : 'text-hf-orange')}
                 onClick={(event) => setIssueAnchor(anchorBeside(event.currentTarget))}
                 title={validationMessage}
-                aria-label={isError ? 'Node error details' : 'Node warning details'}
+                label={isError ? 'Node error details' : 'Node warning details'}
               >
                 <TriangleAlert size={16} />
-              </button>
+              </ModiffIconButton>
               {issueAnchor && (
                 <NodePopover anchor={issueAnchor} onClose={() => setIssueAnchor(null)} className="max-w-[420px] p-3">
                   <div className={cx('mb-1 text-sm font-bold', isError ? 'text-modiff-red' : 'text-hf-orange')}>
                     {isError ? 'Node error' : 'Node warning'}
                   </div>
-                  <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm text-gray-300">
+                  <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm text-modiff-text">
                     {validationMessage}
                   </p>
                 </NodePopover>
               )}
             </>
           )}
-          <button
-            type="button"
-            className="grid size-7 place-items-center rounded-modiff-compact text-gray-200 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+          <ModiffIconButton
+            size="compact"
+            className="nodrag text-modiff-text"
             onClick={(event) => setHelpAnchor(anchorBeside(event.currentTarget))}
-            aria-label="Node help"
+            label="Node help"
           >
             <CircleHelp size={16} />
-          </button>
+          </ModiffIconButton>
           {helpAnchor && (
             <NodePopover anchor={helpAnchor} onClose={() => setHelpAnchor(null)} className="max-w-[480px] p-3">
               <div className="text-base font-bold text-modiff-text">{label}</div>
-              {node.data.description && <div className="mt-1 text-sm text-gray-300">{node.data.description}</div>}
+              {node.data.description && <div className="mt-1 text-sm text-modiff-text">{node.data.description}</div>}
               {Object.entries(node.data.params).map(([key, param]) =>
                 param.description ? (
-                  <div key={key} className="mt-1 text-sm text-gray-300">
+                  <div key={key} className="mt-1 text-sm text-modiff-text">
                     <b className="text-modiff-text">{param.label || key.charAt(0).toUpperCase() + key.slice(1)}:</b>{' '}
                     {param.description}
                   </div>
@@ -321,22 +348,11 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       </CustomNodeHeaderFrame>
 
       {isCollapsed ? (
-        <div className="relative flex min-h-24 w-full flex-1 items-center justify-center bg-modiff-surface px-8 py-4 text-gray-400">
-          <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-            <NodeContent
-              nodeId={node.id}
-              params={node.data.params}
-              updateStore={handleUpdateStore}
-              module={node.data.module || ''}
-              action={node.data.action || ''}
-              groupHandles
-              handlesOnly
-              compactHandles
-              executionStatus={node.data.executionStatus}
-              progressMessage={node.data.progressMessage}
-            />
-          </ErrorBoundary>
-          <span className="truncate text-xs font-semibold text-modiff-muted">Collapsed</span>
+        <div
+          className="relative flex min-h-24 w-full flex-1 items-center justify-center bg-modiff-surface px-8 py-4 text-modiff-subtle-text"
+          data-testid={`node-scroll-body-${node.id}`}
+        >
+          <span className="truncate text-xs font-semibold text-modiff-subtle-text">Collapsed</span>
         </div>
       ) : (
         <>
@@ -347,6 +363,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
                 ? '[&_.modiff-textarea-field]:min-h-40'
                 : '[&_.modiff-textarea-field]:min-h-[110px]',
             )}
+            data-testid={`node-scroll-body-${node.id}`}
           >
             <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
               <NodeContent
@@ -355,19 +372,25 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
                 updateStore={handleUpdateStore}
                 module={node.data.module || ''}
                 action={node.data.action || ''}
+                mode="controls"
                 executionStatus={node.data.executionStatus}
                 progressMessage={node.data.progressMessage}
               />
             </ErrorBoundary>
           </div>
 
-          <div className="relative w-full shrink-0 bg-modiff-bg text-gray-400">
-            <NodeProgress progress={node.data.progress} />
+          <div className="relative w-full shrink-0 bg-modiff-bg text-modiff-subtle-text">
+            <NodeProgress
+              progress={node.data.progress}
+              executionStatus={node.data.executionStatus}
+              executionProgress={node.data.executionProgress}
+            />
             <div className="flex items-center gap-2 p-1 pr-6">
-              <button
-                type="button"
-                className="nodrag grid size-7 place-items-center rounded-modiff-compact text-gray-500 transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+              <ModiffIconButton
+                size="compact"
+                className="nodrag text-modiff-subtle-text"
                 disabled={!node.data.isCached}
+                label={node.data.isCached ? 'Clear node cache' : 'Node is not cached'}
                 title={node.data.isCached ? 'Click to clear cache' : 'Not cached'}
                 onClick={() => {
                   void handleClearCache();
@@ -375,14 +398,19 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
               >
                 <Circle
                   size={14}
-                  className={node.data.isCached ? 'fill-modiff-green text-modiff-green' : 'fill-gray-600 text-gray-600'}
+                  className={
+                    node.data.isCached
+                      ? 'fill-modiff-green text-modiff-green'
+                      : 'fill-modiff-disabled text-modiff-disabled'
+                  }
                 />
-              </button>
+              </ModiffIconButton>
               <NodeProgressStatus
                 status={node.data.executionStatus}
                 phase={node.data.executionPhase}
                 message={node.data.progressMessage}
                 progress={node.data.progress}
+                executionProgress={node.data.executionProgress}
               />
               <FooterMetricButton
                 icon={<Gauge size={14} />}
@@ -422,15 +450,23 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
               )}
             </div>
 
-            {node.data.resizable && (
-              <div
-                className="nodrag absolute bottom-0 right-0 z-[9999] h-[26px] w-[26px] cursor-se-resize border-4 border-transparent border-b-gray-500 border-r-gray-500 leading-none hover:border-b-hf-yellow hover:border-r-hf-yellow hover:bg-white/10"
-                onMouseDown={onResizeStart}
-              />
-            )}
+            {node.data.resizable && <NodeResizeGrip onMouseDown={onResizeStart} />}
           </div>
         </>
       )}
+      <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
+        <NodeContent
+          nodeId={node.id}
+          params={node.data.params}
+          updateStore={handleUpdateStore}
+          module={node.data.module || ''}
+          action={node.data.action || ''}
+          mode="connectors"
+          compactConnectors={isCollapsed}
+          executionStatus={node.data.executionStatus}
+          progressMessage={node.data.progressMessage}
+        />
+      </ErrorBoundary>
       {contextMenu && (
         <NodeContextMenu position={contextMenu} onClose={closeContextMenu}>
           <ContextMenuItem
@@ -539,49 +575,82 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       {branchPreview && (
         <NodePopover anchor={branchPreview.anchor} onClose={() => setBranchPreview(null)} className="w-80 p-3">
           <div className="mb-2 text-sm font-bold text-modiff-text">Run branch preview</div>
-          <p className="text-xs text-gray-300">Target: {label}</p>
-          <p className="text-xs text-gray-400">Included nodes: {branchPreview.nodeIds.length}</p>
-          <p className="text-xs text-gray-400">Cached nodes that may be reused: {branchPreview.cachedNodeIds.length}</p>
+          <p className="text-xs text-modiff-text">Target: {label}</p>
+          <p className="text-xs text-modiff-subtle-text">Included nodes: {branchPreview.nodeIds.length}</p>
+          <p className="text-xs text-modiff-subtle-text">
+            Cached nodes that may be reused: {branchPreview.cachedNodeIds.length}
+          </p>
           <div className="mt-2 max-h-28 overflow-auto border border-modiff-border bg-modiff-bg p-2">
             {branchPreview.nodeIds.map((id) => (
               <p
                 key={id}
                 className={cx(
                   'truncate text-xs',
-                  branchPreview.cachedNodeIds.includes(id) ? 'text-modiff-green' : 'text-gray-300',
+                  branchPreview.cachedNodeIds.includes(id) ? 'text-modiff-green' : 'text-modiff-text',
                 )}
               >
                 {branchPreview.cachedNodeIds.includes(id) ? 'Cached' : 'Run'} | {id}
               </p>
             ))}
           </div>
-          <button
-            type="button"
-            className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-modiff-compact bg-hf-yellow px-3 text-sm font-semibold text-black transition hover:bg-hf-orange focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+          <ModiffButton
+            tone="primary"
+            size="dense"
+            className="mt-2"
+            icon={<Play size={15} />}
             onClick={() => {
               setBranchPreview(null);
               void handleRunFromNode();
             }}
           >
-            <Play size={15} />
             Run selected branch
-          </button>
+          </ModiffButton>
         </NodePopover>
       )}
     </CustomNodeFrame>
   );
 });
 
-function NodeProgress({ progress = 0 }: { progress?: number }) {
-  if (progress < 0) {
-    return (
-      <div className="h-1 overflow-hidden bg-white/10">
-        <div className="h-full w-1/4 animate-[modiff-progress-indeterminate_1.15s_ease-in-out_infinite] bg-hf-yellow" />
-      </div>
-    );
-  }
-
-  return <ModiffProgress value={progress} className="h-1 rounded-none bg-white/10" />;
+function NodeProgress({
+  progress = 0,
+  executionStatus,
+  executionProgress,
+}: {
+  progress?: number;
+  executionStatus?: string;
+  executionProgress?: ExecutionProgress;
+}) {
+  const indeterminate = progress < 0 || (executionStatus === 'running' && progress <= 0);
+  const detail =
+    executionProgressDetail(executionProgress) || (indeterminate ? 'Working; progress is not measurable yet.' : '');
+  const progressBar = indeterminate ? (
+    <div
+      aria-label="Node is running; progress is not measurable yet."
+      className="h-1 overflow-hidden bg-modiff-border-subtle"
+      data-testid="node-progress-indeterminate"
+      role="progressbar"
+    >
+      <div className="h-full w-1/4 animate-[modiff-progress-indeterminate_1.15s_ease-in-out_infinite] bg-hf-yellow" />
+    </div>
+  ) : (
+    <ModiffProgress value={progress} className="h-1 rounded-none bg-modiff-border-subtle" />
+  );
+  if (!detail) return progressBar;
+  return (
+    <ModiffTooltip<HTMLDivElement> content={detail} placement="top">
+      {(tooltipProps) => (
+        <div
+          {...tooltipProps}
+          className="nodrag nowheel outline-none focus-visible:ring-1 focus-visible:ring-modiff-focus"
+          role="group"
+          aria-label={detail}
+          tabIndex={0}
+        >
+          {progressBar}
+        </div>
+      )}
+    </ModiffTooltip>
+  );
 }
 
 function NodeProgressStatus({
@@ -589,11 +658,13 @@ function NodeProgressStatus({
   phase,
   message,
   progress = 0,
+  executionProgress,
 }: {
   status?: string;
   phase?: string;
   message?: string;
   progress?: number;
+  executionProgress?: ExecutionProgress;
 }) {
   const active = status === 'running' || progress < 0 || progress > 0;
   if (!active && !message && !status) return null;
@@ -613,13 +684,20 @@ function NodeProgressStatus({
       : detail.length > 42
         ? `${detail.slice(0, 39).trimEnd()}...`
         : detail;
+  const completeDetail = executionProgressDetail(executionProgress) || detail;
   return (
-    <span
-      className="max-w-32 truncate rounded-modiff-compact bg-modiff-surface px-2 py-1 text-xs font-semibold capitalize text-modiff-muted"
-      title={detail}
-    >
-      {label}
-    </span>
+    <ModiffTooltip<HTMLSpanElement> content={completeDetail} placement="top">
+      {(tooltipProps) => (
+        <span
+          {...tooltipProps}
+          className="max-w-32 truncate rounded-modiff-compact bg-modiff-surface px-2 py-1 text-xs font-semibold capitalize text-modiff-subtle-text outline-none focus-visible:ring-1 focus-visible:ring-modiff-focus"
+          role="status"
+          tabIndex={0}
+        >
+          {label}
+        </span>
+      )}
+    </ModiffTooltip>
   );
 }
 
@@ -634,25 +712,20 @@ function NodePopover({
   className?: string;
   onClose: () => void;
 }) {
-  return createPortal(
-    <>
-      <button
-        type="button"
-        className="fixed inset-0 z-40 cursor-default bg-transparent"
-        onClick={onClose}
-        aria-label="Close popover"
-      />
-      <AnchoredPanel
-        anchor={anchor}
-        className={cx(
-          'rounded-modiff-panel border border-modiff-border bg-modiff-surface shadow-modiff-node',
-          className,
-        )}
-      >
-        {children}
-      </AnchoredPanel>
-    </>,
-    document.body,
+  return (
+    <ModiffPopover
+      anchor={anchor}
+      ariaLabel="Node details"
+      closeOnOutside={false}
+      gap={0}
+      modal
+      onClose={onClose}
+      open
+      panelClassName={className}
+      placement="bottom-start"
+    >
+      {children}
+    </ModiffPopover>
   );
 }
 
@@ -668,22 +741,23 @@ function FooterMetricButton({
   title: string;
 }) {
   return (
-    <button
-      type="button"
+    <ModiffButton
+      size="compact"
+      tone="ghost"
       title={title}
-      className="nodrag inline-flex h-7 min-w-0 items-center gap-1 rounded-modiff-compact border border-modiff-border px-2 text-xs font-semibold text-gray-300 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow"
+      icon={icon}
+      className="nodrag min-w-0 border border-modiff-border px-2 text-xs text-modiff-text"
       onClick={onClick}
     >
-      {icon}
       {children}
-    </button>
+    </ModiffButton>
   );
 }
 
 function MetricRow({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <div className="flex gap-2 text-sm text-gray-300">
-      <span className="w-14 text-gray-400">{label}</span>
+    <div className="flex gap-2 text-sm text-modiff-text">
+      <span className="w-14 text-modiff-subtle-text">{label}</span>
       <span>{children}</span>
     </div>
   );
@@ -698,55 +772,58 @@ function NodeContextMenu({
   onClose: () => void;
   position: { mouseX: number; mouseY: number };
 }) {
-  return createPortal(
-    <>
-      <button
-        type="button"
-        className="fixed inset-0 z-40 cursor-default bg-transparent"
-        onClick={onClose}
-        aria-label="Close node menu"
-      />
-      <AnchoredPanel
-        anchor={{ left: position.mouseX, top: position.mouseY }}
-        className="min-w-44 rounded-modiff-panel border border-modiff-border bg-modiff-surface p-1 shadow-modiff-node"
-      >
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+  }, []);
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []);
+    if (items.length === 0) return;
+    const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLElement));
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = items.length - 1;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (nextIndex !== null) {
+      event.preventDefault();
+      items[nextIndex]?.focus();
+    }
+  };
+
+  return (
+    <ModiffPopover
+      anchor={{ left: position.mouseX, top: position.mouseY }}
+      ariaLabel="Node actions"
+      closeOnOutside={false}
+      gap={0}
+      modal
+      onClose={onClose}
+      open
+      panelClassName="min-w-44 p-1"
+      placement="bottom-start"
+      role="menu"
+    >
+      <div ref={menuRef} onKeyDown={handleKeyDown}>
         {children}
-      </AnchoredPanel>
-    </>,
-    document.body,
+      </div>
+    </ModiffPopover>
   );
 }
 
-function ContextMenuItem({
-  children,
-  danger = false,
-  icon,
-  onClick,
-  ...props
-}: {
-  children: ReactNode;
-  danger?: boolean;
-  icon: ReactNode;
-  onClick: () => void;
-} & ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type="button"
-      className={cx(
-        'flex w-full items-center gap-2 rounded-modiff-compact px-2 py-1.5 text-left text-sm transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hf-yellow',
-        danger ? 'text-modiff-red hover:text-modiff-red' : 'text-gray-200 hover:text-white',
-      )}
-      onClick={onClick}
-      {...props}
-    >
-      <span className="grid size-4 place-items-center">{icon}</span>
-      {children}
-    </button>
-  );
+function ContextMenuItem({ ...props }: GraphMenuActionProps) {
+  return <GraphMenuAction {...props} />;
 }
 
 function ContextMenuDivider() {
-  return <div className="my-1 border-t border-modiff-border" />;
+  return <SharedGraphMenuDivider />;
 }
 
 export default CustomNode;

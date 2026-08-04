@@ -1,12 +1,20 @@
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useState, type ReactNode } from 'react';
-import { Download, Eraser, FolderOpen, Gauge, RefreshCw, Settings } from 'lucide-react';
+import { Download, Eraser, FolderOpen, Gauge, RefreshCw, Search, Settings } from 'lucide-react';
+import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
-import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { runtimeFailureTargetsActiveWorkflow, useRunIssueStore } from '../stores/useRunIssueStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  advanceWorkflowOperationContext,
+  captureWorkflowOperationContext,
+  isWorkflowOperationCancelled,
+  useStudioStore,
+} from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { createOrUpdateStudioGraph } from '../studio/graphBridge';
+import { autoProofIsReady, formPatchForAutoCandidate } from '../studio/autoResource';
+import { coordinateGraphRun } from '../studio/runCoordinator';
 import {
   getFormDefaultsForModel,
   getProfileForForm,
@@ -38,13 +46,72 @@ export default function RunIssuesDialog() {
   const sid = useWebsocketStore((state) => state.sid);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
+  const setStudioViewMode = useSettingsStore((state) => state.setStudioViewMode);
+  const setWorkflowFocusRequest = useSettingsStore((state) => state.setWorkflowFocusRequest);
   const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
   const form = useStudioStore((state) => state.form);
   const updateForm = useStudioStore((state) => state.updateForm);
+  const applyAutoResourcePlan = useStudioStore((state) => state.applyAutoResourcePlan);
+  const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
+  const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const currentRunContext = useStudioStore((state) => state.currentRunContext);
+  const workflowCanvasHydrated = useStudioStore((state) => state.workflowCanvasHydrated);
+  const workflowTabs = useStudioStore((state) => state.workflowTabs);
+  const failureRunContext = useStudioStore((state) => {
+    const taskId = failure?.taskId?.trim();
+    if (taskId) return state.runContextsByTaskId[taskId] ?? null;
+    const clientRunId = failure?.clientRunId?.trim();
+    return clientRunId ? (state.runContextsByClientRunId[clientRunId] ?? null) : null;
+  });
   const [cleanupState, setCleanupState] = useState<CleanupState>('idle');
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
   const cleanupRunning = cleanupState === 'running';
   const hasCleanupIssue = issues.some((item) => item.action === 'cleanup_gpu');
+  const nextCandidate = autoResourcePlan?.nextCandidate;
+  const failureTargetsActiveWorkflow = runtimeFailureTargetsActiveWorkflow(failure, failureRunContext, {
+    activeWorkflowTabId,
+    currentRunContext,
+    workflowCanvasHydrated,
+    workflowTabs,
+  });
+
+  const retryWithNextCandidate = async () => {
+    if (!nextCandidate || !failureTargetsActiveWorkflow) return;
+    if (nextCandidate.installed === false || nextCandidate.repairRequired) {
+      setRightPanelOpen(true);
+      setRightPanelTab('compatibility');
+      closeFailure();
+      return;
+    }
+    if (!sid) {
+      enqueueSnackbar('Connect to the MoDiff backend before retrying.', { variant: 'error' });
+      return;
+    }
+    const patch = formPatchForAutoCandidate(nextCandidate, form);
+    const followingCandidate =
+      autoResourcePlan.candidates?.find(
+        (candidate) =>
+          candidate.id !== nextCandidate.id &&
+          candidate.id !== autoResourcePlan.selectedCandidate?.id &&
+          autoProofIsReady(candidate.proof),
+      ) ?? null;
+    const nextPlan = {
+      ...autoResourcePlan,
+      selectedCandidate: nextCandidate,
+      nextCandidate: followingCandidate,
+    };
+    const context = captureWorkflowOperationContext();
+    try {
+      applyAutoResourcePlan(nextPlan, patch);
+      advanceWorkflowOperationContext(context);
+      await createOrUpdateStudioGraph(useStudioStore.getState().form, context);
+      await coordinateGraphRun({ sid, studioContext: {}, workflowContext: context });
+      closeFailure();
+    } catch (error) {
+      if (isWorkflowOperationCancelled(error)) return;
+      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 7000 });
+    }
+  };
 
   const openSetup = () => {
     setRightPanelOpen(true);
@@ -58,6 +125,45 @@ export default function RunIssuesDialog() {
     setRightPanelTab('studio');
     closeIssues();
     closeFailure();
+  };
+
+  const inspectNode = (nodeId: string | null | undefined, source: 'issues' | 'failure') => {
+    setRightPanelOpen(true);
+    setRightPanelTab('studio');
+    if (nodeId) {
+      setStudioViewMode('expert');
+      const flow = useFlowStore.getState();
+      if (flow.nodes.some((node) => node.id === nodeId)) {
+        void flow.onNodesChange(
+          flow.nodes.map((node) => ({
+            id: node.id,
+            type: 'select' as const,
+            selected: node.id === nodeId,
+          })),
+        );
+      }
+      if (activeWorkflowTabId) {
+        setWorkflowFocusRequest({
+          workflowTabId: activeWorkflowTabId,
+          nodeId,
+          requestId: Date.now(),
+          requestedAt: Date.now(),
+        });
+      }
+    } else if (activeWorkflowTabId) {
+      setWorkflowFocusRequest({
+        workflowTabId: activeWorkflowTabId,
+        nodeId: null,
+        requestId: Date.now(),
+        requestedAt: Date.now(),
+      });
+      enqueueSnackbar('Graph centered. Readiness details remain visible in Studio.', {
+        variant: 'info',
+        autoHideDuration: 2600,
+      });
+    }
+    if (source === 'issues') closeIssues();
+    else closeFailure();
   };
 
   const openModelManager = () => {
@@ -167,6 +273,11 @@ export default function RunIssuesDialog() {
     );
   };
 
+  const applyFailureLowVramPreset = () => {
+    if (!failureTargetsActiveWorkflow) return;
+    applyLowVramPreset();
+  };
+
   const switchToZImage = () => {
     const defaults = getFormDefaultsForModel('ZImageModularPipeline');
     const values = {
@@ -228,22 +339,8 @@ export default function RunIssuesDialog() {
             }
             testId={`run-issue-${item.id}`}
           >
-            <div className="grid gap-2">
-              {item.details && <p className="break-words">{item.details}</p>}
-              {(item.repoId || item.modelPath || item.nodeId) && (
-                <details className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2">
-                  <summary className="cursor-pointer text-xs font-semibold text-modiff-text">
-                    Technical reference
-                  </summary>
-                  <p className="mt-1 break-all text-xs text-modiff-muted">
-                    {item.repoId ? `Repo: ${item.repoId}` : ''}
-                    {item.repoId && (item.modelPath || item.nodeId) ? ' | ' : ''}
-                    {item.modelPath ? `Path: ${item.modelPath}` : ''}
-                    {item.modelPath && item.nodeId ? ' | ' : ''}
-                    {item.nodeId ? `Node: ${item.nodeId}` : ''}
-                  </p>
-                </details>
-              )}
+            <div className="grid min-w-0 gap-2">
+              {item.details && <p className="whitespace-pre-wrap break-words">{item.details}</p>}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {item.action === 'install_model' && item.repoId && (
@@ -270,6 +367,11 @@ export default function RunIssuesDialog() {
               {item.action === 'select_image' && (
                 <ModiffButton icon={<FolderOpen size={15} />} onClick={openStudio}>
                   Open Studio inputs
+                </ModiffButton>
+              )}
+              {item.action === 'inspect_node' && (
+                <ModiffButton icon={<Search size={15} />} onClick={() => inspectNode(item.nodeId, 'issues')}>
+                  {item.nodeId ? 'Inspect node' : 'Inspect graph'}
                 </ModiffButton>
               )}
               {item.action === 'open_model_manager' && (
@@ -304,10 +406,24 @@ export default function RunIssuesDialog() {
         testId="run-failure-dialog"
         footer={
           <RunDialogFooter cleanupMessage={cleanupMessage} cleanupState={cleanupState}>
+            {nextCandidate && failureTargetsActiveWorkflow ? (
+              <ModiffButton
+                icon={<RefreshCw size={15} />}
+                onClick={() => void retryWithNextCandidate()}
+                disabled={cleanupRunning}
+              >
+                Retry with next option
+              </ModiffButton>
+            ) : null}
             {failure?.oom ? cleanupButton : null}
-            {failure?.oom ? (
-              <ModiffButton icon={<Gauge size={15} />} onClick={applyLowVramPreset} disabled={cleanupRunning}>
+            {failure?.oom && failureTargetsActiveWorkflow ? (
+              <ModiffButton icon={<Gauge size={15} />} onClick={applyFailureLowVramPreset} disabled={cleanupRunning}>
                 Low-VRAM preset
+              </ModiffButton>
+            ) : null}
+            {failure?.nodeId && failureTargetsActiveWorkflow ? (
+              <ModiffButton icon={<Search size={15} />} onClick={() => inspectNode(failure.nodeId, 'failure')}>
+                Inspect node
               </ModiffButton>
             ) : null}
             <ModiffButton icon={<Settings size={15} />} onClick={openSetup} disabled={cleanupRunning}>
@@ -319,72 +435,22 @@ export default function RunIssuesDialog() {
       >
         {failure && (
           <div>
-            <IssueCard
-              tone={failure.oom ? 'warning' : 'error'}
-              title={failureTitle(failure)}
-              meta={failureMeta(failure)}
-            >
-              <p className="break-words">{failure.message}</p>
+            <IssueCard tone={failure.oom ? 'warning' : 'error'} title={failureTitle(failure)}>
+              <p className="break-words">{failureUserMessage(failure)}</p>
+              {failure.message.trim() && failure.message.trim() !== failureUserMessage(failure) ? (
+                <p
+                  className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-xs text-modiff-text"
+                  data-testid="run-failure-message"
+                >
+                  {failure.message}
+                </p>
+              ) : null}
               {failure.recoveryHint && (
                 <p className="mt-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-xs text-modiff-text">
                   {failure.recoveryHint}
                 </p>
               )}
-              {failure.memorySummary && (
-                <div className="mt-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-xs text-gray-300">
-                  {failure.memorySummary}
-                </div>
-              )}
-              {runtimeHintSummary(failure) && (
-                <div className="mt-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-xs text-gray-300">
-                  {runtimeHintSummary(failure)}
-                </div>
-              )}
-              {cudaMemorySummary(failure) && (
-                <div className="mt-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-xs text-gray-300">
-                  {cudaMemorySummary(failure)}
-                </div>
-              )}
-              {gpuProcessSummary(failure) && (
-                <div className="mt-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-xs text-gray-300">
-                  {gpuProcessSummary(failure)}
-                </div>
-              )}
-              <details className="mt-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2">
-                <summary className="cursor-pointer text-xs font-semibold text-modiff-text">Run reference</summary>
-                <div className="mt-1 grid gap-1 break-all text-xs text-modiff-muted">
-                  <div>
-                    {failure.nodeId ? `Node ${failure.nodeId}` : 'Graph run'}
-                    {failure.taskId ? ` | Task ${failure.taskId}` : ''}
-                  </div>
-                  {(failure.category || failure.errorCode) && (
-                    <div>
-                      {failure.category ? `Category: ${failure.category}` : ''}
-                      {failure.category && failure.errorCode ? ' | ' : ''}
-                      {failure.errorCode ? `Code: ${failure.errorCode}` : ''}
-                    </div>
-                  )}
-                </div>
-              </details>
             </IssueCard>
-            {hasRuntimeDiagnostics(failure) && (
-              <details className="mt-3 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
-                <summary className="cursor-pointer text-xs font-semibold text-modiff-text">
-                  Accelerator diagnostics
-                </summary>
-                <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-300">
-                  {formatDiagnostics(failure)}
-                </pre>
-              </details>
-            )}
-            {failure.traceback && (
-              <details className="mt-3 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
-                <summary className="cursor-pointer text-xs font-semibold text-modiff-text">Traceback details</summary>
-                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-300">
-                  {failure.traceback}
-                </pre>
-              </details>
-            )}
           </div>
         )}
       </RunModal>
@@ -400,10 +466,14 @@ function failureTitle(failure: RuntimeFailure) {
   return 'The backend stopped this run';
 }
 
-function failureMeta(failure: RuntimeFailure) {
-  const parts = [failure.exceptionType || 'Runtime error'];
-  if (failure.errorCode) parts.push(failure.errorCode);
-  return parts.join(' | ');
+function failureUserMessage(failure: RuntimeFailure) {
+  if (failure.oom || failure.category === 'oom') {
+    return 'This graph needs more available memory than the current settings allow.';
+  }
+  if (failure.category === 'missing_model') return 'Install or select the model needed by this workflow.';
+  if (failure.category === 'missing_dependency') return 'Complete the required setup, then try the run again.';
+  if (failure.category === 'backend_unavailable') return 'Reconnect to MoDiff, then check the queue before retrying.';
+  return 'The generation could not finish. Check the highlighted step and try again.';
 }
 
 function cleanupResponseHasError(data: unknown) {
@@ -427,137 +497,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function formatBytes(bytes?: number | null) {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes)) return null;
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  const precision = value >= 10 || unitIndex === 0 ? 0 : 1;
-  return `${value.toFixed(precision)} ${units[unitIndex]}`;
-}
-
-function cudaMemorySummary(failure: RuntimeFailure) {
-  const snapshot = failure.cudaMemorySnapshot;
-  if (!snapshot) return null;
-  const device = snapshot.devices?.[0];
-  const freeBytes = snapshot.free_bytes ?? device?.free_bytes;
-  const totalBytes = snapshot.total_bytes ?? device?.total_bytes;
-  const allocatedBytes = snapshot.allocated_bytes ?? device?.allocated_bytes;
-  const free = formatBytes(freeBytes);
-  const total = formatBytes(totalBytes);
-  const allocated = formatBytes(allocatedBytes);
-  if (free && total) {
-    return `CUDA at failure: ${free} free / ${total} total${allocated ? `, ${allocated} allocated by MoDiff` : ''}.`;
-  }
-  if (snapshot.error) return `CUDA memory snapshot unavailable: ${snapshot.error}`;
-  if (snapshot.available === false) return 'CUDA memory snapshot is not available from this backend.';
-  return null;
-}
-
-function gpuProcessSummary(failure: RuntimeFailure) {
-  const processes = failure.gpuProcesses?.processes ?? [];
-  if (processes.length === 0) return null;
-  const visible = processes.slice(0, 3).map((process) => {
-    const name = process.process_name || (process.pid ? `PID ${process.pid}` : 'Unknown process');
-    return process.used_memory_mb ? `${name} (${process.used_memory_mb} MB)` : name;
-  });
-  return `${processes.length} GPU process${processes.length === 1 ? '' : 'es'} visible through nvidia-smi: ${visible.join(', ')}.`;
-}
-
-function hasRuntimeDiagnostics(failure: RuntimeFailure) {
-  return Boolean(
-    failure.cudaMemorySnapshot ||
-    failure.gpuProcesses ||
-    failure.runtimeHints ||
-    failure.runtimeBudget ||
-    failure.loaderDiagnostics,
-  );
-}
-
-function formatDiagnostics(failure: RuntimeFailure) {
-  return JSON.stringify(
-    {
-      cuda_memory_snapshot: failure.cudaMemorySnapshot ?? null,
-      gpu_processes: failure.gpuProcesses ?? null,
-      runtime_hints: failure.runtimeHints ?? null,
-      runtime_budget: failure.runtimeBudget ?? null,
-      loader_diagnostics: failure.loaderDiagnostics ?? null,
-    },
-    null,
-    2,
-  );
-}
-
 function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function booleanValue(value: unknown) {
-  return typeof value === 'boolean' ? value : null;
-}
-
-function stringArrayValue(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    : [];
-}
-
-function runtimeHintSummary(failure: RuntimeFailure) {
-  const hints = failure.runtimeHints;
-  if (!hints) return null;
-  const name = stringValue(hints.modelName) ?? stringValue(hints.modelRepo);
-  const repo = stringValue(hints.modelRepo);
-  const resolvedArtifact = stringValue(hints.resolvedArtifact);
-  const executionPath = stringValue(hints.executionPath);
-  const compatibilityStatus = stringValue(hints.compatibilityStatus);
-  const dtype = stringValue(hints.dtype);
-  const resourceMode = stringValue(hints.resourceMode);
-  const resolvedResourceMode = stringValue(hints.resolvedResourceMode);
-  const quantization = stringValue(hints.quantizationMode);
-  const quantizedComponents = stringArrayValue(hints.quantizedComponents);
-  const device = stringValue(hints.device);
-  const autoOffload = booleanValue(hints.autoOffload);
-  const offloadMode = stringValue(hints.offloadMode);
-  const offloadDiskPath = stringValue(hints.offloadDiskPath);
-  const offload =
-    autoOffload === null
-      ? null
-      : autoOffload
-        ? offloadMode
-          ? offloadMode.replace(/_/g, '-')
-          : 'model-cpu'
-        : 'offload disabled';
-  const quantizationLabel =
-    quantization && quantization !== 'none'
-      ? `${quantization}${quantizedComponents.length ? `(${quantizedComponents.join(',')})` : ''}`
-      : null;
-  const budget =
-    typeof failure.runtimeBudget?.applied_budget_bytes === 'number'
-      ? formatBytes(failure.runtimeBudget.applied_budget_bytes)
-      : null;
-  const retryAttempt = typeof hints.resourceRetryAttempt === 'number' ? hints.resourceRetryAttempt : null;
-  const bits = [
-    name ? `Model: ${name}` : null,
-    repo && repo !== name ? repo : null,
-    resolvedArtifact && resolvedArtifact !== repo ? `artifact ${resolvedArtifact}` : null,
-    executionPath,
-    resourceMode
-      ? `resource ${resourceMode}${resolvedResourceMode && resolvedResourceMode !== resourceMode ? `/${resolvedResourceMode}` : ''}`
-      : null,
-    dtype,
-    quantizationLabel,
-    offload,
-    offloadDiskPath && offloadMode === 'group_disk' ? `disk ${offloadDiskPath}` : null,
-    device,
-    compatibilityStatus ? `compat ${compatibilityStatus}` : null,
-    budget ? `budget ${budget}` : null,
-    retryAttempt ? `retry ${retryAttempt}` : null,
-  ].filter(Boolean);
-  return bits.length ? bits.join(' | ') : null;
 }
 
 function RunDialogFooter({
@@ -575,7 +516,7 @@ function RunDialogFooter({
       ? 'text-modiff-red'
       : cleanupState === 'success'
         ? 'text-modiff-green'
-        : 'text-modiff-muted';
+        : 'text-modiff-subtle-text';
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">

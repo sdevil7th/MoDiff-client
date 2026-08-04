@@ -1,6 +1,9 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { FieldProps } from '../components/NodeContent';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { FieldFrame } from '../ui';
+import { FieldFrame, ModiffFieldShell } from '../ui';
+import { GraphControlInput } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
 
 export default function InputField(props: FieldProps) {
@@ -35,23 +38,19 @@ export default function InputField(props: FieldProps) {
       layoutStyle={props.style}
       className="modiff-field"
     >
-      <div
+      <ModiffFieldShell
+        htmlFor={inputId}
+        label={props.label}
+        layout="inline"
+        disabled={props.disabled}
+        labelClassName="text-modiff-control pointer-events-none max-w-[50%] truncate pr-2 font-normal"
         className={cx(
           'flex w-full items-center justify-between overflow-hidden rounded-modiff-compact bg-modiff-bg px-2 py-1 outline outline-2',
           isFocused ? 'outline-hf-yellow' : 'outline-transparent',
         )}
       >
-        <label
-          htmlFor={inputId}
-          className="pointer-events-none max-w-[50%] truncate pr-2 text-[13px] text-gray-400"
-          title={props.label}
-        >
-          {props.label}
-        </label>
-        <input
-          id={inputId}
+        <GraphControlInput
           value={draftValue}
-          disabled={props.disabled}
           onChange={(event) => setDraftValue(event.target.value)}
           autoComplete="off"
           className={cx(
@@ -78,7 +77,7 @@ export default function InputField(props: FieldProps) {
             }
           }}
         />
-      </div>
+      </ModiffFieldShell>
     </FieldFrame>
   );
 }

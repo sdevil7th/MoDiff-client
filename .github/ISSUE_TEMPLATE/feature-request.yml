@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a focused MoDiff Client workflow or interface change.
+title: '[Feature] '
+labels:
+  - enhancement
+body:
+  - type: textarea
+    attributes:
+      label: Motivation
+      description: Describe the user problem before describing an interface.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed user experience
+      description: Describe the interaction, graph behavior, error states, and accessibility expectations.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Existing patterns and backend contract
+      description: Identify reusable components/stores and any endpoint, websocket, persistence, or Diffusers capability involved.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives and compatibility
+      description: Note migration, bundle, browser, platform, privacy, and dependency implications.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Validation plan
+      description: List unit, mocked browser, live-backend, Gallery, accessibility, and documentation checks as applicable.
+    validations:
+      required: true

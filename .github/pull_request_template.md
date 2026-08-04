@@ -2,12 +2,26 @@
 
 -
 
+## Scope And Human Review
+
+- Agreed scope / linked issue or discussion:
+- Human self-review completed; every changed line and generated artifact is understood: yes / no
+- AI assistance used (tool and role), or `none`:
+- Follow-up work deliberately left out of this change:
+
 ## Checks
 
 - [ ] `npm run check`
 - [ ] `npm run check:ui` for behavior/layout changes, or reason not needed:
 - [ ] `npm run gallery:verify` and `npm run gallery:coverage` for Gallery/template changes, or reason not needed:
 - [ ] Documentation and local Markdown links updated when behavior/commands changed.
+- [ ] Exact command results and any skipped checks are recorded below.
+
+## Validation Results
+
+- Commands and results:
+- Checks skipped, with reason:
+- Live hardware/model evidence, or `not claimed`:
 
 ## Compatibility And Proof
 

@@ -1,6 +1,6 @@
 import type { NodeData } from '../stores/useNodeStore';
 
-export type NodeCatalogVisibility = 'essential' | 'advanced' | 'legacy' | 'internal';
+export type NodeCatalogVisibility = 'essential' | 'advanced' | 'experimental' | 'internal';
 
 export type NodeSurfaceCategory =
   | 'Load'
@@ -16,7 +16,7 @@ export type NodeSurfaceCategory =
   | 'Text'
   | 'Utility';
 
-export type NodeRuntimeKind = 'diffusers' | 'diffusers_accelerated' | 'legacy_external' | 'unsupported';
+export type NodeRuntimeKind = 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';
 
 export type NodeCatalogEntry = {
   key: string;
@@ -28,7 +28,7 @@ export type NodeCatalogEntry = {
   runtimeKind: NodeRuntimeKind;
   isDiffusersBacked: boolean;
   acceleratorStrategy?: string;
-  legacyReason?: string;
+  specializedReason?: string;
   node: NodeData;
 };
 
@@ -47,7 +47,7 @@ const SURFACE_CATEGORY_ORDER: NodeSurfaceCategory[] = [
   'Utility',
 ];
 
-const MODEL_SPECIFIC_MODULES = new Set(['modules.QwenImage', 'modules.WanVACE']);
+const MODEL_SPECIFIC_MODULES = new Set<string>();
 
 const ESSENTIAL_NODE_KEYS = new Set([
   'modules.DiffusersImage.LoadPipeline',
@@ -57,13 +57,25 @@ const ESSENTIAL_NODE_KEYS = new Set([
   'modules.DiffusersImage.Inpaint',
   'modules.DiffusersImage.ControlGenerate',
   'modules.DiffusersImage.LoadAdapter',
+  'modules.DiffusersAudio.LoadAdapter',
+  'modules.DiffusersAudio.SetAdapters',
+  'modules.DiffusersAudio.FuseAdapters',
   'modules.DiffusersAudio.Generate',
+  'modules.DiffusersVideo.LoadPipeline',
+  'modules.DiffusersVideo.Generate',
+  'modules.DiffusersVideo.GenerateVideoAudio',
+  'modules.DiffusersVideo.GenerateSequence',
+  'modules.VideoConditioning.ReferenceImages',
   'modules.Audio.Load',
+  'modules.Audio.FitDuration',
   'modules.Audio.Export',
   'modules.Image.Load',
   'modules.Image.Preview',
   'modules.Video.Load',
   'modules.Video.Export',
+  'modules.Video.Compose',
+  'modules.Video.LyricOverlay',
+  'modules.Video.ExportWithAudio',
   'modules.Text.Display',
 ]);
 
@@ -76,12 +88,19 @@ const FACADE_LABELS: Record<string, string> = {
   'modules.DiffusersImage.ControlGenerate': 'Generate image',
   'modules.DiffusersImage.LoadAdapter': 'Load adapter',
   'modules.DiffusersAudio.Generate': 'Generate audio',
+  'modules.DiffusersVideo.GenerateVideoAudio': 'Generate video + audio',
+  'modules.DiffusersVideo.GenerateSequence': 'Generate video sequence',
+  'modules.VideoConditioning.ReferenceImages': 'Reference images',
   'modules.Audio.Load': 'Load audio',
+  'modules.Audio.FitDuration': 'Fit audio duration',
   'modules.Audio.Export': 'Export',
   'modules.Image.Load': 'Load image',
   'modules.Image.Preview': 'Preview',
   'modules.Video.Load': 'Load video',
   'modules.Video.Export': 'Export',
+  'modules.Video.Compose': 'Compose video',
+  'modules.Video.LyricOverlay': 'Add timed lyrics',
+  'modules.Video.ExportWithAudio': 'Export video with audio',
   'modules.Text.Display': 'Preview text',
   'modules.ModularDiffusers.ModelsLoader': 'Load model',
 };
@@ -112,9 +131,8 @@ function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
 }
 
 function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
-  if (node.type === 'group') return 'internal';
-  if (key.startsWith('modules.Experiments.')) return 'legacy';
-  if (textIncludesAny(`${key} ${node.label}`, ['nunchaku', 'sd3', 'deprecated'])) return 'legacy';
+  if (node.type === 'group' || node.type === 'loop') return 'internal';
+  if (textIncludesAny(`${key} ${node.label}`, ['nunchaku', 'sd3', 'deprecated'])) return 'experimental';
   if (ESSENTIAL_NODE_KEYS.has(key)) return 'essential';
   if (MODEL_SPECIFIC_MODULES.has(node.module)) return 'advanced';
   if (node.module === 'modules.ModularDiffusers') return 'advanced';
@@ -126,8 +144,7 @@ function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
 function runtimeKindForNode(node: NodeData, key: string): NodeRuntimeKind {
   const text = `${key} ${node.label}`.toLowerCase();
   if (textIncludesAny(text, ['nunchaku'])) return 'diffusers_accelerated';
-  if (key.startsWith('modules.Experiments.')) return 'legacy_external';
-  if (textIncludesAny(text, ['sd3'])) return 'legacy_external';
+  if (textIncludesAny(text, ['sd3'])) return 'experimental_diffusers';
   return 'diffusers';
 }
 
@@ -150,10 +167,11 @@ function normalizeCatalogLabel(node: NodeData, key: string) {
 export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCatalogEntry {
   const runtimeKind = runtimeKindForNode(node, key);
   const visibility = visibilityForNode(node, key);
-  const isDiffusersBacked = runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated';
-  const legacyReason =
-    visibility === 'legacy'
-      ? 'Compatibility or experiment node. Hidden from Essentials.'
+  const isDiffusersBacked =
+    runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated' || runtimeKind === 'experimental_diffusers';
+  const specializedReason =
+    visibility === 'experimental'
+      ? 'Experimental Diffusers node. Hidden from Essentials.'
       : MODEL_SPECIFIC_MODULES.has(node.module) || node.module === 'modules.ModularDiffusers'
         ? 'Backend strategy node. Studio routes normal workflows through profiles.'
         : undefined;
@@ -168,7 +186,7 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
     runtimeKind,
     isDiffusersBacked,
     acceleratorStrategy: runtimeKind === 'diffusers_accelerated' ? 'accelerated Diffusers strategy' : undefined,
-    legacyReason,
+    specializedReason,
     node,
   };
 }

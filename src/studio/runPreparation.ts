@@ -1,9 +1,10 @@
-import type { APIGraphExport } from '../stores/useFlowStore';
+import { useFlowStore, type APIGraphExport } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import type { JsonObject } from '../types/api';
-import { selectedAutoCandidate } from './autoResource';
+import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import {
+  getModelRequirementsForMode,
   getProfileForForm,
   getStudioModelDisplayName,
   QWEN_IMAGE_2512_PREQUANTIZED_REPO,
@@ -15,7 +16,7 @@ import {
   resolveStudioResourceForm,
   resolveStudioResourcePlan,
 } from './resourcePlanner';
-import { getRuntimeCudaDevice, isCudaDevice, QWEN_MIN_CUDA_TOTAL_BYTES } from './runReadiness';
+import { getRuntimeCudaDevice, isCudaDevice } from './runReadiness';
 import {
   getPromptSettingsHash,
   getTemplateLockHash,
@@ -39,25 +40,101 @@ export type StudioRunCorrelation = {
   runInputHash: string;
 };
 
+/**
+ * Adds only transport correlation and the immutable workflow origin. This is
+ * valid for every graph, including raw/imported graphs that have no Studio
+ * model or resource plan.
+ */
+export function applyRunCorrelationHints(
+  apiGraph: APIGraphExport,
+  runIdentity: StudioRunCorrelation,
+  options: { targetNodeId?: string } = {},
+): APIGraphExport {
+  const studio = useStudioStore.getState();
+  const workflowTab = studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId);
+  const liveGraph = useFlowStore.getState().toObject();
+  const workflowSnapshot =
+    workflowTab?.snapshot ??
+    ({
+      nodes: liveGraph.nodes,
+      edges: liveGraph.edges,
+      viewport: liveGraph.viewport,
+    } as unknown as JsonObject);
+
+  return {
+    ...apiGraph,
+    runtimeHints: {
+      ...apiGraph.runtimeHints,
+      clientRunId: runIdentity.clientRunId,
+      runInputHash: runIdentity.runInputHash,
+      ...(studio.activeWorkflowTabId ? { workflowTabId: studio.activeWorkflowTabId } : {}),
+      workflowCanvasEpoch: studio.workflowCanvasEpoch,
+      ...(workflowTab?.title ? { workflowTitle: workflowTab.title } : {}),
+      workflowSnapshot: workflowSnapshot as unknown as JsonObject,
+      ...(options.targetNodeId ? { nodeId: options.targetNodeId } : {}),
+    },
+  };
+}
+
 export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: StudioRunCorrelation): APIGraphExport {
-  const form = resolveStudioResourceForm(useStudioStore.getState().form, {
-    runtimeStatus: useNodesStore.getState().runtimeStatus,
-  });
+  const studio = useStudioStore.getState();
+  const committedAutoCandidate =
+    studio.form.resourceMode === 'auto' ? selectedAutoCandidate(studio.autoResourcePlan, studio.form) : null;
+  const pinnedAutoFormKeys = new Set(
+    Object.values(studio.autoFieldOverrides)
+      .map((override) => override.formKey)
+      .filter((key): key is keyof typeof studio.form => Boolean(key)),
+  );
+  // A ready Auto plan is the authoritative resource decision. Running the
+  // committed form back through the generic profile fallback here used to
+  // replace a live-proven resident recipe with model_cpu in the receipt and
+  // runtime hints immediately before submission.
+  const form = committedAutoCandidate
+    ? {
+        ...studio.form,
+        ...formPatchForAutoCandidate(committedAutoCandidate, studio.form, pinnedAutoFormKeys),
+      }
+    : resolveStudioResourceForm(studio.form, {
+        runtimeStatus: useNodesStore.getState().runtimeStatus,
+      });
   const profile = getProfileForForm(form);
   const runtimeStatus = useNodesStore.getState().runtimeStatus;
   const resourcePlan = resolveStudioResourcePlan(form, { runtimeStatus });
-  const autoResourcePlan = useStudioStore.getState().autoResourcePlan;
-  const autoCandidate = form.resourceMode === 'auto' ? selectedAutoCandidate(autoResourcePlan) : null;
+  const autoResourcePlan = studio.autoResourcePlan;
+  const workflowTab = studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId);
+  const activeTemplate = STUDIO_TEMPLATES.find((template) => template.id === studio.activeTemplateId);
+  const templateBaseModel = activeTemplate?.workflowBlockSettings?.lora?.baseModel;
+  const templateBaseModelRepo = templateBaseModel?.source === 'hub' ? templateBaseModel.value : undefined;
+  const selectedCandidate = form.resourceMode === 'auto' ? selectedAutoCandidate(autoResourcePlan, form) : null;
+  // The backend applies a proven Auto plan directly to loader nodes. Mirror an
+  // architecture-locked audio LoRA base into that plan as well as the visible
+  // graph, or the backend would replace the correct checkpoint with the
+  // profile default immediately before execution.
+  const autoCandidate =
+    selectedCandidate && templateBaseModelRepo
+      ? {
+          ...selectedCandidate,
+          modelRepo: templateBaseModelRepo,
+          resolvedArtifact: templateBaseModelRepo,
+          artifact: templateBaseModelRepo,
+          installTarget: {
+            ...(selectedCandidate.installTarget ?? {}),
+            repo: templateBaseModelRepo,
+          },
+        }
+      : selectedCandidate;
   const autoRetryPlans =
     form.resourceMode === 'auto'
       ? qwenDirectRetryPlansFromCandidates(autoResourcePlan?.candidates, autoCandidate?.id, form)
       : resourcePlan.retryPlans;
   const resolvedModelRepo =
+    templateBaseModelRepo ??
     autoCandidate?.modelRepo ??
     autoCandidate?.installTarget?.repo ??
     autoCandidate?.resolvedArtifact ??
     resourcePlan.resolvedModelRepo;
   const resolvedArtifact =
+    templateBaseModelRepo ??
     autoCandidate?.resolvedArtifact ??
     autoCandidate?.artifact ??
     autoCandidate?.installTarget?.repo ??
@@ -75,14 +152,18 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   const resolvedQuantizedComponents = autoCandidate?.quantizedComponents ?? resourcePlan.quantizedComponents;
   const resolvedOffloadMode =
     (autoCandidate?.offloadMode as StudioFormState['offloadMode'] | undefined) ?? form.offloadMode;
+  const resolvedAutoOffload =
+    typeof autoCandidate?.autoOffload === 'boolean' ? autoCandidate.autoOffload : resolvedOffloadMode !== 'none';
   const cudaDevice = getRuntimeCudaDevice(runtimeStatus, form.device);
   const totalBytes = cudaDevice?.memory_total_bytes ?? cudaDevice?.total_memory ?? undefined;
   const freeBytes = cudaDevice?.memory_free_bytes ?? undefined;
   const reserveBytes = totalBytes ? Math.max(GIB, Math.floor(totalBytes * 0.1)) : undefined;
   const budgetFromFree = freeBytes && reserveBytes ? Math.max(0, freeBytes - reserveBytes) : undefined;
   const budgetFromTotal = totalBytes && reserveBytes ? Math.max(0, totalBytes - reserveBytes) : undefined;
-  const requestedCudaBudgetBytes =
+  const locallyEstimatedCudaBudgetBytes =
     budgetFromFree && budgetFromTotal ? Math.min(budgetFromFree, budgetFromTotal) : (budgetFromFree ?? budgetFromTotal);
+  const requestedCudaReserveBytes = form.resourceMode === 'expert' ? reserveBytes : undefined;
+  const requestedCudaBudgetBytes = form.resourceMode === 'expert' ? locallyEstimatedCudaBudgetBytes : undefined;
   const lowVramMode =
     profile.family === 'Qwen Image' &&
     isCudaDevice(form.device) &&
@@ -92,8 +173,12 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
     form.autoOffload &&
     (resolvedOffloadMode === QWEN_LOW_VRAM_OFFLOAD_MODE ||
       resolvedOffloadMode === 'sequential_cpu' ||
-      resolvedOffloadMode === 'group_disk') &&
-    Boolean(totalBytes && totalBytes < QWEN_MIN_CUDA_TOTAL_BYTES);
+      resolvedOffloadMode === 'group_disk');
+  const modelDependencies = getModelRequirementsForMode(profile, form.mode).map((requirement) => ({
+    id: requirement.id,
+    kind: requirement.kind,
+    repo: requirement.repo,
+  }));
 
   return {
     ...apiGraph,
@@ -105,10 +190,11 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       cudaMemoryTotalBytes: totalBytes,
       modelFamily: profile.family,
       modelType: profile.modelType,
-      modelRepo: profile.defaultRepo,
+      modelRepo: templateBaseModelRepo ?? profile.defaultRepo,
       modelName: getStudioModelDisplayName(profile),
       resolvedModelRepo,
       resolvedArtifact,
+      modelDependencies,
       executionPath: resolvedExecutionPath,
       pipelineClass: autoCandidate?.pipelineClass,
       dtype: form.dtype,
@@ -116,8 +202,14 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       resolvedResourceMode: resourcePlan.resolvedResourceMode,
       quantizationMode: resolvedQuantizationMode,
       quantizedComponents: resolvedQuantizedComponents,
-      autoOffload: form.autoOffload,
+      autoOffload: resolvedAutoOffload,
       offloadMode: resolvedOffloadMode,
+      deviceMap: autoCandidate?.deviceMap,
+      attentionBackend: autoCandidate?.attentionBackend,
+      regionalCompile: autoCandidate?.regionalCompile,
+      denoiserCache: autoCandidate?.denoiserCache,
+      channelsLast: autoCandidate?.channelsLast,
+      layerwiseCasting: autoCandidate?.layerwiseCasting,
       supportedOffloadModes: profile.offloadSupport.modes,
       offloadDiskPath: resourcePlan.offloadDiskPath,
       resourcePlan: {
@@ -128,7 +220,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
         dtype: resourcePlan.dtype,
         quantizationMode: resolvedQuantizationMode,
         quantizedComponents: resolvedQuantizedComponents,
-        autoOffload: resourcePlan.autoOffload,
+        autoOffload: resolvedAutoOffload,
         offloadMode: resolvedOffloadMode,
       },
       autoResourcePlan: autoCandidate ? (autoCandidate as unknown as JsonObject) : undefined,
@@ -137,16 +229,24 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
         : undefined,
       autoResourceProofStatus: autoCandidate?.proof?.status,
       autoResourceCandidateId: autoCandidate?.id,
+      autoFieldOverrides: Object.values(studio.autoFieldOverrides) as unknown as JsonObject[],
+      optimizationQualificationForm: form as unknown as JsonObject,
       resourceRetryModes: resourcePlan.retryOffloadModes,
       resourceRetryPlans: autoRetryPlans as unknown as JsonObject[],
       compatibilityStatus: autoCandidate?.proof?.status ?? (form.resourceMode === 'auto' ? 'needs_setup' : 'expert'),
       lowVramMode,
+      // Preserve upstream-recommended sampling settings for quality-first
+      // local video runs. The backend still enforces a bounded 12-hour cap.
+      maxRuntimeSeconds: profile.outputKind === 'video' ? 12 * 60 * 60 : undefined,
       cudaBudgetPolicy: 'advisory',
       enforceCudaBudget: false,
-      requestedCudaReserveBytes: reserveBytes,
+      requestedCudaReserveBytes,
       requestedCudaBudgetBytes,
       clientRunId: runIdentity?.clientRunId,
       runInputHash: runIdentity?.runInputHash,
+      workflowTabId: workflowTab?.id,
+      workflowTitle: workflowTab?.title,
+      workflowSnapshot: workflowTab?.snapshot as unknown as JsonObject | undefined,
     },
   };
 }
@@ -176,6 +276,7 @@ export function applyDeterministicRunMetadata(
 
   const templateLockHash = template ? getTemplateLockHash(template) : undefined;
   const promptSettingsHash = getPromptSettingsHash(studio.form);
+  const expensiveMediaProof = template?.outputKinds?.some((kind) => kind === 'video' || kind === 'audio') ?? false;
   const provenance: JsonObject = {
     source: exactTemplateCompatible ? 'studio-template' : 'studio-variation',
     promptSettingsHash,
@@ -192,7 +293,11 @@ export function applyDeterministicRunMetadata(
     ...apiGraph,
     deterministicMode: {
       enabled: true,
-      strict: true,
+      // Audio/video proofs need a locked seed and complete provenance, but
+      // forcing deterministic kernels can make supported pipelines unusably
+      // slow (especially Wan on ROCm). Duplicate image proofs retain the
+      // stronger byte-reproducibility contract.
+      strict: !expensiveMediaProof,
       seed: studio.form.seed,
       promptSettingsHash,
       ...(template ? { templateId: template.id } : {}),

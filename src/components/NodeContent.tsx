@@ -1,7 +1,21 @@
-import { lazy, memo, ReactNode, Suspense } from 'react';
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
+import { Fragment, lazy, memo, ReactNode, Suspense } from 'react';
+import { AlertTriangle, Pin, RotateCcw } from 'lucide-react';
+import type { Position } from '@xyflow/react';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { autoFieldOverrideKey, useStudioStore } from '../stores/useStudioStore';
+import { formPatchForAutoCandidate, selectedAutoCandidate } from '../studio/autoResource';
 import { NodeParams, type NodeParamOptions, type NodeParamSignal } from '../stores/useNodeStore';
+import { useFlowStore } from '../stores/useFlowStore';
+import { classifyManagedControl } from '../studio/managedControlPolicy';
+import { runtimeOptionValues } from '../studio/runtimeOptions';
 import { sanitizeModiffFieldStyle, type ModiffFieldStyle } from '../theme';
 import type { ImageArtifact } from '../utils/imageArtifacts';
+import { GraphControlButton } from '../ui/GraphControls';
+import { ModiffDisclosure, ModiffTooltip } from '../ui';
+import { cx } from '../utils/classNames';
+import { EncodeImageSummary } from './EncodeImageSummary';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -41,6 +55,7 @@ export type FieldProps = {
   options: NodeParamOptions;
   optionsSource?: Record<string, unknown>;
   dataType: string;
+  connectionType?: string | string[];
   fieldType: string;
   updateStore: (param: string, value: unknown, key?: keyof NodeParams) => void;
   module: string;
@@ -59,6 +74,7 @@ export type FieldProps = {
   signal?: NodeParamSignal;
   children?: ReactNode;
   compactHandle?: boolean;
+  handlePosition?: Position;
 };
 
 type NodeContentProps = {
@@ -67,14 +83,29 @@ type NodeContentProps = {
   updateStore: (param: string, value: unknown, key?: keyof NodeParams) => void;
   module: string;
   action: string;
-  groupHandles?: boolean;
-  handlesOnly?: boolean;
-  compactHandles?: boolean;
-  hideHandles?: boolean;
+  mode?: 'all' | 'controls' | 'connectors';
+  compactConnectors?: boolean;
+  hidePreviews?: boolean;
   executionStatus?: string;
   progressMessage?: string;
   uiStateMessage?: string;
 };
+
+const AUDIO_SAMPLE_RATE_OPTIONS = {
+  '44100': '44.1 kHz',
+  '48000': '48 kHz',
+  '88200': '88.2 kHz',
+  '96000': '96 kHz',
+};
+
+function liveFieldOptions(module: string, fieldKey: string, display: string, options: NodeParamOptions) {
+  const isAudioSampleRate =
+    /^modules\.(?:Audio|DiffusersAudio)$/.test(module) &&
+    fieldKey === 'sample_rate' &&
+    display !== 'input' &&
+    display !== 'output';
+  return isAudioSampleRate ? AUDIO_SAMPLE_RATE_OPTIONS : options;
+}
 
 const NodeContent = memo(function NodeContent({
   nodeId,
@@ -82,24 +113,90 @@ const NodeContent = memo(function NodeContent({
   updateStore,
   module,
   action,
-  groupHandles = false,
-  handlesOnly = false,
-  compactHandles = false,
-  hideHandles = false,
+  mode = 'all',
+  compactConnectors = false,
+  hidePreviews = false,
   executionStatus,
   progressMessage,
   uiStateMessage,
 }: NodeContentProps) {
+  const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
+  const studioForm = useStudioStore((state) => state.form);
+  const autoFieldOverrides = useStudioStore((state) => state.autoFieldOverrides);
+  const resetAutoFieldOverride = useStudioStore((state) => state.resetAutoFieldOverride);
+  const studioResourceMode = studioForm.resourceMode;
+  const studioGraphBinding = useStudioStore((state) => state.graphBinding);
+  const graphNode = useFlowStore((state) => state.nodes.find((node) => node.id === nodeId));
+  const studioRole = graphNode?.data.studioRole;
+  const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
+  const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
+  const selectedCandidate = selectedAutoCandidate(autoResourcePlan, studioForm);
+  const resolved = selectedCandidate?.artifactResolution?.resolved;
+  const isModelNode =
+    /load|pipeline|model/i.test(`${module}.${action}`) &&
+    Object.keys(params).some((key) => /model|repo|checkpoint|pipeline/i.test(key));
+  const showResolution = Boolean(
+    isModelNode &&
+    selectedCandidate &&
+    (selectedCandidate.artifactResolution?.substituted ||
+      (resolved?.format && resolved.format !== 'native') ||
+      (selectedCandidate.quantizationMode && selectedCandidate.quantizationMode !== 'none')),
+  );
+  const resolvedRepo = resolved?.repo || selectedCandidate?.resolvedArtifact || selectedCandidate?.artifact || '';
+  const resolutionFormat =
+    resolved?.format || selectedCandidate?.artifactFormat || selectedCandidate?.quantizationMode || 'native';
+  const resolutionNotice = showResolution ? (
+    <GraphControlButton
+      type="button"
+      className="text-modiff-label mb-2 flex min-h-7 w-full items-center gap-1.5 rounded-modiff-compact border border-hf-yellow/50 bg-hf-yellow/10 px-2 py-1.5 text-left text-hf-yellow hover:bg-hf-yellow/15"
+      title="Open model compatibility details"
+      data-testid={`node-resolution-warning-${nodeId}`}
+      onClick={() => {
+        setRightPanelOpen(true);
+        setRightPanelTab('compatibility');
+      }}
+    >
+      <AlertTriangle size={13} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate">
+        {resolvedRepo} · {resolutionFormat}
+      </span>
+    </GraphControlButton>
+  ) : null;
+  const controlledStudioNode = Boolean(
+    studioGraphBinding && (studioGraphBinding.managedNodeIds?.includes(nodeId) || graphNode?.data.studioOwned === true),
+  );
+  const autoModeActive = studioResourceMode === 'auto';
+  const autoFormPatch = formPatchForAutoCandidate(selectedCandidate, studioForm);
   const fields = Object.entries(params).map(([key, data]: [string, NodeParams]) => {
     const label = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
     const display = data.isInput ? 'input' : data.display || '';
     const dataType = (
       Array.isArray(data.type) && data.type.length > 0 ? data.type[0] : data.type || 'string'
     ) as string;
-    const fieldType = getFieldType(display, dataType, data.options);
+    const connectionType = data.type || 'string';
+    const options = liveFieldOptions(module, key, display, data.options || []);
+    const fieldType = getFieldType(display, dataType, options);
     const hidden = data.hidden || false;
-    const value = data.value ?? data.default;
+    const configuredValue = data.value ?? data.default;
+    const fileBackedLoaderPreview =
+      (fieldType === 'ui_audio' || fieldType === 'ui_video') &&
+      /(?:^|\.)Load$/i.test(action) &&
+      typeof (params.file?.value ?? params.file?.default) === 'string'
+        ? (params.file?.value ?? params.file?.default)
+        : undefined;
+    // Older runs stored `/cache/<node>/filename/...` for file-backed previews.
+    // That endpoint contains the filename as text, not the media bytes. Loader
+    // nodes can render their selected file directly before or after execution.
+    const value = fileBackedLoaderPreview ?? configuredValue;
     const isConnected = display === 'input' || display === 'output' ? data.isConnected || false : undefined;
+    const classification = classifyManagedControl(studioRole, key, data);
+    const autoManaged = autoModeActive && classification.surface === 'advanced';
+    const autoOverride = autoFieldOverrides[autoFieldOverrideKey(nodeId, key)];
+    const autoValue = controlledStudioNode
+      ? classification.formKey && autoFormPatch[classification.formKey] !== undefined
+        ? autoFormPatch[classification.formKey]
+        : autoValueForField(key, data.default, selectedCandidate, studioForm)
+      : data.default;
 
     const props = {
       nodeId,
@@ -108,6 +205,7 @@ const NodeContent = memo(function NodeContent({
       display,
       isConnected,
       dataType,
+      connectionType,
       fieldType,
       hidden,
       updateStore,
@@ -116,7 +214,7 @@ const NodeContent = memo(function NodeContent({
       onChange: data.onChange,
       fieldKey: key,
       default: data.default,
-      options: data.options || [],
+      options,
       style: sanitizeModiffFieldStyle(data.style, `${nodeId}.${key}`),
       disabled: data.disabled || false,
       min: data.min,
@@ -132,88 +230,90 @@ const NodeContent = memo(function NodeContent({
       onSignal: data.onSignal,
     };
 
-    return { key, props };
+    return {
+      key,
+      props,
+      autoManaged,
+      autoOverride: Boolean(autoOverride),
+      resetAutoOverride: () => {
+        updateStore(key, autoValue, 'value');
+        resetAutoFieldOverride(nodeId, key);
+      },
+      surface: autoModeActive && !isPreviewFieldType(fieldType) ? classification.surface : ('main' as const),
+    };
   });
-  const renderFields = hideHandles
-    ? fields.filter(({ props }) => props.fieldType !== 'input' && props.fieldType !== 'output')
-    : fields;
+  const connectors = fields.filter(({ props }) => props.fieldType === 'input' || props.fieldType === 'output');
+  const controls = fields.filter(
+    ({ props }) =>
+      props.fieldType !== 'input' &&
+      props.fieldType !== 'output' &&
+      (!hidePreviews || !isPreviewFieldType(props.fieldType)),
+  );
 
-  if (groupHandles) {
-    const inputs = fields.filter(({ props }) => props.fieldType === 'input');
-    const outputs = fields.filter(({ props }) => props.fieldType === 'output');
-    const others = fields.filter(({ props }) => props.fieldType !== 'input' && props.fieldType !== 'output');
-    const inputRailClassName = compactHandles
-      ? 'absolute left-[-4px] top-1/2 z-10 flex w-5 -translate-y-1/2 flex-col items-center gap-1 py-1'
-      : 'absolute left-[-20px] top-1/2 -translate-y-1/2 rounded-modiff-compact bg-modiff-panel py-0.5 text-xs';
-    const outputRailClassName = compactHandles
-      ? 'absolute right-[-4px] top-1/2 z-10 flex w-5 -translate-y-1/2 flex-col items-center gap-1 py-1'
-      : 'absolute right-[-20px] top-1/2 -translate-y-1/2 rounded-modiff-compact bg-modiff-panel py-0.5 text-xs';
+  if (mode === 'connectors') {
+    if (connectors.length === 0) return null;
+    const inputs = connectors.filter(({ props }) => props.fieldType === 'input');
+    const outputs = connectors.filter(({ props }) => props.fieldType === 'output');
 
     return (
-      <>
-        {inputs.length > 0 && (
-          <div className={inputRailClassName}>
-            {inputs.map(({ key, props }) => (
-              <FieldMemo key={key} {...props} compactHandle={compactHandles} />
-            ))}
-          </div>
+      <div
+        aria-label="Node connectors"
+        className={cx(
+          'nodrag relative z-10 grid w-full shrink-0 grid-cols-2 overflow-visible border-t border-modiff-border-subtle bg-modiff-bg text-modiff-subtle-text',
+          compactConnectors ? 'min-h-7 py-1' : 'min-h-9 py-1.5',
         )}
-        {outputs.length > 0 && (
-          <div className={outputRailClassName}>
-            {outputs.map(({ key, props }) => (
-              <FieldMemo key={key} {...props} compactHandle={compactHandles} />
-            ))}
-          </div>
-        )}
-        {!handlesOnly && others.length > 0 && (
-          <div>
-            {others.map(({ key, props }) => (
-              <FieldMemo key={key} {...props} />
-            ))}
-          </div>
-        )}
-      </>
+        data-connector-layout="bottom-tray"
+        data-testid={`node-connector-tray-${nodeId}`}
+        role="group"
+      >
+        <div className="grid min-w-0 content-start gap-1 pr-2">
+          {inputs.map(({ key, props }) => (
+            <FieldMemo key={key} {...props} compactHandle={compactConnectors} />
+          ))}
+        </div>
+        <div className="grid min-w-0 content-start gap-1 border-l border-modiff-border-subtle pl-2">
+          {outputs.map(({ key, props }) => (
+            <FieldMemo key={key} {...props} compactHandle={compactConnectors} />
+          ))}
+        </div>
+      </div>
     );
   }
 
-  // Search `ui_group` fields and collect their children
-  const groupFields: Record<string, { props: FieldProps; children: { key: string; props: FieldProps }[] }> = {};
-  const groupedFieldKeys = new Set<string>();
+  const renderFields = mode === 'controls' ? controls : [...controls, ...connectors];
+  const mainFields = renderFields.filter(({ surface }) => surface === 'main');
+  const advancedFields = renderFields.filter(({ surface }) => surface === 'advanced');
 
-  renderFields.forEach(({ key, props }) => {
-    if (props.fieldType === 'ui_group' && Array.isArray(props.options)) {
-      groupFields[key] = { props, children: [] };
-      props.options.forEach((option) => {
-        const optionKey = String(option);
-        const child = renderFields.find((field) => field.key === optionKey);
-        if (child && !groupedFieldKeys.has(optionKey)) {
-          groupFields[key]?.children.push(child);
-          groupedFieldKeys.add(optionKey); // Mark as grouped
-        }
-      });
-    }
-  });
+  const orderedMainFields = orderedFieldElements(mainFields);
+  const orderedAdvancedFields = orderedFieldElements(advancedFields);
+  const encodeImageSummary =
+    /ModularDiffusers/.test(module) && action === 'ImageEncode' ? (
+      <EncodeImageSummary
+        nodeId={nodeId}
+        params={params}
+        executionStatus={executionStatus}
+        progressMessage={progressMessage}
+      />
+    ) : null;
 
-  // Build the final ordered list of fields to render
-  const orderedFields = renderFields
-    .filter(({ key }) => !groupedFieldKeys.has(key)) // Exclude children of groups from the top level
-    .map(({ key, props }) => {
-      const group = groupFields[key];
-      if (group) {
-        // This is a group, render it with its children
-        return (
-          <GroupMemo key={key} {...props}>
-            {group.children.map(({ key: childKey, props: childProps }) => (
-              <FieldMemo key={childKey} {...childProps} />
-            ))}
-          </GroupMemo>
-        );
-      }
-      // This is a regular field
-      return <FieldMemo key={key} {...props} />;
-    });
-
-  return orderedFields;
+  return (
+    <>
+      {encodeImageSummary}
+      {resolutionNotice}
+      {orderedMainFields}
+      {orderedAdvancedFields.length > 0 ? (
+        <ModiffDisclosure
+          label="Advanced"
+          data-testid={`node-advanced-controls-${nodeId}`}
+          className="rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40"
+          buttonClassName="min-h-7 text-xs"
+          panelClassName="grid gap-2 border-t border-modiff-border-subtle p-2"
+        >
+          {orderedAdvancedFields}
+        </ModiffDisclosure>
+      ) : null}
+    </>
+  );
 });
 
 export default NodeContent;
@@ -232,6 +332,116 @@ const getCustomField = (fieldName: string, module: string) => {
 const GroupMemo = memo((props: FieldProps) => {
   return <UIGroupField props={props}>{props.children}</UIGroupField>;
 });
+
+type ClassifiedField = {
+  autoManaged: boolean;
+  autoOverride: boolean;
+  key: string;
+  props: FieldProps;
+  resetAutoOverride: () => void;
+  surface: 'main' | 'advanced' | 'hidden';
+};
+
+const AUTO_MANAGED_MESSAGE =
+  'Auto manages this setting until you edit it. Your edit stays pinned to this workflow while Auto manages the other settings.';
+const AUTO_OVERRIDE_MESSAGE = 'Pinned override for this workflow. Auto remains active for other settings.';
+
+function autoValueForField(
+  fieldKey: string,
+  defaultValue: unknown,
+  candidate: ReturnType<typeof selectedAutoCandidate>,
+  form: ReturnType<typeof useStudioStore.getState>['form'],
+) {
+  if (!candidate) return defaultValue;
+  if (/^(model|model_id|repo_id)$/.test(fieldKey)) {
+    return candidate.resolvedArtifact ?? candidate.artifact ?? candidate.modelRepo ?? defaultValue;
+  }
+  if (fieldKey === 'pipeline_class') return candidate.pipelineClass ?? defaultValue;
+  if (fieldKey === 'dtype') return candidate.dtype ?? form.dtype;
+  if (fieldKey === 'device') return form.device;
+  if (fieldKey === 'offload_mode') return candidate.offloadMode ?? form.offloadMode;
+  if (fieldKey === 'auto_offload') return (candidate.offloadMode ?? form.offloadMode) !== 'none';
+  if (fieldKey === 'quantization_mode' || fieldKey === 'backend') {
+    return candidate.quantizationMode ?? form.quantizationMode;
+  }
+  if (fieldKey === 'quantized_components' || fieldKey === 'components') {
+    return candidate.quantizedComponents ?? defaultValue;
+  }
+  return defaultValue;
+}
+
+function fieldElement(field: ClassifiedField) {
+  const content = <FieldMemo {...field.props} />;
+  if (!field.autoManaged) return <Fragment key={field.key}>{content}</Fragment>;
+  return (
+    <ModiffTooltip<HTMLDivElement>
+      key={field.key}
+      content={field.autoOverride ? AUTO_OVERRIDE_MESSAGE : AUTO_MANAGED_MESSAGE}
+    >
+      {(tooltipProps) => (
+        <div
+          {...tooltipProps}
+          role="group"
+          aria-label={field.autoOverride ? AUTO_OVERRIDE_MESSAGE : AUTO_MANAGED_MESSAGE}
+          className="relative"
+          data-auto-managed-control={field.key}
+          data-auto-override={field.autoOverride || undefined}
+        >
+          {content}
+          {field.autoOverride ? (
+            <div className="mt-1 flex items-center justify-end gap-0.5 border-t border-modiff-border-subtle pt-1">
+              <span
+                aria-label="Pinned Auto override"
+                className="grid size-7 place-items-center text-hf-yellow"
+                title={AUTO_OVERRIDE_MESSAGE}
+              >
+                <Pin size={13} aria-hidden="true" />
+              </span>
+              <GraphControlButton
+                type="button"
+                aria-label={`Reset ${field.props.label} to Auto`}
+                title={`Reset ${field.props.label} to Auto`}
+                className="grid size-7 place-items-center rounded-modiff-compact text-modiff-subtle-text hover:bg-modiff-surface-hover hover:text-modiff-text"
+                onClick={field.resetAutoOverride}
+              >
+                <RotateCcw size={13} aria-hidden="true" />
+              </GraphControlButton>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </ModiffTooltip>
+  );
+}
+
+function orderedFieldElements(fields: ClassifiedField[]) {
+  const groupFields: Record<string, { field: ClassifiedField; children: ClassifiedField[] }> = {};
+  const groupedFieldKeys = new Set<string>();
+
+  fields.forEach((field) => {
+    if (field.props.fieldType !== 'ui_group' || !Array.isArray(field.props.options)) return;
+    groupFields[field.key] = { field, children: [] };
+    runtimeOptionValues(field.props.options, { includeDisabled: true }).forEach((optionKey) => {
+      const child = fields.find((candidate) => candidate.key === optionKey);
+      if (child && !groupedFieldKeys.has(optionKey)) {
+        groupFields[field.key]?.children.push(child);
+        groupedFieldKeys.add(optionKey);
+      }
+    });
+  });
+
+  return fields
+    .filter(({ key }) => !groupedFieldKeys.has(key))
+    .map((field) => {
+      const group = groupFields[field.key];
+      if (!group) return fieldElement(field);
+      return (
+        <GroupMemo key={field.key} {...field.props}>
+          {group.children.map(fieldElement)}
+        </GroupMemo>
+      );
+    });
+}
 
 const FieldMemo = memo((props: FieldProps) => {
   if (props.display.startsWith('custom')) {
@@ -323,7 +533,10 @@ function getFieldType(display: string, dataType: string, options: unknown) {
     return display;
   }
 
-  if (options && typeof options === 'object') {
+  // Backend schemas commonly serialize "no options" as [] or {}. Treating any
+  // object as a select turned numeric fields such as Export Video FPS into a
+  // disabled "16 (unavailable)" dropdown. Only a real option set is a select.
+  if (runtimeOptionValues(options, { includeDisabled: true }).length > 0) {
     return 'select';
   }
 
@@ -332,4 +545,8 @@ function getFieldType(display: string, dataType: string, options: unknown) {
   }
 
   return 'text';
+}
+
+function isPreviewFieldType(fieldType: string) {
+  return ['ui_image', 'ui_video', 'ui_audio', 'ui_text', 'ui_imagecompare'].includes(fieldType);
 }

@@ -7,8 +7,8 @@ This directory contains durable user, operator, and contributor documentation fo
 | Guide                                           | Audience            | What it covers                                                                                |
 | ----------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
 | [Project README](../README.md)                  | Everyone            | Project scope, prerequisites, quick start, first workflow, validation, and support boundaries |
-| [Studio user guide](studio-user-flow.md)        | Users and testers   | Tasks, interface areas, models, Gallery, export, failures, and a manual smoke test            |
-| [Troubleshooting](troubleshooting.md)           | Users and operators | Preflight, ports, connection problems, model downloads, browser state, and runtime recovery   |
+| [Studio user guide](studio-user-flow.md)        | Users and testers   | Tasks, interface areas, Auto performance, models, Gallery, export, failures, and smoke tests  |
+| [Troubleshooting](troubleshooting.md)           | Users and operators | Preflight, ports, slow/stalled runs, model downloads, browser state, and runtime recovery     |
 | [Privacy and security](privacy-and-security.md) | Users and deployers | Stored data, network activity, exports, trust boundaries, cleanup, and safe issue reports     |
 | [Windows support](windows-support.md)           | Windows users       | PowerShell launchers, backend setup, CUDA notes, process cleanup, and platform smoke tests    |
 | [Ubuntu Linux support](linux-support.md)        | Linux users         | Native prerequisites, backend setup, launcher behavior, and platform smoke tests              |
@@ -16,14 +16,16 @@ This directory contains durable user, operator, and contributor documentation fo
 
 ## Build And Contribute
 
-| Guide                                                          | Audience                        | What it covers                                                                              |
-| -------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------- |
-| [Contributing](../CONTRIBUTING.md)                             | Contributors                    | Environment setup, change rules, testing, documentation, and pull requests                  |
-| [Client architecture](modiff-client-architecture.md)           | Frontend/backend contributors   | App shell, stores, graph/runtime boundaries, Studio, persistence, and extension points      |
-| [Frontend style guide](frontend-style-guide.md)                | UI contributors                 | Tokens, components, fields, accessibility, and style enforcement                            |
-| [Auto mode design](auto-mode-design.md)                        | Runtime and Studio contributors | Auto/Expert contract, readiness semantics, model recipe metadata, and onboarding checks     |
-| [Build and deployment](deployment.md)                          | Maintainers and deployers       | Production builds, backend static-file integration, same-origin hosting, and release checks |
-| [Template quality schema](template-quality-review.schema.json) | Gallery maintainers             | Machine-readable quality-review record used by the Gallery verification tooling             |
+| Guide                                                           | Audience                        | What it covers                                                                               |
+| --------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
+| [Contributing](../CONTRIBUTING.md)                              | Contributors                    | Environment setup, change rules, testing, documentation, and pull requests                   |
+| [Client architecture](modiff-client-architecture.md)            | Frontend/backend contributors   | App shell, stores, graph/runtime boundaries, Studio, persistence, and extension points       |
+| [Frontend style guide](frontend-style-guide.md)                 | UI contributors                 | Tokens, components, fields, accessibility, and style enforcement                             |
+| [Auto mode design](auto-mode-design.md)                         | Runtime and Studio contributors | Auto/Expert contract, readiness semantics, model recipe metadata, and onboarding checks      |
+| [Source provenance map](source-provenance.md)                   | Maintainers and legal reviewers | Inherited source baselines, modification headers, and commentless artifact treatment         |
+| [Build and deployment](deployment.md)                           | Maintainers and deployers       | Production builds, backend static-file integration, same-origin hosting, and release checks  |
+| [Template asset storage](template-gallery-assets.md)            | Gallery maintainers             | Public Hugging Face Dataset publication, pinned URLs, integrity checks, and offline cache    |
+| [Template quality schema](template-quality-review.schema.json)  | Gallery maintainers             | Machine-readable quality-review record used by the Gallery verification tooling              |
 
 ## Documentation Standards
 

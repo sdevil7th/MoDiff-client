@@ -1,8 +1,10 @@
+// Derived from cubiq/Mellon-client and modified by the MoDiff project.
+
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { NodeData } from '../stores/useNodeStore';
 
-import { Search } from 'lucide-react';
-import { AnchoredPanel } from '../ui';
+import { ModiffPopover, ModiffSearchInput } from '../ui';
+import { GraphControlButton } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
 
 interface NodeSearchDialogProps {
@@ -119,66 +121,73 @@ const NodeSearchDialog = ({
   }
 
   return (
-    <>
-      <button
-        type="button"
-        className="fixed inset-0 z-40 cursor-default bg-transparent"
-        onClick={handleClose}
-        aria-label="Close node search"
-      />
-      <AnchoredPanel
-        anchor={anchorPosition}
-        className="w-[368px] max-h-[512px] overflow-hidden border-4 border-modiff-bg bg-modiff-panel shadow-modiff-node"
-      >
-        <div className="p-2">
-          <label className="flex h-9 items-center gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 text-sm text-modiff-text focus-within:border-hf-yellow">
-            <Search size={16} className="shrink-0 text-gray-400" />
-            <input
-              ref={inputRef}
-              autoFocus
-              placeholder="Search nodes"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-500"
-              onKeyDown={(e) => {
-                handleKeyDown(e.nativeEvent as KeyboardEvent);
-              }}
-            />
-          </label>
-        </div>
+    <ModiffPopover
+      anchor={anchorPosition}
+      ariaLabel="Search nodes"
+      closeOnOutside={false}
+      gap={0}
+      modal
+      onClose={handleClose}
+      open
+      panelClassName="w-[368px] max-h-[512px] overflow-hidden border-4 border-modiff-bg bg-modiff-panel"
+      placement="bottom-start"
+    >
+      <div className="p-2">
+        <ModiffSearchInput
+          ref={inputRef}
+          aria-label="Search nodes"
+          aria-activedescendant={filteredNodes[selectedIndex] ? `node-search-${selectedIndex}` : undefined}
+          autoFocus
+          placeholder="Search nodes"
+          value={searchQuery}
+          onChange={(event) => {
+            setSearchQuery(event.currentTarget.value);
+            setSelectedIndex(0);
+          }}
+          onClear={() => {
+            setSearchQuery('');
+            setSelectedIndex(0);
+          }}
+          onKeyDown={(event) => {
+            handleKeyDown(event.nativeEvent as KeyboardEvent);
+          }}
+        />
+      </div>
 
-        <div className="max-h-[456px] overflow-auto">
-          {filteredNodes.length === 0 ? (
-            <div className="px-4 py-6 text-center">
-              <div className="text-sm font-semibold text-modiff-text">No results found</div>
-              <div className="text-xs text-gray-400">Try a different search query</div>
-            </div>
-          ) : (
-            filteredNodes.map(([key, node], index) => (
-              <button
-                type="button"
-                key={key}
-                onClick={() => {
-                  onSelect(key, node);
-                  handleClose();
-                }}
-                className={cx(
-                  'block w-full px-3 py-2 text-left transition hover:bg-white/10',
-                  index === selectedIndex && 'bg-modiff-surface',
-                )}
-              >
-                <div className="truncate text-sm text-modiff-text">{node.label}</div>
-                {node.description ? (
-                  <div className="truncate text-xs text-gray-400">
-                    {node.description.substring(0, 72) + (node.description.length > 72 ? '...' : '')}
-                  </div>
-                ) : null}
-              </button>
-            ))
-          )}
-        </div>
-      </AnchoredPanel>
-    </>
+      <div className="max-h-[456px] overflow-auto" role="listbox" aria-label="Matching nodes">
+        {filteredNodes.length === 0 ? (
+          <div className="px-4 py-6 text-center">
+            <div className="text-sm font-semibold text-modiff-text">No results found</div>
+            <div className="text-xs text-modiff-subtle-text">Try a different search query</div>
+          </div>
+        ) : (
+          filteredNodes.map(([key, node], index) => (
+            <GraphControlButton
+              type="button"
+              key={key}
+              id={`node-search-${index}`}
+              role="option"
+              aria-selected={index === selectedIndex}
+              onClick={() => {
+                onSelect(key, node);
+                handleClose();
+              }}
+              className={cx(
+                'block w-full px-3 py-2 text-left transition hover:bg-modiff-surface-hover',
+                index === selectedIndex && 'bg-modiff-surface',
+              )}
+            >
+              <div className="truncate text-sm text-modiff-text">{node.label}</div>
+              {node.description ? (
+                <div className="truncate text-xs text-modiff-subtle-text">
+                  {node.description.substring(0, 72) + (node.description.length > 72 ? '...' : '')}
+                </div>
+              ) : null}
+            </GraphControlButton>
+          ))
+        )}
+      </div>
+    </ModiffPopover>
   );
 };
 
