@@ -16,6 +16,7 @@ export default defineConfig({
     timeout: 15 * 1000,
   },
   fullyParallel: false,
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
   webServer: {
@@ -31,8 +32,8 @@ export default defineConfig({
     ...devices['Desktop Chrome'],
     baseURL: `http://127.0.0.1:${mockFrontendPort}`,
     channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
-    trace: 'retain-on-failure',
+    trace: process.env.CI ? 'retain-on-first-failure' : 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: process.env.CI ? 'retain-on-first-failure' : 'retain-on-failure',
   },
 });

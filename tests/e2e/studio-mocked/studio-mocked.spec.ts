@@ -2461,10 +2461,12 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await expect(page.getByTestId('template-browser-use-flux_fill_inpaint')).toBeVisible();
   await page.getByTestId('template-browser-search').fill('canny');
   await expect(page.getByTestId('template-browser-use-flux_control_canny')).toBeVisible();
-  await page.getByTestId('template-browser-model-filter').click();
+  const modelFilter = page.getByTestId('template-browser-model-filter');
+  await modelFilter.click();
   await expect(page.getByRole('option', { name: 'FLUX.1-dev', exact: true })).toBeVisible();
   await expect(page.getByRole('option', { name: 'FLUX.1-Krea-dev', exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await modelFilter.click();
+  await expect(page.getByRole('listbox')).toBeHidden();
 
   await page.getByTestId('template-browser-search').fill('flux schnell');
   await expect(page.getByTestId('template-usage-warning-flux_schnell_text_to_image')).toHaveCount(0);
@@ -6427,26 +6429,31 @@ test('previous video and audio renders open in-app without replacing the current
 
   const videoStage = page.locator(`.react-flow__node[data-id="${videoState.exporterId}"]`);
   const emptyVideo = page.getByTestId(`node-preview-empty-${videoState.exporterId}-preview`);
+  await expect(videoStage).toBeVisible();
   await expect(emptyVideo).toBeVisible();
   await expect(videoStage.getByText('Previous')).toBeVisible();
   await videoStage.getByTitle(/frames from|Video from/).click();
-  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
-  await expect(page.getByTestId('media-viewer-video')).toBeVisible();
+  const mediaViewer = page.getByTestId('media-viewer-dialog');
+  await expect(mediaViewer).toBeVisible();
+  await expect(mediaViewer.getByTestId('media-viewer-video')).toBeVisible();
   await expect(emptyVideo).toBeVisible();
-  await page.getByRole('button', { name: 'Close media viewer' }).click();
-  await expect(page.getByTestId('media-viewer-dialog')).toHaveCount(0);
+  await mediaViewer.getByRole('button', { name: 'Close media viewer' }).click();
+  await expect(mediaViewer).toHaveCount(0);
   await videoStage.getByTitle(/frames from|Video from/).click();
-  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Download video' }).click();
-  await expect(page.getByTestId('media-export-dialog')).toBeVisible();
-  await page.getByLabel('Download format').click();
+  await expect(mediaViewer).toBeVisible();
+  await mediaViewer.getByRole('button', { name: 'Download video' }).click();
+  const mediaExport = page.getByTestId('media-export-dialog');
+  await expect(mediaExport).toBeVisible();
+  await mediaExport.getByLabel('Download format').click();
   await expect(page.getByRole('option', { name: 'MP4 (H.264 + AAC)' })).toBeVisible();
   await expect(page.getByRole('option', { name: 'WebM (VP9 + Opus)' })).toBeVisible();
   await expect(page.getByRole('option', { name: 'MOV (ProRes + PCM)' })).toBeVisible();
   await expect(page.getByRole('option', { name: 'Animated GIF' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Cancel' }).click();
-  await page.getByRole('button', { name: 'Close media viewer' }).click();
+  await mediaExport.getByRole('button', { name: 'Cancel' }).click();
+  await expect(mediaExport).toHaveCount(0);
+  await mediaViewer.getByRole('button', { name: 'Close media viewer' }).click();
+  await expect(mediaViewer).toHaveCount(0);
 
   await videoStage.getByRole('button', { name: 'Output actions' }).click();
   const copyUrlAction = page.getByRole('menuitem', { name: 'Copy URL' });
@@ -6457,12 +6464,12 @@ test('previous video and audio renders open in-app without replacing the current
     return url.pathname === '/cache/history/video.mp4' && url.searchParams.get('download_format') === 'webm';
   });
   await page.getByRole('menuitem', { name: /^Download/ }).click();
-  await expect(page.getByTestId('media-export-dialog')).toBeVisible();
-  await page.getByLabel('Download format').click();
+  await expect(mediaExport).toBeVisible();
+  await mediaExport.getByLabel('Download format').click();
   await page.getByRole('option', { name: 'WebM (VP9 + Opus)' }).click();
-  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  await mediaExport.getByRole('button', { name: 'Download', exact: true }).click();
   await convertedDownload;
-  await expect(page.getByTestId('media-export-dialog')).toHaveCount(0);
+  await expect(mediaExport).toHaveCount(0);
   await expect(copyUrlAction).toHaveCount(0);
 
   await page.evaluate(({ exporterId }) => {
@@ -6488,10 +6495,10 @@ test('previous video and audio renders open in-app without replacing the current
   await expect(videoActions).toHaveClass(/rounded-full/);
   await videoActions.click();
   await page.getByRole('menuitem', { name: /^Download/ }).click();
-  await expect(page.getByTestId('media-export-dialog')).toBeVisible();
-  await expect(page.getByLabel('Download format')).toBeVisible();
-  await page.getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.getByTestId('media-export-dialog')).toHaveCount(0);
+  await expect(mediaExport).toBeVisible();
+  await expect(mediaExport.getByLabel('Download format')).toBeVisible();
+  await mediaExport.getByRole('button', { name: 'Cancel' }).click();
+  await expect(mediaExport).toHaveCount(0);
 
   const audioState = await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('ace_step_text_to_audio');
@@ -6514,10 +6521,12 @@ test('previous video and audio renders open in-app without replacing the current
 
   const audioStage = page.locator(`.react-flow__node[data-id="${audioState.exporterId}"]`);
   const emptyAudio = page.getByTestId(`node-preview-empty-${audioState.exporterId}-preview`);
+  await expect(videoStage).toHaveCount(0);
+  await expect(audioStage).toBeVisible();
   await expect(emptyAudio).toBeVisible();
   await audioStage.getByTitle(/Audio from/).click();
-  await expect(page.getByTestId('media-viewer-dialog')).toBeVisible();
-  await expect(page.getByTestId('media-viewer-audio')).toBeVisible();
+  await expect(mediaViewer).toBeVisible();
+  await expect(mediaViewer.getByTestId('media-viewer-audio')).toBeVisible();
   await expect(emptyAudio).toBeVisible();
 });
 
