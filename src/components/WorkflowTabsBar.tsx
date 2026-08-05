@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { Plus, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useFlowStore } from '../stores/useFlowStore';
@@ -10,6 +10,7 @@ import { markWorkflowTabClosed } from '../studio/useWorkflowBackendSync';
 
 export default function WorkflowTabsBar() {
   const tabListRef = useRef<HTMLDivElement>(null);
+  const pendingTabRevealRef = useRef<number | null>(null);
   const pendingSnapshotSaveRef = useRef(false);
   const {
     workflowTabs,
@@ -36,6 +37,34 @@ export default function WorkflowTabsBar() {
   const form = useStudioStore((state) => state.form);
   const graphBinding = useStudioStore((state) => state.graphBinding);
   const workflowCanvasHydrated = useStudioStore((state) => state.workflowCanvasHydrated);
+
+  const revealTabItem = useCallback((tabItem: HTMLElement) => {
+    const tabList = tabListRef.current;
+    if (!tabList) return;
+
+    if (pendingTabRevealRef.current !== null) {
+      window.cancelAnimationFrame(pendingTabRevealRef.current);
+    }
+
+    revealHorizontalItem(tabList, tabItem);
+    pendingTabRevealRef.current = window.requestAnimationFrame(() => {
+      pendingTabRevealRef.current = null;
+      if (!tabItem.isConnected || !tabList.contains(tabItem)) return;
+      // Native focus scrolling can run after the focus event and reveal only
+      // the tab button. Recheck after layout so the adjacent close action is
+      // kept inside the horizontal scrollport as well.
+      revealHorizontalItem(tabList, tabItem);
+    });
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (pendingTabRevealRef.current !== null) {
+        window.cancelAnimationFrame(pendingTabRevealRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!workflowCanvasHydrated) return;
@@ -66,8 +95,8 @@ export default function WorkflowTabsBar() {
   useLayoutEffect(() => {
     const tabList = tabListRef.current;
     const activeTab = tabList?.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement;
-    if (tabList && activeTab) revealHorizontalItem(tabList, activeTab);
-  }, [activeWorkflowTabId, workflowTabs.length]);
+    if (activeTab) revealTabItem(activeTab);
+  }, [activeWorkflowTabId, revealTabItem, workflowTabs.length]);
 
   if (workflowTabs.length === 0 || !activeWorkflowTabId) return null;
 
@@ -108,9 +137,8 @@ export default function WorkflowTabsBar() {
                   data-testid={`workflow-tab-${tab.id}`}
                   onSelect={() => switchWorkflowTab(tab.id)}
                   onFocus={(event) => {
-                    const tabList = event.currentTarget.closest<HTMLElement>('[data-testid="workflow-tabs-scroll"]');
                     const tabItem = event.currentTarget.parentElement;
-                    if (tabList && tabItem) revealHorizontalItem(tabList, tabItem);
+                    if (tabItem) revealTabItem(tabItem);
                   }}
                   className="min-w-0 flex-1 justify-start rounded-none px-2 text-left text-xs leading-none focus-visible:outline-inset"
                 >
