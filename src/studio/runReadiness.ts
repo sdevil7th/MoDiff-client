@@ -43,10 +43,12 @@ import type {
   StudioFormState,
   StudioModelProfile,
 } from './types';
+import { exactStudioCapabilitySupport, exactStudioCapabilityUnsupportedMessage } from './modelCapabilities';
 import { runtimeOptionValues } from './runtimeOptions';
 import type { RuntimeCudaDevice, RuntimeMpsDevice, RuntimeStatus, RuntimeXpuDevice } from '../stores/useNodeStore';
 import type { RuntimeResourceSnapshot } from './runtimeResources';
 import { getStudioGraphRunBlockingMessage } from './graphBridge';
+import { optionalRuntimeBlockState } from './optionalRuntimes';
 
 const GIB = 1024 ** 3;
 const MODEL_PARAM_HINTS = [
@@ -900,15 +902,83 @@ function describeInpaintContract(profile: StudioModelProfile) {
   return `${contract.reason}${missingInputs} Source: ${contract.source}.`;
 }
 
+function blockingOptionalRuntimeState(
+  profile: StudioModelProfile | null,
+  mode: StudioFormState['mode'],
+  catalog: ReturnType<typeof useNodesStore.getState>['optionalRuntimeCatalog'],
+  stale: boolean,
+) {
+  if (!profile) return null;
+  const matching = profile.executionProfiles?.find((item) => item.modes.includes(mode));
+  if (profile.executionProfiles && !matching) {
+    return profile.optionalRuntimeRequirement?.requiredNow ? 'unavailable' : null;
+  }
+  const requirement =
+    matching?.optionalRuntimeRequirement ??
+    (profile.executionProfiles ? undefined : profile.optionalRuntimeRequirement);
+  return requirement?.requiredNow && stale ? 'unavailable' : optionalRuntimeBlockState(requirement, catalog);
+}
+
 function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   const issues: RunReadinessIssue[] = [];
-  const { hfCache, localModels, modelCacheDiagnostics } = useNodesStore.getState();
+  const {
+    hfCache,
+    localModels,
+    modelCacheDiagnostics,
+    optionalRuntimeCatalog,
+    discoveryRequests,
+    studioModelCapabilities,
+    studioModelCapabilitiesAuthoritative,
+  } = useNodesStore.getState();
   const { graphBinding, autoResourcePlan, autoResourceCheck } = useStudioStore.getState();
   const profile = getProfileForForm(form);
   const modelStatus = getStudioModelCacheStatus(profile, hfCache, localModels, modelCacheDiagnostics);
   const autoCandidate = form.resourceMode === 'auto' ? selectedAutoCandidate(autoResourcePlan, form) : null;
   const autoInstallTarget = form.resourceMode === 'auto' ? autoResourceInstallTarget(autoResourcePlan, form) : null;
   const autoCompatibility = autoResourceCompatibility(autoResourcePlan, form);
+  const exactCapability = exactStudioCapabilitySupport(
+    studioModelCapabilities,
+    studioModelCapabilitiesAuthoritative,
+    form.modelType,
+    form.mode,
+  );
+
+  if (exactCapability.status === 'unsupported') {
+    issues.push(
+      issue({
+        code: 'backend_mode_unsupported',
+        category: 'backend',
+        severity: 'error',
+        blocking: true,
+        message: exactStudioCapabilityUnsupportedMessage(form.modelType, form.mode, exactCapability),
+        details: 'Choose a backend-advertised model/task pair or an explicit Expert graph.',
+      }),
+    );
+  }
+
+  const optionalRuntimeBlock =
+    exactCapability.status === 'supported'
+      ? blockingOptionalRuntimeState(
+          exactCapability.capability,
+          form.mode,
+          optionalRuntimeCatalog,
+          discoveryRequests.capabilities.status !== 'success' ||
+            discoveryRequests.optionalRuntimes.status !== 'success',
+        )
+      : null;
+  if (optionalRuntimeBlock) {
+    issues.push(
+      issue({
+        code: 'optional_runtime_required',
+        category: 'environment',
+        severity: 'error',
+        blocking: true,
+        action: 'open_setup',
+        message: 'Reviewed optional runtime required.',
+        details: `${optionalRuntimeBlock.replace(/_/g, ' ')}.`,
+      }),
+    );
+  }
 
   if (form.resourceMode === 'auto' && (!autoResourcePlan || !autoPlanIsReady(autoResourcePlan, form))) {
     const transientPlannerFailure = autoResourcePlan?.error === true;

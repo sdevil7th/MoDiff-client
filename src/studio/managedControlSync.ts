@@ -3,6 +3,7 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { classifyManagedControl, type ManagedControlFormKey } from './managedControlPolicy';
+import { runtimeOptionValues } from './runtimeOptions';
 import type { StudioFormState, StudioGraphBinding } from './types';
 
 const AUDIO_MODES = new Set(['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint']);
@@ -14,7 +15,117 @@ const AUDIO_VISUAL_EXTENSION_ROLES = new Set([
   'exportWithAudio',
 ]);
 
-function managedControlSemanticKey(
+const DECLARATIVE_BINDING_KEY = 'studioBinding';
+const DECLARATIVE_BINDING_GROUP = /^[a-z][a-z0-9-]{0,63}$/;
+
+type DeclarativeStudioFieldBinding =
+  | Readonly<{
+      schemaVersion: 1;
+      group: string;
+      formFields: readonly [keyof StudioFormState];
+      transform: 'identity';
+      numericOptions: readonly [];
+    }>
+  | Readonly<{
+      schemaVersion: 1;
+      group: string;
+      formFields: readonly ['width', 'height'];
+      transform: 'nearest-option-to-long-edge';
+      numericOptions: readonly number[];
+    }>;
+
+type DeclarativeStudioFieldBindingResult = DeclarativeStudioFieldBinding | false | undefined;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+/**
+ * Parse the deliberately small backend-owned managed-field binding grammar.
+ * Unknown versions, transforms, fields, extra properties, or option shapes are
+ * inert. This metadata can arrive through an untrusted dynamic node definition,
+ * so malformed declarations never fall back to a name-derived binding.
+ */
+export function readDeclarativeStudioFieldBinding(param?: NodeParams): DeclarativeStudioFieldBindingResult {
+  const fieldOptions = param?.fieldOptions;
+  if (!fieldOptions || !Object.prototype.hasOwnProperty.call(fieldOptions, DECLARATIVE_BINDING_KEY)) {
+    return undefined;
+  }
+
+  const raw = fieldOptions[DECLARATIVE_BINDING_KEY];
+  if (
+    !isRecord(raw) ||
+    Object.keys(raw).length !== 4 ||
+    raw.schemaVersion !== 1 ||
+    typeof raw.group !== 'string' ||
+    !DECLARATIVE_BINDING_GROUP.test(raw.group) ||
+    !Array.isArray(raw.formFields) ||
+    !raw.formFields.every((field): field is string => typeof field === 'string')
+  ) {
+    return false;
+  }
+
+  const formFields = raw.formFields as string[];
+  if (raw.transform === 'identity') {
+    if (formFields.length !== 1 || formFields[0] !== 'maxSequenceLength') {
+      return false;
+    }
+    return {
+      schemaVersion: 1,
+      group: raw.group,
+      formFields: [formFields[0] as keyof StudioFormState],
+      transform: 'identity',
+      numericOptions: [],
+    };
+  }
+
+  if (
+    raw.transform !== 'nearest-option-to-long-edge' ||
+    formFields.length !== 2 ||
+    formFields[0] !== 'width' ||
+    formFields[1] !== 'height'
+  ) {
+    return false;
+  }
+
+  const numericOptions = runtimeOptionValues(param.options).map(Number);
+  if (
+    numericOptions.length < 2 ||
+    numericOptions.length > 16 ||
+    numericOptions.some((option) => !Number.isInteger(option) || option < 16 || option > 2048) ||
+    new Set(numericOptions).size !== numericOptions.length
+  ) {
+    return false;
+  }
+
+  return {
+    schemaVersion: 1,
+    group: raw.group,
+    formFields: ['width', 'height'],
+    transform: 'nearest-option-to-long-edge',
+    numericOptions,
+  };
+}
+
+function declarativeBindingSyncGroup(binding: DeclarativeStudioFieldBinding) {
+  return `binding:${JSON.stringify(binding)}`;
+}
+
+function declarativeBindingValue(binding: DeclarativeStudioFieldBinding, form: StudioFormState) {
+  if (binding.transform === 'identity') return form[binding.formFields[0]];
+
+  const longEdge = Math.max(Number(form.width), Number(form.height));
+  if (!Number.isFinite(longEdge)) return undefined;
+  return binding.numericOptions.reduce((nearest, candidate) => {
+    const candidateDistance = Math.abs(candidate - longEdge);
+    const nearestDistance = Math.abs(nearest - longEdge);
+    return candidateDistance < nearestDistance || (candidateDistance === nearestDistance && candidate > nearest)
+      ? candidate
+      : nearest;
+  });
+}
+
+function legacyManagedControlSemanticKey(
   node: CustomNodeType,
   paramKey: string,
   binding: StudioGraphBinding,
@@ -32,9 +143,11 @@ function managedControlSemanticKey(
   return undefined;
 }
 
-export function managedControlSyncGroup(node: CustomNodeType, paramKey: string, binding: StudioGraphBinding) {
-  const semanticKey = managedControlSemanticKey(node, paramKey, binding);
-  if (!semanticKey) return undefined;
+function legacyManagedControlSyncGroup(
+  node: CustomNodeType,
+  semanticKey: ManagedControlFormKey,
+  binding: StudioGraphBinding,
+) {
   const role = node.data.studioRole ?? '';
   if (role.startsWith('soundtrack')) return `soundtrack:${semanticKey}`;
   if (role.startsWith('qualityVideo')) return `quality-video:${semanticKey}`;
@@ -44,13 +157,28 @@ export function managedControlSyncGroup(node: CustomNodeType, paramKey: string, 
   return `form:${semanticKey}`;
 }
 
+export function managedControlSyncGroup(node: CustomNodeType, paramKey: string, binding: StudioGraphBinding) {
+  const declarativeBinding = readDeclarativeStudioFieldBinding(node.data.params[paramKey]);
+  if (declarativeBinding !== undefined)
+    return declarativeBinding ? declarativeBindingSyncGroup(declarativeBinding) : undefined;
+  const semanticKey = legacyManagedControlSemanticKey(node, paramKey, binding);
+  return semanticKey ? legacyManagedControlSyncGroup(node, semanticKey, binding) : undefined;
+}
+
 export function managedControlFormKey(
   node: CustomNodeType,
   paramKey: string,
   binding: StudioGraphBinding,
 ): ManagedControlFormKey | undefined {
-  const syncGroup = managedControlSyncGroup(node, paramKey, binding);
-  return syncGroup?.startsWith('form:') ? managedControlSemanticKey(node, paramKey, binding) : undefined;
+  const declarativeBinding = readDeclarativeStudioFieldBinding(node.data.params[paramKey]);
+  if (declarativeBinding !== undefined)
+    return declarativeBinding && declarativeBinding.transform === 'identity'
+      ? declarativeBinding.formFields[0]
+      : undefined;
+  const semanticKey = legacyManagedControlSemanticKey(node, paramKey, binding);
+  return semanticKey && legacyManagedControlSyncGroup(node, semanticKey, binding).startsWith('form:')
+    ? semanticKey
+    : undefined;
 }
 
 function managedNodes(binding: StudioGraphBinding) {
@@ -145,8 +273,15 @@ export function syncManagedControlGroup(
 
 export function syncManagedFormControlAliases(form: StudioFormState, binding: StudioGraphBinding) {
   const syncGroups = new Set<string>();
+  const declarativeBindings = new Map<string, DeclarativeStudioFieldBinding>();
   managedNodes(binding).forEach((node) => {
-    Object.keys(node.data.params ?? {}).forEach((paramKey) => {
+    Object.entries(node.data.params ?? {}).forEach(([paramKey, param]) => {
+      const declarativeBinding = readDeclarativeStudioFieldBinding(param);
+      if (declarativeBinding) {
+        declarativeBindings.set(declarativeBindingSyncGroup(declarativeBinding), declarativeBinding);
+        return;
+      }
+      if (declarativeBinding === false) return;
       const syncGroup = managedControlSyncGroup(node, paramKey, binding);
       if (syncGroup?.startsWith('form:')) syncGroups.add(syncGroup);
     });
@@ -155,6 +290,10 @@ export function syncManagedFormControlAliases(form: StudioFormState, binding: St
   syncGroups.forEach((syncGroup) => {
     const formKey = syncGroup.slice('form:'.length) as keyof StudioFormState;
     syncManagedControlGroup(binding, syncGroup, form[formKey], form.randomSeed);
+  });
+  declarativeBindings.forEach((declarativeBinding, syncGroup) => {
+    const value = declarativeBindingValue(declarativeBinding, form);
+    if (value !== undefined) syncManagedControlGroup(binding, syncGroup, value, form.randomSeed);
   });
 }
 

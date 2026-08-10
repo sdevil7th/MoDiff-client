@@ -4,7 +4,6 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import type { AppModeInput, UserBlockDefinition, UserBlockPort, WorkflowBlueprint } from './types';
 import { classifyManagedControl } from './managedControlPolicy';
-import { normalizeGenericModelLoaderParams } from './modelSelection';
 import { arrangeGraphNodes } from '../workflow/graphLayout';
 
 type FlowGraph = {
@@ -240,10 +239,7 @@ export function normalizeUserBlockDefinition(block: UserBlockDefinition): UserBl
         cloned.edges.filter(isRecord).map((edge) => edge as unknown as Edge),
       )
     : sourceNodes;
-  const nodes = normalizedBlockNodePositions(laidOutNodes).map((node) => {
-    const params = normalizeGenericModelLoaderParams(node.data.module, node.data.action, node.data.params);
-    return params === node.data.params ? node : { ...node, data: { ...node.data, params } };
-  });
+  const nodes = normalizedBlockNodePositions(laidOutNodes);
   return {
     ...cloned,
     nodes,

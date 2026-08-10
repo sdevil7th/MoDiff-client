@@ -284,6 +284,7 @@ const LORA_POLICY = {
   adapter_name: advanced(),
   scheduler_class: advanced(),
   scheduler_config: advanced(),
+  revision: internal(),
   expected_sha256: internal(),
 } satisfies RolePolicy;
 
@@ -384,21 +385,44 @@ export const MANAGED_CONTROL_POLICIES = {
     image: internal(),
     embeddings: internal(),
   },
-  denoise: IMAGE_GENERATION_POLICY,
+  denoise: {
+    ...IMAGE_GENERATION_POLICY,
+    num_frames: essential('numFrames'),
+  },
   decode: OUTPUT_PREVIEW_POLICY,
   preview: OUTPUT_PREVIEW_POLICY,
   loadImage: IMAGE_SOURCE_POLICY,
+  loadControlImage: IMAGE_SOURCE_POLICY,
   loadMask: MASK_SOURCE_POLICY,
   applyMask: {
     image: internal(),
     mask: internal(),
     output: internal(),
   },
+  imageEmbeddings: {
+    width: essential('width'),
+    height: essential('height'),
+    image: internal(),
+    last_image: internal(),
+    image_encoder: internal(),
+    image_embeds: internal(),
+    route_state_out: internal(),
+  },
   imageEncode: {
     resolution: advanced(),
+    width: essential('width'),
+    height: essential('height'),
+    num_frames: essential('numFrames'),
+    seed: essential('seed'),
     image: internal(),
+    last_image: internal(),
+    vae: internal(),
     image_latents: internal(),
+    image_condition_latents: internal(),
+    route_state_in: internal(),
+    route_state_out: internal(),
   },
+  loadLastImage: IMAGE_SOURCE_POLICY,
   controlnetModel: {
     ...MODELS_POLICY,
     // AutoModelLoader's model_type is the component kind (`controlnet`), not

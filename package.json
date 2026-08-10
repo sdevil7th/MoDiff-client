@@ -71,7 +71,7 @@
     "test:gallery-harness": "node --test scripts/template-gallery-harness.test.mjs",
     "test:gallery-runner": "node --test scripts/template-gallery-runner.test.mjs",
     "test:gallery-queue": "node --test scripts/example-generation-queue.test.mjs",
-    "test:driver-contract": "node --test scripts/diffusers-only-contract.test.mjs",
+    "test:driver-contract": "node --test scripts/hugging-face-runtime-contract.test.mjs",
     "test:graph-mutations": "node --test scripts/flow-graph-mutations.test.mjs scripts/graph-fixer.test.mjs",
     "test:graph-visuals": "node --test scripts/graph-visuals.test.mjs",
     "test:media-viewer": "node --test scripts/media-viewer.test.mjs",

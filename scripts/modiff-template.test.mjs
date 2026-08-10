@@ -31,6 +31,7 @@ let flowStoreModule;
 let runtimeOptionsModule;
 let deviceRebaseModule;
 let modelUsagePoliciesModule;
+let modelCapabilitiesModule;
 
 before(async () => {
   globalThis.window = {
@@ -71,6 +72,309 @@ before(async () => {
   runtimeOptionsModule = await server.ssrLoadModule('/src/studio/runtimeOptions.ts');
   deviceRebaseModule = await server.ssrLoadModule('/src/studio/deviceRebase.ts');
   modelUsagePoliciesModule = await server.ssrLoadModule('/src/studio/modelUsagePolicies.ts');
+  modelCapabilitiesModule = await server.ssrLoadModule('/src/studio/modelCapabilities.ts');
+});
+
+test('schema-v2 capability modes are exact while legacy mode metadata can fall back', () => {
+  const explicitNoModes = {
+    modelType: 'FluxDepthPipeline',
+    modes: ['control_image'],
+    runnableModes: [],
+  };
+  const exact = modelCapabilitiesModule.exactStudioCapabilitySupport(
+    [explicitNoModes],
+    true,
+    'FluxDepthPipeline',
+    'control_image',
+  );
+
+  assert.equal(exact.status, 'unsupported');
+  assert.equal(exact.reason, 'mode_not_advertised');
+  assert.deepEqual(exact.modes, []);
+  assert.equal(
+    modelCapabilitiesModule.exactStudioCapabilityUnsupportedMessage('FluxDepthPipeline', 'control_image', exact),
+    'FLUX.1-Depth-dev does not support Control image on the connected backend.',
+  );
+
+  const legacy = { modelType: 'FluxDepthPipeline', modes: ['control_image'] };
+  assert.deepEqual(modelCapabilitiesModule.advertisedStudioModes(legacy), ['control_image']);
+  assert.equal(
+    modelCapabilitiesModule.exactStudioCapabilitySupport([legacy], false, 'FluxDepthPipeline', 'control_image').status,
+    'unknown',
+  );
+});
+
+test('the managed Qwen ControlNet requirement carries its reviewed immutable commit', () => {
+  assert.equal(profilesModule.QWEN_CONTROLNET_REQUIREMENT.repo, 'InstantX/Qwen-Image-ControlNet-Union');
+  assert.equal(profilesModule.QWEN_CONTROLNET_REQUIREMENT.revision, 'b13036f066d6dee7c20513e263d3d673055e9de8');
+});
+
+test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
+  const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+  const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image', 'control_image'],
+          runnableModes: ['text_to_image'],
+        },
+      ],
+      studioModelCapabilitiesAuthoritative: true,
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: {
+        ...previousForm,
+        mode: 'control_image',
+        modelType: 'QwenImageModularPipeline',
+        resourceMode: 'expert',
+      },
+      graphBinding: null,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+
+    const issue = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'backend_mode_unsupported');
+    assert.equal(issue?.blocking, true);
+    assert.equal(issue?.message, 'Qwen-Image-2512 does not support Control image on the connected backend.');
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousCapabilities,
+      studioModelCapabilitiesAuthoritative: previousAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
+test('an imported stale Qwen Edit Plus inpaint form stays blocked by backend capability truth', () => {
+  const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+  const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [
+        {
+          modelType: 'QwenImageEditPlusModularPipeline',
+          // Preserve a stale legacy metadata claim to prove schema-v2
+          // runnableModes remains authoritative for an imported form.
+          modes: ['edit_image', 'multi_image_reference_edit', 'inpaint'],
+          runnableModes: ['edit_image', 'multi_image_reference_edit'],
+        },
+      ],
+      studioModelCapabilitiesAuthoritative: true,
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: {
+        ...previousForm,
+        mode: 'inpaint',
+        modelType: 'QwenImageEditPlusModularPipeline',
+        resourceMode: 'auto',
+      },
+      graphBinding: null,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+
+    const issue = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'backend_mode_unsupported');
+    assert.equal(issue?.blocking, true);
+    assert.equal(issue?.message, 'Qwen-Image-Edit-2511 does not support Inpaint on the connected backend.');
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousCapabilities,
+      studioModelCapabilitiesAuthoritative: previousAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
+function optionalRequirement(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    delivery: 'base',
+    requiredNow: false,
+    profileIds: ['huggingface-transformers-peft-5.14.1-0.20.0'],
+    executionProfileIds: ['qwen-image:t2i-direct'],
+    state: 'base_satisfied',
+    reason: 'base_runtime_contract',
+    ...overrides,
+  };
+}
+
+function qualifiedOptionalRuntimeCatalog() {
+  return {
+    schemaVersion: 1,
+    processLoadStatus: 'active',
+    profiles: [
+      {
+        id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+        label: 'Hugging Face Transformers + PEFT',
+        specDigest: `sha256:${'1'.repeat(64)}`,
+        contractState: 'qualified',
+        cutoverReady: true,
+        installActionAvailable: true,
+        activationAvailable: true,
+        status: 'present_unqualified',
+        overlayStatus: 'active',
+      },
+    ],
+  };
+}
+
+test('optional runtime readiness is exact-mode scoped and base delivery stays neutral', () => {
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+  const base = optionalRequirement();
+  const required = optionalRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    executionProfileIds: ['qwen-image:control'],
+    state: 'missing',
+    reason: 'optional_runtime_missing',
+  });
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilitiesAuthoritative: true,
+      optionalRuntimeCatalog: null,
+      studioModelCapabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image', 'control_image'],
+          runnableModes: ['text_to_image', 'control_image'],
+          executionProfiles: [
+            { id: 'qwen-image:t2i-direct', modes: ['text_to_image'], optionalRuntimeRequirement: base },
+            { id: 'qwen-image:control', modes: ['control_image'], optionalRuntimeRequirement: required },
+          ],
+        },
+      ],
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    studioStoreModule.useStudioStore.setState({
+      form: { ...previousForm, modelType: 'QwenImageModularPipeline', mode: 'text_to_image', resourceMode: 'expert' },
+      graphBinding: null,
+    });
+    let issue = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'optional_runtime_required');
+    assert.equal(issue, undefined, 'base-delivered exact mode must ignore missing overlay status');
+
+    studioStoreModule.useStudioStore.setState({
+      form: { ...previousForm, modelType: 'QwenImageModularPipeline', mode: 'control_image', resourceMode: 'expert' },
+    });
+    issue = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'optional_runtime_required');
+    assert.equal(issue?.blocking, true);
+    assert.equal(issue?.action, 'open_setup');
+    assert.match(issue?.message ?? '', /reviewed optional runtime/i);
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      optionalRuntimeCatalog: previousNodesState.optionalRuntimeCatalog,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
+test('a required runtime becomes ready only with the exact qualified active catalog', () => {
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+  const required = optionalRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    state: 'active',
+    reason: 'optional_runtime_active',
+  });
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilitiesAuthoritative: true,
+      optionalRuntimeCatalog: qualifiedOptionalRuntimeCatalog(),
+      discoveryRequests: {
+        ...previousNodesState.discoveryRequests,
+        capabilities: { status: 'success', error: null, requestId: 1 },
+        optionalRuntimes: { status: 'success', error: null, requestId: 1 },
+      },
+      studioModelCapabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image'],
+          runnableModes: ['text_to_image'],
+          optionalRuntimeRequirement: required,
+          executionProfiles: [
+            { id: 'qwen-image:t2i-direct', modes: ['text_to_image'], optionalRuntimeRequirement: required },
+          ],
+        },
+      ],
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: { ...previousForm, modelType: 'QwenImageModularPipeline', mode: 'text_to_image', resourceMode: 'expert' },
+      graphBinding: null,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+
+    const optionalIssue = () =>
+      runReadinessModule
+        .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+        .find((item) => item.code === 'optional_runtime_required');
+    const setDiscovery = (key, status) => {
+      const discoveryRequests = nodesStoreModule.useNodesStore.getState().discoveryRequests;
+      nodesStoreModule.useNodesStore.setState({
+        discoveryRequests: { ...discoveryRequests, [key]: { status, error: null, requestId: 2 } },
+      });
+    };
+    assert.equal(optionalIssue(), undefined);
+    const activeCapability = nodesStoreModule.useNodesStore.getState().studioModelCapabilities[0];
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [
+        {
+          ...activeCapability,
+          executionProfiles: activeCapability.executionProfiles.map((profile) => ({
+            ...profile,
+            modes: ['control_image'],
+          })),
+        },
+      ],
+    });
+    assert.equal(optionalIssue()?.blocking, true, 'present execution profiles require an exact selected-mode match');
+    nodesStoreModule.useNodesStore.setState({ studioModelCapabilities: [activeCapability] });
+    assert.equal(optionalIssue(), undefined);
+    for (const key of ['capabilities', 'optionalRuntimes']) {
+      for (const status of ['loading', 'error']) {
+        setDiscovery(key, status);
+        assert.equal(optionalIssue()?.blocking, true, `${key} ${status} must make retained runtime status stale`);
+        setDiscovery(key, 'success');
+        assert.equal(optionalIssue(), undefined);
+      }
+    }
+    nodesStoreModule.useNodesStore.setState({ optionalRuntimeCatalog: null });
+    assert.equal(optionalIssue()?.blocking, true, 'missing or stale status must restore the blocker');
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      optionalRuntimeCatalog: previousNodesState.optionalRuntimeCatalog,
+      discoveryRequests: previousNodesState.discoveryRequests,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
 });
 
 test('Intel XPU is preferred over CPU while compatibility remains backend-owned', () => {
@@ -741,6 +1045,23 @@ test('every published template exposes a hardware-aware loader reuse contract fo
   assert.equal(fastLora.runtimeReuseKey, zImageLora.runtimeReuseKey);
 });
 
+test('Qwen Edit Lightning templates retain the reviewed immutable auxiliary identity', () => {
+  const templates = templatesModule.STUDIO_TEMPLATES.filter(
+    (template) => template.workflowBlockSettings?.lora?.model?.value === 'lightx2v/Qwen-Image-Edit-2511-Lightning',
+  );
+  assert.ok(templates.length > 0);
+  for (const template of templates) {
+    const artifact = template.workflowBlockSettings.lora.model;
+    assert.equal(artifact.revision, 'd74eba145674fd7e31b949324e148e21e7118abd', template.id);
+    assert.equal(artifact.sha256, '22226e8d05d354bb356627d428809f5afd7819399b077238a2b70a82883a904f', template.id);
+    assert.equal(
+      template.workflowBlockSettings.lora.weightName,
+      'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors',
+      template.id,
+    );
+  }
+});
+
 test('native five-second video proofs follow the shared card-preview contract', () => {
   const template = templatesModule.STUDIO_TEMPLATES.find((entry) => entry.id === 'wan_vace_outpaint_reframe');
   const base = {
@@ -1398,6 +1719,11 @@ test('ACE templates lock musical structure, metadata, and model-aware negative b
   const customLora = templates.find((template) => template.id === 'ace_step_custom_lora');
   assert.equal(customLora.evidencePolicy, 'user_supplied');
   assert.match(customLora.example.notes, /bring-your-own adapter/i);
+  assert.equal(
+    customLora.workflowBlockSettings.lora.baseModel.revision,
+    'be23effe449c5957947f3020fd63bee23c64abe4',
+    'the local-adapter starter must still pin its managed Hub base model',
+  );
 
   const ghibliLora = templatesModule.STUDIO_TEMPLATES.find((template) => template.id === 'flux_lora_ghibli_story');
   const ghibliMedia = templateExactnessModule.getTemplateCardMedia(ghibliLora, null);
@@ -2325,6 +2651,8 @@ test('High-detail Qwen template exposes the documentary bakery preview and Auto 
 test('Qwen model profiles show exact repo-backed model names', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.QwenImageModularPipeline;
   const editProfile = profilesModule.STUDIO_MODEL_PROFILES.QwenImageEditModularPipeline;
+  const editPlusProfile = profilesModule.STUDIO_MODEL_PROFILES.QwenImageEditPlusModularPipeline;
+  const editPlusAuto = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.QwenImageEditPlusModularPipeline;
   assert.equal(profile.label, 'Qwen-Image-2512');
   assert.equal(profile.displayName, 'Qwen-Image-2512');
   assert.equal(profile.defaultRepo, 'Qwen/Qwen-Image-2512');
@@ -2332,6 +2660,17 @@ test('Qwen model profiles show exact repo-backed model names', () => {
   assert.equal(editProfile.supportsMask, true);
   assert.equal(editProfile.inpaintContract.available, true);
   assert.equal(editProfile.inpaintContract.source, 'modules.DiffusersImage.Inpaint');
+  assert.deepEqual(editProfile.modes, ['edit_image', 'inpaint', 'outpaint']);
+  assert.deepEqual(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.QwenImageEditModularPipeline.supportedModes, [
+    'edit_image',
+    'inpaint',
+    'outpaint',
+  ]);
+  assert.deepEqual(editPlusProfile.modes, ['edit_image', 'multi_image_reference_edit']);
+  assert.deepEqual(editPlusAuto.supportedModes, ['edit_image', 'multi_image_reference_edit']);
+  assert.equal(editPlusProfile.inpaintContract.available, false);
+  assert.equal(profilesModule.isModelCompatibleWithMode('QwenImageEditPlusModularPipeline', 'inpaint'), false);
+  assert.equal(profilesModule.isModelCompatibleWithMode('QwenImageEditModularPipeline', 'inpaint'), true);
   assert.deepEqual(profile.offloadSupport.modes, ['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk']);
   assert.equal(profile.offloadSupport.default, 'model_cpu');
   assert.equal(profile.offloadSupport.lowVram, 'model_cpu');
@@ -2413,9 +2752,10 @@ test('every registered Studio model survives persisted form and binding validati
 
 test('completed graph finalization proofs survive persistence validation', () => {
   const proof = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     shapeKey: 'edit_image:QwenImageEditModularPipeline:expert:none:models|prompt|denoise',
     fieldSchemaHash: 'graph-v1-0123abcd',
+    edgeSpecHash: 'graph-v1-4567cdef',
     finalizedAt: 1234,
   };
   const binding = outputContractsModule.coerceStudioGraphBinding({
@@ -2433,7 +2773,7 @@ test('completed graph finalization proofs survive persistence validation', () =>
 
   const malformed = outputContractsModule.coerceStudioGraphBinding({
     ...binding,
-    finalizationProof: { ...proof, schemaVersion: 2 },
+    finalizationProof: { ...proof, schemaVersion: 1 },
   });
   assert.equal(malformed?.finalizationProof, undefined);
 });
@@ -3107,6 +3447,8 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
   });
 
   const graph = runMetadataModule.applyStudioRuntimeHints({ sid: 'test', nodes: {}, paths: [] });
+  assert.equal(graph.runtimeHints.modelType, 'QwenImageModularPipeline');
+  assert.equal(graph.runtimeHints.mode, 'text_to_image');
   assert.equal(graph.runtimeHints.modelName, 'Qwen-Image-2512');
   assert.equal(graph.runtimeHints.modelRepo, 'Qwen/Qwen-Image-2512');
   assert.equal(graph.runtimeHints.dtype, 'bfloat16');

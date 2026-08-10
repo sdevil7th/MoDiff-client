@@ -1,14 +1,14 @@
-import type { Edge } from '@xyflow/react';
-import type { CustomNodeType } from '../stores/useFlowStore';
-import type { NodeParams } from '../stores/useNodeStore';
-
-export type ModelFamilyHint = 'ace' | 'flux' | 'ltx' | 'qwen' | 'sdxl' | 'stable-audio' | 'wan' | 'z-image';
-
 export type IndexedHubModel = {
   id?: unknown;
   class_names?: unknown;
   installed?: unknown;
   complete?: unknown;
+};
+
+export type ParsedModelSourceFilter = {
+  className?: unknown;
+  id?: unknown;
+  valid: boolean;
 };
 
 export function indexedHubModelIsInstalled(item: IndexedHubModel) {
@@ -19,155 +19,95 @@ export function indexedHubModelIsInstalled(item: IndexedHubModel) {
   return true;
 }
 
-function recordValue(value: unknown) {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object' && 'value' in value) {
-    const nested = (value as { value?: unknown }).value;
-    return typeof nested === 'string' ? nested : '';
-  }
-  return '';
-}
-
-function emptyModelFieldValue(value: unknown) {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return { ...value, value: '' };
-  }
-  return '';
-}
-
-/**
- * A generic component loader cannot choose a repository until its connected
- * pipeline family is known. Older backend definitions assigned example SDXL
- * or FLUX repositories as defaults; those defaults subsequently leaked into
- * saved workflows and returned whenever a field definition was refreshed.
- *
- * Keep an explicit value when it differs from the old default, but remove every
- * non-empty implicit default from AutoModelLoader.
- */
-export function normalizeGenericModelLoaderParams(module: string, action: string, params: Record<string, NodeParams>) {
-  if (module !== 'modules.ModularDiffusers' || action !== 'AutoModelLoader') return params;
-  const modelId = params.model_id;
-  if (!modelId) return params;
-  const implicitId = recordValue(modelId.default).trim();
-  if (!implicitId) return params;
-
-  const hasExplicitValue = Object.prototype.hasOwnProperty.call(modelId, 'value');
-  const selectedId = recordValue(modelId.value).trim();
-  const nextModelId: NodeParams = {
-    ...modelId,
-    default: emptyModelFieldValue(modelId.default),
-  };
-  if (!hasExplicitValue || selectedId === implicitId) {
-    nextModelId.value = emptyModelFieldValue(modelId.value ?? modelId.default);
-  }
-  return {
-    ...params,
-    model_id: nextModelId,
-  };
-}
-
-function modelReferenceFromNode(node: CustomNodeType) {
-  if (!/(?:load|pipeline|model)/i.test(`${node.data.module}.${node.data.action}`)) return '';
-  for (const key of ['repo_id', 'model_id', 'repository_id']) {
-    const param = node.data.params?.[key];
-    const value = recordValue(param?.value ?? param?.default).trim();
-    if (value) return value;
-  }
-  return '';
-}
-
 function textList(value: unknown) {
   if (typeof value === 'string') return [value];
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
-export function modelFamilyHint(value: unknown, classNames: unknown = []): ModelFamilyHint | null {
-  const text = `${typeof value === 'string' ? value : ''} ${textList(classNames).join(' ')}`.toLowerCase();
-  if (!text.trim()) return null;
-  if (/qwen/.test(text)) return 'qwen';
-  if (/(?:^|[/_.-])flux(?:$|[/_.-])/.test(text)) return 'flux';
-  if (/stable[-_. ]?diffusion[-_. ]?xl|sdxl|sd_xl/.test(text)) return 'sdxl';
-  if (/(?:^|[/_.-])z[-_. ]?image(?:$|[/_.-])/.test(text)) return 'z-image';
-  if (/(?:^|[/_.-])wan(?:2|$|[/_.-])/.test(text)) return 'wan';
-  if (/(?:^|[/_.-])ltx(?:$|[/_.-])/.test(text)) return 'ltx';
-  if (/ace[-_. ]?step|acestep/.test(text)) return 'ace';
-  if (/stable[-_. ]?audio/.test(text)) return 'stable-audio';
-  return null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-export function connectedModelFamilyHint(
-  nodes: CustomNodeType[],
-  edges: Edge[],
-  nodeId: string,
-): ModelFamilyHint | null {
-  const neighbors = new Map<string, Set<string>>();
-  edges.forEach((edge) => {
-    if (!neighbors.has(edge.source)) neighbors.set(edge.source, new Set());
-    if (!neighbors.has(edge.target)) neighbors.set(edge.target, new Set());
-    neighbors.get(edge.source)?.add(edge.target);
-    neighbors.get(edge.target)?.add(edge.source);
-  });
+function parseModelSourceFilter(value: unknown): ParsedModelSourceFilter {
+  if (value === undefined || value === null) return { valid: true };
+  if (!isRecord(value)) return { valid: false };
+  const parsed: ParsedModelSourceFilter = { valid: true };
+  if (Object.prototype.hasOwnProperty.call(value, 'className')) parsed.className = value.className;
+  if (Object.prototype.hasOwnProperty.call(value, 'id')) parsed.id = value.id;
+  return parsed;
+}
 
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const pending = [...(neighbors.get(nodeId) ?? [])];
-  const visited = new Set([nodeId]);
-  const families = new Set<ModelFamilyHint>();
-
-  while (pending.length > 0) {
-    const currentId = pending.shift();
-    if (!currentId || visited.has(currentId)) continue;
-    visited.add(currentId);
-    const current = nodeById.get(currentId);
-    if (current) {
-      const reference = modelReferenceFromNode(current);
-      const family = modelFamilyHint(reference);
-      if (family) families.add(family);
-    }
-    neighbors.get(currentId)?.forEach((neighborId) => {
-      if (!visited.has(neighborId)) pending.push(neighborId);
-    });
+export function parseModelSelectionFilters(value: unknown): {
+  hub: ParsedModelSourceFilter;
+  local: ParsedModelSourceFilter;
+} {
+  if (value === undefined || value === null) {
+    return { hub: { valid: true }, local: { valid: true } };
   }
+  if (!isRecord(value)) {
+    return { hub: { valid: false }, local: { valid: false } };
+  }
+  return {
+    hub: parseModelSourceFilter(value.hub),
+    local: parseModelSourceFilter(value.local),
+  };
+}
 
-  return families.size === 1 ? (Array.from(families)[0] ?? null) : null;
+type TextFilter =
+  | { kind: 'none' }
+  | { kind: 'invalid' }
+  | { kind: 'exact'; values: Set<string> }
+  | { expression: RegExp; kind: 'regex' };
+
+function parseTextFilter(filter: unknown): TextFilter {
+  if (filter === undefined || filter === null) return { kind: 'none' };
+  if (typeof filter === 'string') {
+    if (!filter.trim()) return { kind: 'none' };
+    try {
+      return { expression: new RegExp(filter), kind: 'regex' };
+    } catch {
+      return { kind: 'invalid' };
+    }
+  }
+  if (Array.isArray(filter)) {
+    if (filter.length === 0) return { kind: 'none' };
+    if (!filter.every((value): value is string => typeof value === 'string' && Boolean(value.trim()))) {
+      return { kind: 'invalid' };
+    }
+    return { kind: 'exact', values: new Set(filter) };
+  }
+  return { kind: 'invalid' };
 }
 
 function matchesClassFilter(item: IndexedHubModel, filter: unknown) {
   const classNames = textList(item.class_names);
-  if (typeof filter === 'string' && filter) {
-    try {
-      const expression = new RegExp(filter);
-      return classNames.some((name) => expression.test(name));
-    } catch {
-      return false;
-    }
-  }
-  if (Array.isArray(filter) && filter.length > 0) {
-    const accepted = new Set(filter.filter((value): value is string => typeof value === 'string' && Boolean(value)));
-    return accepted.size === 0 || classNames.some((name) => accepted.has(name));
-  }
-  return true;
+  const parsed = parseTextFilter(filter);
+  if (parsed.kind === 'none') return true;
+  if (parsed.kind === 'invalid') return false;
+  if (parsed.kind === 'regex') return classNames.some((name) => parsed.expression.test(name));
+  return classNames.some((name) => parsed.values.has(name));
 }
 
 function matchesIdFilter(id: string, filter: unknown) {
-  if (typeof filter !== 'string' || !filter) return true;
-  try {
-    return new RegExp(filter).test(id);
-  } catch {
-    return false;
-  }
+  const parsed = parseTextFilter(filter);
+  if (parsed.kind === 'none') return true;
+  if (parsed.kind === 'invalid') return false;
+  if (parsed.kind === 'regex') return parsed.expression.test(id);
+  return parsed.values.has(id);
 }
 
 export function compatibleInstalledHubModels({
   classNameFilter,
-  family,
+  filterValid = true,
   idFilter,
   items,
 }: {
   classNameFilter?: unknown;
-  family?: ModelFamilyHint | null;
+  filterValid?: unknown;
   idFilter?: unknown;
   items: unknown[];
 }) {
+  if (filterValid !== true) return [];
   return items
     .filter((item): item is IndexedHubModel => Boolean(item && typeof item === 'object'))
     .flatMap((item) => {
@@ -180,7 +120,6 @@ export function compatibleInstalledHubModels({
       ) {
         return [];
       }
-      if (family && modelFamilyHint(id, item.class_names) !== family) return [];
       return [id];
     })
     .filter((id, index, values) => values.indexOf(id) === index)
@@ -188,19 +127,28 @@ export function compatibleInstalledHubModels({
 }
 
 export function compatibleInstalledLocalModels({
-  family,
+  classNameFilter,
+  filterValid = true,
   idFilter,
   items,
 }: {
-  family?: ModelFamilyHint | null;
+  classNameFilter?: unknown;
+  filterValid?: unknown;
   idFilter?: unknown;
   items: unknown[];
 }) {
+  if (filterValid !== true) return [];
+  // `/local_models` currently returns path strings without class metadata. A
+  // backend class filter therefore cannot be evaluated safely: returning every
+  // path would turn an authoritative compatibility constraint into a fail-open
+  // hint. Keep ID-only local contracts usable, but wait for enriched local
+  // discovery before admitting candidates under a declared class filter.
+  if (parseTextFilter(classNameFilter).kind !== 'none') return [];
+
   return items
     .filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
     .map((item) => item.trim())
     .filter((id) => matchesIdFilter(id, idFilter))
-    .filter((id) => !family || modelFamilyHint(id) === family)
     .filter((id, index, values) => values.indexOf(id) === index)
     .sort((left, right) => left.localeCompare(right));
 }

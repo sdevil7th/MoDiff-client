@@ -168,6 +168,317 @@ test('graph replacement restores missing live UI preview contracts without repla
   assert.equal(preview.value, '/file?file=previous.mp4');
 });
 
+test('pre-registry graph replacement strips stored behavior and restores only the arriving live contract', () => {
+  flowStoreModule.useFlowStore.getState().replaceGraph({
+    nodes: [
+      node('startup-loader', {
+        repository: {
+          type: 'string',
+          display: 'modelselect',
+          value: { source: 'hub', value: 'example/custom-modular' },
+          onChange: 'saved_repository_action',
+        },
+        components: {
+          display: 'input',
+          type: 'Components',
+          onSignal: { action: 'value', target: 'saved_identity' },
+        },
+        spawned_input: {
+          type: 'string',
+          spawn: true,
+          value: 'saved execution data',
+          onChange: 'saved_spawn_action',
+        },
+      }),
+    ],
+    edges: [],
+  });
+
+  let state = flowStoreModule.useFlowStore.getState();
+  let params = state.nodes[0].data.params;
+  assert.equal(params.repository.onChange, undefined);
+  assert.equal(params.components.onSignal, undefined);
+  assert.deepEqual(params.spawned_input, {
+    type: 'string',
+    spawn: true,
+    value: 'saved execution data',
+  });
+
+  nodeStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      'modules.Test.startup-loader': {
+        type: 'custom',
+        module: 'modules.Test',
+        action: 'startup-loader',
+        label: 'Startup loader',
+        category: 'Test',
+        params: {
+          repository: {
+            type: 'string',
+            display: 'modelselect',
+            value: { source: 'hub', value: 'live/default' },
+            onChange: 'resolve_execution_identity',
+          },
+          components: {
+            display: 'input',
+            type: 'Components',
+            onSignal: { action: 'value', target: 'modiff_pipeline_identity' },
+          },
+        },
+      },
+    },
+  });
+  state.replaceGraph({ nodes: state.nodes, edges: state.edges, viewport: state.viewport });
+
+  params = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
+  assert.deepEqual(params.repository.value, { source: 'hub', value: 'example/custom-modular' });
+  assert.equal(params.repository.onChange, 'resolve_execution_identity');
+  assert.deepEqual(params.components.onSignal, {
+    action: 'value',
+    target: 'modiff_pipeline_identity',
+  });
+  assert.deepEqual(params.spawned_input, {
+    type: 'string',
+    spawn: true,
+    value: 'saved execution data',
+  });
+});
+
+test('unknown nodes remain inert after registry discovery', () => {
+  nodeStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      'modules.Test.known-node': node('known-node', {}).data,
+    },
+  });
+  flowStoreModule.useFlowStore.getState().replaceGraph({
+    nodes: [
+      node('unknown-node', {
+        prompt: {
+          type: 'string',
+          value: 'saved prompt',
+          onChange: { action: 'exec', data: 'untrusted_saved_action' },
+          onSignal: { action: 'value', target: 'untrusted_saved_target' },
+        },
+      }),
+    ],
+    edges: [],
+  });
+
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().nodes[0].data.params.prompt, {
+    type: 'string',
+    value: 'saved prompt',
+  });
+});
+
+test('legacy graph replacement rebases live field actions and restores hidden execution state without replacing saved values', () => {
+  const savedIdentity = {
+    version: 1,
+    source: 'hub',
+    repository: 'example/custom-modular',
+    revision: 'a'.repeat(40),
+    trust_remote_code: false,
+    config_filename: 'modiff_pipeline_config.json',
+    config_sha256: 'b'.repeat(64),
+    execution_id: 'c'.repeat(64),
+  };
+  nodeStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      'modules.Test.legacy-loader': {
+        type: 'custom',
+        module: 'modules.Test',
+        action: 'legacy-loader',
+        label: 'Current loader',
+        category: 'Test',
+        params: {
+          repository: {
+            label: 'Repository',
+            type: 'string',
+            value: 'live/default',
+            onChange: 'resolve_execution_identity',
+          },
+          components: {
+            display: 'input',
+            type: 'Components',
+            onSignal: { action: 'value', target: 'modiff_pipeline_identity' },
+          },
+          inert_setting: {
+            type: 'string',
+            value: 'live-default',
+          },
+          modiff_pipeline_identity: {
+            type: 'object',
+            value: null,
+            hidden: true,
+          },
+          missing_hidden_state: {
+            type: 'string',
+            value: 'live-hidden-default',
+            hidden: true,
+          },
+          new_visible_field: {
+            type: 'string',
+            value: 'not-restored-without-a-node-definition-update',
+          },
+        },
+      },
+    },
+  });
+
+  flowStoreModule.useFlowStore.getState().replaceGraph({
+    nodes: [
+      node('legacy-loader', {
+        repository: {
+          label: 'Saved repository',
+          type: 'string',
+          value: 'example/custom-modular',
+          onChange: 'stale_resolver',
+        },
+        components: {
+          display: 'input',
+          type: 'Components',
+          value: 'saved-components',
+          onChange: 'stale_component_action',
+          onSignal: { action: 'value', target: 'stale_identity' },
+        },
+        inert_setting: {
+          type: 'string',
+          value: 'saved-setting',
+          onChange: 'removed_backend_action',
+          onSignal: { action: 'value', target: 'removed_target' },
+        },
+        removed_field: {
+          type: 'string',
+          spawn: true,
+          value: 'saved-execution-data',
+          onChange: 'removed_field_action',
+          onSignal: { action: 'value', target: 'removed_field_target' },
+        },
+        modiff_pipeline_identity: {
+          value: savedIdentity,
+        },
+      }),
+    ],
+    edges: [],
+  });
+
+  const params = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
+  assert.deepEqual(params.repository, {
+    label: 'Saved repository',
+    type: 'string',
+    value: 'example/custom-modular',
+    onChange: 'resolve_execution_identity',
+  });
+  assert.deepEqual(params.components, {
+    display: 'input',
+    type: 'Components',
+    value: 'saved-components',
+    isConnected: false,
+    onSignal: { action: 'value', target: 'modiff_pipeline_identity' },
+  });
+  assert.deepEqual(params.inert_setting, {
+    type: 'string',
+    value: 'saved-setting',
+  });
+  assert.deepEqual(params.removed_field, {
+    type: 'string',
+    spawn: true,
+    value: 'saved-execution-data',
+  });
+  assert.deepEqual(params.modiff_pipeline_identity, {
+    type: 'object',
+    value: savedIdentity,
+    hidden: true,
+  });
+  assert.deepEqual(params.missing_hidden_state, {
+    type: 'string',
+    value: 'live-hidden-default',
+    hidden: true,
+  });
+  assert.equal(params.new_visible_field, undefined);
+});
+
+test('opaque output signals update connected inputs, stay transient, and clear on disconnect', () => {
+  const identityA = {
+    version: 1,
+    source: 'hub',
+    repository: 'example/custom-a',
+    revision: 'a'.repeat(40),
+    execution_id: '1'.repeat(64),
+  };
+  const identityB = {
+    version: 1,
+    source: 'local',
+    repository: 'D:/models/custom-b',
+    revision: null,
+    execution_id: '2'.repeat(64),
+  };
+  const connection = edge('identity-edge', 'source', 'target', 'components', 'components');
+  flowStoreModule.useFlowStore.setState({
+    nodes: [
+      node('source', {
+        modiff_pipeline_identity: {
+          type: 'object',
+          hidden: true,
+          value: identityA,
+        },
+        components: {
+          display: 'output',
+          type: 'Components',
+          isConnected: true,
+          signal: { direction: 'output', origin: 'modiff_pipeline_identity', value: identityA },
+        },
+      }),
+      node('target', {
+        components: {
+          display: 'input',
+          type: 'Components',
+          isInput: true,
+          isConnected: true,
+          signal: {
+            direction: 'output',
+            origin: 'legacy-propagated-origin',
+            value: { execution_id: 'stale' },
+          },
+        },
+      }),
+    ],
+    edges: [connection],
+  });
+
+  let flow = flowStoreModule.useFlowStore.getState();
+  flow.updateSignalValues(connection);
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().getParam('target', 'components', 'signal'), {
+    direction: 'output',
+    origin: undefined,
+    value: identityA,
+  });
+
+  flowStoreModule.useFlowStore
+    .getState()
+    .setParam(
+      'source',
+      'components',
+      { direction: 'output', origin: 'modiff_pipeline_identity', value: identityB },
+      'signal',
+    );
+  flowStoreModule.useFlowStore.getState().setParam('source', 'modiff_pipeline_identity', identityB, 'value');
+  flow = flowStoreModule.useFlowStore.getState();
+  flow.updateSignalValues(connection);
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().getSignalValue('target', 'components'), identityB);
+
+  const durable = flowStoreModule.useFlowStore.getState().toObject();
+  assert.deepEqual(
+    durable.nodes.find((item) => item.id === 'source').data.params.modiff_pipeline_identity.value,
+    identityB,
+  );
+  assert.equal(durable.nodes.find((item) => item.id === 'source').data.params.components.signal.value, undefined);
+  assert.equal(durable.nodes.find((item) => item.id === 'target').data.params.components.signal.value, undefined);
+
+  flowStoreModule.useFlowStore.getState().removeEdges('identity-edge');
+  assert.equal(flowStoreModule.useFlowStore.getState().getSignalValue('target', 'components'), undefined);
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().getSignalValue('source', 'components'), identityB);
+});
+
 test('node deletion cleans edges, spawned inputs, signals, handles, cache, and round-trips through history', () => {
   const source = node(
     'source',
@@ -364,8 +675,14 @@ test('advancing a task retires the previous node progress indicator', () => {
   assert.equal(loader.data.progressMessage, 'Loading weights 91/398');
 });
 
-test('persisted flow hydration versions and filters malformed graph state', async () => {
-  const valid = node('persisted-valid', { prompt: { value: 'restored' } });
+test('persisted flow hydration versions, strips behavior, and filters malformed graph state', async () => {
+  const valid = node('persisted-valid', {
+    prompt: {
+      value: 'restored',
+      onChange: 'persisted_action',
+      onSignal: { action: 'value', target: 'persisted_target' },
+    },
+  });
   globalThis.localStorage.setItem(
     'modiff.flow',
     JSON.stringify({
@@ -400,6 +717,7 @@ test('persisted flow hydration versions and filters malformed graph state', asyn
     ['valid-edge'],
   );
   assert.deepEqual(restored.viewport, { x: 12, y: 0, zoom: 1 });
+  assert.deepEqual(restored.nodes[0].data.params.prompt, { value: 'restored' });
   assert.equal(restored.historyPast.length, 0);
   assert.equal(restored.historyFuture.length, 0);
 });

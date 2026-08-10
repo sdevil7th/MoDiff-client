@@ -180,7 +180,9 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
       return;
     }
     const propKey = eventData.prop || 'value';
-    value = isRecord(data) ? data[String(value ?? '')] : (value ?? '');
+    // A value action without an explicit mapping is a generic passthrough.
+    // Do not mistake the action descriptor itself for a model/value map.
+    value = isRecord(eventData.data) ? eventData.data[String(value ?? '')] : (value ?? '');
 
     if (!['value', 'hidden', 'disabled', 'options', 'fieldOptions', 'display'].includes(propKey)) {
       return;
@@ -252,7 +254,7 @@ export function relaySignal(nodeId: string, fieldKey: string, signal: NodeParamS
             flowState.setParam(
               targetNodeId,
               targetFieldKey,
-              { ...(targetSignal ?? signal), value: signal.value },
+              { ...(targetSignal ?? signal), origin: undefined, value: signal.value },
               'signal',
             );
           }
@@ -273,7 +275,7 @@ export function relaySignal(nodeId: string, fieldKey: string, signal: NodeParamS
           flowState.setParam(
             sourceNodeId,
             sourceFieldKey,
-            { ...(sourceSignal ?? signal), value: signal.value },
+            { ...(sourceSignal ?? signal), origin: undefined, value: signal.value },
             'signal',
           );
         }

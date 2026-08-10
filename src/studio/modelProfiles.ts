@@ -8,6 +8,7 @@ import type {
 } from './types';
 
 export const QWEN_CONTROLNET_REPO = 'InstantX/Qwen-Image-ControlNet-Union';
+export const QWEN_CONTROLNET_REVISION = 'b13036f066d6dee7c20513e263d3d673055e9de8';
 export const QWEN_IMAGE_2512_REPO = 'Qwen/Qwen-Image-2512';
 export const QWEN_IMAGE_2512_PREQUANTIZED_REPO = 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit';
 export const QWEN_IMAGE_EDIT_PREQUANTIZED_REPO = 'ovedrive/qwen-image-edit-4bit';
@@ -78,6 +79,7 @@ export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   id: 'qwen-controlnet-union',
   label: 'Qwen ControlNet Union',
   repo: QWEN_CONTROLNET_REPO,
+  revision: QWEN_CONTROLNET_REVISION,
   kind: 'controlnet',
   requiredForModes: ['control_image'],
   description: 'Required for Qwen Image Control image workflows.',
@@ -473,7 +475,7 @@ export const STUDIO_MODEL_PROFILES: Record<StudioModelType, StudioModelProfile> 
       offloadMode: QWEN_LOW_VRAM_OFFLOAD_MODE,
       steps: 24,
     },
-    modes: ['edit_image', 'multi_image_reference_edit', 'inpaint'],
+    modes: ['edit_image', 'multi_image_reference_edit'],
     modeRequirements: {
       inpaint: {
         requiredImages: ['referenceImages', 'maskImage'],
@@ -1122,7 +1124,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   QwenImageEditPlusModularPipeline: {
     modelType: 'QwenImageEditPlusModularPipeline',
-    supportedModes: ['edit_image', 'multi_image_reference_edit', 'inpaint'],
+    supportedModes: ['edit_image', 'multi_image_reference_edit'],
     autoStatus: 'auto_ready',
     minimum:
       'ROCm or CUDA accelerator with enough usable accelerator/unified memory for the selected validated recipe; the qualified native BF16 path requires 64 GB-class memory.',

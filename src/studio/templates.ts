@@ -88,6 +88,7 @@ const QWEN_EDIT_2511_LIGHTNING_LORA: NonNullable<StudioTemplateWorkflowBlockSett
   model: {
     source: 'hub',
     value: 'lightx2v/Qwen-Image-Edit-2511-Lightning',
+    revision: 'd74eba145674fd7e31b949324e148e21e7118abd',
     sha256: '22226e8d05d354bb356627d428809f5afd7819399b077238a2b70a82883a904f',
     byteSize: 849608296,
     license: 'Apache-2.0',
@@ -255,6 +256,7 @@ const ACE_STEP_CUSTOM_LORA: NonNullable<StudioTemplateWorkflowBlockSettings['lor
   baseModel: {
     source: 'hub',
     value: 'Runware/acestep-v15-turbo-diffusers',
+    revision: 'be23effe449c5957947f3020fd63bee23c64abe4',
   },
   model: {
     source: 'local',

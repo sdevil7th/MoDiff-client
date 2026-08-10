@@ -117,6 +117,10 @@ Read [the architecture guide](docs/modiff-client-architecture.md) before changin
 - Keep localStorage migrations from legacy keys; do not strand existing user workflows.
 - A model profile, registry key, cached directory, mocked test, and live model output are different proof levels. Document them separately.
 
+The compatible backend may integrate model libraries officially maintained and published by Hugging Face. The browser does not run those libraries or a hosted inference provider. It consumes task-generic execution specifications from the backend and must not select Python classes or duplicate model-specific parameter logic. Hub hosting alone does not establish that a package or repository implementation is an official Hugging Face library.
+
+Transformers-backed execution is optional and consented. Template browsing/opening, registry discovery, and Auto planning may display a missing-runtime requirement but must not initiate installation. The user must explicitly request installation of a reviewed backend optional-runtime profile; Run remains blocked until the backend reports a compatible verified installation.
+
 For a large component, extract domain behavior into hooks/modules before adding another responsibility. `StudioPanel`, `Workflow`, flow mutations, websocket handling, graph export, and Studio contracts already use that pattern.
 
 ## Stack And Dependency Policy

@@ -28,6 +28,8 @@ Reports are especially useful when they involve:
 - Workflow/export/provenance data leaking between users or origins
 - Dependency or build-pipeline compromise
 
+Official Hugging Face model libraries execute only in the local backend process; they do not make model repositories or repository-supplied code trusted. Optional runtimes must be installed through an explicit, reviewed backend action. Opening a template, discovering nodes, or checking Auto compatibility must remain read-only with respect to Python packages.
+
 ## Supported Versions
 
 Until tagged releases are published, security fixes target the current `main` branch and its compatible MoDiff backend revision. Older snapshots may not receive backports.

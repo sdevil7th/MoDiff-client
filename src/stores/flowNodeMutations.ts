@@ -4,7 +4,6 @@ import { nanoid } from 'nanoid';
 import type { NodeData, NodeParams } from './useNodeStore';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { deepEqual } from '../utils/deepEqual';
-import { normalizeGenericModelLoaderParams } from '../studio/modelSelection';
 import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 
@@ -23,12 +22,7 @@ export function applyFlowNodeChanges(changes: NodeChange<CustomNodeType>[], set:
 }
 
 export function addFlowNode(node: CustomNodeType, set: FlowStoreSet, get: FlowStoreGet) {
-  set({
-    nodes: [...get().nodes, node].map((item) => {
-      const params = normalizeGenericModelLoaderParams(item.data.module, item.data.action, item.data.params);
-      return params === item.data.params ? item : { ...item, data: { ...item.data, params } };
-    }),
-  });
+  set({ nodes: [...get().nodes, node] });
 }
 
 export function removeFlowNodes(ids: string | string[], set: FlowStoreSet, get: FlowStoreGet) {

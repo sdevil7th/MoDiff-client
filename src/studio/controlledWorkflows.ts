@@ -327,9 +327,8 @@ export async function addLoraWorkflowBlock(
         source: adapter.model.source,
         value: adapter.model.value,
       });
-      if (adapter.model.sha256) {
-        setParamIfPresent(nodeId, ['expected_sha256'], adapter.model.sha256);
-      }
+      setParamIfPresent(nodeId, ['revision'], adapter.model.revision ?? '');
+      setParamIfPresent(nodeId, ['expected_sha256'], adapter.model.sha256 ?? '');
     }
     if (adapter?.weightName) {
       setParamIfPresent(nodeId, ['weight_name'], adapter.weightName);
@@ -345,9 +344,7 @@ export async function addLoraWorkflowBlock(
       source: settings.baseModel.source,
       value: settings.baseModel.value,
     });
-    if (settings.baseModel.revision) {
-      setParamIfPresent(audioPipelineNode, ['revision'], settings.baseModel.revision);
-    }
+    setParamIfPresent(audioPipelineNode, ['revision'], settings.baseModel.revision ?? '');
   }
   if (settings?.schedulerClass) {
     setParamIfPresent(loraNode, ['scheduler_class'], settings.schedulerClass);

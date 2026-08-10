@@ -1,10 +1,12 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { FieldProps } from '../components/NodeContent';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { FieldFrame, ModiffFieldShell } from '../ui';
 import { GraphControlInput } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
+import fieldAction from '../utils/fieldAction';
+import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 
 export default function InputField(props: FieldProps) {
   const [isFocused, setIsFocused] = useState(false);
@@ -21,14 +23,14 @@ export default function InputField(props: FieldProps) {
     }
   }, [fieldValue, isFocused]);
 
-  const commitValue = useCallback(
-    (value: string) => {
-      if (value !== fieldValue) {
-        updateStore(fieldKey, value);
-      }
-    },
-    [fieldKey, fieldValue, updateStore],
-  );
+  const commitValue = (value: string) => {
+    if (value !== fieldValue) {
+      updateStore(fieldKey, value);
+      void fieldAction(props, value);
+    }
+  };
+
+  useInitialFieldAction(props);
 
   return (
     <FieldFrame

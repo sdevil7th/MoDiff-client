@@ -4,9 +4,15 @@ These rules apply to Codex, Copilot-style agents, and any AI tool editing this r
 
 ## Non-Negotiable Rules
 
-- Diffusers and Modular Diffusers are the only supported model execution layer. Do not add a hosted inference
-  provider, alternate model driver, second graph executor, or browser-side model runtime. Supporting libraries may
-  assist a Diffusers pipeline but must not become an independent execution path.
+- The backend may execute models through official libraries maintained and published by Hugging Face. Keep all of
+  them behind the existing backend graph, resource, Auto/Expert, file, and security contracts; do not add a hosted
+  inference provider, second graph executor, browser-side model runtime, or client-owned workflow representation.
+- Keep frontend nodes and task surfaces generic. Render the backend's declared dynamic inputs, parameters, outputs,
+  readiness, and install requirements instead of selecting Python classes or maintaining model-specific parameter
+  branches in the client.
+- Transformers is an optional backend runtime, not a default client/application dependency. Browsing or opening a
+  template, loading registry data, and requesting an Auto plan must never install it. Show an explicit install and
+  consent action for a reviewed optional-runtime profile, then require backend verification before enabling Run.
 - New UI work is Tailwind/headless-first. Do not reintroduce MUI, Emotion, notistack, styled-components, CSS modules, or another UI framework.
 - Use `src/theme` for MoDiff colors, Hugging Face-inspired tokens, typography, radii, shadows, z-index values, category colors, style sanitizers, and React Flow helpers.
 - Use `src/ui` primitives before writing repeated panel, status, field, image, toast, dialog, menu, tab, or toolbar styling.

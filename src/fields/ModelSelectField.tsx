@@ -1,6 +1,6 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { FieldProps } from '../components/NodeContent';
@@ -11,20 +11,19 @@ import { Download, Library, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { isHfDownloadActive } from '../studio/modelInstall';
-import { getProfileForForm } from '../studio/modelProfiles';
 import {
   compatibleInstalledHubModels,
   compatibleInstalledLocalModels,
-  connectedModelFamilyHint,
   indexedHubModelIsInstalled,
-  modelFamilyHint,
+  parseModelSelectionFilters,
 } from '../studio/modelSelection';
 import { FieldFrame, ModiffButton } from '../ui';
 import { GraphIconButton } from '../ui/GraphControls';
 import { enqueueSnackbar } from '../ui/snackbar';
+import fieldAction from '../utils/fieldAction';
+import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 
 type HfCacheItem = {
   id?: unknown;
@@ -64,11 +63,10 @@ function asModelFieldValue(value: unknown, fallbackSource: ModelSource): ModelFi
   return { source: fallbackSource, value: '' };
 }
 
-function asFilterRecord(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
-}
-
 export default function ModelSelectField(props: FieldProps) {
+  const actionTimerRef = useRef(0);
+  const latestActionPropsRef = useRef(props);
+  latestActionPropsRef.current = props;
   const activeSources = asModelSources(props.fieldOptions?.sources);
   const fallbackSource = activeSources[0] ?? 'hub';
   const propsValue =
@@ -90,36 +88,30 @@ export default function ModelSelectField(props: FieldProps) {
         localModels: state.localModels,
       })),
     );
-  const connectedFamily = useFlowStore((state) => connectedModelFamilyHint(state.nodes, state.edges, props.nodeId));
-  const managedFamily = useStudioStore((state) =>
-    state.graphBinding?.managedNodeIds.includes(props.nodeId)
-      ? modelFamilyHint(getProfileForForm(state.form).defaultRepo)
-      : null,
-  );
-  const family = managedFamily ?? connectedFamily;
   const sid = useWebsocketStore((state) => state.sid);
   const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
-  const filterRoot = asFilterRecord(props.fieldOptions?.filter);
-  const hubFilter = asFilterRecord(filterRoot.hub);
-  const localFilter = asFilterRecord(filterRoot.local);
+  const filters = parseModelSelectionFilters(props.fieldOptions?.filter);
+  const hubFilter = filters.hub;
+  const localFilter = filters.local;
   const hubOptions = useMemo(
     () =>
       compatibleInstalledHubModels({
         classNameFilter: hubFilter.className,
-        family,
+        filterValid: hubFilter.valid,
         idFilter: hubFilter.id,
         items: hfCache,
       }),
-    [family, hfCache, hubFilter.className, hubFilter.id],
+    [hfCache, hubFilter.className, hubFilter.id, hubFilter.valid],
   );
   const localModelOptions = useMemo(
     () =>
       compatibleInstalledLocalModels({
-        family,
+        classNameFilter: localFilter.className,
+        filterValid: localFilter.valid,
         idFilter: localFilter.id,
         items: localModels,
       }),
-    [family, localFilter.id, localModels],
+    [localFilter.className, localFilter.id, localFilter.valid, localModels],
   );
   const currentInstalled = useMemo(() => {
     if (!currentModelId) return false;
@@ -137,19 +129,36 @@ export default function ModelSelectField(props: FieldProps) {
   const installProgress = currentModelId ? hfDownloadProgress[currentModelId] : undefined;
   const installActive = isHfDownloadActive(installProgress);
 
-  const handleSourceTypeChange = (source: 'hub' | 'local') => {
-    props.updateStore(props.fieldKey, { ...propsValue, value: '', source });
+  const scheduleFieldAction = (value: ModelFieldValue) => {
+    clearTimeout(actionTimerRef.current);
+    const scheduledAction = props.onChange;
+    actionTimerRef.current = window.setTimeout(() => {
+      const liveNode = useFlowStore.getState().nodes.find(({ id }) => id === props.nodeId);
+      if (
+        liveNode?.data.module === props.module &&
+        liveNode.data.action === props.action &&
+        liveNode.data.params[props.fieldKey]?.onChange === scheduledAction
+      ) {
+        void fieldAction(latestActionPropsRef.current, value);
+      }
+    }, 250);
+  };
+
+  const handleSourceTypeChange = (source: ModelSource) => {
+    const nextValue = { ...propsValue, value: '', source };
+    props.updateStore(props.fieldKey, nextValue);
+    scheduleFieldAction(nextValue);
   };
 
   const handleFieldChange = (key: string, value: unknown) => {
-    if (value === null || value === undefined) {
-      value = null;
-    } else if (typeof value === 'object') {
-      value = (value as { value?: unknown }).value;
-    }
-
-    props.updateStore(key, { ...propsValue, value });
+    const nextValue = isRecord(value) ? value.value : (value ?? null);
+    const nextModelValue = { ...propsValue, value: nextValue };
+    props.updateStore(key, nextModelValue);
+    scheduleFieldAction(nextModelValue);
   };
+
+  useInitialFieldAction(props);
+  useEffect(() => () => clearTimeout(actionTimerRef.current), []);
 
   const handleRefresh = async () => {
     props.updateStore(props.fieldKey, true, 'disabled');
@@ -213,6 +222,7 @@ export default function ModelSelectField(props: FieldProps) {
         <div className="z-[1] min-w-0 flex-1">
           <AutocompleteField
             {...props}
+            onChange={undefined}
             value={fieldValue}
             disabled={props.disabled || isLoading}
             fieldOptions={{ ...props.fieldOptions, emptyMessage: 'No compatible installed models' }}

@@ -70,10 +70,10 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
   const hfCache = useNodesStore((state) => state.hfCache);
   const localModels = useNodesStore((state) => state.localModels);
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
-  const modelDiscoveryRevision = useNodesStore(
-    (state) =>
-      `${state.discoveryRequests.hfCache.status}:${state.discoveryRequests.hfCache.requestId ?? ''}|${state.discoveryRequests.localModels.status}:${state.discoveryRequests.localModels.requestId ?? ''}`,
-  );
+  const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const studioModelCapabilitiesAuthoritative = useNodesStore((state) => state.studioModelCapabilitiesAuthoritative);
+  const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
+  const discoveryRequests = useNodesStore((state) => state.discoveryRequests);
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
   const runtimeResources = useNodesStore((state) => state.runtimeResources);
   const queueRevision = useTaskStore((state) => state.queueRevision);
@@ -84,78 +84,36 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
       : 'idle';
   });
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
-  const readinessRevision = useMemo(
-    () =>
-      JSON.stringify({
-        autoResourcePlan,
-        flowFingerprint,
-        form,
-        graphBindingFingerprint: graphBinding?.fingerprint,
-        graphBindingNodeCount: graphBinding?.managedNodeIds.length ?? 0,
-        graphFinalization,
-        isPreparing,
-        hfCache: hfCache
-          .map((item) =>
-            typeof item === 'string'
-              ? item
-              : item && typeof item === 'object'
-                ? String((item as { id?: unknown }).id ?? JSON.stringify(item))
-                : String(item),
-          )
-          .sort(),
-        localModels: localModels
-          .map((item) =>
-            typeof item === 'string'
-              ? item
-              : item && typeof item === 'object'
-                ? String(
-                    (item as { id?: unknown; path?: unknown }).id ??
-                      (item as { path?: unknown }).path ??
-                      JSON.stringify(item),
-                  )
-                : String(item),
-          )
-          .sort(),
-        modelDiscoveryRevision,
-        modelCacheDiagnostics,
-        nodesRegistryKeys: Object.keys(nodesRegistry).sort(),
-        runtimeStatus,
-        runtimeResourceSample: runtimeResources
-          ? {
-              sampledAt: runtimeResources.sampledAt,
-              activeDevice: runtimeResources.activeDevice,
-              free: runtimeResources.accelerators.map((item) => [item.device, item.memoryFreeBytes]),
-            }
-          : null,
-        queueRevision,
-        currentTaskFingerprint,
-      }),
-    [
-      autoResourcePlan,
-      flowFingerprint,
-      form,
-      graphBinding,
-      graphFinalization,
-      isPreparing,
-      hfCache,
-      localModels,
-      modelDiscoveryRevision,
-      modelCacheDiagnostics,
-      nodesRegistry,
-      runtimeStatus,
-      runtimeResources,
-      queueRevision,
-      currentTaskFingerprint,
-    ],
-  );
-
   const issues = useMemo(() => {
-    void readinessRevision;
     // A template graph is assembled, finalized, and laid out as one atomic
     // transition. Do not classify its intentionally incomplete hidden states.
     if (isPreparing) return [];
     return collectRunReadinessIssues({ sid, isConnected, includeStudio });
-  }, [includeStudio, isConnected, isPreparing, readinessRevision, sid]);
+    // The collector reads stores imperatively; selected snapshots below are intentional invalidation signals.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    autoResourcePlan,
+    currentTaskFingerprint,
+    discoveryRequests,
+    flowFingerprint,
+    form,
+    graphBinding,
+    graphFinalization,
+    hfCache,
+    includeStudio,
+    isConnected,
+    isPreparing,
+    localModels,
+    modelCacheDiagnostics,
+    nodesRegistry,
+    optionalRuntimeCatalog,
+    queueRevision,
+    runtimeResources,
+    runtimeStatus,
+    sid,
+    studioModelCapabilities,
+    studioModelCapabilitiesAuthoritative,
+  ]);
   const decision = useMemo(() => buildRunReadinessDecision(issues, { preparing: isPreparing }), [isPreparing, issues]);
 
   return {

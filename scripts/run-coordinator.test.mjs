@@ -9,6 +9,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let coordinatorModule;
 let fieldActionModule;
 let flowStoreModule;
+let nodesStoreModule;
+let runPreparationModule;
 let studioStoreModule;
 let taskStoreModule;
 let websocketModule;
@@ -47,6 +49,8 @@ before(async () => {
   coordinatorModule = await server.ssrLoadModule('/src/studio/runCoordinator.ts');
   fieldActionModule = await server.ssrLoadModule('/src/utils/fieldAction.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  runPreparationModule = await server.ssrLoadModule('/src/studio/runPreparation.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
   websocketModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
@@ -311,6 +315,90 @@ test('field actions send the workflow tab and canvas epoch captured at dispatch'
   assert.equal(submitted.workflowTabId, 'workflow-field-action');
   assert.equal(submitted.workflowCanvasEpoch, 23);
   assert.equal(submitted.queue, true);
+});
+
+test('value signal actions pass backend model identities through without a client allowlist', async () => {
+  const updates = [];
+
+  await fieldActionModule.default(
+    {
+      nodeId: 'preview',
+      fieldKey: 'output',
+      module: 'modules.Contract',
+      action: 'DynamicTask',
+      onSignal: { action: 'value', target: 'model_type' },
+      updateStore: (field, value, prop) => updates.push({ field, value, prop }),
+    },
+    'FutureRegisteredModularPipeline',
+    'onSignal',
+  );
+
+  assert.deepEqual(updates, [
+    {
+      field: 'model_type',
+      value: 'FutureRegisteredModularPipeline',
+      prop: 'value',
+    },
+  ]);
+});
+
+test('value signal actions pass structured execution identities without interpreting their fields', async () => {
+  const updates = [];
+  const identity = {
+    version: 1,
+    source: 'hub',
+    repository: 'example/custom-modular',
+    revision: 'a'.repeat(40),
+    execution_id: 'b'.repeat(64),
+    backend_extension: { arbitrary: ['opaque', 7] },
+  };
+
+  await fieldActionModule.default(
+    {
+      nodeId: 'preview',
+      fieldKey: 'output',
+      module: 'modules.Contract',
+      action: 'DynamicTask',
+      onSignal: { action: 'value', target: 'modiff_pipeline_identity' },
+      updateStore: (field, value, prop) => updates.push({ field, value, prop }),
+    },
+    identity,
+    'onSignal',
+  );
+
+  assert.deepEqual(updates, [{ field: 'modiff_pipeline_identity', value: identity, prop: 'value' }]);
+});
+
+test('hidden execution identity changes participate in the Studio run input hash', () => {
+  const form = studioStoreModule.useStudioStore.getState().form;
+  const baseGraph = graph();
+  const graphWithIdentity = (executionId) => ({
+    ...baseGraph,
+    nodes: {
+      ...baseGraph.nodes,
+      generate: {
+        ...baseGraph.nodes.generate,
+        params: {
+          ...baseGraph.nodes.generate.params,
+          modiff_pipeline_identity: {
+            value: {
+              version: 1,
+              source: 'hub',
+              repository: 'example/custom-modular',
+              revision: 'a'.repeat(40),
+              execution_id: executionId,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const first = runPreparationModule.getStudioRunInputHash(form, graphWithIdentity('1'.repeat(64)));
+  const same = runPreparationModule.getStudioRunInputHash(form, graphWithIdentity('1'.repeat(64)));
+  const second = runPreparationModule.getStudioRunInputHash(form, graphWithIdentity('2'.repeat(64)));
+  assert.equal(first, same);
+  assert.notEqual(first, second);
 });
 
 test('imported graph submission captures generic correlation without Studio resource metadata', async () => {
@@ -896,6 +984,165 @@ test('dynamic field and completion messages mutate only their owning workflow ca
     args: [{}, { node: 'preview', key: 'output', queue: true }],
   });
   assert.equal(flowStoreModule.useFlowStore.getState().getParam('preview', 'output', 'disabled'), false);
+});
+
+test('owned set_field_params messages reconcile opaque signals across connected generic fields', async () => {
+  const context = {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  };
+  studioStoreModule.useStudioStore.setState({
+    activeWorkflowTabId: 'workflow-origin',
+    workflowCanvasEpoch: 12,
+    workflowTabs: [{ id: 'workflow-origin' }, { id: 'workflow-other' }],
+  });
+  const source = {
+    id: 'identity-source',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Contract',
+      action: 'IdentitySource',
+      label: 'Identity source',
+      category: 'Test',
+      params: {
+        components: { display: 'output', type: 'Components', isConnected: true },
+      },
+    },
+  };
+  const target = {
+    id: 'identity-target',
+    type: 'custom',
+    position: { x: 200, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Contract',
+      action: 'IdentityTarget',
+      label: 'Identity target',
+      category: 'Test',
+      params: {
+        components: { display: 'input', type: 'Components', isInput: true, isConnected: true },
+      },
+    },
+  };
+  flowStoreModule.useFlowStore.setState({
+    nodes: [source, target],
+    edges: [
+      {
+        id: 'identity-edge',
+        source: source.id,
+        sourceHandle: 'components',
+        target: target.id,
+        targetHandle: 'components',
+      },
+    ],
+  });
+  const identityA = {
+    version: 1,
+    source: 'hub',
+    repository: 'example/custom-a',
+    revision: 'a'.repeat(40),
+    execution_id: '1'.repeat(64),
+  };
+  const identityB = {
+    version: 1,
+    source: 'local',
+    repository: 'D:/models/custom-b',
+    revision: null,
+    execution_id: '2'.repeat(64),
+  };
+  const sendSignal = (identity, workflowTabId = 'workflow-origin') =>
+    websocketModule.handleWebsocketMessage(
+      {
+        type: 'set_field_params',
+        sid: 'session-1',
+        node: source.id,
+        field: 'components',
+        params: {
+          signal: { direction: 'output', origin: 'modiff_pipeline_identity', value: identity },
+        },
+        workflow_tab_id: workflowTabId,
+        workflow_canvas_epoch: 12,
+      },
+      context,
+    );
+
+  sendSignal(identityA, 'workflow-other');
+  await Promise.resolve();
+  assert.equal(flowStoreModule.useFlowStore.getState().getParam(source.id, 'components', 'signal'), null);
+  assert.equal(flowStoreModule.useFlowStore.getState().getSignalValue(target.id, 'components'), undefined);
+
+  sendSignal(identityA);
+  await Promise.resolve();
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().getParam(source.id, 'components', 'signal'), {
+    direction: 'output',
+    origin: 'modiff_pipeline_identity',
+    value: identityA,
+  });
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().getParam(target.id, 'components', 'signal'), {
+    direction: 'output',
+    origin: undefined,
+    value: identityA,
+  });
+
+  sendSignal(identityB);
+  await Promise.resolve();
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().getSignalValue(target.id, 'components'), identityB);
+});
+
+test('live node definitions preserve an intentional backend AutoModelLoader repository default', () => {
+  const nodeKey = 'modules.ModularDiffusers.AutoModelLoader';
+  const initialRepository = { source: 'hub', value: 'future/initial-default' };
+  const liveRepository = { source: 'hub', value: 'future/live-default' };
+  const loader = {
+    id: 'backend-default-loader',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.ModularDiffusers',
+      action: 'AutoModelLoader',
+      label: 'Backend default loader',
+      category: 'Test',
+      params: {
+        model_id: { type: 'string', display: 'modelselect', default: initialRepository },
+      },
+    },
+  };
+  const previousRegistry = nodesStoreModule.useNodesStore.getState().nodesRegistry;
+  nodesStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      ...previousRegistry,
+      [nodeKey]: loader.data,
+    },
+  });
+  flowStoreModule.useFlowStore.setState({ nodes: [loader], edges: [] });
+
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'node_definition',
+      node: loader.id,
+      params: {
+        model_id: { type: 'string', display: 'modelselect', default: liveRepository },
+      },
+    },
+    {
+      sid: 'session-1',
+      ws: {},
+      getSid: () => 'session-1',
+      setSid: () => undefined,
+      setLoopTimer: () => undefined,
+    },
+  );
+
+  const modelParam = flowStoreModule.useFlowStore.getState().nodes[0].data.params.model_id;
+  assert.deepEqual(modelParam.default, liveRepository);
+  assert.deepEqual(modelParam.value, liveRepository);
+  nodesStoreModule.useNodesStore.setState({ nodesRegistry: previousRegistry });
 });
 
 test('captured run canvas epoch rejects an old-backend dynamic message after document replacement', () => {

@@ -1,6 +1,6 @@
 import type { HfDownloadProgress } from '../stores/useNodeStore';
 import type { ImageArtifact } from '../utils/imageArtifacts';
-import type { StudioPreviewSlot } from '../studio/types';
+import type { StudioMode, StudioPreviewSlot } from '../studio/types';
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -49,6 +49,7 @@ export type ApiGraphRuntimeHints = {
   cudaMemoryTotalBytes?: number;
   modelFamily?: string;
   modelType?: string;
+  mode?: StudioMode;
   modelRepo?: string;
   modelName?: string;
   resolvedModelRepo?: string;

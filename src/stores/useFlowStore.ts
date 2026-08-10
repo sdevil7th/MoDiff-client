@@ -275,6 +275,8 @@ export function durableFlowNodeSnapshot(node: CustomNodeType) {
     : undefined;
   Object.values(snapshot.data.params).forEach((param) => {
     delete param.artifacts;
+    delete param.onChange;
+    delete param.onSignal;
     if (param.signal) {
       param.signal = { ...param.signal, value: undefined };
     }

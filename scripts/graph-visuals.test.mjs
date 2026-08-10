@@ -22,7 +22,9 @@ let managedControlSync;
 let modelSelection;
 let nodeFactory;
 let flowStoreModule;
+let nodesStoreModule;
 let studioStoreModule;
+let websocketMessageHandler;
 let userBlocksModule;
 let server;
 
@@ -44,6 +46,7 @@ before(async () => {
     localStorage: globalThis.localStorage,
     location: { origin: 'http://127.0.0.1:5191' },
     requestAnimationFrame: (callback) => setTimeout(() => callback(Date.now()), 0),
+    setTimeout: globalThis.setTimeout,
   };
   server = await createServer({
     root: ROOT,
@@ -65,7 +68,9 @@ before(async () => {
   modelSelection = await server.ssrLoadModule('/src/studio/modelSelection.ts');
   nodeFactory = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  websocketMessageHandler = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   userBlocksModule = await server.ssrLoadModule('/src/studio/userBlocks.ts');
 });
 
@@ -127,6 +132,89 @@ function managedNode(id, role, extras = {}) {
       uiState: extras.uiState,
     },
   };
+}
+
+function managedContractNode(id, role, module, action, params) {
+  const item = managedNode(id, role, { params });
+  item.data.module = module;
+  item.data.action = action;
+  return item;
+}
+
+const FINALIZATION_PROOF_PARAM_KEYS = [
+  'type',
+  'display',
+  'hidden',
+  'required',
+  'isInput',
+  'spawn',
+  'optionsSource',
+  'min',
+  'max',
+  'step',
+  'onChange',
+  'onSignal',
+  'dataSource',
+  'fieldOptions',
+];
+
+function orderedFinalizationProofValue(value) {
+  if (Array.isArray(value)) return value.map(orderedFinalizationProofValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entryValue]) => [key, orderedFinalizationProofValue(entryValue)]),
+  );
+}
+
+function finalizationProofHash(value) {
+  const serialized = JSON.stringify(orderedFinalizationProofValue(value));
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `graph-v1-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function craftedFinalizationProof(binding, roles) {
+  const nodes = flowStoreModule.useFlowStore.getState().nodes;
+  const nodeById = new Map(nodes.map((item) => [item.id, item]));
+  const fieldSchemaHash = finalizationProofHash({
+    nodes: roles.map((role) => {
+      const nodeId = binding.nodes[role];
+      const item = nodeById.get(nodeId);
+      return {
+        role,
+        id: nodeId,
+        module: item?.data.module,
+        action: item?.data.action,
+        params: Object.fromEntries(
+          Object.entries(item?.data.params ?? {})
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, param]) => [
+              key,
+              Object.fromEntries(
+                FINALIZATION_PROOF_PARAM_KEYS.map((paramKey) => [paramKey, param[paramKey]]).filter(
+                  ([, paramValue]) => paramValue !== undefined,
+                ),
+              ),
+            ]),
+        ),
+      };
+    }),
+  });
+  const managedNodes = new Set(binding.managedNodeIds);
+  const edgeSpecHash = finalizationProofHash(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.filter((item) => managedNodes.has(item.source) && managedNodes.has(item.target))
+      .map((item) => `${item.source}:${item.sourceHandle ?? ''}->${item.target}:${item.targetHandle ?? ''}`)
+      .sort(),
+  );
+  return { schemaVersion: 2, shapeKey: `${binding.fingerprint}:${roles.join('|')}`, fieldSchemaHash, edgeSpecHash };
 }
 
 function graphContentSnapshot(state) {
@@ -1006,6 +1094,124 @@ test('blueprints cannot copy managed ownership and explicit binding membership s
   assert.equal(graphBridge.inspectStudioGraphBindingDivergence()?.kind, 'missing_managed_node');
 });
 
+test('managed video extensions re-seal only after their exact route is complete', () => {
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const quantization = managedContractNode(
+    'proof-video-quantization',
+    'diffusersQuantization',
+    'modules.DiffusersRuntime',
+    'PipelineQuantizationConfigV2',
+    { quantization_config: output('quantization_config') },
+  );
+  const recipe = managedContractNode(
+    'proof-video-recipe',
+    'diffusersRecipe',
+    'modules.DiffusersRuntime',
+    'DiffusersExecutionRecipe',
+    {
+      quantization_config: input('quantization_config'),
+      execution_recipe: output('execution_recipe'),
+    },
+  );
+  const pipeline = managedContractNode(
+    'proof-video-pipeline',
+    'wanPipeline',
+    'modules.DiffusersVideo',
+    'LoadPipeline',
+    { execution_recipe: input('execution_recipe'), pipeline: output('pipeline') },
+  );
+  const generate = managedContractNode('proof-video-generate', 'wanGenerate', 'modules.DiffusersVideo', 'Generate', {
+    pipeline: input('pipeline'),
+    video_out: output('video'),
+  });
+  const exporter = managedContractNode('proof-video-export', 'videoExport', 'modules.Video', 'Export', {
+    video: input('video'),
+  });
+  const nodes = [quantization, recipe, pipeline, generate, exporter];
+  const edges = [
+    edge('proof-video-edge-1', quantization.id, recipe.id, 'quantization_config', 'quantization_config'),
+    edge('proof-video-edge-2', recipe.id, pipeline.id, 'execution_recipe', 'execution_recipe'),
+    edge('proof-video-edge-3', pipeline.id, generate.id, 'pipeline', 'pipeline'),
+    edge('proof-video-edge-4', generate.id, exporter.id, 'video_out', 'video'),
+  ];
+  const form = {
+    ...studioStoreModule.useStudioStore.getState().form,
+    mode: 'text_to_video',
+    modelType: 'WanVideoPipeline',
+    resourceMode: 'expert',
+    quantizationMode: 'none',
+  };
+  const binding = {
+    mode: form.mode,
+    modelType: form.modelType,
+    nodes: {
+      diffusersQuantization: quantization.id,
+      diffusersRecipe: recipe.id,
+      wanPipeline: pipeline.id,
+      wanGenerate: generate.id,
+      videoExport: exporter.id,
+    },
+    managedNodeIds: nodes.map((item) => item.id),
+    managedEdgeIds: edges.map((item) => item.id),
+    fingerprint: `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  flowStoreModule.useFlowStore.setState({ nodes, edges });
+  const shapeKey = graphBridge.getStudioGraphShapeKey(form);
+  binding.finalizationProof = {
+    ...craftedFinalizationProof(binding, shapeKey.split(':').at(-1).split('|')),
+    shapeKey,
+    finalizedAt: 1,
+  };
+  studioStoreModule.useStudioStore.setState({
+    form,
+    graphBinding: binding,
+    graphFinalization: { status: 'complete', managedEdgeCount: edges.length, finalizedAt: 1 },
+  });
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+
+  const upscaler = managedContractNode('proof-video-upscaler', 'upscaler', 'modules.Spandrel', 'Upscaler', {
+    image: input('video'),
+    output: output('video'),
+  });
+  flowStoreModule.useFlowStore.setState({ nodes: [...nodes, upscaler] });
+  const originalProof = binding.finalizationProof;
+  assert.equal(graphBridge.refreshStudioManagedGraphBinding([upscaler.id])?.finalizationProof, originalProof);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(form), /graph changed/i);
+
+  flowStoreModule.useFlowStore.setState({
+    edges: [...edges.slice(0, -1), edge('proof-video-edge-5', generate.id, upscaler.id, 'video_out', 'image')],
+  });
+  assert.equal(graphBridge.refreshStudioManagedGraphBinding()?.finalizationProof, originalProof);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(form), /graph changed/i);
+
+  flowStoreModule.useFlowStore.setState((state) => ({
+    edges: [...state.edges, edge('proof-video-edge-6', upscaler.id, exporter.id, 'output', 'video')],
+  }));
+  const finalized = graphBridge.refreshStudioManagedGraphBinding();
+  assert.notEqual(finalized?.finalizationProof?.edgeSpecHash, originalProof.edgeSpecHash);
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.managedEdgeCount, 5);
+
+  flowStoreModule.useFlowStore.getState().setParam(generate.id, 'video_out', true, 'disabled');
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null, 'field busy state is not graph schema');
+  const proofBeforeSchemaDrift = studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof;
+  flowStoreModule.useFlowStore.getState().setParam(generate.id, 'video_out', 'tampered', 'type');
+  assert.equal(graphBridge.refreshStudioManagedGraphBinding()?.finalizationProof, proofBeforeSchemaDrift);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(form), /graph changed/i);
+  flowStoreModule.useFlowStore.getState().setParam(generate.id, 'video_out', 'video', 'type');
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+
+  flowStoreModule.useFlowStore.setState((state) => ({
+    edges: state.edges.filter((item) => item.id !== 'proof-video-edge-6'),
+  }));
+  const sealedProof = studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof;
+  assert.equal(graphBridge.refreshStudioManagedGraphBinding()?.finalizationProof, sealedProof);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(form), /graph changed/i);
+});
+
 test('Blocks expand from embedded snapshots, resize, collapse, export, and flatten without nesting', () => {
   const source = node('source', -400, 0, {
     params: { output: { display: 'output', type: 'image' } },
@@ -1492,6 +1698,1767 @@ test('managed control synchronization keeps live exact-graph aliases and extensi
   );
 });
 
+test('backend declarative field bindings synchronize opaque managed fields without model identity branches', () => {
+  const resolutionBinding = {
+    schemaVersion: 1,
+    group: 'source-resolution',
+    formFields: ['width', 'height'],
+    transform: 'nearest-option-to-long-edge',
+  };
+  const promptNode = managedNode('opaque-action-a', 'prompt', { params: {} });
+  const imageNode = managedNode('opaque-action-b', 'imageEncode', { params: {} });
+  const binding = {
+    mode: 'layer_decomposition',
+    modelType: 'OpaqueSyntheticPipelineIdentity',
+    nodes: { prompt: promptNode.id, imageEncode: imageNode.id },
+    managedNodeIds: [promptNode.id, imageNode.id],
+    managedEdgeIds: [],
+    fingerprint: 'opaque-declarative-binding',
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  flowStoreModule.useFlowStore.setState({ nodes: [promptNode, imageNode], edges: [] });
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: binding,
+    form: {
+      ...studioStoreModule.useStudioStore.getState().form,
+      width: 1000,
+      height: 512,
+      maxSequenceLength: 777,
+    },
+  });
+
+  // Simulate two backend node-definition responses arriving after an opaque
+  // model selection. Field names are intentionally unrelated to any model or
+  // known parameter alias; the backend metadata is the only binding source.
+  flowStoreModule.useFlowStore.getState().replaceNodeParams(promptNode.id, {
+    contract_alpha: {
+      type: 'int',
+      default: 640,
+      options: [640, 1024],
+      fieldOptions: { studioBinding: resolutionBinding },
+    },
+    contract_tokens: {
+      type: 'int',
+      default: 1024,
+      fieldOptions: {
+        studioBinding: {
+          schemaVersion: 1,
+          group: 'maximum-sequence-length',
+          formFields: ['maxSequenceLength'],
+          transform: 'identity',
+        },
+      },
+    },
+  });
+  flowStoreModule.useFlowStore.getState().replaceNodeParams(imageNode.id, {
+    contract_omega: {
+      type: 'int',
+      default: 640,
+      options: [640, 1024],
+      fieldOptions: { studioBinding: resolutionBinding },
+    },
+  });
+
+  let form = studioStoreModule.useStudioStore.getState().form;
+  managedControlSync.syncManagedFormControlAliases(form, binding);
+  let nodes = flowStoreModule.useFlowStore.getState().nodes;
+  assert.equal(nodes[0].data.params.contract_alpha.value, 1024);
+  assert.equal(nodes[1].data.params.contract_omega.value, 1024);
+  assert.equal(nodes[0].data.params.contract_tokens.value, 777);
+
+  studioStoreModule.useStudioStore.getState().updateForm({ width: 640, height: 640 });
+  form = studioStoreModule.useStudioStore.getState().form;
+  managedControlSync.syncManagedFormControlAliases(form, binding);
+  nodes = flowStoreModule.useFlowStore.getState().nodes;
+  assert.equal(nodes[0].data.params.contract_alpha.value, 640);
+  assert.equal(nodes[1].data.params.contract_omega.value, 640);
+
+  managedControlSync.syncManagedNodeControlChange(promptNode.id, 'contract_alpha', 1024);
+  nodes = flowStoreModule.useFlowStore.getState().nodes;
+  assert.equal(nodes[0].data.params.contract_alpha.value, 1024);
+  assert.equal(nodes[1].data.params.contract_omega.value, 1024);
+
+  managedControlSync.syncManagedNodeControlChange(promptNode.id, 'contract_tokens', 896);
+  assert.equal(studioStoreModule.useStudioStore.getState().form.maxSequenceLength, 896);
+  assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.params.contract_tokens.value, 896);
+
+  const malformed = managedNode('malformed-binding', 'qwenGenerate', {
+    params: {
+      max_sequence_length: {
+        type: 'int',
+        value: 111,
+        fieldOptions: {
+          studioBinding: {
+            schemaVersion: 1,
+            group: 'maximum-sequence-length',
+            formFields: ['maxSequenceLength'],
+            transform: 'identity',
+            unexpected: true,
+          },
+        },
+      },
+    },
+  });
+  flowStoreModule.useFlowStore.setState((state) => ({ nodes: [...state.nodes, malformed] }));
+  const malformedBinding = {
+    ...binding,
+    managedNodeIds: [...binding.managedNodeIds, malformed.id],
+  };
+  assert.equal(
+    managedControlSync.managedControlSyncGroup(malformed, 'max_sequence_length', malformedBinding),
+    undefined,
+  );
+  assert.equal(managedControlSync.managedControlFormKey(malformed, 'max_sequence_length', malformedBinding), undefined);
+  managedControlSync.syncManagedFormControlAliases(studioStoreModule.useStudioStore.getState().form, malformedBinding);
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === malformed.id).data.params
+      .max_sequence_length.value,
+    111,
+  );
+
+  const oversized = managedNode('oversized-binding', 'imageEncode', {
+    params: {
+      attacker_dimension: {
+        type: 'int',
+        value: 321,
+        options: [640, 1_000_000],
+        fieldOptions: { studioBinding: resolutionBinding },
+      },
+    },
+  });
+  const oversizedBinding = {
+    ...binding,
+    managedNodeIds: [...binding.managedNodeIds, oversized.id],
+  };
+  flowStoreModule.useFlowStore.setState((state) => ({ nodes: [...state.nodes, oversized] }));
+  assert.equal(
+    managedControlSync.managedControlSyncGroup(oversized, 'attacker_dimension', oversizedBinding),
+    undefined,
+  );
+  managedControlSync.syncManagedFormControlAliases(studioStoreModule.useStudioStore.getState().form, oversizedBinding);
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === oversized.id).data.params
+      .attacker_dimension.value,
+    321,
+  );
+
+  const directDimension = managedNode('direct-dimension-binding', 'imageEncode', {
+    params: {
+      attacker_width: {
+        type: 'int',
+        value: 320,
+        fieldOptions: {
+          studioBinding: {
+            schemaVersion: 1,
+            group: 'direct-dimension',
+            formFields: ['width'],
+            transform: 'identity',
+          },
+        },
+      },
+    },
+  });
+  const directDimensionBinding = {
+    ...binding,
+    managedNodeIds: [...binding.managedNodeIds, directDimension.id],
+  };
+  flowStoreModule.useFlowStore.setState((state) => ({ nodes: [...state.nodes, directDimension] }));
+  assert.equal(
+    managedControlSync.managedControlSyncGroup(directDimension, 'attacker_width', directDimensionBinding),
+    undefined,
+  );
+  managedControlSync.syncManagedNodeControlChange(directDimension.id, 'attacker_width', 1_000_000);
+  assert.equal(studioStoreModule.useStudioStore.getState().form.width, 640);
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === directDimension.id).data.params
+      .attacker_width.value,
+    320,
+  );
+
+  const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+  assert.doesNotMatch(bridgeSource, /QwenImageLayeredModularPipeline/);
+});
+
+test('managed modular topology follows opaque route handles and retains the inpaint mask fallback', async () => {
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const route = 'opaque_modular_route';
+  const buildFixture = (
+    mode,
+    {
+      promptImage = true,
+      routeHandles = false,
+      includeImage = true,
+      includeControl = mode === 'control_image',
+      distinctControlImage = true,
+      fixtureId = '',
+    } = {},
+  ) => {
+    const prefix = `route-${mode}${fixtureId ? `-${fixtureId}` : ''}`;
+    const models = managedContractNode(`${prefix}-models`, 'models', 'modules.ModularDiffusers', 'ModelsLoader', {
+      model_type: { type: 'string', value: 'QwenImageLayeredModularPipeline' },
+      repo_id: { type: 'string', value: '' },
+      text_encoders: output('TextEncoders'),
+      unet_out: output('DenoiseModel'),
+      vae_out: output('VAE'),
+      scheduler: output('Scheduler'),
+    });
+    const prompt = managedContractNode(`${prefix}-prompt`, 'prompt', 'modules.ModularDiffusers', 'EncodePrompt', {
+      text_encoders: input('TextEncoders'),
+      prompt: { type: 'text', value: '' },
+      embeddings: output('TextEmbeddings'),
+      ...(promptImage ? { image: input('image') } : {}),
+    });
+    const denoise = managedContractNode(`${prefix}-denoise`, 'denoise', 'modules.ModularDiffusers', 'Denoise', {
+      unet: input('DenoiseModel'),
+      scheduler: input('Scheduler'),
+      embeddings: input('TextEmbeddings'),
+      image_latents: input('Latents'),
+      ...(includeControl ? { controlnet_bundle: input('custom_controlnet') } : {}),
+      latents: output('Latents'),
+      width: { type: 'int', value: 512 },
+      height: { type: 'int', value: 512 },
+      seed: { type: 'int', value: { value: 0, isRandom: true } },
+      ...(routeHandles ? { route_state_in: input(route), route_state_out: output(route) } : {}),
+    });
+    const decode = managedContractNode(`${prefix}-decode`, 'decode', 'modules.ModularDiffusers', 'DecodeLatents', {
+      vae: input('VAE'),
+      latents: input('Latents'),
+      images: output('image'),
+      ...(routeHandles ? { route_state_in: input(route) } : {}),
+    });
+    const preview = managedContractNode(`${prefix}-preview`, 'preview', 'modules.Image', 'Preview', {
+      image: input('image'),
+    });
+    const nodes = [models, prompt, denoise, decode, preview];
+    const roles = {
+      models: models.id,
+      prompt: prompt.id,
+      denoise: denoise.id,
+      decode: decode.id,
+      preview: preview.id,
+    };
+    if (includeImage || includeControl) {
+      const loadImage = managedContractNode(`${prefix}-source`, 'loadImage', 'modules.Image', 'Load', {
+        file: { type: 'string', value: '' },
+        image: output('image'),
+      });
+      nodes.push(loadImage);
+      roles.loadImage = loadImage.id;
+    }
+    if (includeImage && includeControl && distinctControlImage) {
+      const loadControlImage = managedContractNode(
+        `${prefix}-control-source`,
+        'loadControlImage',
+        'modules.Image',
+        'Load',
+        {
+          file: { type: 'string', value: '' },
+          image: output('image'),
+        },
+      );
+      nodes.push(loadControlImage);
+      roles.loadControlImage = loadControlImage.id;
+    }
+    if (includeImage) {
+      const imageEncode = managedContractNode(
+        `${prefix}-encode`,
+        'imageEncode',
+        'modules.ModularDiffusers',
+        'ImageEncode',
+        {
+          vae: input('VAE'),
+          image: input('image'),
+          image_latents: output('Latents'),
+          width: { type: 'int', value: 512 },
+          height: { type: 'int', value: 512 },
+          seed: { type: 'int', value: { value: 0, isRandom: true } },
+          ...(routeHandles ? { route_state_out: output(route) } : {}),
+        },
+      );
+      nodes.push(imageEncode);
+      roles.imageEncode = imageEncode.id;
+    }
+    if (mode === 'inpaint') {
+      const loadMask = managedContractNode(`${prefix}-mask`, 'loadMask', 'modules.Image', 'Load', {
+        file: { type: 'string', value: '' },
+        image: output('image'),
+      });
+      const applyMask = managedContractNode(`${prefix}-apply`, 'applyMask', 'modules.Image', 'ApplyMask', {
+        image: input('image'),
+        mask: input('image'),
+        output: output('image'),
+      });
+      nodes.push(loadMask, applyMask);
+      roles.loadMask = loadMask.id;
+      roles.applyMask = applyMask.id;
+    }
+    if (includeControl) {
+      const controlnetModel = managedContractNode(
+        `${prefix}-control-model`,
+        'controlnetModel',
+        'modules.ModularDiffusers',
+        'AutoModelLoader',
+        {
+          model_id: { type: 'string', value: '' },
+          model: output('ControlNetModel'),
+        },
+      );
+      const controlnet = managedContractNode(
+        `${prefix}-controlnet`,
+        'controlnet',
+        'modules.ModularDiffusers',
+        'Controlnet',
+        {
+          vae: input('VAE'),
+          control_image: input('image'),
+          controlnet: input('ControlNetModel'),
+          controlnet_bundle: output('custom_controlnet'),
+          width: { type: 'int', value: 512 },
+          height: { type: 'int', value: 512 },
+          seed: { type: 'int', value: { value: 0, isRandom: true } },
+          controlnet_conditioning_scale: { type: 'float', value: 1 },
+        },
+      );
+      nodes.push(controlnetModel, controlnet);
+      roles.controlnetModel = controlnetModel.id;
+      roles.controlnet = controlnet.id;
+    }
+    const form = {
+      ...studioStoreModule.useStudioStore.getState().form,
+      mode,
+      modelType: 'QwenImageLayeredModularPipeline',
+      resourceMode: 'expert',
+      quantizationMode: 'none',
+      referenceImages: ['opaque-source.png'],
+      controlImage: 'opaque-control.png',
+      maskImage: 'opaque-mask.png',
+      width: 768,
+      height: 640,
+      seed: 321,
+      randomSeed: false,
+    };
+    const binding = {
+      mode,
+      modelType: form.modelType,
+      nodes: roles,
+      managedNodeIds: nodes.map((item) => item.id),
+      managedEdgeIds: [],
+      fingerprint: `${mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    flowStoreModule.useFlowStore.setState({ nodes, edges: [] });
+    studioStoreModule.useStudioStore.setState({
+      form,
+      graphBinding: binding,
+      graphFinalization: null,
+      autoFieldOverrides: {},
+      autoResourcePlan: null,
+    });
+    return { binding, form, roles };
+  };
+  const addParams = (nodeId, params) => {
+    const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === nodeId);
+    flowStoreModule.useFlowStore.getState().replaceNodeParams(nodeId, { ...node.data.params, ...params });
+  };
+  const removeParams = (nodeId, keys) => {
+    const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === nodeId);
+    flowStoreModule.useFlowStore
+      .getState()
+      .replaceNodeParams(
+        nodeId,
+        Object.fromEntries(Object.entries(node.data.params).filter(([key]) => !keys.includes(key))),
+      );
+  };
+  const hasEdge = (source, sourceHandle, target, targetHandle) =>
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some(
+        (edge) =>
+          edge.source === source &&
+          edge.sourceHandle === sourceHandle &&
+          edge.target === target &&
+          edge.targetHandle === targetHandle,
+      );
+
+  const inpaint = buildFixture('inpaint');
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(), true);
+  assert.equal(graphBridge.syncStudioGraphDefinition(inpaint.form), true);
+  assert.equal(
+    hasEdge(inpaint.roles.loadImage, 'image', inpaint.roles.applyMask, 'image'),
+    true,
+    'contracts without route handles retain ApplyMask',
+  );
+  assert.equal(hasEdge(inpaint.roles.applyMask, 'output', inpaint.roles.imageEncode, 'image'), true);
+  let imageParams = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === inpaint.roles.imageEncode)
+    .data.params;
+  assert.equal(imageParams.width.value, 768);
+  assert.equal(imageParams.height.value, 640);
+  assert.deepEqual(imageParams.seed.value, { value: 321, isRandom: false });
+  const fallbackProof = studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof.fieldSchemaHash;
+
+  const decodeNode = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === inpaint.roles.decode);
+  nodesStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      'modules.ModularDiffusers.DecodeLatents': { ...decodeNode.data, params: { ...decodeNode.data.params } },
+    },
+  });
+  studioStoreModule.useStudioStore.getState().ensureWorkflowTabs();
+  const originalTab = studioStoreModule.useStudioStore.getState().activeWorkflowTabId;
+  websocketMessageHandler.handleWebsocketMessage(
+    {
+      type: 'node_definition',
+      node: inpaint.roles.decode,
+      params: { route_state_in: input(route) },
+    },
+    { sid: null },
+  );
+  const otherTab = studioStoreModule.useStudioStore.getState().createWorkflowTab('Definition timer owner');
+  studioStoreModule.useStudioStore.getState().switchWorkflowTab(originalTab);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.notEqual(otherTab, originalTab);
+  assert.equal(
+    studioStoreModule.useStudioStore.getState().graphFinalization,
+    null,
+    'the definition timer captured before A-to-B-to-A cannot reconcile the restored canvas',
+  );
+  assert.equal(graphBridge.syncStudioGraphDefinition(inpaint.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(hasEdge(inpaint.roles.loadImage, 'image', inpaint.roles.applyMask, 'image'), true);
+
+  addParams(inpaint.roles.imageEncode, {
+    mask_image: input('image'),
+    route_state_out: output(route),
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(inpaint.form), false);
+  assert.equal(hasEdge(inpaint.roles.applyMask, 'output', inpaint.roles.imageEncode, 'image'), true);
+
+  addParams(inpaint.roles.denoise, {
+    route_state_in: input(route),
+    route_state_out: output(route),
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(inpaint.form), true);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'complete');
+  assert.equal(hasEdge(inpaint.roles.loadImage, 'image', inpaint.roles.imageEncode, 'image'), true);
+  assert.equal(hasEdge(inpaint.roles.loadMask, 'image', inpaint.roles.imageEncode, 'mask_image'), true);
+  assert.equal(hasEdge(inpaint.roles.imageEncode, 'route_state_out', inpaint.roles.denoise, 'route_state_in'), true);
+  assert.equal(hasEdge(inpaint.roles.denoise, 'route_state_out', inpaint.roles.decode, 'route_state_in'), true);
+  assert.equal(hasEdge(inpaint.roles.denoise, 'latents', inpaint.roles.decode, 'latents'), true);
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some((edge) => edge.source === inpaint.roles.applyMask || edge.target === inpaint.roles.applyMask),
+    false,
+  );
+  const nativeBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+  assert.equal(nativeBinding.managedEdgeIds.length, 14, 'the route-only Qwen inpaint edge ledger remains unchanged');
+  assert.equal(nativeBinding.finalizationProof.schemaVersion, 2);
+  assert.match(nativeBinding.finalizationProof.edgeSpecHash, /^graph-v1-/);
+  assert.notEqual(nativeBinding.finalizationProof.fieldSchemaHash, fallbackProof);
+  assert.deepEqual(
+    [...nativeBinding.managedEdgeIds].sort(),
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.map((edge) => edge.id)
+      .sort(),
+  );
+
+  const nativeEdges = flowStoreModule.useFlowStore.getState().edges;
+  const nativeRouteEdge = nativeEdges.find(
+    (edge) => edge.source === inpaint.roles.denoise && edge.sourceHandle === 'route_state_out',
+  );
+  assert.ok(nativeRouteEdge);
+  flowStoreModule.useFlowStore.setState({
+    edges: nativeEdges.map((edge) => (edge.id === nativeRouteEdge.id ? { ...edge, targetHandle: 'latents' } : edge)),
+  });
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(inpaint.form), /graph changed/i);
+  const previousFinalizedAt = nativeBinding.finalizationProof.finalizedAt;
+  studioStoreModule.useStudioStore.setState({ graphFinalization: null });
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  assert.equal(await graphBridge.waitForStudioGraphFinalization(2_000), true);
+  const repairedState = studioStoreModule.useStudioStore.getState();
+  assert.equal(repairedState.graphFinalization.status, 'complete');
+  assert.ok(repairedState.graphBinding.finalizationProof.finalizedAt > previousFinalizedAt);
+  assert.equal(
+    hasEdge(inpaint.roles.denoise, 'route_state_out', inpaint.roles.decode, 'route_state_in'),
+    true,
+    'restore revalidation repairs the exact endpoint before readiness returns',
+  );
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(inpaint.form), null);
+
+  const typedInpaint = buildFixture('inpaint', {
+    fixtureId: 'typed-state',
+    promptImage: false,
+    routeHandles: true,
+  });
+  addParams(typedInpaint.roles.imageEncode, {
+    mask_image: input('image'),
+    mask: output('OpaqueMaskState'),
+    masked_image_latents: output('OpaqueMaskedLatents'),
+  });
+  addParams(typedInpaint.roles.denoise, {
+    vae: input('VAE'),
+    mask: input('OpaqueMaskState'),
+    masked_image_latents: input('OpaqueMaskedLatents'),
+  });
+  flowStoreModule.useFlowStore.getState().replaceNodeParams(typedInpaint.roles.applyMask, {});
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(typedInpaint.form), true);
+  const typedState = studioStoreModule.useStudioStore.getState();
+  const typedEdgeLedger = [
+    [typedInpaint.roles.models, 'text_encoders', typedInpaint.roles.prompt, 'text_encoders'],
+    [typedInpaint.roles.models, 'unet_out', typedInpaint.roles.denoise, 'unet'],
+    [typedInpaint.roles.models, 'scheduler', typedInpaint.roles.denoise, 'scheduler'],
+    [typedInpaint.roles.models, 'vae_out', typedInpaint.roles.denoise, 'vae'],
+    [typedInpaint.roles.models, 'vae_out', typedInpaint.roles.decode, 'vae'],
+    [typedInpaint.roles.prompt, 'embeddings', typedInpaint.roles.denoise, 'embeddings'],
+    [typedInpaint.roles.denoise, 'latents', typedInpaint.roles.decode, 'latents'],
+    [typedInpaint.roles.decode, 'images', typedInpaint.roles.preview, 'image'],
+    [typedInpaint.roles.denoise, 'route_state_out', typedInpaint.roles.decode, 'route_state_in'],
+    [typedInpaint.roles.models, 'vae_out', typedInpaint.roles.imageEncode, 'vae'],
+    [typedInpaint.roles.loadImage, 'image', typedInpaint.roles.imageEncode, 'image'],
+    [typedInpaint.roles.loadMask, 'image', typedInpaint.roles.imageEncode, 'mask_image'],
+    [typedInpaint.roles.imageEncode, 'image_latents', typedInpaint.roles.denoise, 'image_latents'],
+    [typedInpaint.roles.imageEncode, 'route_state_out', typedInpaint.roles.denoise, 'route_state_in'],
+    [typedInpaint.roles.imageEncode, 'mask', typedInpaint.roles.denoise, 'mask'],
+    [typedInpaint.roles.imageEncode, 'masked_image_latents', typedInpaint.roles.denoise, 'masked_image_latents'],
+  ]
+    .map(([source, sourceHandle, target, targetHandle]) => `${source}:${sourceHandle}->${target}:${targetHandle}`)
+    .sort();
+  assert.deepEqual(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.map((edge) => `${edge.source}:${edge.sourceHandle}->${edge.target}:${edge.targetHandle}`)
+      .sort(),
+    typedEdgeLedger,
+  );
+  assert.equal(typedState.graphBinding.managedEdgeIds.length, 16);
+  assert.equal(typedState.graphBinding.finalizationProof.schemaVersion, 2);
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some(
+        (edge) => edge.source === typedInpaint.roles.applyMask || edge.target === typedInpaint.roles.applyMask,
+      ),
+    false,
+    'native typed state does not require ApplyMask fields or connections',
+  );
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some((edge) => edge.target === typedInpaint.roles.prompt && edge.targetHandle === 'image'),
+    false,
+    'the optional prompt image is absent from the exact native state ledger',
+  );
+
+  const sealedTypedEdges = structuredClone(flowStoreModule.useFlowStore.getState().edges);
+  const sealedTypedProof = typedState.graphBinding.finalizationProof;
+  const maskStateEdge = sealedTypedEdges.find(
+    (edge) => edge.source === typedInpaint.roles.imageEncode && edge.sourceHandle === 'mask',
+  );
+  assert.ok(maskStateEdge);
+  flowStoreModule.useFlowStore.setState({
+    edges: sealedTypedEdges.map((edge) =>
+      edge.id === maskStateEdge.id ? { ...edge, targetHandle: 'image_latents' } : edge,
+    ),
+  });
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage(typedInpaint.form),
+    /graph changed/i,
+    'the typed-state proof seals exact edge endpoints',
+  );
+  flowStoreModule.useFlowStore.setState({ edges: sealedTypedEdges });
+  addParams(typedInpaint.roles.denoise, { mask: input(' OpaqueMaskState') });
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(typedInpaint.form), /graph changed/i);
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(typedInpaint.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some(
+        (edge) => edge.source === typedInpaint.roles.applyMask || edge.target === typedInpaint.roles.applyMask,
+      ),
+    false,
+    'a padded typed-state mismatch cannot downgrade to ApplyMask',
+  );
+  addParams(typedInpaint.roles.denoise, { mask: input('OpaqueMaskState') });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(typedInpaint.form), true);
+  assert.notStrictEqual(
+    studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof,
+    sealedTypedProof,
+    'schema repair mints a fresh proof',
+  );
+
+  removeParams(typedInpaint.roles.imageEncode, ['mask', 'masked_image_latents']);
+  removeParams(typedInpaint.roles.denoise, ['vae', 'mask', 'masked_image_latents']);
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(typedInpaint.form), false);
+  const strippedTypedState = studioStoreModule.useStudioStore.getState();
+  assert.equal(strippedTypedState.graphFinalization.status, 'pending');
+  assert.equal(strippedTypedState.graphBinding.finalizationProof, undefined);
+  assert.equal(hasEdge(typedInpaint.roles.loadImage, 'image', typedInpaint.roles.applyMask, 'image'), false);
+  assert.equal(
+    hasEdge(typedInpaint.roles.imageEncode, 'route_state_out', typedInpaint.roles.denoise, 'route_state_in'),
+    true,
+  );
+
+  const routeOnlyQwenForm = {
+    ...typedInpaint.form,
+    modelType: 'QwenImageEditPlusModularPipeline',
+  };
+  addParams(typedInpaint.roles.prompt, { image: input('image') });
+  studioStoreModule.useStudioStore.setState({
+    form: routeOnlyQwenForm,
+    graphBinding: {
+      ...strippedTypedState.graphBinding,
+      modelType: routeOnlyQwenForm.modelType,
+      fingerprint: `${routeOnlyQwenForm.mode}:${routeOnlyQwenForm.modelType}:${routeOnlyQwenForm.resourceMode}:${routeOnlyQwenForm.quantizationMode}`,
+      finalizationProof: undefined,
+    },
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(routeOnlyQwenForm), true);
+  const routeOnlyQwenState = studioStoreModule.useStudioStore.getState();
+  assert.equal(routeOnlyQwenState.graphFinalization.status, 'complete');
+  assert.equal(routeOnlyQwenState.graphBinding.finalizationProof.schemaVersion, 2);
+  assert.equal(routeOnlyQwenState.graphBinding.managedEdgeIds.length, 14);
+  assert.equal(routeOnlyQwenState.graphBinding.createdAt, typedState.graphBinding.createdAt);
+  assert.equal(routeOnlyQwenState.graphBinding.nodes.denoise, typedState.graphBinding.nodes.denoise);
+  assert.equal(routeOnlyQwenState.graphBinding.nodes.imageEncode, typedState.graphBinding.nodes.imageEncode);
+  assert.equal(
+    hasEdge(typedInpaint.roles.imageEncode, 'route_state_out', typedInpaint.roles.denoise, 'route_state_in'),
+    true,
+  );
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some(
+        (edge) =>
+          (edge.source === typedInpaint.roles.models &&
+            edge.sourceHandle === 'vae_out' &&
+            edge.target === typedInpaint.roles.denoise) ||
+          (edge.source === typedInpaint.roles.imageEncode &&
+            ['mask', 'masked_image_latents'].includes(edge.sourceHandle)),
+      ),
+    false,
+    'a new route-only fingerprint does not inherit the prior typed-state latch',
+  );
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(routeOnlyQwenForm), null);
+
+  const lateTyped = buildFixture('inpaint', {
+    fixtureId: 'late-state',
+    promptImage: false,
+    routeHandles: true,
+  });
+  addParams(lateTyped.roles.imageEncode, { mask_image: input('image') });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), true);
+  assert.ok(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof);
+  addParams(lateTyped.roles.denoise, { vae: input('VAE') });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    hasEdge(lateTyped.roles.loadImage, 'image', lateTyped.roles.applyMask, 'image'),
+    false,
+    'the Denoise VAE marker requires the complete typed inpaint state instead of legacy fallback',
+  );
+  addParams(lateTyped.roles.imageEncode, {
+    mask: output('OpaqueMaskState'),
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(hasEdge(lateTyped.roles.loadImage, 'image', lateTyped.roles.applyMask, 'image'), false);
+  addParams(lateTyped.roles.imageEncode, { masked_image_latents: output('OpaqueMaskedLatents') });
+  addParams(lateTyped.roles.denoise, {
+    mask: input('OpaqueMaskState'),
+    masked_image_latents: input('OpaqueMaskedLatents'),
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), true);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.managedEdgeIds.length, 16);
+  addParams(lateTyped.roles.imageEncode, {
+    masked_image_latents: { type: 'OpaqueMaskedLatents', display: 'input' },
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  addParams(lateTyped.roles.imageEncode, { masked_image_latents: output('OpaqueMaskedLatents') });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), true);
+  addParams(lateTyped.roles.denoise, { mask: input('') });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  addParams(lateTyped.roles.denoise, { mask: input('OpaqueMaskState') });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(lateTyped.form), true);
+
+  const persistedTypedEvidence = buildFixture('inpaint', {
+    fixtureId: 'persisted-state-edge',
+    promptImage: false,
+    routeHandles: true,
+  });
+  addParams(persistedTypedEvidence.roles.imageEncode, { mask_image: input('image') });
+  const persistedVaeEdge = {
+    id: 'persisted-native-denoise-vae-edge',
+    source: persistedTypedEvidence.roles.models,
+    sourceHandle: 'vae_out',
+    target: persistedTypedEvidence.roles.denoise,
+    targetHandle: 'vae',
+    type: 'default',
+  };
+  flowStoreModule.useFlowStore.setState({ edges: [persistedVaeEdge] });
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: { ...persistedTypedEvidence.binding, managedEdgeIds: [persistedVaeEdge.id] },
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(persistedTypedEvidence.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    hasEdge(persistedTypedEvidence.roles.loadImage, 'image', persistedTypedEvidence.roles.applyMask, 'image'),
+    false,
+  );
+
+  const edit = buildFixture('edit_image', { promptImage: false, routeHandles: true });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(edit.form), true);
+  assert.equal(hasEdge(edit.roles.imageEncode, 'route_state_out', edit.roles.denoise, 'route_state_in'), true);
+  assert.equal(hasEdge(edit.roles.denoise, 'route_state_out', edit.roles.decode, 'route_state_in'), true);
+  assert.equal(hasEdge(edit.roles.denoise, 'latents', edit.roles.decode, 'latents'), true);
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some((edge) => edge.target === edit.roles.prompt && edge.targetHandle === 'image'),
+    false,
+    'image-conditioned prompt input remains optional',
+  );
+
+  const textControl = buildFixture('control_image', { includeImage: false, routeHandles: true });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(textControl.form), true);
+  assert.equal(
+    hasEdge(textControl.roles.controlnet, 'controlnet_bundle', textControl.roles.denoise, 'controlnet_bundle'),
+    true,
+    'legacy bundle-only ControlNet definitions remain unchanged',
+  );
+  assert.equal(
+    hasEdge(textControl.roles.controlnet, 'route_state_out', textControl.roles.denoise, 'route_state_in'),
+    false,
+  );
+  assert.equal(hasEdge(textControl.roles.denoise, 'route_state_out', textControl.roles.decode, 'route_state_in'), true);
+  addParams(textControl.roles.controlnet, { route_state_in: input(route) });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(textControl.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    hasEdge(textControl.roles.controlnet, 'controlnet_bundle', textControl.roles.denoise, 'controlnet_bundle'),
+    true,
+    'a partial route publication retains the last stable bundle topology',
+  );
+  addParams(textControl.roles.controlnet, { route_state_out: output(route) });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(textControl.form), true);
+  assert.equal(
+    hasEdge(textControl.roles.controlnet, 'route_state_out', textControl.roles.denoise, 'route_state_in'),
+    true,
+  );
+  assert.equal(hasEdge(textControl.roles.denoise, 'route_state_out', textControl.roles.decode, 'route_state_in'), true);
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some((edge) => edge.target === textControl.roles.controlnet && edge.targetHandle === 'route_state_in'),
+    false,
+    'an unused ControlNet route input does not invent an ImageEncode prefix',
+  );
+  const textControlParams = flowStoreModule.useFlowStore
+    .getState()
+    .nodes.find((item) => item.id === textControl.roles.controlnet).data.params;
+  assert.deepEqual(textControlParams.seed.value, { value: 321, isRandom: false });
+  assert.equal(textControl.roles.loadControlImage, undefined);
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === textControl.roles.loadImage).data.params
+      .file.value,
+    'opaque-control.png',
+  );
+
+  const missingControlLoader = buildFixture('edit_image', {
+    includeControl: true,
+    routeHandles: true,
+    distinctControlImage: false,
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(missingControlLoader.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    hasEdge(missingControlLoader.roles.loadImage, 'image', missingControlLoader.roles.controlnet, 'control_image'),
+    false,
+    'a combined image and ControlNet graph never reuses the source image loader as control input',
+  );
+
+  for (const mode of ['layer_decomposition', 'multi_image_reference_edit', 'outpaint']) {
+    const unsupportedCombined = buildFixture(mode, { includeControl: true, routeHandles: true });
+    graphBridge.markStudioGraphDefinitionPending();
+    assert.equal(graphBridge.syncStudioGraphDefinition(unsupportedCombined.form), false);
+    const unsupportedState = studioStoreModule.useStudioStore.getState();
+    assert.equal(unsupportedState.graphFinalization.status, 'pending');
+    assert.equal(unsupportedState.graphBinding.finalizationProof, undefined);
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(unsupportedCombined.form), /route pending/i);
+    assert.equal(
+      flowStoreModule.useFlowStore
+        .getState()
+        .edges.some(
+          (item) =>
+            item.source === unsupportedCombined.roles.loadControlImage ||
+            item.source === unsupportedCombined.roles.controlnet ||
+            item.target === unsupportedCombined.roles.controlnet,
+        ),
+      false,
+      `${mode} cannot adopt combined ControlNet topology`,
+    );
+    assert.doesNotMatch(
+      graphBridge.getStudioGraphShapeKey(unsupportedCombined.form),
+      /loadControlImage|controlnetModel|controlnet/,
+    );
+  }
+
+  const imageControl = buildFixture('edit_image', { includeControl: true, routeHandles: true });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(imageControl.form), true);
+  assert.equal(
+    hasEdge(imageControl.roles.imageEncode, 'route_state_out', imageControl.roles.denoise, 'route_state_in'),
+    true,
+    'ControlNet definitions with no route handles preserve the legacy image route',
+  );
+  const legacyImageControlProof =
+    studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof.edgeSpecHash;
+  addParams(imageControl.roles.controlnet, { route_state_out: output(route) });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(imageControl.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    hasEdge(imageControl.roles.imageEncode, 'image_latents', imageControl.roles.denoise, 'image_latents'),
+    true,
+  );
+  assert.equal(
+    hasEdge(imageControl.roles.controlnet, 'controlnet_bundle', imageControl.roles.denoise, 'controlnet_bundle'),
+    true,
+  );
+  assert.equal(hasEdge(imageControl.roles.loadImage, 'image', imageControl.roles.imageEncode, 'image'), true);
+  assert.equal(
+    hasEdge(imageControl.roles.loadControlImage, 'image', imageControl.roles.controlnet, 'control_image'),
+    true,
+  );
+  assert.equal(hasEdge(imageControl.roles.loadImage, 'image', imageControl.roles.controlnet, 'control_image'), false);
+  assert.equal(
+    hasEdge(imageControl.roles.imageEncode, 'route_state_out', imageControl.roles.denoise, 'route_state_in'),
+    true,
+    'the incomplete ControlNet action retains the last stable direct image route',
+  );
+  addParams(imageControl.roles.controlnet, { route_state_in: input(`${route}_mismatch`) });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(imageControl.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  addParams(imageControl.roles.controlnet, { route_state_in: input(route) });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(imageControl.form), true);
+  assert.equal(
+    hasEdge(imageControl.roles.imageEncode, 'route_state_out', imageControl.roles.controlnet, 'route_state_in'),
+    true,
+  );
+  assert.equal(
+    hasEdge(imageControl.roles.imageEncode, 'route_state_out', imageControl.roles.denoise, 'route_state_in'),
+    false,
+    'a routed ImageEncode feeds ControlNet instead of bypassing it',
+  );
+  assert.equal(
+    hasEdge(imageControl.roles.controlnet, 'route_state_out', imageControl.roles.denoise, 'route_state_in'),
+    true,
+  );
+  assert.equal(
+    hasEdge(imageControl.roles.denoise, 'route_state_out', imageControl.roles.decode, 'route_state_in'),
+    true,
+  );
+  const routedImageControlState = studioStoreModule.useStudioStore.getState();
+  const routedImageControlEdges = flowStoreModule.useFlowStore.getState().edges;
+  const routedControlEdge = routedImageControlEdges.find(
+    (edge) =>
+      edge.source === imageControl.roles.controlnet &&
+      edge.sourceHandle === 'route_state_out' &&
+      edge.target === imageControl.roles.denoise &&
+      edge.targetHandle === 'route_state_in',
+  );
+  assert.equal(routedImageControlState.graphBinding.finalizationProof.schemaVersion, 2);
+  assert.notEqual(routedImageControlState.graphBinding.finalizationProof.edgeSpecHash, legacyImageControlProof);
+  assert.ok(routedControlEdge);
+  assert.ok(routedImageControlState.graphBinding.managedEdgeIds.includes(routedControlEdge.id));
+  for (const nodeId of [imageControl.roles.imageEncode, imageControl.roles.controlnet, imageControl.roles.denoise]) {
+    const params = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === nodeId).data.params;
+    assert.deepEqual(params.seed.value, { value: 321, isRandom: false });
+  }
+  const imageControlNodes = flowStoreModule.useFlowStore.getState().nodes;
+  assert.deepEqual(imageControlNodes.find((item) => item.id === imageControl.roles.loadImage).data.params.file.value, [
+    'opaque-source.png',
+  ]);
+  assert.equal(
+    imageControlNodes.find((item) => item.id === imageControl.roles.loadControlImage).data.params.file.value,
+    'opaque-control.png',
+  );
+
+  const sealedImageControlState = studioStoreModule.useStudioStore.getState();
+  const sealedImageControlBinding = structuredClone(sealedImageControlState.graphBinding);
+  const sealedImageControlNodes = structuredClone(flowStoreModule.useFlowStore.getState().nodes);
+  const sealedImageControlEdges = structuredClone(flowStoreModule.useFlowStore.getState().edges);
+  const staleLayerForm = { ...imageControl.form, mode: 'layer_decomposition' };
+  flowStoreModule.useFlowStore.setState({ edges: [] });
+  studioStoreModule.useStudioStore.setState({
+    form: staleLayerForm,
+    graphBinding: { ...structuredClone(sealedImageControlBinding), finalizationProof: undefined },
+    graphFinalization: null,
+  });
+  assert.equal(graphBridge.syncStudioGraphDefinition(staleLayerForm), false);
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(staleLayerForm), /graph changed/i);
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage({ ...staleLayerForm, modelType: 'FluxSchnellPipeline' }),
+    /graph changed/i,
+  );
+  assert.equal(await graphBridge.waitForStudioGraphFinalization(500), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+
+  flowStoreModule.useFlowStore.setState({ nodes: sealedImageControlNodes, edges: sealedImageControlEdges });
+  studioStoreModule.useStudioStore.setState({
+    form: imageControl.form,
+    graphBinding: sealedImageControlBinding,
+    graphFinalization: structuredClone(sealedImageControlState.graphFinalization),
+  });
+  const detachedOptionalIds = new Set([
+    imageControl.roles.loadControlImage,
+    imageControl.roles.controlnetModel,
+    imageControl.roles.controlnet,
+  ]);
+  const detachedBindingNodes = { ...sealedImageControlBinding.nodes };
+  delete detachedBindingNodes.loadControlImage;
+  delete detachedBindingNodes.controlnetModel;
+  delete detachedBindingNodes.controlnet;
+  flowStoreModule.useFlowStore.setState((state) => ({
+    edges: state.edges.filter((item) => !detachedOptionalIds.has(item.source) && !detachedOptionalIds.has(item.target)),
+  }));
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: {
+      ...sealedImageControlBinding,
+      nodes: detachedBindingNodes,
+      finalizationProof: undefined,
+    },
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(imageControl.form), false);
+  const detachedState = studioStoreModule.useStudioStore.getState();
+  assert.equal(detachedState.graphFinalization.status, 'pending');
+  assert.equal(detachedState.graphBinding.finalizationProof, undefined);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(imageControl.form), /graph changed/i);
+  assert.equal(await graphBridge.waitForStudioGraphFinalization(1_000), false);
+  const detachedWaitState = studioStoreModule.useStudioStore.getState();
+  assert.notEqual(detachedWaitState.graphFinalization.status, 'complete');
+  assert.equal(detachedWaitState.graphBinding.finalizationProof, undefined);
+
+  const controlInpaint = buildFixture('inpaint', {
+    includeControl: true,
+    routeHandles: true,
+  });
+  addParams(controlInpaint.roles.imageEncode, { mask_image: input('image') });
+  addParams(controlInpaint.roles.controlnet, {
+    route_state_in: input(route),
+    route_state_out: output(route),
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(controlInpaint.form), true);
+  assert.equal(hasEdge(controlInpaint.roles.loadImage, 'image', controlInpaint.roles.imageEncode, 'image'), true);
+  assert.equal(hasEdge(controlInpaint.roles.loadMask, 'image', controlInpaint.roles.imageEncode, 'mask_image'), true);
+  assert.equal(
+    hasEdge(controlInpaint.roles.loadControlImage, 'image', controlInpaint.roles.controlnet, 'control_image'),
+    true,
+  );
+  assert.equal(
+    hasEdge(controlInpaint.roles.imageEncode, 'image_latents', controlInpaint.roles.denoise, 'image_latents'),
+    true,
+  );
+  assert.equal(
+    hasEdge(controlInpaint.roles.imageEncode, 'route_state_out', controlInpaint.roles.controlnet, 'route_state_in'),
+    true,
+  );
+  assert.equal(
+    hasEdge(controlInpaint.roles.controlnet, 'controlnet_bundle', controlInpaint.roles.denoise, 'controlnet_bundle'),
+    true,
+  );
+  assert.equal(
+    hasEdge(controlInpaint.roles.controlnet, 'route_state_out', controlInpaint.roles.denoise, 'route_state_in'),
+    true,
+  );
+  assert.equal(
+    hasEdge(controlInpaint.roles.denoise, 'route_state_out', controlInpaint.roles.decode, 'route_state_in'),
+    true,
+  );
+  assert.equal(
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.some(
+        (edge) =>
+          edge.source === controlInpaint.roles.applyMask ||
+          edge.target === controlInpaint.roles.applyMask ||
+          (edge.source === controlInpaint.roles.imageEncode &&
+            edge.sourceHandle === 'route_state_out' &&
+            edge.target === controlInpaint.roles.denoise),
+      ),
+    false,
+  );
+  const controlInpaintState = studioStoreModule.useStudioStore.getState();
+  const controlInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+  assert.equal(controlInpaintState.graphFinalization.status, 'complete');
+  assert.equal(controlInpaintState.graphBinding.finalizationProof.schemaVersion, 2);
+  assert.match(controlInpaintState.graphBinding.finalizationProof.edgeSpecHash, /^graph-v1-/);
+  assert.ok(controlInpaintState.graphBinding.managedNodeIds.includes(controlInpaint.roles.loadControlImage));
+  assert.deepEqual(
+    [...controlInpaintState.graphBinding.managedEdgeIds].sort(),
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.map((edge) => edge.id)
+      .sort(),
+  );
+  assert.deepEqual(
+    controlInpaintNodes.find((item) => item.id === controlInpaint.roles.loadImage).data.params.file.value,
+    ['opaque-source.png'],
+  );
+  assert.equal(
+    controlInpaintNodes.find((item) => item.id === controlInpaint.roles.loadControlImage).data.params.file.value,
+    'opaque-control.png',
+  );
+  assert.equal(
+    controlInpaintNodes.find((item) => item.id === controlInpaint.roles.loadMask).data.params.file.value,
+    'opaque-mask.png',
+  );
+  for (const nodeId of [
+    controlInpaint.roles.imageEncode,
+    controlInpaint.roles.controlnet,
+    controlInpaint.roles.denoise,
+  ]) {
+    const params = controlInpaintNodes.find((item) => item.id === nodeId).data.params;
+    assert.deepEqual(params.seed.value, { value: 321, isRandom: false });
+  }
+
+  nodesStoreModule.useNodesStore.setState({
+    nodesRegistry: Object.fromEntries(
+      controlInpaintNodes.map((item) => [`${item.data.module}.${item.data.action}`, structuredClone(item.data)]),
+    ),
+  });
+  const removedControlLoaderId = controlInpaint.roles.loadControlImage;
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: state.nodes.filter((item) => item.id !== removedControlLoaderId),
+    edges: state.edges.filter(
+      (item) => item.source !== removedControlLoaderId && item.target !== removedControlLoaderId,
+    ),
+  }));
+  const nativeWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = undefined;
+  try {
+    await graphBridge.createOrUpdateStudioGraph(controlInpaint.form);
+  } finally {
+    globalThis.WebSocket = nativeWebSocket;
+  }
+  const rebuiltState = studioStoreModule.useStudioStore.getState();
+  const rebuiltBinding = rebuiltState.graphBinding;
+  const rebuiltControlLoaderId = rebuiltBinding.nodes.loadControlImage;
+  const participatingControlRoles = [
+    'models',
+    'prompt',
+    'denoise',
+    'decode',
+    'preview',
+    'loadImage',
+    'loadMask',
+    'applyMask',
+    'imageEncode',
+    'loadControlImage',
+    'controlnetModel',
+    'controlnet',
+  ];
+  assert.notEqual(rebuiltControlLoaderId, removedControlLoaderId, 'a missing optional loader is reconstructed');
+  assert.equal(rebuiltState.graphFinalization.status, 'complete');
+  assert.match(rebuiltBinding.finalizationProof.shapeKey, /\|loadControlImage\|controlnetModel\|controlnet$/);
+  assert.doesNotMatch(
+    graphBridge.getStudioGraphShapeKey(controlInpaint.form),
+    /loadControlImage|controlnetModel|controlnet/,
+  );
+  for (const role of participatingControlRoles) {
+    assert.ok(rebuiltBinding.nodes[role], `${role} survives binding rebuild`);
+    assert.ok(rebuiltBinding.managedNodeIds.includes(rebuiltBinding.nodes[role]), `${role} remains managed`);
+  }
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === rebuiltControlLoaderId).data.params.file
+      .value,
+    'opaque-control.png',
+  );
+
+  const restoredProof = structuredClone(rebuiltBinding.finalizationProof);
+  studioStoreModule.useStudioStore.setState({ graphFinalization: null });
+  assert.equal(await graphBridge.waitForStudioGraphFinalization(2_000), true);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'complete');
+  assert.deepEqual(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, restoredProof);
+
+  const finalizedBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+  const finalizedNodes = structuredClone(flowStoreModule.useFlowStore.getState().nodes);
+  const optionalRoleMutations = [
+    ['loadControlImage', (data) => ({ ...data, module: 'modules.MutatedImage' })],
+    ['controlnetModel', (data) => ({ ...data, action: 'MutatedLoader' })],
+    [
+      'controlnet',
+      (data) => ({
+        ...data,
+        params: {
+          ...data.params,
+          control_image: { ...data.params.control_image, type: 'mutated_image' },
+        },
+      }),
+    ],
+  ];
+  for (const [role, mutate] of optionalRoleMutations) {
+    flowStoreModule.useFlowStore.setState({ nodes: structuredClone(finalizedNodes) });
+    studioStoreModule.useStudioStore.setState({
+      graphBinding: structuredClone(finalizedBinding),
+      graphFinalization: { ...rebuiltState.graphFinalization },
+    });
+    const roleId = finalizedBinding.nodes[role];
+    flowStoreModule.useFlowStore.setState((state) => ({
+      nodes: state.nodes.map((item) => (item.id === roleId ? { ...item, data: mutate(item.data) } : item)),
+    }));
+    assert.match(
+      graphBridge.getStudioGraphRunBlockingMessage(controlInpaint.form),
+      /graph changed/i,
+      `${role} schema mutations invalidate the combined graph proof`,
+    );
+    assert.equal(graphBridge.markStudioGraphDefinitionPending(), true);
+    assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  }
+
+  const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+  const routeTopologySource = bridgeSource.match(
+    /function modularRouteTopology[\s\S]*?\n\}\n\nfunction desiredBaseEdgeSpecs/,
+  )?.[0];
+  assert.ok(routeTopologySource);
+  assert.doesNotMatch(routeTopologySource, /Qwen|SDXL|modelType/);
+  for (const predicate of ['usesQwenDirectTextToImage', 'usesQwenDirectInpaint', 'usesQwenDirectOutpaint']) {
+    const predicateSource = bridgeSource.match(new RegExp(`function ${predicate}\\([\\s\\S]*?\\n\\}`))?.[0];
+    assert.match(predicateSource, /return false;/, `${predicate} cannot activate unreachable direct-role diagnostics`);
+    assert.equal(
+      bridgeSource.match(new RegExp(`${predicate}\\(`, 'g'))?.length,
+      2,
+      `${predicate} is retained only as its literal-false declaration and inert run-diagnostic guard`,
+    );
+  }
+  assert.doesNotMatch(
+    bridgeSource,
+    /finalizeDirectQwen|desiredQwen(?:TextToImage|Inpaint|Outpaint)EdgeSpecs|usesQwenDirectInpaintPipeline/,
+    'literal-false direct Qwen branches do not retain unreachable edge or finalization implementations',
+  );
+
+  const text = buildFixture('text_to_image', { includeImage: false });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(text.form), true);
+  const textFallbackProof = studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof.fieldSchemaHash;
+  addParams(text.roles.denoise, { route_state_out: output(route) });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(text.form), false);
+  assert.equal(hasEdge(text.roles.denoise, 'route_state_out', text.roles.decode, 'route_state_in'), false);
+  addParams(text.roles.decode, { route_state_in: input(route) });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(text.form), true);
+  assert.equal(hasEdge(text.roles.denoise, 'route_state_out', text.roles.decode, 'route_state_in'), true);
+  assert.notEqual(
+    studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof.fieldSchemaHash,
+    textFallbackProof,
+    'late opaque text route handles mint a new proof only after both endpoints exist',
+  );
+
+  const textMismatch = buildFixture('text_to_image', { includeImage: false });
+  assert.equal(graphBridge.syncStudioGraphDefinition(textMismatch.form), true);
+  addParams(textMismatch.roles.denoise, { route_state_out: output('opaque_route_alpha') });
+  addParams(textMismatch.roles.decode, { route_state_in: input('opaque_route_beta') });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(textMismatch.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    hasEdge(textMismatch.roles.denoise, 'route_state_out', textMismatch.roles.decode, 'route_state_in'),
+    false,
+  );
+
+  const malformed = buildFixture('inpaint');
+  assert.equal(graphBridge.syncStudioGraphDefinition(malformed.form), true);
+  const setCompleteRoute = (
+    imageType,
+    denoiseInputType,
+    denoiseOutputType,
+    decodeType,
+    maskType = 'image',
+    denoiseInputDisplay = 'input',
+  ) => {
+    addParams(malformed.roles.imageEncode, {
+      mask_image: input(maskType),
+      route_state_out: output(imageType),
+    });
+    addParams(malformed.roles.denoise, {
+      route_state_in: { type: denoiseInputType, display: denoiseInputDisplay },
+      route_state_out: output(denoiseOutputType),
+    });
+    addParams(malformed.roles.decode, { route_state_in: input(decodeType) });
+    graphBridge.markStudioGraphDefinitionPending();
+    return graphBridge.syncStudioGraphDefinition(malformed.form);
+  };
+  const assertMalformedPending = () => {
+    assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+    assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+    assert.equal(hasEdge(malformed.roles.loadImage, 'image', malformed.roles.applyMask, 'image'), true);
+    assert.equal(
+      hasEdge(malformed.roles.imageEncode, 'route_state_out', malformed.roles.denoise, 'route_state_in'),
+      false,
+    );
+  };
+
+  assert.equal(
+    setCompleteRoute('opaque_route_alpha', 'opaque_route_alpha', 'opaque_route_beta', 'opaque_route_beta'),
+    false,
+  );
+  assertMalformedPending();
+  assert.equal(setCompleteRoute(' opaque_route', 'opaque_route', 'opaque_route', 'opaque_route'), false);
+  assertMalformedPending();
+  assert.equal(setCompleteRoute(['opaque_route'], 'opaque_route', 'opaque_route', 'opaque_route'), false);
+  assertMalformedPending();
+  assert.equal(
+    setCompleteRoute('opaque_route', 'opaque_route', 'opaque_route', 'opaque_route', 'image', 'output'),
+    false,
+  );
+  assertMalformedPending();
+  assert.equal(setCompleteRoute('opaque_route', 'opaque_route', 'opaque_route', 'opaque_route', 'other_image'), false);
+  assertMalformedPending();
+  const partialBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+  const forgedProof = craftedFinalizationProof(partialBinding, [
+    'models',
+    'prompt',
+    'denoise',
+    'decode',
+    'preview',
+    'loadImage',
+    'loadMask',
+    'applyMask',
+    'imageEncode',
+  ]);
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: {
+      ...partialBinding,
+      finalizationProof: { ...forgedProof, finalizedAt: Date.now() },
+    },
+    graphFinalization: {
+      status: 'complete',
+      bindingFingerprint: partialBinding.fingerprint,
+      startedAt: null,
+      timedOutGroups: [],
+      managedEdgeCount: partialBinding.managedEdgeIds.length,
+    },
+  });
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage(malformed.form),
+    /graph changed/i,
+    'a recomputed checksum cannot authorize a semantically incomplete route contract',
+  );
+  assert.equal(setCompleteRoute('opaque_route', 'opaque_route', 'opaque_route', 'opaque_route'), true);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'complete');
+});
+
+test('restored modular video groups require exact typed I2V and first-last-frame state routes', () => {
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const scalar = (display) => ({ type: 'int', ...(display ? { display } : {}) });
+  let fixtureSequence = 0;
+  const buildFixture = ({ flf = false, omit = null } = {}) => {
+    fixtureSequence += 1;
+    const prefix = `modular-video-${fixtureSequence}`;
+    const routeType = 'opaque_video_route';
+    const models = managedContractNode(prefix + '-models', 'models', 'modules.ModularDiffusers', 'ModelsLoader', {
+      model_type: { type: 'string', value: 'opaque-modular-video' },
+      text_encoders: output('diffusers_auto_models'),
+      image_encoder: output('diffusers_auto_model'),
+      unet_out: output('diffusers_auto_model'),
+      scheduler: output('diffusers_auto_model'),
+      vae_out: output('diffusers_auto_model'),
+    });
+    const prompt = managedContractNode(prefix + '-prompt', 'prompt', 'modules.ModularDiffusers', 'EncodePrompt', {
+      text_encoders: input('diffusers_auto_models'),
+      prompt: { type: 'string', display: 'textarea', value: '' },
+      negative_prompt: { type: 'string', display: 'textarea', value: '' },
+      embeddings: output('embeddings'),
+    });
+    const loadImage = managedContractNode(prefix + '-opening', 'loadImage', 'modules.Image', 'Load', {
+      file: { type: 'string', value: ['opening.png'] },
+      alpha_channel: { type: 'string', value: 'remove alpha' },
+      image: output('image'),
+    });
+    const imageEmbeddings = managedContractNode(
+      prefix + '-image-embeddings',
+      'imageEmbeddings',
+      'modules.ModularDiffusers',
+      'ImageEmbeddings',
+      {
+        image: input('image'),
+        last_image: input('image'),
+        image_encoder: input('diffusers_auto_model'),
+        width: scalar(),
+        height: scalar(),
+        image_embeds: output('image_embeds'),
+        route_state_out: output(routeType),
+      },
+    );
+    const imageEncode = managedContractNode(
+      prefix + '-image-encode',
+      'imageEncode',
+      'modules.ModularDiffusers',
+      'ImageEncode',
+      {
+        image: input('image'),
+        last_image: input('image'),
+        vae: input('diffusers_auto_model'),
+        width: scalar(),
+        height: scalar(),
+        num_frames: scalar('slider'),
+        seed: scalar('random'),
+        route_state_in: input(routeType),
+        image_condition_latents: output('video_condition_latents'),
+        route_state_out: output(routeType),
+      },
+    );
+    const denoise = managedContractNode(prefix + '-denoise', 'denoise', 'modules.ModularDiffusers', 'Denoise', {
+      unet: input('diffusers_auto_model'),
+      scheduler: input('diffusers_auto_model'),
+      vae: input('diffusers_auto_model'),
+      embeddings: input('embeddings'),
+      image_embeds: input('image_embeds'),
+      image_condition_latents: input('video_condition_latents'),
+      width: scalar(),
+      height: scalar(),
+      num_frames: scalar('slider'),
+      seed: scalar('random'),
+      num_inference_steps: { type: 'int', display: 'slider' },
+      guidance_scale: { type: 'float', display: 'slider' },
+      route_state_in: input(routeType),
+      latents: output('latents'),
+      route_state_out: output(routeType),
+    });
+    const decode = managedContractNode(prefix + '-decode', 'decode', 'modules.ModularDiffusers', 'DecodeLatents', {
+      vae: input('diffusers_auto_model'),
+      latents: input('latents'),
+      route_state_in: input(routeType),
+      videos: output('video'),
+    });
+    const videoExport = managedContractNode(prefix + '-export', 'videoExport', 'modules.Video', 'Export', {
+      video: input('video'),
+      fps: { type: 'int', value: 16 },
+      output: output('video'),
+    });
+    const nodes = [models, prompt, loadImage, imageEmbeddings, imageEncode, denoise, decode, videoExport];
+    const roles = {
+      models: models.id,
+      prompt: prompt.id,
+      loadImage: loadImage.id,
+      imageEmbeddings: imageEmbeddings.id,
+      imageEncode: imageEncode.id,
+      denoise: denoise.id,
+      decode: decode.id,
+      videoExport: videoExport.id,
+    };
+    if (flf) {
+      const loadLastImage = managedContractNode(prefix + '-ending', 'loadLastImage', 'modules.Image', 'Load', {
+        file: { type: 'string', value: ['ending.png'] },
+        alpha_channel: { type: 'string', value: 'remove alpha' },
+        image: output('image'),
+      });
+      nodes.push(loadLastImage);
+      roles.loadLastImage = loadLastImage.id;
+    }
+    if (omit) {
+      const target = nodes.find((item) => item.data.studioRole === omit.role);
+      delete target.data.params[omit.field];
+    }
+    const form = {
+      ...studioStoreModule.useStudioStore.getState().form,
+      mode: 'image_to_video',
+      modelType: 'WanImageToVideoPipeline',
+      resourceMode: 'expert',
+      quantizationMode: 'none',
+      referenceImages: ['opening-from-form.png'],
+      width: 832,
+      height: 480,
+      numFrames: 81,
+      seed: 1234,
+      randomSeed: false,
+      steps: 40,
+      guidanceScale: 3.5,
+      fps: 16,
+    };
+    const binding = {
+      mode: form.mode,
+      modelType: form.modelType,
+      nodes: roles,
+      managedNodeIds: nodes.map((item) => item.id),
+      managedEdgeIds: [],
+      fingerprint: `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+      createdAt: fixtureSequence,
+      updatedAt: 1,
+    };
+    flowStoreModule.useFlowStore.setState({ nodes, edges: [] });
+    studioStoreModule.useStudioStore.setState({
+      form,
+      graphBinding: binding,
+      graphFinalization: null,
+      autoFieldOverrides: {},
+      autoResourcePlan: null,
+    });
+    return { binding, form, roles };
+  };
+  const replaceParam = (nodeId, field, param) => {
+    const item = flowStoreModule.useFlowStore.getState().nodes.find((node) => node.id === nodeId);
+    flowStoreModule.useFlowStore.getState().replaceNodeParams(nodeId, { ...item.data.params, [field]: param });
+  };
+  const ledger = () =>
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.map((item) => `${item.source}:${item.sourceHandle}->${item.target}:${item.targetHandle}`)
+      .sort();
+
+  const i2v = buildFixture();
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(), true);
+  assert.equal(graphBridge.syncStudioGraphDefinition(i2v.form), true);
+  const i2vState = studioStoreModule.useStudioStore.getState();
+  assert.equal(i2vState.graphFinalization.status, 'complete');
+  assert.equal(i2vState.graphBinding.managedEdgeIds.length, 17);
+  assert.equal(i2vState.graphBinding.finalizationProof.schemaVersion, 2);
+  assert.match(i2vState.graphBinding.finalizationProof.shapeKey, /imageEmbeddings\|imageEncode/);
+  assert.deepEqual(
+    ledger(),
+    [
+      [i2v.roles.models, 'text_encoders', i2v.roles.prompt, 'text_encoders'],
+      [i2v.roles.models, 'image_encoder', i2v.roles.imageEmbeddings, 'image_encoder'],
+      [i2v.roles.models, 'vae_out', i2v.roles.imageEncode, 'vae'],
+      [i2v.roles.models, 'unet_out', i2v.roles.denoise, 'unet'],
+      [i2v.roles.models, 'scheduler', i2v.roles.denoise, 'scheduler'],
+      [i2v.roles.models, 'vae_out', i2v.roles.denoise, 'vae'],
+      [i2v.roles.models, 'vae_out', i2v.roles.decode, 'vae'],
+      [i2v.roles.loadImage, 'image', i2v.roles.imageEmbeddings, 'image'],
+      [i2v.roles.loadImage, 'image', i2v.roles.imageEncode, 'image'],
+      [i2v.roles.prompt, 'embeddings', i2v.roles.denoise, 'embeddings'],
+      [i2v.roles.imageEmbeddings, 'image_embeds', i2v.roles.denoise, 'image_embeds'],
+      [i2v.roles.imageEmbeddings, 'route_state_out', i2v.roles.imageEncode, 'route_state_in'],
+      [i2v.roles.imageEncode, 'image_condition_latents', i2v.roles.denoise, 'image_condition_latents'],
+      [i2v.roles.imageEncode, 'route_state_out', i2v.roles.denoise, 'route_state_in'],
+      [i2v.roles.denoise, 'latents', i2v.roles.decode, 'latents'],
+      [i2v.roles.denoise, 'route_state_out', i2v.roles.decode, 'route_state_in'],
+      [i2v.roles.decode, 'videos', i2v.roles.videoExport, 'video'],
+    ]
+      .map(([source, sourceHandle, target, targetHandle]) => `${source}:${sourceHandle}->${target}:${targetHandle}`)
+      .sort(),
+  );
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().edges.some((item) => item.sourceHandle === 'first_last_frame_latents'),
+    false,
+  );
+  const i2vNodes = flowStoreModule.useFlowStore.getState().nodes;
+  assert.deepEqual(i2vNodes.find((item) => item.id === i2v.roles.loadImage).data.params.file.value, [
+    'opening-from-form.png',
+  ]);
+  for (const role of ['imageEmbeddings', 'imageEncode', 'denoise']) {
+    const params = i2vNodes.find((item) => item.id === i2v.roles[role]).data.params;
+    assert.equal(params.width.value, 832);
+    assert.equal(params.height.value, 480);
+  }
+  for (const role of ['imageEncode', 'denoise']) {
+    const params = i2vNodes.find((item) => item.id === i2v.roles[role]).data.params;
+    assert.equal(params.num_frames.value, 81);
+    assert.deepEqual(params.seed.value, { value: 1234, isRandom: false });
+  }
+  managedControlSync.syncManagedNodeControlChange(i2v.roles.imageEmbeddings, 'width', 768);
+  assert.equal(studioStoreModule.useStudioStore.getState().form.width, 768);
+  for (const role of ['imageEmbeddings', 'imageEncode', 'denoise']) {
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === i2v.roles[role]).data.params.width.value,
+      768,
+    );
+  }
+
+  const sealedI2v = structuredClone(i2vState.graphBinding);
+  const sealedI2vEdges = structuredClone(flowStoreModule.useFlowStore.getState().edges);
+  replaceParam(i2v.roles.denoise, 'vae', input('mutated_vae'));
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(i2v.form), /graph changed/i);
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(i2v.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.deepEqual(
+    ledger(),
+    sealedI2vEdges.map((item) => `${item.source}:${item.sourceHandle}->${item.target}:${item.targetHandle}`).sort(),
+  );
+  replaceParam(i2v.roles.denoise, 'vae', input('diffusers_auto_model'));
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(i2v.form), true);
+  assert.notDeepEqual(
+    studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof,
+    sealedI2v.finalizationProof,
+  );
+
+  const segmentedRoute = buildFixture();
+  replaceParam(segmentedRoute.roles.imageEmbeddings, 'route_state_out', output('route_alpha'));
+  replaceParam(segmentedRoute.roles.imageEncode, 'route_state_in', input('route_alpha'));
+  replaceParam(segmentedRoute.roles.imageEncode, 'route_state_out', output('route_beta'));
+  replaceParam(segmentedRoute.roles.denoise, 'route_state_in', input('route_beta'));
+  replaceParam(segmentedRoute.roles.denoise, 'route_state_out', output('route_gamma'));
+  replaceParam(segmentedRoute.roles.decode, 'route_state_in', input('route_gamma'));
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(segmentedRoute.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().edges.length,
+    0,
+    'pairwise-valid route segments cannot mint three unrelated route identities',
+  );
+
+  const malformedContracts = [
+    ['imageEmbeddings', 'image_embeds', { type: 'image_embeds', display: 'input' }],
+    ['imageEncode', 'image_condition_latents', output(' video_condition_latents')],
+    ['imageEncode', 'seed', scalar('slider')],
+    ['loadImage', 'image', input('image')],
+    ['denoise', 'route_state_out', output('')],
+  ];
+  for (const [role, field, param] of malformedContracts) {
+    const malformedContract = buildFixture();
+    replaceParam(malformedContract.roles[role], field, param);
+    graphBridge.markStudioGraphDefinitionPending();
+    assert.equal(
+      graphBridge.syncStudioGraphDefinition(malformedContract.form),
+      false,
+      `${role}.${field} malformed type/display remains pending`,
+    );
+    assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+    assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+  }
+
+  const duplicateRole = buildFixture();
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(duplicateRole.form), true);
+  const duplicate = managedContractNode(
+    'duplicate-hidden-image-embeddings',
+    'imageEmbeddings',
+    'modules.ModularDiffusers',
+    'ImageEmbeddings',
+    {},
+  );
+  flowStoreModule.useFlowStore.setState((state) => ({ nodes: [...state.nodes, duplicate] }));
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage(duplicateRole.form),
+    /graph changed/i,
+    'an unsealed duplicate modular-video role invalidates the proof',
+  );
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(duplicateRole.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+
+  const missingCoreMap = buildFixture();
+  const deletedCoreNodes = { ...missingCoreMap.binding.nodes };
+  delete deletedCoreNodes.imageEmbeddings;
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: { ...missingCoreMap.binding, nodes: deletedCoreNodes },
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(missingCoreMap.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(missingCoreMap.form), /route pending/i);
+
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: {
+      ...missingCoreMap.binding,
+      nodes: { ...missingCoreMap.binding.nodes, imageEmbeddings: missingCoreMap.roles.denoise },
+    },
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(missingCoreMap.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(missingCoreMap.form), /route pending/i);
+
+  const flf = buildFixture({ flf: true, omit: { role: 'imageEncode', field: 'last_image' } });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(flf.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0, 'partial FLF never falls back to I2V edges');
+  replaceParam(flf.roles.imageEncode, 'last_image', input('image'));
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(flf.form), true);
+  const flfState = studioStoreModule.useStudioStore.getState();
+  assert.equal(flfState.graphBinding.managedEdgeIds.length, 19);
+  assert.match(flfState.graphBinding.finalizationProof.shapeKey, /\|loadLastImage$/);
+  assert.ok(ledger().includes(`${flf.roles.loadLastImage}:image->${flf.roles.imageEmbeddings}:last_image`));
+  assert.ok(ledger().includes(`${flf.roles.loadLastImage}:image->${flf.roles.imageEncode}:last_image`));
+  assert.deepEqual(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === flf.roles.loadLastImage).data.params.file
+      .value,
+    ['ending.png'],
+    'form synchronization never aliases the opening image into the ending-image loader',
+  );
+
+  const flfNodeIds = new Set([flf.roles.loadLastImage]);
+  const strippedNodes = { ...flfState.graphBinding.nodes };
+  delete strippedNodes.loadLastImage;
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: state.nodes.filter((item) => !flfNodeIds.has(item.id)),
+    edges: state.edges.filter((item) => !flfNodeIds.has(item.source) && !flfNodeIds.has(item.target)),
+  }));
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: {
+      ...flfState.graphBinding,
+      nodes: strippedNodes,
+      managedNodeIds: flfState.graphBinding.managedNodeIds.filter((id) => !flfNodeIds.has(id)),
+      managedEdgeIds: flowStoreModule.useFlowStore.getState().edges.map((item) => item.id),
+      finalizationProof: undefined,
+    },
+  });
+  graphBridge.markStudioGraphDefinitionPending();
+  assert.equal(graphBridge.syncStudioGraphDefinition(flf.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(flf.form), /route pending/i);
+
+  const partialLast = managedContractNode('partial-last-only', 'loadLastImage', 'modules.Image', 'Load', {
+    file: { type: 'string', value: ['ending-only.png'] },
+    image: output('image'),
+  });
+  const partialLastBinding = {
+    mode: flf.form.mode,
+    modelType: flf.form.modelType,
+    nodes: {},
+    managedNodeIds: [partialLast.id],
+    managedEdgeIds: [],
+    fingerprint: flfState.graphBinding.fingerprint,
+    createdAt: 99_999,
+    updatedAt: 1,
+  };
+  flowStoreModule.useFlowStore.setState({ nodes: [partialLast], edges: [] });
+  studioStoreModule.useStudioStore.setState({ graphBinding: partialLastBinding, graphFinalization: null });
+  assert.equal(
+    graphBridge.markStudioGraphDefinitionPending(),
+    true,
+    'a live managed ending-image role is Modular evidence even without its binding map or route edges',
+  );
+  assert.equal(graphBridge.syncStudioGraphDefinition(flf.form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(flf.form), /route pending/i);
+
+  const replacementWanPipeline = managedContractNode(
+    'replacement-standard-pipeline',
+    'wanPipeline',
+    'modules.DiffusersVideo',
+    'LoadPipeline',
+    {},
+  );
+  const replacementGenerate = managedContractNode(
+    'replacement-standard-generate',
+    'wanGenerate',
+    'modules.DiffusersVideo',
+    'Generate',
+    {},
+  );
+  const replacementExport = managedContractNode(flf.roles.videoExport, 'videoExport', 'modules.Video', 'Export', {});
+  const replacementRecipe = managedContractNode(
+    'replacement-standard-recipe',
+    'diffusersRecipe',
+    'modules.DiffusersRuntime',
+    'DiffusersExecutionRecipe',
+    {},
+  );
+  const replacementQuantization = managedContractNode(
+    'replacement-standard-quantization',
+    'diffusersQuantization',
+    'modules.DiffusersRuntime',
+    'PipelineQuantizationConfigV2',
+    {},
+  );
+  const replacementNodes = [
+    replacementQuantization,
+    replacementRecipe,
+    replacementWanPipeline,
+    replacementGenerate,
+    replacementExport,
+  ];
+  flowStoreModule.useFlowStore.setState({ nodes: replacementNodes, edges: [] });
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: {
+      mode: flfState.graphBinding.mode,
+      modelType: flfState.graphBinding.modelType,
+      nodes: {
+        diffusersQuantization: replacementQuantization.id,
+        diffusersRecipe: replacementRecipe.id,
+        wanPipeline: replacementWanPipeline.id,
+        wanGenerate: replacementGenerate.id,
+        videoExport: replacementExport.id,
+      },
+      managedNodeIds: replacementNodes.map((item) => item.id),
+      managedEdgeIds: [],
+      fingerprint: flfState.graphBinding.fingerprint,
+      createdAt: flfState.graphBinding.createdAt,
+      updatedAt: flfState.graphBinding.updatedAt,
+    },
+    graphFinalization: null,
+  });
+  assert.equal(
+    graphBridge.markStudioGraphDefinitionPending(),
+    false,
+    'a distinct standard-video node group cannot inherit the prior Modular/FLF latch',
+  );
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(flf.form), null);
+
+  const standardForm = {
+    ...flf.form,
+    modelType: 'WanTI2VPipeline',
+    mode: 'image_to_video',
+  };
+  assert.match(graphBridge.getStudioGraphShapeKey(standardForm), /wanPipeline\|wanGenerate\|videoExport/);
+  assert.doesNotMatch(graphBridge.getStudioGraphShapeKey(standardForm), /imageEmbeddings|loadLastImage/);
+  const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+  const modularVideoObservationSource = bridgeSource.match(
+    /function modularVideoGroupObserved[\s\S]*?\n\}\n\nfunction participatingRoles/,
+  )?.[0];
+  const modularVideoTopologySource = bridgeSource.match(
+    /const MODULAR_VIDEO_I2V_EDGE_HANDLES[\s\S]*?\n\}\n\nfunction modularTopologyPending/,
+  )?.[0];
+  assert.ok(modularVideoObservationSource);
+  assert.ok(modularVideoTopologySource);
+  assert.doesNotMatch(modularVideoObservationSource, /Wan|modelType|repo|pipelineClass/);
+  assert.doesNotMatch(modularVideoTopologySource, /Wan|modelType|repo|pipelineClass/);
+});
+
 test('managed graph entry points wait for finalization and Auto only rebuilds when graph shape changes', () => {
   const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
   const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
@@ -1527,80 +3494,233 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   assert.match(issuesDialogSource, /setWorkflowFocusRequest\(\{[\s\S]*nodeId: null/);
 });
 
-test('model selector offers installed models only when their class and connected family are compatible', () => {
+test('model selector applies only backend class and id filters to opaque installed models', () => {
   const installed = [
     {
-      id: 'InstantX/Qwen-Image-ControlNet-Union',
-      class_names: ['QwenImageControlNetModel'],
+      id: 'org/opaque-alpha',
+      class_names: ['ClassAlpha'],
       installed: true,
       complete: true,
     },
     {
-      id: 'diffusers/controlnet-depth-sdxl-1.0',
-      class_names: ['ControlNetModel'],
+      id: 'org/opaque-beta',
+      class_names: ['ClassBeta'],
       installed: true,
       complete: true,
     },
     {
-      id: 'InstantX/Qwen-Image-ControlNet-Incomplete',
-      class_names: ['QwenImageControlNetModel'],
+      id: 'org/opaque-incomplete',
+      class_names: ['ClassAlpha'],
       installed: false,
       complete: false,
     },
     {
-      id: 'unrelated/not-a-control-model',
-      class_names: ['AutoencoderKL'],
+      id: 'another/installed-model',
+      class_names: ['ClassGamma'],
     },
   ];
-  const classNameFilter = ['ControlNetModel', 'QwenImageControlNetModel', 'FluxControlNetModel'];
 
   assert.deepEqual(
     modelSelection.compatibleInstalledHubModels({
-      classNameFilter,
-      family: 'qwen',
+      classNameFilter: ['ClassAlpha'],
+      idFilter: '^org/',
       items: installed,
     }),
-    ['InstantX/Qwen-Image-ControlNet-Union'],
+    ['org/opaque-alpha'],
   );
   assert.deepEqual(
     modelSelection.compatibleInstalledHubModels({
-      classNameFilter,
-      family: 'sdxl',
       items: installed,
     }),
-    ['diffusers/controlnet-depth-sdxl-1.0'],
+    ['another/installed-model', 'org/opaque-alpha', 'org/opaque-beta'],
   );
+  assert.deepEqual(
+    modelSelection.compatibleInstalledHubModels({
+      classNameFilter: '[invalid',
+      items: installed,
+    }),
+    [],
+  );
+  assert.deepEqual(
+    modelSelection.compatibleInstalledHubModels({
+      idFilter: '[invalid',
+      items: installed,
+    }),
+    [],
+  );
+  for (const invalidFilter of [{}, 42, ['ClassAlpha', 42], ['']]) {
+    assert.deepEqual(
+      modelSelection.compatibleInstalledHubModels({
+        classNameFilter: invalidFilter,
+        items: installed,
+      }),
+      [],
+    );
+  }
+  for (const invalidFilter of [{}, 42, ['org/opaque-alpha', 42], ['']]) {
+    assert.deepEqual(
+      modelSelection.compatibleInstalledHubModels({
+        idFilter: invalidFilter,
+        items: installed,
+      }),
+      [],
+    );
+  }
+  assert.deepEqual(
+    modelSelection.compatibleInstalledHubModels({
+      idFilter: ['org/opaque-beta', 'org/opaque-alpha'],
+      items: installed,
+    }),
+    ['org/opaque-alpha', 'org/opaque-beta'],
+  );
+  for (const noFilter of [undefined, null, '', '   ', []]) {
+    assert.deepEqual(
+      modelSelection.compatibleInstalledHubModels({
+        classNameFilter: noFilter,
+        idFilter: noFilter,
+        items: installed,
+      }),
+      ['another/installed-model', 'org/opaque-alpha', 'org/opaque-beta'],
+    );
+  }
+  assert.deepEqual(
+    modelSelection.compatibleInstalledLocalModels({
+      idFilter: 'alpha$',
+      items: ['local/opaque-beta', 'local/opaque-alpha', 'local/opaque-alpha'],
+    }),
+    ['local/opaque-alpha'],
+  );
+  assert.deepEqual(
+    modelSelection.compatibleInstalledLocalModels({
+      classNameFilter: ['ClassAlpha'],
+      idFilter: 'alpha$',
+      items: ['local/opaque-beta', 'local/opaque-alpha'],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    modelSelection.compatibleInstalledLocalModels({
+      idFilter: '[invalid',
+      items: ['local/opaque-alpha'],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    modelSelection.compatibleInstalledLocalModels({
+      idFilter: ['local/opaque-beta'],
+      items: ['local/opaque-alpha', 'local/opaque-beta'],
+    }),
+    ['local/opaque-beta'],
+  );
+  for (const invalidFilter of [{}, 42, ['local/opaque-alpha', 42], ['']]) {
+    assert.deepEqual(
+      modelSelection.compatibleInstalledLocalModels({
+        idFilter: invalidFilter,
+        items: ['local/opaque-alpha'],
+      }),
+      [],
+    );
+  }
+  for (const noFilter of [undefined, null, '', '   ', []]) {
+    assert.deepEqual(
+      modelSelection.compatibleInstalledLocalModels({
+        classNameFilter: noFilter,
+        items: ['local/opaque-beta', 'local/opaque-alpha'],
+      }),
+      ['local/opaque-alpha', 'local/opaque-beta'],
+    );
+  }
+  for (const invalidClassFilter of [{}, 42, ['ClassAlpha', 42], ['']]) {
+    assert.deepEqual(
+      modelSelection.compatibleInstalledLocalModels({
+        classNameFilter: invalidClassFilter,
+        items: ['local/opaque-alpha'],
+      }),
+      [],
+    );
+  }
+
+  for (const absentFilter of [undefined, null, {}, { hub: null, local: null }, { hub: {}, local: {} }]) {
+    assert.deepEqual(modelSelection.parseModelSelectionFilters(absentFilter), {
+      hub: { valid: true },
+      local: { valid: true },
+    });
+  }
+  for (const invalidRoot of [[], 42, 'hub']) {
+    const parsed = modelSelection.parseModelSelectionFilters(invalidRoot);
+    assert.deepEqual(parsed, { hub: { valid: false }, local: { valid: false } });
+    assert.deepEqual(
+      modelSelection.compatibleInstalledHubModels({
+        ...parsed.hub,
+        filterValid: parsed.hub.valid,
+        items: installed,
+      }),
+      [],
+    );
+    assert.deepEqual(
+      modelSelection.compatibleInstalledLocalModels({
+        ...parsed.local,
+        filterValid: parsed.local.valid,
+        items: ['local/opaque-alpha'],
+      }),
+      [],
+    );
+  }
+  for (const invalidHub of [[], 42, 'hub']) {
+    const parsed = modelSelection.parseModelSelectionFilters({ hub: invalidHub });
+    assert.deepEqual(parsed, {
+      hub: { valid: false },
+      local: { valid: true },
+    });
+    assert.deepEqual(
+      modelSelection.compatibleInstalledHubModels({ filterValid: parsed.hub.valid, items: installed }),
+      [],
+    );
+    assert.deepEqual(
+      modelSelection.compatibleInstalledLocalModels({
+        filterValid: parsed.local.valid,
+        items: ['local/opaque-alpha'],
+      }),
+      ['local/opaque-alpha'],
+    );
+  }
+  for (const invalidLocal of [[], 42, 'local']) {
+    const parsed = modelSelection.parseModelSelectionFilters({ local: invalidLocal });
+    assert.deepEqual(parsed, {
+      hub: { valid: true },
+      local: { valid: false },
+    });
+    assert.deepEqual(modelSelection.compatibleInstalledHubModels({ filterValid: parsed.hub.valid, items: installed }), [
+      'another/installed-model',
+      'org/opaque-alpha',
+      'org/opaque-beta',
+    ]);
+    assert.deepEqual(
+      modelSelection.compatibleInstalledLocalModels({
+        filterValid: parsed.local.valid,
+        items: ['local/opaque-alpha'],
+      }),
+      [],
+    );
+  }
+  const parsedFilters = modelSelection.parseModelSelectionFilters({
+    hub: { className: ['ClassAlpha'], id: '^org/' },
+    local: { id: 'opaque-alpha$' },
+  });
+  assert.deepEqual(parsedFilters, {
+    hub: { className: ['ClassAlpha'], id: '^org/', valid: true },
+    local: { id: 'opaque-alpha$', valid: true },
+  });
 });
 
-test('model selector infers one family from connected pipeline loaders and ignores unrelated graph branches', () => {
-  const componentLoader = node('component-loader');
-  componentLoader.data.module = 'modules.ModularDiffusers';
-  componentLoader.data.action = 'AutoModelLoader';
-  componentLoader.data.params = {
-    model_type: { value: 'controlnet' },
-    model_id: { value: { source: 'hub', value: '' } },
-  };
-  const pipelineLoader = node('pipeline-loader');
-  pipelineLoader.data.module = 'modules.ModularDiffusers';
-  pipelineLoader.data.action = 'ModelsLoader';
-  pipelineLoader.data.params = {
-    repo_id: { value: { source: 'hub', value: 'Qwen/Qwen-Image-2512' } },
-  };
-  const unrelatedLoader = node('unrelated-loader');
-  unrelatedLoader.data.module = 'modules.DiffusersImage';
-  unrelatedLoader.data.action = 'LoadPipeline';
-  unrelatedLoader.data.params = {
-    model_id: { value: { source: 'hub', value: 'black-forest-labs/FLUX.1-dev' } },
-  };
-
-  assert.equal(
-    modelSelection.connectedModelFamilyHint(
-      [componentLoader, pipelineLoader, unrelatedLoader],
-      [edge('component-pipeline', 'component-loader', 'pipeline-loader')],
-      componentLoader.id,
-    ),
-    'qwen',
-  );
+test('model selector contains no client-owned model-family inference', () => {
+  const selectionSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'modelSelection.ts'), 'utf8');
+  const fieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'ModelSelectField.tsx'), 'utf8');
+  assert.doesNotMatch(selectionSource, /ModelFamilyHint|modelFamilyHint|connectedModelFamilyHint/);
+  assert.doesNotMatch(fieldSource, /getProfileForForm|useStudioStore|connectedModelFamilyHint|modelFamilyHint/);
+  assert.match(fieldSource, /parseModelSelectionFilters\(props\.fieldOptions\?\.filter\)/);
+  assert.match(fieldSource, /filterValid: hubFilter\.valid/);
+  assert.match(fieldSource, /filterValid: localFilter\.valid/);
 });
 
 test('model selector subscribes to discovered indexes and preserves the selected value during refresh', () => {
@@ -1612,69 +3732,15 @@ test('model selector subscribes to discovered indexes and preserves the selected
   assert.doesNotMatch(refreshBody, /updateStore\([^,]+,\s*\{[^}]*value/);
 });
 
-test('generic model loaders remove legacy implicit repositories without overwriting an explicit selection', () => {
-  const implicitParams = {
-    model_type: { value: 'controlnet' },
-    model_id: {
-      value: { source: 'hub', value: 'diffusers/controlnet-depth-sdxl-1.0' },
-      default: { source: 'hub', value: 'diffusers/controlnet-depth-sdxl-1.0' },
-    },
-  };
-  const migrated = modelSelection.normalizeGenericModelLoaderParams(
-    'modules.ModularDiffusers',
-    'AutoModelLoader',
-    implicitParams,
-  );
-  assert.deepEqual(migrated.model_id.value, { source: 'hub', value: '' });
-  assert.deepEqual(migrated.model_id.default, { source: 'hub', value: '' });
-
-  const explicitParams = {
-    ...implicitParams,
-    model_id: {
-      ...implicitParams.model_id,
-      value: { source: 'hub', value: 'InstantX/Qwen-Image-ControlNet-Union' },
-    },
-  };
-  const explicit = modelSelection.normalizeGenericModelLoaderParams(
-    'modules.ModularDiffusers',
-    'AutoModelLoader',
-    explicitParams,
-  );
-  assert.deepEqual(explicit.model_id.value, {
-    source: 'hub',
-    value: 'InstantX/Qwen-Image-ControlNet-Union',
-  });
-  assert.deepEqual(explicit.model_id.default, { source: 'hub', value: '' });
-});
-
-test('adding an unrelated node cannot restore a legacy generic model default', () => {
-  const loader = node('legacy-loader');
-  loader.data.module = 'modules.ModularDiffusers';
-  loader.data.action = 'AutoModelLoader';
-  loader.data.params = {
-    model_type: { value: 'controlnet' },
-    model_id: {
-      value: { source: 'hub', value: 'diffusers/controlnet-depth-sdxl-1.0' },
-      default: { source: 'hub', value: 'diffusers/controlnet-depth-sdxl-1.0' },
-    },
-  };
-  flowStoreModule.useFlowStore.setState({ nodes: [loader], edges: [] });
-  flowStoreModule.useFlowStore.getState().addNode(node('unrelated'));
-
-  const migrated = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === loader.id);
-  assert.deepEqual(migrated.data.params.model_id.value, { source: 'hub', value: '' });
-  assert.deepEqual(migrated.data.params.model_id.default, { source: 'hub', value: '' });
-});
-
-test('new generic model nodes cannot inherit a non-empty backend example default', () => {
+test('generic model nodes preserve backend-owned repository defaults without client rewriting', () => {
   const registryNode = node('registry-loader').data;
   registryNode.module = 'modules.ModularDiffusers';
   registryNode.action = 'AutoModelLoader';
   registryNode.params = {
-    model_type: { value: 'controlnet' },
+    component_type: { value: 'ClassFuture' },
     model_id: {
-      value: { source: 'hub', value: 'diffusers/controlnet-depth-sdxl-1.0' },
-      default: { source: 'hub', value: 'diffusers/controlnet-depth-sdxl-1.0' },
+      value: { source: 'hub', value: 'future/default-repository' },
+      default: { source: 'hub', value: 'future/default-repository' },
     },
   };
   const created = nodeFactory.createNodeFromRegistry(
@@ -1682,14 +3748,24 @@ test('new generic model nodes cannot inherit a non-empty backend example default
     { 'modules.ModularDiffusers.AutoModelLoader': registryNode },
     { x: 0, y: 0 },
   );
-  assert.deepEqual(created.data.params.model_id.value, { source: 'hub', value: '' });
-  assert.deepEqual(created.data.params.model_id.default, { source: 'hub', value: '' });
+  assert.deepEqual(created.data.params.model_id.value, { source: 'hub', value: 'future/default-repository' });
+  assert.deepEqual(created.data.params.model_id.default, { source: 'hub', value: 'future/default-repository' });
+
+  const restored = {
+    ...created,
+    id: 'restored-loader',
+    data: {
+      ...created.data,
+      params: JSON.parse(JSON.stringify(created.data.params)),
+    },
+  };
+  flowStoreModule.useFlowStore.getState().replaceGraph({ nodes: [restored], edges: [] });
+  const preserved = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === restored.id);
+  assert.deepEqual(preserved.data.params.model_id.value, { source: 'hub', value: 'future/default-repository' });
+  assert.deepEqual(preserved.data.params.model_id.default, { source: 'hub', value: 'future/default-repository' });
 
   const websocketSource = fs.readFileSync(path.join(ROOT, 'src', 'stores', 'websocketMessageHandler.ts'), 'utf8');
-  assert.match(
-    websocketSource,
-    /normalizeGenericModelLoaderParams\(node\.data\.module,\s*node\.data\.action,\s*newParams\)/,
-  );
+  assert.doesNotMatch(websocketSource, /AutoModelLoader|normalizeGenericModelLoaderParams/);
 });
 
 test('managed Qwen ControlNet sync pins AutoModelLoader to the controlnet component kind', () => {

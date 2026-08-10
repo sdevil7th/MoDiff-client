@@ -1,3 +1,5 @@
+import type { OptionalRuntimeRequirement } from './optionalRuntimes';
+
 export type StudioMode =
   | 'text_to_image'
   | 'edit_image'
@@ -326,9 +328,12 @@ export type StudioGraphRole =
   | 'decode'
   | 'preview'
   | 'loadImage'
+  | 'loadControlImage'
   | 'loadMask'
   | 'applyMask'
+  | 'imageEmbeddings'
   | 'imageEncode'
+  | 'loadLastImage'
   | 'controlnetModel'
   | 'controlnet'
   | 'diffusersQuantization'
@@ -364,9 +369,10 @@ export type StudioGraphBinding = {
   managedEdgeIds: string[];
   fingerprint: string;
   finalizationProof?: {
-    schemaVersion: 1;
+    schemaVersion: 2;
     shapeKey: string;
     fieldSchemaHash: string;
+    edgeSpecHash: string;
     finalizedAt: number;
   };
   createdAt: number;
@@ -608,6 +614,9 @@ export type StudioExecutionProfile = {
   max_low_memory_side?: number | null;
   max_low_memory_steps?: number | null;
   live_proof: boolean;
+  optional_runtime_delivery?: 'base' | 'optional_overlay';
+  optional_runtime_profiles?: string[];
+  optionalRuntimeRequirement?: OptionalRuntimeRequirement;
 };
 
 export type StudioModelProfile = {
@@ -673,12 +682,14 @@ export type StudioModelProfile = {
   runnableModes?: StudioMode[];
   downloadFiles?: string[];
   inputContracts?: Partial<Record<StudioMode, StudioModeRequirement>>;
+  optionalRuntimeRequirement?: OptionalRuntimeRequirement;
 };
 
 export type StudioModelRequirement = {
   id: string;
   label: string;
   repo: string;
+  revision?: string;
   kind: 'base' | 'controlnet' | 'adapter';
   requiredForModes?: StudioMode[];
   description?: string;

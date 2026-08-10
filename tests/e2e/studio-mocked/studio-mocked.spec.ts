@@ -88,6 +88,7 @@ declare global {
             nodes?: Record<string, string>;
             managedEdgeIds?: string[];
             managedNodeIds?: string[];
+            finalizationProof?: { fieldSchemaHash?: string };
           } | null;
           currentRunContext?: {
             form?: {
@@ -198,12 +199,22 @@ declare global {
           | 'multi_model_compare',
       ) => void;
       addCustomNodeForTest: (key?: string) => string;
+      connectGraph: (connection: {
+        source: string;
+        target: string;
+        sourceHandle?: string | null;
+        targetHandle?: string | null;
+      }) => void;
       setFirstNodeCollapsedByAction: (action: string, collapsed: boolean) => boolean;
       setFirstNodePositionByAction: (action: string, position: { x: number; y: number }) => boolean;
       setFirstNodeSizeByAction: (action: string, size: { width: number; height: number }) => boolean;
       selectFirstNodeByAction: (action: string) => boolean;
       selectNodesByAction: (actions: string[]) => number;
       setWebsocketConnection: (connection: { sid?: string | null; isConnected?: boolean }) => void;
+      setStudioFormForTest: (form: { mode?: string; modelType?: string; resourceMode?: string }) => void;
+      bindManagedGraphForTest: (form: Record<string, unknown>, nodes: Record<string, string>) => boolean;
+      startManagedGraphFinalizationForTest: () => Promise<void>;
+      waitForManagedGraphFinalizationForTest: () => Promise<void>;
       startStudioRunForTest: (identity: { clientRunId: string; runInputHash: string; taskId?: string | null }) => {
         clientRunId: string;
         runInputHash: string;
@@ -259,6 +270,10 @@ let mockFileUploadCalls = 0;
 let mockDownloadFailureRepo: string | null = null;
 let mockDownloadFailureMessage = '';
 let mockHfTokenConfigured = false;
+let mockOptionalRuntimeMutationCalls = 0;
+let mockOptionalRuntimeProcessStatus = 'base';
+let mockOptionalRuntimeQualified = false;
+let mockOptionalRuntimeDelayMs = 0;
 
 function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
@@ -1141,6 +1156,37 @@ async function installMockRoutes(page: Page) {
       }),
     });
   });
+  await page.route('**/runtime/optional-runtimes**', async (route) => {
+    if (route.request().method() !== 'GET') {
+      mockOptionalRuntimeMutationCalls += 1;
+      await route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":true}' });
+      return;
+    }
+    const delay = mockOptionalRuntimeDelayMs;
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 1,
+        profiles: [
+          {
+            schemaVersion: 1,
+            id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+            label: 'Hugging Face Transformers + PEFT',
+            specDigest: 'sha256:8e1b0b6b2baa891d4551caa3cde4d59708eced0fd74c1333b68a1aab7ff924b5',
+            contractState: mockOptionalRuntimeQualified ? 'qualified' : 'candidate_unqualified',
+            cutoverReady: mockOptionalRuntimeQualified,
+            installActionAvailable: false,
+            activationAvailable: false,
+            status: 'missing',
+            overlayStatus: mockOptionalRuntimeQualified ? 'active' : 'missing',
+          },
+        ],
+        overlay: { processLoadStatus: mockOptionalRuntimeProcessStatus },
+      }),
+    });
+  });
   await page.route('**/runtime/resources**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -1280,6 +1326,10 @@ test.beforeEach(() => {
   mockDownloadFailureRepo = null;
   mockDownloadFailureMessage = '';
   mockHfTokenConfigured = false;
+  mockOptionalRuntimeMutationCalls = 0;
+  mockOptionalRuntimeProcessStatus = 'base';
+  mockOptionalRuntimeQualified = false;
+  mockOptionalRuntimeDelayMs = 0;
 });
 
 test('top bar reports live system and accelerator resources without refreshing runtime discovery', async ({ page }) => {
@@ -1303,6 +1353,47 @@ test('top bar reports live system and accelerator resources without refreshing r
   await expect(popover).toContainText('Mock CUDA 16GB');
   await expect(popover).toContainText('42% (mock)');
   await expect(popover).toContainText('Peak allocated');
+});
+
+test('optional runtime setup is GET-only and keeps the unqualified candidate non-actionable', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept', { resourceMode: 'auto' });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
+  });
+
+  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const profile = disclosure.getByText(/Hugging Face Transformers \+ PEFT:/);
+  await expect(disclosure).toBeVisible();
+  await expect(profile).toContainText('unavailable');
+  await expect(profile).toContainText('candidate_unqualified');
+  await expect(disclosure.getByRole('button', { name: /install|activate/i })).toHaveCount(0);
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
+
+  mockOptionalRuntimeProcessStatus = 'restart_required';
+  await page.getByTestId('setup-refresh').click();
+  await expect(profile).toContainText('restart required');
+  mockOptionalRuntimeProcessStatus = 'repair_required';
+  await page.getByTestId('setup-refresh').click();
+  await expect(profile).toContainText('repair required');
+
+  mockOptionalRuntimeQualified = true;
+  mockOptionalRuntimeProcessStatus = 'active';
+  await page.getByTestId('setup-refresh').click();
+  await expect(profile).toContainText('active');
+  mockOptionalRuntimeDelayMs = 500;
+  await page.getByTestId('setup-refresh').click();
+  await expect(disclosure).toContainText('Loading optional runtimes');
+  await expect(profile).toHaveCount(0);
+  mockOptionalRuntimeDelayMs = 0;
+  await expect(profile).toContainText('active');
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
 });
 
 test('manual graphs expose Encode Image status and graph-derived full-resolution A/B comparison', async ({ page }) => {
@@ -2106,6 +2197,65 @@ test('mocked Studio normalizes persisted forms without video fields', async ({ p
   await page.getByTestId('launcher-mode-text_to_image').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   expect(pageErrors).toEqual([]);
+});
+
+test('schema-v2 capabilities hide and block an exact model task pair the backend omits', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('InstantX/Qwen-Image-ControlNet-Union');
+  mockIncludeQuantizationNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: [
+          {
+            modelType: 'QwenImageModularPipeline',
+            modes: ['text_to_image', 'control_image'],
+            runnableModes: ['text_to_image'],
+          },
+        ],
+        experimentalCapabilities: [
+          {
+            modelType: 'FluxModularPipeline',
+            modes: ['text_to_image', 'image_to_image', 'control_image'],
+            runnableModes: ['text_to_image', 'image_to_image', 'control_image'],
+          },
+        ],
+      }),
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
+    .toHaveLength(1);
+
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'control_image',
+      modelType: 'QwenImageModularPipeline',
+      resourceMode: 'expert',
+    });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
+  });
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  await expect(page.getByTestId('studio-run-readiness')).toContainText(
+    'Qwen-Image-2512 does not support Control image on the connected backend.',
+  );
+
+  const taskSelect = page.getByTestId('studio-task-select');
+  await expect(taskSelect).toContainText('Select');
+  await taskSelect.click();
+  await expect(page.getByRole('option', { name: 'Text to image' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Control image' })).toHaveCount(0);
 });
 
 test('mocked Studio restores legacy template tabs as managed without moving their saved graph', async ({ page }) => {
@@ -5114,6 +5264,116 @@ test('transient Auto planner failure does not report an installed Z-Image model 
   await expect(page.getByTestId('studio-run')).toBeEnabled();
 });
 
+test('backend declarative bindings synchronize both generic Layered actions after dynamic refresh', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-Layered');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.setStudioFormForTest({ resourceMode: 'expert' });
+  });
+
+  await page.evaluate(async () => {
+    try {
+      await window.__MODIFF_E2E__!.applyTemplate('qwen_layered_portrait', {
+        referenceImages: ['mock-layer-source.webp'],
+        resourceMode: 'expert',
+        width: 1000,
+        height: 512,
+      });
+    } catch (error) {
+      // Startup Auto-plan reconciliation may supersede this intentionally
+      // Expert-only fixture while its already-materialized graph remains the
+      // active document. The assertions below require that exact graph.
+      if (!(error instanceof Error) || !error.message.includes('workflow changed')) throw error;
+    }
+  });
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return [
+        current.flow.nodes.some((node) => node.action === 'EncodePrompt'),
+        current.flow.nodes.some((node) => node.action === 'ImageEncode'),
+        Boolean(current.studio.graphBinding),
+      ];
+    })
+    .toEqual([true, true, true]);
+
+  const resolutionBinding = {
+    schemaVersion: 1,
+    group: 'source-resolution',
+    formFields: ['width', 'height'],
+    transform: 'nearest-option-to-long-edge',
+  };
+  const refreshed = await page.evaluate((backendBinding) => {
+    const promptUpdated = window.__MODIFF_E2E__!.applyNodeDefinitionForAction('EncodePrompt', {
+      contract_alpha: {
+        label: 'Opaque source contract A',
+        type: 'int',
+        default: 640,
+        options: [640, 1024],
+        fieldOptions: { controlTier: 'advanced', studioBinding: backendBinding },
+      },
+    });
+    const imageUpdated = window.__MODIFF_E2E__!.applyNodeDefinitionForAction('ImageEncode', {
+      contract_omega: {
+        label: 'Opaque source contract B',
+        type: 'int',
+        default: 640,
+        options: [640, 1024],
+        fieldOptions: { controlTier: 'advanced', studioBinding: backendBinding },
+      },
+    });
+    return promptUpdated && imageUpdated;
+  }, resolutionBinding);
+  expect(refreshed).toBe(true);
+
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const prompt = current.flow.nodes.find((node) => node.action === 'EncodePrompt');
+      const image = current.flow.nodes.find((node) => node.action === 'ImageEncode');
+      return [prompt?.params?.contract_alpha?.value, image?.params?.contract_omega?.value];
+    })
+    .toEqual([1024, 1024]);
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+  await page.getByTestId('studio-section-toggle-advanced-generation').click();
+  await page.getByTestId('studio-width-input').fill('640');
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const prompt = current.flow.nodes.find((node) => node.action === 'EncodePrompt');
+      const image = current.flow.nodes.find((node) => node.action === 'ImageEncode');
+      return [prompt?.params?.contract_alpha?.value, image?.params?.contract_omega?.value];
+    })
+    .toEqual([640, 640]);
+
+  const promptNodeId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'EncodePrompt')?.id,
+  );
+  expect(promptNodeId).toBeTruthy();
+  const opaqueControl = page.locator(`.react-flow__node[data-id="${promptNodeId}"] [data-key="contract_alpha"]`);
+  await opaqueControl.getByRole('button').click();
+  await page.getByRole('option', { name: '1024', exact: true }).click();
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const prompt = current.flow.nodes.find((node) => node.action === 'EncodePrompt');
+      const image = current.flow.nodes.find((node) => node.action === 'ImageEncode');
+      return [prompt?.params?.contract_alpha?.value, image?.params?.contract_omega?.value];
+    })
+    .toEqual([1024, 1024]);
+});
+
 test('mocked Studio renders generic Qwen template skeleton without waiting on Modular fields', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
@@ -7567,6 +7827,1192 @@ test('mocked dynamic node definitions update node and field metadata without val
       ),
     )
     .toBe('Dynamic Generate');
+});
+
+test('late managed definitions switch generic inpaint topology only after the complete route contract', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.ModularDiffusers.Denoise': {
+            ...mockRegistry['modules.ModularDiffusers.Denoise'],
+            params: {
+              ...mockRegistry['modules.ModularDiffusers.Denoise'].params,
+              image_latents: { type: 'Latents', display: 'input' },
+            },
+          },
+          'modules.Image.ApplyMask': nodeDef('modules.Image', 'ApplyMask', 'image', {
+            image: { type: 'image', display: 'input' },
+            mask: { type: 'image', display: 'input' },
+            output: { type: 'image', display: 'output' },
+          }),
+        },
+      }),
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const roles = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const add = (key: string) => window.__MODIFF_E2E__!.addCustomNodeForTest(key);
+    const roles = {
+      models: add('modules.ModularDiffusers.ModelsLoader'),
+      prompt: add('modules.ModularDiffusers.EncodePrompt'),
+      denoise: add('modules.ModularDiffusers.Denoise'),
+      decode: add('modules.ModularDiffusers.DecodeLatents'),
+      preview: add('modules.Image.Preview'),
+      loadImage: add('modules.Image.Load'),
+      loadMask: add('modules.Image.Load'),
+      applyMask: add('modules.Image.ApplyMask'),
+      imageEncode: add('modules.ModularDiffusers.ImageEncode'),
+    };
+    const ready = window.__MODIFF_E2E__!.bindManagedGraphForTest(
+      {
+        mode: 'inpaint',
+        modelType: 'QwenImageLayeredModularPipeline',
+        resourceMode: 'expert',
+        quantizationMode: 'none',
+        referenceImages: ['opaque-source.png'],
+        maskImage: 'opaque-mask.png',
+        width: 768,
+        height: 640,
+        seed: 2468,
+        randomSeed: false,
+      },
+      roles,
+    );
+    if (!ready) throw new Error('The fallback managed graph did not finalize.');
+    return roles;
+  });
+
+  const topology = () =>
+    page.evaluate((roles) => {
+      const current = window.__MODIFF_E2E__!.getState();
+      const edge = (source: string, sourceHandle: string, target: string, targetHandle: string) =>
+        current.flow.edges.some(
+          (item) =>
+            item.source === source &&
+            item.sourceHandle === sourceHandle &&
+            item.target === target &&
+            item.targetHandle === targetHandle,
+        );
+      const encode = current.flow.nodes.find((node) => node.id === roles.imageEncode);
+      return {
+        status: current.studio.graphFinalization?.status ?? null,
+        fallbackSource: edge(roles.loadImage, 'image', roles.applyMask, 'image'),
+        fallbackEncode: edge(roles.applyMask, 'output', roles.imageEncode, 'image'),
+        nativeSource: edge(roles.loadImage, 'image', roles.imageEncode, 'image'),
+        nativeMask: edge(roles.loadMask, 'image', roles.imageEncode, 'mask_image'),
+        encodeRoute: edge(roles.imageEncode, 'route_state_out', roles.denoise, 'route_state_in'),
+        denoiseRoute: edge(roles.denoise, 'route_state_out', roles.decode, 'route_state_in'),
+        latentRoute: edge(roles.denoise, 'latents', roles.decode, 'latents'),
+        applyMaskEdges: current.flow.edges.filter(
+          (item) => item.source === roles.applyMask || item.target === roles.applyMask,
+        ).length,
+        managedEdges: current.studio.graphBinding?.managedEdgeIds?.length,
+        graphEdges: current.flow.edges.length,
+        proof: Boolean(current.studio.graphBinding?.finalizationProof?.fieldSchemaHash),
+        width: encode?.params?.width?.value,
+        height: encode?.params?.height?.value,
+        seed: encode?.params?.seed?.value,
+      };
+    }, roles);
+
+  await expect.poll(topology).toMatchObject({
+    status: 'complete',
+    fallbackSource: true,
+    fallbackEncode: true,
+    nativeSource: false,
+    nativeMask: false,
+    encodeRoute: false,
+    denoiseRoute: false,
+    latentRoute: true,
+  });
+
+  const routeType = 'opaque_modular_route';
+  await page.evaluate(() => {
+    void window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest().catch(() => undefined);
+  });
+  await expect.poll(async () => (await topology()).status).toBe('pending');
+
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: { route_state_in: { type: routeType, display: 'input' } },
+      });
+    },
+    { nodeId: roles.decode, routeType },
+  );
+  await expect.poll(topology).toMatchObject({
+    status: 'pending',
+    fallbackSource: true,
+    fallbackEncode: true,
+    encodeRoute: false,
+    denoiseRoute: false,
+  });
+
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: {
+          mask_image: { type: 'image', display: 'input' },
+          route_state_out: { type: routeType, display: 'output' },
+          width: { type: 'int', value: 512 },
+          height: { type: 'int', value: 512 },
+          seed: { type: 'int', display: 'random', value: { value: 0, isRandom: true } },
+        },
+      });
+    },
+    { nodeId: roles.imageEncode, routeType },
+  );
+  await expect.poll(topology).toMatchObject({
+    status: 'pending',
+    fallbackSource: true,
+    fallbackEncode: true,
+    nativeSource: false,
+    nativeMask: false,
+  });
+
+  await page.evaluate(
+    ({ nodeId, routeType, mismatchedRouteType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: {
+          route_state_in: { type: routeType, display: 'input' },
+          route_state_out: { type: mismatchedRouteType, display: 'output' },
+        },
+      });
+    },
+    { nodeId: roles.denoise, routeType, mismatchedRouteType: `${routeType}_other` },
+  );
+
+  await expect.poll(topology).toMatchObject({
+    status: 'pending',
+    fallbackSource: true,
+    fallbackEncode: true,
+    nativeSource: false,
+    nativeMask: false,
+    encodeRoute: false,
+    denoiseRoute: false,
+    proof: false,
+  });
+  const mismatchedReadiness = await page.evaluate(async () =>
+    Promise.race([
+      window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest().then(
+        () => 'settled',
+        () => 'rejected',
+      ),
+      new Promise<'pending'>((resolve) => window.setTimeout(() => resolve('pending'), 150)),
+    ]),
+  );
+  expect(mismatchedReadiness).toBe('pending');
+
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: {
+          route_state_in: { type: routeType, display: 'input' },
+          route_state_out: { type: routeType, display: 'output' },
+        },
+      });
+    },
+    { nodeId: roles.denoise, routeType },
+  );
+
+  const finalizedReadiness = await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest();
+    const current = window.__MODIFF_E2E__!.getState();
+    return {
+      status: current.studio.graphFinalization?.status,
+      proof: Boolean(current.studio.graphBinding?.finalizationProof?.fieldSchemaHash),
+    };
+  });
+  expect(finalizedReadiness).toEqual({ status: 'complete', proof: true });
+
+  await expect.poll(topology).toEqual({
+    status: 'complete',
+    fallbackSource: false,
+    fallbackEncode: false,
+    nativeSource: true,
+    nativeMask: true,
+    encodeRoute: true,
+    denoiseRoute: true,
+    latentRoute: true,
+    applyMaskEdges: 0,
+    managedEdges: 13,
+    graphEdges: 13,
+    proof: true,
+    width: 768,
+    height: 640,
+    seed: { value: 2468, isRandom: false },
+  });
+});
+
+test('late managed definitions adopt generic ControlNet routing only after its complete route contract', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.ModularDiffusers.Denoise': {
+            ...mockRegistry['modules.ModularDiffusers.Denoise'],
+            params: {
+              ...mockRegistry['modules.ModularDiffusers.Denoise'].params,
+              controlnet_bundle: { type: 'custom_controlnet', display: 'input' },
+            },
+          },
+          'modules.ModularDiffusers.AutoModelLoader': nodeDef('modules.ModularDiffusers', 'AutoModelLoader', 'loader', {
+            model_id: { type: 'string', value: '' },
+            model: { type: 'ControlNetModel', display: 'output' },
+          }),
+          'modules.ModularDiffusers.Controlnet': nodeDef('modules.ModularDiffusers', 'Controlnet', 'adapter', {
+            model_type: { type: 'string', value: '', hidden: true },
+            vae: { type: 'VAE', display: 'input' },
+            control_image: { type: 'image', display: 'input' },
+            controlnet: { type: 'ControlNetModel', display: 'input' },
+            controlnet_bundle: { type: 'custom_controlnet', display: 'output' },
+            width: { type: 'int', value: 512 },
+            height: { type: 'int', value: 512 },
+            seed: { type: 'int', display: 'random', value: { value: 0, isRandom: true } },
+            controlnet_conditioning_scale: { type: 'float', value: 1 },
+          }),
+        },
+      }),
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const roles = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const add = (key: string) => window.__MODIFF_E2E__!.addCustomNodeForTest(key);
+    const roles = {
+      models: add('modules.ModularDiffusers.ModelsLoader'),
+      prompt: add('modules.ModularDiffusers.EncodePrompt'),
+      denoise: add('modules.ModularDiffusers.Denoise'),
+      decode: add('modules.ModularDiffusers.DecodeLatents'),
+      preview: add('modules.Image.Preview'),
+      loadImage: add('modules.Image.Load'),
+      controlnetModel: add('modules.ModularDiffusers.AutoModelLoader'),
+      controlnet: add('modules.ModularDiffusers.Controlnet'),
+    };
+    const ready = window.__MODIFF_E2E__!.bindManagedGraphForTest(
+      {
+        mode: 'control_image',
+        modelType: 'QwenImageModularPipeline',
+        resourceMode: 'expert',
+        quantizationMode: 'none',
+        controlImage: 'opaque-control.png',
+        width: 896,
+        height: 640,
+        seed: 1357,
+        randomSeed: false,
+      },
+      roles,
+    );
+    if (!ready) throw new Error('The legacy ControlNet graph did not finalize.');
+    return roles;
+  });
+
+  const topology = () =>
+    page.evaluate((roles) => {
+      const current = window.__MODIFF_E2E__!.getState();
+      const edge = (source: string, sourceHandle: string, target: string, targetHandle: string) =>
+        current.flow.edges.some(
+          (item) =>
+            item.source === source &&
+            item.sourceHandle === sourceHandle &&
+            item.target === target &&
+            item.targetHandle === targetHandle,
+        );
+      const controlnet = current.flow.nodes.find((node) => node.id === roles.controlnet);
+      const denoise = current.flow.nodes.find((node) => node.id === roles.denoise);
+      return {
+        status: current.studio.graphFinalization?.status ?? null,
+        bundle: edge(roles.controlnet, 'controlnet_bundle', roles.denoise, 'controlnet_bundle'),
+        controlRoute: edge(roles.controlnet, 'route_state_out', roles.denoise, 'route_state_in'),
+        denoiseRoute: edge(roles.denoise, 'route_state_out', roles.decode, 'route_state_in'),
+        incomingControlRoute: current.flow.edges.filter(
+          (item) => item.target === roles.controlnet && item.targetHandle === 'route_state_in',
+        ).length,
+        proof: Boolean(current.studio.graphBinding?.finalizationProof?.edgeSpecHash),
+        managedEdges: current.studio.graphBinding?.managedEdgeIds?.length,
+        graphEdges: current.flow.edges.length,
+        controlSeed: controlnet?.params?.seed?.value,
+        denoiseSeed: denoise?.params?.seed?.value,
+      };
+    }, roles);
+
+  await expect.poll(topology).toMatchObject({
+    status: 'complete',
+    bundle: true,
+    controlRoute: false,
+    denoiseRoute: false,
+    incomingControlRoute: 0,
+    proof: true,
+  });
+
+  const routeType = 'opaque_control_route';
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: { route_state_in: { type: routeType, display: 'input' } },
+      });
+    },
+    { nodeId: roles.decode, routeType },
+  );
+  await expect.poll(topology).toMatchObject({
+    status: 'pending',
+    bundle: true,
+    controlRoute: false,
+    denoiseRoute: false,
+    proof: false,
+  });
+
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: { route_state_out: { type: routeType, display: 'output' } },
+      });
+    },
+    { nodeId: roles.denoise, routeType },
+  );
+  await expect.poll(topology).toMatchObject({
+    status: 'complete',
+    bundle: true,
+    controlRoute: false,
+    denoiseRoute: true,
+    incomingControlRoute: 0,
+    proof: true,
+  });
+
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    await window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest();
+  });
+  await expect.poll(topology).toMatchObject({
+    status: 'complete',
+    bundle: true,
+    controlRoute: false,
+    denoiseRoute: true,
+    incomingControlRoute: 0,
+    proof: true,
+  });
+
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: {
+          route_state_in: { type: routeType, display: 'input' },
+          route_state_out: { type: routeType, display: 'output' },
+        },
+      });
+    },
+    { nodeId: roles.controlnet, routeType },
+  );
+  await expect.poll(topology).toMatchObject({
+    status: 'pending',
+    bundle: true,
+    controlRoute: false,
+    denoiseRoute: true,
+    proof: false,
+  });
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: {
+          route_state_in: { type: routeType, display: 'input' },
+          route_state_out: { type: `${routeType}_mismatch`, display: 'output' },
+        },
+      });
+    },
+    { nodeId: roles.denoise, routeType },
+  );
+  await expect.poll(topology).toMatchObject({
+    status: 'pending',
+    bundle: true,
+    controlRoute: false,
+    denoiseRoute: true,
+    proof: false,
+  });
+
+  await page.evaluate(
+    ({ nodeId, routeType }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: {
+          route_state_in: { type: routeType, display: 'input' },
+          route_state_out: { type: routeType, display: 'output' },
+        },
+      });
+    },
+    { nodeId: roles.denoise, routeType },
+  );
+
+  await expect.poll(topology).toEqual({
+    status: 'complete',
+    bundle: true,
+    controlRoute: true,
+    denoiseRoute: true,
+    incomingControlRoute: 0,
+    proof: true,
+    managedEdges: 13,
+    graphEdges: 13,
+    controlSeed: { value: 1357, isRandom: false },
+    denoiseSeed: { value: 1357, isRandom: false },
+  });
+});
+
+test('backend-driven model selection replaces generic node fields and removes unsupported actions', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const dynamicNodeKey = 'modules.Contract.DynamicTask';
+  const dynamicNodeDefinition = nodeDef('modules.Contract', 'DynamicTask', 'test', {
+    model_choice: {
+      label: 'Model choice',
+      type: 'string',
+      display: 'select',
+      value: 'catalog/supported',
+      options: [
+        { value: 'catalog/supported', label: 'Supported model' },
+        { value: 'catalog/unsupported', label: 'Unsupported model' },
+      ],
+      onChange: 'refresh_dynamic_contract',
+    },
+  });
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: { ...mockRegistry, [dynamicNodeKey]: dynamicNodeDefinition },
+      }),
+    });
+  });
+
+  type FieldActionRequest = {
+    action?: string;
+    fieldKey?: string;
+    fn?: string;
+    module?: string;
+    node?: string;
+    values?: Record<string, unknown>;
+  };
+  const fieldActionRequests: FieldActionRequest[] = [];
+  await page.route('**/fields/action', async (route) => {
+    const request = (route.request().postDataJSON() ?? {}) as FieldActionRequest;
+    fieldActionRequests.push(request);
+    const selectedModel = String(request.values?.model_choice ?? '');
+    const params =
+      selectedModel === 'catalog/supported'
+        ? {
+            task_input: {
+              label: 'Task input',
+              type: 'text',
+              display: 'textarea',
+              value: '',
+            },
+            execute_task: {
+              label: 'Execute supported task',
+              type: 'string',
+              display: 'ui_button',
+              value: '',
+              onChange: { action: 'exec', data: 'execute_supported_task' },
+            },
+          }
+        : {
+            unavailable_reason: {
+              label: 'Unavailable reason',
+              type: 'text',
+              display: 'textarea',
+              value: 'The selected model has no executable contract for this node.',
+              disabled: true,
+            },
+          };
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false }),
+    });
+    await page.evaluate(
+      ({ nodeId, params }) => {
+        window.__MODIFF_E2E__!.sendWebsocketMessage({
+          type: 'node_definition',
+          node: nodeId,
+          label: 'Backend-defined task',
+          params,
+        });
+      },
+      { nodeId: String(request.node ?? ''), params },
+    );
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  const nodeId = await page.evaluate((key) => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    return window.__MODIFF_E2E__!.addCustomNodeForTest(key);
+  }, dynamicNodeKey);
+
+  const dynamicNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  const modelChoice = dynamicNode.locator('[data-key="model_choice"] button');
+  await expect(dynamicNode.getByRole('button', { name: 'Execute supported task' })).toBeVisible();
+  await expect(dynamicNode.getByText('Task input', { exact: true })).toBeVisible();
+  await expect
+    .poll(() => fieldActionRequests.some((request) => request.values?.model_choice === 'catalog/supported'))
+    .toBe(true);
+
+  await modelChoice.click();
+  await page.getByRole('option', { name: 'Unsupported model', exact: true }).click();
+  await expect(dynamicNode.getByText('Unavailable reason', { exact: true })).toBeVisible();
+  await expect(dynamicNode.getByRole('button', { name: 'Execute supported task' })).toHaveCount(0);
+  await expect(dynamicNode.getByText('Task input', { exact: true })).toHaveCount(0);
+  await expect
+    .poll(() => fieldActionRequests.some((request) => request.values?.model_choice === 'catalog/unsupported'))
+    .toBe(true);
+  expect(
+    await page.evaluate(
+      ({ nodeId }) => {
+        const node = window.__MODIFF_E2E__!.getState().flow.nodes.find((item) => item.id === nodeId);
+        return Object.keys(node?.params ?? {}).sort();
+      },
+      { nodeId },
+    ),
+  ).toEqual(['model_choice', 'unavailable_reason']);
+
+  await modelChoice.click();
+  await page.getByRole('option', { name: 'Supported model', exact: true }).click();
+  await expect(dynamicNode.getByRole('button', { name: 'Execute supported task' })).toBeVisible();
+  await expect(dynamicNode.getByText('Unavailable reason', { exact: true })).toHaveCount(0);
+  await expect
+    .poll(() => fieldActionRequests.filter((request) => request.values?.model_choice === 'catalog/supported').length)
+    .toBeGreaterThan(1);
+
+  expect(fieldActionRequests.at(-1)).toMatchObject({
+    module: 'modules.Contract',
+    action: 'DynamicTask',
+    fn: 'refresh_dynamic_contract',
+    fieldKey: 'model_choice',
+    values: { model_choice: 'catalog/supported' },
+  });
+});
+
+test('opaque adapter metadata drives repository, mode, task, and input choices without family inference', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const adapterNodeKey = 'modules.Contract.GenericMediaAdapter';
+  const legacyLoaderKey = 'modules.Contract.LegacyPipelineLoader';
+  const contractParams = (adapterClass: 'ClassAlpha' | 'ClassBeta') => {
+    const isBeta = adapterClass === 'ClassBeta';
+    return {
+      adapter_class: {
+        label: 'Adapter contract',
+        type: 'string',
+        display: 'select',
+        value: adapterClass,
+        options: [
+          { value: 'ClassAlpha', label: 'Class Alpha' },
+          { value: 'ClassBeta', label: 'Class Beta' },
+        ],
+        onChange: 'refresh_adapter_contract',
+      },
+      repository: {
+        label: 'Repository',
+        type: 'string',
+        display: 'modelselect',
+        value: { source: 'hub', value: isBeta ? 'org/opaque-beta' : 'org/opaque-alpha' },
+        fieldOptions: {
+          sources: ['hub', 'local'],
+          filter: {
+            hub: { className: [adapterClass], id: '^org/opaque-' },
+            local: { className: [adapterClass], id: isBeta ? 'opaque-beta$' : 'opaque-alpha$' },
+          },
+        },
+      },
+      adapter_input: {
+        label: 'Legacy-connected adapter input',
+        type: 'opaque_adapter_contract',
+        display: 'input',
+      },
+      mode: {
+        label: 'Mode',
+        type: 'string',
+        display: 'select',
+        value: isBeta ? 'mode_beta' : 'mode_alpha',
+        options: isBeta ? ['mode_beta', 'mode_beta_extended'] : ['mode_alpha'],
+      },
+      task: {
+        label: 'Task',
+        type: 'string',
+        display: 'select',
+        value: isBeta ? 'task_beta' : 'task_alpha',
+        options: isBeta ? ['task_beta'] : ['task_alpha'],
+      },
+      source_input: {
+        label: 'Source input',
+        type: 'text',
+        display: 'textarea',
+        value: '',
+        hidden: !isBeta,
+      },
+    };
+  };
+
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          [legacyLoaderKey]: nodeDef('modules.Contract', 'LegacyPipelineLoader', 'test', {
+            repo_id: { type: 'string', value: 'Qwen/Qwen-Image-2512' },
+            adapter_output: {
+              label: 'Legacy adapter output',
+              type: 'opaque_adapter_contract',
+              display: 'output',
+            },
+          }),
+          [adapterNodeKey]: nodeDef('modules.Contract', 'GenericMediaAdapter', 'test', contractParams('ClassAlpha')),
+        },
+      }),
+    });
+  });
+  await page.route('**/hf_cache**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { id: 'org/opaque-alpha', class_names: ['ClassAlpha'], installed: true, complete: true },
+        { id: 'org/opaque-beta', class_names: ['ClassBeta'], installed: true, complete: true },
+        { id: 'org/opaque-incomplete', class_names: ['ClassAlpha'], installed: false, complete: false },
+      ]),
+    });
+  });
+  await page.route('**/local_models**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['local/opaque-alpha', 'local/opaque-beta']),
+    });
+  });
+
+  type AdapterActionRequest = {
+    fieldKey?: string;
+    fn?: string;
+    node?: string;
+    values?: { adapter_class?: string };
+  };
+  const requests: AdapterActionRequest[] = [];
+  await page.route('**/fields/action', async (route) => {
+    const request = (route.request().postDataJSON() ?? {}) as AdapterActionRequest;
+    requests.push(request);
+    const adapterClass = request.values?.adapter_class === 'ClassBeta' ? 'ClassBeta' : 'ClassAlpha';
+    const params = contractParams(adapterClass);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+    await page.evaluate(
+      ({ adapterClass, nodeId, params }) => {
+        window.__MODIFF_E2E__!.sendWebsocketMessage({
+          type: 'node_definition',
+          node: nodeId,
+          label: 'Backend-owned generic adapter',
+          params,
+        });
+        const isBeta = adapterClass === 'ClassBeta';
+        window.__MODIFF_E2E__!.sendWebsocketMessage({
+          type: 'set_field_value',
+          node: nodeId,
+          fields: {
+            repository: { source: 'hub', value: isBeta ? 'org/opaque-beta' : 'org/opaque-alpha' },
+            mode: isBeta ? 'mode_beta' : 'mode_alpha',
+            task: isBeta ? 'task_beta' : 'task_alpha',
+          },
+        });
+      },
+      { adapterClass, nodeId: String(request.node ?? ''), params },
+    );
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  const { legacyLoaderId, nodeId } = await page.evaluate(
+    ({ adapterKey, loaderKey }) => {
+      window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+      const legacyLoaderId = window.__MODIFF_E2E__!.addCustomNodeForTest(loaderKey);
+      const nodeId = window.__MODIFF_E2E__!.addCustomNodeForTest(adapterKey);
+      return { legacyLoaderId, nodeId };
+    },
+    { adapterKey: adapterNodeKey, loaderKey: legacyLoaderKey },
+  );
+  expect(legacyLoaderId).not.toBe(nodeId);
+
+  const adapterNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  await expect(adapterNode.locator('[data-key="adapter_class"]')).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate((nodeId) => {
+        const node = window.__MODIFF_E2E__!.getState().flow.nodes.find((item) => item.id === nodeId);
+        return {
+          adapterClass: node?.params.adapter_class?.value,
+          label: node?.label,
+          repository: node?.params.repository?.value,
+        };
+      }, nodeId),
+    )
+    .toEqual({
+      adapterClass: 'ClassAlpha',
+      label: 'Backend-owned generic adapter',
+      repository: { source: 'hub', value: 'org/opaque-alpha' },
+    });
+  expect(requests.filter((request) => request.values?.adapter_class === 'ClassAlpha')).toHaveLength(1);
+
+  await page.evaluate(
+    ({ legacyLoaderId, nodeId }) => {
+      window.__MODIFF_E2E__!.connectGraph({
+        source: legacyLoaderId,
+        sourceHandle: 'adapter_output',
+        target: nodeId,
+        targetHandle: 'adapter_input',
+      });
+    },
+    { legacyLoaderId, nodeId },
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ legacyLoaderId, nodeId }) =>
+          window
+            .__MODIFF_E2E__!.getState()
+            .flow.edges.some((edge) => edge.source === legacyLoaderId && edge.target === nodeId),
+        { legacyLoaderId, nodeId },
+      ),
+    )
+    .toBe(true);
+  await expect(adapterNode.getByText('Source input', { exact: true })).not.toBeVisible();
+  const modeField = adapterNode.locator('[data-key="mode"]');
+  const taskField = adapterNode.locator('[data-key="task"]');
+  await expect(modeField).toContainText('mode_alpha');
+  await expect(taskField).toContainText('task_alpha');
+
+  const repositoryField = adapterNode.locator('[data-key="repository"]');
+  await repositoryField.getByRole('button', { name: 'Show options' }).click();
+  await expect(page.getByRole('option', { name: 'org/opaque-alpha', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'org/opaque-beta', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  await adapterNode.getByRole('button', { name: 'Local', exact: true }).click();
+  await repositoryField.getByRole('button', { name: 'Show options' }).click();
+  await expect(page.getByText('No compatible installed models', { exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'local/opaque-alpha', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('option', { name: 'local/opaque-beta', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await adapterNode.getByRole('button', { name: 'HF Hub', exact: true }).click();
+
+  await adapterNode.locator('[data-key="adapter_class"] button').click();
+  await page.getByRole('option', { name: 'Class Beta', exact: true }).click();
+  await expect.poll(() => requests.filter((request) => request.values?.adapter_class === 'ClassBeta').length).toBe(1);
+  await expect(adapterNode.getByText('Source input', { exact: true })).toBeVisible();
+  await expect(modeField).toContainText('mode_beta');
+  await expect(taskField).toContainText('task_beta');
+  await modeField.getByRole('button').click();
+  await expect(page.getByRole('option', { name: 'mode_beta_extended', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'mode_alpha', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await repositoryField.getByRole('button', { name: 'Show options' }).click();
+  await expect(page.getByRole('option', { name: 'org/opaque-beta', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'org/opaque-alpha', exact: true })).toHaveCount(0);
+});
+
+test('generic text and model-source actions debounce queries and send the latest backend values', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const contractNodeKey = 'modules.Contract.ExecutionIdentityCarrier';
+  const originalRepository = 'example/original-custom-modular';
+  const selectedRepository = 'example/selected-custom-modular';
+  const originalRevision = 'a'.repeat(40);
+  const selectedRevision = 'b'.repeat(40);
+  const contractNodeDefinition = nodeDef('modules.Contract', 'ExecutionIdentityCarrier', 'test', {
+    repository: {
+      label: 'Repository',
+      type: 'string',
+      display: 'modelselect',
+      value: { source: 'hub', value: originalRepository },
+      fieldOptions: { noValidation: true, sources: ['hub', 'local'] },
+      onChange: 'resolve_execution_identity',
+    },
+    revision: {
+      label: 'Revision',
+      type: 'string',
+      value: originalRevision,
+      onChange: 'resolve_execution_identity',
+    },
+    modiff_pipeline_identity: {
+      type: 'object',
+      value: null,
+      hidden: true,
+    },
+    review: {
+      label: 'Review custom pipeline',
+      type: 'string',
+      display: 'ui_button',
+      value: '',
+      hidden: true,
+      onChange: { action: 'exec', data: 'review_custom_pipeline' },
+    },
+    refresh: {
+      label: 'Refresh custom pipeline',
+      type: 'string',
+      display: 'ui_button',
+      value: '',
+      hidden: true,
+      onChange: { action: 'exec', data: 'refresh_custom_pipeline' },
+    },
+  });
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: { ...mockRegistry, [contractNodeKey]: contractNodeDefinition },
+      }),
+    });
+  });
+
+  type IdentityFieldActionRequest = {
+    fieldKey?: string;
+    fn?: string;
+    values?: {
+      repository?: { source?: string; value?: string };
+      revision?: string;
+    };
+  };
+  const requests: IdentityFieldActionRequest[] = [];
+  await page.route('**/fields/action', async (route) => {
+    requests.push((route.request().postDataJSON() ?? {}) as IdentityFieldActionRequest);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false }),
+    });
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  const nodeId = await page.evaluate((key) => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    return window.__MODIFF_E2E__!.addCustomNodeForTest(key);
+  }, contractNodeKey);
+
+  const contractNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  const repositoryInput = contractNode.locator('[data-key="repository"] input');
+  const revisionInput = contractNode.locator('[data-key="revision"] input');
+  await expect(repositoryInput).toHaveValue(originalRepository);
+  await expect(revisionInput).toHaveValue(originalRevision);
+  await expect
+    .poll(() =>
+      requests.some(
+        (request) =>
+          request.fieldKey === 'revision' &&
+          request.values?.revision === originalRevision &&
+          request.values?.repository?.value === originalRepository,
+      ),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      requests.some(
+        (request) =>
+          request.fieldKey === 'repository' &&
+          request.values?.repository?.source === 'hub' &&
+          request.values?.repository?.value === originalRepository,
+      ),
+    )
+    .toBe(true);
+
+  const initialRepositoryRequestCount = requests.filter((request) => request.fieldKey === 'repository').length;
+  await repositoryInput.fill(selectedRepository);
+  await page.waitForTimeout(150);
+  expect(requests.filter((request) => request.fieldKey === 'repository')).toHaveLength(initialRepositoryRequestCount);
+  expect(
+    requests.filter(
+      (request) => request.fieldKey === 'repository' && request.values?.repository?.value === selectedRepository,
+    ),
+  ).toHaveLength(0);
+  await repositoryInput.blur();
+  await expect
+    .poll(() =>
+      requests.some(
+        (request) =>
+          request.fieldKey === 'repository' &&
+          request.values?.repository?.source === 'hub' &&
+          request.values?.repository?.value === selectedRepository,
+      ),
+    )
+    .toBe(true);
+  expect(
+    requests.filter(
+      (request) =>
+        request.fieldKey === 'repository' &&
+        request.values?.repository?.source === 'hub' &&
+        request.values?.repository?.value === selectedRepository,
+    ),
+  ).toHaveLength(1);
+
+  await revisionInput.fill(selectedRevision);
+  await revisionInput.blur();
+  await expect
+    .poll(() =>
+      requests.some(
+        (request) =>
+          request.fieldKey === 'revision' &&
+          request.values?.revision === selectedRevision &&
+          request.values?.repository?.value === selectedRepository,
+      ),
+    )
+    .toBe(true);
+
+  await contractNode.getByRole('button', { name: 'Local', exact: true }).click();
+  await expect
+    .poll(() =>
+      requests.some(
+        (request) =>
+          request.fieldKey === 'repository' &&
+          request.values?.repository?.source === 'local' &&
+          request.values?.repository?.value === '' &&
+          request.values?.revision === selectedRevision,
+      ),
+    )
+    .toBe(true);
+  expect(requests.filter((request) => request.fieldKey === 'review' || request.fieldKey === 'refresh')).toHaveLength(0);
+});
+
+test('registry-late field actions initialize once and live contract changes cancel pending model actions', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const contractNodeKey = 'modules.Contract.RegistryLateIdentity';
+  const nodeId = 'registry-late-identity';
+  const originalRepository = 'example/persisted-custom-modular';
+  const pendingRepository = 'example/should-not-dispatch';
+  const contractNodeDefinition = nodeDef('modules.Contract', 'RegistryLateIdentity', 'test', {
+    repository: {
+      label: 'Repository',
+      type: 'string',
+      display: 'modelselect',
+      value: { source: 'hub', value: 'example/live-default' },
+      fieldOptions: { noValidation: true, sources: ['hub', 'local'] },
+      onChange: 'resolve_execution_identity',
+    },
+    modiff_pipeline_identity: {
+      type: 'object',
+      value: null,
+      hidden: true,
+    },
+  });
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: { ...mockRegistry, [contractNodeKey]: contractNodeDefinition },
+      }),
+    });
+  });
+
+  type RegistryLateActionRequest = {
+    fieldKey?: string;
+    fn?: string;
+    values?: { repository?: { source?: string; value?: string } };
+  };
+  const requests: RegistryLateActionRequest[] = [];
+  await page.route('**/fields/action', async (route) => {
+    requests.push((route.request().postDataJSON() ?? {}) as RegistryLateActionRequest);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false }),
+    });
+  });
+
+  await page.addInitScript(
+    ({ action, module, nodeId, repository }) => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.localStorage.setItem(
+        'modiff.flow',
+        JSON.stringify({
+          version: 1,
+          state: {
+            nodes: [
+              {
+                id: nodeId,
+                type: 'custom',
+                position: { x: 160, y: 120 },
+                data: {
+                  type: 'custom',
+                  module,
+                  action,
+                  label: 'Registry-late identity',
+                  category: 'Test',
+                  params: {
+                    repository: {
+                      label: 'Repository',
+                      type: 'string',
+                      display: 'modelselect',
+                      value: { source: 'hub', value: repository },
+                      fieldOptions: { noValidation: true, sources: ['hub', 'local'] },
+                    },
+                  },
+                },
+              },
+            ],
+            edges: [],
+            viewport: { x: 0, y: 0, zoom: 1 },
+          },
+        }),
+      );
+    },
+    { action: 'RegistryLateIdentity', module: 'modules.Contract', nodeId, repository: originalRepository },
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setStudioFormForTest({}));
+
+  await expect
+    .poll(
+      () =>
+        requests.filter(
+          (request) =>
+            request.fieldKey === 'repository' &&
+            request.fn === 'resolve_execution_identity' &&
+            request.values?.repository?.value === originalRepository,
+        ).length,
+    )
+    .toBe(1);
+  await page.waitForTimeout(350);
+  expect(
+    requests.filter(
+      (request) => request.fieldKey === 'repository' && request.values?.repository?.value === originalRepository,
+    ),
+  ).toHaveLength(1);
+
+  const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  const repositoryInput = node.locator('[data-key="repository"] input');
+  await expect(repositoryInput).toHaveValue(originalRepository);
+  await repositoryInput.fill(pendingRepository);
+  await repositoryInput.blur();
+  await page.evaluate(
+    ({ nodeId, repository }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'node_definition',
+        node: nodeId,
+        params: {
+          repository: {
+            label: 'Repository',
+            type: 'string',
+            display: 'modelselect',
+            value: { source: 'hub', value: repository },
+            fieldOptions: { noValidation: true, sources: ['hub', 'local'] },
+          },
+        },
+      });
+    },
+    { nodeId, repository: pendingRepository },
+  );
+  await page.waitForTimeout(400);
+  expect(requests.filter((request) => request.values?.repository?.value === pendingRepository)).toHaveLength(0);
 });
 
 test('workflow tabs remain a single horizontally scrollable row with pinned new-tab access', async ({ page }) => {

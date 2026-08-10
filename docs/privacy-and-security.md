@@ -68,6 +68,8 @@ Review outbound network policy when running in a restricted environment. Do not 
 
 Treat third-party model repositories, Python packages, custom modules, and custom fields as code or content from outside the MoDiff trust boundary.
 
+- The backend may execute reviewed libraries officially maintained and published by Hugging Face. That status applies to the verified library package, not to every model, organization, or Python file hosted on the Hub.
+- Optional model runtimes require an explicit install/consent action and backend version verification. Viewing a template, refreshing the node/model registry, or checking Auto compatibility must not install packages.
 - Review the source, license, maintainer, pinned revision, and required execution flags before installation.
 - Some model ecosystems support repository-provided code; do not enable remote-code execution for an untrusted repository.
 - Custom Python modules execute with the backend process's operating-system permissions.

@@ -7,17 +7,26 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let nodesStoreModule;
+let optionalRuntimesModule;
 let requestModule;
+let runReadinessModule;
 let server;
 let studioStoreModule;
+let flowStoreModule;
 let originalFetch;
 
 function requestStates() {
   return Object.fromEntries(
-    ['capabilities', 'customModules', 'hfCache', 'localModels', 'modelCache', 'nodes', 'runtime'].map((key) => [
-      key,
-      { status: 'idle', error: null, requestId: null },
-    ]),
+    [
+      'capabilities',
+      'customModules',
+      'hfCache',
+      'localModels',
+      'modelCache',
+      'nodes',
+      'optionalRuntimes',
+      'runtime',
+    ].map((key) => [key, { status: 'idle', error: null, requestId: null }]),
   );
 }
 
@@ -35,8 +44,11 @@ before(async () => {
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
+  flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  optionalRuntimesModule = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
+  runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
   originalFetch = globalThis.fetch;
 });
 
@@ -50,8 +62,10 @@ beforeEach(() => {
     localModels: [],
     modelCacheDiagnostics: null,
     studioModelCapabilities: [],
+    studioModelCapabilitiesAuthoritative: false,
     runtimeStatus: null,
     runtimeError: null,
+    optionalRuntimeCatalog: null,
     hfDownloadProgress: {},
     customModules: [],
     customModuleError: null,
@@ -102,6 +116,41 @@ function customModule(name, enabled = true) {
   };
 }
 
+function runtimeRequirement(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    delivery: 'base',
+    requiredNow: false,
+    profileIds: ['huggingface-transformers-peft-5.14.1-0.20.0'],
+    executionProfileIds: ['qwen-image:t2i-direct'],
+    state: 'base_satisfied',
+    reason: 'base_runtime_contract',
+    ...overrides,
+  };
+}
+
+function optionalRuntimeCatalog(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    profiles: [
+      {
+        schemaVersion: 1,
+        id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+        label: 'Hugging Face Transformers + PEFT',
+        specDigest: `sha256:${'1'.repeat(64)}`,
+        contractState: 'candidate_unqualified',
+        cutoverReady: false,
+        installActionAvailable: false,
+        activationAvailable: false,
+        status: 'missing',
+        overlayStatus: 'missing',
+      },
+    ],
+    overlay: { processLoadStatus: 'base' },
+    ...overrides,
+  };
+}
+
 test('requestJson normalizes non-OK JSON responses', async () => {
   globalThis.fetch = async () => jsonResponse({ error: true, message: 'Backend unavailable' }, 503);
 
@@ -127,6 +176,442 @@ test('requestJson distinguishes invalid JSON and invalid payloads', async () => 
     }),
     (error) => error.kind === 'invalid_payload' && error.message === 'Expected a typed list.',
   );
+});
+
+test('model capabilities keep schema-v2 runnable modes exact and ignore experimental records', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image', 'control_image'],
+          runnableModes: ['text_to_image'],
+        },
+      ],
+      experimentalCapabilities: [
+        {
+          modelType: 'FluxModularPipeline',
+          modes: ['text_to_image', 'image_to_image', 'control_image'],
+          runnableModes: ['text_to_image', 'image_to_image', 'control_image'],
+        },
+      ],
+    });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.studioModelCapabilitiesAuthoritative, true);
+  assert.deepEqual(
+    state.studioModelCapabilities.map(({ modelType, modes, runnableModes }) => ({ modelType, modes, runnableModes })),
+    [
+      {
+        modelType: 'QwenImageModularPipeline',
+        modes: ['text_to_image', 'control_image'],
+        runnableModes: ['text_to_image'],
+      },
+    ],
+  );
+});
+
+test('legacy model capabilities remain non-authoritative when schemaVersion is absent', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      capabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image', 'control_image'],
+        },
+      ],
+    });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.studioModelCapabilitiesAuthoritative, false);
+  assert.deepEqual(state.studioModelCapabilities[0].modes, ['text_to_image', 'control_image']);
+});
+
+test('optional runtime contracts normalize exact nested profile metadata', async () => {
+  const requirement = runtimeRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    state: 'missing',
+    reason: 'optional_runtime_missing',
+  });
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image'],
+          runnableModes: ['text_to_image'],
+          optionalRuntimeRequirement: requirement,
+          executionProfiles: [
+            {
+              id: 'qwen-image:t2i-direct',
+              modes: ['text_to_image'],
+              optional_runtime_delivery: 'optional_overlay',
+              optional_runtime_requirement: requirement,
+            },
+          ],
+        },
+      ],
+    });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].optionalRuntimeRequirement, requirement);
+  assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].optionalRuntimeRequirement, requirement);
+  assert.equal(state.studioModelCapabilities[0].executionProfiles[0].optional_runtime_requirement, undefined);
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousFlow = flowStoreModule.useFlowStore.getState();
+  try {
+    studioStoreModule.useStudioStore.setState({
+      form: { ...previousForm, modelType: 'QwenImageModularPipeline', mode: 'text_to_image', resourceMode: 'expert' },
+      graphBinding: null,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    const issue = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'optional_runtime_required');
+    assert.equal(issue?.blocking, true, 'the exact backend snake-case required contract must block Run');
+  } finally {
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousFlow.nodes, edges: previousFlow.edges });
+  }
+});
+
+test('malformed optional runtime capability metadata fails the authoritative response closed', async () => {
+  const invalidRequirements = [
+    runtimeRequirement({ unexpected: true }),
+    runtimeRequirement({ requiredNow: true, state: 'active' }),
+    runtimeRequirement({ executionProfileIds: ['qwen-image:t2i-direct', 'qwen-image:t2i-direct'] }),
+  ];
+  for (const requirement of invalidRequirements) {
+    globalThis.fetch = async () =>
+      jsonResponse({
+        schemaVersion: 2,
+        capabilities: [
+          {
+            modelType: 'QwenImageModularPipeline',
+            modes: ['text_to_image'],
+            runnableModes: ['text_to_image'],
+            optionalRuntimeRequirement: requirement,
+          },
+        ],
+      });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    const state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.equal(state.studioModelCapabilitiesAuthoritative, false);
+    assert.deepEqual(state.studioModelCapabilities, []);
+  }
+});
+
+test('mixed-version and conflicting execution runtime contracts fail closed', async () => {
+  const firstId = 'qwen-image:t2i-direct';
+  const secondId = 'qwen-image:t2i-secondary';
+  const base = runtimeRequirement({ executionProfileIds: [firstId] });
+  const overlay = runtimeRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    executionProfileIds: [secondId],
+    state: 'missing',
+    reason: 'optional_runtime_missing',
+  });
+  const requiredFirst = { ...overlay, executionProfileIds: [firstId] };
+  const invalidProfiles = [
+    {
+      aggregate: runtimeRequirement(),
+      profiles: [{ id: firstId, modes: ['text_to_image'] }],
+    },
+    {
+      profiles: [
+        { id: firstId, modes: ['text_to_image'], optionalRuntimeRequirement: base },
+        { id: secondId, modes: ['control_image'] },
+      ],
+    },
+    {
+      profiles: [
+        { id: firstId, modes: ['text_to_image'], optionalRuntimeRequirement: base },
+        { id: secondId, modes: ['text_to_image'], optionalRuntimeRequirement: overlay },
+      ],
+    },
+    {
+      aggregate: requiredFirst,
+      profiles: [{ id: firstId, modes: ['text_to_image'], optionalRuntimeRequirement: base }],
+    },
+    {
+      aggregate: base,
+      profiles: [{ id: firstId, modes: ['text_to_image'], optionalRuntimeRequirement: requiredFirst }],
+    },
+  ];
+  for (const { aggregate, profiles } of invalidProfiles) {
+    globalThis.fetch = async () =>
+      jsonResponse({
+        schemaVersion: 2,
+        capabilities: [
+          {
+            modelType: 'QwenImageModularPipeline',
+            modes: ['text_to_image', 'control_image'],
+            runnableModes: ['text_to_image', 'control_image'],
+            ...(aggregate ? { optionalRuntimeRequirement: aggregate } : {}),
+            executionProfiles: profiles,
+          },
+        ],
+      });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    assert.equal(nodesStoreModule.useNodesStore.getState().discoveryRequests.capabilities.status, 'error');
+  }
+});
+
+test('capability identity and runnable execution-profile coverage are exact', async () => {
+  const baseCapability = {
+    modelType: 'QwenImageModularPipeline',
+    modes: ['text_to_image', 'control_image'],
+    runnableModes: ['text_to_image'],
+  };
+  for (const capabilities of [
+    [baseCapability, { ...baseCapability, optionalRuntimeRequirement: runtimeRequirement() }],
+    [
+      {
+        ...baseCapability,
+        executionProfiles: [{ id: 'qwen-image:control', modes: ['control_image'] }],
+      },
+    ],
+    [
+      {
+        ...baseCapability,
+        executionProfiles: [{ id: 'qwen-image:t2i-direct', modes: ['text_to_image', 'text_to_image'] }],
+      },
+    ],
+    [
+      {
+        modelType: baseCapability.modelType,
+        modes: ['text_to_image', 'control_image'],
+        executionProfiles: [{ id: 'qwen-image:control', modes: ['control_image'] }],
+      },
+    ],
+    [{ ...baseCapability, modes: ['text_to_image', 'text_to_image'] }],
+    [{ ...baseCapability, runnableModes: ['text_to_image', 'text_to_image'] }],
+    [{ ...baseCapability, modes: Array(100_000).fill('text_to_image') }],
+    Array.from({ length: 129 }, (_, index) => ({ modelType: `FuturePipeline${index}`, modes: [] })),
+  ]) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    assert.equal(nodesStoreModule.useNodesStore.getState().discoveryRequests.capabilities.status, 'error');
+  }
+
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [{ ...baseCapability, optionalRuntimeRequirement: runtimeRequirement() }],
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.equal(
+    nodesStoreModule.useNodesStore.getState().discoveryRequests.capabilities.status,
+    'success',
+    'an absent executionProfiles field keeps the legacy aggregate fallback compatible',
+  );
+});
+
+test('a malformed capability refresh preserves the last authoritative runtime contract', async () => {
+  const requirement = runtimeRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    state: 'missing',
+    reason: 'optional_runtime_missing',
+  });
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image'],
+          runnableModes: ['text_to_image'],
+          optionalRuntimeRequirement: requirement,
+          executionProfiles: [
+            { id: 'qwen-image:t2i-direct', modes: ['text_to_image'], optionalRuntimeRequirement: requirement },
+          ],
+        },
+      ],
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  const previous = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [
+        {
+          modelType: 'QwenImageModularPipeline',
+          modes: ['text_to_image'],
+          optionalRuntimeRequirement: { ...requirement, schemaVersion: 999 },
+        },
+      ],
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'error');
+  assert.equal(state.studioModelCapabilitiesAuthoritative, true);
+  assert.deepEqual(state.studioModelCapabilities, previous);
+});
+
+test('a late malformed capability response cannot replace the newest valid contract', async () => {
+  const calls = [];
+  globalThis.fetch = () => {
+    const call = deferred();
+    calls.push(call);
+    return call.promise;
+  };
+  const first = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  const second = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  calls[1].resolve(
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [
+        { modelType: 'QwenImageModularPipeline', modes: ['text_to_image'], runnableModes: ['text_to_image'] },
+      ],
+    }),
+  );
+  await second;
+  calls[0].resolve(jsonResponse({ schemaVersion: 2, capabilities: 'malformed' }));
+  await first;
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.equal(state.studioModelCapabilitiesAuthoritative, true);
+  assert.equal(state.studioModelCapabilities[0].modelType, 'QwenImageModularPipeline');
+});
+
+test('optional runtime catalog parsing is bounded and qualified-active only', () => {
+  assert.deepEqual(
+    optionalRuntimesModule.parseOptionalRuntimeRequirement(
+      runtimeRequirement({ profileIds: [], executionProfileIds: [] }),
+    ).executionProfileIds,
+    [],
+  );
+  assert.throws(
+    () =>
+      optionalRuntimesModule.parseOptionalRuntimeRequirement(
+        runtimeRequirement({
+          delivery: 'optional_overlay',
+          requiredNow: true,
+          profileIds: [],
+          executionProfileIds: [],
+          state: 'missing',
+        }),
+      ),
+    /runtime contract/i,
+  );
+  const parsed = optionalRuntimesModule.parseOptionalRuntimeCatalog(optionalRuntimeCatalog());
+  assert.equal(parsed.profiles[0].installActionAvailable, false);
+  assert.equal(optionalRuntimesModule.optionalRuntimeBlockState(runtimeRequirement(), null), null);
+  for (const processLoadStatus of ['active', 'base', 'busy_recovery_only', 'repair_required', 'restart_required']) {
+    assert.equal(
+      optionalRuntimesModule.optionalRuntimeBlockState(runtimeRequirement(), { ...parsed, processLoadStatus }),
+      null,
+      `base delivery must ignore ${processLoadStatus}`,
+    );
+  }
+
+  const required = runtimeRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    state: 'active',
+    reason: 'optional_runtime_active',
+  });
+  assert.equal(
+    optionalRuntimesModule.optionalRuntimeBlockState(required, parsed),
+    'unavailable',
+    'candidate_unqualified must not satisfy an active requirement',
+  );
+  const activeCatalog = optionalRuntimesModule.parseOptionalRuntimeCatalog(
+    optionalRuntimeCatalog({
+      profiles: [
+        {
+          ...optionalRuntimeCatalog().profiles[0],
+          contractState: 'qualified',
+          cutoverReady: true,
+          status: 'present_unqualified',
+          overlayStatus: 'active',
+        },
+      ],
+      overlay: { processLoadStatus: 'active' },
+    }),
+  );
+  assert.equal(optionalRuntimesModule.optionalRuntimeBlockState(required, activeCatalog), null);
+  assert.equal(
+    optionalRuntimesModule.optionalRuntimeBlockState(
+      required,
+      optionalRuntimesModule.parseOptionalRuntimeCatalog(
+        optionalRuntimeCatalog({
+          profiles: [
+            {
+              ...optionalRuntimeCatalog().profiles[0],
+              contractState: 'qualified',
+              cutoverReady: false,
+              overlayStatus: 'active',
+            },
+          ],
+          overlay: { processLoadStatus: 'active' },
+        }),
+      ),
+    ),
+    'unavailable',
+  );
+  assert.throws(
+    () =>
+      optionalRuntimesModule.parseOptionalRuntimeCatalog(
+        optionalRuntimeCatalog({ profiles: Array.from({ length: 33 }, () => optionalRuntimeCatalog().profiles[0]) }),
+      ),
+    /runtime contract/i,
+  );
+  assert.throws(
+    () =>
+      optionalRuntimesModule.parseOptionalRuntimeCatalog(
+        optionalRuntimeCatalog({ profiles: [{ ...optionalRuntimeCatalog().profiles[0], schemaVersion: 999 }] }),
+      ),
+    /runtime contract/i,
+  );
+  for (const profile of [
+    { ...optionalRuntimeCatalog().profiles[0], specDigest: 'sha256:invalid' },
+    { ...optionalRuntimeCatalog().profiles[0], installActionAvailable: 'yes' },
+    { ...optionalRuntimeCatalog().profiles[0], activationAvailable: undefined },
+  ]) {
+    assert.throws(
+      () => optionalRuntimesModule.parseOptionalRuntimeCatalog(optionalRuntimeCatalog({ profiles: [profile] })),
+      /runtime contract/i,
+    );
+  }
+});
+
+test('optional runtime status uses latest-response ordering and clears malformed state', async () => {
+  const calls = [];
+  globalThis.fetch = () => {
+    const call = deferred();
+    calls.push(call);
+    return call.promise;
+  };
+  const first = nodesStoreModule.useNodesStore.getState().fetchOptionalRuntimes();
+  const second = nodesStoreModule.useNodesStore.getState().fetchOptionalRuntimes();
+  calls[1].resolve(jsonResponse(optionalRuntimeCatalog()));
+  await second;
+  calls[0].resolve(jsonResponse({ schemaVersion: 999 }));
+  await first;
+  assert.equal(nodesStoreModule.useNodesStore.getState().optionalRuntimeCatalog.profiles.length, 1);
+
+  globalThis.fetch = async () =>
+    jsonResponse({ schemaVersion: 1, profiles: [], overlay: { processLoadStatus: 'bogus' } });
+  await nodesStoreModule.useNodesStore.getState().fetchOptionalRuntimes();
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.optionalRuntimeCatalog, null);
+  assert.equal(state.discoveryRequests.optionalRuntimes.status, 'error');
+  assert.match(state.discoveryRequests.optionalRuntimes.error, /runtime contract/i);
 });
 
 test('requestJson aborts requests at the configured timeout', async () => {
@@ -368,6 +853,28 @@ test('one discovery failure does not suppress successful sibling endpoints', asy
   assert.equal(state.discoveryRequests.localModels.status, 'success');
   assert.deepEqual(state.localModels, [{ name: 'local-model' }]);
   assert.equal(state.error, null);
+});
+
+test('an older backend without optional-runtime status keeps critical discovery usable', async () => {
+  globalThis.fetch = async (url) => {
+    const path = String(url);
+    if (path.endsWith('/nodes')) return jsonResponse({ instance: 'legacy', nodes: {} });
+    if (path.includes('/runtime/optional-runtimes')) return jsonResponse({ message: 'Not found' }, 404);
+    if (path.includes('/runtime/status')) return jsonResponse({ ready: true, packages: {} });
+    if (path.includes('/model_cache/diagnostics')) return jsonResponse({ locations: [] });
+    if (path.includes('/model_capabilities')) return jsonResponse({ schemaVersion: 2, capabilities: [] });
+    if (path.includes('/custom_modules')) return jsonResponse({ modules: [] });
+    return jsonResponse([]);
+  };
+
+  await nodesStoreModule.useNodesStore.getState().fetchRegistry();
+
+  const state = nodesStoreModule.useNodesStore.getState();
+  for (const key of ['nodes', 'runtime', 'hfCache', 'localModels', 'modelCache', 'capabilities']) {
+    assert.equal(state.discoveryRequests[key].status, 'success', key);
+  }
+  assert.equal(state.discoveryRequests.optionalRuntimes.status, 'error');
+  assert.equal(state.optionalRuntimeCatalog, null);
 });
 
 test('invalid node registry responses report an error and a later retry recovers', async () => {

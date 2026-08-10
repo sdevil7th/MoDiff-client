@@ -9,6 +9,8 @@ import {
   createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
   inspectStudioGraphBindingDivergence,
+  markStudioGraphDefinitionPending,
+  syncStudioGraphDefinition,
   validateStudioGraphReadyForRun,
   waitForStudioGraphFinalization,
 } from '../studio/graphBridge';
@@ -32,7 +34,9 @@ import { arrangeGraphNodes, waitForGraphNodeMeasurements } from '../workflow/gra
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 import type {
   StudioFormState,
+  StudioGraphBinding,
   StudioImportedAsset,
+  StudioGraphRole,
   StudioOutput,
   StudioTemplateId,
   WorkspacePanelTab,
@@ -103,6 +107,10 @@ type ModiffE2EHooks = {
   selectFirstNodeByAction: (action: string) => boolean;
   selectNodesByAction: (actions: string[]) => number;
   setWebsocketConnection: (connection: { sid?: string | null; isConnected?: boolean }) => void;
+  setStudioFormForTest: (form: Partial<StudioFormState>) => void;
+  bindManagedGraphForTest: (form: Partial<StudioFormState>, nodes: Partial<Record<StudioGraphRole, string>>) => boolean;
+  startManagedGraphFinalizationForTest: () => Promise<void>;
+  waitForManagedGraphFinalizationForTest: () => Promise<void>;
   startStudioRunForTest: (identity: { clientRunId: string; runInputHash: string; taskId?: string | null }) => {
     clientRunId: string;
     runInputHash: string;
@@ -130,6 +138,7 @@ declare global {
 // Auto has finished. This is isolated to the E2E bridge; normal Studio runs keep
 // the selected template and Auto contracts unchanged.
 let pendingGalleryFormOverrides: Partial<StudioFormState> = {};
+let managedGraphFinalizationForTest: Promise<void> | null = null;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -394,6 +403,41 @@ function applyNodeDefinitionForAction(action: string, params: Record<string, unk
   return true;
 }
 
+function bindManagedGraphForTest(
+  formPatch: Partial<StudioFormState>,
+  roleNodes: Partial<Record<StudioGraphRole, string>>,
+) {
+  const studio = useStudioStore.getState();
+  const form = { ...studio.form, ...formPatch } as StudioFormState;
+  useStudioStore.setState({ form });
+  const roleByNodeId = new Map(
+    Object.entries(roleNodes).flatMap(([role, nodeId]) =>
+      typeof nodeId === 'string' ? [[nodeId, role as StudioGraphRole]] : [],
+    ),
+  );
+  useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((node) => {
+      const role = roleByNodeId.get(node.id);
+      return role ? { ...node, data: { ...node.data, studioOwned: true, studioRole: role } } : node;
+    }),
+  }));
+  const now = Date.now();
+  const binding: StudioGraphBinding = {
+    mode: form.mode,
+    modelType: form.modelType,
+    nodes: roleNodes,
+    managedNodeIds: Array.from(roleByNodeId.keys()),
+    managedEdgeIds: [],
+    fingerprint: `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+  useStudioStore.getState().setGraphBinding(binding);
+  useStudioStore.getState().setGraphFinalization(null);
+  markStudioGraphDefinitionPending();
+  return syncStudioGraphDefinition(form);
+}
+
 function makeGraphScenarioNode(
   key: string,
   id: string,
@@ -560,8 +604,11 @@ function toggleUserBlockForTest(id: string) {
   useFlowStore.getState().toggleUserBlockExpanded(id);
 }
 
+let customNodeSequence = 0;
+
 function addCustomNodeForTest(key = 'modules.Image.Preview') {
-  const id = `custom-${Date.now()}`;
+  customNodeSequence += 1;
+  const id = `custom-${Date.now()}-${customNodeSequence}`;
   const node = makeGraphScenarioNode(key, id, { x: 720, y: 220 });
   useFlowStore.getState().addNode(node);
   if (useStudioStore.getState().graphBinding) {
@@ -890,6 +937,17 @@ export function installE2EHooks() {
     selectFirstNodeByAction,
     selectNodesByAction,
     setWebsocketConnection,
+    setStudioFormForTest: (form: Partial<StudioFormState>) => {
+      useStudioStore.getState().updateForm(form);
+      useStudioStore.getState().setLauncherDismissed(true);
+    },
+    bindManagedGraphForTest,
+    startManagedGraphFinalizationForTest: () => {
+      managedGraphFinalizationForTest = createOrUpdateStudioGraph().then(() => undefined);
+      return managedGraphFinalizationForTest;
+    },
+    waitForManagedGraphFinalizationForTest: () =>
+      managedGraphFinalizationForTest ?? Promise.reject(new Error('No managed graph finalization is active.')),
     startStudioRunForTest,
     seedStudioOutputsForTest,
     seedImportedAssetsForTest,

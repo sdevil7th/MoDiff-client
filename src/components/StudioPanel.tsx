@@ -123,8 +123,6 @@ const ASPECT_OPTIONS: { label: StudioAspectRatio; width: number; height: number 
   { label: '9:16', width: 768, height: 1344 },
 ];
 
-const MODE_OPTIONS = Object.keys(STUDIO_MODE_LABELS).filter((mode) => mode !== 'advanced_workflow') as StudioMode[];
-
 function numberValue(value: string, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -160,8 +158,8 @@ export default function StudioPanel() {
     modelCacheDiagnostics,
     runtimeStatus,
     nodesRegistry,
-    hfDownloadProgress,
     studioModelCapabilities,
+    studioModelCapabilitiesAuthoritative,
     installHfModel,
   } = useNodesStore(
     useShallow((state) => ({
@@ -170,8 +168,8 @@ export default function StudioPanel() {
       modelCacheDiagnostics: state.modelCacheDiagnostics,
       runtimeStatus: state.runtimeStatus,
       nodesRegistry: state.nodesRegistry,
-      hfDownloadProgress: state.hfDownloadProgress,
       studioModelCapabilities: state.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: state.studioModelCapabilitiesAuthoritative,
       installHfModel: state.installHfModel,
     })),
   );
@@ -361,12 +359,9 @@ export default function StudioPanel() {
     hfCache,
     localModels,
     modelCacheDiagnostics,
-    runtimeStatus,
-    nodesRegistry,
-    hfDownloadProgress,
-    isConnected,
     autoResourcePlan,
     backendCapabilities: studioModelCapabilities,
+    backendCapabilitiesAuthoritative: studioModelCapabilitiesAuthoritative,
   });
   const runBlockedReason = runReadiness.blockingIssues[0]?.message ?? '';
   const runControlsBlocked = !runReadiness.canRun;
@@ -1045,7 +1040,7 @@ export default function StudioPanel() {
                   onValueChange={(value) => {
                     void handleModeChange(value as StudioMode);
                   }}
-                  options={(compatibleModes.length > 0 ? compatibleModes : MODE_OPTIONS).map((mode) => ({
+                  options={compatibleModes.map((mode) => ({
                     value: mode,
                     label: STUDIO_MODE_LABELS[mode],
                   }))}

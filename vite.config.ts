@@ -162,6 +162,17 @@ const baseConfig: UserConfig = {
       treeshake: true,
       output: {
         manualChunks: (moduleId) => {
+          // Keep stable static Studio catalogs/contracts together so their
+          // repeated vocabulary compresses once within the bundle budget,
+          // without changing load timing.
+          if (
+            moduleId.endsWith('/src/studio/templates.ts') ||
+            moduleId.endsWith('/src/studio/modelUsagePolicies.ts') ||
+            moduleId.endsWith('/src/studio/nodeCatalog.ts') ||
+            moduleId.endsWith('/src/studio/templateBackendCapabilities.ts')
+          ) {
+            return 'studio-templates';
+          }
           if (
             moduleId.includes('/node_modules/@xyflow/') ||
             moduleId.includes('/node_modules/react/') ||

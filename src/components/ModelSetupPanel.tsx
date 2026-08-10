@@ -188,10 +188,8 @@ export default function ModelSetupPanel() {
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
   const runtimeError = useNodesStore((state) => state.runtimeError);
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
+  const refreshModelIndexes = useNodesStore((state) => state.refreshModelIndexes);
   const fetchRuntimeStatus = useNodesStore((state) => state.fetchRuntimeStatus);
-  const fetchHfCache = useNodesStore((state) => state.fetchHfCache);
-  const fetchLocalModels = useNodesStore((state) => state.fetchLocalModels);
-  const fetchModelCacheDiagnostics = useNodesStore((state) => state.fetchModelCacheDiagnostics);
   const fetchStudioModelCapabilities = useNodesStore((state) => state.fetchStudioModelCapabilities);
   const installHfModel = useNodesStore((state) => state.installHfModel);
   const form = useStudioStore((state) => state.form);
@@ -298,13 +296,7 @@ export default function ModelSetupPanel() {
   };
 
   const refresh = async () => {
-    await Promise.all([
-      fetchRuntimeStatus(),
-      fetchHfCache(true),
-      fetchLocalModels(true),
-      fetchModelCacheDiagnostics(true),
-      fetchStudioModelCapabilities(),
-    ]);
+    await refreshModelIndexes(true, { invalidateAutoPlans: false });
     await refreshAutoPlans();
   };
 

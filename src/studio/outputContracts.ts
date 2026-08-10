@@ -314,18 +314,21 @@ export function coerceStudioGraphSnapshot(value: unknown): StudioGraphSnapshot |
 export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | null {
   if (!isRecord(value)) return null;
   const rawProof = isRecord(value.finalizationProof) ? value.finalizationProof : null;
+  const shapeKey = stringValue(rawProof?.shapeKey);
+  const fieldSchemaHash = stringValue(rawProof?.fieldSchemaHash);
+  const edgeSpecHash = stringValue(rawProof?.edgeSpecHash);
   const finalizationProof =
-    rawProof?.schemaVersion === 1 &&
-    typeof rawProof.shapeKey === 'string' &&
-    rawProof.shapeKey.length > 0 &&
-    typeof rawProof.fieldSchemaHash === 'string' &&
-    rawProof.fieldSchemaHash.length > 0 &&
+    rawProof?.schemaVersion === 2 &&
+    shapeKey &&
+    fieldSchemaHash &&
+    edgeSpecHash &&
     typeof rawProof.finalizedAt === 'number' &&
     Number.isFinite(rawProof.finalizedAt)
       ? {
-          schemaVersion: 1 as const,
-          shapeKey: rawProof.shapeKey,
-          fieldSchemaHash: rawProof.fieldSchemaHash,
+          schemaVersion: 2 as const,
+          shapeKey,
+          fieldSchemaHash,
+          edgeSpecHash,
           finalizedAt: rawProof.finalizedAt,
         }
       : undefined;

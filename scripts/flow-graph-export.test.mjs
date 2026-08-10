@@ -144,6 +144,50 @@ test('graph export preserves safe CUDA/ROCm offload and non-offloaded CPU execut
   assert.equal(cpuGraph.nodes.loader.params.offload_mode.value, 'none');
 });
 
+test('graph export preserves a hidden opaque execution identity and ignores its transient output signal', () => {
+  const identity = {
+    version: 1,
+    source: 'hub',
+    repository: 'example/custom-modular',
+    revision: 'a'.repeat(40),
+    trust_remote_code: false,
+    config_filename: 'modiff_pipeline_config.json',
+    config_sha256: 'b'.repeat(64),
+    execution_id: 'c'.repeat(64),
+  };
+  const graph = exportModule.buildApiGraphExport({
+    nodes: [
+      {
+        id: 'custom-loader',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'custom',
+          module: 'modules.ModularDiffusers',
+          action: 'ModelsLoader',
+          label: 'Models loader',
+          params: {
+            repository: { type: 'string', value: 'example/custom-modular' },
+            modiff_pipeline_identity: { type: 'object', value: identity, hidden: true },
+            components: {
+              type: 'Components',
+              display: 'output',
+              signal: { direction: 'output', origin: 'modiff_pipeline_identity', value: identity },
+            },
+          },
+        },
+      },
+    ],
+    edges: [],
+    sid: 'opaque-identity-session',
+    setParam: () => {},
+  });
+
+  assert.deepEqual(graph.nodes['custom-loader'].params.modiff_pipeline_identity.value, identity);
+  assert.equal(graph.nodes['custom-loader'].params.modiff_pipeline_identity.display, undefined);
+  assert.equal(graph.nodes['custom-loader'].params.components, undefined);
+});
+
 test('visual loop containers export bounded executor metadata and direct child nodes', () => {
   const loop = {
     id: 'loop-container',

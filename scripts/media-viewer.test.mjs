@@ -351,7 +351,15 @@ test('runtime optimization contracts fail closed and documentation URLs allow on
   assert.equal(runtimeOptimizations.parseOptimizationCatalog(catalog).capabilities.length, 1);
   assert.throws(
     () => runtimeOptimizations.parseOptimizationCatalog({ ...catalog, capabilities: [null] }),
-    /invalid optimization capability/i,
+    /invalid runtime contract/i,
+  );
+  assert.throws(
+    () =>
+      runtimeOptimizations.parseOptimizationCatalog({
+        ...catalog,
+        capabilities: [{ ...catalog.capabilities[0], kind: 'package', canInstall: true, canEnable: false }],
+      }),
+    /invalid runtime contract/i,
   );
   assert.equal(runtimeOptimizations.safeOptimizationDocumentationUrl('javascript:alert(1)'), null);
   assert.match(

@@ -13,6 +13,14 @@ import {
   isHfDownloadComplete,
 } from '../studio/modelInstall';
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
+import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
+import {
+  parseOptionalRuntimeCatalog,
+  parseOptionalRuntimeExecutionProfiles,
+  parseOptionalRuntimeRequirement,
+  parseRuntimeModes,
+  type OptionalRuntimeCatalog,
+} from '../studio/optionalRuntimes';
 import type { ExecutionProgress, RunReadinessIssue, StudioModelProfile, UserBlockDefinition } from '../studio/types';
 import type { ModiffFieldStyle, ModiffNodeStyle } from '../theme';
 import { enqueueSnackbar } from '../ui/snackbar';
@@ -324,9 +332,11 @@ type NodesStore = {
   localModels: unknown[];
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
   studioModelCapabilities: StudioModelProfile[];
+  studioModelCapabilitiesAuthoritative: boolean;
   runtimeStatus: RuntimeStatus | null;
   runtimeResources: RuntimeResourceSnapshot | null;
   runtimeError: string | null;
+  optionalRuntimeCatalog: OptionalRuntimeCatalog | null;
   hfDownloadProgress: Record<string, HfDownloadProgress>;
   customModules: CustomModuleInfo[];
   customModuleError: string | null;
@@ -345,6 +355,7 @@ type NodesStore = {
   updateCustomModule: (name: string) => Promise<CustomModuleActionResult>;
   setCustomModuleEnabled: (name: string, enabled: boolean) => Promise<CustomModuleActionResult>;
   fetchRuntimeStatus: () => Promise<void>;
+  fetchOptionalRuntimes: () => Promise<void>;
   setRuntimeResources: (snapshot: RuntimeResourceSnapshot | null) => void;
   fetchNodes: () => Promise<void>;
   fetchHfCache: (refresh?: boolean) => Promise<void>;
@@ -355,7 +366,14 @@ type NodesStore = {
 };
 
 export type DiscoveryRequestKey =
-  'capabilities' | 'customModules' | 'hfCache' | 'localModels' | 'modelCache' | 'nodes' | 'runtime';
+  | 'capabilities'
+  | 'customModules'
+  | 'hfCache'
+  | 'localModels'
+  | 'modelCache'
+  | 'nodes'
+  | 'optionalRuntimes'
+  | 'runtime';
 
 export type DiscoveryRequestState = {
   status: 'error' | 'idle' | 'loading' | 'success';
@@ -380,6 +398,7 @@ function initialDiscoveryRequests(): Record<DiscoveryRequestKey, DiscoveryReques
     localModels: { status: 'idle', error: null, requestId: null },
     modelCache: { status: 'idle', error: null, requestId: null },
     nodes: { status: 'idle', error: null, requestId: null },
+    optionalRuntimes: { status: 'idle', error: null, requestId: null },
     runtime: { status: 'idle', error: null, requestId: null },
   };
 }
@@ -535,12 +554,49 @@ function parseModelCacheDiagnostics(value: unknown) {
   return payload as ModelCacheDiagnostics;
 }
 
+function invalidModelCapabilities(): never {
+  throw new Error('Invalid model-capabilities response.');
+}
+
 function parseStudioModelCapabilities(value: unknown) {
-  const payload = payloadRecord(value, 'The model-capabilities response is invalid.');
-  if (!Array.isArray(payload.capabilities)) {
-    throw new Error('The model-capabilities response has no capabilities array.');
-  }
-  return payload.capabilities as StudioModelProfile[];
+  const payload = payloadRecord(value, 'Invalid model-capabilities response.');
+  if (!Array.isArray(payload.capabilities) || payload.capabilities.length > 128) invalidModelCapabilities();
+  const modelTypes = new Set();
+  const capabilities = payload.capabilities.flatMap((item) => {
+    if (!isRecord(item) || typeof item.modelType !== 'string') invalidModelCapabilities();
+    // A newer backend can advertise models this client does not have a Studio
+    // presentation for yet. Ignore those records instead of casting them into
+    // the closed client model union. Experimental capabilities are likewise a
+    // separate response field and are never promoted into runnable Studio data.
+    if (!isStudioModelType(item.modelType)) return [];
+    if (modelTypes.has(item.modelType)) invalidModelCapabilities();
+    modelTypes.add(item.modelType);
+    const modes = parseRuntimeModes(item.modes, isStudioMode);
+    const runnableModes =
+      item.runnableModes === undefined ? undefined : parseRuntimeModes(item.runnableModes, isStudioMode);
+    const optionalRuntimeRequirement =
+      item.optionalRuntimeRequirement === undefined
+        ? undefined
+        : parseOptionalRuntimeRequirement(item.optionalRuntimeRequirement);
+    const executionProfiles =
+      item.executionProfiles === undefined
+        ? undefined
+        : parseOptionalRuntimeExecutionProfiles(item.executionProfiles, optionalRuntimeRequirement, isStudioMode);
+    if (
+      executionProfiles &&
+      (executionProfiles.some((profile) => profile.modes.some((mode) => !modes.includes(mode))) ||
+        (runnableModes ?? modes).some((mode) => !executionProfiles.some((profile) => profile.modes.includes(mode))))
+    )
+      invalidModelCapabilities();
+    item.modes = modes;
+    if (runnableModes) item.runnableModes = runnableModes;
+    if (executionProfiles) item.executionProfiles = executionProfiles;
+    return [item as unknown as StudioModelProfile];
+  });
+  return {
+    authoritative: payload.schemaVersion === 2,
+    capabilities,
+  };
 }
 
 function parseHfInstallResponse(value: unknown, repoId: string) {
@@ -607,9 +663,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   localModels: [],
   modelCacheDiagnostics: null,
   studioModelCapabilities: [],
+  studioModelCapabilitiesAuthoritative: false,
   runtimeStatus: null,
   runtimeResources: null,
   runtimeError: null,
+  optionalRuntimeCatalog: null,
   hfDownloadProgress: {},
   customModules: [],
   customModuleError: null,
@@ -649,6 +707,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     }
     await Promise.all([
       get().fetchRuntimeStatus(),
+      get().fetchOptionalRuntimes(),
       get().fetchHfCache(refresh),
       get().fetchLocalModels(refresh),
       get().fetchModelCacheDiagnostics(refresh),
@@ -806,6 +865,20 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       'Could not read runtime status. Check that the server is running.',
     );
   },
+  fetchOptionalRuntimes: async () => {
+    await runDiscoveryRequest(
+      'optionalRuntimes',
+      set,
+      (signal) =>
+        requestJson(`${config.serverAddress}/runtime/optional-runtimes`, {
+          signal,
+          parse: parseOptionalRuntimeCatalog,
+        }),
+      (optionalRuntimeCatalog) => ({ optionalRuntimeCatalog }),
+      () => ({ optionalRuntimeCatalog: null }),
+      'Could not read optional runtime status.',
+    );
+  },
   fetchNodes: async () => {
     if (inFlightNodeDiscovery) {
       await inFlightNodeDiscovery;
@@ -892,8 +965,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           signal,
           parse: parseStudioModelCapabilities,
         }),
-      (studioModelCapabilities) => ({ studioModelCapabilities }),
-      () => ({ studioModelCapabilities: [] }),
+      ({ authoritative, capabilities }) => ({
+        studioModelCapabilities: capabilities,
+        studioModelCapabilitiesAuthoritative: authoritative,
+      }),
+      () => ({}),
       'Could not read model capabilities.',
     );
   },

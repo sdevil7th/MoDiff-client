@@ -210,7 +210,11 @@ export function updateSignalsForEdges(edges: Edge | Edge[], get: FlowStoreGet) {
         get().setParam(edge.source, sourceHandle, { ...sourceSignal, value: undefined }, 'signal');
       }
 
-      if (sourceParam?.isConnected && sourceSignal.direction === 'output' && !targetSignal?.origin) {
+      if (
+        sourceParam?.isConnected &&
+        sourceSignal.direction === 'output' &&
+        !(targetSignal?.direction === 'input' && targetSignal.origin)
+      ) {
         get().setParam(edge.target, targetHandle, { ...sourceSignal, origin: undefined }, 'signal');
       }
     }
@@ -220,7 +224,11 @@ export function updateSignalsForEdges(edges: Edge | Edge[], get: FlowStoreGet) {
         get().setParam(edge.target, targetHandle, { ...targetSignal, value: undefined }, 'signal');
       }
 
-      if (targetParam?.isConnected && targetSignal.direction === 'input' && !sourceSignal?.origin) {
+      if (
+        targetParam?.isConnected &&
+        targetSignal.direction === 'input' &&
+        !(sourceSignal?.direction === 'output' && sourceSignal.origin)
+      ) {
         get().setParam(edge.source, sourceHandle, { ...targetSignal, origin: undefined }, 'signal');
       }
     }

@@ -1,10 +1,9 @@
 import { enqueueSnackbar } from '../ui/snackbar';
-import { syncStudioGraphValues } from '../studio/graphBridge';
+import { markStudioGraphDefinitionPending, syncStudioGraphDefinition } from '../studio/graphBridge';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { collapsedUserBlockPreviewTarget, runtimeProgressTarget } from '../studio/userBlocks';
 import { executionProgressFrom } from '../studio/executionProgress';
-import { normalizeGenericModelLoaderParams } from '../studio/modelSelection';
 import {
   backendWorkflowTab,
   forgetBackendWorkflow,
@@ -335,13 +334,15 @@ function preserveCurrentParamValue(current: NodeParams | undefined, incoming: No
 }
 
 function scheduleStudioDefinitionSync() {
+  const workflowContext = captureWorkflowOperationContext();
+  markStudioGraphDefinitionPending();
   if (studioDefinitionSyncTimer) {
     globalThis.clearTimeout(studioDefinitionSyncTimer);
   }
   studioDefinitionSyncTimer = globalThis.setTimeout(() => {
     studioDefinitionSyncTimer = null;
-    syncStudioGraphValues();
-    useStudioStore.getState().saveActiveWorkflowTab(true);
+    if (!workflowOperationContextIsCurrent(workflowContext)) return;
+    syncStudioGraphDefinition();
   }, 80);
 }
 
@@ -884,7 +885,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         param.value = param.value ?? param.default;
       });
 
-      let newParams = { ...defaultDef.params, ...definitionParams };
+      const newParams = { ...defaultDef.params, ...definitionParams };
       Object.keys(newParams).forEach((key) => {
         const currentParam = node.data.params[key];
         const incomingParam = newParams[key];
@@ -892,7 +893,6 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
           newParams[key] = preserveCurrentParamValue(currentParam, incomingParam);
         }
       });
-      newParams = normalizeGenericModelLoaderParams(node.data.module, node.data.action, newParams);
       useFlowStore.getState().replaceNodeParams(node.id, newParams);
       const updatedNodes = useFlowStore.getState().nodes.map((n) =>
         n.id !== node.id
@@ -967,9 +967,12 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
 
         useFlowStore.getState().setParam(nodeId, field, updatedValue, key as keyof NodeParams);
       });
+      const signalChanged = params.signal !== undefined;
       queueMicrotask(() => {
         if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: false })) return;
-        useFlowStore.getState().setParam(nodeId, field, false, 'disabled');
+        const flow = useFlowStore.getState();
+        flow.setParam(nodeId, field, false, 'disabled');
+        if (signalChanged) flow.updateSignalValues(flow.edges);
       });
 
       break;

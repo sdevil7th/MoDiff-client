@@ -15,7 +15,8 @@ React/Vite client
           v
 MoDiff Python backend
   |-- node registry and graph executor
-  |-- model/artifact/runtime management
+  |-- reviewed Hugging Face model-library adapters
+  |-- model/artifact/optional-runtime management
   |-- files, previews, uploads, workflows, and Studio outputs
   `-- integrated static-file host
 ```
@@ -23,6 +24,8 @@ MoDiff Python backend
 `app.config.ts` chooses the HTTP origin. In an integrated build it defaults to `window.location.origin`. In development, Vite proxies the paths listed in `vite.config.ts` to `VITE_BACKEND_PROXY_TARGET` (default `http://127.0.0.1:8088`). `VITE_SERVER_ADDRESS` bypasses that same-origin default and should be used only with deliberate cross-origin backend configuration.
 
 The frontend treats backend responses, websocket messages, local storage, dynamic node definitions, and imported packages as untrusted data at their boundaries. Use parsers/type guards before storing or rendering them.
+
+The backend may use official model libraries maintained and published by Hugging Face, but the client remains runtime-agnostic. It renders backend-declared task inputs, parameters, outputs, missing optional runtimes, and readiness instead of selecting library classes or maintaining model-specific execution branches. The browser never loads a model runtime or invokes a hosted inference provider.
 
 ## Technology
 
@@ -92,6 +95,8 @@ All execution surfaces, including Studio and Run as app, must submit this graph 
 - `/hf_download` install/repair tasks
 
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
+
+An optional runtime requirement is discovery data, not permission to mutate the Python environment. Template browsing/opening, registry refresh, and Auto planning must remain non-installing. Installation begins only from an explicit user action against a reviewed backend runtime profile, and the client keeps Run blocked until a later backend status confirms the compatible installation.
 
 Model visibility, artifact presence, and Auto readiness are separate concepts.
 `src/studio/modelCache.ts` and `artifactRequirements.ts` describe local artifact
@@ -172,6 +177,8 @@ Studio graph updates follow this rule:
 
 Repeated reconciliation with the same inputs must be idempotent. If a user changes a managed graph until its binding diverges, clear the binding and treat it as a custom graph rather than silently rebuilding over their work.
 
+Managed graph finalization proofs are consistency checks, not authorization tokens. The current proof schema binds the resolved graph shape, authoritative field schemas, and the sorted source/target handle specification. Restoring a proof also revalidates the exact live managed-edge set and executable dynamic field groups; a preserved edge ID with changed endpoints, an incomplete dynamic route, or a recomputed checksum over a malformed contract remains non-runnable until reconciliation produces a fresh proof.
+
 ## Run Flow
 
 ```text
@@ -201,6 +208,27 @@ User selects Run
 - `src/utils/useInitialFieldAction.ts` handles required initial dynamic-field synchronization.
 
 Fields must preserve `data-key`, `modiff-field`, `nodrag`, `nowheel`, hidden, disabled, and backend-action contracts. Backend-provided styles are sanitized to safe layout properties by `src/theme/modiffStyle.ts`; visual styling from dynamic payloads is not trusted.
+
+Managed dynamic fields may opt into the versioned `fieldOptions.studioBinding`
+contract. Version 1 is intentionally small: an `identity` binding reads only
+the allowlisted `maxSequenceLength` form field, while
+`nearest-option-to-long-edge` reads width and height and selects the nearest
+numeric option declared by that backend field. Direct dimension identity
+bindings are rejected. Long-edge options must be unique integer dimensions in
+the reviewed 16-through-2048 Studio execution envelope. A group synchronizes fields that
+publish the exact same binding signature. Unknown versions, transforms, form
+fields, extra properties, malformed or out-of-envelope options, and partially
+matching group declarations are inert; the client does not infer a fallback
+from model, repository, class, label, or field name. This metadata changes
+values in the existing visible graph only and is not another workflow or
+execution representation.
+
+Durable snapshots never retain `onChange` or `onSignal` behavior. Restored and imported nodes remain inert while the registry is unavailable, then rebase the current registry's behavior onto matching stored fields, remove actions that are absent from the current contract, restore missing live hidden fields, and preserve stored values. This lets the backend evolve a generic node contract without adding model-name branches, executing behavior from an untrusted workflow, or silently dropping an execution-critical field from an older workflow.
+
+Backend-issued execution identities are opaque client values. The durable copy lives in a normal hidden parameter, so workflow snapshots, exports, and run-input hashes include it. A matching output `signal` may carry the identity across connected generic nodes while the graph is live; signal values are deliberately removed from durable snapshots and must be reconstructed by the backend after restore. The client transports and reconciles these values but does not parse repository names, pipeline classes, or identity fields to select behavior.
+
+Generic model selectors coalesce free-form repository edits through a short bounded debounce. Backend `onChange` work runs for the initial value and the latest repository selection or source switch; it must not run once per keystroke.
+Their compatible choices come only from backend declarations. Hub entries apply the declared class/id filters. The current local-model index contains paths but no class metadata, so local ID-only filters remain usable while any declared local class filter fails closed with no candidates until the backend publishes metadata that can evaluate it. The generic model selector does not infer a model family from repository names, connected nodes, or the current Studio profile, and it does not rewrite backend repository defaults.
 
 Custom React fields are dynamically imported from the `@custom-fields` Vite alias and served by the backend under `/user`. Treat custom fields as trusted operator-provided code, not untrusted data.
 

@@ -2,7 +2,6 @@ import type { Edge, NodeChange, Viewport } from '@xyflow/react';
 
 import { deleteNodeCache } from '../utils/serverActions';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
-import { normalizeGenericModelLoaderParams } from '../studio/modelSelection';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { useNodesStore } from './useNodeStore';
@@ -27,37 +26,36 @@ function toArray(value: string | string[]) {
   return Array.isArray(value) ? value : [value];
 }
 
-function withLiveUiFieldContracts(nodes: CustomNodeType[]) {
+function hasOwn(value: object, key: string) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function withLiveFieldContracts(nodes: CustomNodeType[]) {
   const registry = useNodesStore.getState().nodesRegistry;
 
   return nodes.map((node) => {
     const definition = registry[`${node.data.module}.${node.data.action}`];
-    const uiFields = Object.entries(definition?.params ?? {}).filter(([, param]) =>
-      String(param.display ?? '').startsWith('ui_'),
+    const liveParams = definition?.params;
+    const storedParams = node.data.params;
+    const params = Object.fromEntries(
+      Object.entries(storedParams).map(([fieldKey, storedParam]) => {
+        const liveParam = liveParams?.[fieldKey];
+        const fullLiveField = liveParam && (liveParam.display?.startsWith('ui_') || liveParam.hidden);
+        const mergedParam = fullLiveField ? { ...storedParam, ...liveParam } : { ...storedParam };
+        if (fullLiveField && hasOwn(storedParam, 'value')) mergedParam.value = storedParam.value;
+        if (fullLiveField && hasOwn(storedParam, 'artifacts')) mergedParam.artifacts = storedParam.artifacts;
+        for (const behaviorKey of ['onChange', 'onSignal'] as const) {
+          if (liveParam && hasOwn(liveParam, behaviorKey)) mergedParam[behaviorKey] = liveParam[behaviorKey];
+          else delete mergedParam[behaviorKey];
+        }
+        return [fieldKey, mergedParam];
+      }),
     );
-
-    let changed = false;
-    const params = { ...node.data.params };
-    uiFields.forEach(([fieldKey, liveParam]) => {
-      const storedParam = params[fieldKey];
-      const mergedParam = storedParam ? { ...storedParam, ...liveParam } : { ...liveParam };
-      if (storedParam && Object.prototype.hasOwnProperty.call(storedParam, 'value')) {
-        mergedParam.value = storedParam.value;
-      }
-      if (storedParam && Object.prototype.hasOwnProperty.call(storedParam, 'artifacts')) {
-        mergedParam.artifacts = storedParam.artifacts;
-      }
-      params[fieldKey] = mergedParam;
-      changed = true;
-    });
-    const normalizedParams = normalizeGenericModelLoaderParams(
-      node.data.module,
-      node.data.action,
-      changed ? params : node.data.params,
-    );
-    return changed || normalizedParams !== node.data.params
-      ? { ...node, data: { ...node.data, params: normalizedParams } }
-      : node;
+    for (const [fieldKey, liveParam] of Object.entries(liveParams ?? {})) {
+      if (hasOwn(storedParams, fieldKey)) continue;
+      if (liveParam.display?.startsWith('ui_') || liveParam.hidden) params[fieldKey] = { ...liveParam };
+    }
+    return { ...node, data: { ...node.data, params } };
   });
 }
 
@@ -129,7 +127,7 @@ export function replaceFlowGraph(
   get: FlowStoreGet,
 ) {
   const previousNodeIds = new Set(get().nodes.map((node) => node.id));
-  const nodes = withLiveUiFieldContracts(replacement.nodes);
+  const nodes = withLiveFieldContracts(replacement.nodes);
   const nextNodeIds = new Set(nodes.map((node) => node.id));
   const removedNodeIds = [...previousNodeIds].filter((nodeId) => !nextNodeIds.has(nodeId));
   const edges = decorateConnectionEdges(

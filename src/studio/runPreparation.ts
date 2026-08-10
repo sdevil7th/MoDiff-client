@@ -190,6 +190,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       cudaMemoryTotalBytes: totalBytes,
       modelFamily: profile.family,
       modelType: profile.modelType,
+      mode: form.mode,
       modelRepo: templateBaseModelRepo ?? profile.defaultRepo,
       modelName: getStudioModelDisplayName(profile),
       resolvedModelRepo,
