@@ -1300,6 +1300,15 @@ test('backend execution specs materialize exact image and video recipes with sea
     edges: editEdgeRows,
     bindings: editBindingRows,
   };
+  const kontextSpec = {
+    ...reduxSpec,
+    id: 'flux-kontext:edit-image:v1',
+    modelType: 'FluxKontextPipeline',
+    executionProfileId: 'flux-kontext:direct',
+    pipelineClass: 'FluxKontextPipeline',
+    defaultRepo: 'black-forest-labs/FLUX.1-Kontext-dev',
+    contentHash: 'studio-spec-v1-393009a9',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1442,6 +1451,17 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioExecutionSpecModes: [spec.mode],
     studioExecutionSpecs: [spec],
   });
+  const kontextCapability = {
+    ...capability(kontextSpec),
+    modes: ['edit_image', 'multi_image_reference_edit'],
+    runnableModes: ['edit_image', 'multi_image_reference_edit'],
+    executionProfiles: [
+      {
+        ...profile(kontextSpec),
+        modes: ['edit_image', 'multi_image_reference_edit'],
+      },
+    ],
+  };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
     ...roleRows,
@@ -1527,6 +1547,7 @@ test('backend execution specs materialize exact image and video recipes with sea
         capability(depthSpec),
         capability(cannySpec),
         capability(reduxSpec),
+        kontextCapability,
         capability(i2vSpec),
         capability(ti2vSpec),
         {
@@ -1726,6 +1747,42 @@ test('backend execution specs materialize exact image and video recipes with sea
       reduxForm.conditioningScale,
     );
 
+    const kontextForm = {
+      ...reduxForm,
+      modelType: 'FluxKontextPipeline',
+      referenceImages: ['@data/images/kontext.png'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: kontextForm });
+    await graphBridge.createOrUpdateStudioGraph(kontextForm);
+    const kontextBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(kontextBinding.executionSpec.id, kontextSpec.id);
+    assert.equal(kontextBinding.executionSpec.contentHash, kontextSpec.contentHash);
+    assert.deepEqual(topology(kontextBinding), topology(reduxBinding));
+    assert.equal(
+      flowStoreModule.useFlowStore
+        .getState()
+        .nodes.find((item) => item.id === kontextBinding.nodes.diffusersImagePipeline).data.params.pipeline_class.value,
+      'FluxKontextPipeline',
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(kontextForm), null);
+
+    const kontextMultiForm = {
+      ...kontextForm,
+      mode: 'multi_image_reference_edit',
+      referenceImages: ['@data/images/kontext-a.png', '@data/images/kontext-b.png'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: kontextMultiForm });
+    await graphBridge.createOrUpdateStudioGraph(kontextMultiForm);
+    const kontextMultiBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(
+      kontextMultiBinding.executionSpec,
+      undefined,
+      'the unclaimed Kontext multi-reference mode remains on the legacy graph path',
+    );
+    assert.ok(kontextMultiBinding.nodes.loadImage);
+    assert.ok(kontextMultiBinding.nodes.diffusersImageEdit);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(kontextMultiForm), null);
+
     const i2vForm = {
       ...baseForm,
       modelType: 'WanImageToVideoPipeline',
@@ -1889,6 +1946,7 @@ test('backend execution specs materialize exact image and video recipes with sea
           capability(depthSpec),
           capability(cannySpec),
           capability(reduxSpec),
+          kontextCapability,
           capability(i2vSpec),
           capability(ti2vSpec),
         ],
