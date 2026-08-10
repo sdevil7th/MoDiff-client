@@ -225,6 +225,7 @@ function fluxCapability(spec = fluxExecutionSpec(), overrides = {}) {
     runnableModes: ['text_to_image'],
     executionProfiles: [fluxExecutionProfile()],
     studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecModes: [spec.mode],
     studioExecutionSpecs: [spec],
     ...overrides,
   };
@@ -309,6 +310,13 @@ test('Studio execution specifications require an exact versioned capability cont
   assert.equal(state.studioExecutionSpecInvalid, false);
   assert.equal(state.studioModelCapabilities[0].studioExecutionSpecs[0].contentHash, spec.contentHash);
 
+  const partial = fluxCapability(spec, { modes: ['text_to_image', 'edit_image'] });
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [partial] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  state = nodesStoreModule.useNodesStore.getState();
+  assert.deepEqual(state.studioModelCapabilities[0].studioExecutionSpecModes, ['text_to_image']);
+  assert.deepEqual(state.studioModelCapabilities[0].modes, ['text_to_image', 'edit_image']);
+
   const malformed = [
     fluxCapability({ ...spec, contentHash: 'studio-spec-v1-00000000' }),
     fluxCapability({ ...spec, roles: [...spec.roles, spec.roles[0]] }),
@@ -325,6 +333,11 @@ test('Studio execution specifications require an exact versioned capability cont
     })(),
     { ...fluxCapability(spec), studioExecutionSpecSchemaVersion: undefined },
     { ...fluxCapability(spec), studioExecutionSpecs: undefined },
+    { ...fluxCapability(spec), studioExecutionSpecModes: undefined },
+    { ...fluxCapability(spec), studioExecutionSpecModes: [] },
+    { ...fluxCapability(spec), studioExecutionSpecModes: [spec.mode, spec.mode] },
+    { ...fluxCapability(spec), studioExecutionSpecModes: ['edit_image'] },
+    { ...fluxCapability(spec), studioExecutionSpecModes: [spec.mode, 'future_mode'] },
   ];
   for (const capability of malformed) {
     globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });

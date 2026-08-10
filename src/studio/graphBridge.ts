@@ -69,6 +69,7 @@ function executionSpecForForm(
   if (nodeStore.studioExecutionSpecInvalid) return null;
   const capability = nodeStore.studioModelCapabilities.find((item) => item.modelType === form.modelType);
   if (capability?.studioExecutionSpecSchemaVersion !== 1) return undefined;
+  if (!capability.studioExecutionSpecModes?.includes(form.mode)) return undefined;
   const matches = capability.studioExecutionSpecs?.filter((item) => item.mode === form.mode) ?? [];
   return matches.length === 1 ? matches[0] : null;
 }
@@ -3340,15 +3341,12 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
 
   if (isVideoMode(form.mode)) {
     const preservationWanMode = form.modelType === 'WanVideoPipeline';
-    const wanTextToVideoMode = preservationWanMode && form.mode === 'text_to_video';
     const pipelineClass =
       autoCandidate?.pipelineClass ??
       (form.modelType === 'LTXVideoPipeline'
         ? 'LTXConditionPipeline'
         : preservationWanMode
-          ? wanTextToVideoMode
-            ? 'WanPipeline'
-            : 'WanVideoToVideoPipeline'
+          ? 'WanVideoToVideoPipeline'
           : 'WanVACEPipeline');
     const resolvedArtifact =
       autoCandidate?.resolvedArtifact ??
@@ -3360,8 +3358,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     const decodedVideoPixels = form.width * form.height * form.numFrames;
     const needsVaeTiling =
       form.resourceMode !== 'expert' || resolvedOffloadMode !== 'none' || decodedVideoPixels > 40_000_000;
-    const supportsNativeFlash =
-      form.device.startsWith('cuda') && (pipelineClass === 'WanPipeline' || pipelineClass === 'Wan22Pipeline');
+    const supportsNativeFlash = form.device.startsWith('cuda') && pipelineClass === 'Wan22Pipeline';
 
     setParamIfPresent(
       diffusersQuantization,

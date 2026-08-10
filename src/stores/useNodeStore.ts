@@ -579,7 +579,9 @@ function parseStudioModelCapabilities(value: unknown) {
     if (!isStudioModelType(item.modelType)) return [];
     if (
       payload.schemaVersion !== 2 &&
-      (item.studioExecutionSpecs !== undefined || item.studioExecutionSpecSchemaVersion !== undefined)
+      (item.studioExecutionSpecs !== undefined ||
+        item.studioExecutionSpecSchemaVersion !== undefined ||
+        item.studioExecutionSpecModes !== undefined)
     )
       throw new Error('Invalid Studio execution specification.');
     if (modelTypes.has(item.modelType)) invalidModelCapabilities();
@@ -604,10 +606,23 @@ function parseStudioModelCapabilities(value: unknown) {
             modes,
             executionProfiles as unknown as StudioExecutionProfile[] | undefined,
           );
+    const studioExecutionSpecModes =
+      item.studioExecutionSpecModes === undefined
+        ? undefined
+        : parseRuntimeModes(item.studioExecutionSpecModes, isStudioMode);
     if (
-      (item.studioExecutionSpecs === undefined) !== (item.studioExecutionSpecSchemaVersion === undefined) ||
+      new Set([
+        item.studioExecutionSpecs === undefined,
+        item.studioExecutionSpecSchemaVersion === undefined,
+        item.studioExecutionSpecModes === undefined,
+      ]).size !== 1 ||
       (item.studioExecutionSpecSchemaVersion !== undefined &&
-        (item.studioExecutionSpecSchemaVersion !== 1 || !studioExecutionSpecs?.length))
+        (item.studioExecutionSpecSchemaVersion !== 1 ||
+          !studioExecutionSpecs?.length ||
+          !studioExecutionSpecModes ||
+          studioExecutionSpecModes.length !== (item.studioExecutionSpecModes as unknown[]).length ||
+          studioExecutionSpecs.length !== studioExecutionSpecModes.length ||
+          studioExecutionSpecs.some((spec) => !studioExecutionSpecModes.includes(spec.mode))))
     )
       throw new Error('Invalid Studio execution specification.');
     if (
@@ -620,6 +635,7 @@ function parseStudioModelCapabilities(value: unknown) {
     if (runnableModes) item.runnableModes = runnableModes;
     if (executionProfiles) item.executionProfiles = executionProfiles;
     if (studioExecutionSpecs) item.studioExecutionSpecs = studioExecutionSpecs;
+    if (studioExecutionSpecModes) item.studioExecutionSpecModes = studioExecutionSpecModes;
     if (item.studioExecutionSpecSchemaVersion === 1) item.studioExecutionSpecSchemaVersion = 1;
     return [item as unknown as StudioModelProfile];
   });

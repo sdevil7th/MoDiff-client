@@ -1372,6 +1372,15 @@ test('backend execution specs materialize exact image and video recipes with sea
     edges: videoEdgeRows,
     bindings: videoBindingRows,
   };
+  const wanT2vSpec = {
+    ...ti2vSpec,
+    id: 'wan-21-t2v-1.3b:text-to-video:v1',
+    modelType: 'WanVideoPipeline',
+    executionProfileId: 'wan-text-to-video:direct',
+    pipelineClass: 'WanPipeline',
+    defaultRepo: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
+    contentHash: 'studio-spec-v1-10c9a3f2',
+  };
   const i2vRoleRows = [...videoRoleRows, ['loadImage', 'modules.Image.Load', -520, 300]];
   const i2vEdgeRows = [...videoEdgeRows, ['loadImage', 'image', 'wanGenerate', 'reference_images']];
   const i2vBindingRows = [
@@ -1430,6 +1439,7 @@ test('backend execution specs materialize exact image and video recipes with sea
     runnableModes: [spec.mode],
     executionProfiles: [profile(spec)],
     studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecModes: [spec.mode],
     studioExecutionSpecs: [spec],
   });
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
@@ -1441,6 +1451,8 @@ test('backend execution specs materialize exact image and video recipes with sea
     ...i2vRoleRows.filter(
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...videoRoleRows].some(([id]) => id === role),
     ),
+    ['loadVideo', 'modules.Video.Load', -520, 260],
+    ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
   ];
   const paramsByRole = Object.fromEntries(registryRoleRows.map(([role]) => [role, {}]));
   for (const [role, param] of [
@@ -1457,11 +1469,17 @@ test('backend execution specs materialize exact image and video recipes with sea
     ...editEdgeRows,
     ...videoEdgeRows,
     ...i2vEdgeRows,
+    ['loadVideo', 'video', 'normalizeVideo', 'video'],
+    ['normalizeVideo', 'output', 'wanGenerate', 'video'],
   ]) {
     const type = sourceHandle;
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
     paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
   }
+  paramsByRole.loadVideo.file = scalar();
+  paramsByRole.normalizeVideo.width = scalar();
+  paramsByRole.normalizeVideo.height = scalar();
+  paramsByRole.normalizeVideo.num_frames = scalar();
   paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
   const registry = Object.fromEntries(
     registryRoleRows.map(([role, nodeKey]) => {
@@ -1511,6 +1529,20 @@ test('backend execution specs materialize exact image and video recipes with sea
         capability(reduxSpec),
         capability(i2vSpec),
         capability(ti2vSpec),
+        {
+          ...capability(wanT2vSpec),
+          modes: ['text_to_video', 'video_to_video', 'video_color_edit'],
+          runnableModes: ['text_to_video', 'video_to_video', 'video_color_edit'],
+          executionProfiles: [
+            profile(wanT2vSpec),
+            {
+              ...profile(wanT2vSpec),
+              id: 'wan-video-to-video:direct',
+              modes: ['video_to_video', 'video_color_edit'],
+              pipeline_class: 'WanVideoToVideoPipeline',
+            },
+          ],
+        },
       ],
       studioModelCapabilitiesAuthoritative: true,
       studioExecutionSpecInvalid: false,
@@ -1798,6 +1830,42 @@ test('backend execution specs materialize exact image and video recipes with sea
       .nodes.find((item) => item.id === cpuTi2vBinding.nodes.diffusersRecipe).data.params;
     assert.equal(cpuTi2vRecipe.attention_backend.value, 'auto');
     assert.equal(cpuTi2vRecipe.attention_components.value, '');
+
+    const wanT2vForm = {
+      ...ti2vForm,
+      modelType: 'WanVideoPipeline',
+      width: 832,
+      height: 480,
+      numFrames: 81,
+      fps: 15,
+      steps: 50,
+      guidanceScale: 5,
+    };
+    studioStoreModule.useStudioStore.setState({ form: wanT2vForm });
+    await graphBridge.createOrUpdateStudioGraph(wanT2vForm);
+    const wanT2vBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(wanT2vBinding.executionSpec.id, wanT2vSpec.id);
+    assert.equal(wanT2vBinding.executionSpec.contentHash, wanT2vSpec.contentHash);
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === wanT2vBinding.nodes.wanPipeline).data
+        .params.pipeline_class.value,
+      'WanPipeline',
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanT2vForm), null);
+
+    const wanV2vForm = { ...wanT2vForm, mode: 'video_to_video', sourceVideo: '@data/videos/source.mp4' };
+    studioStoreModule.useStudioStore.setState({ form: wanV2vForm });
+    await graphBridge.createOrUpdateStudioGraph(wanV2vForm);
+    const wanV2vBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(wanV2vBinding.executionSpec, undefined, 'an unclaimed sibling mode remains on the legacy graph path');
+    assert.ok(wanV2vBinding.nodes.loadVideo);
+    assert.ok(wanV2vBinding.nodes.normalizeVideo);
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === wanV2vBinding.nodes.wanPipeline).data
+        .params.pipeline_class.value,
+      'WanVideoToVideoPipeline',
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanV2vForm), null);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [

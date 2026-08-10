@@ -728,6 +728,7 @@ export type StudioModelProfile = {
   executionProfiles?: StudioExecutionProfile[];
   studioExecutionSpecs?: StudioExecutionSpec[];
   studioExecutionSpecSchemaVersion?: 1;
+  studioExecutionSpecModes?: StudioMode[];
   runnableModes?: StudioMode[];
   downloadFiles?: string[];
   inputContracts?: Partial<Record<StudioMode, StudioModeRequirement>>;

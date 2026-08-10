@@ -192,6 +192,12 @@ Studio graph updates follow this rule:
 7. Apply dynamic field actions and wait for graph finalization.
 8. Store the new binding and synchronize form values.
 
+Capabilities with exact execution specifications also declare
+`studioExecutionSpecModes`. The client requires that list to match the received
+specification modes exactly. A declared mode with a missing or malformed recipe
+blocks instead of falling back; an undeclared sibling mode continues through the
+legacy reconciliation path until its own exact recipe is migrated.
+
 Repeated reconciliation with the same inputs must be idempotent. If a user changes a managed graph until its binding diverges, clear the binding and treat it as a custom graph rather than silently rebuilding over their work.
 
 For a migrated pair, the validated backend specification owns the loader node,
