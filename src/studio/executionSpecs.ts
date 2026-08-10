@@ -22,7 +22,7 @@ const SPEC_ROLES = new Set<StudioGraphRole>(
   ) as StudioGraphRole[],
 );
 const BINDING_SOURCES = new Set(
-  'quantizationMode|quantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|empty|true|transformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|outputType|maxSequenceLength|controlImage|referenceImages|conditioningScale|alphaMode|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson'.split(
+  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|empty|true|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|outputType|maxSequenceLength|controlImage|referenceImages|conditioningScale|alphaMode|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson'.split(
     '|',
   ),
 );

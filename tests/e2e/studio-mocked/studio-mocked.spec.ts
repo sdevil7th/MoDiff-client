@@ -309,6 +309,7 @@ const mockExecutionProfileIds: Record<string, string> = {
   'WanVACEPipeline:video_inpaint': 'wan-vace:direct',
   'WanVACEPipeline:video_outpaint': 'wan-vace:direct',
   'WanVACEPipeline:control_to_video': 'wan-vace:direct',
+  'WanImageToVideoPipeline:image_to_video': 'wan-22-image-to-video:direct',
   'WanTI2VPipeline:text_to_video': 'wan-22-ti2v-5b:direct',
   'AceStepAudioPipeline:text_to_audio': 'ace-step-audio:direct',
   'AceStepAudioPipeline:audio_variation': 'ace-step-audio:direct',
@@ -536,8 +537,8 @@ function mockWanTi2vExecutionCapability() {
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
     ['wanPipeline', 'modules.DiffusersVideo.LoadPipeline', -520, -80],
-    ['wanGenerate', 'modules.DiffusersVideo.Generate', -120, -80],
-    ['videoExport', 'modules.Video.Export', 980, -80],
+    ['wanGenerate', 'modules.DiffusersVideo.Generate', 220, -80],
+    ['videoExport', 'modules.Video.Export', 640, -80],
   ] as const;
   const edges = [
     ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
@@ -605,7 +606,7 @@ function mockWanTi2vExecutionCapability() {
     bindings,
     autoFields: mockFluxAutoFields,
     actions: [],
-    contentHash: 'studio-spec-v1-bfde649f',
+    contentHash: 'studio-spec-v1-da22e734',
   };
   return {
     modelType: spec.modelType,
@@ -625,6 +626,57 @@ function mockWanTi2vExecutionCapability() {
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecs: [spec],
+  };
+}
+
+function mockWanI2vExecutionCapability() {
+  const base = mockWanTi2vExecutionCapability();
+  const baseSpec = base.studioExecutionSpecs[0];
+  const spec = {
+    ...baseSpec,
+    id: 'wan-22-i2v-a14b:image-to-video:v1',
+    modelType: 'WanImageToVideoPipeline',
+    mode: 'image_to_video',
+    executionProfileId: 'wan-22-image-to-video:direct',
+    pipelineClass: 'WanImageToVideoPipeline',
+    defaultRepo: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers',
+    roles: [...baseSpec.roles, ['loadImage', 'modules.Image.Load', -520, 300] as const],
+    edges: [...baseSpec.edges, ['loadImage', 'image', 'wanGenerate', 'reference_images'] as const],
+    bindings: [
+      ...baseSpec.bindings
+        .filter(([role, param]) => role !== 'wanGenerate' || param !== 'scheduler_flow_shift')
+        .map(([role, param, source]) => [
+          role,
+          param,
+          role === 'diffusersQuantization' && param === 'components'
+            ? 'dualQuantizedComponents'
+            : role === 'diffusersRecipe' && param === 'attention_components'
+              ? 'dualTransformer'
+              : role === 'diffusersRecipe' && param === 'vae_tiling'
+                ? 'true'
+                : source,
+        ]),
+      ['loadImage', 'file', 'referenceImages'],
+      ['loadImage', 'alpha_channel', 'alphaMode'],
+    ],
+    contentHash: 'studio-spec-v1-fed2321d',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    modes: [spec.mode],
+    runnableModes: [spec.mode],
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: [spec.mode],
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+      },
+    ],
     studioExecutionSpecs: [spec],
   };
 }
@@ -656,7 +708,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     const executionPath =
       modelType === 'WanVACEPipeline'
         ? 'direct-wan-vace'
-        : modelType === 'WanTI2VPipeline'
+        : modelType === 'WanTI2VPipeline' || modelType === 'WanImageToVideoPipeline'
           ? 'direct-diffusers-video'
           : modelType === 'AceStepAudioPipeline'
             ? 'direct-diffusers-audio'
@@ -6212,6 +6264,19 @@ test('Wan A14B resident I2V templates retain VAE tiling and configure both nativ
   mockIncludeOutpaintNode = true;
   await ensureFrontend();
   await installMockRoutes(page);
+  const capability = mockWanI2vExecutionCapability();
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: [capability],
+        studioExecutionSpecs: capability.studioExecutionSpecs,
+      }),
+    });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
 
@@ -6235,22 +6300,43 @@ test('Wan A14B resident I2V templates retain VAE tiling and configure both nativ
         const pipeline = current.flow.nodes.find(
           (node) => node.module === 'modules.DiffusersVideo' && node.action === 'LoadPipeline',
         );
+        const image = current.flow.nodes.find((node) => node.module === 'modules.Image' && node.action === 'Load');
+        const generate = current.flow.nodes.find(
+          (node) => node.module === 'modules.DiffusersVideo' && node.action === 'Generate',
+        );
         return {
+          receipt: current.studio.graphBinding?.executionSpec,
           pipelineClass: pipeline?.params?.pipeline_class?.value,
           offloadMode: recipe?.params?.offload_mode?.value,
           vaeTiling: recipe?.params?.vae_tiling?.value,
           attentionBackend: recipe?.params?.attention_backend?.value,
           attentionComponents: recipe?.params?.attention_components?.value,
+          referenceImages: image?.params?.file?.value,
+          referenceEdge: current.flow.edges.some(
+            (edge) =>
+              edge.source === image?.id &&
+              edge.sourceHandle === 'image' &&
+              edge.target === generate?.id &&
+              edge.targetHandle === 'reference_images',
+          ),
         };
       },
       { timeout: 10_000 },
     )
     .toEqual({
+      receipt: {
+        schemaVersion: 1,
+        id: 'wan-22-i2v-a14b:image-to-video:v1',
+        contentHash: 'studio-spec-v1-fed2321d',
+        executionProfileId: 'wan-22-image-to-video:direct',
+      },
       pipelineClass: 'WanImageToVideoPipeline',
       offloadMode: 'none',
       vaeTiling: true,
       attentionBackend: '_native_flash',
       attentionComponents: 'transformer,transformer_2',
+      referenceImages: ['mock-rally-keyframe.webp'],
+      referenceEdge: true,
     });
 });
 
@@ -6608,6 +6694,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
     mockFluxExecutionCapability('FluxDepthPipeline'),
     mockFluxExecutionCapability('FluxCannyPipeline'),
     mockFluxExecutionCapability('FluxReduxPipeline'),
+    mockWanI2vExecutionCapability(),
     mockWanTi2vExecutionCapability(),
   ];
   await page.unroute('**/model_capabilities**');
@@ -6648,7 +6735,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(7);
+    .toHaveLength(8);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -6859,7 +6946,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   expect(ti2v.receipt).toEqual({
     schemaVersion: 1,
     id: 'wan-22-ti2v-5b:text-to-video:v1',
-    contentHash: 'studio-spec-v1-bfde649f',
+    contentHash: 'studio-spec-v1-da22e734',
     executionProfileId: 'wan-22-ti2v-5b:direct',
   });
   expect(ti2v.nodes.wanPipeline).toBeTruthy();

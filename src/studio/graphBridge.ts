@@ -38,7 +38,6 @@ import {
   FLUX_STUDIO_MODEL_TYPES,
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
-  WAN_22_I2V_A14B_REPO,
   WAN_T2V_1_3B_REPO,
   WAN_VACE_REVISION,
 } from './modelProfiles';
@@ -3155,7 +3154,9 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   values.autoOffload = values.offloadMode !== 'none';
   values.nativeFlashAttention =
     candidate?.attentionBackend ?? (form.device.startsWith('cuda') ? '_native_flash' : 'auto');
-  values.transformer = 'transformer';
+  values.transformer = values.nativeFlashAttention === '_native_flash' ? 'transformer' : '';
+  values.dualTransformer = values.nativeFlashAttention === '_native_flash' ? 'transformer,transformer_2' : '';
+  values.dualQuantizedComponents = candidate?.quantizedComponents ?? ['transformer', 'transformer_2'];
   values.videoVaeTiling =
     form.resourceMode !== 'expert' ||
     values.offloadMode !== 'none' ||
@@ -3339,48 +3340,35 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
 
   if (isVideoMode(form.mode)) {
     const preservationWanMode = form.modelType === 'WanVideoPipeline';
-    const qualityWanImageMode = form.modelType === 'WanImageToVideoPipeline';
     const wanTextToVideoMode = preservationWanMode && form.mode === 'text_to_video';
     const pipelineClass =
       autoCandidate?.pipelineClass ??
       (form.modelType === 'LTXVideoPipeline'
         ? 'LTXConditionPipeline'
-        : qualityWanImageMode
-          ? 'WanImageToVideoPipeline'
-          : preservationWanMode
-            ? wanTextToVideoMode
-              ? 'WanPipeline'
-              : 'WanVideoToVideoPipeline'
-            : 'WanVACEPipeline');
+        : preservationWanMode
+          ? wanTextToVideoMode
+            ? 'WanPipeline'
+            : 'WanVideoToVideoPipeline'
+          : 'WanVACEPipeline');
     const resolvedArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
       autoCandidate?.installTarget?.repo ??
       autoCandidate?.modelRepo ??
-      (qualityWanImageMode ? WAN_22_I2V_A14B_REPO : preservationWanMode ? WAN_T2V_1_3B_REPO : capability.defaultRepo);
+      (preservationWanMode ? WAN_T2V_1_3B_REPO : capability.defaultRepo);
     const resolvedOffloadMode = autoCandidate?.offloadMode ?? form.offloadMode;
     const decodedVideoPixels = form.width * form.height * form.numFrames;
     const needsVaeTiling =
-      qualityWanImageMode ||
-      form.resourceMode !== 'expert' ||
-      resolvedOffloadMode !== 'none' ||
-      decodedVideoPixels > 40_000_000;
+      form.resourceMode !== 'expert' || resolvedOffloadMode !== 'none' || decodedVideoPixels > 40_000_000;
     const supportsNativeFlash =
-      form.device.startsWith('cuda') &&
-      (pipelineClass === 'WanImageToVideoPipeline' ||
-        pipelineClass === 'WanPipeline' ||
-        pipelineClass === 'Wan22Pipeline');
+      form.device.startsWith('cuda') && (pipelineClass === 'WanPipeline' || pipelineClass === 'Wan22Pipeline');
 
     setParamIfPresent(
       diffusersQuantization,
       ['backend'],
       form.resourceMode === 'expert' ? form.quantizationMode : 'none',
     );
-    setParamIfPresent(
-      diffusersQuantization,
-      ['components'],
-      pipelineClass === 'WanImageToVideoPipeline' ? ['transformer', 'transformer_2'] : ['transformer'],
-    );
+    setParamIfPresent(diffusersQuantization, ['components'], ['transformer']);
     setParamIfPresent(diffusersQuantization, ['dtype'], autoCandidate?.dtype ?? form.dtype);
     setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], resolvedOffloadMode);
@@ -3393,15 +3381,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       autoCandidate?.attentionBackend ??
       (pipelineClass === 'LTXConditionPipeline' ? '_native_math' : supportsNativeFlash ? '_native_flash' : 'auto');
     setParamIfPresent(diffusersRecipe, ['attention_backend'], attentionBackend);
-    setParamIfPresent(
-      diffusersRecipe,
-      ['attention_components'],
-      supportsNativeFlash
-        ? pipelineClass === 'WanImageToVideoPipeline'
-          ? 'transformer,transformer_2'
-          : 'transformer'
-        : '',
-    );
+    setParamIfPresent(diffusersRecipe, ['attention_components'], supportsNativeFlash ? 'transformer' : '');
     setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
     // Decode activation pressure can exceed sampling pressure by tens of GiB.
     // Wan I2V also VAE-encodes an 81-frame padded conditioning tensor before

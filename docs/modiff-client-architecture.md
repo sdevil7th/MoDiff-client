@@ -159,7 +159,7 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 
 - `types.ts`: forms, modes, model profiles, graph bindings, tabs, outputs, templates, and run context
 - `modelProfiles.ts`: catalog presentation, form defaults, artifact notes, and legacy capability fallback; it must not select nodes or loaders for migrated pairs
-- `executionSpecs.ts`: strict backend recipe parsing and runtime receipt construction; Flux Schnell, Dev, and Krea text-to-image, Flux Depth and Canny control-image, Flux Redux edit-image, and Wan 2.2 TI2V 5B text-to-video use this path
+- `executionSpecs.ts`: strict backend recipe parsing and runtime receipt construction; Flux Schnell, Dev, and Krea text-to-image, Flux Depth and Canny control-image, Flux Redux edit-image, Wan 2.2 I2V A14B image-to-video, and Wan 2.2 TI2V 5B text-to-video use this path
 - `templates.ts`: curated workflow recipes and Gallery metadata
 - `graphBridge.ts`: create/reconcile a managed graph from a Studio form
 - `resourcePlanner.ts` and `autoResource.ts`: form normalization and the versioned backend Auto plan contract
@@ -206,10 +206,10 @@ control-image source, control generator, preview route, and
 likewise receives its loader, reference-image source, edit generator, preview
 route, and `FluxReduxPipeline` identity from the specification.
 `modelProfiles.ts` retains presentation and form defaults only for all migrated
-pairs. Wan 2.2 TI2V 5B text-to-video also uses a backend-owned five-node video
-recipe; its native-flash eligibility, VAE tiling, scheduler flow shift, and
-export frame rate are declarative bindings rather than model-name graph
-branches.
+pairs. Wan 2.2 I2V A14B and TI2V 5B also use backend-owned video recipes. I2V
+adds the generic image-loader route and dual-transformer bindings, while TI2V
+declares scheduler flow shift; native-flash eligibility, VAE tiling, and export
+frame rate are declarative bindings rather than model-name graph branches.
 
 Managed graph finalization proofs are consistency checks, not authorization tokens. The current proof schema binds the resolved graph shape, authoritative field schemas, and the sorted source/target handle specification. Restoring a proof also revalidates the exact live managed-edge set and executable dynamic field groups; a preserved edge ID with changed endpoints, an incomplete dynamic route, or a recomputed checksum over a malformed contract remains non-runnable until reconciliation produces a fresh proof.
 

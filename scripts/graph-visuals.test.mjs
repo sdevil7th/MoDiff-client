@@ -1125,7 +1125,7 @@ test('blueprints cannot copy managed ownership and explicit binding membership s
   assert.equal(graphBridge.inspectStudioGraphBindingDivergence()?.kind, 'missing_managed_node');
 });
 
-test('backend execution specs materialize Flux variants with one topology and sealed receipts', async () => {
+test('backend execution specs materialize exact image and video recipes with sealed receipts', async () => {
   const roleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1304,8 +1304,8 @@ test('backend execution specs materialize Flux variants with one topology and se
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
     ['wanPipeline', 'modules.DiffusersVideo.LoadPipeline', -520, -80],
-    ['wanGenerate', 'modules.DiffusersVideo.Generate', -120, -80],
-    ['videoExport', 'modules.Video.Export', 980, -80],
+    ['wanGenerate', 'modules.DiffusersVideo.Generate', 220, -80],
+    ['videoExport', 'modules.Video.Export', 640, -80],
   ];
   const videoEdgeRows = [
     ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
@@ -1361,7 +1361,7 @@ test('backend execution specs materialize Flux variants with one topology and se
       'WanTI2VPipeline',
       'wan-22-ti2v-5b:direct',
       'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
-      'studio-spec-v1-bfde649f',
+      'studio-spec-v1-da22e734',
     ),
     id: 'wan-22-ti2v-5b:text-to-video:v1',
     mode: 'text_to_video',
@@ -1371,6 +1371,41 @@ test('backend execution specs materialize Flux variants with one topology and se
     roles: videoRoleRows,
     edges: videoEdgeRows,
     bindings: videoBindingRows,
+  };
+  const i2vRoleRows = [...videoRoleRows, ['loadImage', 'modules.Image.Load', -520, 300]];
+  const i2vEdgeRows = [...videoEdgeRows, ['loadImage', 'image', 'wanGenerate', 'reference_images']];
+  const i2vBindingRows = [
+    ...videoBindingRows
+      .filter(([role, param]) => role !== 'wanGenerate' || param !== 'scheduler_flow_shift')
+      .map(([role, param, source]) => [
+        role,
+        param,
+        role === 'diffusersQuantization' && param === 'components'
+          ? 'dualQuantizedComponents'
+          : role === 'diffusersRecipe' && param === 'attention_components'
+            ? 'dualTransformer'
+            : role === 'diffusersRecipe' && param === 'vae_tiling'
+              ? 'true'
+              : source,
+      ]),
+    ['loadImage', 'file', 'referenceImages'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+  ];
+  const i2vSpec = {
+    ...makeSpec(
+      'WanImageToVideoPipeline',
+      'wan-22-image-to-video:direct',
+      'Wan-AI/Wan2.2-I2V-A14B-Diffusers',
+      'studio-spec-v1-fed2321d',
+    ),
+    id: 'wan-22-i2v-a14b:image-to-video:v1',
+    mode: 'image_to_video',
+    executionPath: 'direct-diffusers-video',
+    loaderModule: 'modules.DiffusersVideo',
+    pipelineClass: 'WanImageToVideoPipeline',
+    roles: i2vRoleRows,
+    edges: i2vEdgeRows,
+    bindings: i2vBindingRows,
   };
   const profile = (spec) => ({
     id: spec.executionProfileId,
@@ -1403,15 +1438,25 @@ test('backend execution specs materialize Flux variants with one topology and se
     ...depthRoleRows.filter(([role]) => !roleRows.some(([id]) => id === role)),
     ...editRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows].some(([id]) => id === role)),
     ...videoRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows].some(([id]) => id === role)),
+    ...i2vRoleRows.filter(
+      ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...videoRoleRows].some(([id]) => id === role),
+    ),
   ];
   const paramsByRole = Object.fromEntries(registryRoleRows.map(([role]) => [role, {}]));
-  for (const [role, param] of [...bindingRows, ...depthBindingRows, ...editBindingRows, ...videoBindingRows])
+  for (const [role, param] of [
+    ...bindingRows,
+    ...depthBindingRows,
+    ...editBindingRows,
+    ...videoBindingRows,
+    ...i2vBindingRows,
+  ])
     paramsByRole[role][param] = scalar();
   for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [
     ...edgeRows,
     ...depthEdgeRows,
     ...editEdgeRows,
     ...videoEdgeRows,
+    ...i2vEdgeRows,
   ]) {
     const type = sourceHandle;
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
@@ -1464,6 +1509,7 @@ test('backend execution specs materialize Flux variants with one topology and se
         capability(depthSpec),
         capability(cannySpec),
         capability(reduxSpec),
+        capability(i2vSpec),
         capability(ti2vSpec),
       ],
       studioModelCapabilitiesAuthoritative: true,
@@ -1648,6 +1694,56 @@ test('backend execution specs materialize Flux variants with one topology and se
       reduxForm.conditioningScale,
     );
 
+    const i2vForm = {
+      ...baseForm,
+      modelType: 'WanImageToVideoPipeline',
+      mode: 'image_to_video',
+      device: 'cuda:0',
+      offloadMode: 'none',
+      width: 832,
+      height: 480,
+      numFrames: 81,
+      fps: 16,
+      steps: 40,
+      guidanceScale: 3.5,
+      guidanceScale2: 3.5,
+      conditioningScale: 1,
+      referenceImages: ['opening.png'],
+      alphaMode: 'remove alpha',
+      attentionKwargsJson: '',
+    };
+    studioStoreModule.useStudioStore.setState({ form: i2vForm });
+    await graphBridge.createOrUpdateStudioGraph(i2vForm);
+    const i2vBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(i2vBinding.executionSpec.id, i2vSpec.id);
+    assert.equal(i2vBinding.executionSpec.contentHash, i2vSpec.contentHash);
+    assert.deepEqual(
+      topology(i2vBinding),
+      i2vEdgeRows
+        .map(([source, sourceHandle, target, targetHandle]) => [source, sourceHandle, target, targetHandle])
+        .sort(),
+    );
+    const i2vNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const i2vQuantization = i2vNodes.find((item) => item.id === i2vBinding.nodes.diffusersQuantization).data.params;
+    const i2vRecipe = i2vNodes.find((item) => item.id === i2vBinding.nodes.diffusersRecipe).data.params;
+    const i2vPipeline = i2vNodes.find((item) => item.id === i2vBinding.nodes.wanPipeline).data.params;
+    const i2vGenerate = i2vNodes.find((item) => item.id === i2vBinding.nodes.wanGenerate).data.params;
+    const i2vImage = i2vNodes.find((item) => item.id === i2vBinding.nodes.loadImage).data.params;
+    assert.deepEqual(i2vQuantization.components.value, ['transformer', 'transformer_2']);
+    assert.equal(i2vRecipe.attention_backend.value, '_native_flash');
+    assert.equal(i2vRecipe.attention_components.value, 'transformer,transformer_2');
+    assert.equal(i2vRecipe.vae_tiling.value, true);
+    assert.equal(i2vPipeline.pipeline_class.value, 'WanImageToVideoPipeline');
+    assert.deepEqual(i2vPipeline.model_id.value, {
+      source: 'hub',
+      value: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers',
+    });
+    assert.deepEqual(i2vImage.file.value, ['opening.png']);
+    assert.equal(i2vImage.alpha_channel.value, 'remove alpha');
+    assert.equal(i2vGenerate.guidance_scale_2.value, 3.5);
+    assert.equal(i2vGenerate.use_guidance_scale_2.value, true);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(i2vForm), null);
+
     const ti2vForm = {
       ...baseForm,
       modelType: 'WanTI2VPipeline',
@@ -1689,7 +1785,19 @@ test('backend execution specs materialize Flux variants with one topology and se
     assert.equal(ti2vGenerate.scheduler_flow_shift.value, 8);
     assert.equal(ti2vGenerate.use_guidance_scale_2.value, false);
     assert.equal(ti2vNodes.find((item) => item.id === ti2vBinding.nodes.videoExport).data.params.fps.value, 24);
+    assert.deepEqual(ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanGenerate).position, { x: 220, y: -80 });
+    assert.deepEqual(ti2vNodes.find((item) => item.id === ti2vBinding.nodes.videoExport).position, { x: 640, y: -80 });
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(ti2vForm), null);
+
+    const cpuTi2vForm = { ...ti2vForm, device: 'cpu:0' };
+    studioStoreModule.useStudioStore.setState({ form: cpuTi2vForm });
+    await graphBridge.createOrUpdateStudioGraph(cpuTi2vForm);
+    const cpuTi2vBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    const cpuTi2vRecipe = flowStoreModule.useFlowStore
+      .getState()
+      .nodes.find((item) => item.id === cpuTi2vBinding.nodes.diffusersRecipe).data.params;
+    assert.equal(cpuTi2vRecipe.attention_backend.value, 'auto');
+    assert.equal(cpuTi2vRecipe.attention_components.value, '');
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
@@ -1713,6 +1821,7 @@ test('backend execution specs materialize Flux variants with one topology and se
           capability(depthSpec),
           capability(cannySpec),
           capability(reduxSpec),
+          capability(i2vSpec),
           capability(ti2vSpec),
         ],
       });
@@ -1736,6 +1845,7 @@ test('backend execution specs materialize Flux variants with one topology and se
         capability(depthSpec),
         capability(cannySpec),
         capability(reduxSpec),
+        capability(i2vSpec),
         capability(ti2vSpec),
       ],
     });
