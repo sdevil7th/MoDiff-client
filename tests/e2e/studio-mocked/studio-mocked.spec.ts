@@ -389,14 +389,19 @@ const mockFluxAutoFields = [
   'channelsLast',
 ] as const;
 
-function mockFluxExecutionCapability(modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline') {
+function mockFluxExecutionCapability(modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline' | 'FluxKreaPipeline') {
   const dev = modelType === 'FluxDevPipeline';
-  const executionProfileId = dev ? 'flux-dev:direct' : 'flux-schnell:direct';
-  const defaultRepo = dev ? 'black-forest-labs/FLUX.1-dev' : 'black-forest-labs/FLUX.1-schnell';
+  const krea = modelType === 'FluxKreaPipeline';
+  const executionProfileId = dev ? 'flux-dev:direct' : krea ? 'flux-krea:direct' : 'flux-schnell:direct';
+  const defaultRepo = dev
+    ? 'black-forest-labs/FLUX.1-dev'
+    : krea
+      ? 'black-forest-labs/FLUX.1-Krea-dev'
+      : 'black-forest-labs/FLUX.1-schnell';
   const spec = {
     schemaVersion: 1,
     canonicalizationVersion: 1,
-    id: dev ? 'flux-dev:text-to-image:v1' : 'flux-schnell:text-to-image:v1',
+    id: dev ? 'flux-dev:text-to-image:v1' : krea ? 'flux-krea:text-to-image:v1' : 'flux-schnell:text-to-image:v1',
     modelType,
     mode: 'text_to_image',
     executionProfileId,
@@ -410,7 +415,7 @@ function mockFluxExecutionCapability(modelType: 'FluxSchnellPipeline' | 'FluxDev
     bindings: mockFluxExecutionBindings,
     autoFields: mockFluxAutoFields,
     actions: [],
-    contentHash: dev ? 'studio-spec-v1-d5ee399d' : 'studio-spec-v1-9cd1abb5',
+    contentHash: dev ? 'studio-spec-v1-d5ee399d' : krea ? 'studio-spec-v1-34a1abeb' : 'studio-spec-v1-9cd1abb5',
   };
   return {
     modelType,
@@ -6361,6 +6366,7 @@ test('backend Studio execution specs keep Flux model switches on one exact graph
   mockInstalledRepos.clear();
   mockInstalledRepos.add('black-forest-labs/FLUX.1-schnell');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-dev');
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-Krea-dev');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -6368,6 +6374,7 @@ test('backend Studio execution specs keep Flux model switches on one exact graph
   const capabilities = [
     mockFluxExecutionCapability('FluxSchnellPipeline'),
     mockFluxExecutionCapability('FluxDevPipeline'),
+    mockFluxExecutionCapability('FluxKreaPipeline'),
   ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
@@ -6407,7 +6414,7 @@ test('backend Studio execution specs keep Flux model switches on one exact graph
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(2);
+    .toHaveLength(3);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -6429,6 +6436,27 @@ test('backend Studio execution specs keep Flux model switches on one exact graph
     id: 'flux-schnell:text-to-image:v1',
     contentHash: 'studio-spec-v1-9cd1abb5',
     executionProfileId: 'flux-schnell:direct',
+  });
+
+  const krea = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ modelType: 'FluxKreaPipeline' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    return {
+      receipt: state.studio.graphBinding?.executionSpec,
+      nodes: state.studio.graphBinding?.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+    };
+  });
+  expect(krea).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'flux-krea:text-to-image:v1',
+      contentHash: 'studio-spec-v1-34a1abeb',
+      executionProfileId: 'flux-krea:direct',
+    },
+    nodes: schnell.nodes,
+    edgeShape: schnell.edgeShape,
   });
 
   const dev = await page.evaluate(async () => {

@@ -1192,7 +1192,7 @@ test('backend execution specs materialize Flux variants with one topology and se
   const makeSpec = (modelType, profileId, repo, contentHash) => ({
     schemaVersion: 1,
     canonicalizationVersion: 1,
-    id: `${profileId}:text-to-image:v1`,
+    id: `${profileId.split(':')[0]}:text-to-image:v1`,
     modelType,
     mode: 'text_to_image',
     executionProfileId: profileId,
@@ -1219,6 +1219,12 @@ test('backend execution specs materialize Flux variants with one topology and se
     'flux-dev:direct',
     'black-forest-labs/FLUX.1-dev',
     'studio-spec-v1-d5ee399d',
+  );
+  const kreaSpec = makeSpec(
+    'FluxKreaPipeline',
+    'flux-krea:direct',
+    'black-forest-labs/FLUX.1-Krea-dev',
+    'studio-spec-v1-34a1abeb',
   );
   const profile = (spec) => ({
     id: spec.executionProfileId,
@@ -1287,7 +1293,7 @@ test('backend execution specs materialize Flux variants with one topology and se
   try {
     nodesStoreModule.useNodesStore.setState({
       nodesRegistry: registry,
-      studioModelCapabilities: [capability(schnellSpec), capability(devSpec)],
+      studioModelCapabilities: [capability(schnellSpec), capability(devSpec), capability(kreaSpec)],
       studioModelCapabilitiesAuthoritative: true,
       studioExecutionSpecInvalid: false,
     });
@@ -1312,6 +1318,20 @@ test('backend execution specs materialize Flux variants with one topology and se
       .nodes.find((item) => item.id === schnellBinding.nodes.diffusersImagePipeline);
     assert.equal(schnellPipeline.data.params.model_id.value.value, schnellSpec.defaultRepo);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(baseForm), null);
+
+    const kreaForm = { ...baseForm, modelType: 'FluxKreaPipeline', steps: 24, guidanceScale: 3.5 };
+    studioStoreModule.useStudioStore.setState({ form: kreaForm });
+    await graphBridge.createOrUpdateStudioGraph(kreaForm);
+    const kreaBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.deepEqual(kreaBinding.nodes, schnellBinding.nodes);
+    assert.deepEqual(topology(kreaBinding), schnellTopology);
+    assert.equal(kreaBinding.executionSpec.id, kreaSpec.id);
+    assert.equal(kreaBinding.executionSpec.contentHash, kreaSpec.contentHash);
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === kreaBinding.nodes.diffusersImagePipeline)
+        .data.params.model_id.value.value,
+      kreaSpec.defaultRepo,
+    );
 
     const devForm = { ...baseForm, modelType: 'FluxDevPipeline', steps: 20, guidanceScale: 3.5 };
     studioStoreModule.useStudioStore.setState({ form: devForm });
@@ -1388,7 +1408,7 @@ test('backend execution specs materialize Flux variants with one topology and se
     ]) {
       const malformed = mutate(structuredClone(schnellSpec));
       nodesStoreModule.useNodesStore.setState({
-        studioModelCapabilities: [capability(malformed), capability(devSpec)],
+        studioModelCapabilities: [capability(malformed), capability(devSpec), capability(kreaSpec)],
       });
       await assert.rejects(
         () => graphBridge.createOrUpdateStudioGraph(baseForm),
@@ -1403,7 +1423,7 @@ test('backend execution specs materialize Flux variants with one topology and se
           module: 'modules.Unreviewed',
         },
       },
-      studioModelCapabilities: [capability(schnellSpec), capability(devSpec)],
+      studioModelCapabilities: [capability(schnellSpec), capability(devSpec), capability(kreaSpec)],
     });
     await assert.rejects(
       () => graphBridge.createOrUpdateStudioGraph(baseForm),

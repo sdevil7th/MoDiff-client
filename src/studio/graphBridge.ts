@@ -86,6 +86,12 @@ function executionSpecForBinding(binding: StudioGraphBinding): StudioExecutionSp
     : null;
 }
 
+function executionProfileForForm(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
+  const capability = useNodesStore.getState().studioModelCapabilities.find((item) => item.modelType === form.modelType);
+  const matches = capability?.executionProfiles?.filter((item) => item.modes.includes(form.mode)) ?? [];
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 function specRole(spec: StudioExecutionSpec | null | undefined, role: StudioGraphRole) {
   return spec?.roles.find((item) => item[0] === role);
 }
@@ -336,6 +342,8 @@ function hasDiffusersImageFacadeForMode(mode: StudioMode) {
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
   if (!('nodes' in form) && executionSpecForForm(form)) return true;
+  if (!('nodes' in form) && executionProfileForForm(form)?.backend_path === 'modules.DiffusersImage.LoadPipeline')
+    return true;
   if (isFluxModel(form.modelType)) return true;
   if (
     !('nodes' in form) &&
@@ -1455,8 +1463,7 @@ function seedValue(form: StudioFormState) {
   return { value: form.seed, isRandom: form.randomSeed };
 }
 
-function fluxPipelineClassFor(form: StudioFormState, candidatePipelineClass?: string) {
-  if (candidatePipelineClass) return candidatePipelineClass;
+function fluxPipelineClassFor(form: StudioFormState) {
   if (form.modelType === 'QwenImageModularPipeline') return 'QwenImagePipeline';
   if (form.modelType === 'QwenImageEditModularPipeline' && (form.mode === 'inpaint' || form.mode === 'outpaint')) {
     return 'QwenImageEditInpaintPipeline';
@@ -3479,13 +3486,15 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
     const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
     const pipelineClass =
-      isFluxModel(form.modelType) ||
+      autoCandidate?.pipelineClass ??
+      executionProfileForForm(form)?.pipeline_class ??
+      (isFluxModel(form.modelType) ||
       form.modelType === 'QwenImageModularPipeline' ||
       form.modelType === 'QwenImageEditModularPipeline'
-        ? fluxPipelineClassFor(form, autoCandidate?.pipelineClass)
+        ? fluxPipelineClassFor(form)
         : form.modelType === 'ZImageModularPipeline'
-          ? (autoCandidate?.pipelineClass ?? 'ZImagePipeline')
-          : autoCandidate?.pipelineClass;
+          ? 'ZImagePipeline'
+          : undefined);
     const imageDtype = autoPatch.dtype ?? form.dtype;
 
     setParamIfPresent(diffusersQuantization, ['backend'], autoQuantizationMode);
