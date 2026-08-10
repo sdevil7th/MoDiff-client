@@ -1266,6 +1266,40 @@ test('backend execution specs materialize Flux variants with one topology and se
     defaultRepo: 'black-forest-labs/FLUX.1-Canny-dev',
     contentHash: 'studio-spec-v1-82045f56',
   };
+  const editRoleRows = [
+    ...roleRows.slice(0, 3),
+    ['loadImage', 'modules.Image.Load', -520, 300],
+    ['diffusersImageEdit', 'modules.DiffusersImage.Edit', -120, -80],
+    roleRows[4],
+  ];
+  const editEdgeRows = [
+    ...edgeRows.slice(0, 2),
+    ['diffusersImagePipeline', 'pipeline', 'diffusersImageEdit', 'pipeline'],
+    ['loadImage', 'image', 'diffusersImageEdit', 'image'],
+    ['diffusersImageEdit', 'images', 'preview', 'image'],
+  ];
+  const editBindingRows = [
+    ...bindingRows.slice(0, 23),
+    ['loadImage', 'file', 'referenceImages'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ...bindingRows.slice(23, 31).map(([, param, source]) => ['diffusersImageEdit', param, source]),
+    ['diffusersImageEdit', 'reference_strength', 'conditioningScale'],
+    ...bindingRows.slice(31).map(([, param, source]) => ['diffusersImageEdit', param, source]),
+  ];
+  const reduxSpec = {
+    ...makeSpec(
+      'FluxReduxPipeline',
+      'flux-redux:direct',
+      'black-forest-labs/FLUX.1-Redux-dev',
+      'studio-spec-v1-18e2c4ac',
+    ),
+    id: 'flux-redux:edit-image:v1',
+    mode: 'edit_image',
+    pipelineClass: 'FluxReduxPipeline',
+    roles: editRoleRows,
+    edges: editEdgeRows,
+    bindings: editBindingRows,
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -1292,10 +1326,15 @@ test('backend execution specs materialize Flux variants with one topology and se
     studioExecutionSpecs: [spec],
   });
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
-  const registryRoleRows = [...roleRows, ...depthRoleRows.filter(([role]) => !roleRows.some(([id]) => id === role))];
+  const registryRoleRows = [
+    ...roleRows,
+    ...depthRoleRows.filter(([role]) => !roleRows.some(([id]) => id === role)),
+    ...editRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows].some(([id]) => id === role)),
+  ];
   const paramsByRole = Object.fromEntries(registryRoleRows.map(([role]) => [role, {}]));
-  for (const [role, param] of [...bindingRows, ...depthBindingRows]) paramsByRole[role][param] = scalar();
-  for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [...edgeRows, ...depthEdgeRows]) {
+  for (const [role, param] of [...bindingRows, ...depthBindingRows, ...editBindingRows])
+    paramsByRole[role][param] = scalar();
+  for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [...edgeRows, ...depthEdgeRows, ...editEdgeRows]) {
     const type = sourceHandle;
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
     paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
@@ -1346,6 +1385,7 @@ test('backend execution specs materialize Flux variants with one topology and se
         capability(kreaSpec),
         capability(depthSpec),
         capability(cannySpec),
+        capability(reduxSpec),
       ],
       studioModelCapabilitiesAuthoritative: true,
       studioExecutionSpecInvalid: false,
@@ -1495,6 +1535,40 @@ test('backend execution specs materialize Flux variants with one topology and se
       cannySpec.defaultRepo,
     );
 
+    const reduxForm = {
+      ...depthForm,
+      modelType: 'FluxReduxPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/redux.png'],
+      conditioningScale: 0.8,
+    };
+    studioStoreModule.useStudioStore.setState({ form: reduxForm });
+    await graphBridge.createOrUpdateStudioGraph(reduxForm);
+    const reduxBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(reduxBinding.executionSpec.id, reduxSpec.id);
+    assert.equal(reduxBinding.executionSpec.contentHash, reduxSpec.contentHash);
+    assert.equal(reduxBinding.nodes.diffusersImageControl, undefined);
+    assert.ok(reduxBinding.nodes.diffusersImageEdit);
+    assert.deepEqual(
+      topology(reduxBinding),
+      editEdgeRows
+        .map(([source, sourceHandle, target, targetHandle]) => [source, sourceHandle, target, targetHandle])
+        .sort(),
+    );
+    const reduxNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(
+      reduxNodes.find((item) => item.id === reduxBinding.nodes.diffusersImagePipeline).data.params.pipeline_class.value,
+      'FluxReduxPipeline',
+    );
+    assert.deepEqual(
+      reduxNodes.find((item) => item.id === reduxBinding.nodes.loadImage).data.params.file.value,
+      reduxForm.referenceImages,
+    );
+    assert.equal(
+      reduxNodes.find((item) => item.id === reduxBinding.nodes.diffusersImageEdit).data.params.reference_strength.value,
+      reduxForm.conditioningScale,
+    );
+
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
       (spec) => ({
@@ -1516,6 +1590,7 @@ test('backend execution specs materialize Flux variants with one topology and se
           capability(kreaSpec),
           capability(depthSpec),
           capability(cannySpec),
+          capability(reduxSpec),
         ],
       });
       await assert.rejects(
@@ -1537,6 +1612,7 @@ test('backend execution specs materialize Flux variants with one topology and se
         capability(kreaSpec),
         capability(depthSpec),
         capability(cannySpec),
+        capability(reduxSpec),
       ],
     });
     await assert.rejects(

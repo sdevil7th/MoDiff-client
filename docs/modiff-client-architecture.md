@@ -159,7 +159,7 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 
 - `types.ts`: forms, modes, model profiles, graph bindings, tabs, outputs, templates, and run context
 - `modelProfiles.ts`: catalog presentation, form defaults, artifact notes, and legacy capability fallback; it must not select nodes or loaders for migrated pairs
-- `executionSpecs.ts`: strict backend recipe parsing and runtime receipt construction; Flux Schnell, Dev, and Krea text-to-image plus Flux Depth and Canny control-image use this path
+- `executionSpecs.ts`: strict backend recipe parsing and runtime receipt construction; Flux Schnell, Dev, and Krea text-to-image, Flux Depth and Canny control-image, and Flux Redux edit-image use this path
 - `templates.ts`: curated workflow recipes and Gallery metadata
 - `graphBridge.ts`: create/reconcile a managed graph from a Studio form
 - `resourcePlanner.ts` and `autoResource.ts`: form normalization and the versioned backend Auto plan contract
@@ -202,8 +202,11 @@ Krea text-to-image is the first P0.3e migration: its direct image facade and
 `FluxPipeline` identity now come from the backend profile/specification. Flux
 Depth and Canny control-image are the next migrated pairs: their loader,
 control-image source, control generator, preview route, and
-`FluxControlPipeline` identity are also backend-declared. `modelProfiles.ts`
-retains presentation and form defaults only for all migrated pairs.
+`FluxControlPipeline` identity are also backend-declared. Flux Redux edit-image
+likewise receives its loader, reference-image source, edit generator, preview
+route, and `FluxReduxPipeline` identity from the specification.
+`modelProfiles.ts` retains presentation and form defaults only for all migrated
+pairs.
 
 Managed graph finalization proofs are consistency checks, not authorization tokens. The current proof schema binds the resolved graph shape, authoritative field schemas, and the sorted source/target handle specification. Restoring a proof also revalidates the exact live managed-edge set and executable dynamic field groups; a preserved edge ID with changed endpoints, an incomplete dynamic route, or a recomputed checksum over a malformed contract remains non-runnable until reconciliation produces a fresh proof.
 

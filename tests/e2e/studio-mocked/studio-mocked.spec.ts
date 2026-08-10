@@ -407,14 +407,41 @@ const mockFluxControlExecutionBindings = [
   ['loadImage', 'alpha_channel', 'alphaMode'],
   ...mockFluxExecutionBindings.slice(23).map(([, param, source]) => ['diffusersImageControl', param, source] as const),
 ] as const;
+const mockFluxEditExecutionRoles = [
+  ...mockFluxExecutionRoles.slice(0, 3),
+  ['loadImage', 'modules.Image.Load', -520, 300],
+  ['diffusersImageEdit', 'modules.DiffusersImage.Edit', -120, -80],
+  mockFluxExecutionRoles[4],
+] as const;
+const mockFluxEditExecutionEdges = [
+  ...mockFluxExecutionEdges.slice(0, 2),
+  ['diffusersImagePipeline', 'pipeline', 'diffusersImageEdit', 'pipeline'],
+  ['loadImage', 'image', 'diffusersImageEdit', 'image'],
+  ['diffusersImageEdit', 'images', 'preview', 'image'],
+] as const;
+const mockFluxEditExecutionBindings = [
+  ...mockFluxExecutionBindings.slice(0, 23),
+  ['loadImage', 'file', 'referenceImages'],
+  ['loadImage', 'alpha_channel', 'alphaMode'],
+  ...mockFluxExecutionBindings.slice(23, 31).map(([, param, source]) => ['diffusersImageEdit', param, source] as const),
+  ['diffusersImageEdit', 'reference_strength', 'conditioningScale'],
+  ...mockFluxExecutionBindings.slice(31).map(([, param, source]) => ['diffusersImageEdit', param, source] as const),
+] as const;
 
 function mockFluxExecutionCapability(
-  modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline' | 'FluxKreaPipeline' | 'FluxDepthPipeline' | 'FluxCannyPipeline',
+  modelType:
+    | 'FluxSchnellPipeline'
+    | 'FluxDevPipeline'
+    | 'FluxKreaPipeline'
+    | 'FluxDepthPipeline'
+    | 'FluxCannyPipeline'
+    | 'FluxReduxPipeline',
 ) {
   const dev = modelType === 'FluxDevPipeline';
   const krea = modelType === 'FluxKreaPipeline';
   const depth = modelType === 'FluxDepthPipeline';
   const canny = modelType === 'FluxCannyPipeline';
+  const redux = modelType === 'FluxReduxPipeline';
   const control = depth || canny;
   const executionProfileId = dev
     ? 'flux-dev:direct'
@@ -424,7 +451,9 @@ function mockFluxExecutionCapability(
         ? 'flux-depth:direct'
         : canny
           ? 'flux-canny:direct'
-          : 'flux-schnell:direct';
+          : redux
+            ? 'flux-redux:direct'
+            : 'flux-schnell:direct';
   const defaultRepo = dev
     ? 'black-forest-labs/FLUX.1-dev'
     : krea
@@ -433,7 +462,9 @@ function mockFluxExecutionCapability(
         ? 'black-forest-labs/FLUX.1-Depth-dev'
         : canny
           ? 'black-forest-labs/FLUX.1-Canny-dev'
-          : 'black-forest-labs/FLUX.1-schnell';
+          : redux
+            ? 'black-forest-labs/FLUX.1-Redux-dev'
+            : 'black-forest-labs/FLUX.1-schnell';
   const spec = {
     schemaVersion: 1,
     canonicalizationVersion: 1,
@@ -445,18 +476,24 @@ function mockFluxExecutionCapability(
           ? 'flux-depth:control-image:v1'
           : canny
             ? 'flux-canny:control-image:v1'
-            : 'flux-schnell:text-to-image:v1',
+            : redux
+              ? 'flux-redux:edit-image:v1'
+              : 'flux-schnell:text-to-image:v1',
     modelType,
-    mode: control ? 'control_image' : 'text_to_image',
+    mode: control ? 'control_image' : redux ? 'edit_image' : 'text_to_image',
     executionProfileId,
     loaderModule: 'modules.DiffusersImage',
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
-    pipelineClass: control ? 'FluxControlPipeline' : 'FluxPipeline',
+    pipelineClass: control ? 'FluxControlPipeline' : redux ? 'FluxReduxPipeline' : 'FluxPipeline',
     defaultRepo,
-    roles: control ? mockFluxControlExecutionRoles : mockFluxExecutionRoles,
-    edges: control ? mockFluxControlExecutionEdges : mockFluxExecutionEdges,
-    bindings: control ? mockFluxControlExecutionBindings : mockFluxExecutionBindings,
+    roles: control ? mockFluxControlExecutionRoles : redux ? mockFluxEditExecutionRoles : mockFluxExecutionRoles,
+    edges: control ? mockFluxControlExecutionEdges : redux ? mockFluxEditExecutionEdges : mockFluxExecutionEdges,
+    bindings: control
+      ? mockFluxControlExecutionBindings
+      : redux
+        ? mockFluxEditExecutionBindings
+        : mockFluxExecutionBindings,
     autoFields: mockFluxAutoFields,
     actions: [],
     contentHash: dev
@@ -467,7 +504,9 @@ function mockFluxExecutionCapability(
           ? 'studio-spec-v1-2d8b881e'
           : canny
             ? 'studio-spec-v1-82045f56'
-            : 'studio-spec-v1-9cd1abb5',
+            : redux
+              ? 'studio-spec-v1-18e2c4ac'
+              : 'studio-spec-v1-9cd1abb5',
   };
   return {
     modelType,
@@ -549,9 +588,11 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
                 ? 'ZImagePipeline'
                 : modelType === 'FluxDepthPipeline' || modelType === 'FluxCannyPipeline'
                   ? 'FluxControlPipeline'
-                  : modelType.startsWith('Flux')
-                    ? 'FluxPipeline'
-                    : modelType,
+                  : modelType === 'FluxReduxPipeline'
+                    ? 'FluxReduxPipeline'
+                    : modelType.startsWith('Flux')
+                      ? 'FluxPipeline'
+                      : modelType,
       modelRepo: defaultRepo,
       resolvedArtifact: defaultRepo,
       artifact: defaultRepo,
@@ -959,6 +1000,16 @@ const mockRegistry = {
     pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
     image: { type: 'image', display: 'input' },
     prompt: { type: 'text', display: 'textarea', value: '' },
+    negative_prompt: { type: 'text', display: 'textarea', value: '' },
+    width: { type: 'int', value: 1024 },
+    height: { type: 'int', value: 1024 },
+    seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
+    num_inference_steps: { type: 'int', value: 28 },
+    guidance_scale: { type: 'float', value: 3.5 },
+    strength: { type: 'float', value: 1 },
+    reference_strength: { type: 'float', value: 1 },
+    output_type: { type: 'string', value: 'pil' },
+    max_sequence_length: { type: 'int', value: 512 },
     images: { type: 'image', display: 'output' },
   }),
   'modules.DiffusersImage.Inpaint': nodeDef('modules.DiffusersImage', 'Inpaint', 'Diffusers Image', {
@@ -6432,6 +6483,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Krea-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Depth-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Canny-dev');
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-Redux-dev');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -6442,6 +6494,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
     mockFluxExecutionCapability('FluxKreaPipeline'),
     mockFluxExecutionCapability('FluxDepthPipeline'),
     mockFluxExecutionCapability('FluxCannyPipeline'),
+    mockFluxExecutionCapability('FluxReduxPipeline'),
   ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
@@ -6481,7 +6534,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(5);
+    .toHaveLength(6);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -6618,6 +6671,47 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   expect(canny.nodes).toEqual(depth.nodes);
   expect(canny.edgeShape).toEqual(depth.edgeShape);
   expect(canny.modelRepo).toBe('black-forest-labs/FLUX.1-Canny-dev');
+
+  const redux = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'FluxReduxPipeline',
+      mode: 'edit_image',
+      resourceMode: 'expert',
+      referenceImages: ['@data/images/redux.png'],
+      conditioningScale: 0.8,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
+      referenceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+      referenceStrength: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImageEdit)?.params
+        ?.reference_strength?.value,
+    };
+  });
+  expect(redux.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'flux-redux:edit-image:v1',
+    contentHash: 'studio-spec-v1-18e2c4ac',
+    executionProfileId: 'flux-redux:direct',
+  });
+  expect(redux.nodes.diffusersImageControl).toBeUndefined();
+  expect(redux.nodes.diffusersImageEdit).toBeTruthy();
+  expect(redux.edgeShape).toEqual([
+    'execution_recipe>execution_recipe',
+    'image>image',
+    'images>image',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+  ]);
+  expect(redux.pipelineClass).toBe('FluxReduxPipeline');
+  expect(redux.referenceFile).toEqual(['@data/images/redux.png']);
+  expect(redux.referenceStrength).toBe(0.8);
 });
 
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {
