@@ -1,14 +1,14 @@
-import { TEMPLATE_DEFAULT_INPUT_BINDINGS } from './generated/templateDefaultInputBindings';
 import { resolveTemplateAssetUrl } from './templateAssets';
+import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from './templates';
 
 type BundledInputAsset = {
   fileName?: string;
   runtimePath: string;
 };
 
-const BUNDLED_INPUT_ASSETS = Object.values(TEMPLATE_DEFAULT_INPUT_BINDINGS)
-  .flat()
-  .flatMap((binding) => binding.defaultAssets as BundledInputAsset[])
+const BUNDLED_INPUT_ASSETS = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES]
+  .flatMap((template) => template.inputBindings ?? [])
+  .flatMap((binding) => (binding.origin === 'template' ? (binding.defaultAssets as BundledInputAsset[]) : []))
   .filter((asset) => Boolean(asset.fileName?.trim()));
 
 function escapedPattern(value: string) {

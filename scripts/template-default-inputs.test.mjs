@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import ts from 'typescript';
 
 import {
   PROJECT_ROOT,
@@ -105,15 +106,20 @@ test('runtime input files retain every reviewed provenance byte hash', async () 
   }
 });
 
-test('JSON and TypeScript mappings are deterministic views of the same keyed contract', async () => {
+test('JSON and packed TypeScript are deterministic views of the same keyed contract', async () => {
   const plan = await buildTemplateDefaultInputPlan();
   const jsonMapping = JSON.parse(renderRuntimeInputJson(plan));
   assert.deepEqual(jsonMapping, plan.mapping);
 
   const typescript = await renderRuntimeInputTypescript(plan);
-  assert.match(typescript, /satisfies Partial<Record<StudioTemplateId, StudioTemplateInputBinding\[\]>>;/);
-  for (const templateId of Object.keys(plan.mapping)) {
-    assert.match(typescript, new RegExp(`\\b${templateId}: \\[`));
+  const javascript = ts.transpileModule(typescript, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ESNext },
+  }).outputText;
+  const generated = await import(`data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`);
+  for (const [templateId, bindings] of Object.entries(plan.mapping)) {
+    const templateIndex = plan.templateIds.indexOf(templateId);
+    assert.notEqual(templateIndex, -1, `${templateId} has a stable base-template index`);
+    assert.deepEqual(generated.templateDefaultInputBindings(templateId, templateIndex), bindings);
   }
 });
 

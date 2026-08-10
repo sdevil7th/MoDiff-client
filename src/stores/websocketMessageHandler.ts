@@ -35,6 +35,10 @@ export type WebsocketMessageHandlerContext = {
 const TERMINAL_NODE_PROGRESS_TASK_LIMIT = 64;
 const terminalNodeProgressTaskIds = new Set<string>();
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
 function markNodeProgressTaskTerminal(taskId?: string | null) {
   if (!taskId) return;
   terminalNodeProgressTaskIds.delete(taskId);
@@ -335,13 +339,12 @@ function preserveCurrentParamValue(current: NodeParams | undefined, incoming: No
 
 function scheduleStudioDefinitionSync() {
   const workflowContext = captureWorkflowOperationContext();
-  markStudioGraphDefinitionPending();
   if (studioDefinitionSyncTimer) {
     globalThis.clearTimeout(studioDefinitionSyncTimer);
   }
   studioDefinitionSyncTimer = globalThis.setTimeout(() => {
     studioDefinitionSyncTimer = null;
-    if (!workflowOperationContextIsCurrent(workflowContext)) return;
+    if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: false })) return;
     syncStudioGraphDefinition();
   }, 80);
 }
@@ -355,7 +358,17 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       }
       const instance = message.instance ?? '';
       if (instance !== useNodesStore.getState().instance) {
-        useNodesStore.getState().fetchNodes();
+        const workflowContext = captureWorkflowOperationContext();
+        const schemaPending = useStudioStore.getState().graphBinding ? markStudioGraphDefinitionPending() : false;
+        void useNodesStore
+          .getState()
+          .fetchNodes()
+          .then(() => {
+            if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: false })) return;
+            const flow = useFlowStore.getState();
+            flow.replaceGraph({ nodes: flow.nodes, edges: flow.edges, viewport: flow.viewport });
+            if (schemaPending) syncStudioGraphDefinition();
+          });
         console.info('Server instance changed, fetching nodes');
       }
       const cached = message.cachedNodes ?? [];
@@ -880,6 +893,8 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         return;
       }
 
+      const schemaPending = markStudioGraphDefinitionPending(node.id);
+
       const definitionParams = message.params as Record<string, NodeParams>;
       Object.values(definitionParams).forEach((param) => {
         param.value = param.value ?? param.default;
@@ -907,9 +922,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
             },
       );
       useFlowStore.setState({ nodes: updatedNodes });
-      if (node.data.studioOwned) {
-        scheduleStudioDefinitionSync();
-      }
+      if (schemaPending) scheduleStudioDefinitionSync();
       break;
     }
     case 'set_field_visibility': {
@@ -920,9 +933,11 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       if (!shouldApplyWorkflowCanvasMutation(message, context)) return;
       const nodeId = message.node;
       const visibility = message.fields as Record<string, boolean>;
+      const schemaPending = markStudioGraphDefinitionPending(nodeId, ['hidden']);
       Object.keys(visibility).forEach((key) => {
         useFlowStore.getState().setParam(nodeId, key, !visibility[key], 'hidden');
       });
+      if (schemaPending) scheduleStudioDefinitionSync();
       break;
     }
     case 'set_field_value': {
@@ -948,6 +963,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       const field = message.field;
       const params = message.params;
       const workflowContext = captureWorkflowOperationContext();
+      const schemaPending = markStudioGraphDefinitionPending(nodeId, Object.keys(params) as Array<keyof NodeParams>);
 
       useFlowStore.getState().setParam(nodeId, field, true, 'disabled');
       Object.keys(params).forEach((key) => {
@@ -958,7 +974,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
             return newValue;
           }
 
-          if (typeof currValue === 'object' && typeof newValue === 'object') {
+          if (isPlainRecord(currValue) && isPlainRecord(newValue)) {
             return { ...currValue, ...newValue };
           }
 
@@ -974,6 +990,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         flow.setParam(nodeId, field, false, 'disabled');
         if (signalChanged) flow.updateSignalValues(flow.edges);
       });
+      if (schemaPending) scheduleStudioDefinitionSync();
 
       break;
     }

@@ -421,7 +421,11 @@ function reconcileSnapshotGraphBinding(
     )
     .map((edge) => String(edge.id));
   const roleNodes = Object.fromEntries(
-    studioNodes.filter((node) => node.role).map((node) => [node.role, node.id]),
+    studioNodes
+      .filter(
+        (node) => node.role && (!binding?.controlled || Object.prototype.hasOwnProperty.call(binding.nodes, node.role)),
+      )
+      .map((node) => [node.role, node.id]),
   ) as StudioGraphBinding['nodes'];
   const now = Date.now();
 
@@ -433,7 +437,9 @@ function reconcileSnapshotGraphBinding(
     managedEdgeIds:
       !binding || hasRecoveredExtensions ? currentManagedEdgeIds : Array.from(new Set(binding.managedEdgeIds)),
     fingerprint: binding?.fingerprint || `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+    ...(binding?.controlled ? { controlled: binding.controlled } : {}),
     ...(binding?.finalizationProof ? { finalizationProof: binding.finalizationProof } : {}),
+    ...(binding?.finalizationProofInvalid ? { finalizationProofInvalid: true as const } : {}),
     createdAt: binding?.createdAt ?? now,
     updatedAt: binding?.updatedAt ?? now,
   };

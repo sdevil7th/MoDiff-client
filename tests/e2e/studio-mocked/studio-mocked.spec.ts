@@ -14,6 +14,7 @@ declare global {
           visibleNodeCount: number;
           nodes: Array<{
             id: string;
+            parentId?: string;
             selected?: boolean;
             position: { x: number; y: number };
             module: string;
@@ -88,7 +89,14 @@ declare global {
             nodes?: Record<string, string>;
             managedEdgeIds?: string[];
             managedNodeIds?: string[];
-            finalizationProof?: { fieldSchemaHash?: string };
+            finalizationProofInvalid?: boolean;
+            controlled?: { contractIds?: string[] };
+            finalizationProof?: {
+              schemaVersion?: number;
+              fieldSchemaHash?: string;
+              managedGraphHash?: string;
+              contractIds?: string[];
+            };
           } | null;
           currentRunContext?: {
             form?: {
@@ -515,6 +523,17 @@ const mockRegistry = {
     unet_out: { type: 'DenoiseModel', display: 'output' },
     vae_out: { type: 'VAE', display: 'output' },
     scheduler: { type: 'Scheduler', display: 'output' },
+    lora_list: { type: 'lora_list', display: 'input' },
+  }),
+  'modules.ModularDiffusers.Lora': nodeDef('modules.ModularDiffusers', 'Lora', 'loader', {
+    model: { type: 'string', value: { source: 'hub', value: '' } },
+    revision: { type: 'string', value: '' },
+    expected_sha256: { type: 'string', value: '' },
+    weight_name: { type: 'string', value: '' },
+    adapter_name: { type: 'string', value: '' },
+    scale: { type: 'float', value: 1 },
+    replace_existing: { type: 'bool', value: true },
+    lora: { type: 'lora_list', display: 'output' },
   }),
   'modules.ModularDiffusers.EncodePrompt': nodeDef('modules.ModularDiffusers', 'EncodePrompt', 'text', {
     text_encoders: { type: 'TextEncoders', display: 'input' },
@@ -557,11 +576,11 @@ const mockRegistry = {
     all_images: { type: 'image', display: 'output' },
   }),
   'modules.Spandrel.Upscaler': nodeDef('modules.Spandrel', 'Upscaler', 'image', {
-    image: { type: 'image', display: 'input' },
+    image: { type: ['image', 'video'], display: 'input' },
     model_id: { type: 'string', value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth' },
     device: { type: 'string', value: 'cuda:0' },
     downscale: { type: 'float', value: 1 },
-    output: { type: 'image', display: 'output' },
+    output: { type: ['image', 'video'], display: 'output' },
   }),
   'modules.Image.Load': nodeDef('modules.Image', 'Load', 'image', {
     image: { type: 'image', display: 'output' },
@@ -660,6 +679,17 @@ const mockRegistry = {
     execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
     pipeline: { type: 'image_diffusion_pipeline', display: 'output' },
   }),
+  'modules.DiffusersImage.LoadAdapter': nodeDef('modules.DiffusersImage', 'LoadAdapter', 'Diffusers Image', {
+    pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
+    model: { type: 'string', value: { source: 'hub', value: '' } },
+    revision: { type: 'string', value: '' },
+    expected_sha256: { type: 'string', value: '' },
+    weight_name: { type: 'string', value: '' },
+    adapter_name: { type: 'string', value: '' },
+    scale: { type: 'float', value: 1 },
+    replace_existing: { type: 'bool', value: true },
+    output: { type: 'image_diffusion_pipeline', display: 'output' },
+  }),
   'modules.DiffusersImage.Generate': nodeDef('modules.DiffusersImage', 'Generate', 'Diffusers Image', {
     pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
     prompt: { type: 'text', display: 'textarea', value: '' },
@@ -739,6 +769,45 @@ const mockRegistry = {
     seed: { type: 'int', display: 'random', value: { value: 92021, isRandom: false } },
     video_out: { type: 'video', display: 'output' },
   }),
+  'modules.DiffusersVideo.GenerateSequence': nodeDef('modules.DiffusersVideo', 'GenerateSequence', 'Diffusers Video', {
+    pipeline: { type: 'video_diffusion_pipeline', display: 'input' },
+    mode: { type: 'string', value: 'text_to_video' },
+    prompts_json: { type: 'text', value: '[]' },
+    negative_prompt: { type: 'text', value: '' },
+    width: { type: 'int', value: 768 },
+    height: { type: 'int', value: 512 },
+    num_frames: { type: 'int', value: 81 },
+    frame_rate: { type: 'float', value: 16 },
+    num_inference_steps: { type: 'int', value: 8 },
+    guidance_scale: { type: 'float', value: 1 },
+    seed: { type: 'int', value: 42 },
+    output_type: { type: 'string', value: 'pil' },
+    max_sequence_length: { type: 'int', value: 512 },
+    clips: { type: 'video', display: 'output' },
+  }),
+  'modules.DiffusersVideo.BuildShotJobs': nodeDef('modules.DiffusersVideo', 'BuildShotJobs', 'Diffusers Video', {
+    shots: { type: 'shot_list', display: 'input' },
+    opening_images: { type: 'image', display: 'input' },
+    mode: { type: 'string', value: 'image_to_video' },
+    reference_policy: { type: 'string', value: 'one_per_shot' },
+    base_seed: { type: 'int', value: 42 },
+    fps: { type: 'float', value: 16 },
+    minimum_seconds: { type: 'float', value: 5 },
+    width: { type: 'int', value: 832 },
+    height: { type: 'int', value: 480 },
+    steps: { type: 'int', value: 40 },
+    guidance_scale: { type: 'float', value: 3.5 },
+    secondary_guidance_scale: { type: 'float', value: 3.5 },
+    conditioning_strength: { type: 'float', value: 1 },
+    negative_prompt: { type: 'text', value: '' },
+    jobs: { type: 'collection', display: 'output' },
+  }),
+  'modules.DiffusersVideo.GenerateShotJob': nodeDef('modules.DiffusersVideo', 'GenerateShotJob', 'Diffusers Video', {
+    pipeline: { type: 'video_diffusion_pipeline', display: 'input' },
+    job: { type: 'any', display: 'input' },
+    video_out: { type: 'video', display: 'output' },
+    fps_out: { type: 'float', display: 'output' },
+  }),
   'modules.Video.Load': nodeDef('modules.Video', 'Load', 'Video', {
     file: { type: 'str', display: 'filebrowser', value: '' },
     video: { type: 'video', display: 'output' },
@@ -772,12 +841,70 @@ const mockRegistry = {
     preview: { type: 'url', display: 'ui_video' },
     file: { type: 'video', display: 'output' },
   }),
+  'modules.Video.Compose': nodeDef('modules.Video', 'Compose', 'Video', {
+    clip_1: { type: 'video', display: 'input' },
+    fps: { type: 'float', value: 16 },
+    transition_seconds: { type: 'float', value: 0.35 },
+    video: { type: 'video', display: 'output' },
+  }),
+  'modules.Video.ExportAsset': nodeDef('modules.Video', 'ExportAsset', 'Video', {
+    video: { type: 'video', display: 'input' },
+    fps: { type: 'float', display: 'input' },
+    quality: { type: 'int', value: 10 },
+    pin: { type: 'bool', value: true },
+    asset: { type: 'video_asset', display: 'output' },
+  }),
+  'modules.Video.ConcatenateAssets': nodeDef('modules.Video', 'ConcatenateAssets', 'Video', {
+    clips: { type: 'collection', display: 'input' },
+    transition_seconds: { type: 'float', value: 0.35 },
+    pin: { type: 'bool', value: true },
+    file: { type: 'video', display: 'output' },
+  }),
+  'modules.Video.LyricOverlay': nodeDef('modules.Video', 'LyricOverlay', 'Video', {
+    video: { type: 'video', display: 'input' },
+    lrc: { type: 'text', value: '' },
+    fps: { type: 'float', value: 16 },
+    font_size: { type: 'int', value: 58 },
+    bottom_margin: { type: 'int', value: 70 },
+    output: { type: 'video', display: 'output' },
+  }),
+  'modules.Video.ExportWithAudio': nodeDef('modules.Video', 'ExportWithAudio', 'Video', {
+    video: { type: 'video', display: 'input' },
+    audio: { type: 'audio', display: 'input' },
+    fps: { type: 'float', value: 16 },
+    quality: { type: 'int', value: 10 },
+    file: { type: 'video', display: 'output' },
+  }),
+  'modules.WorkflowControl.AuthorShotList': nodeDef('modules.WorkflowControl', 'AuthorShotList', 'Workflow Control', {
+    shots_json: { type: 'text', value: '[]' },
+    maximum_shots: { type: 'int', value: 6 },
+    shots: { type: 'shot_list', display: 'output' },
+  }),
+  'modules.WorkflowControl.LoopItems': nodeDef('modules.WorkflowControl', 'LoopItems', 'Workflow Control', {
+    collection: { type: 'collection', display: 'input' },
+    item: { type: 'any', display: 'output' },
+  }),
+  'modules.WorkflowControl.LoopResult': nodeDef('modules.WorkflowControl', 'LoopResult', 'Workflow Control', {
+    value_input: { type: 'any', display: 'input' },
+    collection: { type: 'collection', display: 'output' },
+  }),
   'modules.DiffusersAudio.LoadPipeline': nodeDef('modules.DiffusersAudio', 'LoadPipeline', 'Diffusers Audio', {
     model_id: { type: 'string', value: 'ACE-Step/acestep-v15-xl-turbo-diffusers' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
     execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
     pipeline: { type: 'diffusers_audio_pipeline', display: 'output' },
+  }),
+  'modules.DiffusersAudio.LoadAdapter': nodeDef('modules.DiffusersAudio', 'LoadAdapter', 'Diffusers Audio', {
+    pipeline: { type: 'diffusers_audio_pipeline', display: 'input' },
+    model: { type: 'string', value: { source: 'hub', value: '' } },
+    revision: { type: 'string', value: '' },
+    expected_sha256: { type: 'string', value: '' },
+    weight_name: { type: 'string', value: '' },
+    adapter_name: { type: 'string', value: '' },
+    scale: { type: 'float', value: 1 },
+    replace_existing: { type: 'bool', value: true },
+    output: { type: 'diffusers_audio_pipeline', display: 'output' },
   }),
   'modules.DiffusersAudio.Generate': nodeDef('modules.DiffusersAudio', 'Generate', 'Diffusers Audio', {
     pipeline: { type: 'diffusers_audio_pipeline', display: 'input' },
@@ -788,6 +915,17 @@ const mockRegistry = {
     audio: { type: 'audio', display: 'input' },
     file: { type: 'str', value: '{PATH:audio}/MoDiff_{HASH:6}.wav' },
     preview: { type: 'url', display: 'ui_audio' },
+  }),
+  'modules.Audio.FitDuration': nodeDef('modules.Audio', 'FitDuration', 'audio', {
+    audio: { type: 'audio', display: 'input' },
+    source_start_seconds: { type: 'float', value: 0 },
+    source_duration_seconds: { type: 'float', value: 0 },
+    target_duration_seconds: { type: 'float', value: 0 },
+    delay_seconds: { type: 'float', value: 0 },
+    target_sample_rate: { type: 'int', value: 48000 },
+    fade_in_seconds: { type: 'float', value: 0 },
+    fade_out_seconds: { type: 'float', value: 0 },
+    output: { type: 'audio', display: 'output' },
   }),
 };
 
@@ -3870,6 +4008,164 @@ test('mocked template workflow blocks stay managed and restore with Studio promp
     });
   await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
   await expect(page.getByTestId('studio-section-toggle-prompt-tools')).toBeVisible();
+});
+
+test('controlled workflow families seal and restore exact schema-v3 graph proofs', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const cases = [
+    ['fast_lora', ['lora.modular.v1'], { resourceMode: 'expert' }],
+    ['flux_lora_cinematic_octane_3d', ['lora.diffusers-image.v1'], {}],
+    ['ace_step_custom_lora', ['lora.diffusers-audio.v1'], {}],
+    ['qwen_upscale_finish', ['upscale.image.v1'], {}],
+    ['ltx_video_animated_story', ['upscale.video.v1', 'video-sequence.v1'], {}],
+    ['ltx_video_long_showcase', ['quality-video.i2v.v1', 'upscale.quality-loop.v1'], {}],
+    ['wan_21_t2v_13b_seed_vault', ['quality-video.t2v.v1', 'upscale.quality-loop.v1'], {}],
+    ['wan_22_ti2v_5b_seed_vault', ['soundtrack.v1'], {}],
+    ['ace_step_lyric_music_video', ['lyric-video.v1'], {}],
+  ] as const;
+
+  for (const [templateId, expectedContracts, formOverrides] of cases) {
+    await page.evaluate(
+      async ({ id, overrides }) => {
+        try {
+          await window.__MODIFF_E2E__!.applyTemplate(id, overrides);
+        } catch (error) {
+          throw new Error(`${id}: ${String(error)}`);
+        }
+      },
+      { id: templateId, overrides: formOverrides },
+    );
+    const state = await page.evaluate(() => {
+      const current = window.__MODIFF_E2E__!.getState();
+      const binding = current.studio.graphBinding;
+      const qualityGenerate = current.flow.nodes.find((node) => node.studioRole === 'qualityVideoGenerate');
+      const qualityRetain = current.flow.nodes.find((node) => node.studioRole === 'qualityVideoRetain');
+      return {
+        proofVersion: binding?.finalizationProof?.schemaVersion,
+        proofContracts: binding?.finalizationProof?.contractIds,
+        manifestContracts: binding?.controlled?.contractIds,
+        graphHash: binding?.finalizationProof?.managedGraphHash,
+        divergence: window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence(),
+        qualityFps: qualityGenerate
+          ? current.flow.edges.some(
+              (edge) =>
+                edge.source === qualityGenerate.id &&
+                edge.sourceHandle === 'fps_out' &&
+                edge.target === qualityRetain?.id &&
+                edge.targetHandle === 'fps',
+            )
+          : true,
+      };
+    });
+    expect(state).toEqual({
+      proofVersion: 3,
+      proofContracts: [...expectedContracts].sort(),
+      manifestContracts: [...expectedContracts].sort(),
+      graphHash: expect.stringMatching(/^graph-v1-/),
+      divergence: null,
+      qualityFps: true,
+    });
+
+    if (templateId === 'ltx_video_long_showcase') {
+      const qualityTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+      await page.getByTestId('workflow-tab-new').click();
+      await page.getByTestId(`workflow-tab-${qualityTabId}`).click();
+      await page.evaluate(() => window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest());
+      const restored = await page.evaluate(() => {
+        const current = window.__MODIFF_E2E__!.getState();
+        const loop = current.flow.nodes.find((node) => node.studioRole === 'qualityVideoLoop');
+        const body = current.flow.nodes.filter((node) =>
+          [
+            'qualityVideoLoopItems',
+            'qualityVideoGenerate',
+            'qualityVideoRetain',
+            'qualityVideoLoopResult',
+            'upscaler',
+          ].includes(node.studioRole ?? ''),
+        );
+        return {
+          proof: current.studio.graphBinding?.finalizationProof?.schemaVersion,
+          contracts: current.studio.graphBinding?.controlled?.contractIds,
+          loop: loop?.id,
+          bodyParents: body.map((node) => node.parentId),
+        };
+      });
+      expect(restored.proof).toBe(3);
+      expect(restored.contracts).toEqual(['quality-video.i2v.v1', 'upscale.quality-loop.v1']);
+      expect(restored.loop).toBeTruthy();
+      expect(restored.bodyParents).toEqual(Array(5).fill(restored.loop));
+    }
+  }
+
+  const managedTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  await page.getByTestId('workflow-tab-new').click();
+  await page.getByTestId(`workflow-tab-${managedTabId}`).click();
+  await page.evaluate(() => window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest());
+  await expect
+    .poll(async () => {
+      const state = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return {
+        status: state.studio.graphFinalization?.status,
+        proofVersion: state.studio.graphBinding?.finalizationProof?.schemaVersion,
+        proofInvalid: state.studio.graphBinding?.finalizationProofInvalid,
+        contracts: state.studio.graphBinding?.controlled?.contractIds,
+      };
+    })
+    .toEqual({ status: 'complete', proofVersion: 3, proofInvalid: undefined, contracts: ['lyric-video.v1'] });
+});
+
+test('controlled workflow transactions are idempotent across supported reverse compositions', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const assertContracts = async (expected: string[]) => {
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          proof: window.__MODIFF_E2E__!.getState().studio.graphBinding?.finalizationProof?.schemaVersion,
+          contracts: window.__MODIFF_E2E__!.getState().studio.graphBinding?.controlled?.contractIds,
+          divergence: window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence(),
+        })),
+      )
+      .toEqual({ proof: 3, contracts: expected, divergence: null });
+  };
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video'));
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('video_sequence', 'ltx_video_animated_story'),
+  );
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('video_sequence', 'ltx_video_animated_story'),
+  );
+  await assertContracts(['upscale.video.v1', 'video-sequence.v1']);
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('wan_22_ti2v_5b_seed_vault'));
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('upscaler', 'wan_vace_cinematic_text_to_video'),
+  );
+  await assertContracts(['soundtrack.v1', 'upscale.video.v1']);
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video'));
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('quality_video_sequence', 'wan_21_t2v_13b_seed_vault'),
+  );
+  await assertContracts(['quality-video.t2v.v1', 'upscale.quality-loop.v1']);
 });
 
 test('Studio sticky prompt seals the measured header gap while the right panel scrolls', async ({ page }) => {

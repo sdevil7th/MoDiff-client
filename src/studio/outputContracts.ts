@@ -2,9 +2,12 @@ import {
   DEFAULT_STUDIO_FORM,
   LEGACY_STUDIO_OFFLOAD_MODES,
   normalizeStudioOffloadMode,
+  STUDIO_MODE_DESCRIPTIONS,
   STUDIO_MODEL_PROFILES,
 } from './modelProfiles';
 import { normalizeStudioResourceMode } from './resourcePlanner';
+import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from './templates';
+import { CONTROLLED_GRAPH_CONTRACT_IDS, type ControlledGraphContractId } from './controlledWorkflowContracts';
 import type {
   StudioFormState,
   StudioGraphBinding,
@@ -35,28 +38,7 @@ const STUDIO_PREVIEW_SLOT_STATUSES: readonly StudioPreviewSlotStatus[] = [
   'completed_without_output',
 ];
 
-const STUDIO_MODES: readonly StudioMode[] = [
-  'text_to_image',
-  'edit_image',
-  'multi_image_reference_edit',
-  'inpaint',
-  'outpaint',
-  'control_image',
-  'layer_decomposition',
-  'text_to_video',
-  'image_to_video',
-  'video_to_video',
-  'video_inpaint',
-  'video_outpaint',
-  'reference_to_video',
-  'control_to_video',
-  'video_color_edit',
-  'text_to_audio',
-  'audio_variation',
-  'audio_continuation',
-  'audio_repaint',
-  'advanced_workflow',
-];
+const STUDIO_MODES = Object.keys(STUDIO_MODE_DESCRIPTIONS) as StudioMode[];
 
 // Keep persistence validation tied to the canonical model registry. A copied
 // allow-list previously omitted the Wan and LTX model types, so restoring an
@@ -75,88 +57,9 @@ const STUDIO_QUANTIZATION_MODES: readonly StudioFormState['quantizationMode'][] 
 ];
 const STUDIO_ALPHA_MODES: readonly StudioFormState['alphaMode'][] = ['ignore', 'add alpha', 'remove alpha'];
 const STUDIO_OUTPUT_TYPES: readonly StudioFormState['outputType'][] = ['pil', 'np', 'pt'];
-const STUDIO_TEMPLATE_IDS: readonly StudioTemplateId[] = [
-  'z_image_quick_concept',
-  'z_image_product_mockup',
-  'z_image_poster',
-  'z_image_lora_style',
-  'qwen_text_rendering',
-  'qwen_poster_logo_text',
-  'qwen_product_mockup',
-  'qwen_low_vram_text_rendering',
-  'qwen_low_vram_product_concept',
-  'qwen_low_vram_poster_layout',
-  'qwen_control_image_layout',
-  'z_image_cinematic_contact_sheet',
-  'qwen_product_ad_composite',
-  'qwen_product_relight',
-  'qwen_packaging_dieline',
-  'qwen_character_angles',
-  'qwen_tile_extract',
-  'qwen_logo_texture',
-  'qwen_layered_portrait',
-  'qwen_outpaint_aspect_template',
-  'qwen_inpaint_object_replace',
-  'character_edit',
-  'qwen_edit_strength_sweep',
-  'reference_fusion',
-  'qwen_multi_reference_product',
-  'qwen_inpaint_mask_draft',
-  'layer_decomposition',
-  'qwen_upscale_finish',
-  'qwen_outpaint_draft',
-  'low_vram',
-  'fast_lora',
-  'high_quality',
-  'wan_vace_cinematic_text_to_video',
-  'wan_vace_direct_text_to_video',
-  'wan_vace_animate_product_still',
-  'wan_vace_video_color_grade',
-  'wan_vace_masked_object_replace',
-  'wan_vace_outpaint_reframe',
-  'wan_vace_reference_motion',
-  'wan_vace_grayscale_control',
-  'ace_step_text_to_audio',
-  'ace_step_audio_variation',
-  'ace_step_audio_continuation',
-  'ace_step_audio_repaint',
-  'ace_step_chinese_new_year_lora',
-  'ace_step_custom_lora',
-  'flux_schnell_text_to_image',
-  'flux_dev_expert_text_to_image',
-  'flux_lora_ghibli_story',
-  'flux_lora_oil_painting',
-  'flux_lora_film_noir',
-  'flux_lora_retro_comic',
-  'flux_lora_watercolor',
-  'flux_lora_paper_cutout',
-  'flux_lora_photoreal_documentary',
-  'flux_kontext_edit',
-  'flux_fill_inpaint',
-  'flux_control_canny',
-  'flux_krea_text_to_image',
-  'flux_kontext_multi_reference',
-  'flux_fill_outpaint',
-  'flux_depth_control',
-  'flux_redux_edit',
-  'flux_redux_multi_reference',
-  'flux2_klein_text_to_image',
-  'flux2_klein_edit',
-  'flux2_klein_multi_reference',
-  'wan_vace_video_to_video',
-  'qwen_edit_plus_single_image',
-  'ltx_video_text_to_video',
-  'ltx_video_image_to_video',
-  'ltx_video_video_to_video',
-  'ltx_video_multi_reference',
-  'ltx_video_long_showcase',
-  'wan_video_long_showcase',
-  'wan_22_i2v_seed_vault',
-  'wan_21_t2v_13b_seed_vault',
-  'wan_22_ti2v_5b_seed_vault',
-  'ltx_video_animated_story',
-  'ace_step_lyric_music_video',
-];
+const STUDIO_TEMPLATE_IDS: readonly StudioTemplateId[] = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].map(
+  (template) => template.id,
+);
 const STUDIO_OUTPUT_DISPLAY_TYPES: readonly NonNullable<StudioOutput['displayType']>[] = [
   'image',
   'image_collection',
@@ -317,7 +220,27 @@ export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | n
   const shapeKey = stringValue(rawProof?.shapeKey);
   const fieldSchemaHash = stringValue(rawProof?.fieldSchemaHash);
   const edgeSpecHash = stringValue(rawProof?.edgeSpecHash);
-  const finalizationProof =
+  const managedGraphHash = stringValue(rawProof?.managedGraphHash);
+  const rawContractIds = Array.isArray(rawProof?.contractIds) ? rawProof.contractIds : [];
+  const contractIds = rawContractIds.filter(
+    (id): id is ControlledGraphContractId =>
+      typeof id === 'string' && CONTROLLED_GRAPH_CONTRACT_IDS.includes(id as ControlledGraphContractId),
+  );
+  const controlledValue = isRecord(value.controlled) ? value.controlled : null;
+  const rawControlledIds = Array.isArray(controlledValue?.contractIds) ? controlledValue.contractIds : [];
+  const controlledIds = rawControlledIds.filter(
+    (id): id is ControlledGraphContractId =>
+      typeof id === 'string' && CONTROLLED_GRAPH_CONTRACT_IDS.includes(id as ControlledGraphContractId),
+  );
+  const controlled =
+    controlledValue?.schemaVersion === 1 &&
+    controlledValue.contractRevision === 1 &&
+    controlledIds.length === rawControlledIds.length &&
+    controlledIds.length <= 16 &&
+    new Set(controlledIds).size === controlledIds.length
+      ? { schemaVersion: 1 as const, contractRevision: 1 as const, contractIds: controlledIds }
+      : undefined;
+  const v2Proof =
     rawProof?.schemaVersion === 2 &&
     shapeKey &&
     fieldSchemaHash &&
@@ -332,6 +255,39 @@ export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | n
           finalizedAt: rawProof.finalizedAt,
         }
       : undefined;
+  const v3Proof =
+    rawProof?.schemaVersion === 3 &&
+    rawProof.canonicalizationVersion === 1 &&
+    rawProof.contractRevision === 1 &&
+    shapeKey &&
+    shapeKey.length <= 2048 &&
+    /^graph-v1-[0-9a-f]+$/.test(fieldSchemaHash) &&
+    /^graph-v1-[0-9a-f]+$/.test(managedGraphHash) &&
+    contractIds.length === rawContractIds.length &&
+    contractIds.length > 0 &&
+    contractIds.length <= 16 &&
+    new Set(contractIds).size === contractIds.length &&
+    controlled &&
+    contractIds.length === controlled.contractIds.length &&
+    contractIds.every((id, index) => id === controlled.contractIds[index]) &&
+    typeof rawProof.finalizedAt === 'number' &&
+    Number.isFinite(rawProof.finalizedAt)
+      ? {
+          schemaVersion: 3 as const,
+          canonicalizationVersion: 1 as const,
+          contractRevision: 1 as const,
+          shapeKey,
+          fieldSchemaHash,
+          managedGraphHash,
+          contractIds,
+          finalizedAt: rawProof.finalizedAt,
+        }
+      : undefined;
+  const finalizationProof = v2Proof ?? v3Proof;
+  const proofProvided = value.finalizationProof !== undefined;
+  const controlledProvided = value.controlled !== undefined;
+  const proofMatchesDeclaration = !controlled || finalizationProof?.schemaVersion === 3;
+  const proofInvalid = value.finalizationProofInvalid === true;
   return {
     mode: stringUnionValue(value.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode),
     modelType: stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType),
@@ -339,7 +295,13 @@ export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | n
     managedNodeIds: stringArrayValue(value.managedNodeIds),
     managedEdgeIds: stringArrayValue(value.managedEdgeIds),
     fingerprint: stringValue(value.fingerprint, ''),
-    ...(finalizationProof ? { finalizationProof } : {}),
+    ...(controlled ? { controlled } : {}),
+    ...(finalizationProof && proofMatchesDeclaration ? { finalizationProof } : {}),
+    ...(proofInvalid ||
+    (proofProvided && (!finalizationProof || !proofMatchesDeclaration)) ||
+    (controlledProvided && !controlled)
+      ? { finalizationProofInvalid: true as const }
+      : {}),
     createdAt: numberValue(value.createdAt, Date.now()),
     updatedAt: numberValue(value.updatedAt, Date.now()),
   };

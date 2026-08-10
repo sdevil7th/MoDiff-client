@@ -193,6 +193,7 @@ export type RunReadinessIssueAction =
   | 'switch_to_z_image'
   | 'cleanup_gpu'
   | 'open_model_manager'
+  | 'detach_graph'
   | 'inspect_node';
 
 export type RunReadinessIssue = {
@@ -368,13 +369,30 @@ export type StudioGraphBinding = {
   managedNodeIds: string[];
   managedEdgeIds: string[];
   fingerprint: string;
-  finalizationProof?: {
-    schemaVersion: 2;
-    shapeKey: string;
-    fieldSchemaHash: string;
-    edgeSpecHash: string;
-    finalizedAt: number;
+  controlled?: {
+    schemaVersion: 1;
+    contractRevision: 1;
+    contractIds: import('./controlledWorkflowContracts').ControlledGraphContractId[];
   };
+  finalizationProof?:
+    | {
+        schemaVersion: 2;
+        shapeKey: string;
+        fieldSchemaHash: string;
+        edgeSpecHash: string;
+        finalizedAt: number;
+      }
+    | {
+        schemaVersion: 3;
+        canonicalizationVersion: 1;
+        contractRevision: 1;
+        shapeKey: string;
+        fieldSchemaHash: string;
+        managedGraphHash: string;
+        contractIds: import('./controlledWorkflowContracts').ControlledGraphContractId[];
+        finalizedAt: number;
+      };
+  finalizationProofInvalid?: true;
   createdAt: number;
   updatedAt: number;
 };

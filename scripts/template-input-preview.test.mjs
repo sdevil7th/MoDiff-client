@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { createServer } from 'vite';
+
+import { PROJECT_ROOT, readStudioTemplateIds, renderRuntimeInputTypescript } from './template-default-inputs.mjs';
 
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
 const { bundledTemplateInputPreviewUrl } = await server.ssrLoadModule('/src/studio/templateInputPreview.ts');
 const { resolveTemplateAssetUrl } = await server.ssrLoadModule('/src/studio/templateAssets.ts');
+const { templateDefaultInputBindings } = await server.ssrLoadModule(
+  '/src/studio/generated/templateDefaultInputBindings.ts',
+);
 
 test.after(async () => {
   await server.close();
@@ -29,4 +35,34 @@ test('resolves the backend collision suffix to the byte-identical configured inp
 
 test('does not substitute an unrelated user file', () => {
   assert.equal(bundledTemplateInputPreviewUrl('audio/my-own-recording.wav'), null);
+});
+
+test('tracked default-input JSON and generated packed bindings stay deterministic and aligned', async () => {
+  const mapping = JSON.parse(
+    await readFile(
+      new URL('../public/template-gallery/runtime-inputs/default-input-bindings.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const templateIds = await readStudioTemplateIds(PROJECT_ROOT);
+  assert.deepEqual(
+    Object.keys(mapping).filter((templateId) => !templateIds.includes(templateId)),
+    [],
+    'the tracked mapping contains only runnable templates',
+  );
+  for (const [index, templateId] of templateIds.entries()) {
+    assert.deepEqual(templateDefaultInputBindings(templateId, index), mapping[templateId] ?? [], templateId);
+  }
+
+  const rendered = await renderRuntimeInputTypescript({ mapping, templateIds });
+  assert.equal(
+    rendered,
+    await renderRuntimeInputTypescript({ mapping, templateIds }),
+    'two renders are byte-identical',
+  );
+  assert.equal(
+    rendered,
+    await readFile(new URL('../src/studio/generated/templateDefaultInputBindings.ts', import.meta.url), 'utf8'),
+    'the checked-in packed artifact matches the tracked JSON and template order',
+  );
 });

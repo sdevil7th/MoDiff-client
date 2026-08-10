@@ -23,6 +23,7 @@ let modelSelection;
 let nodeFactory;
 let flowStoreModule;
 let nodesStoreModule;
+let runReadinessModule;
 let studioStoreModule;
 let websocketMessageHandler;
 let userBlocksModule;
@@ -69,6 +70,7 @@ before(async () => {
   nodeFactory = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   websocketMessageHandler = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   userBlocksModule = await server.ssrLoadModule('/src/studio/userBlocks.ts');
@@ -152,8 +154,6 @@ const FINALIZATION_PROOF_PARAM_KEYS = [
   'min',
   'max',
   'step',
-  'onChange',
-  'onSignal',
   'dataSource',
   'fieldOptions',
 ];
@@ -215,6 +215,35 @@ function craftedFinalizationProof(binding, roles) {
       .sort(),
   );
   return { schemaVersion: 2, shapeKey: `${binding.fingerprint}:${roles.join('|')}`, fieldSchemaHash, edgeSpecHash };
+}
+
+function controlledFieldSchemaHash(binding) {
+  const nodeById = new Map(flowStoreModule.useFlowStore.getState().nodes.map((item) => [item.id, item]));
+  return finalizationProofHash(
+    binding.managedNodeIds
+      .map((nodeId) => {
+        const item = nodeById.get(nodeId);
+        return [
+          nodeId,
+          item?.data.studioRole,
+          item?.data.module,
+          item?.data.action,
+          Object.fromEntries(
+            Object.entries(item?.data.params ?? {})
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([key, param]) => [
+                key,
+                Object.fromEntries(
+                  FINALIZATION_PROOF_PARAM_KEYS.map((paramKey) => [paramKey, param[paramKey]]).filter(
+                    ([, paramValue]) => paramValue !== undefined,
+                  ),
+                ),
+              ]),
+          ),
+        ];
+      })
+      .sort(([left], [right]) => String(left).localeCompare(String(right))),
+  );
 }
 
 function graphContentSnapshot(state) {
@@ -1210,6 +1239,303 @@ test('managed video extensions re-seal only after their exact route is complete'
   const sealedProof = studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof;
   assert.equal(graphBridge.refreshStudioManagedGraphBinding()?.finalizationProof, sealedProof);
   assert.match(graphBridge.getStudioGraphRunBlockingMessage(form), /graph changed/i);
+});
+
+test('schema-v3 controlled commits roll back partial routes and seal extension execution identity', async () => {
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const quantization = managedContractNode(
+    'v3-quantization',
+    'diffusersQuantization',
+    'modules.DiffusersRuntime',
+    'PipelineQuantizationConfigV2',
+    { quantization_config: output('quantization_config') },
+  );
+  const recipe = managedContractNode(
+    'v3-recipe',
+    'diffusersRecipe',
+    'modules.DiffusersRuntime',
+    'DiffusersExecutionRecipe',
+    {
+      quantization_config: input('quantization_config'),
+      execution_recipe: output('execution_recipe'),
+    },
+  );
+  const pipeline = managedContractNode('v3-pipeline', 'wanPipeline', 'modules.DiffusersVideo', 'LoadPipeline', {
+    execution_recipe: input('execution_recipe'),
+    pipeline: output('pipeline'),
+  });
+  const generate = managedContractNode('v3-generate', 'wanGenerate', 'modules.DiffusersVideo', 'Generate', {
+    pipeline: input('pipeline'),
+    video_out: output('video'),
+  });
+  const exporter = managedContractNode('v3-export', 'videoExport', 'modules.Video', 'Export', {
+    video: input('video'),
+    format: { type: 'string', display: 'select', value: 'mp4' },
+  });
+  const nodes = [quantization, recipe, pipeline, generate, exporter];
+  const edges = [
+    edge('v3-edge-1', quantization.id, recipe.id, 'quantization_config', 'quantization_config'),
+    edge('v3-edge-2', recipe.id, pipeline.id, 'execution_recipe', 'execution_recipe'),
+    edge('v3-edge-3', pipeline.id, generate.id, 'pipeline', 'pipeline'),
+    edge('v3-edge-4', generate.id, exporter.id, 'video_out', 'video'),
+  ];
+  const form = {
+    ...studioStoreModule.useStudioStore.getState().form,
+    mode: 'text_to_video',
+    modelType: 'WanVideoPipeline',
+    resourceMode: 'expert',
+    quantizationMode: 'none',
+  };
+  const binding = {
+    mode: form.mode,
+    modelType: form.modelType,
+    nodes: {
+      diffusersQuantization: quantization.id,
+      diffusersRecipe: recipe.id,
+      wanPipeline: pipeline.id,
+      wanGenerate: generate.id,
+      videoExport: exporter.id,
+    },
+    managedNodeIds: nodes.map((item) => item.id),
+    managedEdgeIds: edges.map((item) => item.id),
+    fingerprint: `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  flowStoreModule.useFlowStore.setState({ nodes, edges });
+  const shapeKey = graphBridge.getStudioGraphShapeKey(form);
+  binding.finalizationProof = {
+    ...craftedFinalizationProof(binding, shapeKey.split(':').at(-1).split('|')),
+    shapeKey,
+    finalizedAt: 1,
+  };
+  studioStoreModule.useStudioStore.setState({
+    form,
+    graphBinding: binding,
+    graphFinalization: {
+      status: 'complete',
+      bindingFingerprint: binding.fingerprint,
+      startedAt: 1,
+      timedOutGroups: [],
+      managedEdgeCount: edges.length,
+    },
+  });
+
+  const upscaler = managedContractNode('v3-upscaler', 'upscaler', 'modules.Spandrel', 'Upscaler', {
+    image: input('video'),
+    output: output('video'),
+  });
+  nodesStoreModule.useNodesStore.setState((state) => ({
+    nodesRegistry: {
+      ...state.nodesRegistry,
+      ...Object.fromEntries(
+        [...nodes, upscaler].map((item) => [
+          `${item.data.module}.${item.data.action}`,
+          { ...item.data, studioOwned: undefined, studioRole: undefined },
+        ]),
+      ),
+    },
+  }));
+  const transaction = graphBridge.beginControlledGraphTransaction(
+    studioStoreModule.captureWorkflowOperationContext(),
+    'upscale.video.v1',
+  );
+  flowStoreModule.useFlowStore.setState({
+    nodes: [...nodes, upscaler],
+    edges: [
+      ...edges.slice(0, -1),
+      edge('v3-edge-5', generate.id, upscaler.id, 'video_out', 'image'),
+      edge('v3-edge-6', upscaler.id, exporter.id, 'output', 'video'),
+    ],
+  });
+  const finalized = graphBridge.commitControlledGraphTransaction(transaction);
+  assert.equal(finalized.finalizationProof.schemaVersion, 3);
+  assert.deepEqual(finalized.controlled.contractIds, ['upscale.video.v1']);
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+
+  const reviewedNodes = structuredClone(flowStoreModule.useFlowStore.getState().nodes);
+  const reviewedBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+  flowStoreModule.useFlowStore.getState().setParam(upscaler.id, 'image', true, 'spawn');
+  const forgedBinding = structuredClone(reviewedBinding);
+  forgedBinding.finalizationProof.fieldSchemaHash = controlledFieldSchemaHash(forgedBinding);
+  studioStoreModule.useStudioStore.setState({ graphBinding: forgedBinding });
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage(form),
+    /graph changed/i,
+    'a recomputed hash cannot authorize execution metadata absent from the reviewed registry',
+  );
+  flowStoreModule.useFlowStore.setState({ nodes: reviewedNodes });
+  studioStoreModule.useStudioStore.setState({ graphBinding: reviewedBinding });
+  flowStoreModule.useFlowStore.getState().setParam(upscaler.id, 'image', 'output', 'display');
+  const forgedDisplayBinding = structuredClone(reviewedBinding);
+  forgedDisplayBinding.finalizationProof.fieldSchemaHash = controlledFieldSchemaHash(forgedDisplayBinding);
+  studioStoreModule.useStudioStore.setState({ graphBinding: forgedDisplayBinding });
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage(form),
+    /graph changed/i,
+    'a recomputed hash cannot turn a reviewed extension input into an omitted output',
+  );
+  flowStoreModule.useFlowStore.setState({ nodes: reviewedNodes });
+  studioStoreModule.useStudioStore.setState({ graphBinding: reviewedBinding });
+  flowStoreModule.useFlowStore.getState().setParam(exporter.id, 'format', 'output', 'display');
+  const forgedBaseDisplayBinding = structuredClone(reviewedBinding);
+  forgedBaseDisplayBinding.finalizationProof.fieldSchemaHash = controlledFieldSchemaHash(forgedBaseDisplayBinding);
+  studioStoreModule.useStudioStore.setState({ graphBinding: forgedBaseDisplayBinding });
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage(form),
+    /graph changed/i,
+    'a recomputed hash cannot turn a reviewed base input into an omitted output',
+  );
+  flowStoreModule.useFlowStore.setState({ nodes: reviewedNodes });
+  studioStoreModule.useStudioStore.setState({ graphBinding: reviewedBinding });
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+
+  flowStoreModule.useFlowStore.getState().setParam(upscaler.id, 'output', true, 'disabled');
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null, 'field disabled remains transient UI state');
+
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['display']), true);
+  flowStoreModule.useFlowStore.getState().setParam(upscaler.id, 'output', 'input', 'display');
+  assert.equal(graphBridge.syncStudioGraphDefinition(form), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  flowStoreModule.useFlowStore.getState().setParam(upscaler.id, 'output', 'output', 'display');
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['display']), true);
+  assert.equal(graphBridge.syncStudioGraphDefinition(form), true);
+
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['type']), true);
+  flowStoreModule.useFlowStore.getState().setParam(upscaler.id, 'output', 'audio', 'type');
+  assert.equal(graphBridge.syncStudioGraphDefinition(form), false);
+  flowStoreModule.useFlowStore.getState().setParam(upscaler.id, 'output', 'video', 'type');
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['type']), true);
+  assert.equal(graphBridge.syncStudioGraphDefinition(form), true);
+
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['hidden']), true);
+  studioStoreModule.useStudioStore.getState().updateForm({ prompt: 'Updated while schema settles' });
+  assert.equal(graphBridge.syncStudioGraphDefinition(), true, 'value-only form edits do not strand schema authority');
+
+  studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: 'v3-tab', workflowCanvasEpoch: 1 });
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['hidden']), true);
+  studioStoreModule.useStudioStore.setState({ workflowCanvasEpoch: 3 });
+  assert.equal(
+    graphBridge.syncStudioGraphDefinition(),
+    true,
+    'returning to the same workflow after a tab switch resumes its exact pending schema receipt',
+  );
+  studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: null, workflowCanvasEpoch: 4 });
+
+  const authorizedNodes = structuredClone(flowStoreModule.useFlowStore.getState().nodes);
+  const authorizedEdges = structuredClone(flowStoreModule.useFlowStore.getState().edges);
+  const authorizedBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+  const authorizedFinalization = structuredClone(studioStoreModule.useStudioStore.getState().graphFinalization);
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['hidden']), true);
+  const untrackedLoop = node('v3-untracked-loop', 0, 0, { type: 'loop' });
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: [
+      ...state.nodes.map((item) => (item.id === pipeline.id ? { ...item, parentId: untrackedLoop.id } : item)),
+      untrackedLoop,
+    ],
+  }));
+  assert.equal(graphBridge.syncStudioGraphDefinition(form), false, 'schema refresh cannot bless topology drift');
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof, undefined);
+  flowStoreModule.useFlowStore.setState({ nodes: authorizedNodes, edges: authorizedEdges });
+  studioStoreModule.useStudioStore.setState({
+    graphBinding: authorizedBinding,
+    graphFinalization: authorizedFinalization,
+  });
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['hidden']), true);
+  assert.equal(graphBridge.syncStudioGraphDefinition(form), true);
+
+  const rogue = node('v3-rogue', 0, 0);
+  rogue.type = 'group';
+  flowStoreModule.useFlowStore.setState((state) => ({ nodes: [...state.nodes, rogue] }));
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(form), /graph changed/i);
+  flowStoreModule.useFlowStore.setState((state) => ({ nodes: state.nodes.filter((item) => item.id !== rogue.id) }));
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+
+  flowStoreModule.useFlowStore.getState().setNodeUiState(upscaler.id, { disabled: true });
+  assert.match(graphBridge.getStudioGraphRunBlockingMessage(form), /graph changed/i);
+  flowStoreModule.useFlowStore.getState().setNodeUiState(upscaler.id, { disabled: false });
+  assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+
+  const beforeGraph = graphContentSnapshot(flowStoreModule.useFlowStore.getState());
+  const beforeBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+  const beforeHistory = structuredClone(flowStoreModule.useFlowStore.getState().historyPast);
+  const rejected = graphBridge.beginControlledGraphTransaction(
+    studioStoreModule.captureWorkflowOperationContext(),
+    'upscale.video.v1',
+  );
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((item) =>
+      item.id === upscaler.id ? { ...item, data: { ...item.data, action: 'UnreviewedUpscaler' } } : item,
+    ),
+    edges: state.edges.filter((item) => item.target !== exporter.id),
+  }));
+  assert.throws(() => graphBridge.commitControlledGraphTransaction(rejected), /reviewed graph contract/i);
+  assert.deepEqual(graphContentSnapshot(flowStoreModule.useFlowStore.getState()), beforeGraph);
+  assert.deepEqual(studioStoreModule.useStudioStore.getState().graphBinding, beforeBinding);
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().historyPast, beforeHistory);
+
+  const containerRejected = graphBridge.beginControlledGraphTransaction(
+    studioStoreModule.captureWorkflowOperationContext(),
+    'upscale.video.v1',
+  );
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((item) =>
+      item.id === upscaler.id ? { ...item, type: 'group', data: { ...item.data, type: 'group' } } : item,
+    ),
+  }));
+  assert.throws(() => graphBridge.commitControlledGraphTransaction(containerRejected), /reviewed graph contract/i);
+  assert.deepEqual(graphContentSnapshot(flowStoreModule.useFlowStore.getState()), beforeGraph);
+  assert.deepEqual(studioStoreModule.useStudioStore.getState().graphBinding, beforeBinding);
+
+  const saveAction = studioStoreModule.useStudioStore.getState().saveActiveWorkflowTab;
+  studioStoreModule.useStudioStore.setState({
+    saveActiveWorkflowTab: () => {
+      throw new Error('persist failed');
+    },
+  });
+  const persistFailureGraph = graphContentSnapshot(flowStoreModule.useFlowStore.getState());
+  const persistFailureBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+  const persistFailureHistory = structuredClone(flowStoreModule.useFlowStore.getState().historyPast);
+  try {
+    const persistFailure = graphBridge.beginControlledGraphTransaction(
+      studioStoreModule.captureWorkflowOperationContext(),
+      'upscale.video.v1',
+    );
+    assert.throws(() => graphBridge.commitControlledGraphTransaction(persistFailure), /persist failed/i);
+  } finally {
+    studioStoreModule.useStudioStore.setState({ saveActiveWorkflowTab: saveAction });
+  }
+  assert.deepEqual(graphContentSnapshot(flowStoreModule.useFlowStore.getState()), persistFailureGraph);
+  assert.deepEqual(studioStoreModule.useStudioStore.getState().graphBinding, persistFailureBinding);
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().historyPast, persistFailureHistory);
+
+  flowStoreModule.useFlowStore.setState((state) => ({
+    edges: state.edges.map((item) => (item.id === 'v3-edge-6' ? { ...item, id: 'v3-edge-replaced' } : item)),
+  }));
+  assert.match(
+    graphBridge.getStudioGraphRunBlockingMessage(form),
+    /graph changed/i,
+    'edge identity replacement is sealed',
+  );
+  assert.equal(graphBridge.markStudioGraphDefinitionPending(upscaler.id, ['hidden']), false);
+
+  flowStoreModule.useFlowStore.setState({ nodes, edges });
+  const quarantined = { ...binding, finalizationProofInvalid: true };
+  studioStoreModule.useStudioStore.setState({ graphBinding: quarantined, graphFinalization: null });
+  assert.equal(await graphBridge.waitForStudioGraphFinalization(100), false);
+  assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.finalizationProofInvalid, true);
+  assert.deepEqual(
+    studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof,
+    binding.finalizationProof,
+  );
+  assert.equal(
+    runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((issue) => issue.action === 'detach_graph')?.blocking,
+    true,
+  );
+  await assert.rejects(() => graphBridge.createOrUpdateStudioGraph(form), /saved Studio graph proof is invalid/i);
 });
 
 test('Blocks expand from embedded snapshots, resize, collapse, export, and flatten without nesting', () => {
@@ -3492,6 +3818,11 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
     /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*createOrUpdateStudioGraph\(nextForm, context\)/,
   );
   assert.match(issuesDialogSource, /setWorkflowFocusRequest\(\{[\s\S]*nodeId: null/);
+  assert.match(
+    issuesDialogSource,
+    /item\.action === 'detach_graph'[\s\S]*detachManagedGraph\(\)[\s\S]*Detach invalid receipt/,
+    'an invalid persisted proof has an explicit operator recovery action',
+  );
 });
 
 test('model selector applies only backend class and id filters to opaque installed models', () => {

@@ -413,6 +413,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+function isBoundedRecord(value: unknown, valueIsValid: (item: unknown) => boolean = () => true) {
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  return (
+    entries.length <= 256 && entries.every(([key, item]) => key.length > 0 && key.length <= 256 && valueIsValid(item))
+  );
+}
+
 function optionalField(
   value: Record<string, unknown>,
   key: string,
@@ -574,7 +582,7 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
     case 'update_value':
       return typeof value.node === 'string' && typeof value.key === 'string';
     case 'node_definition':
-      return typeof value.node === 'string' && isRecord(value.params);
+      return typeof value.node === 'string' && isBoundedRecord(value.params, isRecord);
     case 'task_queued':
     case 'task_started':
       return typeof value.task_id === 'string' && (value.current !== undefined || value.queued !== undefined);
@@ -585,10 +593,11 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
     case 'task_progress':
       return typeof value.task_id === 'string' && isFiniteNumber(value.progress);
     case 'set_field_visibility':
+      return typeof value.node === 'string' && isBoundedRecord(value.fields, (field) => typeof field === 'boolean');
     case 'set_field_value':
-      return typeof value.node === 'string' && isRecord(value.fields);
+      return typeof value.node === 'string' && isBoundedRecord(value.fields);
     case 'set_field_params':
-      return typeof value.node === 'string' && typeof value.field === 'string' && isRecord(value.params);
+      return typeof value.node === 'string' && typeof value.field === 'string' && isBoundedRecord(value.params);
     case 'hf_download_progress':
       return (
         typeof value.repo_id === 'string' &&

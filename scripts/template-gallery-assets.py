@@ -349,6 +349,45 @@ def concrete_references(source: Path) -> set[str]:
     return references
 
 
+def derived_runtime_references() -> set[str]:
+    bindings_path = GALLERY_ROOT / "runtime-inputs" / "default-input-bindings.json"
+    templates_path = CLIENT_ROOT / "src" / "studio" / "templates.ts"
+    if not bindings_path.is_file() or not templates_path.is_file():
+        return set()
+    references = concrete_references(bindings_path)
+    source = templates_path.read_text(encoding="utf-8")
+    template_block = re.search(
+        r"const BASE_STUDIO_TEMPLATES:[^=]+?= \[([\s\S]*?)\n\];",
+        source,
+    )
+    poster_indexes = re.search(
+        r"const TEMPLATE_CARD_POSTER_INDEXES = new Set\(\[([\s\S]*?)\]\);",
+        source,
+    )
+    webp_indexes = re.search(
+        r"const WEBP_CARD_POSTER_INDEXES = new Set\(\[([\s\S]*?)\]\);",
+        source,
+    )
+    if not template_block or not poster_indexes or not webp_indexes:
+        raise AssetPipelineError("Could not resolve derived Studio Gallery references.")
+    template_ids = re.findall(r"^    id: '([^']+)',", template_block.group(1), re.MULTILINE)
+    if not template_ids or len(template_ids) != len(set(template_ids)):
+        raise AssetPipelineError("Studio template ids must be present and unique.")
+
+    def indexes(match: re.Match[str]) -> set[int]:
+        return {int(value) for value in re.findall(r"\d+", match.group(1))}
+
+    card_indexes = indexes(poster_indexes)
+    webp_card_indexes = indexes(webp_indexes)
+    if not card_indexes or not webp_card_indexes.issubset(card_indexes) or max(card_indexes) >= len(template_ids):
+        raise AssetPipelineError("Studio card-poster indexes are invalid.")
+    references.update(
+        f"{template_ids[index]}.{'poster' if index == 39 else 'card-poster'}.{'webp' if index in webp_card_indexes else 'png'}"
+        for index in card_indexes
+    )
+    return references
+
+
 def required_assets_by_purpose() -> dict[str, set[str]]:
     unaudited = unaudited_durable_reference_sources()
     if unaudited:
@@ -361,6 +400,8 @@ def required_assets_by_purpose() -> dict[str, set[str]]:
     required = {
         path: set(purposes) for path, purposes in ALWAYS_REQUIRED_BY_PURPOSE.items()
     }
+    for relative_path in derived_runtime_references():
+        required.setdefault(relative_path, set()).add("runtime")
     for purpose, sources in (
         ("runtime", RUNTIME_REFERENCE_SOURCES),
         ("tooling", TOOLING_REFERENCE_SOURCES),

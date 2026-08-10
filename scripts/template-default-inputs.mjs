@@ -4,6 +4,7 @@ import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { format } from 'prettier';
+import ts from 'typescript';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 export const PROJECT_ROOT = resolve(SCRIPT_PATH, '..', '..');
@@ -16,6 +17,7 @@ const RUNTIME_INPUT_ROOT = join(GALLERY_ROOT, 'runtime-inputs');
 const RUNTIME_ASSET_ROOT = join(RUNTIME_INPUT_ROOT, 'assets');
 const RUNTIME_JSON_PATH = join(RUNTIME_INPUT_ROOT, 'default-input-bindings.json');
 const GENERATED_TYPESCRIPT_PATH = join('src', 'studio', 'generated', 'templateDefaultInputBindings.ts');
+const STUDIO_TEMPLATES_PATH = join('src', 'studio', 'templates.ts');
 const RUNTIME_PUBLIC_PREFIX = '/template-gallery/runtime-inputs';
 const APPROVED_REVIEW_STATUSES = new Set(['approved_exact', 'approved_reviewed']);
 
@@ -23,6 +25,17 @@ const FIELD_ORDER = [
   'referenceImages',
   'maskImage',
   'controlImage',
+  'sourceVideo',
+  'maskVideo',
+  'controlVideo',
+  'sourceAudio',
+  'referenceAudio',
+];
+
+const PACKED_FIELD_ORDER = [
+  'controlImage',
+  'referenceImages',
+  'maskImage',
   'sourceVideo',
   'maskVideo',
   'controlVideo',
@@ -214,6 +227,47 @@ function publicFilePath(projectRoot, publicPath) {
 
 async function readJson(path) {
   return JSON.parse(await readFile(path, 'utf8'));
+}
+
+export async function readStudioTemplateIds(projectRoot) {
+  const path = resolve(projectRoot, STUDIO_TEMPLATES_PATH);
+  const source = await readFile(path, 'utf8');
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let templateIds;
+
+  function visit(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'BASE_STUDIO_TEMPLATES' &&
+      ts.isArrayLiteralExpression(node.initializer)
+    ) {
+      templateIds = node.initializer.elements.map((element, index) => {
+        if (!ts.isObjectLiteralExpression(element)) {
+          throw new Error(`BASE_STUDIO_TEMPLATES item ${index} is not an object literal.`);
+        }
+        const idProperty = element.properties.find(
+          (property) =>
+            ts.isPropertyAssignment(property) &&
+            ((ts.isIdentifier(property.name) && property.name.text === 'id') ||
+              (ts.isStringLiteral(property.name) && property.name.text === 'id')),
+        );
+        if (!idProperty || !ts.isStringLiteral(idProperty.initializer)) {
+          throw new Error(`BASE_STUDIO_TEMPLATES item ${index} has no literal id.`);
+        }
+        return idProperty.initializer.text;
+      });
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  if (!templateIds) throw new Error(`Could not find BASE_STUDIO_TEMPLATES in ${STUDIO_TEMPLATES_PATH}.`);
+  if (new Set(templateIds).size !== templateIds.length) {
+    throw new Error(`${STUDIO_TEMPLATES_PATH} contains duplicate base template ids.`);
+  }
+  return templateIds;
 }
 
 async function fileSha256(path) {
@@ -705,15 +759,22 @@ export async function buildTemplateDefaultInputPlan(projectRoot = PROJECT_ROOT) 
 
   const { mapping, runtimeAssets } = buildMapping(collected.requirements, resolved.resolutions);
   validateCoverage(collected.requirements, mapping);
+  const templateIds = await readStudioTemplateIds(projectRoot);
+  const templateIdSet = new Set(templateIds);
   const approvedTemplateIds = collected.approvedEntries.map((entry) => entry.templateId);
   const approvedTemplateIdSet = new Set(approvedTemplateIds);
   const unexpectedTemplateIds = Object.keys(mapping).filter((templateId) => !approvedTemplateIdSet.has(templateId));
   if (unexpectedTemplateIds.length > 0) {
     throw new Error(`Runtime input map contains non-approved templates: ${unexpectedTemplateIds.join(', ')}`);
   }
+  const unmappedTemplateIds = Object.keys(mapping).filter((templateId) => !templateIdSet.has(templateId));
+  if (unmappedTemplateIds.length > 0) {
+    throw new Error(`Runtime input map contains unknown Studio templates: ${unmappedTemplateIds.join(', ')}`);
+  }
 
   return {
     projectRoot,
+    templateIds,
     approvedTemplateIds,
     requirements: collected.requirements,
     excludedGenerated: collected.excludedGenerated,
@@ -728,15 +789,151 @@ export function renderRuntimeInputJson(plan) {
 }
 
 export async function renderRuntimeInputTypescript(plan) {
-  const source = `import type { StudioTemplateId, StudioTemplateInputBinding } from '../types';
+  const usedFields = new Set(
+    Object.values(plan.mapping).flatMap((bindings) => bindings.map((binding) => binding.field)),
+  );
+  const packedFields = PACKED_FIELD_ORDER.filter((field) => usedFields.has(field));
+  if (packedFields.length !== usedFields.size) {
+    const unknownFields = [...usedFields].filter((field) => !packedFields.includes(field));
+    throw new Error(`Runtime input map contains unpackable fields: ${unknownFields.join(', ')}`);
+  }
 
-/**
- * Generated by scripts/template-default-inputs.mjs from approved public gallery
- * provenance. Do not edit by hand.
- */
-export const TEMPLATE_DEFAULT_INPUT_BINDINGS = ${JSON.stringify(plan.mapping, null, 2)} satisfies Partial<
-  Record<StudioTemplateId, StudioTemplateInputBinding[]>
->;
+  const templateIndexes = new Map(plan.templateIds.map((templateId, index) => [templateId, index]));
+  const packedByIndex = new Map();
+  for (const [templateId, bindings] of Object.entries(plan.mapping)) {
+    const templateIndex = templateIndexes.get(templateId);
+    if (templateIndex === undefined) throw new Error(`Runtime input map contains unknown template ${templateId}.`);
+    packedByIndex.set(
+      templateIndex,
+      bindings.map((binding) => {
+        const fieldIndex = packedFields.indexOf(binding.field);
+        const defaultBindingLabel =
+          binding.field === 'referenceImages'
+            ? `Reviewed reference image${binding.defaultAssets.length > 1 ? 's' : ''}`
+            : `Reviewed ${binding.field.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}`;
+        const packedBinding = [
+          fieldIndex,
+          binding.defaultAssets.map((asset, assetIndex) => {
+            const runtimeMatch = /^\/template-gallery\/runtime-inputs\/assets\/([a-f0-9]{64})\.([a-z0-9]+)$/.exec(
+              asset.runtimePath,
+            );
+            if (!runtimeMatch) throw new Error(`Default input ${asset.id} has an unpackable runtime path.`);
+            const [, digest, extension] = runtimeMatch;
+            if (asset.runtimeSha256 !== `sha256:bytes:${digest}`) {
+              throw new Error(`Default input ${asset.id} runtime path and hash differ.`);
+            }
+            const defaultPreviewPath = `/template-gallery/inputs/${templateId}.before.${extension}`;
+            const packedPreview = asset.previewPath === defaultPreviewPath ? true : asset.previewPath;
+            const defaultAssetLabel =
+              binding.field === 'referenceImages'
+                ? `Reviewed reference image ${assetIndex + 1}`
+                : `Reviewed ${binding.field.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}`;
+            const packedAsset = [`${Buffer.from(digest, 'hex').toString('base64')}.${extension}`];
+            if (packedPreview || asset.label !== defaultAssetLabel) packedAsset.push(packedPreview ?? null);
+            if (asset.label !== defaultAssetLabel) packedAsset.push(asset.label);
+            return packedAsset;
+          }),
+        ];
+        if (binding.label !== defaultBindingLabel) packedBinding.push(binding.label);
+        return packedBinding;
+      }),
+    );
+  }
+  const maximumIndex = Math.max(...packedByIndex.keys());
+  const packedSource = `[${Array.from({ length: maximumIndex + 1 }, (_, index) =>
+    packedByIndex.has(index) ? JSON.stringify(packedByIndex.get(index)) : '',
+  ).join(',')}]`;
+
+  const source = `/* eslint-disable no-sparse-arrays -- generated sparse template index */
+import type {
+  StudioTemplateDefaultInputAsset,
+  StudioTemplateId,
+  StudioTemplateInputBinding,
+  StudioTemplateInputFormField,
+} from '../types';
+
+/** Generated by scripts/template-default-inputs.mjs. Do not edit by hand. */
+type PackedAsset = readonly [runtimePath: string, previewPath?: string | true | null, label?: string];
+type PackedBinding = readonly [fieldIndex: number, assets: readonly PackedAsset[], label?: string];
+
+const PACKED_INPUT_FIELDS = ${JSON.stringify(packedFields)} as const satisfies readonly StudioTemplateInputFormField[];
+
+const PACKED_TEMPLATE_DEFAULT_INPUTS = ${packedSource} as const satisfies readonly (
+  | readonly PackedBinding[]
+  | undefined
+)[];
+
+function camelToDelimited(value: string, delimiter: '-' | '_' | ' ') {
+  return value.replace(/[A-Z]/g, (letter) => delimiter + letter.toLowerCase());
+}
+
+function mediaTypeForField(field: StudioTemplateInputFormField) {
+  return field.endsWith('Audio')
+    ? ('audio' as const)
+    : field.endsWith('Video')
+      ? ('video' as const)
+      : ('image' as const);
+}
+
+function reviewedLabel(field: StudioTemplateInputFormField) {
+  return 'Reviewed ' + camelToDelimited(field, ' ');
+}
+
+function unpackAsset(
+  templateId: string,
+  field: StudioTemplateInputFormField,
+  mediaType: 'image' | 'video' | 'audio',
+  packed: PackedAsset,
+  index: number,
+): StudioTemplateDefaultInputAsset {
+  const [runtimeFile, preview, label] = packed;
+  const separator = runtimeFile.lastIndexOf('.');
+  const digest = Array.from(atob(runtimeFile.slice(0, separator)), (byte) =>
+    byte.charCodeAt(0).toString(16).padStart(2, '0'),
+  ).join('');
+  const extension = runtimeFile.slice(separator + 1);
+  const runtimePath = '/template-gallery/runtime-inputs/assets/' + digest + '.' + extension;
+  const previewPath =
+    preview === true
+      ? '/template-gallery/inputs/' + templateId + '.before.' + extension
+      : preview?.startsWith('.')
+        ? '/template-gallery/inputs/' + templateId + '.before' + preview
+        : preview;
+  const referenceImage = field === 'referenceImages';
+  const assetField = referenceImage ? 'reference-image' : camelToDelimited(field, '-');
+  const fileField = referenceImage ? 'reference_image' : camelToDelimited(field, '_');
+  const suffix = referenceImage ? String(index + 1) : '';
+  return {
+    id: templateId + '-' + assetField + (suffix ? '-' + suffix : ''),
+    label: label ?? (referenceImage ? 'Reviewed reference image ' + (index + 1) : reviewedLabel(field)),
+    mediaType,
+    ...(previewPath ? { previewPath } : {}),
+    runtimePath,
+    runtimeSha256: \`sha256:bytes:\${digest}\`,
+    fileName: templateId + '.' + fileField + (suffix ? '_' + suffix : '') + '.' + extension,
+  };
+}
+
+export function templateDefaultInputBindings(templateId: StudioTemplateId, index: number) {
+  const bindings = PACKED_TEMPLATE_DEFAULT_INPUTS[index];
+  return (bindings ?? []).map(([fieldIndex, assets, label]) => {
+    const field = PACKED_INPUT_FIELDS[fieldIndex]!;
+    const mediaType = mediaTypeForField(field);
+    return {
+      id: templateId + '-' + camelToDelimited(field, '-') + '-defaults',
+      label:
+        label ??
+        (field === 'referenceImages'
+          ? 'Reviewed reference image' + (assets.length > 1 ? 's' : '')
+          : reviewedLabel(field)),
+      mediaType,
+      origin: 'template',
+      requiredAt: 'workflow_start',
+      field,
+      defaultAssets: assets.map((asset, index) => unpackAsset(templateId, field, mediaType, asset, index)),
+    };
+  }) as Array<Extract<StudioTemplateInputBinding, { origin: 'template' }>>;
+}
 `;
   return format(source, {
     parser: 'typescript',

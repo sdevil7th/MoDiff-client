@@ -2537,6 +2537,13 @@ test('Qwen outpaint templates fully denoise the generated canvas boundary', () =
 });
 
 test('unknown template ids are discarded instead of entering persisted output state', () => {
+  for (const template of [...templatesModule.STUDIO_TEMPLATES, ...templatesModule.PLANNING_STUDIO_TEMPLATES]) {
+    assert.equal(
+      outputContractsModule.coerceStudioTemplateId(template.id),
+      template.id,
+      `${template.id} remains accepted by persistence coercion`,
+    );
+  }
   const obsoleteTemplateId = 'obsolete_qwen_outpaint_template';
   assert.equal(outputContractsModule.coerceStudioTemplateId(obsoleteTemplateId), undefined);
   const output = outputContractsModule.coerceStudioOutput({
@@ -2776,6 +2783,53 @@ test('completed graph finalization proofs survive persistence validation', () =>
     finalizationProof: { ...proof, schemaVersion: 1 },
   });
   assert.equal(malformed?.finalizationProof, undefined);
+  assert.equal(malformed?.finalizationProofInvalid, true);
+});
+
+test('controlled graph declarations require an exact schema-v3 persistence proof', () => {
+  const controlled = {
+    schemaVersion: 1,
+    contractRevision: 1,
+    contractIds: ['upscale.video.v1'],
+  };
+  const proof = {
+    schemaVersion: 3,
+    canonicalizationVersion: 1,
+    contractRevision: 1,
+    shapeKey: 'text_to_video:WanVideoPipeline:expert:none:runtime|generate|export',
+    fieldSchemaHash: 'graph-v1-0123abcd',
+    managedGraphHash: 'graph-v1-4567cdef',
+    contractIds: controlled.contractIds,
+    finalizedAt: 1234,
+  };
+  const base = {
+    mode: 'text_to_video',
+    modelType: 'WanVideoPipeline',
+    nodes: {},
+    managedNodeIds: [],
+    managedEdgeIds: [],
+    fingerprint: 'text_to_video:WanVideoPipeline:expert:none',
+    controlled,
+    finalizationProof: proof,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const binding = outputContractsModule.coerceStudioGraphBinding(base);
+  assert.deepEqual(binding?.controlled, controlled);
+  assert.deepEqual(binding?.finalizationProof, proof);
+  assert.equal(binding?.finalizationProofInvalid, undefined);
+
+  const malformedCases = [
+    { ...base, controlled: { ...controlled, contractIds: ['unknown.v1'] } },
+    { ...base, finalizationProof: { ...proof, schemaVersion: 2, edgeSpecHash: 'graph-v1-89abcdef' } },
+    { ...base, finalizationProof: { ...proof, managedGraphHash: 'not-a-proof-hash' } },
+    { ...base, finalizationProof: { ...proof, contractIds: ['soundtrack.v1'] } },
+  ];
+  malformedCases.forEach((value) => {
+    const malformed = outputContractsModule.coerceStudioGraphBinding(value);
+    assert.equal(malformed?.finalizationProof, undefined);
+    assert.equal(malformed?.finalizationProofInvalid, true);
+  });
 });
 
 test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe settings', () => {

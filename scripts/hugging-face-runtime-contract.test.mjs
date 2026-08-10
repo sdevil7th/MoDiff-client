@@ -57,7 +57,8 @@ test('optional runtime status stays generic and has no mutation transport', () =
 
 test('frontend workflow generation has no library-specific model driver', () => {
   const controlledWorkflows = source('src/studio/controlledWorkflows.ts');
-  assert.match(controlledWorkflows, /qualityVideoShots: 'modules\.WorkflowControl\.AuthorShotList'/);
+  const controlledContracts = source('src/studio/controlledWorkflowContracts.ts');
+  assert.match(controlledContracts, /qualityVideoShots: 'modules\.WorkflowControl\.AuthorShotList'/);
   assert.match(
     controlledWorkflows,
     /setParamIfPresent\(nodeId, \['revision'\], adapter\.model\.revision \?\? ''\)/,

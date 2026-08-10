@@ -7,7 +7,7 @@ import {
   type SettledGraphFinalization,
 } from './graphFinalization';
 import type { FieldProps } from '../components/NodeContent';
-import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
+import { useFlowStore, type CustomNodeType, type FlowStore } from '../stores/useFlowStore';
 import { type NodeData, type NodeParams, useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import {
@@ -20,7 +20,9 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 import fieldAction from '../utils/fieldAction';
+import { setManagedGraphSchemaMutationHandler } from '../utils/managedGraphSchemaMutation';
 import {
   QWEN_CONTROLNET_REPO,
   QWEN_INPAINT_GENERATE_NODE_KEY,
@@ -45,6 +47,12 @@ import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { hashString, stableStringify } from './templateExactness';
 import { STUDIO_TEMPLATES } from './templates';
+import {
+  CONTROLLED_ROLE_NODE_KEYS,
+  CONTROLLED_WORKFLOW_NODE_KEYS,
+  type ControlledGraphContractId,
+  type ControlledNodeRole,
+} from './controlledWorkflowContracts';
 import type {
   StudioFormState,
   StudioGraphBinding,
@@ -242,6 +250,18 @@ let graphFinalizationPromise: Promise<SettledGraphFinalization<BridgeResult>> | 
 let graphFinalizationContext: WorkflowOperationContext | null = null;
 let graphFinalizationToken = 0;
 let graphDefinitionRevision = 0;
+const controlledDefinitionGraphHashes = new Map<string | null, string>();
+
+export type ControlledGraphTransaction = {
+  id: string;
+  context: WorkflowOperationContext;
+  contractId: ControlledGraphContractId;
+  binding: StudioGraphBinding;
+  finalization: StudioGraphFinalizationState;
+  flow: FlowStore;
+};
+
+let activeControlledGraphTransaction: ControlledGraphTransaction | null = null;
 
 function cloneStudioFormForGraph(form: StudioFormState): StudioFormState {
   return {
@@ -520,13 +540,11 @@ function isString(value: string | undefined): value is string {
 }
 
 function isIgnorableCustomGraphNode(node: CustomNodeType) {
-  return (
-    node.type === 'group' ||
-    node.type === 'loop' ||
-    node.data.type === 'group' ||
-    node.data.type === 'loop' ||
-    node.data.category === 'group'
-  );
+  return node.data.type === 'group' || node.data.type === 'loop';
+}
+
+function isManagedContainerNode(node: CustomNodeType) {
+  return node.type === 'group' || node.type === 'loop' || isIgnorableCustomGraphNode(node);
 }
 
 export function inspectStudioGraphBindingDivergence(
@@ -653,14 +671,57 @@ const GRAPH_PROOF_PARAM_KEYS: Array<keyof NodeParams> = [
   'min',
   'max',
   'step',
-  'onChange',
-  'onSignal',
   'dataSource',
   'fieldOptions',
 ];
 
+const REVIEWED_EXECUTION_PARAM_KEYS = [
+  'type',
+  'display',
+  'isInput',
+  'spawn',
+  'optionsSource',
+  'dataSource',
+] as const satisfies readonly (keyof NodeParams)[];
+
 function hashGraphProof(value: unknown) {
   return `graph-v1-${hashString(stableStringify(value))}`;
+}
+
+function graphProofParamSchema(params: Record<string, NodeParams> | undefined) {
+  return Object.fromEntries(
+    Object.entries(params ?? {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, param]) => [
+        key,
+        Object.fromEntries(
+          GRAPH_PROOF_PARAM_KEYS.map((paramKey) => [paramKey, param[paramKey]]).filter(
+            ([, paramValue]) => paramValue !== undefined,
+          ),
+        ),
+      ]),
+  );
+}
+
+function managedParamSchemaMatchesRegistry(
+  params: Record<string, NodeParams>,
+  reviewedParams: Record<string, NodeParams> | undefined,
+) {
+  if (!reviewedParams) return false;
+  for (const [field, reviewedParam] of Object.entries(reviewedParams)) {
+    const param = params[field];
+    if (
+      !param ||
+      REVIEWED_EXECUTION_PARAM_KEYS.some((key) => stableStringify(param[key]) !== stableStringify(reviewedParam[key]))
+    ) {
+      return false;
+    }
+  }
+  return Object.entries(params).every(([field, param]) =>
+    (['spawn', 'dataSource'] as const).every(
+      (key) => stableStringify(param[key]) === stableStringify(reviewedParams[field]?.[key]),
+    ),
+  );
 }
 
 function fieldSchemaHash(binding: StudioGraphBinding, form: StudioFormState) {
@@ -677,21 +738,523 @@ function fieldSchemaHash(binding: StudioGraphBinding, form: StudioFormState) {
         id: nodeId,
         module: node?.data.module,
         action: node?.data.action,
-        params: Object.fromEntries(
-          Object.entries(node?.data.params ?? {})
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, param]) => [
-              key,
-              Object.fromEntries(
-                GRAPH_PROOF_PARAM_KEYS.map((paramKey) => [paramKey, param[paramKey]]).filter(
-                  ([, paramValue]) => paramValue !== undefined,
-                ),
-              ),
-            ]),
-        ),
+        params: graphProofParamSchema(node?.data.params),
       };
     }),
   });
+}
+
+const CONTROLLED_CONTRACT_ROLES: Partial<Record<ControlledGraphContractId, ControlledNodeRole[]>> = {
+  'upscale.image.v1': ['upscaler', 'upscalePreview'],
+  'upscale.video.v1': ['upscaler'],
+  'upscale.quality-loop.v1': ['upscaler'],
+  'video-sequence.v1': ['videoSequence', 'videoCompose'],
+  'quality-video.i2v.v1': [
+    'qualityVideoQuantization',
+    'qualityVideoRecipe',
+    'qualityVideoShots',
+    'qualityVideoJobs',
+    'qualityVideoLoop',
+    'qualityVideoLoopItems',
+    'qualityVideoGenerate',
+    'qualityVideoRetain',
+    'qualityVideoLoopResult',
+    'qualityVideoJoin',
+  ],
+  'quality-video.t2v.v1': [
+    'qualityVideoQuantization',
+    'qualityVideoRecipe',
+    'qualityVideoShots',
+    'qualityVideoJobs',
+    'qualityVideoLoop',
+    'qualityVideoLoopItems',
+    'qualityVideoGenerate',
+    'qualityVideoRetain',
+    'qualityVideoLoopResult',
+    'qualityVideoJoin',
+  ],
+  'soundtrack.v1': [
+    'soundtrackQuantization',
+    'soundtrackRecipe',
+    'soundtrackPipeline',
+    'soundtrackGenerate',
+    'soundtrackAudioFit',
+    'exportWithAudio',
+  ],
+  'lyric-video.v1': [
+    'lyricVideoQuantization',
+    'lyricVideoRecipe',
+    'lyricVideoPipeline',
+    'videoSequence',
+    'videoCompose',
+    'upscaler',
+    'lyricOverlay',
+    'lyricAudioFit',
+    'exportWithAudio',
+  ],
+};
+
+function isLoraRole(role: string): role is ControlledNodeRole {
+  return role === 'loraAdapter' || /^loraAdapter:[1-9][0-9]?$/.test(role);
+}
+
+function isControlledRole(role: string): role is ControlledNodeRole {
+  return role === 'qualityVideoLoop' || isLoraRole(role) || role in CONTROLLED_ROLE_NODE_KEYS;
+}
+
+function controlledRoleNodes() {
+  const roles = new Map<ControlledNodeRole, CustomNodeType>();
+  let valid = true;
+  for (const node of useFlowStore.getState().nodes) {
+    const role = node.data.studioRole;
+    if (typeof role !== 'string' || !isControlledRole(role)) continue;
+    if (roles.has(role)) valid = false;
+    roles.set(role, node);
+  }
+  return { roles, valid };
+}
+
+function loraContractId(contractIds: readonly ControlledGraphContractId[]) {
+  return contractIds.find((id) => id.startsWith('lora.'));
+}
+
+function expectedLoraNodeKey(contractIds: readonly ControlledGraphContractId[]) {
+  const contractId = loraContractId(contractIds);
+  if (contractId === 'lora.modular.v1') return CONTROLLED_WORKFLOW_NODE_KEYS.lora;
+  if (contractId === 'lora.diffusers-image.v1') return CONTROLLED_WORKFLOW_NODE_KEYS.directLora;
+  if (contractId === 'lora.diffusers-audio.v1') return CONTROLLED_WORKFLOW_NODE_KEYS.audioLora;
+  return undefined;
+}
+
+function controlledContractsAreCompatible(
+  binding: StudioGraphBinding,
+  contractIds: readonly ControlledGraphContractId[],
+) {
+  const contracts = new Set(contractIds);
+  const loraContracts = contractIds.filter((id) => id.startsWith('lora.'));
+  const upscaleContracts = contractIds.filter((id) => id.startsWith('upscale.'));
+  const qualityContracts = contractIds.filter((id) => id.startsWith('quality-video.'));
+  if (
+    contractIds.length === 0 ||
+    contractIds.length > 16 ||
+    contracts.size !== contractIds.length ||
+    loraContracts.length > 1 ||
+    upscaleContracts.length > 1 ||
+    qualityContracts.length > 1
+  ) {
+    return false;
+  }
+  if (contracts.has('lora.modular.v1') && !binding.nodes.models) return false;
+  if (contracts.has('lora.diffusers-image.v1') && !binding.nodes.diffusersImagePipeline) return false;
+  if (contracts.has('lora.diffusers-audio.v1') && !binding.nodes.audioPipeline) return false;
+  if (contracts.has('upscale.image.v1') && (isVideoMode(binding.mode) || isAudioMode(binding.mode))) return false;
+  if (contracts.has('upscale.video.v1') && !isVideoMode(binding.mode)) return false;
+  if (contracts.has('video-sequence.v1') && !isVideoMode(binding.mode)) return false;
+  if (contracts.has('quality-video.i2v.v1') && binding.mode !== 'image_to_video') return false;
+  if (contracts.has('quality-video.t2v.v1') && binding.mode !== 'text_to_video') return false;
+  if (contracts.has('upscale.quality-loop.v1') !== (qualityContracts.length === 1 && upscaleContracts.length === 1)) {
+    return false;
+  }
+  if (qualityContracts.length && (contracts.has('video-sequence.v1') || contracts.has('soundtrack.v1'))) return false;
+  if (contracts.has('soundtrack.v1') && !isVideoMode(binding.mode)) return false;
+  if (
+    contracts.has('lyric-video.v1') &&
+    (!isAudioMode(binding.mode) || contractIds.some((id) => id.includes('video-sequence')))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function contractExpectedRoles(contractIds: readonly ControlledGraphContractId[]) {
+  const roles = new Set<ControlledNodeRole>();
+  contractIds.forEach((id) => CONTROLLED_CONTRACT_ROLES[id]?.forEach((role) => roles.add(role)));
+  return roles;
+}
+
+function sortedLoraNodes(roles: Map<ControlledNodeRole, CustomNodeType>) {
+  return [...roles.entries()]
+    .filter(([role]) => isLoraRole(role))
+    .sort(([left], [right]) => {
+      const index = (role: string) => (role === 'loraAdapter' ? 0 : Number(role.split(':')[1]));
+      return index(left) - index(right);
+    })
+    .map(([, node]) => node);
+}
+
+function expectedControlledEdgeSpecs(
+  binding: StudioGraphBinding,
+  contractIds: readonly ControlledGraphContractId[],
+  roles: Map<ControlledNodeRole, CustomNodeType>,
+) {
+  let valid = true;
+  const specs = new Map(
+    baseDesiredEdgeSpecs(binding).map((spec) => [
+      edgeKey(spec.source, spec.sourceHandle, spec.target, spec.targetHandle),
+      spec,
+    ]),
+  );
+  const add = (...items: Array<StudioEdgeSpec | null | undefined>) => {
+    if (items.some((item) => !item)) valid = false;
+    items
+      .filter((item): item is StudioEdgeSpec => Boolean(item))
+      .forEach((item) => {
+        specs.set(edgeKey(item.source, item.sourceHandle, item.target, item.targetHandle), item);
+      });
+  };
+  const remove = (predicate: (spec: StudioEdgeSpec) => boolean) => {
+    [...specs.entries()].forEach(([key, spec]) => {
+      if (predicate(spec)) specs.delete(key);
+    });
+  };
+  const id = (role: ControlledNodeRole) => roles.get(role)?.id;
+  const contracts = new Set(contractIds);
+  const loraNodes = sortedLoraNodes(roles);
+  const loraId = loraContractId(contractIds);
+
+  if (loraId === 'lora.modular.v1') {
+    add(makeConnectionSpec(loraNodes[0]?.id, ['lora'], binding.nodes.models, ['lora_list', 'loras']));
+  } else if (loraId === 'lora.diffusers-image.v1' || loraId === 'lora.diffusers-audio.v1') {
+    const pipeline =
+      loraId === 'lora.diffusers-image.v1' ? binding.nodes.diffusersImagePipeline : binding.nodes.audioPipeline;
+    const generate =
+      loraId === 'lora.diffusers-image.v1'
+        ? (binding.nodes.diffusersImageInpaint ??
+          binding.nodes.diffusersImageControl ??
+          binding.nodes.diffusersImageEdit ??
+          binding.nodes.diffusersImageGenerate)
+        : binding.nodes.audioGenerate;
+    remove((spec) => spec.source === pipeline && spec.target === generate);
+    add(makeConnectionSpec(pipeline, ['pipeline'], loraNodes[0]?.id, ['pipeline']));
+    for (let index = 1; index < loraNodes.length; index += 1) {
+      add(makeConnectionSpec(loraNodes[index - 1]?.id, ['output'], loraNodes[index]?.id, ['pipeline']));
+    }
+    add(makeConnectionSpec(loraNodes[loraNodes.length - 1]?.id, ['output'], generate, ['pipeline']));
+  }
+
+  const sequence = id('videoSequence');
+  const compose = id('videoCompose');
+  const upscaler = id('upscaler');
+  if (contracts.has('video-sequence.v1')) {
+    remove((spec) => spec.source === binding.nodes.wanGenerate || spec.target === binding.nodes.wanGenerate);
+    add(
+      makeConnectionSpec(binding.nodes.wanPipeline, ['pipeline'], sequence, ['pipeline']),
+      makeConnectionSpec(sequence, ['clips'], compose, ['clip_1']),
+    );
+  }
+
+  if (contracts.has('upscale.image.v1')) {
+    const source = usesDiffusersImageFacade(binding)
+      ? (binding.nodes.diffusersImageInpaint ??
+        binding.nodes.diffusersImageControl ??
+        binding.nodes.diffusersImageEdit ??
+        binding.nodes.diffusersImageGenerate)
+      : binding.nodes.decode;
+    add(
+      makeConnectionSpec(source, ['images', 'image', 'output'], upscaler, IMAGE_HANDLE),
+      makeConnectionSpec(upscaler, ['output', 'image'], id('upscalePreview'), IMAGE_HANDLE),
+    );
+  }
+
+  if (contracts.has('upscale.video.v1') || contracts.has('video-sequence.v1')) {
+    const deliverySource = contracts.has('video-sequence.v1') ? compose : binding.nodes.wanGenerate;
+    remove((spec) => spec.target === binding.nodes.videoExport && spec.source === deliverySource);
+    if (contracts.has('upscale.video.v1')) {
+      add(
+        makeConnectionSpec(deliverySource, compose ? ['video'] : ['video_out'], upscaler, IMAGE_HANDLE),
+        makeConnectionSpec(upscaler, ['output', 'image'], binding.nodes.videoExport, ['video']),
+      );
+    } else {
+      add(makeConnectionSpec(deliverySource, ['video'], binding.nodes.videoExport, ['video']));
+    }
+  }
+
+  const qualityId = contractIds.find((contractId) => contractId.startsWith('quality-video.'));
+  if (qualityId) {
+    remove(
+      (spec) =>
+        spec.source === binding.nodes.wanGenerate ||
+        spec.target === binding.nodes.wanGenerate ||
+        spec.source === binding.nodes.videoExport ||
+        spec.target === binding.nodes.videoExport ||
+        (spec.source === binding.nodes.diffusersRecipe && spec.target === binding.nodes.wanPipeline),
+    );
+    const generate = id('qualityVideoGenerate');
+    const retain = id('qualityVideoRetain');
+    add(
+      makeConnectionSpec(id('qualityVideoQuantization'), ['quantization_config'], id('qualityVideoRecipe'), [
+        'quantization_config',
+      ]),
+      makeConnectionSpec(id('qualityVideoRecipe'), ['execution_recipe'], binding.nodes.wanPipeline, [
+        'execution_recipe',
+      ]),
+      makeConnectionSpec(id('qualityVideoShots'), ['shots'], id('qualityVideoJobs'), ['shots']),
+      ...(qualityId === 'quality-video.i2v.v1'
+        ? [makeConnectionSpec(binding.nodes.loadImage, IMAGE_HANDLE, id('qualityVideoJobs'), ['opening_images'])]
+        : []),
+      makeConnectionSpec(id('qualityVideoJobs'), ['jobs'], id('qualityVideoLoopItems'), ['collection']),
+      makeConnectionSpec(binding.nodes.wanPipeline, ['pipeline'], generate, ['pipeline']),
+      makeConnectionSpec(id('qualityVideoLoopItems'), ['item'], generate, ['job']),
+      makeConnectionSpec(generate, ['fps_out'], retain, ['fps']),
+      makeConnectionSpec(retain, ['asset'], id('qualityVideoLoopResult'), ['value_input']),
+      makeConnectionSpec(id('qualityVideoLoopResult'), ['collection'], id('qualityVideoJoin'), ['clips']),
+    );
+    if (contracts.has('upscale.quality-loop.v1')) {
+      add(
+        makeConnectionSpec(generate, ['video_out'], upscaler, IMAGE_HANDLE),
+        makeConnectionSpec(upscaler, ['output', 'image'], retain, ['video']),
+      );
+    } else {
+      add(makeConnectionSpec(generate, ['video_out'], retain, ['video']));
+    }
+  }
+
+  if (contracts.has('soundtrack.v1')) {
+    const videoSource = upscaler ?? compose ?? binding.nodes.wanGenerate;
+    remove((spec) => spec.target === binding.nodes.videoExport);
+    add(
+      makeConnectionSpec(id('soundtrackQuantization'), ['quantization_config'], id('soundtrackRecipe'), [
+        'quantization_config',
+      ]),
+      makeConnectionSpec(id('soundtrackRecipe'), ['execution_recipe'], id('soundtrackPipeline'), ['execution_recipe']),
+      makeConnectionSpec(id('soundtrackPipeline'), ['pipeline'], id('soundtrackGenerate'), ['pipeline']),
+      makeConnectionSpec(id('soundtrackGenerate'), ['audio'], id('soundtrackAudioFit'), ['audio']),
+      makeConnectionSpec(id('soundtrackAudioFit'), ['output'], id('exportWithAudio'), ['audio']),
+      makeConnectionSpec(
+        videoSource,
+        upscaler ? ['output', 'image'] : compose ? ['video'] : ['video_out'],
+        id('exportWithAudio'),
+        ['video'],
+      ),
+    );
+  }
+
+  if (contracts.has('lyric-video.v1')) {
+    add(
+      makeConnectionSpec(id('lyricVideoQuantization'), ['quantization_config'], id('lyricVideoRecipe'), [
+        'quantization_config',
+      ]),
+      makeConnectionSpec(id('lyricVideoRecipe'), ['execution_recipe'], id('lyricVideoPipeline'), ['execution_recipe']),
+      makeConnectionSpec(id('lyricVideoPipeline'), ['pipeline'], sequence, ['pipeline']),
+      makeConnectionSpec(sequence, ['clips'], compose, ['clip_1']),
+      makeConnectionSpec(compose, ['video'], upscaler, IMAGE_HANDLE),
+      makeConnectionSpec(upscaler, ['output'], id('lyricOverlay'), ['video']),
+      makeConnectionSpec(id('lyricOverlay'), ['output'], id('exportWithAudio'), ['video']),
+      makeConnectionSpec(binding.nodes.audioGenerate, ['audio'], id('lyricAudioFit'), ['audio']),
+      makeConnectionSpec(id('lyricAudioFit'), ['output'], id('exportWithAudio'), ['audio']),
+    );
+  }
+
+  return valid ? [...specs.values()] : null;
+}
+
+function controlledGraphFieldSchemaHash(binding: StudioGraphBinding) {
+  const nodes = new Map(useFlowStore.getState().nodes.map((node) => [node.id, node]));
+  return hashGraphProof(
+    binding.managedNodeIds
+      .map((nodeId) => {
+        const node = nodes.get(nodeId);
+        return [
+          nodeId,
+          node?.data.studioRole,
+          node?.data.module,
+          node?.data.action,
+          graphProofParamSchema(node?.data.params),
+        ];
+      })
+      .sort(([left], [right]) => String(left).localeCompare(String(right))),
+  );
+}
+
+function controlledGraphHash(binding: StudioGraphBinding, contractIds: readonly ControlledGraphContractId[]) {
+  const flow = useFlowStore.getState();
+  const managed = new Set(binding.managedNodeIds);
+  const nodes = flow.nodes
+    .filter((node) => managed.has(node.id))
+    .map((node) => [
+      node.id,
+      node.data.studioRole,
+      graphNodeKey(node),
+      node.type,
+      node.data.type,
+      node.parentId ?? null,
+      node.data.uiState?.disabled === true,
+      node.data.studioRole === 'qualityVideoLoop'
+        ? ['iteration_mode', 'iterations', 'max_iterations', 'carry', 'collect', 'max_retries'].map(
+            (key) => node.data.params[key]?.value,
+          )
+        : null,
+    ])
+    .sort(([left], [right]) => String(left).localeCompare(String(right)));
+  const edges = flow.edges
+    .filter((edge) => managed.has(edge.source) || managed.has(edge.target))
+    .map((edge) => [edge.id, edge.source, edge.sourceHandle ?? null, edge.target, edge.targetHandle ?? null])
+    .sort(([left], [right]) => String(left).localeCompare(String(right)));
+  return hashGraphProof([
+    contractIds,
+    Object.entries(binding.nodes).sort(([left], [right]) => left.localeCompare(right)),
+    nodes,
+    edges,
+  ]);
+}
+
+function controlledGraphSemanticsAreValid(binding: StudioGraphBinding, form: StudioFormState) {
+  const contractIds = binding.controlled?.contractIds;
+  if (
+    binding.controlled?.schemaVersion !== 1 ||
+    binding.controlled.contractRevision !== 1 ||
+    !contractIds ||
+    !controlledContractsAreCompatible(binding, contractIds) ||
+    !bindingMatchesForm(binding, form) ||
+    !participatingRoleNodesAreValid(binding, form)
+  ) {
+    return false;
+  }
+  const baseRoles = participatingRoles(form, binding);
+  const declaredBaseRoles = Object.entries(binding.nodes).filter(([, nodeId]) => typeof nodeId === 'string');
+  if (
+    declaredBaseRoles.length !== baseRoles.length ||
+    declaredBaseRoles.some(([role]) => !baseRoles.includes(role as StudioGraphRole)) ||
+    baseRoles.some((role) => {
+      const node = getNode(binding.nodes[role]);
+      return !nodeMatchesRole(node?.id, role) || !node || node.parentId || isManagedContainerNode(node);
+    })
+  ) {
+    return false;
+  }
+  const { roles, valid } = controlledRoleNodes();
+  if (!valid) return false;
+  const expectedRoles = contractExpectedRoles(contractIds);
+  const loraKey = expectedLoraNodeKey(contractIds);
+  const loraNodes = sortedLoraNodes(roles);
+  if (loraKey) {
+    if (loraNodes.length === 0 || loraNodes.length > 8) return false;
+    loraNodes.forEach((_, index) => expectedRoles.add(index === 0 ? 'loraAdapter' : `loraAdapter:${index}`));
+  } else if (loraNodes.length > 0) {
+    return false;
+  }
+  if (expectedRoles.size !== roles.size || [...expectedRoles].some((role) => !roles.has(role))) return false;
+  for (const [role, node] of roles) {
+    if (!node.data.studioOwned || !binding.managedNodeIds.includes(node.id)) return false;
+    if (role === 'qualityVideoLoop') {
+      if (node.type !== 'loop' || node.data.type !== 'loop' || node.parentId) return false;
+    } else if (graphNodeKey(node) !== (isLoraRole(role) ? loraKey : CONTROLLED_ROLE_NODE_KEYS[role])) {
+      return false;
+    } else if (isManagedContainerNode(node)) {
+      return false;
+    }
+  }
+
+  const expectedManaged = new Set([
+    ...baseRoles.map((role) => binding.nodes[role]).filter(isString),
+    ...[...roles.values()].map((node) => node.id),
+  ]);
+  if (
+    expectedManaged.size !== binding.managedNodeIds.length ||
+    binding.managedNodeIds.some((nodeId) => !expectedManaged.has(nodeId))
+  ) {
+    return false;
+  }
+
+  const registry = useNodesStore.getState().nodesRegistry;
+  for (const nodeId of binding.managedNodeIds) {
+    const node = getNode(nodeId);
+    const reviewedParams = node ? registry[graphNodeKey(node)]?.params : undefined;
+    if (
+      !node ||
+      (node.data.studioRole !== 'qualityVideoLoop' &&
+        !managedParamSchemaMatchesRegistry(node.data.params, reviewedParams))
+    ) {
+      return false;
+    }
+  }
+
+  const disabled = new Set<string>();
+  const contracts = new Set(contractIds);
+  if (contracts.has('video-sequence.v1')) disabled.add(binding.nodes.wanGenerate ?? '');
+  if (contractIds.some((id) => id.startsWith('quality-video.'))) {
+    disabled.add(binding.nodes.wanGenerate ?? '');
+    disabled.add(binding.nodes.videoExport ?? '');
+  }
+  if (contracts.has('soundtrack.v1')) disabled.add(binding.nodes.videoExport ?? '');
+  for (const nodeId of binding.managedNodeIds) {
+    const node = getNode(nodeId);
+    if (!node || (node.data.uiState?.disabled === true) !== disabled.has(nodeId)) return false;
+  }
+
+  const qualityLoop = roles.get('qualityVideoLoop');
+  if (contractIds.some((id) => id.startsWith('quality-video.'))) {
+    if (!qualityLoop) return false;
+    const qualityBody: ControlledNodeRole[] = [
+      'qualityVideoLoopItems',
+      'qualityVideoGenerate',
+      'qualityVideoRetain',
+      'qualityVideoLoopResult',
+    ];
+    if (contracts.has('upscale.quality-loop.v1')) qualityBody.push('upscaler');
+    if (qualityBody.some((role) => roles.get(role)?.parentId !== qualityLoop.id)) return false;
+    if (
+      qualityLoop.data.params.iteration_mode?.value !== 'collection' ||
+      qualityLoop.data.params.iterations?.value !== 6 ||
+      qualityLoop.data.params.max_iterations?.value !== 6 ||
+      qualityLoop.data.params.carry?.value !== false ||
+      qualityLoop.data.params.collect?.value !== true ||
+      qualityLoop.data.params.max_retries?.value !== 1
+    ) {
+      return false;
+    }
+  }
+  for (const [role, node] of roles) {
+    if (
+      role !== 'qualityVideoLoop' &&
+      !['qualityVideoLoopItems', 'qualityVideoGenerate', 'qualityVideoRetain', 'qualityVideoLoopResult'].includes(
+        role,
+      ) &&
+      !(role === 'upscaler' && contracts.has('upscale.quality-loop.v1')) &&
+      node.parentId
+    ) {
+      return false;
+    }
+  }
+
+  const expectedSpecs = expectedControlledEdgeSpecs(binding, contractIds, roles);
+  if (
+    !expectedSpecs ||
+    expectedSpecs.some((spec) => {
+      const source = getNodeParam(spec.source, spec.sourceHandle);
+      const target = getNodeParam(spec.target, spec.targetHandle);
+      return (
+        !source ||
+        !target ||
+        source.isInput === true ||
+        source.display !== 'output' ||
+        !(target.isInput === true || target.display === 'input') ||
+        source.type === undefined ||
+        target.type === undefined ||
+        !connectionTypesAreCompatible(source.type, target.type)
+      );
+    })
+  ) {
+    return false;
+  }
+  const flow = useFlowStore.getState();
+  const managed = new Set(binding.managedNodeIds);
+  const touchingEdges = flow.edges.filter((edge) => managed.has(edge.source) || managed.has(edge.target));
+  const edgeIds = touchingEdges.map((edge) => edge.id);
+  const edgeKeys = touchingEdges.map((edge) => edgeKey(edge.source, edge.sourceHandle, edge.target, edge.targetHandle));
+  const expectedKeys = expectedSpecs.map((spec) =>
+    edgeKey(spec.source, spec.sourceHandle, spec.target, spec.targetHandle),
+  );
+  return (
+    new Set(edgeIds).size === edgeIds.length &&
+    new Set(edgeKeys).size === edgeKeys.length &&
+    edgeIds.length === binding.managedEdgeIds.length &&
+    edgeIds.every((edgeId) => binding.managedEdgeIds.includes(edgeId)) &&
+    edgeKeys.length === expectedKeys.length &&
+    edgeKeys.every((key) => expectedKeys.includes(key)) &&
+    (!requiresDynamicGraphChannel(form, binding) || legacyDynamicFieldGroupsAreFinalized(binding)) &&
+    !inspectStudioGraphBindingDivergence(binding)
+  );
 }
 
 function bindingWithFinalizationProof(
@@ -703,8 +1266,29 @@ function bindingWithFinalizationProof(
   if (!bindingMatchesForm(binding, plannedForm)) {
     return { ...binding, finalizationProof: undefined };
   }
+  if (binding.controlled) {
+    if (!controlledGraphSemanticsAreValid(binding, plannedForm)) {
+      return { ...binding, finalizationProof: undefined, finalizationProofInvalid: true };
+    }
+    return {
+      ...binding,
+      finalizationProofInvalid: undefined,
+      finalizationProof: {
+        schemaVersion: 3,
+        canonicalizationVersion: 1,
+        contractRevision: 1,
+        shapeKey: bindingShapeKey(binding, plannedForm),
+        fieldSchemaHash: controlledGraphFieldSchemaHash(binding),
+        managedGraphHash: controlledGraphHash(binding, binding.controlled.contractIds),
+        contractIds: binding.controlled.contractIds,
+        finalizedAt,
+      },
+      updatedAt: finalizedAt,
+    };
+  }
   return {
     ...binding,
+    finalizationProofInvalid: undefined,
     finalizationProof: {
       schemaVersion: 2,
       shapeKey: bindingShapeKey(binding, plannedForm),
@@ -729,6 +1313,23 @@ function bindingFinalizationSchemaProofMatches(binding: StudioGraphBinding, form
 function bindingFinalizationProofMatches(binding: StudioGraphBinding, form: StudioFormState) {
   const proof = binding.finalizationProof;
   const plannedForm = resolveGraphResourceForm(form);
+  if (binding.controlled && proof?.schemaVersion !== 3) return false;
+  if (proof?.schemaVersion === 3) {
+    const contractIds = binding.controlled?.contractIds;
+    return Boolean(
+      !binding.finalizationProofInvalid &&
+      binding.controlled?.schemaVersion === 1 &&
+      binding.controlled.contractRevision === proof.contractRevision &&
+      proof.canonicalizationVersion === 1 &&
+      contractIds &&
+      proof.contractIds.length === contractIds.length &&
+      proof.contractIds.every((id, index) => id === contractIds[index]) &&
+      proof.shapeKey === bindingShapeKey(binding, plannedForm) &&
+      proof.fieldSchemaHash === controlledGraphFieldSchemaHash(binding) &&
+      proof.managedGraphHash === controlledGraphHash(binding, contractIds) &&
+      controlledGraphSemanticsAreValid(binding, plannedForm),
+    );
+  }
   return (
     bindingFinalizationSchemaProofMatches(binding, plannedForm) &&
     proof?.edgeSpecHash === desiredEdgeSpecHash(binding) &&
@@ -1242,7 +1843,7 @@ function desiredBaseEdgeSpecs(binding: StudioGraphBinding) {
   return specs.filter((spec): spec is StudioEdgeSpec => Boolean(spec));
 }
 
-function desiredVideoEdgeSpecs(binding: StudioGraphBinding) {
+function desiredVideoEdgeSpecs(binding: StudioGraphBinding, includeControlled = true) {
   const {
     diffusersQuantization,
     diffusersRecipe,
@@ -1256,11 +1857,15 @@ function desiredVideoEdgeSpecs(binding: StudioGraphBinding) {
     wanGenerate,
     videoExport,
   } = binding.nodes;
-  const controlledSequence = useFlowStore
-    .getState()
-    .nodes.find((node) => node.data?.studioRole === 'videoSequence')?.id;
-  const controlledCompose = useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'videoCompose')?.id;
-  const controlledUpscaler = useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'upscaler')?.id;
+  const controlledSequence = includeControlled
+    ? useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'videoSequence')?.id
+    : undefined;
+  const controlledCompose = includeControlled
+    ? useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'videoCompose')?.id
+    : undefined;
+  const controlledUpscaler = includeControlled
+    ? useFlowStore.getState().nodes.find((node) => node.data?.studioRole === 'upscaler')?.id
+    : undefined;
   const sequenceDeliverySource = controlledCompose ?? controlledSequence;
   const preUpscaleDeliverySource = sequenceDeliverySource ?? wanGenerate;
   const deliverySource = controlledUpscaler ?? sequenceDeliverySource ?? wanGenerate;
@@ -1402,6 +2007,13 @@ function desiredEdgeSpecs(binding: StudioGraphBinding) {
   return isVideoMode(binding.mode)
     ? desiredVideoEdgeSpecs(binding)
     : [...desiredBaseEdgeSpecs(binding), ...desiredStillUpscaleEdgeSpecs(binding)];
+}
+
+function baseDesiredEdgeSpecs(binding: StudioGraphBinding) {
+  if (isAudioMode(binding.mode)) return desiredAudioEdgeSpecs(binding);
+  if (modularVideoGroupObserved(binding)) return desiredModularVideoEdgeSpecs(binding);
+  if (usesDiffusersImageFacade(binding)) return desiredDiffusersImageEdgeSpecs(binding);
+  return isVideoMode(binding.mode) ? desiredVideoEdgeSpecs(binding, false) : desiredBaseEdgeSpecs(binding);
 }
 
 function minimumDynamicManagedEdgeCount(binding: StudioGraphBinding) {
@@ -1576,7 +2188,8 @@ function restoreFinalizedGraphState(
   form: StudioFormState,
   previous: StudioGraphFinalizationState | null,
 ) {
-  const allowLegacyDynamicProof = !binding.finalizationProof;
+  const allowLegacyDynamicProof =
+    !binding.finalizationProof && !binding.finalizationProofInvalid && !binding.controlled;
   if (!restoredManagedGraphIsLocallyFinalized(binding, form, allowLegacyDynamicProof)) return false;
 
   const finalizedBinding = binding.finalizationProof ? binding : bindingWithFinalizationProof(binding, form);
@@ -1737,9 +2350,26 @@ function reconcileManagedGraphBinding(
 ): StudioGraphBinding {
   const { nodes, edges } = useFlowStore.getState();
   const requestedExtensionIds = new Set(managedExtensionNodeIds);
+  const retainedBindingNodeIds = binding.controlled
+    ? [
+        ...Object.entries(binding.nodes)
+          .filter(([role, nodeId]) => role in NODE_KEYS && typeof nodeId === 'string')
+          .map(([, nodeId]) => nodeId as string),
+        ...nodes
+          .filter(
+            (node) =>
+              node.data.studioOwned === true &&
+              typeof node.data.studioRole === 'string' &&
+              isControlledRole(node.data.studioRole),
+          )
+          .map((node) => node.id),
+      ]
+    : binding.managedNodeIds?.length
+      ? binding.managedNodeIds
+      : Object.values(binding.nodes).filter(isString);
   const managedNodeIds = Array.from(
     new Set([
-      ...(binding.managedNodeIds?.length ? binding.managedNodeIds : Object.values(binding.nodes).filter(isString)),
+      ...retainedBindingNodeIds,
       ...nodes
         .filter((node) => requestedExtensionIds.has(node.id) && node.data.studioOwned === true)
         .map((node) => node.id),
@@ -1750,7 +2380,11 @@ function reconcileManagedGraphBinding(
     ...binding,
     managedNodeIds,
     managedEdgeIds: edges
-      .filter((edge) => managedNodes.has(edge.source) && managedNodes.has(edge.target))
+      .filter((edge) =>
+        binding.controlled
+          ? managedNodes.has(edge.source) || managedNodes.has(edge.target)
+          : managedNodes.has(edge.source) && managedNodes.has(edge.target),
+      )
       .map((edge) => edge.id),
     updatedAt: Date.now(),
   };
@@ -1805,6 +2439,164 @@ export function refreshStudioManagedGraphBinding(managedExtensionNodeIds: readon
   }
   studio.setGraphBinding(next);
   return next;
+}
+
+function controlledContractFamily(contractId: ControlledGraphContractId) {
+  if (contractId.startsWith('lora.')) return 'lora';
+  if (contractId.startsWith('upscale.')) return 'upscale';
+  if (contractId.startsWith('quality-video.')) return 'quality-video';
+  return contractId;
+}
+
+function mergeControlledContractIds(
+  previous: readonly ControlledGraphContractId[],
+  contractId: ControlledGraphContractId,
+) {
+  const family = controlledContractFamily(contractId);
+  const merged: ControlledGraphContractId[] = [
+    ...previous.filter((id) => controlledContractFamily(id) !== family),
+    contractId,
+  ];
+  if (contractId.startsWith('quality-video.') && merged.some((id) => id.startsWith('upscale.'))) {
+    const converted: ControlledGraphContractId[] = [
+      ...merged.filter((id) => !id.startsWith('upscale.')),
+      'upscale.quality-loop.v1',
+    ];
+    return converted.sort();
+  }
+  return merged.sort();
+}
+
+export function beginControlledGraphTransaction(
+  context: WorkflowOperationContext,
+  contractId: ControlledGraphContractId,
+): ControlledGraphTransaction {
+  assertWorkflowOperationContext(context);
+  if (activeControlledGraphTransaction) throw new Error('Another controlled graph update is already in progress.');
+  const studio = useStudioStore.getState();
+  const binding = studio.graphBinding;
+  const finalization = studio.graphFinalization;
+  const form = resolveGraphResourceForm(studio.form);
+  if (
+    !binding ||
+    finalization?.status !== 'complete' ||
+    !bindingFinalizationProofMatches(binding, form) ||
+    inspectStudioGraphBindingDivergence(binding)
+  ) {
+    throw new Error('The Studio graph must be fully finalized before adding a controlled workflow block.');
+  }
+  const flow = useFlowStore.getState();
+  if (flow.historyTransaction)
+    throw new Error('Finish the current graph edit before adding a controlled workflow block.');
+  const transaction: ControlledGraphTransaction = {
+    id: nanoid(),
+    context,
+    contractId,
+    binding,
+    finalization,
+    flow,
+  };
+  activeControlledGraphTransaction = transaction;
+  try {
+    flow.beginHistoryTransaction('Update controlled Studio workflow');
+    const pendingBinding = { ...binding, finalizationProof: undefined, finalizationProofInvalid: undefined };
+    studio.setGraphBinding(pendingBinding);
+    studio.setGraphFinalization({
+      status: 'pending',
+      bindingFingerprint: binding.fingerprint,
+      startedAt: Date.now(),
+      timedOutGroups: [],
+      managedEdgeCount: binding.managedEdgeIds.length,
+      message: 'Updating controlled workflow...',
+    });
+    return transaction;
+  } catch (error) {
+    abortControlledGraphTransaction(transaction);
+    throw error;
+  }
+}
+
+export function abortControlledGraphTransaction(transaction: ControlledGraphTransaction) {
+  if (activeControlledGraphTransaction?.id !== transaction.id) return;
+  activeControlledGraphTransaction = null;
+  let ownsCanvas = true;
+  try {
+    assertWorkflowOperationContext(transaction.context);
+  } catch {
+    ownsCanvas = false;
+  }
+  if (!ownsCanvas) {
+    return;
+  }
+  useFlowStore.setState(transaction.flow);
+  useFlowStore.getState().updateHandleConnectionStatus();
+  useFlowStore.getState().updateSignalValues(transaction.flow.edges);
+  const studio = useStudioStore.getState();
+  studio.setGraphBinding(transaction.binding);
+  studio.setGraphFinalization(transaction.finalization);
+}
+
+export function commitControlledGraphTransaction(transaction: ControlledGraphTransaction) {
+  if (activeControlledGraphTransaction?.id !== transaction.id) {
+    throw new Error('Controlled graph update ownership was lost.');
+  }
+  try {
+    assertWorkflowOperationContext(transaction.context);
+    const studio = useStudioStore.getState();
+    const current = studio.graphBinding;
+    if (!current || current.fingerprint !== transaction.binding.fingerprint) {
+      throw new Error('The Studio graph changed while the controlled block was being added.');
+    }
+    const contractIds = mergeControlledContractIds(
+      transaction.binding.controlled?.contractIds ?? [],
+      transaction.contractId,
+    );
+    const controlledIds = useFlowStore
+      .getState()
+      .nodes.filter(
+        (node) =>
+          node.data.studioOwned === true &&
+          typeof node.data.studioRole === 'string' &&
+          isControlledRole(node.data.studioRole),
+      )
+      .map((node) => node.id);
+    const declared = {
+      ...current,
+      controlled: { schemaVersion: 1 as const, contractRevision: 1 as const, contractIds },
+      finalizationProof: undefined,
+      finalizationProofInvalid: undefined,
+    };
+    const reconciled = reconcileManagedGraphBinding(declared, controlledIds);
+    const form = resolveGraphResourceForm(studio.form);
+    if (!controlledGraphSemanticsAreValid(reconciled, form)) {
+      throw new Error('The controlled workflow route is incomplete or does not match its reviewed graph contract.');
+    }
+    const finalizedAt = Date.now();
+    const finalized = bindingWithFinalizationProof(reconciled, form, finalizedAt);
+    if (finalized.finalizationProof?.schemaVersion !== 3) {
+      throw new Error('The controlled workflow proof could not be sealed.');
+    }
+    useFlowStore.getState().commitHistoryTransaction();
+    studio.setGraphBinding(finalized);
+    studio.setGraphFinalization({
+      status: 'complete',
+      bindingFingerprint: finalized.fingerprint,
+      startedAt: transaction.finalization.startedAt,
+      skeletonMs: transaction.finalization.skeletonMs,
+      finalizedAt,
+      finalizationMs: 0,
+      timedOutGroups: [],
+      managedEdgeCount: finalized.managedEdgeIds.length,
+      message: 'Controlled workflow finalized.',
+    });
+    studio.setLastError(null);
+    studio.saveActiveWorkflowTab(true);
+    activeControlledGraphTransaction = null;
+    return finalized;
+  } catch (error) {
+    abortControlledGraphTransaction(transaction);
+    throw error;
+  }
 }
 
 function scheduleManagedEdgeBindingRefresh(binding: StudioGraphBinding) {
@@ -2741,10 +3533,26 @@ function setStudioGraphDefinitionPending(binding: StudioGraphBinding, message: s
   });
 }
 
-export function markStudioGraphDefinitionPending() {
+export function markStudioGraphDefinitionPending(nodeId?: string, paramKeys?: readonly (keyof NodeParams)[]) {
   const studio = useStudioStore.getState();
   const binding = studio.graphBinding;
-  if (!binding || !requiresDynamicGraphChannel(studio.form, binding)) return false;
+  if (
+    !binding ||
+    (nodeId && !binding.managedNodeIds.includes(nodeId)) ||
+    (paramKeys && !paramKeys.some((key) => GRAPH_PROOF_PARAM_KEYS.includes(key))) ||
+    (!binding.controlled && !requiresDynamicGraphChannel(studio.form, binding))
+  ) {
+    return false;
+  }
+  if (binding.controlled) {
+    const context = captureWorkflowOperationContext();
+    const currentHash = controlledGraphHash(binding, binding.controlled.contractIds);
+    const pendingHash = controlledDefinitionGraphHashes.get(context.workflowTabId);
+    if (pendingHash !== currentHash) {
+      if (!bindingFinalizationProofMatches(binding, resolveGraphResourceForm(studio.form))) return false;
+      controlledDefinitionGraphHashes.set(context.workflowTabId, currentHash);
+    }
+  }
   graphDefinitionRevision += 1;
   setStudioGraphDefinitionPending(binding, 'Graph updating.');
   return true;
@@ -2761,6 +3569,43 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
   }
   applyFormValues(binding, plannedForm);
   syncManagedFormControlAliases(plannedForm, binding);
+  if (binding.controlled) {
+    const context = captureWorkflowOperationContext();
+    const pendingHash = controlledDefinitionGraphHashes.get(context.workflowTabId);
+    if (binding.finalizationProofInvalid || !pendingHash) {
+      setStudioGraphDefinitionPending(binding, 'Graph pending.');
+      return false;
+    }
+    const updatedBinding = reconcileManagedGraphBinding({
+      ...binding,
+      finalizationProof: undefined,
+      finalizationProofInvalid: undefined,
+    });
+    if (
+      controlledGraphHash(updatedBinding, updatedBinding.controlled?.contractIds ?? []) !== pendingHash ||
+      !controlledGraphSemanticsAreValid(updatedBinding, plannedForm)
+    ) {
+      setStudioGraphDefinitionPending(updatedBinding, 'Graph pending.');
+      return false;
+    }
+    const finalizedAt = Date.now();
+    const finalized = bindingWithFinalizationProof(updatedBinding, plannedForm, finalizedAt);
+    studio.setGraphBinding(finalized);
+    studio.setGraphFinalization({
+      status: 'complete',
+      bindingFingerprint: finalized.fingerprint,
+      startedAt: studio.graphFinalization?.startedAt ?? finalizedAt,
+      skeletonMs: studio.graphFinalization?.skeletonMs,
+      finalizedAt,
+      finalizationMs: 0,
+      timedOutGroups: [],
+      managedEdgeCount: finalized.managedEdgeIds.length,
+      message: 'Controlled workflow finalized.',
+    });
+    studio.saveActiveWorkflowTab(true);
+    controlledDefinitionGraphHashes.delete(context.workflowTabId);
+    return true;
+  }
   if (!requiresDynamicGraphChannel(plannedForm, binding)) {
     studio.saveActiveWorkflowTab(true);
     return true;
@@ -3099,11 +3944,19 @@ async function finalizeStudioGraph(
   const definitionRevision = graphDefinitionRevision;
   const timedOutGroups: string[] = [];
   const warnings: string[] = [];
+  if (binding.finalizationProofInvalid) {
+    throw new Error('The saved Studio graph proof is invalid. Recreate the managed graph before running it.');
+  }
   if (!bindingMatchesForm(binding, form)) {
     assertGraphFinalizationActive(token);
     return { binding, warnings };
   }
   try {
+    if (binding.controlled) {
+      assertGraphFinalizationActive(token);
+      syncStudioGraphDefinition(form);
+      return { binding: useStudioStore.getState().graphBinding ?? binding, warnings };
+    }
     if (isAudioMode(form.mode)) {
       await finalizeAudioGraph(binding, form, timedOutGroups, token);
     } else if (modularVideoGroupObserved(binding)) {
@@ -3263,8 +4116,28 @@ async function createOrUpdateStudioGraphInner(
   context: WorkflowOperationContext,
 ): Promise<BridgeResult> {
   assertWorkflowOperationContext(context);
+  if (useStudioStore.getState().graphBinding?.finalizationProofInvalid) {
+    throw new Error('The saved Studio graph proof is invalid. Recreate the managed graph before updating it.');
+  }
   const skeletonStartedAt = Date.now();
   const form = resolveGraphResourceForm(formInput);
+  const existingStudio = useStudioStore.getState();
+  const existingBinding = existingStudio.graphBinding;
+  if (existingBinding?.controlled) {
+    if (
+      bindingFinalizationProofMatches(existingBinding, form) &&
+      !inspectStudioGraphBindingDivergence(existingBinding)
+    ) {
+      if (existingStudio.graphFinalization?.status !== 'complete') {
+        restoreFinalizedGraphState(existingBinding, form, existingStudio.graphFinalization);
+      }
+      return { binding: useStudioStore.getState().graphBinding ?? existingBinding, warnings: [] };
+    }
+    if (syncStudioGraphDefinition(form)) {
+      return { binding: useStudioStore.getState().graphBinding ?? existingBinding, warnings: [] };
+    }
+    throw new Error('The controlled Studio graph changed. Recreate it before adding another workflow block.');
+  }
   const roles = participatingRoles(form, useStudioStore.getState().graphBinding);
   const missingRoles = await ensureRegistryForRoles(roles);
   assertWorkflowOperationContext(context);
@@ -3338,6 +4211,7 @@ export async function waitForStudioGraphFinalization(
   }
   if (!promise) {
     const studio = useStudioStore.getState();
+    if (studio.graphBinding?.finalizationProofInvalid) return false;
     if (studio.graphBinding && !bindingMatchesForm(studio.graphBinding, resolveGraphResourceForm(studio.form))) {
       return false;
     }
@@ -3361,10 +4235,20 @@ export async function waitForStudioGraphFinalization(
       if (!studio.graphBinding) {
         throw new Error('Studio graph finalization is pending without a managed graph binding.');
       }
+      if (studio.graphBinding.controlled) {
+        if (
+          bindingFinalizationProofMatches(studio.graphBinding, resolveGraphResourceForm(studio.form)) &&
+          restoreFinalizedGraphState(studio.graphBinding, studio.form, finalization)
+        ) {
+          return true;
+        }
+        return syncStudioGraphDefinition(studio.form);
+      }
       scheduleStudioGraphFinalization(studio.graphBinding, studio.form, finalization.skeletonMs ?? 0, context);
       return waitForStudioGraphFinalization(timeout, context);
     }
     if (!finalization && studio.graphBinding) {
+      if (studio.graphBinding.controlled) return syncStudioGraphDefinition(studio.form);
       studio.setGraphFinalization({
         status: 'pending',
         bindingFingerprint: studio.graphBinding.fingerprint,
@@ -3397,6 +4281,7 @@ export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStud
   const plannedForm = resolveGraphResourceForm(form);
   const binding = useStudioStore.getState().graphBinding;
   if (binding && !bindingMatchesForm(binding, plannedForm)) return 'Graph changed.';
+  if (binding?.finalizationProofInvalid || (binding?.controlled && !binding.finalizationProof)) return 'Graph changed.';
   if (binding?.finalizationProof && !bindingFinalizationProofMatches(binding, plannedForm)) {
     return 'Graph changed.';
   }
@@ -3432,6 +4317,12 @@ export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStud
   }
   return null;
 }
+
+setManagedGraphSchemaMutationHandler(
+  (nodeId, paramKeys) =>
+    useStudioStore.getState().graphBinding?.controlled ? markStudioGraphDefinitionPending(nodeId, paramKeys) : false,
+  () => syncStudioGraphDefinition(),
+);
 
 export function validateStudioGraphReadyForRun(form: StudioFormState = useStudioStore.getState().form) {
   syncStudioGraphValues(form);

@@ -317,6 +317,85 @@ test('field actions send the workflow tab and canvas epoch captured at dispatch'
   assert.equal(submitted.queue, true);
 });
 
+test('field schema actions invert hide conditions, merge the target, and preserve registry defaults', async () => {
+  const visibility = [];
+  const visibilityProps = {
+    nodeId: 'preview',
+    fieldKey: 'source',
+    module: 'modules.Test',
+    action: 'Preview',
+    onChange: { action: 'hide', data: { yes: ['target'] } },
+    updateStore: (field, value, prop) => visibility.push({ field, value, prop }),
+  };
+  await fieldActionModule.default(visibilityProps, 'yes');
+  await fieldActionModule.default(visibilityProps, 'no');
+  assert.deepEqual(visibility, [
+    { field: 'target', value: true, prop: 'hidden' },
+    { field: 'target', value: false, prop: 'hidden' },
+  ]);
+
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        params: {
+          source: { fieldOptions: { sourceOnly: true } },
+          target: { fieldOptions: { targetOnly: true } },
+        },
+      },
+    })),
+  }));
+  const optionUpdates = [];
+  await fieldActionModule.default(
+    {
+      ...visibilityProps,
+      onChange: { action: 'value', target: 'target', prop: 'fieldOptions', data: { yes: { added: true } } },
+      updateStore: (field, value, prop) => optionUpdates.push({ field, value, prop }),
+    },
+    'yes',
+  );
+  assert.deepEqual(optionUpdates, [
+    { field: 'target', value: { targetOnly: true, added: true }, prop: 'fieldOptions' },
+  ]);
+
+  const registry = nodesStoreModule.useNodesStore.getState().nodesRegistry;
+  nodesStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      ...registry,
+      'modules.Test.Preview': {
+        module: 'modules.Test',
+        action: 'Preview',
+        label: 'Preview',
+        category: 'Test',
+        params: { target: { display: 'input', type: 'string', value: 'registry-default' } },
+      },
+    },
+  });
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((node) => ({
+      ...node,
+      data: { ...node.data, params: { target: { display: 'input', type: 'string', value: 'node-current' } } },
+    })),
+  }));
+  await fieldActionModule.default(
+    {
+      ...visibilityProps,
+      onChange: { action: 'create', data: { yes: { target: { display: 'output', type: 'image' } } } },
+      updateStore: () => undefined,
+    },
+    'yes',
+  );
+  const created = flowStoreModule.useFlowStore.getState().nodes[0].data.params.target;
+  assert.equal(created.value, 'node-current');
+  assert.equal(created.display, 'output');
+  assert.equal(created.type, 'image');
+  assert.equal(
+    nodesStoreModule.useNodesStore.getState().nodesRegistry['modules.Test.Preview'].params.target.value,
+    'registry-default',
+  );
+});
+
 test('value signal actions pass backend model identities through without a client allowlist', async () => {
   const updates = [];
 
@@ -1092,6 +1171,25 @@ test('owned set_field_params messages reconcile opaque signals across connected 
   sendSignal(identityB);
   await Promise.resolve();
   assert.deepEqual(flowStoreModule.useFlowStore.getState().getSignalValue(target.id, 'components'), identityB);
+
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'set_field_params',
+      sid: 'session-1',
+      node: source.id,
+      field: 'components',
+      params: { type: ['Components', 'PipelineComponents'] },
+      workflow_tab_id: 'workflow-origin',
+      workflow_canvas_epoch: 12,
+    },
+    context,
+  );
+  await Promise.resolve();
+  assert.deepEqual(
+    flowStoreModule.useFlowStore.getState().getParam(source.id, 'components', 'type'),
+    ['Components', 'PipelineComponents'],
+    'array-valued schema updates replace the prior value instead of becoming numeric-key records',
+  );
 });
 
 test('live node definitions preserve an intentional backend AutoModelLoader repository default', () => {
@@ -1449,6 +1547,18 @@ test('websocket parsing accepts handled Auto events and rejects malformed typed 
   assert.equal(
     websocketModule.parseWebsocketMessage(
       JSON.stringify({ type: 'runtime_loader_reused', node: 'loader', previous_node: 42 }),
+    ),
+    null,
+  );
+  assert.equal(
+    websocketModule.parseWebsocketMessage(
+      JSON.stringify({ type: 'node_definition', node: 'preview', params: { output: null } }),
+    ),
+    null,
+  );
+  assert.equal(
+    websocketModule.parseWebsocketMessage(
+      JSON.stringify({ type: 'set_field_visibility', node: 'preview', fields: { output: 'false' } }),
     ),
     null,
   );

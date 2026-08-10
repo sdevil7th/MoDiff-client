@@ -79,10 +79,16 @@ type GraphScenarioForTest =
   | 'missing_model'
   | 'multi_model_compare';
 
+type ControlledWorkflowBlockForTest = 'upscaler' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack';
+
 type ModiffE2EHooks = {
   getState: () => unknown;
   listTemplates: (includePlanning?: boolean) => GalleryTemplateSummary[];
   applyTemplate: (templateId: StudioTemplateId, formOverrides?: Partial<StudioFormState>) => Promise<void>;
+  applyControlledWorkflowBlockForTest: (
+    block: ControlledWorkflowBlockForTest,
+    settingsTemplateId: StudioTemplateId,
+  ) => Promise<void>;
   refreshModelIndexes: () => Promise<void>;
   installHfModel: (repoId: string, repair?: boolean, files?: string[]) => Promise<unknown>;
   runActiveTemplate: () => Promise<GalleryRunResult>;
@@ -240,6 +246,21 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
       useStudioStore.getState().setCanvasTransition(null);
     }
   }
+}
+
+async function applyControlledWorkflowBlockForTest(
+  block: ControlledWorkflowBlockForTest,
+  settingsTemplateId: StudioTemplateId,
+) {
+  const template = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].find((item) => item.id === settingsTemplateId);
+  if (!template) throw new Error(`Unknown Studio template: ${settingsTemplateId}`);
+  const form = useStudioStore.getState().form;
+  if (block === 'upscaler') await addUpscaleWorkflowBlock(form, template.workflowBlockSettings?.upscaler);
+  else if (block === 'video_sequence') {
+    await addVideoSequenceWorkflowBlock(form, template.workflowBlockSettings?.videoSequence);
+  } else if (block === 'quality_video_sequence') {
+    await addQualityVideoSequenceWorkflowBlock(form, template.workflowBlockSettings?.qualityVideoSequence);
+  } else await addSoundtrackWorkflowBlock(form, template.workflowBlockSettings?.soundtrack);
 }
 
 async function prepareWorkflowGraphForExport() {
@@ -833,6 +854,7 @@ export function installE2EHooks() {
               : useFlowStore.getState().nodes.length,
           nodes: useFlowStore.getState().nodes.map((node) => ({
             id: node.id,
+            parentId: node.parentId,
             selected: node.selected,
             position: node.position,
             module: node.data.module,
@@ -915,6 +937,7 @@ export function installE2EHooks() {
       }),
     listTemplates,
     applyTemplate,
+    applyControlledWorkflowBlockForTest,
     refreshModelIndexes: () => useNodesStore.getState().refreshModelIndexes(true),
     installHfModel: (repoId: string, repair = false, files: string[] = []) =>
       useNodesStore.getState().installHfModel(repoId, useWebsocketStore.getState().sid, { repair, files }),
@@ -946,8 +969,12 @@ export function installE2EHooks() {
       managedGraphFinalizationForTest = createOrUpdateStudioGraph().then(() => undefined);
       return managedGraphFinalizationForTest;
     },
-    waitForManagedGraphFinalizationForTest: () =>
-      managedGraphFinalizationForTest ?? Promise.reject(new Error('No managed graph finalization is active.')),
+    waitForManagedGraphFinalizationForTest: async () => {
+      if (managedGraphFinalizationForTest) return managedGraphFinalizationForTest;
+      if (!(await waitForStudioGraphFinalization(30_000))) {
+        throw new Error('The restored managed graph did not finish finalizing.');
+      }
+    },
     startStudioRunForTest,
     seedStudioOutputsForTest,
     seedImportedAssetsForTest,

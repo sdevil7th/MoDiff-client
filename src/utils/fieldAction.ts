@@ -7,6 +7,7 @@ import { captureWorkflowOperationContext } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { enqueueSnackbar } from '../ui/snackbar';
 import config from '../../app.config';
+import { beginManagedGraphSchemaMutation, finishManagedGraphSchemaMutation } from './managedGraphSchemaMutation';
 import { formatRequestError, requestJson, RequestError } from './requestJson';
 
 type FieldActionDescriptor = {
@@ -107,6 +108,7 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
       }
     }
   } else if (action === 'show' || action === 'hide') {
+    const schemaPending = beginManagedGraphSchemaMutation(props.nodeId, ['hidden']);
     // This logic should be outside the loop as it should only be evaluated once.
     let valuesToCheck = value;
 
@@ -123,41 +125,31 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
 
     const valuesToCheckList = Array.isArray(valuesToCheck) ? valuesToCheck : [valuesToCheck];
 
-    const fieldVisibilityMap: Map<string, Set<string>> = new Map();
+    const fieldVisibilityMap = new Map<string, boolean>();
     const visibilityData = isRecord(data) ? data : {};
 
     for (const [key, fieldsData] of Object.entries(visibilityData)) {
       const fields = Array.isArray(fieldsData) ? fieldsData : [fieldsData];
+      const matches = valuesToCheckList.includes(key);
 
       for (const field of fields) {
         if (typeof field !== 'string') continue;
-        if (!fieldVisibilityMap.has(field)) {
-          fieldVisibilityMap.set(field, new Set());
-        }
-
-        const requests = fieldVisibilityMap.get(field)!;
-        if (valuesToCheckList.includes(key)) {
-          if (action === 'show') {
-            requests.add(props.fieldKey);
-          } else {
-            // action === 'hide'
-            requests.delete(props.fieldKey);
-          }
-        }
+        fieldVisibilityMap.set(field, Boolean(fieldVisibilityMap.get(field) || matches));
       }
     }
 
-    // Now update visibility based on aggregate requests
-    for (const [field, requests] of fieldVisibilityMap.entries()) {
-      const shouldShow = requests.size > 0;
+    for (const [field, matches] of fieldVisibilityMap) {
+      const shouldShow = action === 'show' ? matches : !matches;
       props.updateStore(field, !shouldShow, 'hidden');
     }
+    if (schemaPending) finishManagedGraphSchemaMutation();
   } else if (action === 'create') {
     const node = flowState.nodes.find((n) => n.id === props.nodeId);
     const defaultDef = useNodesStore.getState().nodesRegistry[`${props.module}.${props.action}`];
     if (!node || !defaultDef) {
       return;
     }
+    const schemaPending = beginManagedGraphSchemaMutation(props.nodeId);
 
     const createData = isRecord(data) ? data : {};
     const currData = normalizeCreatedParams(createData[String(value ?? '')]);
@@ -166,15 +158,25 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
       param.value = param.value ?? param.default;
     });
 
-    const newParams = { ...defaultDef.params, ...currData };
-    // for the default params, use the current node's params value
+    const newParams = Object.fromEntries(
+      Object.entries({ ...defaultDef.params, ...currData }).map(([key, param]) => [
+        key,
+        { ...param, signal: param.signal ? { ...param.signal } : undefined },
+      ]),
+    );
+    // Keep runtime values while accepting the authoritative created schema.
     Object.keys(defaultDef.params).forEach((key) => {
       const currentParam = node.data.params[key];
-      if (currentParam) {
-        newParams[key] = currentParam;
+      const nextParam = newParams[key];
+      if (!currentParam || !nextParam) return;
+      if (Object.prototype.hasOwnProperty.call(currentParam, 'value')) nextParam.value = currentParam.value;
+      if (Object.prototype.hasOwnProperty.call(currentParam, 'artifacts')) nextParam.artifacts = currentParam.artifacts;
+      if (currentParam.signal && nextParam.signal) {
+        nextParam.signal = { ...nextParam.signal, value: currentParam.signal.value };
       }
     });
     flowState.replaceNodeParams(props.nodeId, newParams);
+    if (schemaPending) finishManagedGraphSchemaMutation();
   } else if (action === 'value') {
     if (!targetField) {
       return;
@@ -188,8 +190,12 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
       return;
     }
 
+    const schemaPending = ['hidden', 'fieldOptions', 'display'].includes(propKey)
+      ? beginManagedGraphSchemaMutation(props.nodeId, [propKey])
+      : false;
+
     if (propKey === 'fieldOptions' && isRecord(value)) {
-      const currentFieldOptions = flowState.getParam(props.nodeId, props.fieldKey, 'fieldOptions') || {};
+      const currentFieldOptions = flowState.getParam(props.nodeId, targetField, 'fieldOptions') || {};
       props.updateStore(targetField, { ...currentFieldOptions, ...value }, propKey);
     } else {
       props.updateStore(targetField, value as NodeParams[typeof propKey], propKey);
@@ -214,6 +220,7 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
         props.updateStore(targetField, false, 'disabled');
       });
     }
+    if (schemaPending) finishManagedGraphSchemaMutation();
   } else if (action === 'signal') {
     // check if the target field is an input or output field
     if (!targetField) {

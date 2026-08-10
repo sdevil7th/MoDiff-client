@@ -52,6 +52,7 @@ export default function RunIssuesDialog() {
   const form = useStudioStore((state) => state.form);
   const updateForm = useStudioStore((state) => state.updateForm);
   const applyAutoResourcePlan = useStudioStore((state) => state.applyAutoResourcePlan);
+  const detachManagedGraph = useStudioStore((state) => state.detachManagedGraph);
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
   const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
   const currentRunContext = useStudioStore((state) => state.currentRunContext);
@@ -372,6 +373,17 @@ export default function RunIssuesDialog() {
               {item.action === 'inspect_node' && (
                 <ModiffButton icon={<Search size={15} />} onClick={() => inspectNode(item.nodeId, 'issues')}>
                   {item.nodeId ? 'Inspect node' : 'Inspect graph'}
+                </ModiffButton>
+              )}
+              {item.action === 'detach_graph' && (
+                <ModiffButton
+                  icon={<Eraser size={15} />}
+                  onClick={() => {
+                    detachManagedGraph();
+                    closeIssues();
+                  }}
+                >
+                  Detach invalid receipt
                 </ModiffButton>
               )}
               {item.action === 'open_model_manager' && (

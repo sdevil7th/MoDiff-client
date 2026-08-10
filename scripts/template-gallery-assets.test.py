@@ -298,6 +298,15 @@ class TemplateGalleryAssetTests(unittest.TestCase):
         self.assertEqual(
             required["runtime-inputs/default-input-bindings.json"], {"tooling"}
         )
+        self.assertEqual(
+            required[
+                "runtime-inputs/assets/3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230.wav"
+            ],
+            {"runtime"},
+        )
+        self.assertEqual(
+            required["ace_step_audio_repaint.card-poster.png"], {"runtime"}
+        )
 
     def test_checked_in_manifest_contract_is_valid_without_local_asset_bytes(
         self,

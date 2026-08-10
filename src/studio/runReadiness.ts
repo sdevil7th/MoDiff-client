@@ -1326,14 +1326,17 @@ export function collectRunReadinessIssues(options: {
     }
     const managedGraphIssue = getStudioGraphRunBlockingMessage(studioState.form);
     if (managedGraphIssue) {
+      const invalidProof = studioState.graphBinding?.finalizationProofInvalid === true;
       issues.push(
         issue({
           category: 'graph',
           severity: 'warning',
           blocking: true,
-          action: 'inspect_node',
+          action: invalidProof ? 'detach_graph' : 'inspect_node',
           message: managedGraphIssue,
-          details: 'Run becomes available after the managed graph exposes and connects its required fields.',
+          details: invalidProof
+            ? 'Discard the invalid managed receipt explicitly, then rebuild or review the graph as a custom workflow.'
+            : 'Run becomes available after the managed graph exposes and connects its required fields.',
         }),
       );
     }
