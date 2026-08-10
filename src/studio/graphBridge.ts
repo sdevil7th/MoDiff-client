@@ -39,7 +39,6 @@ import {
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
   WAN_22_I2V_A14B_REPO,
-  WAN_22_TI2V_5B_REPO,
   WAN_T2V_1_3B_REPO,
   WAN_VACE_REVISION,
 } from './modelProfiles';
@@ -3154,6 +3153,14 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   }
   values.pipelineQuantizedComponents = quantizationMode === 'none' ? [] : values.quantizedComponents;
   values.autoOffload = values.offloadMode !== 'none';
+  values.nativeFlashAttention =
+    candidate?.attentionBackend ?? (form.device.startsWith('cuda') ? '_native_flash' : 'auto');
+  values.transformer = 'transformer';
+  values.videoVaeTiling =
+    form.resourceMode !== 'expert' ||
+    values.offloadMode !== 'none' ||
+    form.width * form.height * form.numFrames > 40_000_000;
+  values.useGuidanceScale2 = form.guidanceScale2 > 0;
   for (const [role, param, source] of spec.bindings) {
     const nodeId = binding.nodes[role];
     if (!nodeId || !(param in (getNode(nodeId)?.data.params ?? {}))) {
@@ -3333,33 +3340,24 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   if (isVideoMode(form.mode)) {
     const preservationWanMode = form.modelType === 'WanVideoPipeline';
     const qualityWanImageMode = form.modelType === 'WanImageToVideoPipeline';
-    const qualityWanTextMode = form.modelType === 'WanTI2VPipeline';
     const wanTextToVideoMode = preservationWanMode && form.mode === 'text_to_video';
     const pipelineClass =
       autoCandidate?.pipelineClass ??
       (form.modelType === 'LTXVideoPipeline'
         ? 'LTXConditionPipeline'
-        : qualityWanTextMode
-          ? 'WanTI2VPipeline'
-          : qualityWanImageMode
-            ? 'WanImageToVideoPipeline'
-            : preservationWanMode
-              ? wanTextToVideoMode
-                ? 'WanPipeline'
-                : 'WanVideoToVideoPipeline'
-              : 'WanVACEPipeline');
+        : qualityWanImageMode
+          ? 'WanImageToVideoPipeline'
+          : preservationWanMode
+            ? wanTextToVideoMode
+              ? 'WanPipeline'
+              : 'WanVideoToVideoPipeline'
+            : 'WanVACEPipeline');
     const resolvedArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
       autoCandidate?.installTarget?.repo ??
       autoCandidate?.modelRepo ??
-      (qualityWanTextMode
-        ? WAN_22_TI2V_5B_REPO
-        : qualityWanImageMode
-          ? WAN_22_I2V_A14B_REPO
-          : preservationWanMode
-            ? WAN_T2V_1_3B_REPO
-            : capability.defaultRepo);
+      (qualityWanImageMode ? WAN_22_I2V_A14B_REPO : preservationWanMode ? WAN_T2V_1_3B_REPO : capability.defaultRepo);
     const resolvedOffloadMode = autoCandidate?.offloadMode ?? form.offloadMode;
     const decodedVideoPixels = form.width * form.height * form.numFrames;
     const needsVaeTiling =
@@ -3370,7 +3368,6 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     const supportsNativeFlash =
       form.device.startsWith('cuda') &&
       (pipelineClass === 'WanImageToVideoPipeline' ||
-        pipelineClass === 'WanTI2VPipeline' ||
         pipelineClass === 'WanPipeline' ||
         pipelineClass === 'Wan22Pipeline');
 
@@ -3450,7 +3447,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(wanGenerate, ['num_frames'], form.numFrames);
     setParamIfPresent(wanGenerate, ['num_inference_steps'], form.steps);
     setParamIfPresent(wanGenerate, ['guidance_scale'], form.guidanceScale);
-    if (form.modelType === 'WanVideoPipeline' || form.modelType === 'WanTI2VPipeline') {
+    if (form.modelType === 'WanVideoPipeline') {
       setParamIfPresent(wanGenerate, ['scheduler_flow_shift'], form.shift);
     }
     setParamIfPresent(wanGenerate, ['conditioning_scale'], form.conditioningScale);

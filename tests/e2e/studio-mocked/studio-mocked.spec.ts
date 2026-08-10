@@ -309,6 +309,7 @@ const mockExecutionProfileIds: Record<string, string> = {
   'WanVACEPipeline:video_inpaint': 'wan-vace:direct',
   'WanVACEPipeline:video_outpaint': 'wan-vace:direct',
   'WanVACEPipeline:control_to_video': 'wan-vace:direct',
+  'WanTI2VPipeline:text_to_video': 'wan-22-ti2v-5b:direct',
   'AceStepAudioPipeline:text_to_audio': 'ace-step-audio:direct',
   'AceStepAudioPipeline:audio_variation': 'ace-step-audio:direct',
   'AceStepAudioPipeline:audio_continuation': 'ace-step-audio:direct',
@@ -530,6 +531,104 @@ function mockFluxExecutionCapability(
   };
 }
 
+function mockWanTi2vExecutionCapability() {
+  const roles = [
+    ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+    ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+    ['wanPipeline', 'modules.DiffusersVideo.LoadPipeline', -520, -80],
+    ['wanGenerate', 'modules.DiffusersVideo.Generate', -120, -80],
+    ['videoExport', 'modules.Video.Export', 980, -80],
+  ] as const;
+  const edges = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'wanPipeline', 'execution_recipe'],
+    ['wanPipeline', 'pipeline', 'wanGenerate', 'pipeline'],
+    ['wanGenerate', 'video_out', 'videoExport', 'video'],
+  ] as const;
+  const bindings = [
+    ['diffusersQuantization', 'backend', 'quantizationMode'],
+    ['diffusersQuantization', 'components', 'quantizedComponents'],
+    ['diffusersQuantization', 'dtype', 'dtype'],
+    ['diffusersRecipe', 'device_map', 'deviceMapNone'],
+    ['diffusersRecipe', 'offload_mode', 'offloadMode'],
+    ['diffusersRecipe', 'device', 'device'],
+    ['diffusersRecipe', 'attention_backend', 'nativeFlashAttention'],
+    ['diffusersRecipe', 'attention_components', 'transformer'],
+    ['diffusersRecipe', 'vae_slicing', 'true'],
+    ['diffusersRecipe', 'vae_tiling', 'videoVaeTiling'],
+    ['diffusersRecipe', 'regional_compile', 'regionalCompile'],
+    ['diffusersRecipe', 'denoiser_cache', 'denoiserCache'],
+    ['diffusersRecipe', 'layerwise_casting', 'layerwiseCasting'],
+    ['diffusersRecipe', 'channels_last', 'channelsLast'],
+    ['wanPipeline', 'model_id', 'artifact'],
+    ['wanPipeline', 'pipeline_class', 'pipelineClass'],
+    ['wanPipeline', 'revision', 'empty'],
+    ['wanPipeline', 'dtype', 'dtype'],
+    ['wanPipeline', 'device', 'device'],
+    ['wanPipeline', 'auto_offload', 'autoOffload'],
+    ['wanPipeline', 'offload_mode', 'offloadMode'],
+    ['wanGenerate', 'prompt', 'prompt'],
+    ['wanGenerate', 'mode', 'mode'],
+    ['wanGenerate', 'negative_prompt', 'negativePrompt'],
+    ['wanGenerate', 'width', 'width'],
+    ['wanGenerate', 'height', 'height'],
+    ['wanGenerate', 'seed', 'seed'],
+    ['wanGenerate', 'num_frames', 'numFrames'],
+    ['wanGenerate', 'num_inference_steps', 'steps'],
+    ['wanGenerate', 'guidance_scale', 'guidanceScale'],
+    ['wanGenerate', 'scheduler_flow_shift', 'shift'],
+    ['wanGenerate', 'conditioning_scale', 'conditioningScale'],
+    ['wanGenerate', 'strength', 'strength'],
+    ['wanGenerate', 'denoise_strength', 'strength'],
+    ['wanGenerate', 'frame_rate', 'fps'],
+    ['wanGenerate', 'guidance_scale_2', 'guidanceScale2'],
+    ['wanGenerate', 'use_guidance_scale_2', 'useGuidanceScale2'],
+    ['wanGenerate', 'output_type', 'outputType'],
+    ['wanGenerate', 'max_sequence_length', 'maxSequenceLength'],
+    ['wanGenerate', 'attention_kwargs_json', 'attentionKwargsJson'],
+    ['videoExport', 'fps', 'fps'],
+  ] as const;
+  const spec = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'wan-22-ti2v-5b:text-to-video:v1',
+    modelType: 'WanTI2VPipeline',
+    mode: 'text_to_video',
+    executionProfileId: 'wan-22-ti2v-5b:direct',
+    loaderModule: 'modules.DiffusersVideo',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-video',
+    pipelineClass: 'WanTI2VPipeline',
+    defaultRepo: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
+    roles,
+    edges,
+    bindings,
+    autoFields: mockFluxAutoFields,
+    actions: [],
+    contentHash: 'studio-spec-v1-bfde649f',
+  };
+  return {
+    modelType: spec.modelType,
+    modes: [spec.mode],
+    runnableModes: [spec.mode],
+    executionProfiles: [
+      {
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: [spec.mode],
+        loader_module: spec.loaderModule,
+        loader_action: spec.loaderAction,
+        execution_path: spec.executionPath,
+        backend_path: `${spec.loaderModule}.${spec.loaderAction}`,
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+      },
+    ],
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
   const mode = String(form.mode ?? 'text_to_image');
@@ -557,11 +656,13 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     const executionPath =
       modelType === 'WanVACEPipeline'
         ? 'direct-wan-vace'
-        : modelType === 'AceStepAudioPipeline'
-          ? 'direct-diffusers-audio'
-          : modelType.startsWith('Flux') || modelType === 'ZImageModularPipeline' || directQwenEdit
-            ? 'direct-diffusers-image'
-            : 'modular-diffusers';
+        : modelType === 'WanTI2VPipeline'
+          ? 'direct-diffusers-video'
+          : modelType === 'AceStepAudioPipeline'
+            ? 'direct-diffusers-audio'
+            : modelType.startsWith('Flux') || modelType === 'ZImageModularPipeline' || directQwenEdit
+              ? 'direct-diffusers-image'
+              : 'modular-diffusers';
     const loaderModule = executionPath.includes('audio')
       ? 'modules.DiffusersAudio'
       : executionPath.includes('wan') || executionPath.includes('video')
@@ -1060,6 +1161,7 @@ const mockRegistry = {
   'modules.DiffusersVideo.LoadPipeline': nodeDef('modules.DiffusersVideo', 'LoadPipeline', 'Diffusers Video', {
     model_id: { type: 'string', value: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers' },
     pipeline_class: { type: 'string', value: 'WanImageToVideoPipeline' },
+    revision: { type: 'string', value: '' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
     auto_offload: { type: 'bool', value: false },
@@ -1078,6 +1180,16 @@ const mockRegistry = {
     num_frames: { type: 'int', value: 81 },
     num_inference_steps: { type: 'int', value: 40 },
     guidance_scale: { type: 'float', value: 3.5 },
+    scheduler_flow_shift: { type: 'float', value: 8 },
+    conditioning_scale: { type: 'float', value: 1 },
+    strength: { type: 'float', value: 1 },
+    denoise_strength: { type: 'float', value: 1 },
+    frame_rate: { type: 'float', value: 16 },
+    guidance_scale_2: { type: 'float', value: 0 },
+    use_guidance_scale_2: { type: 'bool', value: false },
+    output_type: { type: 'string', value: 'pil' },
+    max_sequence_length: { type: 'int', value: 512 },
+    attention_kwargs_json: { type: 'text', value: '' },
     seed: { type: 'int', display: 'random', value: { value: 92021, isRandom: false } },
     video_out: { type: 'video', display: 'output' },
   }),
@@ -6474,7 +6586,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
   });
 });
 
-test('backend Studio execution specs materialize exact Flux recipes and submit the sealed receipt', async ({
+test('backend Studio execution specs materialize exact image and video recipes and submit the sealed receipt', async ({
   page,
 }) => {
   mockInstalledRepos.clear();
@@ -6484,6 +6596,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Depth-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Canny-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Redux-dev');
+  mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -6495,6 +6608,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
     mockFluxExecutionCapability('FluxDepthPipeline'),
     mockFluxExecutionCapability('FluxCannyPipeline'),
     mockFluxExecutionCapability('FluxReduxPipeline'),
+    mockWanTi2vExecutionCapability(),
   ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
@@ -6534,7 +6648,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(6);
+    .toHaveLength(7);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -6712,6 +6826,58 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   expect(redux.pipelineClass).toBe('FluxReduxPipeline');
   expect(redux.referenceFile).toEqual(['@data/images/redux.png']);
   expect(redux.referenceStrength).toBe(0.8);
+
+  const ti2v = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'WanTI2VPipeline',
+      mode: 'text_to_video',
+      resourceMode: 'expert',
+      device: 'cuda:0',
+      offloadMode: 'none',
+      width: 1280,
+      height: 704,
+      numFrames: 121,
+      fps: 24,
+      steps: 50,
+      guidanceScale: 5,
+      guidanceScale2: 0,
+      shift: 8,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipeline: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params,
+      recipe: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersRecipe)?.params,
+      generate: state.flow.nodes.find((node) => node.id === binding.nodes.wanGenerate)?.params,
+      export: state.flow.nodes.find((node) => node.id === binding.nodes.videoExport)?.params,
+    };
+  });
+  expect(ti2v.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'wan-22-ti2v-5b:text-to-video:v1',
+    contentHash: 'studio-spec-v1-bfde649f',
+    executionProfileId: 'wan-22-ti2v-5b:direct',
+  });
+  expect(ti2v.nodes.wanPipeline).toBeTruthy();
+  expect(ti2v.nodes.wanGenerate).toBeTruthy();
+  expect(ti2v.edgeShape).toEqual([
+    'execution_recipe>execution_recipe',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+    'video_out>video',
+  ]);
+  expect(ti2v.pipeline?.pipeline_class?.value).toBe('WanTI2VPipeline');
+  expect(ti2v.pipeline?.model_id?.value).toBe('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
+  expect(ti2v.recipe?.attention_backend?.value).toBe('_native_flash');
+  expect(ti2v.recipe?.attention_components?.value).toBe('transformer');
+  expect(ti2v.recipe?.vae_tiling?.value).toBe(true);
+  expect(ti2v.generate?.scheduler_flow_shift?.value).toBe(8);
+  expect(ti2v.generate?.use_guidance_scale_2?.value).toBe(false);
+  expect(ti2v.export?.fps?.value).toBe(24);
 });
 
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {
