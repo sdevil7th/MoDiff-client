@@ -430,6 +430,66 @@ const mockFluxEditExecutionBindings = [
   ...mockFluxExecutionBindings.slice(31).map(([, param, source]) => ['diffusersImageEdit', param, source] as const),
 ] as const;
 
+function mockFluxFillExecutionCapability() {
+  const base = mockFluxExecutionCapability('FluxDevPipeline');
+  const baseSpec = base.studioExecutionSpecs[0];
+  const roles = [
+    ...baseSpec.roles.slice(0, 3),
+    ['loadImage', 'modules.Image.Load', -520, 300],
+    ['loadMask', 'modules.Image.Load', -520, 560],
+    ['diffusersImageInpaint', 'modules.DiffusersImage.Inpaint', -120, -80],
+    baseSpec.roles[4],
+  ] as const;
+  const edges = [
+    ...baseSpec.edges.slice(0, 2),
+    ['diffusersImagePipeline', 'pipeline', 'diffusersImageInpaint', 'pipeline'],
+    ['loadImage', 'image', 'diffusersImageInpaint', 'image'],
+    ['loadMask', 'image', 'diffusersImageInpaint', 'mask_image'],
+    ['diffusersImageInpaint', 'images', 'preview', 'image'],
+  ] as const;
+  const bindings = [
+    ...baseSpec.bindings.slice(0, 23),
+    ['loadImage', 'file', 'referenceImages'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ['loadMask', 'file', 'maskImage'],
+    ['loadMask', 'alpha_channel', 'removeAlpha'],
+    ...baseSpec.bindings.slice(23, 31).map(([, param, source]) => ['diffusersImageInpaint', param, source] as const),
+    ['diffusersImageInpaint', 'reference_strength', 'conditioningScale'],
+    ...baseSpec.bindings.slice(31).map(([, param, source]) => ['diffusersImageInpaint', param, source] as const),
+  ] as const;
+  const spec = {
+    ...baseSpec,
+    id: 'flux-fill:inpaint:v1',
+    modelType: 'FluxFillPipeline',
+    mode: 'inpaint',
+    executionProfileId: 'flux-fill:direct',
+    pipelineClass: 'FluxFillPipeline',
+    defaultRepo: 'black-forest-labs/FLUX.1-Fill-dev',
+    roles,
+    edges,
+    bindings,
+    contentHash: 'studio-spec-v1-ba8c8dd1',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    modes: ['inpaint', 'outpaint'],
+    runnableModes: ['inpaint', 'outpaint'],
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: ['inpaint', 'outpaint'],
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+      },
+    ],
+    studioExecutionSpecModes: ['inpaint'],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockFluxExecutionCapability(
   modelType:
     | 'FluxSchnellPipeline'
@@ -1242,6 +1302,9 @@ const mockRegistry = {
     num_inference_steps: { type: 'int', value: 40 },
     guidance_scale: { type: 'float', value: 4 },
     strength: { type: 'float', value: 0.6 },
+    reference_strength: { type: 'float', value: 1 },
+    output_type: { type: 'string', value: 'pil' },
+    max_sequence_length: { type: 'int', value: 512 },
     images: { type: 'image', display: 'output' },
   }),
   'modules.DiffusersImage.OutpaintCanvas': nodeDef('modules.DiffusersImage', 'OutpaintCanvas', 'Diffusers Image', {
@@ -6748,6 +6811,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Canny-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Redux-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Kontext-dev');
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-Fill-dev');
   mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
   mockIncludeQuantizationNode = true;
@@ -6762,6 +6826,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
     mockFluxExecutionCapability('FluxCannyPipeline'),
     mockFluxExecutionCapability('FluxReduxPipeline'),
     mockFluxExecutionCapability('FluxKontextPipeline'),
+    mockFluxFillExecutionCapability(),
     mockWanI2vExecutionCapability(),
     mockWanTi2vExecutionCapability(),
     mockWanT2vExecutionCapability(),
@@ -6804,7 +6869,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(10);
+    .toHaveLength(11);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7034,6 +7099,66 @@ test('backend Studio execution specs materialize exact image and video recipes a
   expect(kontextMulti.nodes.loadImage).toBeTruthy();
   expect(kontextMulti.nodes.diffusersImageEdit).toBeTruthy();
   expect(kontextMulti.pipelineClass).toBe('FluxKontextPipeline');
+
+  const fill = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'FluxFillPipeline',
+      mode: 'inpaint',
+      resourceMode: 'expert',
+      referenceImages: ['@data/images/fill-source.png'],
+      maskImage: '@data/images/fill-mask.png',
+      alphaMode: 'add alpha',
+      conditioningScale: 0.65,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
+      source: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params,
+      mask: state.flow.nodes.find((node) => node.id === binding.nodes.loadMask)?.params,
+      inpaint: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImageInpaint)?.params,
+    };
+  });
+  expect(fill.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'flux-fill:inpaint:v1',
+    contentHash: 'studio-spec-v1-ba8c8dd1',
+    executionProfileId: 'flux-fill:direct',
+  });
+  expect(fill.nodes.loadImage).toBeTruthy();
+  expect(fill.nodes.loadMask).toBeTruthy();
+  expect(fill.nodes.diffusersImageInpaint).toBeTruthy();
+  expect(fill.edgeShape).toEqual([
+    'execution_recipe>execution_recipe',
+    'image>image',
+    'image>mask_image',
+    'images>image',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+  ]);
+  expect(fill.pipelineClass).toBe('FluxFillPipeline');
+  expect(fill.source?.file?.value).toEqual(['@data/images/fill-source.png']);
+  expect(fill.source?.alpha_channel?.value).toBe('add alpha');
+  expect(fill.mask?.file?.value).toBe('@data/images/fill-mask.png');
+  expect(fill.mask?.alpha_channel?.value).toBe('remove alpha');
+  expect(fill.inpaint?.reference_strength?.value).toBe(0.65);
+
+  const fillOutpaint = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'outpaint' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    return {
+      receipt: state.studio.graphBinding?.executionSpec,
+      nodes: state.studio.graphBinding?.nodes,
+    };
+  });
+  expect(fillOutpaint.receipt).toBeUndefined();
+  expect(fillOutpaint.nodes?.diffusersImageInpaint).toBeTruthy();
 
   const ti2v = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

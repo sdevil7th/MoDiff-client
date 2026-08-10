@@ -1315,6 +1315,39 @@ test('backend execution specs materialize exact image and video recipes with sea
     mode: 'multi_image_reference_edit',
     contentHash: 'studio-spec-v1-aa060039',
   };
+  const inpaintRoleRows = [
+    ...roleRows.slice(0, 3),
+    ['loadImage', 'modules.Image.Load', -520, 300],
+    ['loadMask', 'modules.Image.Load', -520, 560],
+    ['diffusersImageInpaint', 'modules.DiffusersImage.Inpaint', -120, -80],
+    roleRows[4],
+  ];
+  const inpaintEdgeRows = [
+    ...edgeRows.slice(0, 2),
+    ['diffusersImagePipeline', 'pipeline', 'diffusersImageInpaint', 'pipeline'],
+    ['loadImage', 'image', 'diffusersImageInpaint', 'image'],
+    ['loadMask', 'image', 'diffusersImageInpaint', 'mask_image'],
+    ['diffusersImageInpaint', 'images', 'preview', 'image'],
+  ];
+  const inpaintBindingRows = [
+    ...bindingRows.slice(0, 23),
+    ['loadImage', 'file', 'referenceImages'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ['loadMask', 'file', 'maskImage'],
+    ['loadMask', 'alpha_channel', 'removeAlpha'],
+    ...bindingRows.slice(23, 31).map(([, param, source]) => ['diffusersImageInpaint', param, source]),
+    ['diffusersImageInpaint', 'reference_strength', 'conditioningScale'],
+    ...bindingRows.slice(31).map(([, param, source]) => ['diffusersImageInpaint', param, source]),
+  ];
+  const fillSpec = {
+    ...makeSpec('FluxFillPipeline', 'flux-fill:direct', 'black-forest-labs/FLUX.1-Fill-dev', 'studio-spec-v1-ba8c8dd1'),
+    id: 'flux-fill:inpaint:v1',
+    mode: 'inpaint',
+    pipelineClass: 'FluxFillPipeline',
+    roles: inpaintRoleRows,
+    edges: inpaintEdgeRows,
+    bindings: inpaintBindingRows,
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1470,11 +1503,20 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioExecutionSpecModes: ['edit_image', 'multi_image_reference_edit'],
     studioExecutionSpecs: [kontextSpec, kontextMultiSpec],
   };
+  const fillCapability = {
+    ...capability(fillSpec),
+    modes: ['inpaint', 'outpaint'],
+    runnableModes: ['inpaint', 'outpaint'],
+    executionProfiles: [{ ...profile(fillSpec), modes: ['inpaint', 'outpaint'] }],
+  };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
     ...roleRows,
     ...depthRoleRows.filter(([role]) => !roleRows.some(([id]) => id === role)),
     ...editRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows].some(([id]) => id === role)),
+    ...inpaintRoleRows.filter(
+      ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows].some(([id]) => id === role),
+    ),
     ...videoRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows].some(([id]) => id === role)),
     ...i2vRoleRows.filter(
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...videoRoleRows].some(([id]) => id === role),
@@ -1487,6 +1529,7 @@ test('backend execution specs materialize exact image and video recipes with sea
     ...bindingRows,
     ...depthBindingRows,
     ...editBindingRows,
+    ...inpaintBindingRows,
     ...videoBindingRows,
     ...i2vBindingRows,
   ])
@@ -1495,6 +1538,7 @@ test('backend execution specs materialize exact image and video recipes with sea
     ...edgeRows,
     ...depthEdgeRows,
     ...editEdgeRows,
+    ...inpaintEdgeRows,
     ...videoEdgeRows,
     ...i2vEdgeRows,
     ['loadVideo', 'video', 'normalizeVideo', 'video'],
@@ -1556,6 +1600,7 @@ test('backend execution specs materialize exact image and video recipes with sea
         capability(cannySpec),
         capability(reduxSpec),
         kontextCapability,
+        fillCapability,
         capability(i2vSpec),
         capability(ti2vSpec),
         {
@@ -1787,6 +1832,48 @@ test('backend execution specs materialize exact image and video recipes with sea
     assert.ok(kontextMultiBinding.nodes.loadImage);
     assert.ok(kontextMultiBinding.nodes.diffusersImageEdit);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(kontextMultiForm), null);
+
+    const fillForm = {
+      ...baseForm,
+      modelType: 'FluxFillPipeline',
+      mode: 'inpaint',
+      referenceImages: ['@data/images/fill-source.png'],
+      maskImage: '@data/images/fill-mask.png',
+      alphaMode: 'add alpha',
+      strength: 0.72,
+      conditioningScale: 0.65,
+      steps: 24,
+      guidanceScale: 30,
+    };
+    studioStoreModule.useStudioStore.setState({ form: fillForm });
+    await graphBridge.createOrUpdateStudioGraph(fillForm);
+    const fillBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(fillBinding.executionSpec.id, fillSpec.id);
+    assert.equal(fillBinding.executionSpec.contentHash, fillSpec.contentHash);
+    assert.deepEqual(
+      topology(fillBinding),
+      inpaintEdgeRows
+        .map(([source, sourceHandle, target, targetHandle]) => [source, sourceHandle, target, targetHandle])
+        .sort(),
+    );
+    const fillNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const fillSource = fillNodes.find((item) => item.id === fillBinding.nodes.loadImage).data.params;
+    const fillMask = fillNodes.find((item) => item.id === fillBinding.nodes.loadMask).data.params;
+    const fillInpaint = fillNodes.find((item) => item.id === fillBinding.nodes.diffusersImageInpaint).data.params;
+    assert.deepEqual(fillSource.file.value, fillForm.referenceImages);
+    assert.equal(fillSource.alpha_channel.value, fillForm.alphaMode);
+    assert.equal(fillMask.file.value, fillForm.maskImage);
+    assert.equal(fillMask.alpha_channel.value, 'remove alpha');
+    assert.equal(fillInpaint.reference_strength.value, fillForm.conditioningScale);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(fillForm), null);
+
+    const fillOutpaintForm = { ...fillForm, mode: 'outpaint' };
+    studioStoreModule.useStudioStore.setState({ form: fillOutpaintForm });
+    await graphBridge.createOrUpdateStudioGraph(fillOutpaintForm);
+    const fillOutpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(fillOutpaintBinding.executionSpec, undefined, 'an unclaimed sibling mode remains on the legacy path');
+    assert.ok(fillOutpaintBinding.nodes.diffusersImageInpaint);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(fillOutpaintForm), null);
 
     const i2vForm = {
       ...baseForm,

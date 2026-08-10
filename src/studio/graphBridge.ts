@@ -3128,6 +3128,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     attentionBackend: 'auto',
     empty: '',
     true: true,
+    removeAlpha: 'remove alpha',
     regionalCompile: false,
     denoiserCache: 'none',
     layerwiseCasting: false,
