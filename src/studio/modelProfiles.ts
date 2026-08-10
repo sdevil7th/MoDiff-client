@@ -234,7 +234,6 @@ export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = [
   'FluxDevPipeline',
   'FluxKontextPipeline',
   'FluxFillPipeline',
-  'FluxDepthPipeline',
   'FluxCannyPipeline',
   'FluxReduxPipeline',
   'Flux2KleinPipeline',

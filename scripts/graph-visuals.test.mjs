@@ -1226,6 +1226,38 @@ test('backend execution specs materialize Flux variants with one topology and se
     'black-forest-labs/FLUX.1-Krea-dev',
     'studio-spec-v1-34a1abeb',
   );
+  const depthRoleRows = [
+    ...roleRows.slice(0, 3),
+    ['loadImage', 'modules.Image.Load', -520, 300],
+    ['diffusersImageControl', 'modules.DiffusersImage.ControlGenerate', -120, -80],
+    roleRows[4],
+  ];
+  const depthEdgeRows = [
+    ...edgeRows.slice(0, 2),
+    ['diffusersImagePipeline', 'pipeline', 'diffusersImageControl', 'pipeline'],
+    ['loadImage', 'image', 'diffusersImageControl', 'control_image'],
+    ['diffusersImageControl', 'images', 'preview', 'image'],
+  ];
+  const depthBindingRows = [
+    ...bindingRows.slice(0, 23),
+    ['loadImage', 'file', 'controlImage'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ...bindingRows.slice(23).map(([, param, source]) => ['diffusersImageControl', param, source]),
+  ];
+  const depthSpec = {
+    ...makeSpec(
+      'FluxDepthPipeline',
+      'flux-depth:direct',
+      'black-forest-labs/FLUX.1-Depth-dev',
+      'studio-spec-v1-2d8b881e',
+    ),
+    id: 'flux-depth:control-image:v1',
+    mode: 'control_image',
+    pipelineClass: 'FluxControlPipeline',
+    roles: depthRoleRows,
+    edges: depthEdgeRows,
+    bindings: depthBindingRows,
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -1252,16 +1284,17 @@ test('backend execution specs materialize Flux variants with one topology and se
     studioExecutionSpecs: [spec],
   });
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
-  const paramsByRole = Object.fromEntries(roleRows.map(([role]) => [role, {}]));
-  for (const [role, param] of bindingRows) paramsByRole[role][param] = scalar();
-  for (const [sourceRole, sourceHandle, targetRole, targetHandle] of edgeRows) {
-    const type = `${sourceRole}:${sourceHandle}`;
+  const registryRoleRows = [...roleRows, ...depthRoleRows.filter(([role]) => !roleRows.some(([id]) => id === role))];
+  const paramsByRole = Object.fromEntries(registryRoleRows.map(([role]) => [role, {}]));
+  for (const [role, param] of [...bindingRows, ...depthBindingRows]) paramsByRole[role][param] = scalar();
+  for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [...edgeRows, ...depthEdgeRows]) {
+    const type = sourceHandle;
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
     paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
   }
   paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
   const registry = Object.fromEntries(
-    roleRows.map(([role, nodeKey]) => {
+    registryRoleRows.map(([role, nodeKey]) => {
       const [module, action] = nodeKey.split(/\.(?=[^.]+$)/);
       return [
         nodeKey,
@@ -1289,11 +1322,22 @@ test('backend execution specs materialize Flux variants with one topology and se
       ])
       .sort();
   const nativeWebSocket = globalThis.WebSocket;
+  const nativeFetch = globalThis.fetch;
   globalThis.WebSocket = undefined;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: false, nodes: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   try {
     nodesStoreModule.useNodesStore.setState({
       nodesRegistry: registry,
-      studioModelCapabilities: [capability(schnellSpec), capability(devSpec), capability(kreaSpec)],
+      studioModelCapabilities: [
+        capability(schnellSpec),
+        capability(devSpec),
+        capability(kreaSpec),
+        capability(depthSpec),
+      ],
       studioModelCapabilitiesAuthoritative: true,
       studioExecutionSpecInvalid: false,
     });
@@ -1393,6 +1437,40 @@ test('backend execution specs materialize Flux variants with one topology and se
     );
     assert.equal(autoGenerate.width.value, autoForm.width);
 
+    const depthForm = {
+      ...baseForm,
+      modelType: 'FluxDepthPipeline',
+      mode: 'control_image',
+      resourceMode: 'expert',
+      controlImage: '@data/images/depth.png',
+      alphaMode: 'remove alpha',
+      steps: 24,
+      guidanceScale: 10,
+    };
+    studioStoreModule.useStudioStore.setState({ form: depthForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(depthForm);
+    const depthBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(depthBinding.executionSpec.id, depthSpec.id);
+    assert.equal(depthBinding.executionSpec.contentHash, depthSpec.contentHash);
+    assert.equal(depthBinding.nodes.diffusersImageGenerate, undefined);
+    assert.ok(depthBinding.nodes.loadImage);
+    assert.ok(depthBinding.nodes.diffusersImageControl);
+    assert.deepEqual(
+      topology(depthBinding),
+      depthEdgeRows
+        .map(([source, sourceHandle, target, targetHandle]) => [source, sourceHandle, target, targetHandle])
+        .sort(),
+    );
+    const depthNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(
+      depthNodes.find((item) => item.id === depthBinding.nodes.diffusersImagePipeline).data.params.pipeline_class.value,
+      'FluxControlPipeline',
+    );
+    assert.equal(
+      depthNodes.find((item) => item.id === depthBinding.nodes.loadImage).data.params.file.value,
+      depthForm.controlImage,
+    );
+
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
       (spec) => ({
@@ -1408,7 +1486,12 @@ test('backend execution specs materialize Flux variants with one topology and se
     ]) {
       const malformed = mutate(structuredClone(schnellSpec));
       nodesStoreModule.useNodesStore.setState({
-        studioModelCapabilities: [capability(malformed), capability(devSpec), capability(kreaSpec)],
+        studioModelCapabilities: [
+          capability(malformed),
+          capability(devSpec),
+          capability(kreaSpec),
+          capability(depthSpec),
+        ],
       });
       await assert.rejects(
         () => graphBridge.createOrUpdateStudioGraph(baseForm),
@@ -1423,7 +1506,12 @@ test('backend execution specs materialize Flux variants with one topology and se
           module: 'modules.Unreviewed',
         },
       },
-      studioModelCapabilities: [capability(schnellSpec), capability(devSpec), capability(kreaSpec)],
+      studioModelCapabilities: [
+        capability(schnellSpec),
+        capability(devSpec),
+        capability(kreaSpec),
+        capability(depthSpec),
+      ],
     });
     await assert.rejects(
       () => graphBridge.createOrUpdateStudioGraph(baseForm),
@@ -1441,6 +1529,7 @@ test('backend execution specs materialize Flux variants with one topology and se
     );
   } finally {
     globalThis.WebSocket = nativeWebSocket;
+    globalThis.fetch = nativeFetch;
     nodesStoreModule.useNodesStore.setState({
       nodesRegistry: previousNodesState.nodesRegistry,
       studioModelCapabilities: previousNodesState.studioModelCapabilities,

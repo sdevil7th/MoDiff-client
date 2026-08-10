@@ -1472,7 +1472,7 @@ function fluxPipelineClassFor(form: StudioFormState) {
   if (form.modelType === 'FluxReduxPipeline') return 'FluxReduxPipeline';
   if (form.modelType === 'Flux2KleinPipeline') return 'Flux2KleinPipeline';
   if (form.modelType === 'FluxFillPipeline') return 'FluxFillPipeline';
-  if (form.modelType === 'FluxDepthPipeline' || form.modelType === 'FluxCannyPipeline') return 'FluxControlPipeline';
+  if (form.modelType === 'FluxCannyPipeline') return 'FluxControlPipeline';
   if (form.mode === 'edit_image' || form.mode === 'multi_image_reference_edit') return 'FluxImg2ImgPipeline';
   if (form.mode === 'inpaint' || form.mode === 'outpaint') return 'FluxInpaintPipeline';
   return 'FluxPipeline';

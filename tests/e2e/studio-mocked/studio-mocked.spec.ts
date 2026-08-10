@@ -389,48 +389,90 @@ const mockFluxAutoFields = [
   'channelsLast',
 ] as const;
 
-function mockFluxExecutionCapability(modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline' | 'FluxKreaPipeline') {
+const mockFluxControlExecutionRoles = [
+  ...mockFluxExecutionRoles.slice(0, 3),
+  ['loadImage', 'modules.Image.Load', -520, 300],
+  ['diffusersImageControl', 'modules.DiffusersImage.ControlGenerate', -120, -80],
+  mockFluxExecutionRoles[4],
+] as const;
+const mockFluxControlExecutionEdges = [
+  ...mockFluxExecutionEdges.slice(0, 2),
+  ['diffusersImagePipeline', 'pipeline', 'diffusersImageControl', 'pipeline'],
+  ['loadImage', 'image', 'diffusersImageControl', 'control_image'],
+  ['diffusersImageControl', 'images', 'preview', 'image'],
+] as const;
+const mockFluxControlExecutionBindings = [
+  ...mockFluxExecutionBindings.slice(0, 23),
+  ['loadImage', 'file', 'controlImage'],
+  ['loadImage', 'alpha_channel', 'alphaMode'],
+  ...mockFluxExecutionBindings.slice(23).map(([, param, source]) => ['diffusersImageControl', param, source] as const),
+] as const;
+
+function mockFluxExecutionCapability(
+  modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline' | 'FluxKreaPipeline' | 'FluxDepthPipeline',
+) {
   const dev = modelType === 'FluxDevPipeline';
   const krea = modelType === 'FluxKreaPipeline';
-  const executionProfileId = dev ? 'flux-dev:direct' : krea ? 'flux-krea:direct' : 'flux-schnell:direct';
+  const depth = modelType === 'FluxDepthPipeline';
+  const executionProfileId = dev
+    ? 'flux-dev:direct'
+    : krea
+      ? 'flux-krea:direct'
+      : depth
+        ? 'flux-depth:direct'
+        : 'flux-schnell:direct';
   const defaultRepo = dev
     ? 'black-forest-labs/FLUX.1-dev'
     : krea
       ? 'black-forest-labs/FLUX.1-Krea-dev'
-      : 'black-forest-labs/FLUX.1-schnell';
+      : depth
+        ? 'black-forest-labs/FLUX.1-Depth-dev'
+        : 'black-forest-labs/FLUX.1-schnell';
   const spec = {
     schemaVersion: 1,
     canonicalizationVersion: 1,
-    id: dev ? 'flux-dev:text-to-image:v1' : krea ? 'flux-krea:text-to-image:v1' : 'flux-schnell:text-to-image:v1',
+    id: dev
+      ? 'flux-dev:text-to-image:v1'
+      : krea
+        ? 'flux-krea:text-to-image:v1'
+        : depth
+          ? 'flux-depth:control-image:v1'
+          : 'flux-schnell:text-to-image:v1',
     modelType,
-    mode: 'text_to_image',
+    mode: depth ? 'control_image' : 'text_to_image',
     executionProfileId,
     loaderModule: 'modules.DiffusersImage',
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
-    pipelineClass: 'FluxPipeline',
+    pipelineClass: depth ? 'FluxControlPipeline' : 'FluxPipeline',
     defaultRepo,
-    roles: mockFluxExecutionRoles,
-    edges: mockFluxExecutionEdges,
-    bindings: mockFluxExecutionBindings,
+    roles: depth ? mockFluxControlExecutionRoles : mockFluxExecutionRoles,
+    edges: depth ? mockFluxControlExecutionEdges : mockFluxExecutionEdges,
+    bindings: depth ? mockFluxControlExecutionBindings : mockFluxExecutionBindings,
     autoFields: mockFluxAutoFields,
     actions: [],
-    contentHash: dev ? 'studio-spec-v1-d5ee399d' : krea ? 'studio-spec-v1-34a1abeb' : 'studio-spec-v1-9cd1abb5',
+    contentHash: dev
+      ? 'studio-spec-v1-d5ee399d'
+      : krea
+        ? 'studio-spec-v1-34a1abeb'
+        : depth
+          ? 'studio-spec-v1-2d8b881e'
+          : 'studio-spec-v1-9cd1abb5',
   };
   return {
     modelType,
-    modes: ['text_to_image'],
-    runnableModes: ['text_to_image'],
+    modes: [spec.mode],
+    runnableModes: [spec.mode],
     executionProfiles: [
       {
         id: executionProfileId,
         model_type: modelType,
-        modes: ['text_to_image'],
+        modes: [spec.mode],
         loader_module: 'modules.DiffusersImage',
         loader_action: 'LoadPipeline',
         execution_path: 'direct-diffusers-image',
         backend_path: 'modules.DiffusersImage.LoadPipeline',
-        pipeline_class: 'FluxPipeline',
+        pipeline_class: spec.pipelineClass,
         default_repo: defaultRepo,
       },
     ],
@@ -495,9 +537,11 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
               ? 'QwenImageEditInpaintPipeline'
               : modelType === 'ZImageModularPipeline'
                 ? 'ZImagePipeline'
-                : modelType.startsWith('Flux')
-                  ? 'FluxPipeline'
-                  : modelType,
+                : modelType === 'FluxDepthPipeline'
+                  ? 'FluxControlPipeline'
+                  : modelType.startsWith('Flux')
+                    ? 'FluxPipeline'
+                    : modelType,
       modelRepo: defaultRepo,
       resolvedArtifact: defaultRepo,
       artifact: defaultRepo,
@@ -941,6 +985,15 @@ const mockRegistry = {
     pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
     control_image: { type: 'image', display: 'input' },
     prompt: { type: 'text', display: 'textarea', value: '' },
+    negative_prompt: { type: 'text', display: 'textarea', value: '' },
+    width: { type: 'int', value: 1024 },
+    height: { type: 'int', value: 1024 },
+    seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
+    num_inference_steps: { type: 'int', value: 24 },
+    guidance_scale: { type: 'float', value: 10 },
+    strength: { type: 'float', value: 1 },
+    output_type: { type: 'string', value: 'pil' },
+    max_sequence_length: { type: 'int', value: 256 },
     images: { type: 'image', display: 'output' },
   }),
   'modules.DiffusersVideo.LoadPipeline': nodeDef('modules.DiffusersVideo', 'LoadPipeline', 'Diffusers Video', {
@@ -6360,13 +6413,14 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
   });
 });
 
-test('backend Studio execution specs keep Flux model switches on one exact graph and submit the sealed receipt', async ({
+test('backend Studio execution specs materialize exact Flux recipes and submit the sealed receipt', async ({
   page,
 }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('black-forest-labs/FLUX.1-schnell');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Krea-dev');
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-Depth-dev');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -6375,6 +6429,7 @@ test('backend Studio execution specs keep Flux model switches on one exact graph
     mockFluxExecutionCapability('FluxSchnellPipeline'),
     mockFluxExecutionCapability('FluxDevPipeline'),
     mockFluxExecutionCapability('FluxKreaPipeline'),
+    mockFluxExecutionCapability('FluxDepthPipeline'),
   ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
@@ -6414,7 +6469,7 @@ test('backend Studio execution specs keep Flux model switches on one exact graph
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(3);
+    .toHaveLength(4);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -6487,6 +6542,47 @@ test('backend Studio execution specs keep Flux model switches on one exact graph
     nodes: dev.nodes,
   });
   expect(submittedGraph?.runtimeHints?.autoResourcePlan?.executionProfileId).toBe('flux-dev:direct');
+
+  const depth = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'FluxDepthPipeline',
+      mode: 'control_image',
+      resourceMode: 'expert',
+      controlImage: '@data/images/depth.png',
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
+      controlFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+    };
+  });
+  expect(depth.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'flux-depth:control-image:v1',
+    contentHash: 'studio-spec-v1-2d8b881e',
+    executionProfileId: 'flux-depth:direct',
+  });
+  expect(depth.nodes.diffusersImageGenerate).toBeUndefined();
+  expect(depth.nodes.loadImage).toBeTruthy();
+  expect(depth.nodes.diffusersImageControl).toBeTruthy();
+  for (const role of ['diffusersQuantization', 'diffusersRecipe', 'diffusersImagePipeline', 'preview'] as const) {
+    expect(depth.nodes[role]).toBe(dev.nodes?.[role]);
+  }
+  expect(depth.edgeShape).toEqual([
+    'execution_recipe>execution_recipe',
+    'image>control_image',
+    'images>image',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+  ]);
+  expect(depth.pipelineClass).toBe('FluxControlPipeline');
+  expect(depth.controlFile).toBe('@data/images/depth.png');
 });
 
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {
