@@ -24,6 +24,7 @@ let nodeFactory;
 let flowStoreModule;
 let nodesStoreModule;
 let runReadinessModule;
+let runPreparationModule;
 let studioStoreModule;
 let websocketMessageHandler;
 let userBlocksModule;
@@ -71,6 +72,7 @@ before(async () => {
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
+  runPreparationModule = await server.ssrLoadModule('/src/studio/runPreparation.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   websocketMessageHandler = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   userBlocksModule = await server.ssrLoadModule('/src/studio/userBlocks.ts');
@@ -1121,6 +1123,312 @@ test('blueprints cannot copy managed ownership and explicit binding membership s
     'an edge refresh must not erase missing managed membership before divergence can report it',
   );
   assert.equal(graphBridge.inspectStudioGraphBindingDivergence()?.kind, 'missing_managed_node');
+});
+
+test('backend execution specs materialize Flux variants with one topology and sealed receipts', async () => {
+  const roleRows = [
+    ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+    ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+    ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+    ['diffusersImageGenerate', 'modules.DiffusersImage.Generate', -120, -80],
+    ['preview', 'modules.Image.Preview', 980, -80],
+  ];
+  const edgeRows = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'diffusersImagePipeline', 'execution_recipe'],
+    ['diffusersImagePipeline', 'pipeline', 'diffusersImageGenerate', 'pipeline'],
+    ['diffusersImageGenerate', 'images', 'preview', 'image'],
+  ];
+  const bindingRows = [
+    ['diffusersQuantization', 'backend', 'quantizationMode'],
+    ['diffusersQuantization', 'components', 'quantizedComponents'],
+    ['diffusersQuantization', 'dtype', 'dtype'],
+    ['diffusersRecipe', 'device_map', 'deviceMapNone'],
+    ['diffusersRecipe', 'offload_mode', 'offloadMode'],
+    ['diffusersRecipe', 'device', 'device'],
+    ['diffusersRecipe', 'attention_backend', 'attentionBackend'],
+    ['diffusersRecipe', 'attention_components', 'empty'],
+    ['diffusersRecipe', 'vae_slicing', 'true'],
+    ['diffusersRecipe', 'vae_tiling', 'true'],
+    ['diffusersRecipe', 'regional_compile', 'regionalCompile'],
+    ['diffusersRecipe', 'denoiser_cache', 'denoiserCache'],
+    ['diffusersRecipe', 'layerwise_casting', 'layerwiseCasting'],
+    ['diffusersRecipe', 'channels_last', 'channelsLast'],
+    ['diffusersImagePipeline', 'model_id', 'artifact'],
+    ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+    ['diffusersImagePipeline', 'mode', 'mode'],
+    ['diffusersImagePipeline', 'dtype', 'dtype'],
+    ['diffusersImagePipeline', 'device', 'device'],
+    ['diffusersImagePipeline', 'quantization_mode', 'quantizationMode'],
+    ['diffusersImagePipeline', 'quantized_components', 'pipelineQuantizedComponents'],
+    ['diffusersImagePipeline', 'auto_offload', 'autoOffload'],
+    ['diffusersImagePipeline', 'offload_mode', 'offloadMode'],
+    ['diffusersImageGenerate', 'prompt', 'prompt'],
+    ['diffusersImageGenerate', 'negative_prompt', 'negativePrompt'],
+    ['diffusersImageGenerate', 'width', 'width'],
+    ['diffusersImageGenerate', 'height', 'height'],
+    ['diffusersImageGenerate', 'seed', 'seed'],
+    ['diffusersImageGenerate', 'num_inference_steps', 'steps'],
+    ['diffusersImageGenerate', 'guidance_scale', 'guidanceScale'],
+    ['diffusersImageGenerate', 'strength', 'strength'],
+    ['diffusersImageGenerate', 'output_type', 'outputType'],
+    ['diffusersImageGenerate', 'max_sequence_length', 'maxSequenceLength'],
+  ];
+  const autoFields = [
+    'resolvedArtifact',
+    'artifact',
+    'installTarget.repo',
+    'modelRepo',
+    'pipelineClass',
+    'dtype',
+    'offloadMode',
+    'quantizedComponents',
+    'attentionBackend',
+    'regionalCompile',
+    'denoiserCache',
+    'layerwiseCasting',
+    'channelsLast',
+  ];
+  const makeSpec = (modelType, profileId, repo, contentHash) => ({
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: `${profileId}:text-to-image:v1`,
+    modelType,
+    mode: 'text_to_image',
+    executionProfileId: profileId,
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'FluxPipeline',
+    defaultRepo: repo,
+    roles: structuredClone(roleRows),
+    edges: structuredClone(edgeRows),
+    bindings: structuredClone(bindingRows),
+    autoFields: [...autoFields],
+    actions: [],
+    contentHash,
+  });
+  const schnellSpec = makeSpec(
+    'FluxSchnellPipeline',
+    'flux-schnell:direct',
+    'black-forest-labs/FLUX.1-schnell',
+    'studio-spec-v1-9cd1abb5',
+  );
+  const devSpec = makeSpec(
+    'FluxDevPipeline',
+    'flux-dev:direct',
+    'black-forest-labs/FLUX.1-dev',
+    'studio-spec-v1-d5ee399d',
+  );
+  const profile = (spec) => ({
+    id: spec.executionProfileId,
+    model_type: spec.modelType,
+    modes: [spec.mode],
+    loader_module: spec.loaderModule,
+    loader_action: spec.loaderAction,
+    execution_path: spec.executionPath,
+    backend_path: `${spec.loaderModule}.${spec.loaderAction}`,
+    pipeline_class: spec.pipelineClass,
+    default_repo: spec.defaultRepo,
+    fallback_repo: null,
+    quantizable_components: ['transformer', 'text_encoder_2'],
+    default_quantized_components: [],
+    supported_offload_modes: ['none', 'model_cpu'],
+    retry_offload_modes: ['model_cpu'],
+    live_proof: false,
+  });
+  const capability = (spec) => ({
+    modelType: spec.modelType,
+    modes: [spec.mode],
+    runnableModes: [spec.mode],
+    executionProfiles: [profile(spec)],
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecs: [spec],
+  });
+  const scalar = (value = null) => ({ type: 'string', display: 'text', value });
+  const paramsByRole = Object.fromEntries(roleRows.map(([role]) => [role, {}]));
+  for (const [role, param] of bindingRows) paramsByRole[role][param] = scalar();
+  for (const [sourceRole, sourceHandle, targetRole, targetHandle] of edgeRows) {
+    const type = `${sourceRole}:${sourceHandle}`;
+    paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
+    paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
+  }
+  paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
+  const registry = Object.fromEntries(
+    roleRows.map(([role, nodeKey]) => {
+      const [module, action] = nodeKey.split(/\.(?=[^.]+$)/);
+      return [
+        nodeKey,
+        {
+          type: 'custom',
+          module,
+          action,
+          label: action,
+          category: 'Test',
+          params: structuredClone(paramsByRole[role]),
+        },
+      ];
+    }),
+  );
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const topology = (binding) =>
+    flowStoreModule.useFlowStore
+      .getState()
+      .edges.map((item) => [
+        Object.entries(binding.nodes).find(([, id]) => id === item.source)?.[0],
+        item.sourceHandle,
+        Object.entries(binding.nodes).find(([, id]) => id === item.target)?.[0],
+        item.targetHandle,
+      ])
+      .sort();
+  const nativeWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = undefined;
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: registry,
+      studioModelCapabilities: [capability(schnellSpec), capability(devSpec)],
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    const baseForm = {
+      ...previousForm,
+      mode: 'text_to_image',
+      modelType: 'FluxSchnellPipeline',
+      resourceMode: 'expert',
+      quantizationMode: 'none',
+      prompt: 'Form-owned prompt',
+      width: 768,
+      height: 640,
+      steps: 4,
+      guidanceScale: 0,
+    };
+    studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(baseForm);
+    const schnellBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const schnellTopology = topology(schnellBinding);
+    const schnellPipeline = flowStoreModule.useFlowStore
+      .getState()
+      .nodes.find((item) => item.id === schnellBinding.nodes.diffusersImagePipeline);
+    assert.equal(schnellPipeline.data.params.model_id.value.value, schnellSpec.defaultRepo);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(baseForm), null);
+
+    const devForm = { ...baseForm, modelType: 'FluxDevPipeline', steps: 20, guidanceScale: 3.5 };
+    studioStoreModule.useStudioStore.setState({ form: devForm });
+    await graphBridge.createOrUpdateStudioGraph(devForm);
+    const devBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.deepEqual(
+      devBinding.nodes,
+      schnellBinding.nodes,
+      'the backend recipe keeps every graph role identity stable',
+    );
+    assert.deepEqual(topology(devBinding), schnellTopology, 'model switching changes data, not topology');
+    assert.notEqual(devBinding.executionSpec.id, schnellBinding.executionSpec.id);
+    assert.notEqual(devBinding.finalizationProof.shapeKey, schnellBinding.finalizationProof.shapeKey);
+    const devPipeline = flowStoreModule.useFlowStore
+      .getState()
+      .nodes.find((item) => item.id === devBinding.nodes.diffusersImagePipeline);
+    assert.equal(devPipeline.data.params.model_id.value.value, devSpec.defaultRepo);
+    const hinted = runPreparationModule.applyStudioRuntimeHints({ nodes: {}, paths: [] });
+    assert.deepEqual(hinted.runtimeHints.studioExecutionSpec, {
+      schemaVersion: 1,
+      id: devSpec.id,
+      contentHash: devSpec.contentHash,
+      nodes: Object.fromEntries(devSpec.roles.map(([role]) => [role, devBinding.nodes[role]])),
+    });
+
+    const candidate = {
+      id: 'flux-dev-ready',
+      executionProfileId: devSpec.executionProfileId,
+      modelType: devSpec.modelType,
+      mode: devSpec.mode,
+      loaderModule: devSpec.loaderModule,
+      loaderAction: devSpec.loaderAction,
+      executionPath: devSpec.executionPath,
+      pipelineClass: devSpec.pipelineClass,
+      modelRepo: 'reviewed/flux-dev-auto',
+      dtype: 'float16',
+      generation: { prompt: 'candidate-controlled prompt', width: 64 },
+    };
+    const autoForm = { ...devForm, resourceMode: 'auto', prompt: 'Still form-owned', width: 777 };
+    studioStoreModule.useStudioStore.setState({
+      form: autoForm,
+      autoResourcePlan: {
+        schemaVersion: 2,
+        selectedCandidate: candidate,
+        candidates: [structuredClone(candidate)],
+      },
+    });
+    assert.equal(graphBridge.syncStudioGraphValues(autoForm), true);
+    const autoNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(
+      autoNodes.find((item) => item.id === devBinding.nodes.diffusersImagePipeline).data.params.model_id.value.value,
+      candidate.modelRepo,
+    );
+    const autoGenerate = autoNodes.find((item) => item.id === devBinding.nodes.diffusersImageGenerate).data.params;
+    assert.equal(
+      autoGenerate.prompt.value,
+      autoForm.prompt,
+      'undeclared candidate generation data cannot override form input',
+    );
+    assert.equal(autoGenerate.width.value, autoForm.width);
+
+    studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
+    for (const mutate of [
+      (spec) => ({
+        ...spec,
+        roles: spec.roles.map((row, index) => (index === 0 ? [row[0], 'modules.Missing.Node', row[2], row[3]] : row)),
+      }),
+      (spec) => ({ ...spec, bindings: [...spec.bindings, ['preview', 'missing_param', 'empty']] }),
+      (spec) => ({ ...spec, bindings: [...spec.bindings, ['diffusersQuantization', 'quantization_config', 'empty']] }),
+      (spec) => ({
+        ...spec,
+        edges: spec.edges.map((row, index) => (index === 0 ? [row[0], 'missing_output', row[2], row[3]] : row)),
+      }),
+    ]) {
+      const malformed = mutate(structuredClone(schnellSpec));
+      nodesStoreModule.useNodesStore.setState({
+        studioModelCapabilities: [capability(malformed), capability(devSpec)],
+      });
+      await assert.rejects(
+        () => graphBridge.createOrUpdateStudioGraph(baseForm),
+        /missing MoDiff node registry|does not match the current node registry/i,
+      );
+    }
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: {
+        ...registry,
+        'modules.DiffusersImage.LoadPipeline': {
+          ...registry['modules.DiffusersImage.LoadPipeline'],
+          module: 'modules.Unreviewed',
+        },
+      },
+      studioModelCapabilities: [capability(schnellSpec), capability(devSpec)],
+    });
+    await assert.rejects(
+      () => graphBridge.createOrUpdateStudioGraph(baseForm),
+      /does not match the current node registry/i,
+    );
+    nodesStoreModule.useNodesStore.setState({ nodesRegistry: registry });
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioExecutionSpecInvalid: true,
+    });
+    await assert.rejects(
+      () => graphBridge.createOrUpdateStudioGraph(baseForm),
+      /execution specification does not cover/i,
+      'a malformed versioned response must not downgrade to the legacy graph recipe',
+    );
+  } finally {
+    globalThis.WebSocket = nativeWebSocket;
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: previousNodesState.nodesRegistry,
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm, autoResourcePlan: null });
+  }
 });
 
 test('managed video extensions re-seal only after their exact route is complete', () => {

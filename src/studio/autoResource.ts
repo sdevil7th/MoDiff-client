@@ -51,6 +51,7 @@ export type StudioAutoResourceArtifactStatus = {
 
 export type StudioAutoResourceCandidate = {
   id: string;
+  executionProfileId?: string;
   rank?: number;
   modelType?: string;
   mode?: string;
@@ -506,12 +507,13 @@ export function autoResourcePlanTargetMatches(
   plan: StudioAutoResourcePlan | null | undefined,
   nodes: FlowGraphNode[],
   managedNodeIds: readonly string[] | null | undefined,
-  expected: { modelType: string; mode: string },
+  expected: { modelType: string; mode: string; executionProfileId?: string },
 ): boolean {
   if (!isSchemaV2(plan)) return true;
   const selected = selectedAutoCandidate(plan);
   if (!selected) return !(plan.selectedCandidate || plan.compatibility?.state === 'ready');
   if (selected.modelType !== expected.modelType || selected.mode !== expected.mode) return false;
+  if (expected.executionProfileId && selected.executionProfileId !== expected.executionProfileId) return false;
   const identityKey = selected.loaderAction === 'ModelsLoader' ? 'model_type' : 'pipeline_class';
   const expectedIdentity = identityKey === 'model_type' ? selected.modelType : selected.pipelineClass;
   return executableFlowNodes(nodes).some((node) => {

@@ -56,12 +56,39 @@ import {
 } from './controlledWorkflowContracts';
 import type {
   StudioFormState,
+  StudioExecutionSpec,
   StudioGraphBinding,
   StudioGraphFinalizationState,
   StudioGraphRole,
   StudioMode,
   StudioModelType,
 } from './types';
+
+function executionSpecForForm(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+): StudioExecutionSpec | null | undefined {
+  const nodeStore = useNodesStore.getState();
+  if (nodeStore.studioExecutionSpecInvalid) return null;
+  const capability = nodeStore.studioModelCapabilities.find((item) => item.modelType === form.modelType);
+  if (capability?.studioExecutionSpecSchemaVersion !== 1) return undefined;
+  const matches = capability.studioExecutionSpecs?.filter((item) => item.mode === form.mode) ?? [];
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function executionSpecForBinding(binding: StudioGraphBinding): StudioExecutionSpec | null | undefined {
+  const spec = executionSpecForForm(binding);
+  if (!spec) return spec;
+  return binding.executionSpec?.schemaVersion === 1 &&
+    binding.executionSpec.id === spec.id &&
+    binding.executionSpec.contentHash === spec.contentHash &&
+    binding.executionSpec.executionProfileId === spec.executionProfileId
+    ? spec
+    : null;
+}
+
+function specRole(spec: StudioExecutionSpec | null | undefined, role: StudioGraphRole) {
+  return spec?.roles.find((item) => item[0] === role);
+}
 
 function activeAudioTemplateBaseModel() {
   const activeTemplateId = useStudioStore.getState().activeTemplateId;
@@ -308,6 +335,7 @@ function hasDiffusersImageFacadeForMode(mode: StudioMode) {
 
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
+  if (!('nodes' in form) && executionSpecForForm(form)) return true;
   if (isFluxModel(form.modelType)) return true;
   if (
     !('nodes' in form) &&
@@ -358,6 +386,9 @@ function usesQwenDirectOutpaint(_form: StudioFormState | Pick<StudioGraphBinding
 }
 
 function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
+  const executionSpec = executionSpecForForm(form);
+  if (executionSpec === null) throw new Error('The Studio execution specification does not cover this workflow.');
+  if (executionSpec) return executionSpec.roles.map(([role]) => role);
   if (isAudioMode(form.mode)) {
     const roles: StudioGraphRole[] = [
       'diffusersQuantization',
@@ -508,11 +539,15 @@ function hasPartialCombinedControlGroup(binding: StudioGraphBinding) {
 }
 
 function bindingFingerprint(form: StudioFormState) {
-  return `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`;
+  const spec = executionSpecForForm(form);
+  const receipt = spec ? `:${spec.id}:${spec.contentHash}` : spec === null ? ':invalid-spec' : '';
+  return `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}${receipt}`;
 }
 
 function bindingMatchesForm(binding: StudioGraphBinding, form: StudioFormState) {
+  const spec = executionSpecForBinding(binding);
   return (
+    spec !== null &&
     binding.mode === form.mode &&
     binding.modelType === form.modelType &&
     binding.fingerprint === bindingFingerprint(form)
@@ -615,13 +650,13 @@ export function inspectStudioGraphBindingDivergence(
   return null;
 }
 
-function nodeKeyForRole(role: StudioGraphRole) {
-  return NODE_KEYS[role];
+function nodeKeyForRole(role: StudioGraphRole, binding?: StudioGraphBinding) {
+  return specRole(binding ? executionSpecForBinding(binding) : undefined, role)?.[1] ?? NODE_KEYS[role];
 }
 
-function nodeMatchesRole(nodeId: string | undefined, role: StudioGraphRole) {
+function nodeMatchesRole(nodeId: string | undefined, role: StudioGraphRole, binding?: StudioGraphBinding) {
   const node = getNode(nodeId);
-  return Boolean(node && `${node.data.module}.${node.data.action}` === nodeKeyForRole(role));
+  return Boolean(node && `${node.data.module}.${node.data.action}` === nodeKeyForRole(role, binding));
 }
 
 function graphNodeKey(node: CustomNodeType) {
@@ -635,17 +670,6 @@ function assignStudioRole(nodeId: string | undefined, role: StudioGraphRole, stu
       node.id === nodeId ? { ...node, data: { ...node.data, studioRole: role, studioOwned } } : node,
     ),
   }));
-}
-
-function findAdoptableNode(role: StudioGraphRole, assignedNodeIds: Set<string>) {
-  const expectedKey = nodeKeyForRole(role);
-  const nodes = useFlowStore.getState().nodes;
-  const roleMatch = nodes.find(
-    (node) => !assignedNodeIds.has(node.id) && node.data.studioRole === role && graphNodeKey(node) === expectedKey,
-  );
-  if (roleMatch) return roleMatch;
-
-  return nodes.find((node) => !assignedNodeIds.has(node.id) && graphNodeKey(node) === expectedKey);
 }
 
 function getNode(nodeId: string | undefined) {
@@ -1110,7 +1134,7 @@ function controlledGraphSemanticsAreValid(binding: StudioGraphBinding, form: Stu
     declaredBaseRoles.some(([role]) => !baseRoles.includes(role as StudioGraphRole)) ||
     baseRoles.some((role) => {
       const node = getNode(binding.nodes[role]);
-      return !nodeMatchesRole(node?.id, role) || !node || node.parentId || isManagedContainerNode(node);
+      return !nodeMatchesRole(node?.id, role, binding) || !node || node.parentId || isManagedContainerNode(node);
     })
   ) {
     return false;
@@ -1991,7 +2015,19 @@ function desiredAudioEdgeSpecs(binding: StudioGraphBinding) {
   ].filter((spec): spec is StudioEdgeSpec => Boolean(spec));
 }
 
+function desiredExecutionSpecEdgeSpecs(binding: StudioGraphBinding) {
+  const spec = executionSpecForBinding(binding);
+  if (spec === undefined) return undefined;
+  if (spec === null) return [];
+  const edges = spec.edges.map(([sourceRole, sourceHandle, targetRole, targetHandle]) =>
+    makeConnectionSpec(binding.nodes[sourceRole], [sourceHandle], binding.nodes[targetRole], [targetHandle]),
+  );
+  return edges.every(Boolean) ? (edges as StudioEdgeSpec[]) : [];
+}
+
 function desiredEdgeSpecs(binding: StudioGraphBinding) {
+  const executionSpecEdges = desiredExecutionSpecEdgeSpecs(binding);
+  if (executionSpecEdges) return [...executionSpecEdges, ...desiredStillUpscaleEdgeSpecs(binding)];
   if (isAudioMode(binding.mode)) return desiredAudioEdgeSpecs(binding);
   if (modularVideoGroupObserved(binding)) return desiredModularVideoEdgeSpecs(binding);
   if (usesDiffusersImageFacade(binding)) {
@@ -2003,6 +2039,8 @@ function desiredEdgeSpecs(binding: StudioGraphBinding) {
 }
 
 function baseDesiredEdgeSpecs(binding: StudioGraphBinding) {
+  const executionSpecEdges = desiredExecutionSpecEdgeSpecs(binding);
+  if (executionSpecEdges) return executionSpecEdges;
   if (isAudioMode(binding.mode)) return desiredAudioEdgeSpecs(binding);
   if (modularVideoGroupObserved(binding)) return desiredModularVideoEdgeSpecs(binding);
   if (usesDiffusersImageFacade(binding)) return desiredDiffusersImageEdgeSpecs(binding);
@@ -2128,7 +2166,8 @@ function participatingRoleNodesAreValid(binding: StudioGraphBinding, form: Studi
   return (
     new Set(nodeIds).size === nodeIds.length &&
     roles.every(
-      (role) => nodeMatchesRole(binding.nodes[role], role) && binding.managedNodeIds.includes(binding.nodes[role]!),
+      (role) =>
+        nodeMatchesRole(binding.nodes[role], role, binding) && binding.managedNodeIds.includes(binding.nodes[role]!),
     )
   );
 }
@@ -2649,19 +2688,48 @@ async function waitForFieldGroupsTracked(wait: FieldGroupWait, timedOutGroups: s
   return ready;
 }
 
-function missingRegistryRoles(roles: StudioGraphRole[], registry = useNodesStore.getState().nodesRegistry) {
-  return roles.filter((role) => !registry[NODE_KEYS[role]]);
+function missingRegistryRoles(
+  roles: StudioGraphRole[],
+  registry = useNodesStore.getState().nodesRegistry,
+  spec?: StudioExecutionSpec | null,
+) {
+  return roles.filter((role) => !registry[specRole(spec, role)?.[1] ?? NODE_KEYS[role]]);
 }
 
-async function ensureRegistryForRoles(roles: StudioGraphRole[]) {
+function executionSpecMatchesRegistry(spec: StudioExecutionSpec, registry = useNodesStore.getState().nodesRegistry) {
+  const definitions = Object.fromEntries(spec.roles.map(([role, nodeKey]) => [role, registry[nodeKey]])) as Partial<
+    Record<StudioGraphRole, NodeData>
+  >;
+  return (
+    spec.roles.every(
+      ([role, nodeKey]) =>
+        Boolean(definitions[role]?.params) && `${definitions[role]?.module}.${definitions[role]?.action}` === nodeKey,
+    ) &&
+    spec.bindings.every(
+      ([role, param]) =>
+        Boolean(definitions[role]?.params[param]) && definitions[role]?.params[param]?.display !== 'output',
+    ) &&
+    spec.edges.every(([sourceRole, sourceHandle, targetRole, targetHandle]) => {
+      const source = definitions[sourceRole]?.params[sourceHandle];
+      const target = definitions[targetRole]?.params[targetHandle];
+      return (
+        source?.display === 'output' &&
+        target?.display === 'input' &&
+        connectionTypesAreCompatible(source.type, target.type)
+      );
+    })
+  );
+}
+
+async function ensureRegistryForRoles(roles: StudioGraphRole[], spec?: StudioExecutionSpec | null) {
   const nodesStore = useNodesStore.getState();
   let registry = nodesStore.nodesRegistry;
-  let missingRoles = missingRegistryRoles(roles, registry);
+  let missingRoles = missingRegistryRoles(roles, registry, spec);
 
   if (Object.keys(registry).length === 0 || missingRoles.length > 0) {
     await nodesStore.fetchNodes();
     registry = useNodesStore.getState().nodesRegistry;
-    missingRoles = missingRegistryRoles(roles, registry);
+    missingRoles = missingRegistryRoles(roles, registry, spec);
   }
 
   if (Object.keys(registry).length === 0) {
@@ -2671,6 +2739,9 @@ async function ensureRegistryForRoles(roles: StudioGraphRole[]) {
     useStudioStore.getState().setLastError(message);
     throw new Error(message);
   }
+  if (spec && !executionSpecMatchesRegistry(spec, registry)) {
+    throw new Error('The Studio execution specification does not match the current node registry.');
+  }
 
   return missingRoles;
 }
@@ -2679,28 +2750,40 @@ function ensureNode(
   role: StudioGraphRole,
   bindingNodes: Partial<Record<StudioGraphRole, string>>,
   assignedNodeIds: Set<string>,
+  spec?: StudioExecutionSpec | null,
 ) {
-  const existingNode = nodeMatchesRole(bindingNodes[role], role) ? getNode(bindingNodes[role]) : undefined;
+  const nodeKey = specRole(spec, role)?.[1] ?? NODE_KEYS[role];
+  const existing = getNode(bindingNodes[role]);
+  const existingNode = existing && graphNodeKey(existing) === nodeKey ? existing : undefined;
   if (existingNode && !assignedNodeIds.has(existingNode.id)) {
     assignedNodeIds.add(existingNode.id);
     assignStudioRole(existingNode.id, role, existingNode.data.studioOwned === true);
     return existingNode.id;
   }
 
-  const adoptableNode = findAdoptableNode(role, assignedNodeIds);
+  const adoptableNode = useFlowStore
+    .getState()
+    .nodes.find(
+      (node) =>
+        !assignedNodeIds.has(node.id) &&
+        graphNodeKey(node) === nodeKey &&
+        (node.data.studioRole === role || !node.data.studioRole),
+    );
   if (adoptableNode) {
     assignedNodeIds.add(adoptableNode.id);
     assignStudioRole(adoptableNode.id, role, Boolean(adoptableNode.data.studioOwned));
     return adoptableNode.id;
   }
 
-  const registryNode = useNodesStore.getState().nodesRegistry[NODE_KEYS[role]];
+  const registryNode = useNodesStore.getState().nodesRegistry[nodeKey];
   if (!registryNode) return undefined;
 
   const node: CustomNodeType = {
     id: nanoid(),
     type: registryNode.type,
-    position: NODE_POSITIONS[role],
+    position: specRole(spec, role)
+      ? { x: specRole(spec, role)![2], y: specRole(spec, role)![3] }
+      : NODE_POSITIONS[role],
     data: {
       ...cloneNodeData(registryNode),
       studioRole: role,
@@ -2757,12 +2840,14 @@ function pruneDuplicateStudioOwnedNodes(nodes: Partial<Record<StudioGraphRole, s
 
 function buildOrReuseBinding(form: StudioFormState) {
   const previous = useStudioStore.getState().graphBinding;
+  const executionSpec = executionSpecForForm(form);
+  if (executionSpec === null) throw new Error('The Studio execution specification does not cover this workflow.');
   const roles = participatingRoles(form, previous);
   const nodes: Partial<Record<StudioGraphRole, string>> = {};
   const assignedNodeIds = new Set<string>();
 
   roles.forEach((role) => {
-    nodes[role] = ensureNode(role, previous?.nodes ?? nodes, assignedNodeIds);
+    nodes[role] = ensureNode(role, previous?.nodes ?? nodes, assignedNodeIds, executionSpec);
   });
   pruneObsoleteManagedNodes(previous, nodes, roles);
   pruneDuplicateStudioOwnedNodes(nodes, roles);
@@ -2774,6 +2859,16 @@ function buildOrReuseBinding(form: StudioFormState) {
     managedNodeIds: roles.map((role) => nodes[role]).filter(isString),
     managedEdgeIds: [],
     fingerprint: bindingFingerprint(form),
+    ...(executionSpec
+      ? {
+          executionSpec: {
+            schemaVersion: 1 as const,
+            id: executionSpec.id,
+            contentHash: executionSpec.contentHash,
+            executionProfileId: executionSpec.executionProfileId,
+          },
+        }
+      : {}),
     createdAt: previous?.createdAt ?? Date.now(),
     updatedAt: Date.now(),
   } satisfies StudioGraphBinding;
@@ -3016,6 +3111,56 @@ async function reinforceControlConnections(binding: StudioGraphBinding) {
   return managedConnectionsAreReady(binding);
 }
 
+function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormState, spec: StudioExecutionSpec) {
+  const candidate = form.resourceMode === 'auto' ? selectedVisibleGraphAutoCandidate(form, binding) : null;
+  if (candidate && candidate.executionProfileId !== spec.executionProfileId) {
+    throw new Error('The selected Auto candidate does not match the Studio execution specification.');
+  }
+  const quantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
+  const values: Record<string, unknown> = {
+    ...form,
+    quantizationMode,
+    quantizedComponents: ['transformer'],
+    deviceMapNone: 'none',
+    attentionBackend: 'auto',
+    empty: '',
+    true: true,
+    regionalCompile: false,
+    denoiserCache: 'none',
+    layerwiseCasting: false,
+    channelsLast: false,
+    artifact: spec.defaultRepo,
+    pipelineClass: spec.pipelineClass,
+    seed: seedValue(form),
+  };
+  const candidateValues: Record<string, unknown> = {
+    ...candidate,
+    ...formPatchForAutoCandidate(candidate),
+    'installTarget.repo': candidate?.installTarget?.repo,
+  };
+  for (const field of [...spec.autoFields].reverse()) {
+    const value = candidateValues[field];
+    if (value === undefined) continue;
+    values[
+      field === 'resolvedArtifact' || field === 'artifact' || field === 'installTarget.repo' || field === 'modelRepo'
+        ? 'artifact'
+        : field
+    ] = value;
+  }
+  values.pipelineQuantizedComponents = quantizationMode === 'none' ? [] : values.quantizedComponents;
+  values.autoOffload = values.offloadMode !== 'none';
+  for (const [role, param, source] of spec.bindings) {
+    const nodeId = binding.nodes[role];
+    if (!nodeId || !(param in (getNode(nodeId)?.data.params ?? {}))) {
+      throw new Error('The Studio execution specification binding is unavailable.');
+    }
+    if (source === 'artifact') setModelRepo(nodeId, String(values[source]));
+    else if (!setParamIfPresent(nodeId, [param], values[source])) {
+      throw new Error('The Studio execution specification binding is unavailable.');
+    }
+  }
+}
+
 function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   const {
     models,
@@ -3077,6 +3222,12 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   const capability = STUDIO_MODEL_PROFILES[form.modelType];
   const autoCandidate = form.resourceMode === 'auto' ? selectedVisibleGraphAutoCandidate(form, binding) : null;
   const autoPatch = formPatchForAutoCandidate(autoCandidate);
+  const executionSpec = executionSpecForBinding(binding);
+  if (executionSpec === null) throw new Error('The Studio execution specification receipt is stale.');
+  if (executionSpec) {
+    applyExecutionSpecValues(binding, form, executionSpec);
+    return;
+  }
 
   if (isAudioMode(form.mode)) {
     const autoArtifact =
@@ -4108,12 +4259,16 @@ async function createOrUpdateStudioGraphInner(
     throw new Error('The controlled Studio graph changed. Recreate it before adding another workflow block.');
   }
   const roles = participatingRoles(form, useStudioStore.getState().graphBinding);
-  const missingRoles = await ensureRegistryForRoles(roles);
+  const executionSpec = executionSpecForForm(form);
+  if (executionSpec === null) throw new Error('The Studio execution specification does not cover this workflow.');
+  const missingRoles = await ensureRegistryForRoles(roles, executionSpec);
   assertWorkflowOperationContext(context);
   if (missingRoles.length > 0) {
     const message = missingRoles.includes('qwenQuantization')
       ? `Qwen low-VRAM mode needs the MoDiff backend to expose ${QWEN_QUANTIZATION_NODE_KEY}. Restart or update the backend with Modular Diffusers quantization support.`
-      : `Missing MoDiff node registry entries: ${missingRoles.map((role) => NODE_KEYS[role]).join(', ')}`;
+      : `Missing MoDiff node registry entries: ${missingRoles
+          .map((role) => specRole(executionSpec, role)?.[1] ?? NODE_KEYS[role])
+          .join(', ')}`;
     useStudioStore.getState().setLastError(message);
     throw new Error(message);
   }

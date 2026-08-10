@@ -2952,8 +2952,10 @@ export function currentAutoResourcePlanTarget(
   binding: StudioGraphBinding | null,
 ) {
   return (
-    !autoResourcePlanTargetMatches(plan, useFlowStore.getState().nodes, binding?.managedNodeIds, form) &&
-    'Auto mismatch.'
+    !autoResourcePlanTargetMatches(plan, useFlowStore.getState().nodes, binding?.managedNodeIds, {
+      ...form,
+      executionProfileId: binding?.executionSpec?.executionProfileId,
+    }) && 'Auto mismatch.'
   );
 }
 

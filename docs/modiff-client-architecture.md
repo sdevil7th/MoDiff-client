@@ -105,11 +105,22 @@ authority; `src/studio/autoResource.ts` validates its versioned
 `compatibility` assessment and UI surfaces render that assessment without
 re-evaluating GPU, platform, OS, or memory thresholds. A missing plan is
 presented as **Checking compatibility**, never as a client-side hardware guess.
-Schema-v2 selected candidates also carry an exact loader module/action and
-execution path. Before any candidate values reach the form or graph, the
+Schema-v2 selected candidates also carry an exact loader module/action,
+execution-profile ID, and execution path. Before any candidate values reach the form or graph, the
 client verifies the unique same-ID candidate and the executable managed loader
 on the visible canvas. Unrelated or disabled loaders do not satisfy that check,
 and a mismatch remains a blocking readiness issue.
+
+Migrated exact pairs additionally carry a versioned backend Studio execution
+specification. `src/studio/executionSpecs.ts` accepts only the bounded exact
+schema, recomputes its canonical content hash, and binds it to the matching
+execution profile. `graphBridge.ts` then creates the declared generic roles,
+validates every node/parameter/typed handle against the live registry, applies
+only declared form and Auto bindings, and seals the specification identity into
+the graph binding and finalization proof. A malformed versioned response clears
+specification authority and blocks managed reconciliation; it never silently
+downgrades to the legacy schema-v2 recipe. Legacy responses with no new-schema
+marker remain supported while exact pairs are migrated.
 
 Reviewed model usage notices live in `src/studio/modelUsagePolicies.ts`.
 Template and model-manager components consume that registry generically. Only
@@ -148,6 +159,7 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 
 - `types.ts`: forms, modes, model profiles, graph bindings, tabs, outputs, templates, and run context
 - `modelProfiles.ts`: model/task capabilities, defaults, artifact notes, and Auto requirement metadata
+- `executionSpecs.ts`: strict backend recipe parsing and runtime receipt construction
 - `templates.ts`: curated workflow recipes and Gallery metadata
 - `graphBridge.ts`: create/reconcile a managed graph from a Studio form
 - `resourcePlanner.ts` and `autoResource.ts`: form normalization and the versioned backend Auto plan contract

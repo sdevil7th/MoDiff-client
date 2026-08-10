@@ -81,7 +81,7 @@ Proof is scoped. A successful text-to-image run does not prove inpaint, control,
 
 A usable candidate should declare enough information to reproduce and diagnose it:
 
-- Stable candidate identifier
+- Stable candidate identifier and exact execution-profile identifier
 - Model type, task, repository/artifact, and resolved revision when available
 - Exact loader module/action and runtime execution path
 - Dtype and quantization

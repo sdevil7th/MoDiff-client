@@ -216,6 +216,23 @@ export function coerceStudioGraphSnapshot(value: unknown): StudioGraphSnapshot |
 
 export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | null {
   if (!isRecord(value)) return null;
+  const rawExecutionSpec = isRecord(value.executionSpec) ? value.executionSpec : null;
+  const executionSpec =
+    rawExecutionSpec?.schemaVersion === 1 &&
+    Object.keys(rawExecutionSpec).length === 4 &&
+    typeof rawExecutionSpec.id === 'string' &&
+    /^[a-z\d][a-z\d._:-]{0,127}$/.test(rawExecutionSpec.id) &&
+    typeof rawExecutionSpec.contentHash === 'string' &&
+    /^studio-spec-v1-[0-9a-f]{8}$/.test(rawExecutionSpec.contentHash) &&
+    typeof rawExecutionSpec.executionProfileId === 'string' &&
+    /^[a-z\d][a-z\d._:-]{0,127}$/.test(rawExecutionSpec.executionProfileId)
+      ? {
+          schemaVersion: 1 as const,
+          id: rawExecutionSpec.id,
+          contentHash: rawExecutionSpec.contentHash,
+          executionProfileId: rawExecutionSpec.executionProfileId,
+        }
+      : undefined;
   const rawProof = isRecord(value.finalizationProof) ? value.finalizationProof : null;
   const shapeKey = stringValue(rawProof?.shapeKey);
   const fieldSchemaHash = stringValue(rawProof?.fieldSchemaHash);
@@ -295,11 +312,13 @@ export function coerceStudioGraphBinding(value: unknown): StudioGraphBinding | n
     managedNodeIds: stringArrayValue(value.managedNodeIds),
     managedEdgeIds: stringArrayValue(value.managedEdgeIds),
     fingerprint: stringValue(value.fingerprint, ''),
+    ...(executionSpec ? { executionSpec } : {}),
     ...(controlled ? { controlled } : {}),
     ...(finalizationProof && proofMatchesDeclaration ? { finalizationProof } : {}),
     ...(proofInvalid ||
     (proofProvided && (!finalizationProof || !proofMatchesDeclaration)) ||
-    (controlledProvided && !controlled)
+    (controlledProvided && !controlled) ||
+    (value.executionSpec !== undefined && !executionSpec)
       ? { finalizationProofInvalid: true as const }
       : {}),
     createdAt: numberValue(value.createdAt, Date.now()),

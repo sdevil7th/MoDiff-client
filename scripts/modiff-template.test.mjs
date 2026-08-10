@@ -1854,6 +1854,7 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
 
 test('Auto retry plans preserve exact targets and never fall back from a stale selected id', () => {
   const identity = {
+    executionProfileId: 'qwen-image:t2i-direct',
     modelType: 'QwenImageModularPipeline',
     mode: 'text_to_image',
     loaderModule: 'modules.DiffusersImage',
@@ -3070,6 +3071,41 @@ test('completed graph finalization proofs survive persistence validation', () =>
   assert.equal(malformed?.finalizationProofInvalid, true);
 });
 
+test('Studio execution-spec receipts are exact and malformed persistence is quarantined', () => {
+  const executionSpec = {
+    schemaVersion: 1,
+    id: 'flux-schnell:text-to-image:v1',
+    contentHash: 'studio-spec-v1-9cd1abb5',
+    executionProfileId: 'flux-schnell:direct',
+  };
+  const base = {
+    mode: 'text_to_image',
+    modelType: 'FluxSchnellPipeline',
+    nodes: {},
+    managedNodeIds: [],
+    managedEdgeIds: [],
+    fingerprint: 'text_to_image:FluxSchnellPipeline:expert:none',
+    executionSpec,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const binding = outputContractsModule.coerceStudioGraphBinding(base);
+  assert.deepEqual(binding?.executionSpec, executionSpec);
+  assert.equal(binding?.finalizationProofInvalid, undefined);
+
+  for (const malformedReceipt of [
+    { ...executionSpec, schemaVersion: 2 },
+    { ...executionSpec, id: 'invalid receipt' },
+    { ...executionSpec, contentHash: 'studio-spec-v1-not-a-hash' },
+    { ...executionSpec, executionProfileId: '' },
+    { ...executionSpec, unexpected: true },
+  ]) {
+    const malformed = outputContractsModule.coerceStudioGraphBinding({ ...base, executionSpec: malformedReceipt });
+    assert.equal(malformed?.executionSpec, undefined);
+    assert.equal(malformed?.finalizationProofInvalid, true);
+  }
+});
+
 test('controlled graph declarations require an exact schema-v3 persistence proof', () => {
   const controlled = {
     schemaVersion: 1,
@@ -3750,6 +3786,7 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
       statusLabel: 'Ready with local Auto recipe',
       selectedCandidate: {
         id: 'qwen-t2i-prequantized-model-cpu',
+        executionProfileId: 'qwen-image:t2i-direct',
         modelType: 'QwenImageModularPipeline',
         mode: 'text_to_image',
         loaderModule: 'modules.DiffusersImage',
@@ -3775,6 +3812,7 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
       candidates: [
         {
           id: 'qwen-t2i-prequantized-model-cpu',
+          executionProfileId: 'qwen-image:t2i-direct',
           modelType: 'QwenImageModularPipeline',
           mode: 'text_to_image',
           loaderModule: 'modules.DiffusersImage',
@@ -3791,6 +3829,7 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
         },
         {
           id: 'qwen-t2i-fallback',
+          executionProfileId: 'qwen-image:t2i-direct',
           modelType: 'QwenImageModularPipeline',
           mode: 'text_to_image',
           loaderModule: 'modules.DiffusersImage',

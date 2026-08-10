@@ -295,9 +295,149 @@ function mockAutoCompatibility(ready: boolean) {
   };
 }
 
+const mockExecutionProfileIds: Record<string, string> = {
+  'ZImageModularPipeline:text_to_image': 'z-image:auto',
+  'QwenImageModularPipeline:text_to_image': 'qwen-image:t2i-direct',
+  'QwenImageModularPipeline:control_image': 'qwen-image:modular',
+  'QwenImageEditModularPipeline:edit_image': 'qwen-edit:modular',
+  'QwenImageEditModularPipeline:inpaint': 'qwen-edit:direct-inpaint',
+  'QwenImageEditModularPipeline:outpaint': 'qwen-edit:direct-inpaint',
+  'QwenImageEditPlusModularPipeline:edit_image': 'qwen-edit-plus:modular',
+  'QwenImageEditPlusModularPipeline:multi_image_reference_edit': 'qwen-edit-plus:modular',
+  'QwenImageLayeredModularPipeline:layer_decomposition': 'qwen-layered:modular',
+  'WanVACEPipeline:text_to_video': 'wan-vace:direct',
+  'WanVACEPipeline:video_inpaint': 'wan-vace:direct',
+  'WanVACEPipeline:video_outpaint': 'wan-vace:direct',
+  'WanVACEPipeline:control_to_video': 'wan-vace:direct',
+  'AceStepAudioPipeline:text_to_audio': 'ace-step-audio:direct',
+  'AceStepAudioPipeline:audio_variation': 'ace-step-audio:direct',
+  'AceStepAudioPipeline:audio_continuation': 'ace-step-audio:direct',
+  'AceStepAudioPipeline:audio_repaint': 'ace-step-audio:direct',
+  'FluxSchnellPipeline:text_to_image': 'flux-schnell:direct',
+  'FluxDevPipeline:text_to_image': 'flux-dev:direct',
+  'FluxKreaPipeline:text_to_image': 'flux-krea:direct',
+  'FluxKontextPipeline:edit_image': 'flux-kontext:direct',
+  'FluxKontextPipeline:multi_image_reference_edit': 'flux-kontext:direct',
+  'FluxFillPipeline:inpaint': 'flux-fill:direct',
+  'FluxFillPipeline:outpaint': 'flux-fill:direct',
+  'FluxDepthPipeline:control_image': 'flux-depth:direct',
+  'FluxCannyPipeline:control_image': 'flux-canny:direct',
+  'FluxReduxPipeline:edit_image': 'flux-redux:direct',
+};
+
+const mockFluxExecutionRoles = [
+  ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+  ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+  ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+  ['diffusersImageGenerate', 'modules.DiffusersImage.Generate', -120, -80],
+  ['preview', 'modules.Image.Preview', 980, -80],
+] as const;
+const mockFluxExecutionEdges = [
+  ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+  ['diffusersRecipe', 'execution_recipe', 'diffusersImagePipeline', 'execution_recipe'],
+  ['diffusersImagePipeline', 'pipeline', 'diffusersImageGenerate', 'pipeline'],
+  ['diffusersImageGenerate', 'images', 'preview', 'image'],
+] as const;
+const mockFluxExecutionBindings = [
+  ['diffusersQuantization', 'backend', 'quantizationMode'],
+  ['diffusersQuantization', 'components', 'quantizedComponents'],
+  ['diffusersQuantization', 'dtype', 'dtype'],
+  ['diffusersRecipe', 'device_map', 'deviceMapNone'],
+  ['diffusersRecipe', 'offload_mode', 'offloadMode'],
+  ['diffusersRecipe', 'device', 'device'],
+  ['diffusersRecipe', 'attention_backend', 'attentionBackend'],
+  ['diffusersRecipe', 'attention_components', 'empty'],
+  ['diffusersRecipe', 'vae_slicing', 'true'],
+  ['diffusersRecipe', 'vae_tiling', 'true'],
+  ['diffusersRecipe', 'regional_compile', 'regionalCompile'],
+  ['diffusersRecipe', 'denoiser_cache', 'denoiserCache'],
+  ['diffusersRecipe', 'layerwise_casting', 'layerwiseCasting'],
+  ['diffusersRecipe', 'channels_last', 'channelsLast'],
+  ['diffusersImagePipeline', 'model_id', 'artifact'],
+  ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+  ['diffusersImagePipeline', 'mode', 'mode'],
+  ['diffusersImagePipeline', 'dtype', 'dtype'],
+  ['diffusersImagePipeline', 'device', 'device'],
+  ['diffusersImagePipeline', 'quantization_mode', 'quantizationMode'],
+  ['diffusersImagePipeline', 'quantized_components', 'pipelineQuantizedComponents'],
+  ['diffusersImagePipeline', 'auto_offload', 'autoOffload'],
+  ['diffusersImagePipeline', 'offload_mode', 'offloadMode'],
+  ['diffusersImageGenerate', 'prompt', 'prompt'],
+  ['diffusersImageGenerate', 'negative_prompt', 'negativePrompt'],
+  ['diffusersImageGenerate', 'width', 'width'],
+  ['diffusersImageGenerate', 'height', 'height'],
+  ['diffusersImageGenerate', 'seed', 'seed'],
+  ['diffusersImageGenerate', 'num_inference_steps', 'steps'],
+  ['diffusersImageGenerate', 'guidance_scale', 'guidanceScale'],
+  ['diffusersImageGenerate', 'strength', 'strength'],
+  ['diffusersImageGenerate', 'output_type', 'outputType'],
+  ['diffusersImageGenerate', 'max_sequence_length', 'maxSequenceLength'],
+] as const;
+const mockFluxAutoFields = [
+  'resolvedArtifact',
+  'artifact',
+  'installTarget.repo',
+  'modelRepo',
+  'pipelineClass',
+  'dtype',
+  'offloadMode',
+  'quantizedComponents',
+  'attentionBackend',
+  'regionalCompile',
+  'denoiserCache',
+  'layerwiseCasting',
+  'channelsLast',
+] as const;
+
+function mockFluxExecutionCapability(modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline') {
+  const dev = modelType === 'FluxDevPipeline';
+  const executionProfileId = dev ? 'flux-dev:direct' : 'flux-schnell:direct';
+  const defaultRepo = dev ? 'black-forest-labs/FLUX.1-dev' : 'black-forest-labs/FLUX.1-schnell';
+  const spec = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: dev ? 'flux-dev:text-to-image:v1' : 'flux-schnell:text-to-image:v1',
+    modelType,
+    mode: 'text_to_image',
+    executionProfileId,
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'FluxPipeline',
+    defaultRepo,
+    roles: mockFluxExecutionRoles,
+    edges: mockFluxExecutionEdges,
+    bindings: mockFluxExecutionBindings,
+    autoFields: mockFluxAutoFields,
+    actions: [],
+    contentHash: dev ? 'studio-spec-v1-d5ee399d' : 'studio-spec-v1-9cd1abb5',
+  };
+  return {
+    modelType,
+    modes: ['text_to_image'],
+    runnableModes: ['text_to_image'],
+    executionProfiles: [
+      {
+        id: executionProfileId,
+        model_type: modelType,
+        modes: ['text_to_image'],
+        loader_module: 'modules.DiffusersImage',
+        loader_action: 'LoadPipeline',
+        execution_path: 'direct-diffusers-image',
+        backend_path: 'modules.DiffusersImage.LoadPipeline',
+        pipeline_class: 'FluxPipeline',
+        default_repo: defaultRepo,
+      },
+    ],
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
   const mode = String(form.mode ?? 'text_to_image');
+  const executionProfileId = mockExecutionProfileIds[`${modelType}:${mode}`] ?? `mock:${modelType}:${mode}`;
   if (!(modelType === 'QwenImageModularPipeline' && mode === 'text_to_image')) {
     const defaultRepos: Record<string, string> = {
       ZImageModularPipeline: 'Tongyi-MAI/Z-Image-Turbo',
@@ -335,6 +475,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
           : 'modules.ModularDiffusers';
     const candidate = {
       id: `${modelType}-${mode}-declared-safe`,
+      executionProfileId,
       modelType,
       mode,
       loaderModule,
@@ -400,6 +541,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const qwenInstalled = mockInstalledRepos.has('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   const selectedCandidate = {
     id: 'qwen-t2i-prequantized-model-cpu',
+    executionProfileId,
     modelType,
     mode,
     loaderModule: 'modules.DiffusersImage',
@@ -708,6 +850,10 @@ const mockRegistry = {
       attention_components: { type: 'string', value: '' },
       vae_slicing: { type: 'bool', value: true },
       vae_tiling: { type: 'bool', value: true },
+      regional_compile: { type: 'bool', value: false },
+      denoiser_cache: { type: 'string', value: 'none' },
+      layerwise_casting: { type: 'bool', value: false },
+      channels_last: { type: 'bool', value: false },
       execution_recipe: { type: 'diffusers_execution_recipe', display: 'output' },
       summary: { type: 'string', display: 'output' },
     },
@@ -715,6 +861,7 @@ const mockRegistry = {
   'modules.DiffusersImage.LoadPipeline': nodeDef('modules.DiffusersImage', 'LoadPipeline', 'Diffusers Image', {
     model_id: { type: 'string', value: 'black-forest-labs/FLUX.1-schnell' },
     pipeline_class: { type: 'string', value: 'FluxPipeline' },
+    mode: { type: 'string', value: 'text_to_image' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
     quantization_mode: { type: 'string', value: 'none' },
@@ -744,6 +891,7 @@ const mockRegistry = {
     seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
     num_inference_steps: { type: 'int', value: 50 },
     guidance_scale: { type: 'float', value: 4 },
+    strength: { type: 'float', value: 1 },
     output_type: { type: 'string', value: 'pil' },
     max_sequence_length: { type: 'int', value: 512 },
     images: { type: 'image', display: 'output' },
@@ -6075,6 +6223,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
     >;
     const candidate = {
       id: 'qwen-t2i-official-bf16-native',
+      executionProfileId: 'qwen-image:t2i-direct',
       modelType: 'QwenImageModularPipeline',
       mode: 'text_to_image',
       loaderModule: 'modules.DiffusersImage',
@@ -6206,6 +6355,112 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
   });
 });
 
+test('backend Studio execution specs keep Flux model switches on one exact graph and submit the sealed receipt', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-schnell');
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-dev');
+  mockIncludeQuantizationNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const capabilities = [
+    mockFluxExecutionCapability('FluxSchnellPipeline'),
+    mockFluxExecutionCapability('FluxDevPipeline'),
+  ];
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities,
+        studioExecutionSpecs: capabilities.flatMap((item) => item.studioExecutionSpecs),
+      }),
+    });
+  });
+
+  let submittedGraph: {
+    runtimeHints?: {
+      studioExecutionSpec?: {
+        schemaVersion?: number;
+        id?: string;
+        contentHash?: string;
+        nodes?: Record<string, string>;
+      };
+      autoResourcePlan?: { executionProfileId?: string };
+    };
+  } | null = null;
+  await page.route('**/graph', async (route) => {
+    submittedGraph = route.request().postDataJSON() as typeof submittedGraph;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false, message: 'queued', sid: 'mock-sid', task_id: 'flux-spec-run' }),
+    });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
+    .toHaveLength(2);
+
+  const schnell = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'text_to_image',
+      modelType: 'FluxSchnellPipeline',
+      resourceMode: 'auto',
+      device: 'cuda:0',
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    return {
+      receipt: state.studio.graphBinding?.executionSpec,
+      nodes: state.studio.graphBinding?.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+    };
+  });
+  expect(schnell.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'flux-schnell:text-to-image:v1',
+    contentHash: 'studio-spec-v1-9cd1abb5',
+    executionProfileId: 'flux-schnell:direct',
+  });
+
+  const dev = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ modelType: 'FluxDevPipeline' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    await window.__MODIFF_E2E__!.runActiveTemplate();
+    return {
+      receipt: state.studio.graphBinding?.executionSpec,
+      nodes: state.studio.graphBinding?.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+    };
+  });
+  expect(dev).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'flux-dev:text-to-image:v1',
+      contentHash: 'studio-spec-v1-d5ee399d',
+      executionProfileId: 'flux-dev:direct',
+    },
+    nodes: schnell.nodes,
+    edgeShape: schnell.edgeShape,
+  });
+  expect(submittedGraph?.runtimeHints?.studioExecutionSpec).toEqual({
+    schemaVersion: 1,
+    id: 'flux-dev:text-to-image:v1',
+    contentHash: 'studio-spec-v1-d5ee399d',
+    nodes: dev.nodes,
+  });
+  expect(submittedGraph?.runtimeHints?.autoResourcePlan?.executionProfileId).toBe('flux-dev:direct');
+});
+
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
@@ -6214,6 +6469,7 @@ test('mocked Studio blocks a schema-v2 Auto plan that targets a different manage
 
   const candidate = {
     id: 'stale-modular-qwen-plan',
+    executionProfileId: 'qwen-image:modular',
     modelType: 'QwenImageModularPipeline',
     mode: 'text_to_image',
     loaderModule: 'modules.ModularDiffusers',

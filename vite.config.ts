@@ -3,6 +3,7 @@
 import { defineConfig, loadEnv, mergeConfig, type Plugin, type UserConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { minify } from 'terser';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -74,6 +75,32 @@ function shellPublicAssetsPlugin(): Plugin {
   };
 }
 
+function compactProductionChunksPlugin(): Plugin {
+  return {
+    name: 'modiff-compact-production-chunks',
+    apply: 'build',
+    async generateBundle(_options, bundle) {
+      // Preserve Vite's fast Oxc transform, then make one standards-safe
+      // module/toplevel pass over finalized chunks. Avoid Terser's `unsafe_*`
+      // rewrites: this pass is a size optimization, not a semantics tradeoff.
+      await Promise.all(
+        Object.values(bundle).map(async (item) => {
+          if (item.type !== 'chunk') return;
+          const result = await minify(item.code, {
+            compress: { passes: 2 },
+            ecma: 2022,
+            module: true,
+            mangle: true,
+            toplevel: true,
+          });
+          if (!result.code) throw new Error(`Terser produced no code for ${item.fileName}.`);
+          item.code = result.code;
+        }),
+      );
+    },
+  };
+}
+
 function adjacentSupervisorTarget(backendTarget: string) {
   try {
     const url = new URL(backendTarget);
@@ -136,7 +163,7 @@ const backendProxy = Object.fromEntries(
 );
 
 const baseConfig: UserConfig = {
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), compactProductionChunksPlugin()],
   // Keep the browser's process-external recovery endpoint aligned with the
   // backend proxy even when the caller relies on MoDiff's default 8088 port.
   // Without these build-time values, app.config could only see the Vite

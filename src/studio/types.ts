@@ -369,6 +369,12 @@ export type StudioGraphBinding = {
   managedNodeIds: string[];
   managedEdgeIds: string[];
   fingerprint: string;
+  executionSpec?: {
+    schemaVersion: 1;
+    id: string;
+    contentHash: string;
+    executionProfileId: string;
+  };
   controlled?: {
     schemaVersion: 1;
     contractRevision: 1;
@@ -621,6 +627,9 @@ export type StudioExecutionProfile = {
   id: string;
   model_type: StudioModelType;
   modes: StudioMode[];
+  loader_module: string;
+  loader_action: string;
+  execution_path: string;
   backend_path: string;
   pipeline_class: string;
   default_repo: string;
@@ -635,6 +644,26 @@ export type StudioExecutionProfile = {
   optional_runtime_delivery?: 'base' | 'optional_overlay';
   optional_runtime_profiles?: string[];
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
+};
+
+export type StudioExecutionSpec = {
+  schemaVersion: 1;
+  canonicalizationVersion: 1;
+  id: string;
+  modelType: StudioModelType;
+  mode: StudioMode;
+  executionProfileId: string;
+  loaderModule: string;
+  loaderAction: string;
+  executionPath: string;
+  pipelineClass: string;
+  defaultRepo: string;
+  roles: Array<[StudioGraphRole, string, number, number]>;
+  edges: Array<[StudioGraphRole, string, StudioGraphRole, string]>;
+  bindings: Array<[StudioGraphRole, string, string]>;
+  autoFields: string[];
+  actions: [];
+  contentHash: string;
 };
 
 export type StudioModelProfile = {
@@ -697,6 +726,8 @@ export type StudioModelProfile = {
   supportTier?: 'supported' | 'experimental';
   pipelineClasses?: string[];
   executionProfiles?: StudioExecutionProfile[];
+  studioExecutionSpecs?: StudioExecutionSpec[];
+  studioExecutionSpecSchemaVersion?: 1;
   runnableModes?: StudioMode[];
   downloadFiles?: string[];
   inputContracts?: Partial<Record<StudioMode, StudioModeRequirement>>;

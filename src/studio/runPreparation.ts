@@ -3,6 +3,7 @@ import { useNodesStore } from '../stores/useNodeStore';
 import { currentAutoResourcePlanTarget, useStudioStore } from '../stores/useStudioStore';
 import type { JsonObject } from '../types/api';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
+import { studioExecutionSpecRuntimeReceipt } from './executionSpecs';
 import {
   getModelRequirementsForMode,
   getProfileForForm,
@@ -95,6 +96,10 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   // replace a live-proven resident recipe with model_cpu in the receipt and
   // runtime hints immediately before submission.
   const runtimeStatus = useNodesStore.getState().runtimeStatus;
+  const studioExecutionSpec = studioExecutionSpecRuntimeReceipt(
+    studio.graphBinding,
+    useNodesStore.getState().studioModelCapabilities,
+  );
   const form = committedAutoCandidate
     ? {
         ...baseForm,
@@ -210,6 +215,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       resolvedModelRepo,
       resolvedArtifact,
       modelDependencies,
+      studioExecutionSpec,
       executionPath: resolvedExecutionPath,
       pipelineClass: autoCandidate?.pipelineClass,
       dtype: form.dtype,

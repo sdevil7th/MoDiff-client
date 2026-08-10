@@ -14,6 +14,7 @@ import {
 } from '../studio/modelInstall';
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
+import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
 import {
   parseOptionalRuntimeCatalog,
   parseOptionalRuntimeExecutionProfiles,
@@ -21,7 +22,13 @@ import {
   parseRuntimeModes,
   type OptionalRuntimeCatalog,
 } from '../studio/optionalRuntimes';
-import type { ExecutionProgress, RunReadinessIssue, StudioModelProfile, UserBlockDefinition } from '../studio/types';
+import type {
+  ExecutionProgress,
+  RunReadinessIssue,
+  StudioExecutionProfile,
+  StudioModelProfile,
+  UserBlockDefinition,
+} from '../studio/types';
 import type { ModiffFieldStyle, ModiffNodeStyle } from '../theme';
 import { enqueueSnackbar } from '../ui/snackbar';
 import type { ImageArtifact } from '../utils/imageArtifacts';
@@ -333,6 +340,7 @@ type NodesStore = {
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
   studioModelCapabilities: StudioModelProfile[];
   studioModelCapabilitiesAuthoritative: boolean;
+  studioExecutionSpecInvalid: boolean;
   runtimeStatus: RuntimeStatus | null;
   runtimeResources: RuntimeResourceSnapshot | null;
   runtimeError: string | null;
@@ -569,6 +577,11 @@ function parseStudioModelCapabilities(value: unknown) {
     // the closed client model union. Experimental capabilities are likewise a
     // separate response field and are never promoted into runnable Studio data.
     if (!isStudioModelType(item.modelType)) return [];
+    if (
+      payload.schemaVersion !== 2 &&
+      (item.studioExecutionSpecs !== undefined || item.studioExecutionSpecSchemaVersion !== undefined)
+    )
+      throw new Error('Invalid Studio execution specification.');
     if (modelTypes.has(item.modelType)) invalidModelCapabilities();
     modelTypes.add(item.modelType);
     const modes = parseRuntimeModes(item.modes, isStudioMode);
@@ -582,6 +595,21 @@ function parseStudioModelCapabilities(value: unknown) {
       item.executionProfiles === undefined
         ? undefined
         : parseOptionalRuntimeExecutionProfiles(item.executionProfiles, optionalRuntimeRequirement, isStudioMode);
+    const studioExecutionSpecs =
+      item.studioExecutionSpecs === undefined
+        ? undefined
+        : parseStudioExecutionSpecs(
+            item.studioExecutionSpecs,
+            item.modelType,
+            modes,
+            executionProfiles as unknown as StudioExecutionProfile[] | undefined,
+          );
+    if (
+      (item.studioExecutionSpecs === undefined) !== (item.studioExecutionSpecSchemaVersion === undefined) ||
+      (item.studioExecutionSpecSchemaVersion !== undefined &&
+        (item.studioExecutionSpecSchemaVersion !== 1 || !studioExecutionSpecs?.length))
+    )
+      throw new Error('Invalid Studio execution specification.');
     if (
       executionProfiles &&
       (executionProfiles.some((profile) => profile.modes.some((mode) => !modes.includes(mode))) ||
@@ -591,6 +619,8 @@ function parseStudioModelCapabilities(value: unknown) {
     item.modes = modes;
     if (runnableModes) item.runnableModes = runnableModes;
     if (executionProfiles) item.executionProfiles = executionProfiles;
+    if (studioExecutionSpecs) item.studioExecutionSpecs = studioExecutionSpecs;
+    if (item.studioExecutionSpecSchemaVersion === 1) item.studioExecutionSpecSchemaVersion = 1;
     return [item as unknown as StudioModelProfile];
   });
   return {
@@ -664,6 +694,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   modelCacheDiagnostics: null,
   studioModelCapabilities: [],
   studioModelCapabilitiesAuthoritative: false,
+  studioExecutionSpecInvalid: false,
   runtimeStatus: null,
   runtimeResources: null,
   runtimeError: null,
@@ -968,8 +999,16 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       ({ authoritative, capabilities }) => ({
         studioModelCapabilities: capabilities,
         studioModelCapabilitiesAuthoritative: authoritative,
+        studioExecutionSpecInvalid: false,
       }),
-      () => ({}),
+      (message) =>
+        message.includes('Studio execution specification')
+          ? {
+              studioModelCapabilities: [],
+              studioModelCapabilitiesAuthoritative: false,
+              studioExecutionSpecInvalid: true,
+            }
+          : {},
       'Could not read model capabilities.',
     );
   },

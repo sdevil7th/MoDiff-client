@@ -11,6 +11,7 @@ let optionalRuntimesModule;
 let requestModule;
 let runReadinessModule;
 let server;
+let stableHashModule;
 let studioStoreModule;
 let flowStoreModule;
 let originalFetch;
@@ -49,6 +50,7 @@ before(async () => {
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   optionalRuntimesModule = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
   runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
+  stableHashModule = await server.ssrLoadModule('/src/studio/stableHash.ts');
   originalFetch = globalThis.fetch;
 });
 
@@ -151,6 +153,83 @@ function optionalRuntimeCatalog(overrides = {}) {
   };
 }
 
+function fluxExecutionProfile(
+  modelType = 'FluxSchnellPipeline',
+  id = 'flux-schnell:direct',
+  repo = 'black-forest-labs/FLUX.1-schnell',
+) {
+  return {
+    id,
+    model_type: modelType,
+    modes: ['text_to_image'],
+    loader_module: 'modules.DiffusersImage',
+    loader_action: 'LoadPipeline',
+    execution_path: 'direct-diffusers-image',
+    backend_path: 'modules.DiffusersImage.LoadPipeline',
+    pipeline_class: 'FluxPipeline',
+    default_repo: repo,
+    fallback_repo: null,
+    quantizable_components: ['transformer', 'text_encoder_2'],
+    default_quantized_components: [],
+    supported_offload_modes: ['none', 'model_cpu'],
+    retry_offload_modes: ['model_cpu'],
+    live_proof: false,
+  };
+}
+
+function fluxExecutionSpec(overrides = {}) {
+  const semantic = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'flux-schnell:text-to-image:v1',
+    modelType: 'FluxSchnellPipeline',
+    mode: 'text_to_image',
+    executionProfileId: 'flux-schnell:direct',
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'FluxPipeline',
+    defaultRepo: 'black-forest-labs/FLUX.1-schnell',
+    roles: [
+      ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+      ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+      ['diffusersImageGenerate', 'modules.DiffusersImage.Generate', -120, -80],
+      ['preview', 'modules.Image.Preview', 980, -80],
+    ],
+    edges: [
+      ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+      ['diffusersRecipe', 'execution_recipe', 'diffusersImagePipeline', 'execution_recipe'],
+      ['diffusersImagePipeline', 'pipeline', 'diffusersImageGenerate', 'pipeline'],
+      ['diffusersImageGenerate', 'images', 'preview', 'image'],
+    ],
+    bindings: [
+      ['diffusersImagePipeline', 'model_id', 'artifact'],
+      ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+      ['diffusersImageGenerate', 'prompt', 'prompt'],
+    ],
+    autoFields: ['resolvedArtifact', 'pipelineClass'],
+    actions: [],
+    ...overrides,
+  };
+  return {
+    ...semantic,
+    contentHash: `studio-spec-v1-${stableHashModule.hashString(stableHashModule.stableStringify(semantic))}`,
+  };
+}
+
+function fluxCapability(spec = fluxExecutionSpec(), overrides = {}) {
+  return {
+    modelType: 'FluxSchnellPipeline',
+    modes: ['text_to_image'],
+    runnableModes: ['text_to_image'],
+    executionProfiles: [fluxExecutionProfile()],
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecs: [spec],
+    ...overrides,
+  };
+}
+
 test('requestJson normalizes non-OK JSON responses', async () => {
   globalThis.fetch = async () => jsonResponse({ error: true, message: 'Backend unavailable' }, 503);
 
@@ -212,6 +291,55 @@ test('model capabilities keep schema-v2 runnable modes exact and ignore experime
       },
     ],
   );
+});
+
+test('Studio execution specifications require an exact versioned capability contract', async () => {
+  const spec = fluxExecutionSpec();
+  const reordered = Object.fromEntries(Object.entries(spec).reverse());
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [fluxCapability(reordered)],
+    });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.equal(state.studioModelCapabilitiesAuthoritative, true);
+  assert.equal(state.studioExecutionSpecInvalid, false);
+  assert.equal(state.studioModelCapabilities[0].studioExecutionSpecs[0].contentHash, spec.contentHash);
+
+  const malformed = [
+    fluxCapability({ ...spec, contentHash: 'studio-spec-v1-00000000' }),
+    fluxCapability({ ...spec, roles: [...spec.roles, spec.roles[0]] }),
+    fluxCapability({ ...spec, edges: [['missingRole', 'output', 'preview', 'image']] }),
+    fluxCapability({ ...spec, edges: spec.edges.slice(0, 1) }),
+    fluxCapability({ ...spec, bindings: [['diffusersImagePipeline', 'model_id', 'unreviewedSource']] }),
+    { ...fluxCapability(spec), studioExecutionSpecs: [spec, spec] },
+    (() => {
+      const defaultRepo = 'x'.repeat(513);
+      const oversized = fluxExecutionSpec({ defaultRepo });
+      return fluxCapability(oversized, {
+        executionProfiles: [fluxExecutionProfile('FluxSchnellPipeline', 'flux-schnell:direct', defaultRepo)],
+      });
+    })(),
+    { ...fluxCapability(spec), studioExecutionSpecSchemaVersion: undefined },
+    { ...fluxCapability(spec), studioExecutionSpecs: undefined },
+  ];
+  for (const capability of malformed) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.equal(state.studioModelCapabilitiesAuthoritative, false);
+    assert.equal(state.studioExecutionSpecInvalid, true);
+    assert.deepEqual(state.studioModelCapabilities, []);
+  }
+  globalThis.fetch = async () => jsonResponse({ capabilities: [fluxCapability(spec)] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'error');
+  assert.equal(state.studioExecutionSpecInvalid, true);
 });
 
 test('legacy model capabilities remain non-authoritative when schemaVersion is absent', async () => {

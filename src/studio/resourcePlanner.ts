@@ -18,6 +18,7 @@ export const STUDIO_RESOURCE_DESCRIPTIONS: Record<StudioResourceMode, string> = 
 const RESOURCE_RETRY_ORDER: StudioOffloadMode[] = ['model_cpu', 'sequential_cpu', 'group_disk'];
 const QWEN_PRACTICAL_DIMENSION = 1024;
 export const AUTO_RESOURCE_TARGET_KEYS = [
+  'executionProfileId',
   'modelType',
   'mode',
   'loaderModule',
@@ -38,6 +39,7 @@ export function autoProofIsReady(proof: { status?: string } | null | undefined) 
 export type StudioResourceRetryPlan = {
   reason?: string;
   candidateId?: string;
+  executionProfileId?: string;
   modelType?: string;
   mode?: string;
   loaderModule?: string;
@@ -129,6 +131,7 @@ export function qwenDirectRetryPlansFromCandidates(
   candidates:
     | Array<{
         id?: string;
+        executionProfileId?: string;
         modelType?: string;
         mode?: string;
         loaderModule?: string;
