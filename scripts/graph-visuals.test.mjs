@@ -1258,6 +1258,14 @@ test('backend execution specs materialize Flux variants with one topology and se
     edges: depthEdgeRows,
     bindings: depthBindingRows,
   };
+  const cannySpec = {
+    ...depthSpec,
+    id: 'flux-canny:control-image:v1',
+    modelType: 'FluxCannyPipeline',
+    executionProfileId: 'flux-canny:direct',
+    defaultRepo: 'black-forest-labs/FLUX.1-Canny-dev',
+    contentHash: 'studio-spec-v1-82045f56',
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -1337,6 +1345,7 @@ test('backend execution specs materialize Flux variants with one topology and se
         capability(devSpec),
         capability(kreaSpec),
         capability(depthSpec),
+        capability(cannySpec),
       ],
       studioModelCapabilitiesAuthoritative: true,
       studioExecutionSpecInvalid: false,
@@ -1471,6 +1480,21 @@ test('backend execution specs materialize Flux variants with one topology and se
       depthForm.controlImage,
     );
 
+    const cannyForm = { ...depthForm, modelType: 'FluxCannyPipeline' };
+    studioStoreModule.useStudioStore.setState({ form: cannyForm });
+    await graphBridge.createOrUpdateStudioGraph(cannyForm);
+    const cannyBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.deepEqual(cannyBinding.nodes, depthBinding.nodes);
+    assert.deepEqual(topology(cannyBinding), topology(depthBinding));
+    assert.equal(cannyBinding.executionSpec.id, cannySpec.id);
+    assert.equal(cannyBinding.executionSpec.contentHash, cannySpec.contentHash);
+    assert.equal(
+      flowStoreModule.useFlowStore
+        .getState()
+        .nodes.find((item) => item.id === cannyBinding.nodes.diffusersImagePipeline).data.params.model_id.value.value,
+      cannySpec.defaultRepo,
+    );
+
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
       (spec) => ({
@@ -1491,6 +1515,7 @@ test('backend execution specs materialize Flux variants with one topology and se
           capability(devSpec),
           capability(kreaSpec),
           capability(depthSpec),
+          capability(cannySpec),
         ],
       });
       await assert.rejects(
@@ -1511,6 +1536,7 @@ test('backend execution specs materialize Flux variants with one topology and se
         capability(devSpec),
         capability(kreaSpec),
         capability(depthSpec),
+        capability(cannySpec),
       ],
     });
     await assert.rejects(

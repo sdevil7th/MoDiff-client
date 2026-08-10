@@ -409,25 +409,31 @@ const mockFluxControlExecutionBindings = [
 ] as const;
 
 function mockFluxExecutionCapability(
-  modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline' | 'FluxKreaPipeline' | 'FluxDepthPipeline',
+  modelType: 'FluxSchnellPipeline' | 'FluxDevPipeline' | 'FluxKreaPipeline' | 'FluxDepthPipeline' | 'FluxCannyPipeline',
 ) {
   const dev = modelType === 'FluxDevPipeline';
   const krea = modelType === 'FluxKreaPipeline';
   const depth = modelType === 'FluxDepthPipeline';
+  const canny = modelType === 'FluxCannyPipeline';
+  const control = depth || canny;
   const executionProfileId = dev
     ? 'flux-dev:direct'
     : krea
       ? 'flux-krea:direct'
       : depth
         ? 'flux-depth:direct'
-        : 'flux-schnell:direct';
+        : canny
+          ? 'flux-canny:direct'
+          : 'flux-schnell:direct';
   const defaultRepo = dev
     ? 'black-forest-labs/FLUX.1-dev'
     : krea
       ? 'black-forest-labs/FLUX.1-Krea-dev'
       : depth
         ? 'black-forest-labs/FLUX.1-Depth-dev'
-        : 'black-forest-labs/FLUX.1-schnell';
+        : canny
+          ? 'black-forest-labs/FLUX.1-Canny-dev'
+          : 'black-forest-labs/FLUX.1-schnell';
   const spec = {
     schemaVersion: 1,
     canonicalizationVersion: 1,
@@ -437,18 +443,20 @@ function mockFluxExecutionCapability(
         ? 'flux-krea:text-to-image:v1'
         : depth
           ? 'flux-depth:control-image:v1'
-          : 'flux-schnell:text-to-image:v1',
+          : canny
+            ? 'flux-canny:control-image:v1'
+            : 'flux-schnell:text-to-image:v1',
     modelType,
-    mode: depth ? 'control_image' : 'text_to_image',
+    mode: control ? 'control_image' : 'text_to_image',
     executionProfileId,
     loaderModule: 'modules.DiffusersImage',
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
-    pipelineClass: depth ? 'FluxControlPipeline' : 'FluxPipeline',
+    pipelineClass: control ? 'FluxControlPipeline' : 'FluxPipeline',
     defaultRepo,
-    roles: depth ? mockFluxControlExecutionRoles : mockFluxExecutionRoles,
-    edges: depth ? mockFluxControlExecutionEdges : mockFluxExecutionEdges,
-    bindings: depth ? mockFluxControlExecutionBindings : mockFluxExecutionBindings,
+    roles: control ? mockFluxControlExecutionRoles : mockFluxExecutionRoles,
+    edges: control ? mockFluxControlExecutionEdges : mockFluxExecutionEdges,
+    bindings: control ? mockFluxControlExecutionBindings : mockFluxExecutionBindings,
     autoFields: mockFluxAutoFields,
     actions: [],
     contentHash: dev
@@ -457,7 +465,9 @@ function mockFluxExecutionCapability(
         ? 'studio-spec-v1-34a1abeb'
         : depth
           ? 'studio-spec-v1-2d8b881e'
-          : 'studio-spec-v1-9cd1abb5',
+          : canny
+            ? 'studio-spec-v1-82045f56'
+            : 'studio-spec-v1-9cd1abb5',
   };
   return {
     modelType,
@@ -537,7 +547,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
               ? 'QwenImageEditInpaintPipeline'
               : modelType === 'ZImageModularPipeline'
                 ? 'ZImagePipeline'
-                : modelType === 'FluxDepthPipeline'
+                : modelType === 'FluxDepthPipeline' || modelType === 'FluxCannyPipeline'
                   ? 'FluxControlPipeline'
                   : modelType.startsWith('Flux')
                     ? 'FluxPipeline'
@@ -6421,6 +6431,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   mockInstalledRepos.add('black-forest-labs/FLUX.1-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Krea-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Depth-dev');
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-Canny-dev');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -6430,6 +6441,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
     mockFluxExecutionCapability('FluxDevPipeline'),
     mockFluxExecutionCapability('FluxKreaPipeline'),
     mockFluxExecutionCapability('FluxDepthPipeline'),
+    mockFluxExecutionCapability('FluxCannyPipeline'),
   ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
@@ -6469,7 +6481,7 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(4);
+    .toHaveLength(5);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -6583,6 +6595,29 @@ test('backend Studio execution specs materialize exact Flux recipes and submit t
   ]);
   expect(depth.pipelineClass).toBe('FluxControlPipeline');
   expect(depth.controlFile).toBe('@data/images/depth.png');
+
+  const canny = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ modelType: 'FluxCannyPipeline' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      modelRepo: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params?.model_id
+        ?.value,
+    };
+  });
+  expect(canny.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'flux-canny:control-image:v1',
+    contentHash: 'studio-spec-v1-82045f56',
+    executionProfileId: 'flux-canny:direct',
+  });
+  expect(canny.nodes).toEqual(depth.nodes);
+  expect(canny.edgeShape).toEqual(depth.edgeShape);
+  expect(canny.modelRepo).toBe('black-forest-labs/FLUX.1-Canny-dev');
 });
 
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {
@@ -8093,6 +8128,59 @@ test('mocked Studio builds registered Diffusers edit, inpaint, and control facad
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  const cannyCapability = mockFluxExecutionCapability('FluxCannyPipeline');
+  const directCapability = (
+    modelType: 'FluxKontextPipeline' | 'FluxFillPipeline',
+    modes: string[],
+    executionProfileId: string,
+    pipelineClass: string,
+    defaultRepo: string,
+  ) => ({
+    modelType,
+    modes,
+    runnableModes: modes,
+    executionProfiles: [
+      {
+        id: executionProfileId,
+        model_type: modelType,
+        modes,
+        loader_module: 'modules.DiffusersImage',
+        loader_action: 'LoadPipeline',
+        execution_path: 'direct-diffusers-image',
+        backend_path: 'modules.DiffusersImage.LoadPipeline',
+        pipeline_class: pipelineClass,
+        default_repo: defaultRepo,
+      },
+    ],
+  });
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: [
+          directCapability(
+            'FluxKontextPipeline',
+            ['edit_image', 'multi_image_reference_edit'],
+            'flux-kontext:direct',
+            'FluxKontextPipeline',
+            'black-forest-labs/FLUX.1-Kontext-dev',
+          ),
+          directCapability(
+            'FluxFillPipeline',
+            ['inpaint', 'outpaint'],
+            'flux-fill:direct',
+            'FluxFillPipeline',
+            'black-forest-labs/FLUX.1-Fill-dev',
+          ),
+          cannyCapability,
+        ],
+        studioExecutionSpecs: cannyCapability.studioExecutionSpecs,
+      }),
+    });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
