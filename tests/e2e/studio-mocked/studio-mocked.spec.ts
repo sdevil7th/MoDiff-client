@@ -528,6 +528,12 @@ function mockFluxExecutionCapability(
                 : 'studio-spec-v1-9cd1abb5',
   };
   const modes = kontext ? ['edit_image', 'multi_image_reference_edit'] : [spec.mode];
+  const multiSpec = {
+    ...spec,
+    id: 'flux-kontext:multi-image-reference-edit:v1',
+    mode: 'multi_image_reference_edit',
+    contentHash: 'studio-spec-v1-aa060039',
+  };
   return {
     modelType,
     modes,
@@ -546,8 +552,8 @@ function mockFluxExecutionCapability(
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
-    studioExecutionSpecModes: [spec.mode],
-    studioExecutionSpecs: [spec],
+    studioExecutionSpecModes: kontext ? modes : [spec.mode],
+    studioExecutionSpecs: kontext ? [spec, multiSpec] : [spec],
   };
 }
 
@@ -7019,7 +7025,12 @@ test('backend Studio execution specs materialize exact image and video recipes a
         ?.pipeline_class?.value,
     };
   });
-  expect(kontextMulti.receipt).toBeUndefined();
+  expect(kontextMulti.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'flux-kontext:multi-image-reference-edit:v1',
+    contentHash: 'studio-spec-v1-aa060039',
+    executionProfileId: 'flux-kontext:direct',
+  });
   expect(kontextMulti.nodes.loadImage).toBeTruthy();
   expect(kontextMulti.nodes.diffusersImageEdit).toBeTruthy();
   expect(kontextMulti.pipelineClass).toBe('FluxKontextPipeline');

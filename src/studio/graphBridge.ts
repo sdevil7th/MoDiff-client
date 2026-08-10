@@ -1467,7 +1467,6 @@ function fluxPipelineClassFor(form: StudioFormState) {
   if (form.modelType === 'QwenImageEditModularPipeline' && (form.mode === 'inpaint' || form.mode === 'outpaint')) {
     return 'QwenImageEditInpaintPipeline';
   }
-  if (form.modelType === 'FluxKontextPipeline') return 'FluxKontextPipeline';
   if (form.modelType === 'Flux2KleinPipeline') return 'Flux2KleinPipeline';
   if (form.modelType === 'FluxFillPipeline') return 'FluxFillPipeline';
   if (form.mode === 'edit_image' || form.mode === 'multi_image_reference_edit') return 'FluxImg2ImgPipeline';

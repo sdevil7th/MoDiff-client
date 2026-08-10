@@ -1309,6 +1309,12 @@ test('backend execution specs materialize exact image and video recipes with sea
     defaultRepo: 'black-forest-labs/FLUX.1-Kontext-dev',
     contentHash: 'studio-spec-v1-393009a9',
   };
+  const kontextMultiSpec = {
+    ...kontextSpec,
+    id: 'flux-kontext:multi-image-reference-edit:v1',
+    mode: 'multi_image_reference_edit',
+    contentHash: 'studio-spec-v1-aa060039',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1461,6 +1467,8 @@ test('backend execution specs materialize exact image and video recipes with sea
         modes: ['edit_image', 'multi_image_reference_edit'],
       },
     ],
+    studioExecutionSpecModes: ['edit_image', 'multi_image_reference_edit'],
+    studioExecutionSpecs: [kontextSpec, kontextMultiSpec],
   };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
@@ -1774,11 +1782,8 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioStoreModule.useStudioStore.setState({ form: kontextMultiForm });
     await graphBridge.createOrUpdateStudioGraph(kontextMultiForm);
     const kontextMultiBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
-    assert.equal(
-      kontextMultiBinding.executionSpec,
-      undefined,
-      'the unclaimed Kontext multi-reference mode remains on the legacy graph path',
-    );
+    assert.equal(kontextMultiBinding.executionSpec.id, kontextMultiSpec.id);
+    assert.equal(kontextMultiBinding.executionSpec.contentHash, kontextMultiSpec.contentHash);
     assert.ok(kontextMultiBinding.nodes.loadImage);
     assert.ok(kontextMultiBinding.nodes.diffusersImageEdit);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(kontextMultiForm), null);
