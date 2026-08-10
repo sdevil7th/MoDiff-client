@@ -463,7 +463,7 @@ export function inferStudioFormFromWorkflow(
       paramValue(sizeNode, ['true_cfg_scale', 'guidance_scale', 'guidance']),
       defaults.guidanceScale,
     ),
-    resourceMode: normalizeStudioResourceMode(undefined, { ...defaults, quantizationMode, autoOffload, offloadMode }),
+    resourceMode: normalizeStudioResourceMode(undefined),
     dtype: (stringValue(paramValue(modelNode, ['dtype'])) as StudioFormState['dtype']) || defaults.dtype,
     quantizationMode,
     device: stringValue(paramValue(modelNode, ['device'])) || defaults.device,

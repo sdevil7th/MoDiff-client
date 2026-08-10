@@ -49,13 +49,27 @@ function isNodeDisabled(node: FlowGraphNode) {
 
 function hasContainerAncestor(node: FlowGraphNode, ancestorId: string, nodes: FlowGraphNode[]) {
   let parentId = node.parentId;
-  const visited = new Set<string>();
-  while (parentId && !visited.has(parentId)) {
+  let remaining = nodes.length;
+  while (parentId && remaining--) {
     if (parentId === ancestorId) return true;
-    visited.add(parentId);
     parentId = nodes.find((candidate) => candidate.id === parentId)?.parentId;
   }
   return false;
+}
+
+export function executableFlowNodes(nodes: FlowGraphNode[]) {
+  const disabledContainers = nodes.filter(
+    (node) => (node.data.type === 'group' || node.data.type === 'loop') && isNodeDisabled(node),
+  );
+  return nodes.filter(
+    (node) =>
+      node.data.type !== 'group' &&
+      node.data.type !== 'loop' &&
+      !isNodeDisabled(node) &&
+      !disabledContainers.some((container) => hasContainerAncestor(node, container.id, nodes)) &&
+      node.data.module &&
+      node.data.action,
+  );
 }
 
 function paramNumber(node: FlowGraphNode, key: string, fallback: number) {
@@ -100,20 +114,7 @@ export function buildApiGraphExport({
 }: BuildApiGraphExportOptions): ApiGraphExport {
   const sessionId = sid || '';
 
-  const disabledContainers = new Set(
-    nodes
-      .filter((node) => (node.data.type === 'group' || node.data.type === 'loop') && isNodeDisabled(node))
-      .map((node) => node.id),
-  );
-  const executableNodes = nodes.filter(
-    (node) =>
-      node.data.type !== 'group' &&
-      node.data.type !== 'loop' &&
-      !isNodeDisabled(node) &&
-      ![...disabledContainers].some((containerId) => hasContainerAncestor(node, containerId, nodes)) &&
-      node.data.module &&
-      node.data.action,
-  );
+  const executableNodes = executableFlowNodes(nodes);
 
   if (executableNodes.length === 0) {
     return {

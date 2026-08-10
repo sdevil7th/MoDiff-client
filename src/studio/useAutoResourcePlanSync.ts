@@ -3,6 +3,7 @@ import { useEffect, useMemo } from 'react';
 import {
   advanceWorkflowOperationContext,
   captureWorkflowOperationContext,
+  currentAutoResourcePlanTarget,
   isWorkflowOperationCancelled,
   useStudioStore,
   workflowOperationContextIsCurrent,
@@ -118,8 +119,10 @@ export function useAutoResourcePlanSync() {
     }
 
     const context = captureWorkflowOperationContext();
+    const { form: currentForm, graphBinding: binding } = useStudioStore.getState();
+    const target = currentAutoResourcePlanTarget(autoResourcePlan, currentForm, binding);
+    if (target) return;
     const candidate = selectedAutoCandidate(autoResourcePlan, autoPlanExecution);
-    const currentForm = useStudioStore.getState().form;
     const previousShapeKey = getStudioGraphShapeKey(currentForm);
     const patch = formPatchForAutoCandidate(candidate, currentForm);
     const changed = Object.entries(patch).some(([key, value]) => currentForm[key as keyof StudioFormState] !== value);

@@ -1,8 +1,4 @@
-import {
-  QWEN_IMAGE_2512_PREQUANTIZED_REPO,
-  STUDIO_MODEL_PROFILES,
-  STUDIO_OFFLOAD_RUNTIME_LABELS,
-} from './modelProfiles';
+import { STUDIO_MODEL_PROFILES, STUDIO_OFFLOAD_RUNTIME_LABELS } from './modelProfiles';
 import { normalizeStudioDeviceOffloadPlan, supportsStudioCpuOffload } from './deviceOffload';
 import type { StudioFormState, StudioOffloadMode, StudioResourceMode } from './types';
 
@@ -20,17 +16,34 @@ export const STUDIO_RESOURCE_DESCRIPTIONS: Record<StudioResourceMode, string> = 
 };
 
 const RESOURCE_RETRY_ORDER: StudioOffloadMode[] = ['model_cpu', 'sequential_cpu', 'group_disk'];
-const QWEN_PRACTICAL_WIDTH = 1024;
-const QWEN_PRACTICAL_HEIGHT = 1024;
-const QWEN_AUTO_MAX_DIMENSION = 1344;
-const QWEN_AUTO_PIXEL_BUDGET = QWEN_PRACTICAL_WIDTH * QWEN_PRACTICAL_HEIGHT;
-const QWEN_NATIVE_STEPS = 50;
-const QWEN_NATIVE_GUIDANCE = 4.0;
-const QWEN_TRANSFORMER_ONLY_QUANTIZED_COMPONENTS = ['transformer'] as const;
-
+const QWEN_PRACTICAL_DIMENSION = 1024;
+export const AUTO_RESOURCE_TARGET_KEYS = [
+  'modelType',
+  'mode',
+  'loaderModule',
+  'loaderAction',
+  'executionPath',
+  'pipelineClass',
+] as const;
+export const AUTO_RESOURCE_LOADER_TARGETS = [
+  'modules.ModularDiffusers.ModelsLoader.modular-diffusers',
+  'modules.DiffusersImage.LoadPipeline.direct-diffusers-image',
+  'modules.DiffusersAudio.LoadPipeline.direct-diffusers-audio',
+  'modules.DiffusersVideo.LoadPipeline.direct-diffusers-video',
+  'modules.DiffusersVideo.LoadPipeline.direct-wan-vace',
+] as const;
+export function autoProofIsReady(proof: { status?: string } | null | undefined) {
+  return ['passed', 'declared_safe', 'live_proven'].includes(proof?.status as string);
+}
 export type StudioResourceRetryPlan = {
-  reason: string;
+  reason?: string;
+  candidateId?: string;
+  modelType?: string;
+  mode?: string;
+  loaderModule?: string;
+  loaderAction?: string;
   executionPath?: string;
+  pipelineClass?: string;
   modelRepo?: string;
   resolvedArtifact?: string;
   quantizationMode?: StudioFormState['quantizationMode'];
@@ -50,8 +63,6 @@ export type StudioResourceRetryPlan = {
     shift?: number;
   };
 };
-
-type RuntimeStatusLike = unknown;
 
 export type StudioResourcePlan = {
   resourceMode: StudioResourceMode;
@@ -93,39 +104,24 @@ function retryModesFor(offloadMode: StudioOffloadMode, supportedModes: StudioOff
   return currentIndex >= 0 ? supported.slice(currentIndex + 1) : supported;
 }
 
-function isDirectQwenTextToImage(form: StudioFormState, resourceMode: StudioResourceMode) {
-  return form.modelType === 'QwenImageModularPipeline' && form.mode === 'text_to_image' && resourceMode !== 'expert';
-}
-
 function qwenDimension(value: number, fallback: number) {
   const finite = Number.isFinite(value) && value > 0 ? value : fallback;
   return Math.max(256, Math.floor((finite + 1e-6) / 16) * 16);
 }
 
 export function getQwenAutoDimensions(form: Pick<StudioFormState, 'width' | 'height'>) {
-  const requestedWidth = qwenDimension(form.width, QWEN_PRACTICAL_WIDTH);
-  const requestedHeight = qwenDimension(form.height, QWEN_PRACTICAL_HEIGHT);
+  const requestedWidth = qwenDimension(form.width, QWEN_PRACTICAL_DIMENSION);
+  const requestedHeight = qwenDimension(form.height, QWEN_PRACTICAL_DIMENSION);
   const requestedPixels = requestedWidth * requestedHeight;
   const scale = Math.min(
     1,
-    Math.sqrt(QWEN_AUTO_PIXEL_BUDGET / requestedPixels),
-    QWEN_AUTO_MAX_DIMENSION / Math.max(requestedWidth, requestedHeight),
+    Math.sqrt(QWEN_PRACTICAL_DIMENSION ** 2 / requestedPixels),
+    1344 / Math.max(requestedWidth, requestedHeight),
   );
 
   return {
-    width: qwenDimension(requestedWidth * scale, QWEN_PRACTICAL_WIDTH),
-    height: qwenDimension(requestedHeight * scale, QWEN_PRACTICAL_HEIGHT),
-  };
-}
-
-function qwenGenerationDefaults(form: StudioFormState) {
-  const dimensions = getQwenAutoDimensions(form);
-  return {
-    ...dimensions,
-    steps: QWEN_NATIVE_STEPS,
-    guidanceScale: QWEN_NATIVE_GUIDANCE,
-    negativePrompt: form.negativePrompt.trim() || ' ',
-    maxSequenceLength: form.maxSequenceLength || 512,
+    width: qwenDimension(requestedWidth * scale, QWEN_PRACTICAL_DIMENSION),
+    height: qwenDimension(requestedHeight * scale, QWEN_PRACTICAL_DIMENSION),
   };
 }
 
@@ -133,83 +129,43 @@ export function qwenDirectRetryPlansFromCandidates(
   candidates:
     | Array<{
         id?: string;
+        modelType?: string;
+        mode?: string;
+        loaderModule?: string;
+        loaderAction?: string;
         executionPath?: string;
-        modelRepo?: string;
-        resolvedArtifact?: string;
-        artifact?: string;
-        quantizationMode?: string;
-        quantizedComponents?: string[];
-        bnb4ComputeDtype?: string;
+        pipelineClass?: string;
         offloadMode?: string;
         proof?: { status?: string };
-        generation?: StudioResourceRetryPlan['generation'];
       }>
     | null
     | undefined,
   selectedId?: string | null,
-  form?: StudioFormState,
 ): StudioResourceRetryPlan[] {
-  if (!Array.isArray(candidates) || candidates.length === 0) return [];
-  const selectedIndex = selectedId ? candidates.findIndex((candidate) => candidate.id === selectedId) : -1;
+  if (!Array.isArray(candidates) || !candidates.length) return [];
+  if (!selectedId) return [];
+  const selectedIndex = candidates.findIndex((candidate) => candidate.id === selectedId);
+  if (selectedIndex < 0) return [];
+  const selected = candidates[selectedIndex]!;
+  if (AUTO_RESOURCE_TARGET_KEYS.some((key) => !selected[key]?.trim())) return [];
   return candidates
-    .slice(selectedIndex >= 0 ? selectedIndex + 1 : 0)
-    .filter((candidate) => ['passed', 'declared_safe', 'live_proven'].includes(candidate.proof?.status ?? ''))
-    .filter((candidate) => !form || supportsStudioCpuOffload(form.device) || candidate.offloadMode === 'none')
-    .map((candidate) => ({
-      reason: `auto_candidate_${candidate.id ?? 'fallback'}`,
-      executionPath: candidate.executionPath,
-      modelRepo: candidate.modelRepo ?? candidate.resolvedArtifact ?? candidate.artifact,
-      resolvedArtifact: candidate.resolvedArtifact ?? candidate.artifact ?? candidate.modelRepo,
-      quantizationMode: candidate.quantizationMode === 'bnb_4bit' ? 'bnb_4bit' : 'none',
-      quantizedComponents: candidate.quantizedComponents ?? [],
-      bnb4ComputeDtype:
-        candidate.bnb4ComputeDtype === 'float16' || candidate.bnb4ComputeDtype === 'float32'
-          ? candidate.bnb4ComputeDtype
-          : 'bfloat16',
-      offloadMode: candidate.offloadMode as StudioOffloadMode | undefined,
-      generation:
-        form?.modelType === 'QwenImageModularPipeline' && form.mode === 'text_to_image'
-          ? { ...candidate.generation, ...getQwenAutoDimensions(form) }
-          : candidate.generation,
-      onCategories: ['oom', 'cuda_kernel'],
-      onErrorCodes: ['cuda_kernel_unsupported', 'cuda_oom'],
-    }));
+    .slice(selectedIndex + 1)
+    .filter(
+      (candidate) =>
+        autoProofIsReady(candidate.proof) && AUTO_RESOURCE_TARGET_KEYS.every((key) => candidate[key] === selected[key]),
+    )
+    .map(
+      (candidate) =>
+        ({
+          candidateId: candidate.id,
+          ...Object.fromEntries(AUTO_RESOURCE_TARGET_KEYS.map((key) => [key, candidate[key]])),
+          onCategories: ['oom', 'cuda_kernel'],
+          onErrorCodes: ['cuda_kernel_unsupported', 'cuda_oom'],
+        }) as StudioResourceRetryPlan,
+    );
 }
 
-function qwenManualRetryPlans(form: StudioFormState): StudioResourceRetryPlan[] {
-  if (!isDirectQwenTextToImage(form, normalizeStudioResourceMode(form.resourceMode, form))) return [];
-  const officialRepo = STUDIO_MODEL_PROFILES.QwenImageModularPipeline.defaultRepo;
-  const generation = qwenGenerationDefaults(form);
-  return [
-    {
-      reason: 'qwen_manual_transformer_only_after_bnb_text_encoder_kernel_failure',
-      executionPath: 'direct-diffusers-image',
-      modelRepo: officialRepo,
-      resolvedArtifact: officialRepo,
-      quantizationMode: 'bnb_4bit',
-      quantizedComponents: [...QWEN_TRANSFORMER_ONLY_QUANTIZED_COMPONENTS],
-      bnb4ComputeDtype: 'bfloat16',
-      offloadMode: 'model_cpu',
-      generation,
-      onErrorCodes: ['cuda_kernel_unsupported'],
-    },
-    {
-      reason: 'qwen_manual_prequantized_artifact_after_kernel_or_oom',
-      executionPath: 'direct-diffusers-image',
-      modelRepo: QWEN_IMAGE_2512_PREQUANTIZED_REPO,
-      resolvedArtifact: QWEN_IMAGE_2512_PREQUANTIZED_REPO,
-      quantizationMode: 'none',
-      quantizedComponents: [],
-      offloadMode: 'model_cpu',
-      generation,
-      onCategories: ['oom', 'cuda_kernel'],
-      onErrorCodes: ['cuda_kernel_unsupported'],
-    },
-  ];
-}
-
-export function normalizeStudioResourceMode(value: unknown, form?: StudioFormState): StudioResourceMode {
-  void form;
+export function normalizeStudioResourceMode(value: unknown): StudioResourceMode {
   if (value === 'manual' || value === 'expert') return 'expert';
   if (
     value === 'auto' ||
@@ -222,13 +178,9 @@ export function normalizeStudioResourceMode(value: unknown, form?: StudioFormSta
   return 'auto';
 }
 
-export function resolveStudioResourcePlan(
-  form: StudioFormState,
-  options: { runtimeStatus?: RuntimeStatusLike } = {},
-): StudioResourcePlan {
-  void options;
+export function resolveStudioResourcePlan(form: StudioFormState): StudioResourcePlan {
   const profile = STUDIO_MODEL_PROFILES[form.modelType];
-  const mode = normalizeStudioResourceMode(form.resourceMode, form);
+  const mode = normalizeStudioResourceMode(form.resourceMode);
   const supportedModes = profile.offloadSupport.modes;
 
   if (mode === 'expert') {
@@ -251,13 +203,13 @@ export function resolveStudioResourcePlan(
       retryOffloadModes: !supportsStudioCpuOffload(form.device)
         ? []
         : retryModesFor(execution.offloadMode, supportedModes),
-      retryPlans: qwenManualRetryPlans(form),
+      retryPlans: [],
       offloadDiskPath: execution.offloadMode === 'group_disk' ? 'data/offload/diffusers' : undefined,
       summary: `Expert: ${form.dtype}, ${form.quantizationMode}, ${STUDIO_OFFLOAD_RUNTIME_LABELS[execution.offloadMode]}`,
     };
   }
 
-  const isQwenT2I = isDirectQwenTextToImage(form, mode);
+  const isQwenT2I = form.modelType === 'QwenImageModularPipeline' && form.mode === 'text_to_image';
   const requestedOffloadMode = supportedOffload(
     supportedModes,
     isQwenT2I ? 'model_cpu' : profile.offloadSupport.default,
@@ -297,16 +249,13 @@ export function resolveStudioResourcePlan(
     retryPlans: [],
     offloadDiskPath: offloadMode === 'group_disk' ? 'data/offload/diffusers' : undefined,
     summary: isQwenT2I
-      ? `Auto: awaiting local Qwen recipe, ${qwenDimensions?.width}x${qwenDimensions?.height}, ${QWEN_NATIVE_STEPS} steps, CFG ${QWEN_NATIVE_GUIDANCE}`
+      ? `Auto: awaiting local Qwen recipe, ${qwenDimensions?.width}x${qwenDimensions?.height}, 50 steps, CFG 4`
       : `Auto: ${profile.defaultDtype}, ${STUDIO_OFFLOAD_RUNTIME_LABELS[offloadMode]}`,
   };
 }
 
-export function resolveStudioResourceForm(
-  form: StudioFormState,
-  options: { runtimeStatus?: RuntimeStatusLike } = {},
-): StudioFormState {
-  const plan = resolveStudioResourcePlan(form, options);
+export function resolveStudioResourceForm(form: StudioFormState): StudioFormState {
+  const plan = resolveStudioResourcePlan(form);
   if (plan.resourceMode === 'expert') {
     return normalizeStudioDeviceOffloadPlan({
       ...form,

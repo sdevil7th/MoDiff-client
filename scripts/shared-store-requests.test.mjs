@@ -268,11 +268,81 @@ test('Auto planning preserves its error-plan API while using normalized transpor
   assert.match(plan.message, /invalid JSON/);
 });
 
+test('schema-v2 Auto planning rejects a selected candidate without an exact bounded loader target', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      status: 'ready',
+      compatibility: {
+        state: 'ready',
+        severity: 'success',
+        code: 'ready',
+        summary: 'Ready',
+        detail: 'Ready',
+        source: 'backend_auto_planner',
+      },
+      selectedCandidate: {
+        id: 'stale-target',
+        modelType: 'QwenImageModularPipeline',
+        mode: 'text_to_image',
+        executionPath: 'direct-diffusers-image',
+      },
+      candidates: [],
+    });
+  const plan = await autoResourceModule.fetchAutoResourcePlan({ modelType: 'QwenImageModularPipeline' });
+  assert.equal(plan.error, true);
+  assert.match(plan.message, /invalid response/i);
+});
+
+test('schema-v2 Auto planning bounds candidate identity depth, count, size, and syntax', async () => {
+  const candidate = {
+    id: 'qwen-direct',
+    modelType: 'QwenImageModularPipeline',
+    mode: 'text_to_image',
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'QwenImagePipeline',
+  };
+  const plan = (selectedCandidate, candidates) => ({
+    schemaVersion: 2,
+    compatibility: {
+      state: 'ready',
+      severity: 'success',
+      code: 'ready',
+      summary: 'Ready',
+      detail: 'Ready',
+      source: 'backend_auto_planner',
+    },
+    selectedCandidate,
+    candidates,
+  });
+  let nested = 'leaf';
+  for (let depth = 0; depth < 1_200; depth += 1) nested = { nested };
+  const payloads = [
+    plan({ ...candidate, nested }, [{ ...candidate, nested }]),
+    plan(
+      candidate,
+      Array.from({ length: 65 }, (_, index) => ({ ...candidate, id: `candidate-${index}` })),
+    ),
+    plan({ ...candidate, id: 'bad\nid' }, [{ ...candidate, id: 'bad\nid' }]),
+    plan({ ...candidate, note: 'x'.repeat(65_537) }, [{ ...candidate }]),
+    plan(candidate, [candidate, { ...candidate, id: 'duplicate-retry' }, { ...candidate, id: 'duplicate-retry' }]),
+    plan({ ...candidate, executionPath: 'modular-diffusers' }, [{ ...candidate, executionPath: 'modular-diffusers' }]),
+  ];
+  for (const payload of payloads) {
+    globalThis.fetch = async () => jsonResponse(payload);
+    const result = await autoResourceModule.fetchAutoResourcePlan({ modelType: candidate.modelType });
+    assert.equal(result.error, true);
+    assert.match(result.message, /invalid response/i);
+  }
+});
+
 test('Auto plan batches and history mutations reject invalid or failed responses', async () => {
   globalThis.fetch = async () => jsonResponse({ plans: [null] });
   await assert.rejects(
     autoResourceModule.fetchAutoResourcePlans([{ modelType: 'QwenImageModularPipeline' }]),
-    (error) => error.kind === 'invalid_payload' && /plan 1/.test(error.message),
+    (error) => error.kind === 'invalid_payload' && /invalid response/i.test(error.message),
   );
 
   globalThis.fetch = async () => jsonResponse({ message: 'History is locked.' }, 423);

@@ -55,6 +55,8 @@ export type ApiGraphRuntimeHints = {
   resolvedModelRepo?: string;
   resolvedArtifact?: string;
   modelDependencies?: JsonObject[];
+  loaderModule?: string;
+  loaderAction?: string;
   executionPath?: string;
   pipelineClass?: string;
   dtype?: string;

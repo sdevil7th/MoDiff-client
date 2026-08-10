@@ -283,6 +283,18 @@ let mockOptionalRuntimeProcessStatus = 'base';
 let mockOptionalRuntimeQualified = false;
 let mockOptionalRuntimeDelayMs = 0;
 
+function mockAutoCompatibility(ready: boolean) {
+  return {
+    state: ready ? 'ready' : 'needs_setup',
+    severity: ready ? 'success' : 'error',
+    code: ready ? 'mock_ready' : 'mock_needs_setup',
+    summary: ready ? 'Ready' : 'Needs setup',
+    detail: ready ? 'The exact mock recipe is ready.' : 'The exact mock recipe needs setup.',
+    action: null,
+    source: 'backend_auto_planner',
+  };
+}
+
 function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
   const mode = String(form.mode ?? 'text_to_image');
@@ -305,17 +317,41 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     };
     const defaultRepo = defaultRepos[modelType] ?? 'Tongyi-MAI/Z-Image-Turbo';
     const installed = mockInstalledRepos.has(defaultRepo);
+    const directQwenEdit = modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint');
     const executionPath =
       modelType === 'WanVACEPipeline'
         ? 'direct-wan-vace'
         : modelType === 'AceStepAudioPipeline'
           ? 'direct-diffusers-audio'
-          : modelType.startsWith('Flux')
+          : modelType.startsWith('Flux') || modelType === 'ZImageModularPipeline' || directQwenEdit
             ? 'direct-diffusers-image'
             : 'modular-diffusers';
+    const loaderModule = executionPath.includes('audio')
+      ? 'modules.DiffusersAudio'
+      : executionPath.includes('wan') || executionPath.includes('video')
+        ? 'modules.DiffusersVideo'
+        : executionPath.includes('image')
+          ? 'modules.DiffusersImage'
+          : 'modules.ModularDiffusers';
     const candidate = {
       id: `${modelType}-${mode}-declared-safe`,
+      modelType,
+      mode,
+      loaderModule,
+      loaderAction: loaderModule === 'modules.ModularDiffusers' ? 'ModelsLoader' : 'LoadPipeline',
       executionPath,
+      pipelineClass:
+        modelType === 'WanVACEPipeline'
+          ? 'WanVACEPipeline'
+          : modelType === 'AceStepAudioPipeline'
+            ? 'AceStepPipeline'
+            : directQwenEdit
+              ? 'QwenImageEditInpaintPipeline'
+              : modelType === 'ZImageModularPipeline'
+                ? 'ZImagePipeline'
+                : modelType.startsWith('Flux')
+                  ? 'FluxPipeline'
+                  : modelType,
       modelRepo: defaultRepo,
       resolvedArtifact: defaultRepo,
       artifact: defaultRepo,
@@ -348,10 +384,12 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     };
     return {
       error: false,
+      schemaVersion: 2,
       resourceMode: 'auto',
       status: installed ? 'ready' : 'needs_setup',
       statusLabel: installed ? 'Ready with local Auto recipe' : 'Needs setup',
       blockingReason: installed ? null : 'No compatible local artifact was found for Auto.',
+      compatibility: mockAutoCompatibility(installed),
       selectedCandidate: installed ? candidate : null,
       candidates: [candidate],
       hardware: { runtimeFingerprint: 'mock-runtime' },
@@ -362,7 +400,12 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const qwenInstalled = mockInstalledRepos.has('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   const selectedCandidate = {
     id: 'qwen-t2i-prequantized-model-cpu',
+    modelType,
+    mode,
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
+    pipelineClass: 'QwenImagePipeline',
     modelRepo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     artifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
@@ -399,10 +442,12 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   };
   return {
     error: false,
+    schemaVersion: 2,
     resourceMode: 'auto',
     status: qwenInstalled ? 'ready' : 'needs_setup',
     statusLabel: qwenInstalled ? 'Ready with local Auto recipe' : 'Needs setup',
     blockingReason: qwenInstalled ? null : 'No compatible local artifact was found for Auto.',
+    compatibility: mockAutoCompatibility(qwenInstalled),
     selectedCandidate: qwenInstalled ? selectedCandidate : null,
     candidates: [selectedCandidate],
     hardware: { runtimeFingerprint: 'mock-runtime' },
@@ -1506,6 +1551,37 @@ test('optional runtime setup is GET-only and keeps the unqualified candidate non
     window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
   });
 
+  const zImageTarget = await page.evaluate(() => {
+    const state = window.__MODIFF_E2E__!.getState();
+    const candidate = state.studio.autoResourcePlan?.selectedCandidate;
+    const loader = state.flow.nodes.find((node) => node.studioRole === 'diffusersImagePipeline');
+    return {
+      candidate: {
+        loaderModule: candidate?.loaderModule,
+        loaderAction: candidate?.loaderAction,
+        executionPath: candidate?.executionPath,
+        pipelineClass: candidate?.pipelineClass,
+      },
+      loader: {
+        module: loader?.module,
+        action: loader?.action,
+        pipelineClass: loader?.params?.pipeline_class?.value,
+      },
+    };
+  });
+  expect(zImageTarget).toEqual({
+    candidate: {
+      loaderModule: 'modules.DiffusersImage',
+      loaderAction: 'LoadPipeline',
+      executionPath: 'direct-diffusers-image',
+      pipelineClass: 'ZImagePipeline',
+    },
+    loader: {
+      module: 'modules.DiffusersImage',
+      action: 'LoadPipeline',
+      pipelineClass: 'ZImagePipeline',
+    },
+  });
   const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
   const profile = disclosure.getByText(/Hugging Face Transformers \+ PEFT:/);
   await expect(disclosure).toBeVisible();
@@ -5999,7 +6075,12 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
     >;
     const candidate = {
       id: 'qwen-t2i-official-bf16-native',
+      modelType: 'QwenImageModularPipeline',
+      mode: 'text_to_image',
+      loaderModule: 'modules.DiffusersImage',
+      loaderAction: 'LoadPipeline',
       executionPath: 'direct-diffusers-image',
+      pipelineClass: 'QwenImagePipeline',
       modelRepo: 'Qwen/Qwen-Image-2512',
       resolvedArtifact: 'Qwen/Qwen-Image-2512',
       artifact: 'Qwen/Qwen-Image-2512',
@@ -6025,9 +6106,19 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       contentType: 'application/json',
       body: JSON.stringify({
         error: false,
+        schemaVersion: 2,
         resourceMode: 'auto',
         status: 'ready',
         statusLabel: 'Ready with live-proven local Auto recipe',
+        compatibility: {
+          state: 'ready',
+          severity: 'success',
+          code: 'mock_ready',
+          summary: 'Ready',
+          detail: 'The exact mock recipe is ready.',
+          action: null,
+          source: 'backend_auto_planner',
+        },
         selectedCandidate: candidate,
         candidates: [candidate],
         hardware: { runtimeFingerprint: 'mock-high-memory-runtime' },
@@ -6043,6 +6134,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       quantizationMode?: string;
       offloadMode?: string;
       autoOffload?: boolean;
+      autoResourcePlan?: { generation?: { steps?: number } };
     };
   } | null = null;
   await page.route('**/graph', async (route) => {
@@ -6061,6 +6153,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'auto',
       device: 'cuda:0',
+      steps: 7,
     });
     await window.__MODIFF_E2E__!.runActiveTemplate();
   });
@@ -6079,6 +6172,8 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
         receiptQuantizationMode: state.currentRunContext?.form?.quantizationMode,
         receiptOffloadMode: state.currentRunContext?.form?.offloadMode,
         receiptAutoOffload: state.currentRunContext?.form?.autoOffload,
+        steps: state.form.steps,
+        receiptSteps: state.currentRunContext?.form?.steps,
       };
     }),
     graph: {
@@ -6087,6 +6182,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       autoOffload: submittedGraph?.runtimeHints?.autoOffload,
       loaderOffloadMode: submittedLoader?.params?.offload_mode?.value,
       loaderAutoOffload: submittedLoader?.params?.auto_offload?.value,
+      candidateSteps: submittedGraph?.runtimeHints?.autoResourcePlan?.generation?.steps,
     },
   }).toEqual({
     form: {
@@ -6096,6 +6192,8 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       receiptQuantizationMode: 'none',
       receiptOffloadMode: 'none',
       receiptAutoOffload: false,
+      steps: 7,
+      receiptSteps: 7,
     },
     graph: {
       quantizationMode: 'none',
@@ -6103,8 +6201,99 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       autoOffload: false,
       loaderOffloadMode: 'none',
       loaderAutoOffload: false,
+      candidateSteps: 7,
     },
   });
+});
+
+test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const candidate = {
+    id: 'stale-modular-qwen-plan',
+    modelType: 'QwenImageModularPipeline',
+    mode: 'text_to_image',
+    loaderModule: 'modules.ModularDiffusers',
+    loaderAction: 'ModelsLoader',
+    executionPath: 'modular-diffusers',
+    pipelineClass: 'QwenImageModularPipeline',
+    modelRepo: 'Qwen/Qwen-Image-2512',
+    resolvedArtifact: 'Qwen/Qwen-Image-2512',
+    artifact: 'Qwen/Qwen-Image-2512',
+    dtype: 'float32',
+    quantizationMode: 'none',
+    offloadMode: 'none',
+    autoOffload: false,
+    installed: true,
+    artifactStatus: { installed: true, complete: true },
+    proof: { status: 'declared_safe', source: 'mock_stale_plan' },
+  };
+  const stalePlan = {
+    schemaVersion: 2,
+    resourceMode: 'auto',
+    status: 'ready',
+    canAutoRun: true,
+    compatibility: {
+      state: 'ready',
+      severity: 'success',
+      code: 'mock_stale_target',
+      summary: 'Ready',
+      detail: 'Stale mock plan.',
+      action: null,
+      source: 'backend_auto_planner',
+    },
+    selectedCandidate: candidate,
+    candidates: [{ ...candidate }],
+    checkedAt: Date.now(),
+  };
+  await page.route('**/auto_resource/plans', async (route) => {
+    const body = route.request().postDataJSON() as { forms?: Array<Record<string, unknown>>; keys?: string[] } | null;
+    const forms = Array.isArray(body?.forms) ? body.forms : [];
+    const keys = Array.isArray(body?.keys) ? body.keys : [];
+    const plans = forms.map((form, index) => ({
+      ...(form.modelType === 'QwenImageModularPipeline' && form.mode === 'text_to_image'
+        ? stalePlan
+        : mockAutoResourcePlan(form)),
+      planKey: keys[index],
+    }));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ plans }) });
+  });
+  await page.route('**/auto_resource/plan', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(stalePlan),
+    });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      resourceMode: 'auto',
+      device: 'cuda:0',
+    });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
+  });
+
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  const readiness = page.getByTestId('studio-run-readiness');
+  await expect(readiness).toContainText('Run blocked');
+  await readiness.click();
+  await expect(page.getByTestId('run-issues-dialog')).toContainText('Auto mismatch');
+  await expect(page.getByTestId('studio-run')).toBeDisabled();
+  const state = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+  expect(state.studio.form.dtype).toBe('bfloat16');
+  expect(
+    state.flow.nodes.some((node) => node.module === 'modules.DiffusersImage' && node.action === 'LoadPipeline'),
+  ).toBe(true);
+  expect(
+    state.flow.nodes.some((node) => node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader'),
+  ).toBe(false);
 });
 
 test('mocked Studio image preview actions and progress ignore stale websocket messages', async ({ page }) => {

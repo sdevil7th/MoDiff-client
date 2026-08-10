@@ -105,6 +105,11 @@ authority; `src/studio/autoResource.ts` validates its versioned
 `compatibility` assessment and UI surfaces render that assessment without
 re-evaluating GPU, platform, OS, or memory thresholds. A missing plan is
 presented as **Checking compatibility**, never as a client-side hardware guess.
+Schema-v2 selected candidates also carry an exact loader module/action and
+execution path. Before any candidate values reach the form or graph, the
+client verifies the unique same-ID candidate and the executable managed loader
+on the visible canvas. Unrelated or disabled loaders do not satisfy that check,
+and a mismatch remains a blocking readiness issue.
 
 Reviewed model usage notices live in `src/studio/modelUsagePolicies.ts`.
 Template and model-manager components consume that registry generically. Only
@@ -185,6 +190,7 @@ Managed graph finalization proofs are consistency checks, not authorization toke
 User selects Run
   -> validate connection, graph, output reachability, and Studio inputs
   -> if Auto, fetch/confirm accepted candidate proof
+  -> verify the candidate's exact target against the visible managed loader
   -> reconcile/finalize managed graph
   -> export visible graph with websocket session id
   -> apply deterministic/runtime/candidate metadata

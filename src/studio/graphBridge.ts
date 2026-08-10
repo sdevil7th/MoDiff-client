@@ -14,6 +14,7 @@ import {
   assertWorkflowOperationContext,
   autoFieldOverrideKey,
   captureWorkflowOperationContext,
+  currentAutoResourcePlanTarget,
   isWorkflowOperationCancelled,
   WorkflowOperationCancelledError,
   type WorkflowOperationContext,
@@ -42,7 +43,7 @@ import {
   WAN_T2V_1_3B_REPO,
   WAN_VACE_REVISION,
 } from './modelProfiles';
-import { selectedAutoCandidate } from './autoResource';
+import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { hashString, stableStringify } from './templateExactness';
@@ -70,35 +71,27 @@ function activeAudioTemplateBaseModel() {
   return artifact?.source === 'hub' ? artifact.value : undefined;
 }
 
+function selectedVisibleGraphAutoCandidate(
+  form: StudioFormState,
+  binding: StudioGraphBinding | null = useStudioStore.getState().graphBinding,
+) {
+  const plan = useStudioStore.getState().autoResourcePlan;
+  return currentAutoResourcePlanTarget(plan, form, binding) ? null : selectedAutoCandidate(plan, form);
+}
+
 function resolveGraphResourceForm(form: StudioFormState): StudioFormState {
   const plannedForm = resolveStudioResourceForm(form);
   if (form.resourceMode !== 'auto') return plannedForm;
 
-  const candidate = selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, plannedForm);
+  const candidate = selectedVisibleGraphAutoCandidate(plannedForm);
   if (!candidate) return plannedForm;
 
-  const dtype =
-    candidate.dtype === 'float16' || candidate.dtype === 'float32' || candidate.dtype === 'bfloat16'
-      ? candidate.dtype
-      : plannedForm.dtype;
   // Auto selection points at an already-created artifact. Never reinterpret
   // its artifact format as permission to quantize the base model on load.
-  const quantizationMode = 'none';
-  const offloadMode =
-    candidate.offloadMode === 'none' ||
-    candidate.offloadMode === 'model_cpu' ||
-    candidate.offloadMode === 'sequential_cpu' ||
-    candidate.offloadMode === 'group_cpu' ||
-    candidate.offloadMode === 'group_disk'
-      ? candidate.offloadMode
-      : plannedForm.offloadMode;
-
   return {
     ...plannedForm,
-    dtype,
-    quantizationMode,
-    offloadMode,
-    autoOffload: offloadMode !== 'none',
+    ...formPatchForAutoCandidate(candidate),
+    quantizationMode: 'none',
   };
 }
 
@@ -3082,30 +3075,20 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 
   const capability = STUDIO_MODEL_PROFILES[form.modelType];
+  const autoCandidate = form.resourceMode === 'auto' ? selectedVisibleGraphAutoCandidate(form, binding) : null;
+  const autoPatch = formPatchForAutoCandidate(autoCandidate);
 
   if (isAudioMode(form.mode)) {
-    const autoCandidate =
-      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, form) : null;
     const autoArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
       autoCandidate?.installTarget?.repo ??
       autoCandidate?.modelRepo;
-    const autoOffloadMode =
-      autoCandidate?.offloadMode === 'none' ||
-      autoCandidate?.offloadMode === 'model_cpu' ||
-      autoCandidate?.offloadMode === 'sequential_cpu' ||
-      autoCandidate?.offloadMode === 'group_cpu' ||
-      autoCandidate?.offloadMode === 'group_disk'
-        ? autoCandidate.offloadMode
-        : form.offloadMode;
+    const autoOffloadMode = autoPatch.offloadMode ?? form.offloadMode;
     // Auto candidates resolve to pre-built artifacts. On-load quantization is
     // deliberately restricted to Expert graphs where it remains visible.
     const audioQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
-    const audioDtype =
-      autoCandidate?.dtype === 'float16' || autoCandidate?.dtype === 'float32' || autoCandidate?.dtype === 'bfloat16'
-        ? autoCandidate.dtype
-        : form.dtype;
+    const audioDtype = autoPatch.dtype ?? form.dtype;
     const audioPipelineClass = autoCandidate?.pipelineClass ?? 'AceStepPipeline';
     const isStableAudioPipeline = audioPipelineClass === 'StableAudioPipeline';
 
@@ -3192,8 +3175,6 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 
   if (isVideoMode(form.mode)) {
-    const autoCandidate =
-      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, form) : null;
     const preservationWanMode = form.modelType === 'WanVideoPipeline';
     const qualityWanImageMode = form.modelType === 'WanImageToVideoPipeline';
     const qualityWanTextMode = form.modelType === 'WanTI2VPipeline';
@@ -3338,21 +3319,12 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 
   if (usesDiffusersImageFacade(binding)) {
-    const autoCandidate =
-      form.resourceMode === 'auto' ? selectedAutoCandidate(useStudioStore.getState().autoResourcePlan, form) : null;
     const autoArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
       autoCandidate?.installTarget?.repo ??
       autoCandidate?.modelRepo;
-    const autoOffloadMode =
-      autoCandidate?.offloadMode === 'none' ||
-      autoCandidate?.offloadMode === 'model_cpu' ||
-      autoCandidate?.offloadMode === 'sequential_cpu' ||
-      autoCandidate?.offloadMode === 'group_cpu' ||
-      autoCandidate?.offloadMode === 'group_disk'
-        ? autoCandidate.offloadMode
-        : form.offloadMode;
+    const autoOffloadMode = autoPatch.offloadMode ?? form.offloadMode;
     const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
     const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
     const pipelineClass =
@@ -3363,10 +3335,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
         : form.modelType === 'ZImageModularPipeline'
           ? (autoCandidate?.pipelineClass ?? 'ZImagePipeline')
           : autoCandidate?.pipelineClass;
-    const imageDtype =
-      autoCandidate?.dtype === 'float16' || autoCandidate?.dtype === 'float32' || autoCandidate?.dtype === 'bfloat16'
-        ? autoCandidate.dtype
-        : form.dtype;
+    const imageDtype = autoPatch.dtype ?? form.dtype;
 
     setParamIfPresent(diffusersQuantization, ['backend'], autoQuantizationMode);
     setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);

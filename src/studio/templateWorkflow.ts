@@ -4,6 +4,7 @@ import {
   advanceWorkflowOperationContext,
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
+  currentAutoResourcePlanTarget,
   isWorkflowOperationCancelled,
   useStudioStore,
   type WorkflowOperationContext,
@@ -134,26 +135,30 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     advanceWorkflowOperationContext(context);
     useStudioStore.getState().saveActiveWorkflowTab(true);
     after = useStudioStore.getState().form;
-    if (after.resourceMode === 'auto') {
-      const initialPlanKey = autoPlanKeyForForm(after);
-      const cachedPlan = useStudioStore.getState().autoResourcePlans[initialPlanKey];
-      const plan = cachedPlan ?? (await fetchAutoResourcePlan(after));
-      assertWorkflowOperationContext(context);
-      if (!plan.error) {
-        useStudioStore.getState().setAutoResourcePlans({ [initialPlanKey]: plan });
-      }
-      useStudioStore.getState().setAutoResourcePlan(plan);
-      if (autoPlanIsReady(plan, after)) {
-        const patch = formPatchForAutoCandidate(selectedAutoCandidate(plan, after), after);
-        useStudioStore.getState().applyAutoResourcePlan(plan, patch);
-        advanceWorkflowOperationContext(context);
-        after = useStudioStore.getState().form;
-      }
-    }
     await waitForTemplateCanvasPaint();
     assertWorkflowOperationContext(context);
-    const result = await createOrUpdateStudioGraph(after, context);
+    let result = await createOrUpdateStudioGraph(after, context);
     assertWorkflowOperationContext(context);
+    if (after.resourceMode === 'auto') {
+      const initialPlanKey = autoPlanKeyForForm(after);
+      const plan = useStudioStore.getState().autoResourcePlans[initialPlanKey] ?? (await fetchAutoResourcePlan(after));
+      assertWorkflowOperationContext(context);
+      if (!plan.error) useStudioStore.getState().setAutoResourcePlans({ [initialPlanKey]: plan });
+      useStudioStore.getState().setAutoResourcePlan(plan);
+      if (autoPlanIsReady(plan, after)) {
+        const target = currentAutoResourcePlanTarget(plan, after, useStudioStore.getState().graphBinding);
+        if (target) {
+          useStudioStore.getState().setLastError(target);
+        } else {
+          const patch = formPatchForAutoCandidate(selectedAutoCandidate(plan, after), after);
+          useStudioStore.getState().applyAutoResourcePlan(plan, patch);
+          advanceWorkflowOperationContext(context);
+          after = useStudioStore.getState().form;
+          result = await createOrUpdateStudioGraph(after, context);
+          assertWorkflowOperationContext(context);
+        }
+      }
+    }
     graphCreated = true;
     warnings = result.warnings;
     for (const block of template.workflowBlocks ?? []) {

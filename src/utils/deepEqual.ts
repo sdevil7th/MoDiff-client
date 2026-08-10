@@ -9,6 +9,7 @@ export const deepEqual = (a: unknown, b: unknown): boolean => {
   const right = b as Record<string, unknown>;
   return (
     bothAreObjects &&
+    Array.isArray(a) === Array.isArray(b) &&
     Object.keys(left).length === Object.keys(right).length &&
     Object.keys(left).every((key) => deepEqual(left[key], right[key]))
   );

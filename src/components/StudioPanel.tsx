@@ -246,8 +246,7 @@ export default function StudioPanel() {
   );
   const isVideoMode = VIDEO_STUDIO_MODES.includes(form.mode);
   const isAudioMode = AUDIO_STUDIO_MODES.includes(form.mode);
-  const resourcePlan = useMemo(() => resolveStudioResourcePlan(form, { runtimeStatus }), [form, runtimeStatus]);
-  const resourcePathLabel = getStudioResourceExecutionPathLabel(resourcePlan);
+  const resourcePlan = useMemo(() => resolveStudioResourcePlan(form), [form]);
   const expertResourceMode = studioViewMode === 'expert';
   const autoPlanExecution = useMemo(
     () => ({
@@ -258,6 +257,10 @@ export default function StudioPanel() {
     [form.autoOffload, form.device, form.offloadMode],
   );
   const selectedAutoPlanCandidate = selectedAutoCandidate(autoResourcePlan, autoPlanExecution);
+  const resourcePathLabel = getStudioResourceExecutionPathLabel({
+    resourceMode: resourcePlan.resourceMode,
+    executionPath: selectedAutoPlanCandidate?.executionPath ?? resourcePlan.executionPath,
+  });
   const autoResourceChecking = autoPlanChecking || autoResourceCheck.status !== 'idle';
   const autoPlanReady = form.resourceMode !== 'auto' || autoPlanIsReady(autoResourcePlan, autoPlanExecution);
   const autoPlanStatusLabel =

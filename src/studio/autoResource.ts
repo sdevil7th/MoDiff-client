@@ -1,7 +1,12 @@
 import config from '../../app.config';
+import { executableFlowNodes, type FlowGraphNode } from '../stores/flowGraphExport';
+import { deepEqual } from '../utils/deepEqual';
 import { formatRequestError, requestJson } from '../utils/requestJson';
 import { normalizeStudioDeviceOffloadPlan, studioOffloadPlanConflict } from './deviceOffload';
+import { AUTO_RESOURCE_LOADER_TARGETS, AUTO_RESOURCE_TARGET_KEYS } from './resourcePlanner';
 import type { StudioFormState, StudioOffloadMode, StudioResourcePreference } from './types';
+
+export { autoProofIsReady } from './resourcePlanner';
 
 export type StudioAutoResourceHealthBadge =
   | 'Ran here'
@@ -49,9 +54,12 @@ export type StudioAutoResourceCandidate = {
   rank?: number;
   modelType?: string;
   mode?: string;
+  loaderModule?: string;
+  loaderAction?: string;
   executionPath?: string;
   pipelineClass?: string;
   artifact?: string;
+  artifactRevision?: string;
   modelRepo?: string;
   resolvedArtifact?: string;
   baseArtifact?: string;
@@ -220,10 +228,46 @@ export function autoPlanHasRuntimeIssue(plan: StudioAutoResourcePlan | null | un
   return plan?.issue?.category === 'environment' || plan?.issue?.code === 'runtime_profile_mismatch';
 }
 
-const READY_AUTO_PROOF_STATUSES = new Set(['passed', 'declared_safe', 'live_proven']);
+const INVALID_AUTO_PLAN = 'Invalid response.';
+const AUTO_CANDIDATE_ID = /^[a-z\d][\w.:-]{0,127}$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isSchemaV2<T extends { schemaVersion?: unknown } | null | undefined>(
+  value: T,
+): value is T & { schemaVersion: number } {
+  return typeof value?.schemaVersion === 'number' && value.schemaVersion >= 2;
+}
+
+function boundedJson(value: unknown, budget = 65_536, maxDepth = 8) {
+  const visit = (item: unknown, depth: number): boolean =>
+    depth <= maxDepth &&
+    (!item || typeof item !== 'object' || Object.values(item).every((child) => visit(child, depth + 1)));
+  return JSON.stringify(value)!.length <= budget && visit(value, -1);
+}
+
+function candidateTargetIsConsistent(candidate: StudioAutoResourceCandidate) {
+  return (
+    AUTO_RESOURCE_LOADER_TARGETS.includes(
+      `${candidate.loaderModule}.${candidate.loaderAction}.${candidate.executionPath}` as (typeof AUTO_RESOURCE_LOADER_TARGETS)[number],
+    ) &&
+    (candidate.loaderAction !== 'ModelsLoader' || candidate.pipelineClass === candidate.modelType)
+  );
+}
+
+function validCandidateBoundary(value: unknown, targetRequired: boolean) {
+  if (!isRecord(value) || !boundedJson(value) || typeof value.id !== 'string' || !AUTO_CANDIDATE_ID.test(value.id)) {
+    return false;
+  }
+  if (!targetRequired) return true;
+  return (
+    AUTO_RESOURCE_TARGET_KEYS.every((key) => {
+      const item = value[key];
+      return typeof item === 'string' && item && item === item.trim() && item.length < 513;
+    }) && candidateTargetIsConsistent(value as StudioAutoResourceCandidate)
+  );
 }
 
 function positiveNumber(value: unknown) {
@@ -281,10 +325,11 @@ export function localRuntimeEstimate(plan: StudioAutoResourcePlan | null | undef
 
 function parseAutoResourcePlan(value: unknown): StudioAutoResourcePlan {
   if (!isRecord(value)) {
-    throw new Error('Auto resource planner returned an invalid response.');
+    throw new Error(INVALID_AUTO_PLAN);
   }
-  if (typeof value.schemaVersion === 'number' && value.schemaVersion >= 2) {
+  if (isSchemaV2(value)) {
     const compatibility = value.compatibility;
+    const candidates = value.candidates;
     if (
       !isRecord(compatibility) ||
       typeof compatibility.state !== 'string' ||
@@ -294,7 +339,22 @@ function parseAutoResourcePlan(value: unknown): StudioAutoResourcePlan {
       typeof compatibility.detail !== 'string' ||
       compatibility.source !== 'backend_auto_planner'
     ) {
-      throw new Error('Auto resource planner returned an invalid compatibility assessment.');
+      throw new Error(INVALID_AUTO_PLAN);
+    }
+    if (
+      ('candidates' in value && (!Array.isArray(candidates) || candidates.length > 64)) ||
+      !boundedJson(value, 1e6, 10) ||
+      [value.selectedCandidate, value.nextCandidate].some(
+        (candidate) => candidate != null && !validCandidateBoundary(candidate, true),
+      ) ||
+      (Array.isArray(candidates) &&
+        (candidates.some(
+          (candidate) =>
+            !validCandidateBoundary(candidate, !isRecord(candidate) || candidate.exactPairDeclared !== false),
+        ) ||
+          new Set(candidates.map((candidate) => candidate.id)).size !== candidates.length))
+    ) {
+      throw new Error(INVALID_AUTO_PLAN);
     }
   }
   return value as StudioAutoResourcePlan;
@@ -302,10 +362,10 @@ function parseAutoResourcePlan(value: unknown): StudioAutoResourcePlan {
 
 function parseAutoResourcePlans(value: unknown) {
   if (!isRecord(value) || !Array.isArray(value.plans)) {
-    throw new Error('Auto resource planner returned an invalid plans response.');
+    throw new Error(INVALID_AUTO_PLAN);
   }
-  return value.plans.map((plan, index) => {
-    if (!isRecord(plan)) throw new Error(`Auto resource plan ${index + 1} is invalid.`);
+  return value.plans.map((plan) => {
+    if (!isRecord(plan)) throw new Error(INVALID_AUTO_PLAN);
     return parseAutoResourcePlan(plan);
   });
 }
@@ -405,23 +465,12 @@ export function fetchAutoResourcePlans(forms: StudioFormState[], keys: string[] 
   });
 }
 
-export function autoProofIsReady(proof: StudioAutoResourceProof | null | undefined) {
-  return Boolean(proof?.status && READY_AUTO_PROOF_STATUSES.has(proof.status));
-}
-
 export function autoCandidateSupportsExecutionDevice(
   candidate: StudioAutoResourceCandidate | null | undefined,
   form: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
 ) {
   if (!candidate) return false;
-  const offloadMode =
-    candidate.offloadMode === 'none' ||
-    candidate.offloadMode === 'model_cpu' ||
-    candidate.offloadMode === 'sequential_cpu' ||
-    candidate.offloadMode === 'group_cpu' ||
-    candidate.offloadMode === 'group_disk'
-      ? candidate.offloadMode
-      : form.offloadMode;
+  const offloadMode = formPatchForAutoCandidate(candidate).offloadMode ?? form.offloadMode;
   return !studioOffloadPlanConflict({
     device: form.device,
     autoOffload: candidate.autoOffload ?? offloadMode !== 'none',
@@ -434,17 +483,53 @@ export function selectedAutoCandidate(
   form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
 ) {
   const selected = plan?.selectedCandidate;
+  if (isSchemaV2(plan)) {
+    if (!selected?.id || !Array.isArray(plan.candidates)) return null;
+    const sameId = plan.candidates.filter((candidate) => candidate.id === selected.id);
+    if (
+      sameId.length !== 1 ||
+      !deepEqual(sameId[0], selected) ||
+      !candidateTargetIsConsistent(selected) ||
+      (form && !autoCandidateSupportsExecutionDevice(selected, form))
+    ) {
+      return null;
+    }
+    return selected;
+  }
   if (selected?.id && (!form || autoCandidateSupportsExecutionDevice(selected, form))) {
     return selected;
   }
   return plan?.candidates?.find((candidate) => !form || autoCandidateSupportsExecutionDevice(candidate, form)) ?? null;
 }
 
+export function autoResourcePlanTargetMatches(
+  plan: StudioAutoResourcePlan | null | undefined,
+  nodes: FlowGraphNode[],
+  managedNodeIds: readonly string[] | null | undefined,
+  expected: { modelType: string; mode: string },
+): boolean {
+  if (!isSchemaV2(plan)) return true;
+  const selected = selectedAutoCandidate(plan);
+  if (!selected) return !(plan.selectedCandidate || plan.compatibility?.state === 'ready');
+  if (selected.modelType !== expected.modelType || selected.mode !== expected.mode) return false;
+  const identityKey = selected.loaderAction === 'ModelsLoader' ? 'model_type' : 'pipeline_class';
+  const expectedIdentity = identityKey === 'model_type' ? selected.modelType : selected.pipelineClass;
+  return executableFlowNodes(nodes).some((node) => {
+    const field = node.data.params[identityKey];
+    return (
+      managedNodeIds?.includes(node.id) &&
+      node.data.module === selected.loaderModule &&
+      node.data.action === selected.loaderAction &&
+      (field?.value ?? field?.default) === expectedIdentity
+    );
+  });
+}
+
 export function autoPlanIsReady(
   plan: StudioAutoResourcePlan | null | undefined,
   form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
 ) {
-  if (plan?.schemaVersion && plan.schemaVersion >= 2 && plan.compatibility?.state !== 'ready') return false;
+  if (isSchemaV2(plan) && plan.compatibility?.state !== 'ready') return false;
   const selected = selectedAutoCandidate(plan, form);
   if (!selected) return false;
   return (
@@ -637,7 +722,7 @@ export function autoResourceCompatibility(
 export function formPatchForAutoCandidate(
   candidate: StudioAutoResourceCandidate | null | undefined,
   currentForm?: StudioFormState,
-  pinnedFormKeys: ReadonlySet<keyof StudioFormState> = new Set(),
+  pinnedFormKeys?: ReadonlySet<keyof StudioFormState>,
 ): Partial<StudioFormState> {
   if (!candidate) return {};
   const patch: Partial<StudioFormState> = {
@@ -679,7 +764,7 @@ export function formPatchForAutoCandidate(
   }
   return Object.fromEntries(
     Object.entries(patch).filter(
-      ([key]) => key === 'resourceMode' || !pinnedFormKeys.has(key as keyof StudioFormState),
+      ([key]) => key === 'resourceMode' || !pinnedFormKeys?.has(key as keyof StudioFormState),
     ),
   ) as Partial<StudioFormState>;
 }

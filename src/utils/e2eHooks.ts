@@ -306,19 +306,22 @@ async function runActiveTemplate(): Promise<GalleryRunResult> {
           pendingGalleryFormOverrides[field] === undefined ? [] : [[field, pendingGalleryFormOverrides[field]]],
       ),
     );
-    const updatedPlan =
-      autoPlan && selectedCandidate && Object.keys(generationOverrides).length > 0
+    const updatedCandidate =
+      selectedCandidate && Object.keys(generationOverrides).length > 0
         ? {
-            ...autoPlan,
-            selectedCandidate: {
-              ...selectedCandidate,
-              generation: {
-                ...selectedCandidate.generation,
-                ...generationOverrides,
-              },
-            },
+            ...selectedCandidate,
+            generation: { ...selectedCandidate.generation, ...generationOverrides },
           }
-        : autoPlan;
+        : null;
+    const updatedPlan = updatedCandidate
+      ? {
+          ...autoPlan,
+          selectedCandidate: updatedCandidate,
+          candidates: autoPlan?.candidates?.map((candidate) =>
+            candidate.id === updatedCandidate.id ? updatedCandidate : candidate,
+          ),
+        }
+      : autoPlan;
     if (updatedPlan) {
       // Gallery screening overrides are generation-only. Commit them through
       // the same atomic path as a normal Auto run so updateForm's generic
@@ -903,6 +906,7 @@ export function installE2EHooks() {
           workflowTabs: useStudioStore.getState().workflowTabs,
           activeWorkflowTabId: useStudioStore.getState().activeWorkflowTabId,
           activeTemplateId: useStudioStore.getState().activeTemplateId,
+          autoResourcePlan: useStudioStore.getState().autoResourcePlan,
           autoFieldOverrides: useStudioStore.getState().autoFieldOverrides,
           currentRunContext: useStudioStore.getState().currentRunContext,
           lastError: useStudioStore.getState().lastError,

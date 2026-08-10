@@ -1,6 +1,6 @@
 import { useFlowStore, type APIGraphExport } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import { currentAutoResourcePlanTarget, useStudioStore } from '../stores/useStudioStore';
 import type { JsonObject } from '../types/api';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import {
@@ -78,10 +78,15 @@ export function applyRunCorrelationHints(
 
 export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: StudioRunCorrelation): APIGraphExport {
   const studio = useStudioStore.getState();
-  const committedAutoCandidate =
-    studio.form.resourceMode === 'auto' ? selectedAutoCandidate(studio.autoResourcePlan, studio.form) : null;
+  const baseForm = studio.form;
+  const autoResourcePlan = studio.autoResourcePlan;
+  const auto = baseForm.resourceMode === 'auto';
+  const target = currentAutoResourcePlanTarget(autoResourcePlan, baseForm, studio.graphBinding);
+  if (auto && target) throw new Error(target);
+  const committedAutoCandidate = auto ? selectedAutoCandidate(autoResourcePlan, baseForm) : null;
+  const autoFieldOverrides = studio.autoFieldOverrides;
   const pinnedAutoFormKeys = new Set(
-    Object.values(studio.autoFieldOverrides)
+    Object.values(autoFieldOverrides)
       .map((override) => override.formKey)
       .filter((key): key is keyof typeof studio.form => Boolean(key)),
   );
@@ -89,23 +94,21 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   // committed form back through the generic profile fallback here used to
   // replace a live-proven resident recipe with model_cpu in the receipt and
   // runtime hints immediately before submission.
+  const runtimeStatus = useNodesStore.getState().runtimeStatus;
   const form = committedAutoCandidate
     ? {
-        ...studio.form,
-        ...formPatchForAutoCandidate(committedAutoCandidate, studio.form, pinnedAutoFormKeys),
+        ...baseForm,
+        ...formPatchForAutoCandidate(committedAutoCandidate, baseForm, pinnedAutoFormKeys),
       }
-    : resolveStudioResourceForm(studio.form, {
-        runtimeStatus: useNodesStore.getState().runtimeStatus,
-      });
+    : resolveStudioResourceForm(baseForm);
   const profile = getProfileForForm(form);
-  const runtimeStatus = useNodesStore.getState().runtimeStatus;
-  const resourcePlan = resolveStudioResourcePlan(form, { runtimeStatus });
-  const autoResourcePlan = studio.autoResourcePlan;
+  const resourcePlan = resolveStudioResourcePlan(form);
   const workflowTab = studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId);
   const activeTemplate = STUDIO_TEMPLATES.find((template) => template.id === studio.activeTemplateId);
   const templateBaseModel = activeTemplate?.workflowBlockSettings?.lora?.baseModel;
   const templateBaseModelRepo = templateBaseModel?.source === 'hub' ? templateBaseModel.value : undefined;
-  const selectedCandidate = form.resourceMode === 'auto' ? selectedAutoCandidate(autoResourcePlan, form) : null;
+  const templateBaseModelRevision = templateBaseModel?.revision;
+  const selectedCandidate = auto ? selectedAutoCandidate(autoResourcePlan, form) : null;
   // The backend applies a proven Auto plan directly to loader nodes. Mirror an
   // architecture-locked audio LoRA base into that plan as well as the visible
   // graph, or the backend would replace the correct checkpoint with the
@@ -117,38 +120,49 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
           modelRepo: templateBaseModelRepo,
           resolvedArtifact: templateBaseModelRepo,
           artifact: templateBaseModelRepo,
+          baseArtifact: templateBaseModelRepo,
+          artifactRevision: templateBaseModelRevision,
+          artifactResolution: {
+            ...(selectedCandidate.artifactResolution ?? {}),
+            base: {
+              ...(selectedCandidate.artifactResolution?.base ?? {}),
+              repo: templateBaseModelRepo,
+              revision: templateBaseModelRevision,
+            },
+            resolved: {
+              ...(selectedCandidate.artifactResolution?.resolved ?? {}),
+              repo: templateBaseModelRepo,
+              revision: templateBaseModelRevision,
+            },
+            substituted: false,
+          },
           installTarget: {
             ...(selectedCandidate.installTarget ?? {}),
             repo: templateBaseModelRepo,
           },
         }
       : selectedCandidate;
-  const autoRetryPlans =
-    form.resourceMode === 'auto'
-      ? qwenDirectRetryPlansFromCandidates(autoResourcePlan?.candidates, autoCandidate?.id, form)
-      : resourcePlan.retryPlans;
+  const autoCandidates = autoResourcePlan?.candidates?.map((candidate) =>
+    autoCandidate && candidate.id === autoCandidate.id ? autoCandidate : candidate,
+  );
+  const autoRetryPlans = auto
+    ? qwenDirectRetryPlansFromCandidates(autoCandidates, autoCandidate?.id)
+    : resourcePlan.retryPlans;
   const resolvedModelRepo =
-    templateBaseModelRepo ??
     autoCandidate?.modelRepo ??
     autoCandidate?.installTarget?.repo ??
     autoCandidate?.resolvedArtifact ??
+    templateBaseModelRepo ??
     resourcePlan.resolvedModelRepo;
   const resolvedArtifact =
-    templateBaseModelRepo ??
     autoCandidate?.resolvedArtifact ??
     autoCandidate?.artifact ??
     autoCandidate?.installTarget?.repo ??
     autoCandidate?.modelRepo ??
+    templateBaseModelRepo ??
     resourcePlan.resolvedArtifact;
   const resolvedExecutionPath = autoCandidate?.executionPath ?? resourcePlan.executionPath;
-  const resolvedQuantizationMode =
-    autoCandidate?.quantizationMode === 'none' ||
-    autoCandidate?.quantizationMode === 'bnb_4bit' ||
-    autoCandidate?.quantizationMode === 'bnb_8bit' ||
-    autoCandidate?.quantizationMode === 'quanto_float8' ||
-    autoCandidate?.quantizationMode === 'torchao_float8'
-      ? autoCandidate.quantizationMode
-      : form.quantizationMode;
+  const resolvedQuantizationMode = formPatchForAutoCandidate(autoCandidate).quantizationMode ?? form.quantizationMode;
   const resolvedQuantizedComponents = autoCandidate?.quantizedComponents ?? resourcePlan.quantizedComponents;
   const resolvedOffloadMode =
     (autoCandidate?.offloadMode as StudioFormState['offloadMode'] | undefined) ?? form.offloadMode;
@@ -225,16 +239,14 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
         offloadMode: resolvedOffloadMode,
       },
       autoResourcePlan: autoCandidate ? (autoCandidate as unknown as JsonObject) : undefined,
-      autoResourceCandidates: autoResourcePlan?.candidates
-        ? (autoResourcePlan.candidates as unknown as JsonObject[])
-        : undefined,
+      autoResourceCandidates: autoCandidates as unknown as JsonObject[] | undefined,
       autoResourceProofStatus: autoCandidate?.proof?.status,
       autoResourceCandidateId: autoCandidate?.id,
-      autoFieldOverrides: Object.values(studio.autoFieldOverrides) as unknown as JsonObject[],
+      autoFieldOverrides: Object.values(autoFieldOverrides) as unknown as JsonObject[],
       optimizationQualificationForm: form as unknown as JsonObject,
       resourceRetryModes: resourcePlan.retryOffloadModes,
       resourceRetryPlans: autoRetryPlans as unknown as JsonObject[],
-      compatibilityStatus: autoCandidate?.proof?.status ?? (form.resourceMode === 'auto' ? 'needs_setup' : 'expert'),
+      compatibilityStatus: autoCandidate?.proof?.status ?? (auto ? 'needs_setup' : 'expert'),
       lowVramMode,
       // Preserve upstream-recommended sampling settings for quality-first
       // local video runs. The backend still enforces a bounded 12-hour cap.

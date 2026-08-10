@@ -45,7 +45,7 @@ import { adoptManagedWorkflowGraph, inferStudioFormFromWorkflow } from '../studi
 import { migrateLocalStorageKey } from '../utils/persistMigration';
 import { createLatestRequestGate, formatRequestError, requestBlob } from '../utils/requestJson';
 import type { MediaArtifact } from '../utils/imageArtifacts';
-import { autoPlanKeyForForm, type StudioAutoResourcePlan } from '../studio/autoResource';
+import { autoPlanKeyForForm, autoResourcePlanTargetMatches, type StudioAutoResourcePlan } from '../studio/autoResource';
 import type {
   AutoFieldOverride,
   AppModeConfig,
@@ -1591,7 +1591,13 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
       },
       setGraphFinalization: (finalization) => set({ graphFinalization: finalization }),
       setAutoResourcePlan: (plan) => set({ autoResourcePlan: plan }),
-      applyAutoResourcePlan: (plan, values) =>
+      applyAutoResourcePlan: (plan, values) => {
+        const { form, graphBinding } = get();
+        const target = currentAutoResourcePlanTarget(plan, form, graphBinding);
+        if (target) {
+          set({ lastError: target });
+          throw new Error(target);
+        }
         set((state) => {
           const allowedValues = omitPinnedAutoFormValues(values, state.autoFieldOverrides);
           const mergedForm: StudioFormState = {
@@ -1610,7 +1616,8 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               [planKey]: plan,
             },
           };
-        }),
+        });
+      },
       setAutoResourcePlans: (plans) =>
         set((state) => {
           const nextPlans = { ...state.autoResourcePlans };
@@ -2938,6 +2945,17 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
     },
   ),
 );
+
+export function currentAutoResourcePlanTarget(
+  plan: StudioAutoResourcePlan | null,
+  form: StudioFormState,
+  binding: StudioGraphBinding | null,
+) {
+  return (
+    !autoResourcePlanTargetMatches(plan, useFlowStore.getState().nodes, binding?.managedNodeIds, form) &&
+    'Auto mismatch.'
+  );
+}
 
 export function findStudioRunContext(taskId?: string | null, clientRunId?: string | null) {
   return matchingRunContext(useStudioStore.getState(), taskId, clientRunId);

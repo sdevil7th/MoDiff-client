@@ -512,9 +512,22 @@ function readinessContext({
     readiness: 'ready',
     selectedCandidate: {
       id: 'unit-ready',
+      loaderModule: 'modules.ModularDiffusers',
+      loaderAction: 'ModelsLoader',
+      executionPath: 'modular-diffusers',
       installed: true,
       proof: { status: 'declared_safe' },
     },
+    candidates: [
+      {
+        id: 'unit-ready',
+        loaderModule: 'modules.ModularDiffusers',
+        loaderAction: 'ModelsLoader',
+        executionPath: 'modular-diffusers',
+        installed: true,
+        proof: { status: 'declared_safe' },
+      },
+    ],
     compatibility: {
       state: 'ready',
       severity: 'success',
@@ -1598,6 +1611,277 @@ test('Qwen Auto never rewrites user generation controls while planning runtime r
   assert.equal(Object.hasOwn(editedSamplingPatch, 'steps'), false);
   assert.equal(Object.hasOwn(editedSamplingPatch, 'guidanceScale'), false);
   assert.equal(Object.hasOwn(editedSamplingPatch, 'negativePrompt'), false);
+});
+
+test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan profiles', () => {
+  const cases = [
+    [
+      'QwenImageModularPipeline',
+      'text_to_image',
+      'modules.DiffusersImage',
+      'LoadPipeline',
+      'direct-diffusers-image',
+      'QwenImagePipeline',
+    ],
+    [
+      'QwenImageModularPipeline',
+      'control_image',
+      'modules.ModularDiffusers',
+      'ModelsLoader',
+      'modular-diffusers',
+      'QwenImageModularPipeline',
+    ],
+    [
+      'QwenImageEditPlusModularPipeline',
+      'edit_image',
+      'modules.ModularDiffusers',
+      'ModelsLoader',
+      'modular-diffusers',
+      'QwenImageEditPlusModularPipeline',
+    ],
+    [
+      'QwenImageLayeredModularPipeline',
+      'layer_decomposition',
+      'modules.ModularDiffusers',
+      'ModelsLoader',
+      'modular-diffusers',
+      'QwenImageLayeredModularPipeline',
+    ],
+    [
+      'WanVACEPipeline',
+      'control_to_video',
+      'modules.DiffusersVideo',
+      'LoadPipeline',
+      'direct-wan-vace',
+      'WanVACEPipeline',
+    ],
+    [
+      'WanVideoPipeline',
+      'text_to_video',
+      'modules.DiffusersVideo',
+      'LoadPipeline',
+      'direct-diffusers-video',
+      'WanPipeline',
+    ],
+  ];
+  const node = (id, module, action, identity, disabled = false, parentId) => ({
+    id,
+    parentId,
+    data: {
+      module,
+      action,
+      type: 'custom',
+      params: {
+        [module === 'modules.ModularDiffusers' ? 'model_type' : 'pipeline_class']: { value: identity },
+      },
+      uiState: disabled ? { disabled: true } : undefined,
+    },
+  });
+  const planFor = (modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass, id = 'selected') => {
+    const candidate = { id, modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass };
+    return {
+      schemaVersion: 2,
+      status: 'ready',
+      canAutoRun: true,
+      compatibility: { state: 'ready' },
+      selectedCandidate: candidate,
+      candidates: [{ ...candidate }],
+    };
+  };
+
+  for (const [modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass] of cases) {
+    const plan = planFor(modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass);
+    const nodes = [
+      node('modular', 'modules.ModularDiffusers', 'ModelsLoader', modelType),
+      node('image', 'modules.DiffusersImage', 'LoadPipeline', pipelineClass),
+      node('video', 'modules.DiffusersVideo', 'LoadPipeline', pipelineClass),
+    ];
+    const managedId =
+      loaderModule === 'modules.ModularDiffusers' ? 'modular' : loaderModule.includes('Video') ? 'video' : 'image';
+    assert.equal(
+      autoResourceModule.autoResourcePlanTargetMatches(plan, nodes, [managedId], { modelType, mode }),
+      true,
+      `${modelType}:${mode}`,
+    );
+  }
+
+  const qwenPlan = planFor(
+    'QwenImageModularPipeline',
+    'control_image',
+    'modules.ModularDiffusers',
+    'ModelsLoader',
+    'modular-diffusers',
+    'QwenImageModularPipeline',
+  );
+  const mixedNodes = [
+    node('managed-image', 'modules.DiffusersImage', 'LoadPipeline', 'QwenImagePipeline'),
+    node('unrelated-modular', 'modules.ModularDiffusers', 'ModelsLoader', 'QwenImageModularPipeline'),
+  ];
+  assert.ok(
+    !autoResourceModule.autoResourcePlanTargetMatches(qwenPlan, mixedNodes, ['managed-image'], {
+      modelType: 'QwenImageModularPipeline',
+      mode: 'control_image',
+    }),
+    'an unrelated visible loader cannot satisfy the managed target',
+  );
+  assert.ok(
+    !autoResourceModule.autoResourcePlanTargetMatches(
+      qwenPlan,
+      [node('managed-modular', 'modules.ModularDiffusers', 'ModelsLoader', 'QwenImageModularPipeline', true)],
+      ['managed-modular'],
+      { modelType: 'QwenImageModularPipeline', mode: 'control_image' },
+    ),
+    'a disabled loader is not executable',
+  );
+  for (const containers of [
+    [{ id: 'disabled-group', data: { type: 'group', uiState: { disabled: true } } }],
+    [
+      { id: 'disabled-loop', data: { type: 'loop', uiState: { disabled: true } } },
+      { id: 'nested-group', parentId: 'disabled-loop', data: { type: 'group' } },
+    ],
+  ]) {
+    const parentId = containers.at(-1).id;
+    assert.ok(
+      !autoResourceModule.autoResourcePlanTargetMatches(
+        qwenPlan,
+        [
+          ...containers,
+          node(
+            'managed-modular',
+            'modules.ModularDiffusers',
+            'ModelsLoader',
+            'QwenImageModularPipeline',
+            false,
+            parentId,
+          ),
+        ],
+        ['managed-modular'],
+        { modelType: 'QwenImageModularPipeline', mode: 'control_image' },
+      ),
+      'a loader nested under a disabled group or loop is not executable',
+    );
+  }
+
+  const staleId = { ...qwenPlan, selectedCandidate: { ...qwenPlan.selectedCandidate, id: 'stale' } };
+  assert.equal(autoResourceModule.selectedAutoCandidate(staleId), null);
+  assert.ok(
+    !autoResourceModule.autoResourcePlanTargetMatches(staleId, mixedNodes, ['unrelated-modular'], {
+      modelType: 'QwenImageModularPipeline',
+      mode: 'control_image',
+    }),
+  );
+  const boundCandidate = {
+    ...qwenPlan.selectedCandidate,
+    artifactRevision: 'a'.repeat(40),
+    artifactResolution: {
+      resolved: { repo: 'Qwen/Qwen-Image-2512', revision: 'a'.repeat(40), components: ['transformer'] },
+    },
+    quantizedComponents: ['transformer'],
+    bnb4ComputeDtype: 'bfloat16',
+    autoOffload: true,
+    generation: { width: 1024, height: 1024, steps: 50 },
+    proof: { status: 'declared_safe' },
+  };
+  const exactBoundPlan = {
+    ...qwenPlan,
+    selectedCandidate: { ...boundCandidate },
+    candidates: [{ ...boundCandidate }],
+  };
+  assert.equal(autoResourceModule.selectedAutoCandidate(exactBoundPlan)?.id, 'selected');
+  for (const selectedCandidate of [
+    { ...boundCandidate, artifactRevision: 'b'.repeat(40) },
+    { ...boundCandidate, quantizedComponents: ['text_encoder'] },
+    { ...boundCandidate, quantizedComponents: { 0: 'transformer' } },
+    { ...boundCandidate, generation: { ...boundCandidate.generation, steps: 28 } },
+  ]) {
+    const stalePayload = { ...exactBoundPlan, selectedCandidate };
+    assert.equal(autoResourceModule.selectedAutoCandidate(stalePayload), null);
+    assert.ok(
+      !autoResourceModule.autoResourcePlanTargetMatches(stalePayload, mixedNodes, ['unrelated-modular'], {
+        modelType: 'QwenImageModularPipeline',
+        mode: 'control_image',
+      }),
+    );
+  }
+  for (const selectedCandidate of [
+    { ...qwenPlan.selectedCandidate, executionPath: 'direct-diffusers-image' },
+    { ...qwenPlan.selectedCandidate, pipelineClass: 'FluxPipeline' },
+  ]) {
+    const inconsistentTarget = {
+      ...qwenPlan,
+      selectedCandidate,
+      candidates: [{ ...selectedCandidate }],
+    };
+    assert.equal(autoResourceModule.selectedAutoCandidate(inconsistentTarget), null);
+    assert.equal(
+      autoResourceModule.autoResourcePlanTargetMatches(inconsistentTarget, mixedNodes, ['unrelated-modular'], {
+        modelType: 'QwenImageModularPipeline',
+        mode: 'control_image',
+      }),
+      false,
+    );
+  }
+  const wrongPair = planFor(
+    'FluxSchnellPipeline',
+    'text_to_image',
+    'modules.DiffusersImage',
+    'LoadPipeline',
+    'direct-diffusers-image',
+    'FluxPipeline',
+  );
+  assert.ok(
+    !autoResourceModule.autoResourcePlanTargetMatches(wrongPair, mixedNodes, ['managed-image'], {
+      modelType: 'QwenImageModularPipeline',
+      mode: 'text_to_image',
+    }),
+  );
+  const wrongClass = planFor(
+    'QwenImageModularPipeline',
+    'text_to_image',
+    'modules.DiffusersImage',
+    'LoadPipeline',
+    'direct-diffusers-image',
+    'FluxPipeline',
+  );
+  assert.ok(
+    !autoResourceModule.autoResourcePlanTargetMatches(wrongClass, mixedNodes, ['managed-image'], {
+      modelType: 'QwenImageModularPipeline',
+      mode: 'text_to_image',
+    }),
+    'the same loader module/action cannot repurpose a different live pipeline class',
+  );
+});
+
+test('Auto retry plans preserve exact targets and never fall back from a stale selected id', () => {
+  const identity = {
+    modelType: 'QwenImageModularPipeline',
+    mode: 'text_to_image',
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'QwenImagePipeline',
+  };
+  const candidates = [
+    { id: 'selected', ...identity, proof: { status: 'passed' }, offloadMode: 'none' },
+    { id: 'retry', ...identity, proof: { status: 'declared_safe' }, offloadMode: 'model_cpu' },
+    {
+      id: 'cross-branch',
+      ...identity,
+      modelType: 'FluxSchnellPipeline',
+      pipelineClass: 'FluxPipeline',
+      proof: { status: 'passed' },
+      offloadMode: 'model_cpu',
+    },
+    { id: 'targetless', proof: { status: 'passed' }, offloadMode: 'model_cpu' },
+  ];
+  assert.deepEqual(resourcePlannerModule.qwenDirectRetryPlansFromCandidates(candidates, 'selected')[0], {
+    candidateId: 'retry',
+    ...identity,
+    onCategories: ['oom', 'cuda_kernel'],
+    onErrorCodes: ['cuda_kernel_unsupported', 'cuda_oom'],
+  });
+  assert.equal(resourcePlannerModule.qwenDirectRetryPlansFromCandidates(candidates, 'selected').length, 1);
+  assert.deepEqual(resourcePlannerModule.qwenDirectRetryPlansFromCandidates(candidates, 'missing'), []);
 });
 
 test('ACE templates lock musical structure, metadata, and model-aware negative behavior', () => {
@@ -3186,6 +3470,7 @@ test('Studio resource plans expose user-facing execution path labels', () => {
   });
   assert.equal(qwenExpertPlan.executionPath, 'modular-diffusers');
   assert.equal(resourcePlannerModule.getStudioResourceExecutionPathLabel(qwenExpertPlan), 'Expert: full graph');
+  assert.deepEqual(qwenExpertPlan.retryPlans, [], 'Expert must not retry through the direct-image Auto branch');
 
   const zImagePlan = resourcePlannerModule.resolveStudioResourcePlan({
     ...profilesModule.DEFAULT_STUDIO_FORM,
@@ -3193,6 +3478,13 @@ test('Studio resource plans expose user-facing execution path labels', () => {
   });
   assert.equal(zImagePlan.executionPath, 'modular-diffusers');
   assert.equal(resourcePlannerModule.getStudioResourceExecutionPathLabel(zImagePlan), 'Auto: Modular graph');
+  assert.equal(
+    resourcePlannerModule.getStudioResourceExecutionPathLabel({
+      ...zImagePlan,
+      executionPath: 'direct-diffusers-image',
+    }),
+    'Auto: Diffusers image',
+  );
 });
 
 test('all Studio profiles and templates keep offload plans compatible with their execution device', () => {
@@ -3458,7 +3750,12 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
       statusLabel: 'Ready with local Auto recipe',
       selectedCandidate: {
         id: 'qwen-t2i-prequantized-model-cpu',
+        modelType: 'QwenImageModularPipeline',
+        mode: 'text_to_image',
+        loaderModule: 'modules.DiffusersImage',
+        loaderAction: 'LoadPipeline',
         executionPath: 'direct-diffusers-image',
+        pipelineClass: 'QwenImagePipeline',
         modelRepo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
         resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
         dtype: 'bfloat16',
@@ -3478,7 +3775,13 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
       candidates: [
         {
           id: 'qwen-t2i-prequantized-model-cpu',
+          modelType: 'QwenImageModularPipeline',
+          mode: 'text_to_image',
+          loaderModule: 'modules.DiffusersImage',
+          loaderAction: 'LoadPipeline',
           executionPath: 'direct-diffusers-image',
+          pipelineClass: 'QwenImagePipeline',
+          dtype: 'bfloat16',
           modelRepo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
           resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
           quantizationMode: 'none',
@@ -3488,7 +3791,12 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
         },
         {
           id: 'qwen-t2i-fallback',
+          modelType: 'QwenImageModularPipeline',
+          mode: 'text_to_image',
+          loaderModule: 'modules.DiffusersImage',
+          loaderAction: 'LoadPipeline',
           executionPath: 'direct-diffusers-image',
+          pipelineClass: 'QwenImagePipeline',
           modelRepo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
           resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
           quantizationMode: 'none',
@@ -3526,6 +3834,126 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
   assert.equal(graph.runtimeHints.cudaMemoryTotalBytes, totalBytes);
   assert.equal(graph.runtimeHints.requestedCudaReserveBytes, undefined);
   assert.equal(graph.runtimeHints.requestedCudaBudgetBytes, undefined);
+});
+
+test('ACE LoRA runtime hints replace the selected candidate and its complete artifact receipt', () => {
+  const previousStudio = studioStoreModule.useStudioStore.getState();
+  const previousFlow = flowStoreModule.useFlowStore.getState();
+  const originalRepo = 'ACE-Step/ACE-Step-v1.5-turbo';
+  const originalRevision = 'a'.repeat(40);
+  const reviewedRepo = 'Runware/acestep-v15-turbo-diffusers';
+  const reviewedRevision = 'be23effe449c5957947f3020fd63bee23c64abe4';
+  const candidate = {
+    id: 'ace-auto',
+    modelType: 'AceStepAudioPipeline',
+    mode: 'text_to_audio',
+    loaderModule: 'modules.DiffusersAudio',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-audio',
+    pipelineClass: 'AceStepPipeline',
+    modelRepo: originalRepo,
+    resolvedArtifact: originalRepo,
+    artifact: originalRepo,
+    baseArtifact: originalRepo,
+    artifactRevision: originalRevision,
+    artifactResolution: {
+      base: { repo: originalRepo, revision: originalRevision },
+      resolved: {
+        repo: originalRepo,
+        revision: originalRevision,
+        format: 'diffusers',
+        bits: null,
+        quantization: 'none',
+        components: ['transformer'],
+      },
+      substituted: true,
+    },
+    installTarget: { repo: originalRepo, candidateId: 'ace-auto' },
+    dtype: 'bfloat16',
+    quantizationMode: 'none',
+    quantizedComponents: [],
+    autoOffload: false,
+    offloadMode: 'none',
+    proof: { status: 'passed' },
+  };
+
+  try {
+    studioStoreModule.useStudioStore.setState({
+      activeTemplateId: 'ace_step_chinese_new_year_lora',
+      form: {
+        ...profilesModule.DEFAULT_STUDIO_FORM,
+        modelType: 'AceStepAudioPipeline',
+        mode: 'text_to_audio',
+        resourceMode: 'auto',
+        device: 'cpu:0',
+        autoOffload: false,
+        offloadMode: 'none',
+      },
+      graphBinding: {
+        mode: 'text_to_audio',
+        modelType: 'AceStepAudioPipeline',
+        nodes: { audioPipeline: 'ace-loader' },
+        managedNodeIds: ['ace-loader'],
+        managedEdgeIds: [],
+        fingerprint: 'text_to_audio:AceStepAudioPipeline:auto:none',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      autoResourcePlan: {
+        schemaVersion: 2,
+        status: 'ready',
+        canAutoRun: true,
+        compatibility: { state: 'ready' },
+        selectedCandidate: { ...candidate },
+        candidates: [{ ...candidate }],
+      },
+    });
+    flowStoreModule.useFlowStore.setState({
+      nodes: [
+        {
+          id: 'ace-loader',
+          data: {
+            type: 'custom',
+            module: 'modules.DiffusersAudio',
+            action: 'LoadPipeline',
+            params: { pipeline_class: { value: 'AceStepPipeline' } },
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    const hints = runMetadataModule.applyStudioRuntimeHints({ sid: 'ace', nodes: {}, paths: [] }).runtimeHints;
+    const selected = hints.autoResourcePlan;
+    const listed = hints.autoResourceCandidates.find((item) => item.id === candidate.id);
+    for (const receipt of [selected, listed]) {
+      assert.equal(receipt.modelRepo, reviewedRepo);
+      assert.equal(receipt.resolvedArtifact, reviewedRepo);
+      assert.equal(receipt.artifact, reviewedRepo);
+      assert.equal(receipt.baseArtifact, reviewedRepo);
+      assert.equal(receipt.artifactRevision, reviewedRevision);
+      assert.deepEqual(receipt.artifactResolution.base, { repo: reviewedRepo, revision: reviewedRevision });
+      assert.deepEqual(receipt.artifactResolution.resolved, {
+        ...candidate.artifactResolution.resolved,
+        repo: reviewedRepo,
+        revision: reviewedRevision,
+      });
+      assert.equal(receipt.artifactResolution.substituted, false);
+      assert.equal(receipt.installTarget.repo, reviewedRepo);
+    }
+    assert.deepEqual(listed, selected, 'the canonical same-id list entry must be updated with the selected receipt');
+    assert.equal(hints.modelRepo, reviewedRepo);
+    assert.equal(hints.resolvedArtifact, reviewedRepo);
+    assert.equal(candidate.artifactResolution.resolved.repo, originalRepo, 'the backend plan must not be mutated');
+  } finally {
+    studioStoreModule.useStudioStore.setState({
+      activeTemplateId: previousStudio.activeTemplateId,
+      form: previousStudio.form,
+      graphBinding: previousStudio.graphBinding,
+      autoResourcePlan: previousStudio.autoResourcePlan,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: previousFlow.nodes, edges: previousFlow.edges });
+  }
 });
 
 test('Studio output contract preserves per-layer media item hashes', () => {

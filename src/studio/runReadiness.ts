@@ -1,7 +1,7 @@
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import { currentAutoResourcePlanTarget, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore, type Task } from '../stores/useTaskStore';
 import { getStudioModelCacheStatus } from './modelCache';
 import {
@@ -426,7 +426,7 @@ export function getStudioCudaCapacityIssue(
   form: StudioFormState,
   status: RuntimeStatus | null = useNodesStore.getState().runtimeStatus,
 ) {
-  const resolvedForm = resolveStudioResourceForm(form, { runtimeStatus: status });
+  const resolvedForm = resolveStudioResourceForm(form);
   if (resolvedForm.resourceMode !== 'expert') return null;
   const profile = getProfileForForm(resolvedForm);
   if (profile.family !== 'Qwen Image' || cudaIndexFromDevice(resolvedForm.device) === null) return null;
@@ -931,11 +931,13 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     studioModelCapabilitiesAuthoritative,
   } = useNodesStore.getState();
   const { graphBinding, autoResourcePlan, autoResourceCheck } = useStudioStore.getState();
+  const auto = form.resourceMode === 'auto';
   const profile = getProfileForForm(form);
   const modelStatus = getStudioModelCacheStatus(profile, hfCache, localModels, modelCacheDiagnostics);
-  const autoCandidate = form.resourceMode === 'auto' ? selectedAutoCandidate(autoResourcePlan, form) : null;
-  const autoInstallTarget = form.resourceMode === 'auto' ? autoResourceInstallTarget(autoResourcePlan, form) : null;
+  const autoCandidate = auto ? selectedAutoCandidate(autoResourcePlan, form) : null;
+  const autoInstallTarget = auto ? autoResourceInstallTarget(autoResourcePlan, form) : null;
   const autoCompatibility = autoResourceCompatibility(autoResourcePlan, form);
+  const autoTarget = auto && graphBinding ? currentAutoResourcePlanTarget(autoResourcePlan, form, graphBinding) : null;
   const exactCapability = exactStudioCapabilitySupport(
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
@@ -980,7 +982,16 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     );
   }
 
-  if (form.resourceMode === 'auto' && (!autoResourcePlan || !autoPlanIsReady(autoResourcePlan, form))) {
+  if (autoTarget) {
+    issues.push(
+      issue({
+        category: 'backend',
+        severity: 'error',
+        blocking: true,
+        message: autoTarget,
+      }),
+    );
+  } else if (auto && (!autoResourcePlan || !autoPlanIsReady(autoResourcePlan, form))) {
     const transientPlannerFailure = autoResourcePlan?.error === true;
     const runtimeIssue = autoPlanHasRuntimeIssue(autoResourcePlan);
     const autoIssueCategory = transientPlannerFailure
@@ -1027,7 +1038,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
           'Wait for Auto planning to finish.',
       }),
     );
-  } else if (form.resourceMode !== 'auto' && !modelStatus.runnable) {
+  } else if (!auto && !modelStatus.runnable) {
     issues.push(
       issue({
         category: 'model',
@@ -1040,7 +1051,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         details: modelStatus.reason,
       }),
     );
-  } else if (form.resourceMode === 'auto' && autoCandidate?.proof?.status) {
+  } else if (auto && autoCandidate?.proof?.status) {
     const repo =
       autoCandidate.resolvedArtifact ??
       autoCandidate.artifact ??
@@ -1246,12 +1257,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     issues.push(issue(qwenInpaintCapabilityIssue));
   }
 
-  if (
-    profile.outputKind === 'video' &&
-    form.device.startsWith('cuda') &&
-    form.resourceMode !== 'auto' &&
-    form.dtype === 'float32'
-  ) {
+  if (profile.outputKind === 'video' && form.device.startsWith('cuda') && !auto && form.dtype === 'float32') {
     issues.push(
       issue({
         category: 'hardware_fit',
