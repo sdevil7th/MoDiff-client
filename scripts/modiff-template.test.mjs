@@ -4068,7 +4068,8 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
   assert.equal(graph.runtimeHints.autoResourceProofStatus, 'declared_safe');
   assert.equal(graph.runtimeHints.resourceRetryModes, undefined);
   assert.ok(graph.runtimeHints.resourceRetryPlans.length >= 1);
-  assert.equal(graph.runtimeHints.lowVramMode, true);
+  assert.equal(graph.runtimeHints.modelFamily, undefined);
+  assert.equal(graph.runtimeHints.lowVramMode, undefined);
   assert.equal(graph.runtimeHints.cudaMemoryTotalBytes, totalBytes);
   assert.equal(graph.runtimeHints.requestedCudaReserveBytes, undefined);
   assert.equal(graph.runtimeHints.requestedCudaBudgetBytes, undefined);

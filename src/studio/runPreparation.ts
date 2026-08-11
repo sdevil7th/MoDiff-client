@@ -4,20 +4,13 @@ import { currentAutoResourcePlanTarget, useStudioStore } from '../stores/useStud
 import type { JsonObject } from '../types/api';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import { studioExecutionSpecRuntimeReceipt } from './executionSpecs';
-import {
-  getProfileForForm,
-  getStudioModelDisplayName,
-  modelDependencyReceiptForMode,
-  QWEN_IMAGE_2512_PREQUANTIZED_REPO,
-  QWEN_LOW_VRAM_OFFLOAD_MODE,
-  QWEN_LOW_VRAM_QUANTIZATION_MODE,
-} from './modelProfiles';
+import { getProfileForForm, getStudioModelDisplayName, modelDependencyReceiptForMode } from './modelProfiles';
 import {
   qwenDirectRetryPlansFromCandidates,
   resolveStudioResourceForm,
   resolveStudioResourcePlan,
 } from './resourcePlanner';
-import { getRuntimeCudaDevice, isCudaDevice } from './runReadiness';
+import { getRuntimeCudaDevice } from './runReadiness';
 import {
   getPromptSettingsHash,
   getTemplateLockHash,
@@ -183,16 +176,6 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
     budgetFromFree && budgetFromTotal ? Math.min(budgetFromFree, budgetFromTotal) : (budgetFromFree ?? budgetFromTotal);
   const requestedCudaReserveBytes = form.resourceMode === 'expert' ? reserveBytes : undefined;
   const requestedCudaBudgetBytes = form.resourceMode === 'expert' ? locallyEstimatedCudaBudgetBytes : undefined;
-  const lowVramMode =
-    profile.family === 'Qwen Image' &&
-    isCudaDevice(form.device) &&
-    form.dtype === 'bfloat16' &&
-    (resolvedQuantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE ||
-      resolvedArtifact === QWEN_IMAGE_2512_PREQUANTIZED_REPO) &&
-    form.autoOffload &&
-    (resolvedOffloadMode === QWEN_LOW_VRAM_OFFLOAD_MODE ||
-      resolvedOffloadMode === 'sequential_cpu' ||
-      resolvedOffloadMode === 'group_disk');
   const modelDependencies = modelDependencyReceiptForMode(profile, form.mode);
 
   return {
@@ -203,7 +186,6 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       cudaIndex: cudaIndexFromDevice(form.device),
       cudaMemoryFreeBytes: freeBytes,
       cudaMemoryTotalBytes: totalBytes,
-      modelFamily: profile.family,
       modelType: profile.modelType,
       mode: form.mode,
       modelRepo: templateBaseModelRepo ?? profile.defaultRepo,
@@ -249,7 +231,6 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       resourceRetryModes: form.resourceMode === 'expert' ? resourcePlan.retryOffloadModes : undefined,
       resourceRetryPlans: autoRetryPlans as unknown as JsonObject[],
       compatibilityStatus: autoCandidate?.proof?.status ?? (auto ? 'needs_setup' : 'expert'),
-      lowVramMode,
       // Preserve upstream-recommended sampling settings for quality-first
       // local video runs. The backend still enforces a bounded 12-hour cap.
       maxRuntimeSeconds: profile.outputKind === 'video' ? 12 * 60 * 60 : undefined,

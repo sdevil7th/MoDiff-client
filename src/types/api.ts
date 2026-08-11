@@ -47,7 +47,6 @@ export type ApiGraphRuntimeHints = {
   cudaIndex?: number;
   cudaMemoryFreeBytes?: number;
   cudaMemoryTotalBytes?: number;
-  modelFamily?: string;
   modelType?: string;
   mode?: StudioMode;
   modelRepo?: string;
@@ -86,7 +85,6 @@ export type ApiGraphRuntimeHints = {
   resourceRetryPlans?: JsonObject[];
   compatibilityProbe?: JsonObject;
   compatibilityStatus?: string;
-  lowVramMode?: boolean;
   cudaBudgetPolicy?: string;
   enforceCudaBudget?: boolean;
   requestedCudaReserveBytes?: number;

@@ -24,7 +24,6 @@ const EXECUTION_PLAN_FIELDS = [
   'source',
   'device',
   'cudaIndex',
-  'modelFamily',
   'modelType',
   'modelRepo',
   'resolvedModelRepo',
