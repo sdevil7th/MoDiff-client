@@ -1494,6 +1494,27 @@ test('backend execution specs materialize exact image and video recipes with sea
     mode: 'video_color_edit',
     contentHash: 'studio-spec-v1-0be460bc',
   };
+  const ltxBindingRows = videoBindingRows
+    .filter(([role, param]) => role !== 'wanGenerate' || param !== 'scheduler_flow_shift')
+    .map(([role, param, source]) => [
+      role,
+      param,
+      role === 'diffusersRecipe' && param === 'attention_backend'
+        ? 'nativeMath'
+        : role === 'diffusersRecipe' && param === 'attention_components'
+          ? 'empty'
+          : source,
+    ]);
+  const ltxSpec = {
+    ...ti2vSpec,
+    id: 'ltx-video-0.9.8-13b-distilled:text-to-video:v1',
+    modelType: 'LTXVideoPipeline',
+    executionProfileId: 'ltx-video:direct',
+    pipelineClass: 'LTXConditionPipeline',
+    defaultRepo: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+    bindings: ltxBindingRows,
+    contentHash: 'studio-spec-v1-8f100d39',
+  };
   const i2vRoleRows = [...videoRoleRows, ['loadImage', 'modules.Image.Load', -520, 300]];
   const i2vEdgeRows = [...videoEdgeRows, ['loadImage', 'image', 'wanGenerate', 'reference_images']];
   const i2vBindingRows = [
@@ -1613,6 +1634,7 @@ test('backend execution specs materialize exact image and video recipes with sea
     ...videoBindingRows,
     ...i2vBindingRows,
     ...wanV2vBindingRows,
+    ...ltxBindingRows,
   ])
     paramsByRole[role][param] = scalar();
   for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [
@@ -1698,6 +1720,19 @@ test('backend execution specs materialize exact image and video recipes with sea
           ],
           studioExecutionSpecModes: ['text_to_video', 'video_color_edit', 'video_to_video'],
           studioExecutionSpecs: [wanT2vSpec, wanV2vSpec, wanColorSpec],
+        },
+        {
+          ...capability(ltxSpec),
+          modes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+          runnableModes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+          executionProfiles: [
+            {
+              ...profile(ltxSpec),
+              modes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+              fallback_repo: 'Lightricks/LTX-Video',
+              quantizable_components: ['transformer', 'text_encoder'],
+            },
+          ],
         },
       ],
       studioModelCapabilitiesAuthoritative: true,
@@ -2179,6 +2214,33 @@ test('backend execution specs materialize exact image and video recipes with sea
 
     const graphBridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
     assert.doesNotMatch(graphBridgeSource, /WanVideoPipeline|WanVideoToVideoPipeline|WAN_T2V_1_3B_REPO/);
+
+    const ltxForm = { ...wanT2vForm, modelType: 'LTXVideoPipeline', shift: 11 };
+    studioStoreModule.useStudioStore.setState({ form: ltxForm });
+    await graphBridge.createOrUpdateStudioGraph(ltxForm);
+    const ltxBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    const ltxNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(ltxBinding.executionSpec.id, ltxSpec.id);
+    assert.equal(ltxBinding.executionSpec.contentHash, ltxSpec.contentHash);
+    assert.equal(
+      ltxNodes.find((item) => item.id === ltxBinding.nodes.wanPipeline).data.params.pipeline_class.value,
+      'LTXConditionPipeline',
+    );
+    assert.equal(
+      ltxNodes.find((item) => item.id === ltxBinding.nodes.diffusersRecipe).data.params.attention_backend.value,
+      '_native_math',
+    );
+    assert.notEqual(
+      ltxNodes.find((item) => item.id === ltxBinding.nodes.wanGenerate).data.params.scheduler_flow_shift.value,
+      ltxForm.shift,
+    );
+
+    const ltxImageForm = { ...ltxForm, mode: 'image_to_video', referenceImages: ['@data/images/source.png'] };
+    studioStoreModule.useStudioStore.setState({ form: ltxImageForm });
+    await graphBridge.createOrUpdateStudioGraph(ltxImageForm);
+    const ltxImageBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    assert.equal(ltxImageBinding.executionSpec, undefined);
+    assert.ok(ltxImageBinding.nodes.loadImage);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [

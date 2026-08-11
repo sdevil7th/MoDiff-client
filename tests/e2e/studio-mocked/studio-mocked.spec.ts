@@ -877,6 +877,53 @@ function mockWanT2vExecutionCapability() {
   };
 }
 
+function mockLtxT2vExecutionCapability() {
+  const base = mockWanTi2vExecutionCapability();
+  const spec = {
+    ...base.studioExecutionSpecs[0],
+    id: 'ltx-video-0.9.8-13b-distilled:text-to-video:v1',
+    modelType: 'LTXVideoPipeline',
+    executionProfileId: 'ltx-video:direct',
+    pipelineClass: 'LTXConditionPipeline',
+    defaultRepo: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+    bindings: base.studioExecutionSpecs[0].bindings
+      .filter(([role, param]) => role !== 'wanGenerate' || param !== 'scheduler_flow_shift')
+      .map(
+        ([role, param, source]) =>
+          [
+            role,
+            param,
+            role === 'diffusersRecipe' && param === 'attention_backend'
+              ? 'nativeMath'
+              : role === 'diffusersRecipe' && param === 'attention_components'
+                ? 'empty'
+                : source,
+          ] as const,
+      ),
+    contentHash: 'studio-spec-v1-8f100d39',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    modes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+    runnableModes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+        fallback_repo: 'Lightricks/LTX-Video',
+        quantizable_components: ['transformer', 'text_encoder'],
+      },
+    ],
+    studioExecutionSpecModes: [spec.mode],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
   const mode = String(form.mode ?? 'text_to_image');
@@ -6890,6 +6937,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Fill-dev');
   mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
+  mockInstalledRepos.add('Lightricks/LTX-Video-0.9.8-13B-distilled');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -6907,6 +6955,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
     mockWanI2vExecutionCapability(),
     mockWanTi2vExecutionCapability(),
     mockWanT2vExecutionCapability(),
+    mockLtxT2vExecutionCapability(),
   ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
@@ -6946,7 +6995,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(12);
+    .toHaveLength(13);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7481,6 +7530,47 @@ test('backend Studio execution specs materialize exact image and video recipes a
     hasNormalizeVideo: true,
     edgeShape: wanV2v.edgeShape,
     mode: 'video_color_edit',
+  });
+
+  const ltx = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'LTXVideoPipeline',
+      mode: 'text_to_video',
+      shift: 11,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params?.pipeline_class
+        ?.value,
+      attentionBackend: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersRecipe)?.params
+        ?.attention_backend?.value,
+      attentionComponents: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersRecipe)?.params
+        ?.attention_components?.value,
+      schedulerShift: state.flow.nodes.find((node) => node.id === binding.nodes.wanGenerate)?.params
+        ?.scheduler_flow_shift?.value,
+    };
+  });
+  expect(ltx).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'ltx-video-0.9.8-13b-distilled:text-to-video:v1',
+      contentHash: 'studio-spec-v1-8f100d39',
+      executionProfileId: 'ltx-video:direct',
+    },
+    edgeShape: [
+      'execution_recipe>execution_recipe',
+      'pipeline>pipeline',
+      'quantization_config>quantization_config',
+      'video_out>video',
+    ],
+    pipelineClass: 'LTXConditionPipeline',
+    attentionBackend: '_native_math',
+    attentionComponents: '',
+    schedulerShift: 5,
   });
 });
 

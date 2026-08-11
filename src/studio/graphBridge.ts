@@ -3123,6 +3123,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     quantizedComponents: ['transformer'],
     deviceMapNone: 'none',
     attentionBackend: 'auto',
+    nativeMath: '_native_math',
     empty: '',
     true: true,
     removeAlpha: 'remove alpha',
