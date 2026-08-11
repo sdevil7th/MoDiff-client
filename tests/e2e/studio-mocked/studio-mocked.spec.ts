@@ -1103,6 +1103,22 @@ function mockAceTextToAudioExecutionCapability() {
     ],
     contentHash: 'studio-spec-v1-541adefc',
   };
+  const repaintSpec = {
+    ...spec,
+    id: 'ace-step-v1.5-xl-turbo:audio-repaint:v1',
+    mode: 'audio_repaint',
+    roles: variationSpec.roles,
+    edges: variationSpec.edges,
+    bindings: [
+      ['loadAudio', 'file', 'sourceAudio'],
+      ...bindings.map(([role, param, source]) => [
+        role,
+        param,
+        role === 'audioGenerate' && param === 'task_type' ? 'repaint' : source,
+      ]),
+    ],
+    contentHash: 'studio-spec-v1-8f5c37c7',
+  };
   const modes = ['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint'];
   return {
     modelType: spec.modelType,
@@ -1127,8 +1143,8 @@ function mockAceTextToAudioExecutionCapability() {
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
-    studioExecutionSpecModes: [continuationSpec.mode, variationSpec.mode, spec.mode],
-    studioExecutionSpecs: [spec, variationSpec, continuationSpec],
+    studioExecutionSpecModes: [continuationSpec.mode, repaintSpec.mode, variationSpec.mode, spec.mode],
+    studioExecutionSpecs: [spec, variationSpec, continuationSpec, repaintSpec],
   };
 }
 
@@ -8074,16 +8090,35 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   const aceRepaint = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'audio_repaint' });
     await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
-    const binding = window.__MODIFF_E2E__!.getState().studio.graphBinding!;
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
     return {
       receipt: binding.executionSpec,
       hasLoadAudio: Boolean(binding.nodes.loadAudio),
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      generate: state.flow.nodes.find((node) => node.id === binding.nodes.audioGenerate)?.params,
+      sourceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadAudio)?.params?.file?.value,
     };
   });
-  expect(aceRepaint).toEqual({
-    receipt: undefined,
-    hasLoadAudio: true,
+  expect(aceRepaint.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'ace-step-v1.5-xl-turbo:audio-repaint:v1',
+    contentHash: 'studio-spec-v1-8f5c37c7',
+    executionProfileId: 'ace-step-audio:direct',
   });
+  expect(aceRepaint.hasLoadAudio).toBe(true);
+  expect(aceRepaint.edgeShape).toEqual([
+    'audio>audio',
+    'audio>source_audio',
+    'execution_recipe>execution_recipe',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+  ]);
+  expect(aceRepaint.generate?.task_type?.value).toBe('repaint');
+  expect(aceRepaint.generate?.repainting_start?.value).toBe(2);
+  expect(aceRepaint.generate?.repainting_end?.value).toBe(8);
+  expect(aceRepaint.generate?.return_continuation_tail?.value).toBe(false);
+  expect(aceRepaint.sourceFile).toBe('@data/audio/source.wav');
 });
 
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {

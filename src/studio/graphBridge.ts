@@ -3138,6 +3138,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     text2music: 'text2music',
     cover: 'cover',
     continuation: 'continuation',
+    repaint: 'repaint',
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
     sampleRate48000: 48000,
     referenceWindow15: 15,

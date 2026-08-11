@@ -1685,6 +1685,14 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['audioLoudnessMatch', 'max_adjustment_db', 'maxAdjustment12'],
     ['audioJoin', 'boundary_fade_seconds', 'boundaryFade001'],
   ];
+  const audioRepaintBindingRows = [
+    ['loadAudio', 'file', 'sourceAudio'],
+    ...audioBindingRows.map(([role, param, source]) => [
+      role,
+      param,
+      role === 'audioGenerate' && param === 'task_type' ? 'repaint' : source,
+    ]),
+  ];
   const aceSpec = {
     ...makeSpec(
       'AceStepAudioPipeline',
@@ -1718,6 +1726,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     edges: audioContinuationEdgeRows,
     bindings: audioContinuationBindingRows,
     contentHash: 'studio-spec-v1-541adefc',
+  };
+  const aceRepaintSpec = {
+    ...aceSpec,
+    id: 'ace-step-v1.5-xl-turbo:audio-repaint:v1',
+    mode: 'audio_repaint',
+    roles: audioVariationRoleRows,
+    edges: audioVariationEdgeRows,
+    bindings: audioRepaintBindingRows,
+    contentHash: 'studio-spec-v1-8f5c37c7',
   };
   const profile = (spec) => ({
     id: spec.executionProfileId,
@@ -1790,8 +1807,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         quantizable_components: [],
       },
     ],
-    studioExecutionSpecModes: ['audio_continuation', 'audio_variation', 'text_to_audio'],
-    studioExecutionSpecs: [aceSpec, aceVariationSpec, aceContinuationSpec],
+    studioExecutionSpecModes: ['audio_continuation', 'audio_repaint', 'audio_variation', 'text_to_audio'],
+    studioExecutionSpecs: [aceSpec, aceVariationSpec, aceContinuationSpec, aceRepaintSpec],
   };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
@@ -2592,7 +2609,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioStoreModule.useStudioStore.setState({ form: aceRepaintForm });
     await graphBridge.createOrUpdateStudioGraph(aceRepaintForm);
     const aceRepaintBinding = studioStoreModule.useStudioStore.getState().graphBinding;
-    assert.equal(aceRepaintBinding.executionSpec, undefined);
+    const aceRepaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const repaintGenerate = aceRepaintNodes.find((item) => item.id === aceRepaintBinding.nodes.audioGenerate).data
+      .params;
+    assert.equal(aceRepaintBinding.executionSpec.id, aceRepaintSpec.id);
+    assert.equal(aceRepaintBinding.executionSpec.contentHash, aceRepaintSpec.contentHash);
+    assert.deepEqual(topology(aceRepaintBinding), audioVariationEdgeRows.map((row) => [...row]).sort());
+    assert.equal(repaintGenerate.task_type.value, 'repaint');
+    assert.equal(repaintGenerate.repainting_start.value, 2);
+    assert.equal(repaintGenerate.repainting_end.value, 8);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceRepaintForm), null);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
