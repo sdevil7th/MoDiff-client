@@ -229,11 +229,7 @@ export const AUDIO_STUDIO_MODES: StudioMode[] = [
   'audio_repaint',
 ];
 
-export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = [
-  'FluxSchnellPipeline',
-  'FluxDevPipeline',
-  'Flux2KleinPipeline',
-];
+export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = ['FluxSchnellPipeline', 'FluxDevPipeline'];
 
 export function normalizeStudioOffloadMode(value: unknown): StudioFormState['offloadMode'] {
   if (value === 'auto_cpu') return 'model_cpu';

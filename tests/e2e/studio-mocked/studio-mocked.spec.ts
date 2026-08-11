@@ -628,6 +628,12 @@ function mockFluxExecutionCapability(
     bindings: mockFluxEditExecutionBindings,
     contentHash: 'studio-spec-v1-ab4da919',
   };
+  const kleinMultiSpec = {
+    ...kleinEditSpec,
+    id: 'flux2-klein:multi-image-reference-edit:v1',
+    mode: 'multi_image_reference_edit',
+    contentHash: 'studio-spec-v1-756c2d69',
+  };
   return {
     modelType,
     modes,
@@ -646,8 +652,8 @@ function mockFluxExecutionCapability(
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
-    studioExecutionSpecModes: kontext ? modes : klein ? ['text_to_image', 'edit_image'] : [spec.mode],
-    studioExecutionSpecs: kontext ? [spec, multiSpec] : klein ? [spec, kleinEditSpec] : [spec],
+    studioExecutionSpecModes: kontext ? modes : klein ? modes : [spec.mode],
+    studioExecutionSpecs: kontext ? [spec, multiSpec] : klein ? [spec, kleinEditSpec, kleinMultiSpec] : [spec],
   };
 }
 
@@ -7204,12 +7210,24 @@ test('backend Studio execution specs materialize exact image and video recipes a
     });
     await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
     const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
     return {
-      receipt: state.studio.graphBinding?.executionSpec,
-      hasEditNode: Boolean(state.studio.graphBinding?.nodes.diffusersImageEdit),
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
     };
   });
-  expect(kleinMulti).toEqual({ receipt: undefined, hasEditNode: true });
+  expect(kleinMulti).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'flux2-klein:multi-image-reference-edit:v1',
+      contentHash: 'studio-spec-v1-756c2d69',
+      executionProfileId: 'flux2-klein:direct',
+    },
+    nodes: kleinEdit.nodes,
+    pipelineClass: 'Flux2KleinPipeline',
+  });
 
   const fill = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

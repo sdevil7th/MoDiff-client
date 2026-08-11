@@ -1305,6 +1305,12 @@ test('backend execution specs materialize exact image and video recipes with sea
     bindings: editBindingRows,
     contentHash: 'studio-spec-v1-ab4da919',
   };
+  const kleinMultiSpec = {
+    ...kleinEditSpec,
+    id: 'flux2-klein:multi-image-reference-edit:v1',
+    mode: 'multi_image_reference_edit',
+    contentHash: 'studio-spec-v1-756c2d69',
+  };
   const reduxSpec = {
     ...makeSpec(
       'FluxReduxPipeline',
@@ -1546,8 +1552,8 @@ test('backend execution specs materialize exact image and video recipes with sea
         modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
       },
     ],
-    studioExecutionSpecModes: ['text_to_image', 'edit_image'],
-    studioExecutionSpecs: [kleinSpec, kleinEditSpec],
+    studioExecutionSpecModes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    studioExecutionSpecs: [kleinSpec, kleinEditSpec, kleinMultiSpec],
   };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
@@ -1807,7 +1813,8 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioStoreModule.useStudioStore.setState({ form: kleinMultiForm });
     await graphBridge.createOrUpdateStudioGraph(kleinMultiForm);
     const kleinMultiBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
-    assert.equal(kleinMultiBinding.executionSpec, undefined);
+    assert.equal(kleinMultiBinding.executionSpec.id, kleinMultiSpec.id);
+    assert.equal(kleinMultiBinding.executionSpec.contentHash, kleinMultiSpec.contentHash);
     assert.ok(kleinMultiBinding.nodes.loadImage);
     assert.ok(kleinMultiBinding.nodes.diffusersImageEdit);
 
