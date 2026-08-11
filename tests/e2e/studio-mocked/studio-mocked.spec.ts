@@ -500,6 +500,39 @@ function mockFluxFillExecutionCapability() {
   };
 }
 
+function mockZImageExecutionCapability() {
+  const base = mockFluxExecutionCapability('FluxSchnellPipeline');
+  const spec = {
+    ...base.studioExecutionSpecs[0],
+    id: 'z-image:text-to-image:v1',
+    modelType: 'ZImageModularPipeline',
+    executionProfileId: 'z-image:auto',
+    pipelineClass: 'ZImagePipeline',
+    defaultRepo: 'Tongyi-MAI/Z-Image-Turbo',
+    contentHash: 'studio-spec-v1-0d3c1205',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+        quantizable_components: [],
+        default_quantized_components: [],
+        supported_offload_modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
+        retry_offload_modes: ['model_cpu', 'group_disk'],
+        max_low_memory_side: 1024,
+        max_low_memory_steps: 8,
+      },
+    ],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockQwenEditInpaintExecutionCapability() {
   const base = mockFluxFillExecutionCapability();
   const spec = {
@@ -1343,23 +1376,25 @@ function mockStudioExecutionSpecContract(modelType: string, mode: string) {
   ] as const;
   const capability = fluxModel.includes(modelType as (typeof fluxModel)[number])
     ? mockFluxExecutionCapability(modelType as (typeof fluxModel)[number])
-    : modelType === 'FluxFillPipeline'
-      ? mockFluxFillExecutionCapability()
-      : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
-        ? mockQwenEditInpaintExecutionCapability()
-        : modelType === 'WanImageToVideoPipeline'
-          ? mockWanI2vExecutionCapability()
-          : modelType === 'WanTI2VPipeline'
-            ? mockWanTi2vExecutionCapability()
-            : modelType === 'WanVideoPipeline'
-              ? mockWanT2vExecutionCapability()
-              : modelType === 'WanVACEPipeline'
-                ? mockWanVaceT2vExecutionCapability()
-                : modelType === 'LTXVideoPipeline'
-                  ? mockLtxT2vExecutionCapability()
-                  : modelType === 'AceStepAudioPipeline'
-                    ? mockAceTextToAudioExecutionCapability()
-                    : null;
+    : modelType === 'ZImageModularPipeline'
+      ? mockZImageExecutionCapability()
+      : modelType === 'FluxFillPipeline'
+        ? mockFluxFillExecutionCapability()
+        : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
+          ? mockQwenEditInpaintExecutionCapability()
+          : modelType === 'WanImageToVideoPipeline'
+            ? mockWanI2vExecutionCapability()
+            : modelType === 'WanTI2VPipeline'
+              ? mockWanTi2vExecutionCapability()
+              : modelType === 'WanVideoPipeline'
+                ? mockWanT2vExecutionCapability()
+                : modelType === 'WanVACEPipeline'
+                  ? mockWanVaceT2vExecutionCapability()
+                  : modelType === 'LTXVideoPipeline'
+                    ? mockLtxT2vExecutionCapability()
+                    : modelType === 'AceStepAudioPipeline'
+                      ? mockAceTextToAudioExecutionCapability()
+                      : null;
   const spec = capability?.studioExecutionSpecs.find((item) => item.mode === mode);
   return spec
     ? {
@@ -7444,6 +7479,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   page,
 }) => {
   mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-schnell');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Krea-dev');
@@ -7465,6 +7501,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await installMockRoutes(page);
   mockAdvertiseStudioExecutionSpecs = true;
   const capabilities = [
+    mockZImageExecutionCapability(),
     mockFluxExecutionCapability('FluxSchnellPipeline'),
     mockFluxExecutionCapability('FluxDevPipeline'),
     mockFluxExecutionCapability('FluxKreaPipeline'),
@@ -7524,7 +7561,35 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(16);
+    .toHaveLength(17);
+
+  const zImage = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'text_to_image',
+      modelType: 'ZImageModularPipeline',
+      resourceMode: 'auto',
+      device: 'cuda:0',
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
+    };
+  });
+  expect(zImage).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'z-image:text-to-image:v1',
+      contentHash: 'studio-spec-v1-0d3c1205',
+      executionProfileId: 'z-image:auto',
+    },
+    nodes: expect.any(Object),
+    pipelineClass: 'ZImagePipeline',
+  });
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
