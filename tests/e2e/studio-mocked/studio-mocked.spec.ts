@@ -251,7 +251,7 @@ declare global {
         }>,
       ) => void;
       openWorkspacePanelForTest: (
-        tab: 'studio' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints',
+        tab: 'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints',
       ) => void;
       setWorkspacePanelOpenForTest: (open: boolean) => void;
       sendWebsocketMessage: (message: Record<string, unknown>) => void;
@@ -283,6 +283,7 @@ let mockOptionalRuntimeProcessStatus = 'base';
 let mockOptionalRuntimeQualified = false;
 let mockOptionalRuntimeDelayMs = 0;
 let mockAdvertiseStudioExecutionSpecs = false;
+let mockReadyProofStatus: 'declared_safe' | 'live_proven' = 'declared_safe';
 
 function mockAutoCompatibility(ready: boolean) {
   return {
@@ -1848,7 +1849,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
       artifactStatus: { installed, complete: installed, reason: installed ? null : 'Artifact is not installed.' },
       requiresLocalProbe: false,
       proof: installed
-        ? { status: 'declared_safe', source: 'mock_profile' }
+        ? { status: mockReadyProofStatus, source: 'mock_profile' }
         : { status: 'unproven', source: 'mock_profile', message: 'Artifact is not installed.' },
     };
     return {
@@ -3098,6 +3099,7 @@ test.beforeEach(() => {
   mockOptionalRuntimeProcessStatus = 'base';
   mockOptionalRuntimeQualified = false;
   mockOptionalRuntimeDelayMs = 0;
+  mockReadyProofStatus = 'declared_safe';
 });
 
 test('top bar reports live system and accelerator resources without refreshing runtime discovery', async ({ page }) => {
@@ -5849,6 +5851,30 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
       };
     })
     .toEqual({ status: 'complete', proofVersion: 3, proofInvalid: undefined, contracts: ['lyric-video.v1'] });
+});
+
+test('controlled LoRA labels base-only Auto history until its exact artifacts are verified at Run', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('black-forest-labs/FLUX.1-dev');
+  mockInstalledRepos.add('aixonlab/FLUX.1-dev-LoRA-Cinematic-Octane');
+  mockInstalledRepos.add('prithivMLmods/3D-Render-Flux-LoRA');
+  mockReadyProofStatus = 'live_proven';
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('flux_lora_cinematic_octane_3d'));
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
+
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Base recipe ran here');
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('1 warning');
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('compatibility'));
+  const compatibility = page.getByTestId('compatibility-panel');
+  await expect(compatibility).toContainText('Base recipe ran here');
+  await expect(compatibility).toContainText('MoDiff verifies this exact controlled adapter set when Run starts.');
 });
 
 test('controlled workflow transactions are idempotent across supported reverse compositions', async ({ page }) => {

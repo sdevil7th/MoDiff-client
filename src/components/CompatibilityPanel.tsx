@@ -13,6 +13,7 @@ import {
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import {
+  controlledArtifactProofNotice,
   fetchAutoResourcePlan,
   formPatchForAutoCandidate,
   selectedAutoCandidate,
@@ -65,17 +66,20 @@ export default function CompatibilityPanel() {
   const setAlertOpener = useSettingsStore((state) => state.setAlertOpener);
   const sid = useWebsocketStore((state) => state.sid);
   const { installHfModel } = useNodesStore(useShallow((state) => ({ installHfModel: state.installHfModel })));
-  const { form, plan, applyAutoResourcePlan, createWorkflowTab, updateForm, setAutoResourcePlan } = useStudioStore(
-    useShallow((state) => ({
-      form: state.form,
-      plan: state.autoResourcePlan,
-      applyAutoResourcePlan: state.applyAutoResourcePlan,
-      createWorkflowTab: state.createWorkflowTab,
-      updateForm: state.updateForm,
-      setAutoResourcePlan: state.setAutoResourcePlan,
-    })),
-  );
+  const { form, graphBinding, plan, applyAutoResourcePlan, createWorkflowTab, updateForm, setAutoResourcePlan } =
+    useStudioStore(
+      useShallow((state) => ({
+        form: state.form,
+        graphBinding: state.graphBinding,
+        plan: state.autoResourcePlan,
+        applyAutoResourcePlan: state.applyAutoResourcePlan,
+        createWorkflowTab: state.createWorkflowTab,
+        updateForm: state.updateForm,
+        setAutoResourcePlan: state.setAutoResourcePlan,
+      })),
+    );
   const selected = selectedAutoCandidate(plan, form) || null;
+  const controlledProofNotice = controlledArtifactProofNotice(selected, graphBinding?.controlled?.contractIds);
   const alternatives = useMemo(
     () => (plan?.candidates || []).filter((candidate) => candidate.id !== selected?.id),
     [plan?.candidates, selected?.id],
@@ -218,6 +222,7 @@ export default function CompatibilityPanel() {
 
   const evidence = selected.compatibilityEvidence;
   const reason =
+    controlledProofNotice?.message ||
     evidence?.message ||
     selected.reason ||
     selected.skipReason ||
@@ -232,7 +237,9 @@ export default function CompatibilityPanel() {
         <div className="flex items-start gap-2 rounded-modiff-compact border border-hf-yellow/50 bg-hf-yellow/10 p-3">
           <AlertTriangle size={17} className="mt-0.5 shrink-0 text-hf-yellow" />
           <div className="min-w-0">
-            <p className="font-semibold">{evidence?.label || selected.healthBadge || 'This should work'}</p>
+            <p className="font-semibold">
+              {controlledProofNotice?.label || evidence?.label || selected.healthBadge || 'This should work'}
+            </p>
             <p className="mt-1 line-clamp-2 text-xs text-modiff-subtle-text">{reason}</p>
           </div>
         </div>

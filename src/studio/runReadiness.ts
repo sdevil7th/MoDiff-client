@@ -24,6 +24,7 @@ import {
   autoPlanIsReady,
   autoResourceCompatibility,
   autoResourceInstallTarget,
+  controlledArtifactProofNotice,
   selectedAutoCandidate,
 } from './autoResource';
 import { studioOffloadPlanConflict } from './deviceOffload';
@@ -1051,6 +1052,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
       autoCandidate.artifact ??
       autoCandidate.installTarget?.repo ??
       autoCandidate.modelRepo;
+    const controlledProofNotice = controlledArtifactProofNotice(autoCandidate, graphBinding?.controlled?.contractIds);
     if (repo && autoCandidate.installed === false) {
       issues.push(
         issue({
@@ -1066,6 +1068,19 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
           action: 'install_model',
           message: `${repo} is the selected Auto artifact and is not installed.`,
           details: autoCandidate.proof?.message ?? 'Install the Auto-selected artifact, then refresh model status.',
+        }),
+      );
+    } else if (controlledProofNotice) {
+      issues.push(
+        issue({
+          code: 'auto_controlled_artifact_pending_verification',
+          category: 'model',
+          severity: 'warning',
+          nodeId: graphBinding?.nodes.models,
+          repoId: repo || undefined,
+          blocking: false,
+          message: controlledProofNotice.label,
+          details: controlledProofNotice.message,
         }),
       );
     } else if (!autoProofIsReady(autoCandidate.proof)) {

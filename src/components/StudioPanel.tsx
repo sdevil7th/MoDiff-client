@@ -69,6 +69,7 @@ import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
 import {
   autoPlanIsReady,
+  controlledArtifactProofNotice,
   fetchAutoResourcePlan,
   formPatchForAutoCandidate,
   selectedAutoCandidate,
@@ -282,6 +283,10 @@ export default function StudioPanel() {
     ? `${selectedAutoPlanCandidate.resolvedArtifact ?? selectedAutoPlanCandidate.artifact ?? selectedAutoPlanCandidate.modelRepo} | ${selectedAutoPlanCandidate.qualityTier ?? 'quality plan'} | ${selectedAutoPlanCandidate.generation?.width ?? form.width}x${selectedAutoPlanCandidate.generation?.height ?? form.height} | ${selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps | ${selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}`
     : null;
   const graphBinding = useStudioStore((state) => state.graphBinding);
+  const controlledProofNotice = controlledArtifactProofNotice(
+    selectedAutoPlanCandidate,
+    graphBinding?.controlled?.contractIds,
+  );
   const graphFinalization = useStudioStore((state) => state.graphFinalization);
   const managedGraphRunBlockingMessage = graphBinding ? getStudioGraphRunBlockingMessage(form) : null;
   const displayedGraphFinalization =
@@ -812,8 +817,11 @@ export default function StudioPanel() {
                         {selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}
                       </p>
                       <div className="flex flex-wrap gap-1.5" data-testid="studio-auto-plan-summary">
-                        <ReadinessPill tone="success" title={selectedAutoPlanSummary ?? undefined}>
-                          Auto plan
+                        <ReadinessPill
+                          tone={controlledProofNotice ? 'warning' : 'success'}
+                          title={controlledProofNotice?.message ?? selectedAutoPlanSummary ?? undefined}
+                        >
+                          {controlledProofNotice?.label ?? 'Auto plan'}
                         </ReadinessPill>
                         <ReadinessPill
                           title={
@@ -828,7 +836,8 @@ export default function StudioPanel() {
                           {selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps
                         </ReadinessPill>
                         {selectedAutoPlanCandidate.artifactResolution?.substituted ||
-                        selectedAutoPlanCandidate.compatibilityEvidence?.level !== 'ran_here' ? (
+                        selectedAutoPlanCandidate.compatibilityEvidence?.level !== 'ran_here' ||
+                        controlledProofNotice ? (
                           <StudioIconButton
                             size="compact"
                             className="rounded-full border border-hf-yellow/60 bg-hf-yellow/10 text-hf-yellow hover:bg-hf-yellow/20 hover:text-hf-yellow"

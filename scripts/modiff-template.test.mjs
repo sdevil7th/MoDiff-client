@@ -2001,6 +2001,21 @@ test('Auto retry plans preserve exact targets and never fall back from a stale s
   assert.deepEqual(resourcePlannerModule.qwenDirectRetryPlansFromCandidates(candidates, 'missing'), []);
 });
 
+test('controlled artifacts never inherit a base-only Ran here label at plan time', () => {
+  const candidate = { id: 'selected', proof: { status: 'live_proven' } };
+  assert.deepEqual(autoResourceModule.controlledArtifactProofNotice(candidate, ['lora.diffusers-image.v1']), {
+    label: 'Base recipe ran here',
+    message: 'MoDiff verifies this exact controlled adapter set when Run starts.',
+  });
+  assert.equal(autoResourceModule.controlledArtifactProofNotice(candidate, ['upscale.image.v1']), null);
+  assert.equal(
+    autoResourceModule.controlledArtifactProofNotice({ ...candidate, proof: { status: 'declared_safe' } }, [
+      'lora.diffusers-image.v1',
+    ]),
+    null,
+  );
+});
+
 test('ACE templates lock musical structure, metadata, and model-aware negative behavior', () => {
   const templates = templatesModule.STUDIO_TEMPLATES.filter(
     (template) => template.modelType === 'AceStepAudioPipeline',

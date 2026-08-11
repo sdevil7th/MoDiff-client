@@ -511,6 +511,17 @@ export function selectedAutoCandidate(
   return plan?.candidates?.find((candidate) => !form || autoCandidateSupportsExecutionDevice(candidate, form)) ?? null;
 }
 
+export function controlledArtifactProofNotice(
+  candidate: StudioAutoResourceCandidate | null | undefined,
+  contractIds: readonly string[] | null | undefined,
+) {
+  if (candidate?.proof?.status !== 'live_proven' || !contractIds?.some((id) => id.startsWith('lora.'))) return null;
+  return {
+    label: 'Base recipe ran here',
+    message: 'MoDiff verifies this exact controlled adapter set when Run starts.',
+  } as const;
+}
+
 export function autoResourcePlanTargetMatches(
   plan: StudioAutoResourcePlan | null | undefined,
   nodes: FlowGraphNode[],
