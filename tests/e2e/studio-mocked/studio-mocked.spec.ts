@@ -544,9 +544,81 @@ function mockQwenImageExecutionCapability() {
     defaultRepo: 'Qwen/Qwen-Image-2512',
     contentHash: 'studio-spec-v1-f53ab380',
   };
+  const controlSpec = {
+    ...spec,
+    id: 'qwen-image-2512:control-image:v1',
+    mode: 'control_image',
+    executionProfileId: 'qwen-image:modular',
+    loaderModule: 'modules.ModularDiffusers',
+    loaderAction: 'ModelsLoader',
+    executionPath: 'modular-diffusers',
+    pipelineClass: 'QwenImageModularPipeline',
+    roles: [
+      ['models', 'modules.ModularDiffusers.ModelsLoader', -720, -80],
+      ['prompt', 'modules.ModularDiffusers.EncodePrompt', -360, -240],
+      ['loadImage', 'modules.Image.Load', -720, 320],
+      ['controlnetModel', 'modules.ModularDiffusers.AutoModelLoader', -360, 520],
+      ['controlnet', 'modules.ModularDiffusers.Controlnet', 80, 320],
+      ['denoise', 'modules.ModularDiffusers.Denoise', 80, -80],
+      ['decode', 'modules.ModularDiffusers.DecodeLatents', 440, -80],
+      ['preview', 'modules.Image.Preview', 800, -80],
+    ],
+    edges: [
+      ['models', 'text_encoders', 'prompt', 'text_encoders'],
+      ['models', 'unet_out', 'denoise', 'unet'],
+      ['models', 'scheduler', 'denoise', 'scheduler'],
+      ['models', 'vae_out', 'controlnet', 'vae'],
+      ['models', 'vae_out', 'decode', 'vae'],
+      ['loadImage', 'image', 'controlnet', 'control_image'],
+      ['controlnetModel', 'model', 'controlnet', 'controlnet'],
+      ['prompt', 'embeddings', 'denoise', 'embeddings'],
+      ['controlnet', 'controlnet_bundle', 'denoise', 'controlnet_bundle'],
+      ['controlnet', 'route_state_out', 'denoise', 'route_state_in'],
+      ['denoise', 'latents', 'decode', 'latents'],
+      ['denoise', 'route_state_out', 'decode', 'route_state_in'],
+      ['decode', 'images', 'preview', 'image'],
+    ],
+    bindings: [
+      ['models', 'model_type', 'pipelineClass'],
+      ['models', 'repo_id', 'artifact'],
+      ['models', 'dtype', 'dtype'],
+      ['models', 'device', 'device'],
+      ['models', 'auto_offload', 'autoOffload'],
+      ['models', 'offload_mode', 'offloadMode'],
+      ['models', 'trust_remote_code', 'false'],
+      ['loadImage', 'file', 'controlImage'],
+      ['loadImage', 'alpha_channel', 'alphaMode'],
+      ['controlnetModel', 'model_type', 'kind'],
+      ['controlnetModel', 'model_id', 'repo'],
+      ['controlnetModel', 'dtype', 'dtype'],
+      ['controlnetModel', 'subfolder', 'empty'],
+      ['controlnetModel', 'variant', 'empty'],
+      ['controlnetModel', 'trust_remote_code', 'false'],
+      ['controlnetModel', 'revision', 'revision'],
+      ['controlnetModel', 'device', 'device'],
+      ['controlnetModel', 'auto_offload', 'autoOffload'],
+      ['controlnetModel', 'offload_mode', 'offloadMode'],
+      ['prompt', 'prompt', 'prompt'],
+      ['prompt', 'negative_prompt', 'negativePrompt'],
+      ['controlnet', 'model_type', 'pipelineClass'],
+      ['controlnet', 'width', 'width'],
+      ['controlnet', 'height', 'height'],
+      ['controlnet', 'seed', 'seed'],
+      ['controlnet', 'controlnet_conditioning_scale', 'conditioningScale'],
+      ['denoise', 'width', 'width'],
+      ['denoise', 'height', 'height'],
+      ['denoise', 'seed', 'seed'],
+      ['denoise', 'num_inference_steps', 'steps'],
+      ['denoise', 'guidance_scale', 'guidanceScale'],
+      ['denoise', 'strength', 'strength'],
+    ],
+    contentHash: 'studio-spec-v1-2b0e0b6a',
+  };
   return {
     ...base,
     modelType: spec.modelType,
+    modes: ['text_to_image', 'control_image'],
+    runnableModes: ['text_to_image', 'control_image'],
     executionProfiles: [
       {
         ...base.executionProfiles[0],
@@ -562,8 +634,26 @@ function mockQwenImageExecutionCapability() {
         max_low_memory_side: 1328,
         max_low_memory_steps: 50,
       },
+      {
+        id: controlSpec.executionProfileId,
+        model_type: controlSpec.modelType,
+        modes: [controlSpec.mode],
+        loader_module: controlSpec.loaderModule,
+        loader_action: controlSpec.loaderAction,
+        execution_path: controlSpec.executionPath,
+        backend_path: `${controlSpec.loaderModule}.${controlSpec.loaderAction}`,
+        pipeline_class: controlSpec.pipelineClass,
+        default_repo: controlSpec.defaultRepo,
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+        supported_offload_modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
+        retry_offload_modes: ['group_disk'],
+        max_low_memory_side: 768,
+        max_low_memory_steps: 28,
+      },
     ],
-    studioExecutionSpecs: [spec],
+    studioExecutionSpecModes: ['control_image', 'text_to_image'],
+    studioExecutionSpecs: [spec, controlSpec],
   };
 }
 
@@ -1542,7 +1632,7 @@ function mockStudioExecutionSpecContract(modelType: string, mode: string) {
     ? mockFluxExecutionCapability(modelType as (typeof fluxModel)[number])
     : modelType === 'ZImageModularPipeline'
       ? mockZImageExecutionCapability()
-      : modelType === 'QwenImageModularPipeline' && mode === 'text_to_image'
+      : modelType === 'QwenImageModularPipeline'
         ? mockQwenImageExecutionCapability()
         : modelType === 'FluxFillPipeline'
           ? mockFluxFillExecutionCapability()
@@ -1886,6 +1976,23 @@ const mockRegistry = {
     vae_out: { type: 'VAE', display: 'output' },
     scheduler: { type: 'Scheduler', display: 'output' },
     lora_list: { type: 'lora_list', display: 'input' },
+  }),
+  'modules.ModularDiffusers.AutoModelLoader': nodeDef('modules.ModularDiffusers', 'AutoModelLoader', 'loader', {
+    model_type: { type: 'string', value: '', options: ['', 'unet', 'transformer', 'vae', 'controlnet'] },
+    model_id: { type: 'string', display: 'modelselect', value: { source: 'hub', value: '' } },
+    dtype: { type: 'string', value: 'bfloat16' },
+    subfolder: { type: 'string', value: '' },
+    variant: { type: 'string', value: '' },
+    trust_remote_code: { type: 'boolean', value: false },
+    revision: { type: 'string', value: '' },
+    device: { type: 'string', value: 'cuda:0' },
+    auto_offload: { type: 'boolean', value: true },
+    offload_mode: { type: 'string', value: 'model_cpu' },
+    model: { type: 'diffusers_auto_model', display: 'output' },
+  }),
+  'modules.ModularDiffusers.Controlnet': nodeDef('modules.ModularDiffusers', 'Controlnet', 'adapter', {
+    model_type: { type: 'string', value: '', hidden: true },
+    controlnet_bundle: { type: 'custom_controlnet', display: 'output' },
   }),
   'modules.ModularDiffusers.Lora': nodeDef('modules.ModularDiffusers', 'Lora', 'loader', {
     model: { type: 'string', value: { source: 'hub', value: '' } },
@@ -3817,8 +3924,6 @@ test('mocked Studio normalizes persisted forms without video fields', async ({ p
 
 test('schema-v2 capabilities hide and block an exact model task pair the backend omits', async ({ page }) => {
   mockInstalledRepos.clear();
-  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
-  mockInstalledRepos.add('InstantX/Qwen-Image-ControlNet-Union');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -7978,6 +8083,111 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     resolution: 640,
     topology: mockQwenLayeredExecutionCapability()
       .studioExecutionSpecs[0].edges.map((item) => [...item])
+      .sort(),
+  });
+
+  const qwenControl = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'control_image',
+      modelType: 'QwenImageModularPipeline',
+      resourceMode: 'expert',
+      controlImage: 'qwen-control-layout.png',
+      referenceImages: [],
+      conditioningScale: 1.2,
+      width: 768,
+      height: 640,
+      seed: 5201,
+      randomSeed: false,
+      steps: 28,
+      guidanceScale: 4.5,
+      strength: 1,
+    });
+    const finalization = window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (window.__MODIFF_E2E__!.getState().flow.nodes.some((node) => node.action === 'Controlnet')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('EncodePrompt', {
+      prompt: { type: 'text', value: '' },
+      negative_prompt: { type: 'text', value: '' },
+      embeddings: { type: 'TextEmbeddings', display: 'output' },
+    });
+    if (
+      !window.__MODIFF_E2E__!.applyNodeDefinitionForAction('Controlnet', {
+        model_type: { type: 'string', value: '', hidden: true },
+        control_image: { type: 'image', display: 'input' },
+        controlnet_conditioning_scale: { type: 'float', value: 1 },
+        control_guidance_start: { type: 'float', value: 0 },
+        control_guidance_end: { type: 'float', value: 1 },
+        width: { type: 'int', value: 1024 },
+        height: { type: 'int', value: 1024 },
+        seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
+        route_state_in: { type: 'route_state', display: 'input' },
+        controlnet: { type: 'diffusers_auto_model', display: 'input' },
+        vae: { type: 'VAE', display: 'input' },
+        controlnet_bundle: { type: 'custom_controlnet', display: 'output' },
+        route_state_out: { type: 'route_state', display: 'output' },
+      })
+    ) {
+      throw new Error('The ControlNet node was not created before its authoritative definition arrived.');
+    }
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('Denoise', {
+      unet: { type: 'DenoiseModel', display: 'input' },
+      scheduler: { type: 'Scheduler', display: 'input' },
+      embeddings: { type: 'TextEmbeddings', display: 'input' },
+      width: { type: 'int', value: 1024 },
+      height: { type: 'int', value: 1024 },
+      seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
+      num_inference_steps: { type: 'int', value: 50 },
+      guidance_scale: { type: 'float', value: 4.5 },
+      image_latents: { type: 'Latents', display: 'input' },
+      strength: { type: 'float', value: 0.6 },
+      controlnet_bundle: { type: 'custom_controlnet', display: 'input' },
+      route_state_in: { type: 'route_state', display: 'input' },
+      latents: { type: 'Latents', display: 'output' },
+      route_state_out: { type: 'route_state', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('DecodeLatents', {
+      vae: { type: 'VAE', display: 'input' },
+      latents: { type: 'Latents', display: 'input' },
+      route_state_in: { type: 'route_state', display: 'input' },
+      images: { type: 'image', display: 'output' },
+    });
+    await finalization;
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const roles = new Map(Object.entries(binding.nodes).map(([role, id]) => [id, role]));
+    const controlnetLoader = state.flow.nodes.find((node) => node.id === binding.nodes.controlnetModel)?.params;
+    return {
+      receipt: binding.executionSpec,
+      source: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+      modelType: controlnetLoader?.model_type?.value,
+      modelRepo: controlnetLoader?.model_id?.value,
+      revision: controlnetLoader?.revision?.value,
+      controlPipeline: state.flow.nodes.find((node) => node.id === binding.nodes.controlnet)?.params?.model_type?.value,
+      conditioningScale: state.flow.nodes.find((node) => node.id === binding.nodes.controlnet)?.params
+        ?.controlnet_conditioning_scale?.value,
+      topology: state.flow.edges
+        .map((edge) => [roles.get(edge.source), edge.sourceHandle, roles.get(edge.target), edge.targetHandle])
+        .sort(),
+    };
+  });
+  expect(qwenControl).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'qwen-image-2512:control-image:v1',
+      contentHash: 'studio-spec-v1-2b0e0b6a',
+      executionProfileId: 'qwen-image:modular',
+    },
+    source: 'qwen-control-layout.png',
+    modelType: 'controlnet',
+    modelRepo: { source: 'hub', value: 'InstantX/Qwen-Image-ControlNet-Union' },
+    revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+    controlPipeline: 'QwenImageModularPipeline',
+    conditioningScale: 1.2,
+    topology: mockQwenImageExecutionCapability()
+      .studioExecutionSpecs.find((item) => item.mode === 'control_image')!
+      .edges.map((item) => [...item])
       .sort(),
   });
 

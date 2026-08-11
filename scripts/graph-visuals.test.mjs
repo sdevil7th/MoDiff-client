@@ -1511,6 +1511,72 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: qwenLayeredBindings,
     contentHash: 'studio-spec-v1-dda194f0',
   };
+  const qwenControlRoleRows = [
+    ['models', 'modules.ModularDiffusers.ModelsLoader', -720, -80],
+    ['prompt', 'modules.ModularDiffusers.EncodePrompt', -360, -240],
+    ['loadImage', 'modules.Image.Load', -720, 320],
+    ['controlnetModel', 'modules.ModularDiffusers.AutoModelLoader', -360, 520],
+    ['controlnet', 'modules.ModularDiffusers.Controlnet', 80, 320],
+    ['denoise', 'modules.ModularDiffusers.Denoise', 80, -80],
+    ['decode', 'modules.ModularDiffusers.DecodeLatents', 440, -80],
+    ['preview', 'modules.Image.Preview', 800, -80],
+  ];
+  const qwenControlEdgeRows = [
+    ['models', 'text_encoders', 'prompt', 'text_encoders'],
+    ['models', 'unet_out', 'denoise', 'unet'],
+    ['models', 'scheduler', 'denoise', 'scheduler'],
+    ['models', 'vae_out', 'controlnet', 'vae'],
+    ['models', 'vae_out', 'decode', 'vae'],
+    ['loadImage', 'image', 'controlnet', 'control_image'],
+    ['controlnetModel', 'model', 'controlnet', 'controlnet'],
+    ['prompt', 'embeddings', 'denoise', 'embeddings'],
+    ['controlnet', 'controlnet_bundle', 'denoise', 'controlnet_bundle'],
+    ['controlnet', 'route_state_out', 'denoise', 'route_state_in'],
+    ['denoise', 'latents', 'decode', 'latents'],
+    ['denoise', 'route_state_out', 'decode', 'route_state_in'],
+    ['decode', 'images', 'preview', 'image'],
+  ];
+  const qwenControlBindingRows = [
+    ...qwenModularBindingRows.slice(0, 7),
+    ['loadImage', 'file', 'controlImage'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ['controlnetModel', 'model_type', 'kind'],
+    ['controlnetModel', 'model_id', 'repo'],
+    ['controlnetModel', 'dtype', 'dtype'],
+    ['controlnetModel', 'subfolder', 'empty'],
+    ['controlnetModel', 'variant', 'empty'],
+    ['controlnetModel', 'trust_remote_code', 'false'],
+    ['controlnetModel', 'revision', 'revision'],
+    ['controlnetModel', 'device', 'device'],
+    ['controlnetModel', 'auto_offload', 'autoOffload'],
+    ['controlnetModel', 'offload_mode', 'offloadMode'],
+    ['prompt', 'prompt', 'prompt'],
+    ['prompt', 'negative_prompt', 'negativePrompt'],
+    ['controlnet', 'model_type', 'pipelineClass'],
+    ['controlnet', 'width', 'width'],
+    ['controlnet', 'height', 'height'],
+    ['controlnet', 'seed', 'seed'],
+    ['controlnet', 'controlnet_conditioning_scale', 'conditioningScale'],
+    ['denoise', 'width', 'width'],
+    ['denoise', 'height', 'height'],
+    ['denoise', 'seed', 'seed'],
+    ['denoise', 'num_inference_steps', 'steps'],
+    ['denoise', 'guidance_scale', 'guidanceScale'],
+    ['denoise', 'strength', 'strength'],
+  ];
+  const qwenControlSpec = {
+    ...qwenModularSpec,
+    id: 'qwen-image-2512:control-image:v1',
+    modelType: 'QwenImageModularPipeline',
+    mode: 'control_image',
+    executionProfileId: 'qwen-image:modular',
+    pipelineClass: 'QwenImageModularPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-2512',
+    roles: qwenControlRoleRows,
+    edges: qwenControlEdgeRows,
+    bindings: qwenControlBindingRows,
+    contentHash: 'studio-spec-v1-2b0e0b6a',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -2048,6 +2114,16 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: [qwenLayeredSpec.mode],
     studioExecutionSpecs: [qwenLayeredSpec],
   };
+  const qwenControlCapability = {
+    ...capability(qwenControlSpec),
+    executionProfiles: [
+      {
+        ...profile(qwenControlSpec),
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+      },
+    ],
+  };
   const kleinCapability = {
     ...capability(kleinSpec),
     modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
@@ -2092,6 +2168,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
           ([id]) => id === role,
         ),
     ),
+    ...qwenControlRoleRows.filter(
+      ([role]) =>
+        ![
+          ...roleRows,
+          ...depthRoleRows,
+          ...editRoleRows,
+          ...inpaintRoleRows,
+          ...qwenOutpaintRoleRows,
+          ...qwenModularRoleRows,
+        ].some(([id]) => id === role),
+    ),
     ...videoRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows].some(([id]) => id === role)),
     ...i2vRoleRows.filter(
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...videoRoleRows].some(([id]) => id === role),
@@ -2121,6 +2208,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...qwenOutpaintBindingRows,
     ...qwenModularBindingRows,
     ...qwenLayeredSpec.bindings,
+    ...qwenControlBindingRows,
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
@@ -2137,6 +2225,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...wanVaceControlEdgeRows,
     ...qwenOutpaintEdgeRows,
     ...qwenModularEdgeRows,
+    ...qwenControlEdgeRows,
     ...audioEdgeRows,
     ...audioContinuationEdgeRows,
   ]) {
@@ -2144,6 +2233,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
     paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
   }
+  paramsByRole.controlnet.route_state_in = { type: 'route_state_out', display: 'input' };
   paramsByRole.qwenOutpaintCanvas.image = { type: 'image', display: 'input' };
   paramsByRole.qwenOutpaintCanvas.canvas = { type: 'image', display: 'output' };
   paramsByRole.qwenOutpaintCanvas.mask_image = { type: 'image', display: 'output' };
@@ -2218,6 +2308,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         qwenInpaintCapability,
         qwenEditPlusCapability,
         qwenLayeredCapability,
+        qwenControlCapability,
         capability(i2vSpec),
         capability(ti2vSpec),
         {
@@ -2758,6 +2849,67 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       512,
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenLayeredForm), null);
+
+    const qwenControlForm = {
+      ...qwenModularForm,
+      modelType: qwenControlSpec.modelType,
+      mode: qwenControlSpec.mode,
+      controlImage: 'control-layout.png',
+      referenceImages: [],
+      conditioningScale: 1.2,
+      width: 768,
+      height: 640,
+      steps: 28,
+      guidanceScale: 4.5,
+      strength: 1,
+    };
+    const controlFields = new Map(qwenControlRoleRows.map(([role]) => [role, new Set()]));
+    for (const [role, param] of qwenControlBindingRows) controlFields.get(role)?.add(param);
+    for (const [sourceRole, sourceHandle, targetRole, targetHandle] of qwenControlEdgeRows) {
+      controlFields.get(sourceRole)?.add(sourceHandle);
+      controlFields.get(targetRole)?.add(targetHandle);
+    }
+    controlFields.get('controlnet').add('route_state_in');
+    const qwenControlRegistry = structuredClone(registry);
+    for (const [role, nodeKey] of qwenControlRoleRows) {
+      qwenControlRegistry[nodeKey].params = Object.fromEntries(
+        Object.entries(qwenControlRegistry[nodeKey].params).filter(([field]) => controlFields.get(role).has(field)),
+      );
+    }
+    nodesStoreModule.useNodesStore.setState({ nodesRegistry: qwenControlRegistry });
+    flowStoreModule.useFlowStore.setState((state) => ({
+      nodes: state.nodes.map((node) => {
+        const key = `${node.data.module}.${node.data.action}`;
+        return qwenControlRegistry[key]
+          ? { ...node, data: { ...node.data, params: structuredClone(qwenControlRegistry[key].params) } }
+          : node;
+      }),
+    }));
+    studioStoreModule.useStudioStore.setState({ form: qwenControlForm });
+    await graphBridge.createOrUpdateStudioGraph(qwenControlForm);
+    const qwenControlBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenControlNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const controlnetLoader = qwenControlNodes.find((item) => item.id === qwenControlBinding.nodes.controlnetModel).data
+      .params;
+    assert.equal(qwenControlBinding.executionSpec.id, qwenControlSpec.id);
+    assert.equal(qwenControlBinding.executionSpec.contentHash, qwenControlSpec.contentHash);
+    assert.deepEqual(topology(qwenControlBinding), qwenControlEdgeRows.map((row) => [...row]).sort());
+    assert.equal(controlnetLoader.model_type.value, 'controlnet');
+    assert.deepEqual(controlnetLoader.model_id.value, {
+      source: 'hub',
+      value: 'InstantX/Qwen-Image-ControlNet-Union',
+    });
+    assert.equal(controlnetLoader.revision.value, 'b13036f066d6dee7c20513e263d3d673055e9de8');
+    assert.equal(
+      qwenControlNodes.find((item) => item.id === qwenControlBinding.nodes.loadImage).data.params.file.value,
+      qwenControlForm.controlImage,
+    );
+    assert.equal(
+      qwenControlNodes.find((item) => item.id === qwenControlBinding.nodes.controlnet).data.params
+        .controlnet_conditioning_scale.value,
+      1.2,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenControlForm), null);
 
     const i2vForm = {
       ...baseForm,

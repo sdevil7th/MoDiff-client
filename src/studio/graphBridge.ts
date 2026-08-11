@@ -25,7 +25,7 @@ import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 import fieldAction from '../utils/fieldAction';
 import { setManagedGraphSchemaMutationHandler } from '../utils/managedGraphSchemaMutation';
 import {
-  QWEN_CONTROLNET_REPO,
+  QWEN_CONTROLNET_REQUIREMENT,
   QWEN_INPAINT_GENERATE_NODE_KEY,
   QWEN_INPAINT_PIPELINE_NODE_KEY,
   QWEN_LOW_VRAM_QUANTIZATION_COMPONENT,
@@ -2963,7 +2963,7 @@ async function applyControlnetModel(binding: StudioGraphBinding, form: StudioFor
   if (!controlnetModel) return;
 
   await applyAutoModelLoaderType(controlnetModel, 'controlnet');
-  setModelRepo(controlnetModel, QWEN_CONTROLNET_REPO);
+  setModelRepo(controlnetModel, QWEN_CONTROLNET_REQUIREMENT.repo);
   setParamIfPresent(controlnetModel, ['dtype'], form.dtype);
   setParamIfPresent(controlnetModel, ['trust_remote_code'], form.trustRemoteCode);
   setParamIfPresent(controlnetModel, ['device'], form.device);
@@ -3121,6 +3121,8 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     channelsLast: false,
     artifact: audioTemplateBaseModel ?? spec.defaultRepo,
     pipelineClass: spec.pipelineClass,
+    ...QWEN_CONTROLNET_REQUIREMENT,
+    repo: { source: 'hub', value: QWEN_CONTROLNET_REQUIREMENT.repo },
     wanVaceRevision: WAN_VACE_REVISION,
     maskThreshold127: 127,
     inpaintMaskGrow96: 96,
@@ -3582,7 +3584,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
 
   if (controlnetModel) {
     pinControlnetLoaderIdentity(controlnetModel);
-    setModelRepo(controlnetModel, QWEN_CONTROLNET_REPO);
+    setModelRepo(controlnetModel, QWEN_CONTROLNET_REQUIREMENT.repo);
     setParamIfPresent(controlnetModel, ['dtype'], form.dtype);
     setParamIfPresent(controlnetModel, ['trust_remote_code'], form.trustRemoteCode);
     setParamIfPresent(controlnetModel, ['device'], form.device);

@@ -16,20 +16,17 @@ const PIPELINE_CLASS = /^[A-Za-z_][A-Za-z\d_.]{0,255}$/;
 const REPO_ID = /^[A-Za-z\d_.-]+\/[A-Za-z\d_.-]+$/;
 const SPEC_KEYS =
   'actions,autoFields,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
-const SPEC_ROLES = new Set<StudioGraphRole>(
-  'models|prompt|imageEncode|denoise|decode|diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|qwenOutpaintCanvas|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|loadControlVideo|loadMaskVideo|normalizeVideo|alignMaskVideo|audioPipeline|audioGenerate|audioExport|loadAudio|audioLoudnessMatch|audioJoin'.split(
-    '|',
-  ) as StudioGraphRole[],
+function listed<T extends string>(value: string) {
+  return new Set(value.split('|') as T[]);
+}
+const SPEC_ROLES = listed<StudioGraphRole>(
+  'models|prompt|imageEncode|controlnetModel|controlnet|denoise|decode|diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|qwenOutpaintCanvas|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|loadControlVideo|loadMaskVideo|normalizeVideo|alignMaskVideo|audioPipeline|audioGenerate|audioExport|loadAudio|audioLoudnessMatch|audioJoin',
 );
-const BINDING_SOURCES = new Set(
-  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|nativeMath|empty|true|false|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|wanVaceRevision|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|layers|outputType|maxSequenceLength|controlImage|referenceImages|maskImage|outpaintLeft|outpaintRight|outpaintTop|outpaintBottom|outpaintOverlap|outpaintFeather|outpaintFillColor|sourceVideo|controlVideo|maskVideo|maskThreshold127|inpaintMaskGrow96|outpaintMaskGrow0|conditioningScale|alphaMode|addAlpha|removeAlpha|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson|text2music|cover|continuation|repaint|sourceAudio|lyrics|audioDuration|extensionDuration|vocalLanguage|bpmNormalized|keyscale|timesignature|repaintingStart|repaintingEnd|audioCoverStrength|sampleRate48000|referenceWindow15|targetPeakMinus1|maxAdjustment12|boundaryFade001'.split(
-    '|',
-  ),
+const BINDING_SOURCES = listed(
+  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|nativeMath|empty|true|false|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|kind|repo|revision|wanVaceRevision|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|layers|outputType|maxSequenceLength|controlImage|referenceImages|maskImage|outpaintLeft|outpaintRight|outpaintTop|outpaintBottom|outpaintOverlap|outpaintFeather|outpaintFillColor|sourceVideo|controlVideo|maskVideo|maskThreshold127|inpaintMaskGrow96|outpaintMaskGrow0|conditioningScale|alphaMode|addAlpha|removeAlpha|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson|text2music|cover|continuation|repaint|sourceAudio|lyrics|audioDuration|extensionDuration|vocalLanguage|bpmNormalized|keyscale|timesignature|repaintingStart|repaintingEnd|audioCoverStrength|sampleRate48000|referenceWindow15|targetPeakMinus1|maxAdjustment12|boundaryFade001',
 );
-const AUTO_FIELDS = new Set(
-  'resolvedArtifact|artifact|installTarget.repo|modelRepo|pipelineClass|dtype|offloadMode|quantizedComponents|attentionBackend|regionalCompile|denoiserCache|layerwiseCasting|channelsLast'.split(
-    '|',
-  ),
+const AUTO_FIELDS = listed(
+  'resolvedArtifact|artifact|installTarget.repo|modelRepo|pipelineClass|dtype|offloadMode|quantizedComponents|attentionBackend|regionalCompile|denoiserCache|layerwiseCasting|channelsLast',
 );
 function invalid(): never {
   throw new Error('Invalid Studio execution specification.');

@@ -82,7 +82,7 @@ export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   repo: QWEN_CONTROLNET_REPO,
   revision: QWEN_CONTROLNET_REVISION,
   kind: 'controlnet',
-  description: 'Required for Qwen Image Control image workflows.',
+  description: 'Qwen ControlNet model.',
 };
 
 export const QWEN_IMAGE_EDIT_INPAINT_CONTRACT: StudioInpaintContractStatus = {
@@ -340,7 +340,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       control_image: {
         modelRequirements: [QWEN_CONTROLNET_REQUIREMENT],
         requiredImages: ['controlImage'],
-        note: 'Requires the Qwen ControlNet Union model plus one control image.',
+        note: 'Requires Qwen ControlNet Union and a control image.',
       },
     },
   },
