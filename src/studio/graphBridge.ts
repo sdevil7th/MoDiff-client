@@ -3117,6 +3117,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     throw new Error('The selected Auto candidate does not match the Studio execution specification.');
   }
   const quantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
+  const audioTemplateBaseModel = binding.nodes.audioPipeline ? activeAudioTemplateBaseModel() : null;
   const values: Record<string, unknown> = {
     ...form,
     quantizationMode,
@@ -3126,13 +3127,17 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     nativeMath: '_native_math',
     empty: '',
     true: true,
+    false: false,
     removeAlpha: 'remove alpha',
     regionalCompile: false,
     denoiserCache: 'none',
     layerwiseCasting: false,
     channelsLast: false,
-    artifact: spec.defaultRepo,
+    artifact: audioTemplateBaseModel ?? spec.defaultRepo,
     pipelineClass: spec.pipelineClass,
+    text2music: 'text2music',
+    bpmNormalized: form.bpm > 0 ? form.bpm : 0,
+    sampleRate48000: 48000,
     seed: seedValue(form),
   };
   const candidateValues: Record<string, unknown> = {
@@ -3141,6 +3146,11 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     'installTarget.repo': candidate?.installTarget?.repo,
   };
   for (const field of [...spec.autoFields].reverse()) {
+    if (
+      audioTemplateBaseModel &&
+      (field === 'resolvedArtifact' || field === 'artifact' || field === 'installTarget.repo' || field === 'modelRepo')
+    )
+      continue;
     const value = candidateValues[field];
     if (value === undefined) continue;
     values[

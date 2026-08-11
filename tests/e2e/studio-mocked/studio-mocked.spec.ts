@@ -966,6 +966,111 @@ function mockLtxT2vExecutionCapability() {
   };
 }
 
+function mockAceTextToAudioExecutionCapability() {
+  const roles = [
+    ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+    ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+    ['audioPipeline', 'modules.DiffusersAudio.LoadPipeline', -520, -80],
+    ['audioGenerate', 'modules.DiffusersAudio.Generate', -120, -80],
+    ['audioExport', 'modules.Audio.Export', 1060, -80],
+  ] as const;
+  const edges = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'audioPipeline', 'execution_recipe'],
+    ['audioPipeline', 'pipeline', 'audioGenerate', 'pipeline'],
+    ['audioGenerate', 'audio', 'audioExport', 'audio'],
+  ] as const;
+  const bindings = [
+    ['diffusersQuantization', 'backend', 'quantizationMode'],
+    ['diffusersQuantization', 'components', 'quantizedComponents'],
+    ['diffusersQuantization', 'dtype', 'dtype'],
+    ['diffusersRecipe', 'device_map', 'deviceMapNone'],
+    ['diffusersRecipe', 'offload_mode', 'offloadMode'],
+    ['diffusersRecipe', 'device', 'device'],
+    ['diffusersRecipe', 'attention_backend', 'attentionBackend'],
+    ['diffusersRecipe', 'attention_components', 'empty'],
+    ['diffusersRecipe', 'vae_slicing', 'true'],
+    ['diffusersRecipe', 'vae_tiling', 'true'],
+    ['diffusersRecipe', 'regional_compile', 'regionalCompile'],
+    ['diffusersRecipe', 'denoiser_cache', 'denoiserCache'],
+    ['diffusersRecipe', 'layerwise_casting', 'layerwiseCasting'],
+    ['diffusersRecipe', 'channels_last', 'channelsLast'],
+    ['audioPipeline', 'model_id', 'artifact'],
+    ['audioPipeline', 'pipeline_class', 'pipelineClass'],
+    ['audioPipeline', 'mode', 'mode'],
+    ['audioPipeline', 'dtype', 'dtype'],
+    ['audioPipeline', 'device', 'device'],
+    ['audioPipeline', 'auto_offload', 'autoOffload'],
+    ['audioPipeline', 'offload_mode', 'offloadMode'],
+    ['audioGenerate', 'task_type', 'text2music'],
+    ['audioGenerate', 'prompt', 'prompt'],
+    ['audioGenerate', 'negative_prompt', 'negativePrompt'],
+    ['audioGenerate', 'lyrics', 'lyrics'],
+    ['audioGenerate', 'audio_duration', 'audioDuration'],
+    ['audioGenerate', 'extension_duration', 'extensionDuration'],
+    ['audioGenerate', 'vocal_language', 'vocalLanguage'],
+    ['audioGenerate', 'seed', 'seed'],
+    ['audioGenerate', 'num_inference_steps', 'steps'],
+    ['audioGenerate', 'guidance_scale', 'guidanceScale'],
+    ['audioGenerate', 'shift', 'shift'],
+    ['audioGenerate', 'bpm', 'bpmNormalized'],
+    ['audioGenerate', 'keyscale', 'keyscale'],
+    ['audioGenerate', 'timesignature', 'timesignature'],
+    ['audioGenerate', 'repainting_start', 'repaintingStart'],
+    ['audioGenerate', 'repainting_end', 'repaintingEnd'],
+    ['audioGenerate', 'audio_cover_strength', 'audioCoverStrength'],
+    ['audioGenerate', 'return_continuation_tail', 'false'],
+    ['audioGenerate', 'sample_rate', 'sampleRate48000'],
+    ['audioExport', 'sample_rate', 'sampleRate48000'],
+  ] as const;
+  const spec = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'ace-step-v1.5-xl-turbo:text-to-audio:v1',
+    modelType: 'AceStepAudioPipeline',
+    mode: 'text_to_audio',
+    executionProfileId: 'ace-step-audio:direct',
+    loaderModule: 'modules.DiffusersAudio',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-audio',
+    pipelineClass: 'AceStepPipeline',
+    defaultRepo: 'ACE-Step/acestep-v15-xl-turbo-diffusers',
+    roles,
+    edges,
+    bindings,
+    autoFields: mockFluxAutoFields,
+    actions: [],
+    contentHash: 'studio-spec-v1-4bc8ed64',
+  };
+  const modes = ['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint'];
+  return {
+    modelType: spec.modelType,
+    modes,
+    runnableModes: modes,
+    executionProfiles: [
+      {
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes,
+        loader_module: spec.loaderModule,
+        loader_action: spec.loaderAction,
+        execution_path: spec.executionPath,
+        backend_path: `${spec.loaderModule}.${spec.loaderAction}`,
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+        quantizable_components: [],
+        default_quantized_components: [],
+        supported_offload_modes: ['none', 'model_cpu'],
+        retry_offload_modes: ['model_cpu'],
+        live_proof: false,
+      },
+    ],
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecModes: [spec.mode],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
   const mode = String(form.mode ?? 'text_to_image');
@@ -1658,8 +1763,12 @@ const mockRegistry = {
   }),
   'modules.DiffusersAudio.LoadPipeline': nodeDef('modules.DiffusersAudio', 'LoadPipeline', 'Diffusers Audio', {
     model_id: { type: 'string', value: 'ACE-Step/acestep-v15-xl-turbo-diffusers' },
+    pipeline_class: { type: 'string', value: 'AceStepPipeline' },
+    mode: { type: 'string', value: 'text_to_audio' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
+    auto_offload: { type: 'bool', value: true },
+    offload_mode: { type: 'string', value: 'model_cpu' },
     execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
     pipeline: { type: 'diffusers_audio_pipeline', display: 'output' },
   }),
@@ -1676,11 +1785,36 @@ const mockRegistry = {
   }),
   'modules.DiffusersAudio.Generate': nodeDef('modules.DiffusersAudio', 'Generate', 'Diffusers Audio', {
     pipeline: { type: 'diffusers_audio_pipeline', display: 'input' },
+    source_audio: { type: 'audio', display: 'input' },
+    reference_audio: { type: 'audio', display: 'input' },
+    task_type: { type: 'string', value: 'text2music' },
     prompt: { type: 'text', display: 'textarea', value: '' },
+    negative_prompt: { type: 'text', display: 'textarea', value: '' },
+    lyrics: { type: 'text', display: 'textarea', value: '' },
+    audio_duration: { type: 'float', value: 30 },
+    extension_duration: { type: 'float', value: 15 },
+    vocal_language: { type: 'string', value: 'en' },
+    seed: { type: 'int', value: 0 },
+    num_inference_steps: { type: 'int', value: 8 },
+    guidance_scale: { type: 'float', value: 1 },
+    shift: { type: 'float', value: 3 },
+    bpm: { type: 'int', value: 0 },
+    keyscale: { type: 'string', value: 'C' },
+    timesignature: { type: 'string', value: '4/4' },
+    repainting_start: { type: 'float', value: 0 },
+    repainting_end: { type: 'float', value: 10 },
+    audio_cover_strength: { type: 'float', value: 0.5 },
+    return_continuation_tail: { type: 'bool', value: true },
+    sample_rate: { type: 'int', value: 48000 },
+    audio: { type: 'audio', display: 'output' },
+  }),
+  'modules.Audio.Load': nodeDef('modules.Audio', 'Load', 'audio', {
+    file: { type: 'string', value: '' },
     audio: { type: 'audio', display: 'output' },
   }),
   'modules.Audio.Export': nodeDef('modules.Audio', 'Export', 'audio', {
     audio: { type: 'audio', display: 'input' },
+    sample_rate: { type: 'int', value: 48000 },
     file: { type: 'str', value: '{PATH:audio}/MoDiff_{HASH:6}.wav' },
     preview: { type: 'url', display: 'ui_audio' },
   }),
@@ -6964,7 +7098,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
   });
 });
 
-test('backend Studio execution specs materialize exact image and video recipes and submit the sealed receipt', async ({
+test('backend Studio execution specs materialize exact image, video, and audio recipes and submit the sealed receipt', async ({
   page,
 }) => {
   mockInstalledRepos.clear();
@@ -6980,6 +7114,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
   mockInstalledRepos.add('Lightricks/LTX-Video-0.9.8-13B-distilled');
+  mockInstalledRepos.add('ACE-Step/acestep-v15-xl-turbo-diffusers');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -6998,6 +7133,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
     mockWanTi2vExecutionCapability(),
     mockWanT2vExecutionCapability(),
     mockLtxT2vExecutionCapability(),
+    mockAceTextToAudioExecutionCapability(),
   ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
@@ -7037,7 +7173,7 @@ test('backend Studio execution specs materialize exact image and video recipes a
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(13);
+    .toHaveLength(14);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7732,6 +7868,80 @@ test('backend Studio execution specs materialize exact image and video recipes a
     imageFile: ['@data/images/ltx-reference-a.png', '@data/images/ltx-reference-b.png'],
     alphaMode: 'preserve alpha',
     attentionBackend: '_native_math',
+  });
+
+  const ace = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'AceStepAudioPipeline',
+      mode: 'text_to_audio',
+      resourceMode: 'expert',
+      prompt: 'Instrumental post-rock with a gradual crescendo',
+      negativePrompt: 'clipping',
+      lyrics: '[Instrumental]',
+      audioDuration: 42,
+      extensionDuration: 12,
+      vocalLanguage: 'en',
+      steps: 8,
+      guidanceScale: 1,
+      shift: 3,
+      bpm: -1,
+      keyscale: 'C',
+      timesignature: '4/4',
+      repaintingStart: 2,
+      repaintingEnd: 8,
+      audioCoverStrength: 0.75,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipeline: state.flow.nodes.find((node) => node.id === binding.nodes.audioPipeline)?.params,
+      generate: state.flow.nodes.find((node) => node.id === binding.nodes.audioGenerate)?.params,
+      export: state.flow.nodes.find((node) => node.id === binding.nodes.audioExport)?.params,
+    };
+  });
+  expect(ace.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'ace-step-v1.5-xl-turbo:text-to-audio:v1',
+    contentHash: 'studio-spec-v1-4bc8ed64',
+    executionProfileId: 'ace-step-audio:direct',
+  });
+  expect(ace.edgeShape).toEqual([
+    'audio>audio',
+    'execution_recipe>execution_recipe',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+  ]);
+  expect(ace.pipeline?.pipeline_class?.value).toBe('AceStepPipeline');
+  expect(ace.generate?.task_type?.value).toBe('text2music');
+  expect(ace.generate?.audio_duration?.value).toBe(42);
+  expect(ace.generate?.bpm?.value).toBe(0);
+  expect(ace.generate?.return_continuation_tail?.value).toBe(false);
+  expect(ace.generate?.sample_rate?.value).toBe(48000);
+  expect(ace.export?.sample_rate?.value).toBe(48000);
+
+  const aceVariation = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'audio_variation',
+      sourceAudio: '@data/audio/source.wav',
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      hasLoadAudio: Boolean(binding.nodes.loadAudio),
+      taskType: state.flow.nodes.find((node) => node.id === binding.nodes.audioGenerate)?.params?.task_type?.value,
+      sourceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadAudio)?.params?.file?.value,
+    };
+  });
+  expect(aceVariation).toEqual({
+    receipt: undefined,
+    hasLoadAudio: true,
+    taskType: 'cover',
+    sourceFile: '@data/audio/source.wav',
   });
 });
 
