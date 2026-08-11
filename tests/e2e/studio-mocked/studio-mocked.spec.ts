@@ -7690,6 +7690,43 @@ test('mocked Studio derives Expert quantization choices from the exact execution
   await expect(page.getByRole('option', { name: '4-bit BnB' })).toHaveCount(0);
 });
 
+test('mocked Studio preserves Expert quantization only when the target execution profile declares it', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'QwenImageModularPipeline',
+      mode: 'text_to_image',
+      resourceMode: 'expert',
+      quantizationMode: 'bnb_4bit',
+    }),
+  );
+
+  const model = page.getByTestId('studio-model-select');
+  await model.click();
+  await page.getByRole('option', { name: 'FLUX.1-schnell', exact: true }).click();
+  await expect
+    .poll(async () => {
+      const form = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).studio.form;
+      return [form.modelType, form.quantizationMode];
+    })
+    .toEqual(['FluxSchnellPipeline', 'bnb_4bit']);
+
+  await model.click();
+  await page.getByRole('option', { name: 'Z-Image Turbo', exact: true }).click();
+  await expect
+    .poll(async () => {
+      const form = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).studio.form;
+      return [form.modelType, form.quantizationMode];
+    })
+    .toEqual(['ZImageModularPipeline', 'none']);
+});
+
 test('mocked Studio consumes the exact execution-profile Expert MPS policy', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');

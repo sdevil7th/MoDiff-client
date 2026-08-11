@@ -1458,11 +1458,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           let selectedMode = values.mode ?? state.selectedMode;
           let lastError = state.lastError;
 
-          if (
-            values.modelType &&
-            STUDIO_MODEL_PROFILES[values.modelType].family !== 'Qwen Image' &&
-            values.quantizationMode === undefined
-          ) {
+          if (values.modelType && values.quantizationMode === undefined) {
             form = { ...form, quantizationMode: 'none', offloadMode: values.offloadMode ?? 'model_cpu' };
           }
 

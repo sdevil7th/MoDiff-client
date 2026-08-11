@@ -1,6 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useFlowStore } from '../stores/useFlowStore';
+import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import {
   advanceWorkflowOperationContext,
@@ -28,6 +29,7 @@ import {
 import { coordinateGraphRun } from './runCoordinator';
 import { materializeTemplateDefaultInputs } from './templateInputs';
 import { STUDIO_TEMPLATES } from './templates';
+import { exactStudioExecutionProfileForForm } from './executionSpecs';
 import type { StudioFormState, StudioMode, StudioModelType, StudioResourceMode } from './types';
 
 export async function ensureStudioAutoPlanReadyForRun(
@@ -207,7 +209,18 @@ export function useStudioRunActions({
 
   const handleModelTypeChange = useCallback(
     (modelType: StudioModelType) => {
-      useStudioStore.getState().updateForm({ modelType });
+      const current = useStudioStore.getState().form;
+      const nodeStore = useNodesStore.getState();
+      const quantizationMode = exactStudioExecutionProfileForForm(
+        nodeStore.studioModelCapabilities,
+        nodeStore.studioExecutionSpecInvalid,
+        { modelType, mode: current.mode },
+      )?.expert_quantization_modes?.includes(
+        current.quantizationMode as Exclude<StudioFormState['quantizationMode'], 'none'>,
+      )
+        ? current.quantizationMode
+        : 'none';
+      useStudioStore.getState().updateForm({ modelType, quantizationMode });
       void handleCreateGraph();
     },
     [handleCreateGraph],
