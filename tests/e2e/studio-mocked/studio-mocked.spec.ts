@@ -533,6 +533,40 @@ function mockZImageExecutionCapability() {
   };
 }
 
+function mockQwenImageExecutionCapability() {
+  const base = mockFluxExecutionCapability('FluxSchnellPipeline');
+  const spec = {
+    ...base.studioExecutionSpecs[0],
+    id: 'qwen-image-2512:text-to-image:v1',
+    modelType: 'QwenImageModularPipeline',
+    executionProfileId: 'qwen-image:t2i-direct',
+    pipelineClass: 'QwenImagePipeline',
+    defaultRepo: 'Qwen/Qwen-Image-2512',
+    contentHash: 'studio-spec-v1-f53ab380',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+        fallback_repo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: [],
+        supported_offload_modes: ['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'],
+        retry_offload_modes: ['model_cpu', 'sequential_cpu', 'group_disk'],
+        max_low_memory_side: 1328,
+        max_low_memory_steps: 50,
+      },
+    ],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockQwenEditInpaintExecutionCapability() {
   const base = mockFluxFillExecutionCapability();
   const spec = {
@@ -1378,23 +1412,25 @@ function mockStudioExecutionSpecContract(modelType: string, mode: string) {
     ? mockFluxExecutionCapability(modelType as (typeof fluxModel)[number])
     : modelType === 'ZImageModularPipeline'
       ? mockZImageExecutionCapability()
-      : modelType === 'FluxFillPipeline'
-        ? mockFluxFillExecutionCapability()
-        : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
-          ? mockQwenEditInpaintExecutionCapability()
-          : modelType === 'WanImageToVideoPipeline'
-            ? mockWanI2vExecutionCapability()
-            : modelType === 'WanTI2VPipeline'
-              ? mockWanTi2vExecutionCapability()
-              : modelType === 'WanVideoPipeline'
-                ? mockWanT2vExecutionCapability()
-                : modelType === 'WanVACEPipeline'
-                  ? mockWanVaceT2vExecutionCapability()
-                  : modelType === 'LTXVideoPipeline'
-                    ? mockLtxT2vExecutionCapability()
-                    : modelType === 'AceStepAudioPipeline'
-                      ? mockAceTextToAudioExecutionCapability()
-                      : null;
+      : modelType === 'QwenImageModularPipeline' && mode === 'text_to_image'
+        ? mockQwenImageExecutionCapability()
+        : modelType === 'FluxFillPipeline'
+          ? mockFluxFillExecutionCapability()
+          : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
+            ? mockQwenEditInpaintExecutionCapability()
+            : modelType === 'WanImageToVideoPipeline'
+              ? mockWanI2vExecutionCapability()
+              : modelType === 'WanTI2VPipeline'
+                ? mockWanTi2vExecutionCapability()
+                : modelType === 'WanVideoPipeline'
+                  ? mockWanT2vExecutionCapability()
+                  : modelType === 'WanVACEPipeline'
+                    ? mockWanVaceT2vExecutionCapability()
+                    : modelType === 'LTXVideoPipeline'
+                      ? mockLtxT2vExecutionCapability()
+                      : modelType === 'AceStepAudioPipeline'
+                        ? mockAceTextToAudioExecutionCapability()
+                        : null;
   const spec = capability?.studioExecutionSpecs.find((item) => item.mode === mode);
   return spec
     ? {
@@ -1554,6 +1590,9 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     executionPath: 'direct-diffusers-image',
     pipelineClass: 'QwenImagePipeline',
     modelDependencies: [],
+    studioExecutionSpecContract: mockAdvertiseStudioExecutionSpecs
+      ? mockStudioExecutionSpecContract(modelType, mode)
+      : undefined,
     modelRepo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     artifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
@@ -7480,6 +7519,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
 }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-schnell');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Krea-dev');
@@ -7502,6 +7542,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   mockAdvertiseStudioExecutionSpecs = true;
   const capabilities = [
     mockZImageExecutionCapability(),
+    mockQwenImageExecutionCapability(),
     mockFluxExecutionCapability('FluxSchnellPipeline'),
     mockFluxExecutionCapability('FluxDevPipeline'),
     mockFluxExecutionCapability('FluxKreaPipeline'),
@@ -7561,7 +7602,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(17);
+    .toHaveLength(18);
 
   const zImage = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7589,6 +7630,39 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     },
     nodes: expect.any(Object),
     pipelineClass: 'ZImagePipeline',
+  });
+
+  const qwenImage = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'QwenImageModularPipeline',
+      resourceMode: 'auto',
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      candidateContract: state.studio.autoResourcePlan?.selectedCandidate?.studioExecutionSpecContract,
+      nodes: binding.nodes,
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
+    };
+  });
+  expect(qwenImage).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'qwen-image-2512:text-to-image:v1',
+      contentHash: 'studio-spec-v1-f53ab380',
+      executionProfileId: 'qwen-image:t2i-direct',
+    },
+    candidateContract: {
+      schemaVersion: 1,
+      id: 'qwen-image-2512:text-to-image:v1',
+      contentHash: 'studio-spec-v1-f53ab380',
+      executionProfileId: 'qwen-image:t2i-direct',
+    },
+    nodes: zImage.nodes,
+    pipelineClass: 'QwenImagePipeline',
   });
 
   const schnell = await page.evaluate(async () => {
