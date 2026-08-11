@@ -4061,17 +4061,12 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
   assert.deepEqual(graph.runtimeHints.quantizedComponents, []);
   assert.equal(graph.runtimeHints.autoOffload, true);
   assert.equal(graph.runtimeHints.offloadMode, 'model_cpu');
-  assert.deepEqual(graph.runtimeHints.supportedOffloadModes, [
-    'none',
-    'model_cpu',
-    'sequential_cpu',
-    'group_cpu',
-    'group_disk',
-  ]);
+  assert.equal(graph.runtimeHints.supportedOffloadModes, undefined);
   assert.equal(graph.runtimeHints.executionPath, 'direct-diffusers-image');
   assert.equal(graph.runtimeHints.resolvedArtifact, 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   assert.equal(graph.runtimeHints.autoResourceCandidateId, 'qwen-t2i-prequantized-model-cpu');
   assert.equal(graph.runtimeHints.autoResourceProofStatus, 'declared_safe');
+  assert.equal(graph.runtimeHints.resourceRetryModes, undefined);
   assert.ok(graph.runtimeHints.resourceRetryPlans.length >= 1);
   assert.equal(graph.runtimeHints.lowVramMode, true);
   assert.equal(graph.runtimeHints.cudaMemoryTotalBytes, totalBytes);
@@ -4093,6 +4088,14 @@ test('Studio runtime hints carry immutable auxiliary model dependency revisions'
       graphBinding: null,
     });
     const graph = runMetadataModule.applyStudioRuntimeHints({ sid: 'dependencies', nodes: {}, paths: [] });
+    assert.deepEqual(graph.runtimeHints.supportedOffloadModes, [
+      'none',
+      'model_cpu',
+      'sequential_cpu',
+      'group_cpu',
+      'group_disk',
+    ]);
+    assert.deepEqual(graph.runtimeHints.resourceRetryModes, ['sequential_cpu', 'group_disk']);
     assert.deepEqual(graph.runtimeHints.modelDependencies, [
       {
         id: 'qwen-controlnet-union',

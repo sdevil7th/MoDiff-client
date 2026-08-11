@@ -7677,6 +7677,8 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
     runtimeHints?: {
       resourceMode?: string;
       executionPath?: string;
+      supportedOffloadModes?: string[];
+      resourceRetryModes?: string[];
       quantizationMode?: string;
       offloadMode?: string;
       autoOffload?: boolean;
@@ -7724,6 +7726,8 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
     }),
     graph: {
       executionPath: submittedGraph?.runtimeHints?.executionPath,
+      supportedOffloadModes: submittedGraph?.runtimeHints?.supportedOffloadModes,
+      resourceRetryModes: submittedGraph?.runtimeHints?.resourceRetryModes,
       quantizationMode: submittedGraph?.runtimeHints?.quantizationMode,
       offloadMode: submittedGraph?.runtimeHints?.offloadMode,
       autoOffload: submittedGraph?.runtimeHints?.autoOffload,
@@ -7744,6 +7748,8 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
     },
     graph: {
       executionPath: 'direct-diffusers-image',
+      supportedOffloadModes: undefined,
+      resourceRetryModes: undefined,
       quantizationMode: 'none',
       offloadMode: 'none',
       autoOffload: false,

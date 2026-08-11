@@ -227,7 +227,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       denoiserCache: autoCandidate?.denoiserCache,
       channelsLast: autoCandidate?.channelsLast,
       layerwiseCasting: autoCandidate?.layerwiseCasting,
-      supportedOffloadModes: profile.offloadSupport.modes,
+      supportedOffloadModes: form.resourceMode === 'expert' ? profile.offloadSupport.modes : undefined,
       offloadDiskPath: resourcePlan.offloadDiskPath,
       resourcePlan: {
         summary: resourcePlan.summary,
@@ -246,7 +246,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       autoResourceCandidateId: autoCandidate?.id,
       autoFieldOverrides: Object.values(autoFieldOverrides) as unknown as JsonObject[],
       optimizationQualificationForm: form as unknown as JsonObject,
-      resourceRetryModes: resourcePlan.retryOffloadModes,
+      resourceRetryModes: form.resourceMode === 'expert' ? resourcePlan.retryOffloadModes : undefined,
       resourceRetryPlans: autoRetryPlans as unknown as JsonObject[],
       compatibilityStatus: autoCandidate?.proof?.status ?? (auto ? 'needs_setup' : 'expert'),
       lowVramMode,
