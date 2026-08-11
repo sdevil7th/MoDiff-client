@@ -41,6 +41,7 @@ import {
   WAN_VACE_REVISION,
 } from './modelProfiles';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
+import { exactStudioExecutionSpecForForm } from './executionSpecs';
 import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { hashString, stableStringify } from './templateExactness';
@@ -65,12 +66,7 @@ function executionSpecForForm(
   form: Pick<StudioFormState, 'modelType' | 'mode'>,
 ): StudioExecutionSpec | null | undefined {
   const nodeStore = useNodesStore.getState();
-  if (nodeStore.studioExecutionSpecInvalid) return null;
-  const capability = nodeStore.studioModelCapabilities.find((item) => item.modelType === form.modelType);
-  if (capability?.studioExecutionSpecSchemaVersion !== 1) return undefined;
-  if (!capability.studioExecutionSpecModes?.includes(form.mode)) return undefined;
-  const matches = capability.studioExecutionSpecs?.filter((item) => item.mode === form.mode) ?? [];
-  return matches.length === 1 ? matches[0] : null;
+  return exactStudioExecutionSpecForForm(nodeStore.studioModelCapabilities, nodeStore.studioExecutionSpecInvalid, form);
 }
 
 function executionSpecForBinding(binding: StudioGraphBinding): StudioExecutionSpec | null | undefined {

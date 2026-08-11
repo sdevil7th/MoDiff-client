@@ -3281,7 +3281,7 @@ test('controlled graph declarations require an exact schema-v3 persistence proof
   });
 });
 
-test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe settings', () => {
+test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe settings', (t) => {
   const form = {
     ...profilesModule.DEFAULT_STUDIO_FORM,
     mode: 'text_to_image',
@@ -3435,6 +3435,64 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   );
   assert.equal(ownRunIssue, null);
 
+  const previousCapabilityState = {
+    studioModelCapabilities: nodesStoreModule.useNodesStore.getState().studioModelCapabilities,
+    studioExecutionSpecInvalid: nodesStoreModule.useNodesStore.getState().studioExecutionSpecInvalid,
+  };
+  t.after(() => nodesStoreModule.useNodesStore.setState(previousCapabilityState));
+  const readinessSpec = (mode, loaderModule, loaderAction, roles) => ({
+    mode,
+    loaderModule,
+    loaderAction,
+    roles,
+  });
+  nodesStoreModule.useNodesStore.setState({
+    studioExecutionSpecInvalid: false,
+    studioModelCapabilities: [
+      {
+        modelType: 'QwenImageModularPipeline',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['text_to_image'],
+        studioExecutionSpecs: [
+          readinessSpec('text_to_image', 'modules.ModularDiffusers', 'ModelsLoader', [
+            ['models', 'modules.ModularDiffusers.ModelsLoader'],
+          ]),
+        ],
+      },
+      {
+        modelType: 'AceStepAudioPipeline',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['text_to_audio'],
+        studioExecutionSpecs: [
+          readinessSpec('text_to_audio', 'modules.DiffusersAudio', 'LoadPipeline', [
+            ['audioPipeline', 'modules.DiffusersAudio.LoadPipeline'],
+          ]),
+        ],
+      },
+      {
+        modelType: 'QwenImageEditModularPipeline',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['inpaint'],
+        studioExecutionSpecs: [
+          readinessSpec('inpaint', 'modules.DiffusersImage', 'LoadPipeline', [
+            ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline'],
+            ['diffusersImageInpaint', 'modules.DiffusersImage.Inpaint'],
+          ]),
+        ],
+      },
+      {
+        modelType: 'FluxKreaPipeline',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['text_to_image'],
+        studioExecutionSpecs: [
+          readinessSpec('text_to_image', 'modules.FutureImage', 'ReviewedLoader', [
+            ['diffusersImagePipeline', 'modules.FutureImage.ReviewedLoader'],
+          ]),
+        ],
+      },
+    ],
+  });
+
   const missingQuantNodeIssue = runReadinessModule.getStudioQuantizationCapabilityIssue(
     { ...form, resourceMode: 'manual', quantizationMode: 'bnb_4bit' },
     {
@@ -3534,7 +3592,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   assert.equal(unavailableAudioOffloadIssue.blocking, true);
   assert.doesNotMatch(unavailableAudioOffloadIssue.details, /\[object Object\]/);
 
-  const missingInpaintNodeIssue = runReadinessModule.getStudioQwenInpaintCapabilityIssue(
+  const missingInpaintNodeIssue = runReadinessModule.getStudioExecutionSpecCapabilityIssue(
     {
       ...form,
       mode: 'inpaint',
@@ -3547,7 +3605,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   assert.equal(missingInpaintNodeIssue.blocking, true);
   assert.match(missingInpaintNodeIssue.details, /modules\.DiffusersImage\.Inpaint/);
 
-  const inpaintNodesReadyIssue = runReadinessModule.getStudioQwenInpaintCapabilityIssue(
+  const inpaintNodesReadyIssue = runReadinessModule.getStudioExecutionSpecCapabilityIssue(
     {
       ...form,
       mode: 'inpaint',
@@ -3560,7 +3618,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   );
   assert.equal(inpaintNodesReadyIssue, null);
 
-  const genericInpaintNodesReadyIssue = runReadinessModule.getStudioQwenInpaintCapabilityIssue(
+  const genericInpaintNodesReadyIssue = runReadinessModule.getStudioExecutionSpecCapabilityIssue(
     {
       ...form,
       mode: 'inpaint',
@@ -3572,6 +3630,26 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
     },
   );
   assert.equal(genericInpaintNodesReadyIssue, null);
+
+  const futureForm = {
+    ...form,
+    modelType: 'FluxKreaPipeline',
+    resourceMode: 'expert',
+    offloadMode: 'model_cpu',
+  };
+  assert.equal(
+    runReadinessModule.getStudioOffloadCapabilityIssue(futureForm, {
+      'modules.FutureImage.ReviewedLoader': {
+        params: { offload_mode: { options: ['none', 'model_cpu'] } },
+      },
+    }),
+    null,
+  );
+  const futureLoaderIssue = runReadinessModule.getStudioOffloadCapabilityIssue(futureForm, {
+    'modules.FutureImage.ReviewedLoader': { params: {} },
+  });
+  assert.equal(futureLoaderIssue.blocking, true);
+  assert.match(futureLoaderIssue.details, /modules\.FutureImage\.ReviewedLoader/);
 });
 
 test('Auto resource setup offers app-driven repair for incomplete artifacts', () => {

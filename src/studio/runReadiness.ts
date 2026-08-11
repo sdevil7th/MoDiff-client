@@ -14,11 +14,8 @@ import {
   getStudioModelDisplayName,
   normalizeStudioOffloadMode,
   offloadModeIsSupported,
-  QWEN_INPAINT_GENERATE_NODE_KEY,
-  QWEN_INPAINT_PIPELINE_NODE_KEY,
   QWEN_LOW_VRAM_OFFLOAD_MODE,
   QWEN_LOW_VRAM_QUANTIZATION_COMPONENT,
-  QWEN_OUTPAINT_CANVAS_NODE_KEY,
   QWEN_LOW_VRAM_QUANTIZATION_MODE,
   QWEN_QUANTIZATION_NODE_KEY,
   QWEN_T2I_GENERATE_NODE_KEY,
@@ -49,6 +46,7 @@ import type { RuntimeCudaDevice, RuntimeMpsDevice, RuntimeStatus, RuntimeXpuDevi
 import type { RuntimeResourceSnapshot } from './runtimeResources';
 import { getStudioGraphRunBlockingMessage } from './graphBridge';
 import { optionalRuntimeBlockState } from './optionalRuntimes';
+import { exactStudioExecutionSpecForForm } from './executionSpecs';
 
 const GIB = 1024 ** 3;
 const MODEL_PARAM_HINTS = [
@@ -386,21 +384,24 @@ function isQwenQuantizedLowVram(form: StudioFormState) {
   return form.quantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE;
 }
 
+function readinessExecutionSpec(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
+  const nodeStore = useNodesStore.getState();
+  return exactStudioExecutionSpecForForm(nodeStore.studioModelCapabilities, nodeStore.studioExecutionSpecInvalid, form);
+}
+
 function expectedLoaderNodeKey(form: StudioFormState) {
-  if (form.modelType === 'WanVACEPipeline') return 'modules.DiffusersVideo.LoadPipeline';
-  if (form.modelType === 'AceStepAudioPipeline') return 'modules.DiffusersAudio.LoadPipeline';
-  if (form.modelType.startsWith('Flux')) return 'modules.DiffusersImage.LoadPipeline';
-  if (
-    form.mode === 'text_to_image' &&
-    form.modelType === 'QwenImageModularPipeline' &&
-    form.resourceMode !== 'expert'
-  ) {
-    return QWEN_T2I_PIPELINE_NODE_KEY;
+  const binding = useStudioStore.getState().graphBinding;
+  if (binding?.modelType === form.modelType && binding.mode === form.mode) {
+    const loaderId =
+      binding.nodes.models ??
+      binding.nodes.diffusersImagePipeline ??
+      binding.nodes.wanPipeline ??
+      binding.nodes.audioPipeline;
+    const node = useFlowStore.getState().nodes.find((item) => item.id === loaderId);
+    if (node) return `${node.data.module}.${node.data.action}`;
   }
-  if (['inpaint', 'outpaint'].includes(form.mode) && form.modelType === 'QwenImageEditModularPipeline') {
-    return QWEN_INPAINT_PIPELINE_NODE_KEY;
-  }
-  return 'modules.ModularDiffusers.ModelsLoader';
+  const spec = readinessExecutionSpec(form);
+  return spec ? `${spec.loaderModule}.${spec.loaderAction}` : null;
 }
 
 function registryParam(
@@ -499,7 +500,7 @@ export function getStudioQuantizationCapabilityIssue(
     missing.push(`${QWEN_QUANTIZATION_NODE_KEY}.component=${QWEN_LOW_VRAM_QUANTIZATION_COMPONENT}`);
   }
   const loaderNodeKey = expectedLoaderNodeKey(resolvedForm);
-  if (!registryParam(registry, loaderNodeKey, 'offload_mode')) {
+  if (loaderNodeKey && !registryParam(registry, loaderNodeKey, 'offload_mode')) {
     missing.push(`${loaderNodeKey}.offload_mode`);
   }
   if (missing.length === 0) return null;
@@ -535,6 +536,7 @@ export function getStudioOffloadCapabilityIssue(
   if (Object.keys(registry).length === 0) return null;
 
   const loaderNodeKey = expectedLoaderNodeKey(resolvedForm);
+  if (!loaderNodeKey) return null;
   const loader = registry[loaderNodeKey];
   if (!loader) return null;
 
@@ -583,25 +585,14 @@ export function getStudioDeviceOffloadIssue(form: StudioFormState) {
   } satisfies Omit<RunReadinessIssue, 'id'>;
 }
 
-export function getStudioQwenInpaintCapabilityIssue(
+export function getStudioExecutionSpecCapabilityIssue(
   form: StudioFormState,
   registry = useNodesStore.getState().nodesRegistry,
 ) {
-  if (!['inpaint', 'outpaint'].includes(form.mode) || form.modelType !== 'QwenImageEditModularPipeline') return null;
   if (Object.keys(registry).length === 0) return null;
-
-  if (
-    form.mode === 'inpaint' &&
-    registry['modules.DiffusersImage.LoadPipeline'] &&
-    registry['modules.DiffusersImage.Inpaint']
-  ) {
-    return null;
-  }
-
-  const requiredNodes =
-    form.mode === 'outpaint'
-      ? [QWEN_INPAINT_PIPELINE_NODE_KEY, QWEN_OUTPAINT_CANVAS_NODE_KEY, QWEN_INPAINT_GENERATE_NODE_KEY]
-      : [QWEN_INPAINT_PIPELINE_NODE_KEY, QWEN_INPAINT_GENERATE_NODE_KEY];
+  const spec = readinessExecutionSpec(form);
+  if (!spec) return null;
+  const requiredNodes = [...new Set(spec.roles.map(([, nodeKey]) => nodeKey))];
   const missing = requiredNodes.filter((nodeKey) => !registry[nodeKey]);
   if (missing.length === 0) return null;
 
@@ -610,11 +601,8 @@ export function getStudioQwenInpaintCapabilityIssue(
     severity: 'error',
     blocking: true,
     action: 'open_setup',
-    message:
-      form.mode === 'outpaint'
-        ? 'Qwen outpaint needs canvas and mask support.'
-        : 'Qwen inpaint needs backend mask execution support.',
-    details: `This backend did not expose ${missing.join(', ')}. Restart or update MoDiff's generic image nodes, or use an edit workflow without a generated mask.`,
+    message: 'This managed workflow needs its exact backend node contract.',
+    details: `This backend did not expose ${missing.join(', ')}. Restart or update MoDiff before rebuilding this managed workflow.`,
   } satisfies Omit<RunReadinessIssue, 'id'>;
 }
 
@@ -1252,9 +1240,9 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     issues.push(issue(deviceOffloadIssue));
   }
 
-  const qwenInpaintCapabilityIssue = getStudioQwenInpaintCapabilityIssue(form);
-  if (qwenInpaintCapabilityIssue) {
-    issues.push(issue(qwenInpaintCapabilityIssue));
+  const executionSpecCapabilityIssue = getStudioExecutionSpecCapabilityIssue(form);
+  if (executionSpecCapabilityIssue) {
+    issues.push(issue(executionSpecCapabilityIssue));
   }
 
   if (profile.outputKind === 'video' && form.device.startsWith('cuda') && !auto && form.dtype === 'float32') {

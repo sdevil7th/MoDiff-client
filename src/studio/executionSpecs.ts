@@ -2,6 +2,7 @@ import { hashString, stableStringify } from './stableHash';
 import type {
   StudioExecutionProfile,
   StudioExecutionSpec,
+  StudioFormState,
   StudioGraphRole,
   StudioGraphBinding,
   StudioModelProfile,
@@ -38,6 +39,19 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function unique<T>(items: T[]) {
   return new Set(items).size === items.length;
+}
+
+export function exactStudioExecutionSpecForForm(
+  capabilities: readonly StudioModelProfile[],
+  invalid: boolean,
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+): StudioExecutionSpec | null | undefined {
+  if (invalid) return null;
+  const capability = capabilities.find((item) => item.modelType === form.modelType);
+  if (capability?.studioExecutionSpecSchemaVersion !== 1) return undefined;
+  if (!capability.studioExecutionSpecModes?.includes(form.mode)) return undefined;
+  const matches = capability.studioExecutionSpecs?.filter((item) => item.mode === form.mode) ?? [];
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function parseStudioExecutionSpecs(

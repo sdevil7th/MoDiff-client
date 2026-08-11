@@ -11171,6 +11171,19 @@ test('mocked Studio blocks Qwen outpaint when backend canvas node is missing', a
   mockIncludeOutpaintNode = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  const capability = mockQwenEditInpaintExecutionCapability();
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: [capability],
+        studioExecutionSpecs: capability.studioExecutionSpecs,
+      }),
+    });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
@@ -11195,7 +11208,7 @@ test('mocked Studio blocks Qwen outpaint when backend canvas node is missing', a
   await expect(outpaintReadiness).toContainText('Run blocked', { timeout: 30_000 });
   await outpaintReadiness.click();
   const outpaintIssues = page.getByTestId('run-issues-dialog');
-  await expect(outpaintIssues).toContainText('Qwen outpaint needs canvas and mask support');
+  await expect(outpaintIssues).toContainText('This managed workflow needs its exact backend node contract');
   await expect(outpaintIssues).toContainText('OutpaintCanvas');
   await expect(page.getByTestId('studio-run')).toBeDisabled();
 });
