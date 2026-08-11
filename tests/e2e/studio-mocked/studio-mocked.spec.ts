@@ -13277,6 +13277,185 @@ test('Diffusers audio contract signals update generic fields from the selected p
   });
 });
 
+test('Diffusers image contract signals update generic fields from the selected pipeline and mode', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const fields = [
+    'negative_prompt',
+    'width',
+    'height',
+    'guidance_scale',
+    'strength',
+    'padding_mask_crop',
+    'max_sequence_length',
+    'reference_strength',
+  ];
+  const contract = (pipelineClass: string, mode: string, visible: string[]) => ({
+    schemaVersion: 1,
+    library: 'diffusers',
+    mediaKind: 'image',
+    pipelineClass,
+    mode,
+    modes: [mode],
+    actions: { Edit: [mode] },
+    fieldParams: Object.fromEntries(fields.map((field) => [field, { hidden: !visible.includes(field) }])),
+  });
+  const reduxMulti = contract('FluxReduxPipeline', 'multi_image_reference_edit', [
+    'negative_prompt',
+    'width',
+    'height',
+    'guidance_scale',
+    'max_sequence_length',
+    'reference_strength',
+  ]);
+  const sdxlEdit = contract('StableDiffusionXLImg2ImgPipeline', 'edit_image', [
+    'negative_prompt',
+    'guidance_scale',
+    'strength',
+  ]);
+  const qwenMulti = contract('QwenImageEditPlusPipeline', 'multi_image_reference_edit', [
+    'negative_prompt',
+    'width',
+    'height',
+    'guidance_scale',
+    'max_sequence_length',
+  ]);
+
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Contract.ImagePipelineSelection': nodeDef('modules.Contract', 'ImagePipelineSelection', 'test', {
+            pipeline: {
+              type: 'image_diffusion_pipeline',
+              display: 'output',
+              signal: { direction: 'output', value: reduxMulti },
+            },
+          }),
+          'modules.DiffusersImage.Edit': nodeDef('modules.DiffusersImage', 'Edit', 'Diffusers Image', {
+            pipeline: {
+              type: 'image_diffusion_pipeline',
+              display: 'input',
+              onSignal: [
+                { action: 'value', target: 'image_contract' },
+                { action: 'exec', data: 'update_image_contract' },
+              ],
+            },
+            image_contract: { type: 'object', value: reduxMulti, hidden: true },
+            image: { type: 'image', display: 'input' },
+            ...Object.fromEntries(fields.map((field) => [field, { type: 'float', hidden: true }])),
+            images: { type: 'image', display: 'output' },
+          }),
+        },
+      }),
+    });
+  });
+
+  const actionSelections: string[] = [];
+  await page.route('**/fields/action', async (route) => {
+    const request = (route.request().postDataJSON() ?? {}) as {
+      node?: string;
+      fn?: string;
+      values?: { image_contract?: { pipelineClass?: string; mode?: string; fieldParams?: Record<string, unknown> } };
+    };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+    const selected = request.values?.image_contract;
+    if (request.fn !== 'update_image_contract' || !request.node || !selected?.fieldParams) return;
+    actionSelections.push(`${selected.pipelineClass}:${selected.mode}`);
+    for (const [field, params] of Object.entries(selected.fieldParams)) {
+      await page.evaluate(
+        ({ node, field, params }) => {
+          window.__MODIFF_E2E__!.sendWebsocketMessage({ type: 'set_field_params', node, field, params });
+        },
+        { node: request.node, field, params },
+      );
+    }
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const ids = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const source = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Contract.ImagePipelineSelection');
+    const edit = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.DiffusersImage.Edit');
+    window.__MODIFF_E2E__!.connectGraph({ source, sourceHandle: 'pipeline', target: edit, targetHandle: 'pipeline' });
+    return { source, edit };
+  });
+
+  const state = () =>
+    page.evaluate(({ edit }) => {
+      const graph = window.__MODIFF_E2E__!.exportWorkflowGraph() as unknown as {
+        nodes: Array<{ id: string; data: { params: Record<string, { hidden?: boolean }> } }>;
+      };
+      const params = graph.nodes.find((node) => node.id === edit)!.data.params;
+      return {
+        widthHidden: params.width.hidden,
+        strengthHidden: params.strength.hidden,
+        cropHidden: params.padding_mask_crop.hidden,
+        sequenceHidden: params.max_sequence_length.hidden,
+        referenceHidden: params.reference_strength.hidden,
+      };
+    }, ids);
+
+  await expect.poll(state).toEqual({
+    widthHidden: false,
+    strengthHidden: true,
+    cropHidden: true,
+    sequenceHidden: false,
+    referenceHidden: false,
+  });
+
+  for (const [selected, expected, selection] of [
+    [
+      sdxlEdit,
+      {
+        widthHidden: true,
+        strengthHidden: false,
+        cropHidden: true,
+        sequenceHidden: true,
+        referenceHidden: true,
+      },
+      'StableDiffusionXLImg2ImgPipeline:edit_image',
+    ],
+    [
+      qwenMulti,
+      {
+        widthHidden: false,
+        strengthHidden: true,
+        cropHidden: true,
+        sequenceHidden: false,
+        referenceHidden: true,
+      },
+      'QwenImageEditPlusPipeline:multi_image_reference_edit',
+    ],
+  ] as const) {
+    await page.evaluate(
+      ({ source, selected }) => {
+        window.__MODIFF_E2E__!.sendWebsocketMessage({
+          type: 'set_field_params',
+          node: source,
+          field: 'pipeline',
+          params: { signal: { direction: 'output', value: selected } },
+        });
+      },
+      { source: ids.source, selected },
+    );
+    await expect.poll(() => actionSelections.at(-1)).toBe(selection);
+    await expect.poll(state).toEqual(expected);
+  }
+});
+
 test('Diffusers video contract actions update generic fields and bindings from the selected pipeline', async ({
   page,
 }) => {
