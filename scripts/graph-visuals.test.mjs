@@ -1542,6 +1542,32 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ]),
     contentHash: 'studio-spec-v1-1fd16911',
   };
+  const wanVaceControlRoleRows = [
+    ...videoRoleRows,
+    ['loadControlVideo', 'modules.Video.Load', -520, 260],
+    ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
+  ];
+  const wanVaceControlEdgeRows = [
+    ...videoEdgeRows,
+    ['loadControlVideo', 'video', 'normalizeVideo', 'video'],
+    ['normalizeVideo', 'output', 'wanGenerate', 'video'],
+  ];
+  const wanVaceControlBindingRows = [
+    ...wanVaceT2vSpec.bindings,
+    ['loadControlVideo', 'file', 'controlVideo'],
+    ['normalizeVideo', 'width', 'width'],
+    ['normalizeVideo', 'height', 'height'],
+    ['normalizeVideo', 'num_frames', 'numFrames'],
+  ];
+  const wanVaceControlSpec = {
+    ...wanVaceT2vSpec,
+    id: 'wan-vace-1.3b:control-to-video:v1',
+    mode: 'control_to_video',
+    roles: wanVaceControlRoleRows,
+    edges: wanVaceControlEdgeRows,
+    bindings: wanVaceControlBindingRows,
+    contentHash: 'studio-spec-v1-d05d263d',
+  };
   const wanV2vSpec = {
     ...wanT2vSpec,
     id: 'wan-21-t2v-1.3b:video-to-video:v1',
@@ -1901,6 +1927,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...videoRoleRows].some(([id]) => id === role),
     ),
     ['loadVideo', 'modules.Video.Load', -520, 260],
+    ['loadControlVideo', 'modules.Video.Load', -520, 260],
     ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
     ['loadMaskVideo', 'modules.Video.Load', -520, 520],
     ['alignMaskVideo', 'modules.VideoConditioning.AlignMask', -160, 520],
@@ -1920,6 +1947,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...videoBindingRows,
     ...i2vBindingRows,
     ...wanVaceInpaintBindingRows,
+    ...wanVaceControlBindingRows,
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
@@ -1933,6 +1961,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...videoEdgeRows,
     ...i2vEdgeRows,
     ...wanVaceInpaintEdgeRows,
+    ...wanVaceControlEdgeRows,
     ...audioEdgeRows,
     ...audioContinuationEdgeRows,
   ]) {
@@ -2033,8 +2062,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
               modes: ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'],
             },
           ],
-          studioExecutionSpecModes: ['text_to_video', 'video_inpaint', 'video_outpaint'],
-          studioExecutionSpecs: [wanVaceT2vSpec, wanVaceInpaintSpec, wanVaceOutpaintSpec],
+          studioExecutionSpecModes: ['control_to_video', 'text_to_video', 'video_inpaint', 'video_outpaint'],
+          studioExecutionSpecs: [wanVaceT2vSpec, wanVaceInpaintSpec, wanVaceOutpaintSpec, wanVaceControlSpec],
         },
         {
           ...capability(ltxSpec),
@@ -2632,6 +2661,43 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'video_outpaint',
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanVaceOutpaintForm), null);
+
+    const wanVaceControlForm = {
+      ...wanVaceT2vForm,
+      mode: 'control_to_video',
+      controlVideo: '@data/videos/vace-control.mp4',
+    };
+    studioStoreModule.useStudioStore.setState({ form: wanVaceControlForm });
+    await graphBridge.createOrUpdateStudioGraph(wanVaceControlForm);
+    const wanVaceControlBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const wanVaceControlNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(wanVaceControlBinding.executionSpec.id, wanVaceControlSpec.id);
+    assert.equal(wanVaceControlBinding.executionSpec.contentHash, wanVaceControlSpec.contentHash);
+    assert.ok(wanVaceControlBinding.nodes.loadControlVideo);
+    assert.ok(wanVaceControlBinding.nodes.normalizeVideo);
+    assert.equal(wanVaceControlBinding.nodes.loadVideo, undefined);
+    assert.equal(wanVaceControlBinding.nodes.loadMaskVideo, undefined);
+    assert.deepEqual(
+      topology(wanVaceControlBinding),
+      wanVaceControlEdgeRows
+        .map(([source, sourceHandle, target, targetHandle]) => [source, sourceHandle, target, targetHandle])
+        .sort(),
+    );
+    assert.equal(
+      wanVaceControlNodes.find((item) => item.id === wanVaceControlBinding.nodes.loadControlVideo).data.params.file
+        .value,
+      wanVaceControlForm.controlVideo,
+    );
+    assert.equal(
+      wanVaceControlNodes.find((item) => item.id === wanVaceControlBinding.nodes.normalizeVideo).data.params.num_frames
+        .value,
+      wanVaceControlForm.numFrames,
+    );
+    assert.equal(
+      wanVaceControlNodes.find((item) => item.id === wanVaceControlBinding.nodes.wanGenerate).data.params.mode.value,
+      'control_to_video',
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanVaceControlForm), null);
 
     const wanV2vForm = { ...wanT2vForm, mode: 'video_to_video', sourceVideo: '@data/videos/source.mp4' };
     studioStoreModule.useStudioStore.setState({ form: wanV2vForm });

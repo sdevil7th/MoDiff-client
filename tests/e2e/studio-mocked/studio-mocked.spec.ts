@@ -983,6 +983,29 @@ function mockWanVaceT2vExecutionCapability() {
     ),
     contentHash: 'studio-spec-v1-1fd16911',
   };
+  const controlSpec = {
+    ...spec,
+    id: 'wan-vace-1.3b:control-to-video:v1',
+    mode: 'control_to_video',
+    roles: [
+      ...spec.roles,
+      ['loadControlVideo', 'modules.Video.Load', -520, 260],
+      ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
+    ],
+    edges: [
+      ...spec.edges,
+      ['loadControlVideo', 'video', 'normalizeVideo', 'video'],
+      ['normalizeVideo', 'output', 'wanGenerate', 'video'],
+    ],
+    bindings: [
+      ...spec.bindings,
+      ['loadControlVideo', 'file', 'controlVideo'],
+      ['normalizeVideo', 'width', 'width'],
+      ['normalizeVideo', 'height', 'height'],
+      ['normalizeVideo', 'num_frames', 'numFrames'],
+    ],
+    contentHash: 'studio-spec-v1-d05d263d',
+  };
   const modes = ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'];
   return {
     ...base,
@@ -1000,8 +1023,8 @@ function mockWanVaceT2vExecutionCapability() {
         default_repo: spec.defaultRepo,
       },
     ],
-    studioExecutionSpecModes: [spec.mode, inpaintSpec.mode, outpaintSpec.mode],
-    studioExecutionSpecs: [spec, inpaintSpec, outpaintSpec],
+    studioExecutionSpecModes: [controlSpec.mode, spec.mode, inpaintSpec.mode, outpaintSpec.mode],
+    studioExecutionSpecs: [spec, inpaintSpec, outpaintSpec, controlSpec],
   };
 }
 
@@ -8030,6 +8053,50 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     threshold: 127,
     growPixels: 0,
     mode: 'video_outpaint',
+  });
+
+  const wanVaceControl = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'control_to_video',
+      controlVideo: '@data/videos/vace-control.mp4',
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const params = (role: string) =>
+      state.flow.nodes.find((node) => node.id === binding.nodes[role as keyof typeof binding.nodes])?.params;
+    return {
+      receipt: binding.executionSpec,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      controlFile: params('loadControlVideo')?.file?.value,
+      normalizedFrames: params('normalizeVideo')?.num_frames?.value,
+      mode: params('wanGenerate')?.mode?.value,
+      hasControl: Boolean(binding.nodes.loadControlVideo),
+      hasSource: Boolean(binding.nodes.loadVideo),
+      hasMask: Boolean(binding.nodes.loadMaskVideo),
+    };
+  });
+  expect(wanVaceControl).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'wan-vace-1.3b:control-to-video:v1',
+      contentHash: 'studio-spec-v1-d05d263d',
+      executionProfileId: 'wan-vace:direct',
+    },
+    edgeShape: [
+      'execution_recipe>execution_recipe',
+      'output>video',
+      'pipeline>pipeline',
+      'quantization_config>quantization_config',
+      'video>video',
+      'video_out>video',
+    ],
+    controlFile: '@data/videos/vace-control.mp4',
+    normalizedFrames: 81,
+    mode: 'control_to_video',
+    hasControl: true,
+    hasSource: false,
+    hasMask: false,
   });
 
   const wanV2v = await page.evaluate(async () => {
