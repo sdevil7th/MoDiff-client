@@ -98,8 +98,8 @@ const VIDEO_GENERATION_POLICY = {
 
 const WAN_GENERATION_POLICY = {
   ...VIDEO_GENERATION_POLICY,
-  // Diffusers video-to-video uses this slot for conditioning scale, while
-  // other managed video modes use it as denoise strength.
+  // The backend's reviewed video field contract binds this shared slot to the
+  // selected adapter/mode's exact Studio control.
   strength: essential(),
   denoise_strength: essential('strength'),
 } satisfies RolePolicy;

@@ -4374,16 +4374,36 @@ test('managed control synchronization keeps live exact-graph aliases and extensi
     'lyric-visual:fps',
   );
 
-  const ltxGenerate = managedNode('ltx-generate', 'wanGenerate', {
-    params: { strength: { type: 'float', value: 0.8 } },
+  const backendStrengthBinding = {
+    schemaVersion: 1,
+    group: 'video-conditioning-scale',
+    formFields: ['conditioningScale'],
+    transform: 'identity',
+  };
+  const ltxGenerate = managedNode('opaque-video-generate', 'wanGenerate', {
+    params: {
+      strength: {
+        type: 'float',
+        value: 0.8,
+        fieldOptions: { studioBinding: backendStrengthBinding },
+      },
+    },
   });
   assert.equal(
     managedControlSync.managedControlFormKey(ltxGenerate, 'strength', {
       ...binding,
       mode: 'video_to_video',
-      modelType: 'LTXVideoPipeline',
+      modelType: 'OpaqueVideoPipelineIdentity',
     }),
     'conditioningScale',
+  );
+  assert.equal(
+    managedControlSync.managedControlSyncGroup(ltxGenerate, 'strength', {
+      ...binding,
+      mode: 'video_to_video',
+      modelType: 'OpaqueVideoPipelineIdentity',
+    }),
+    `binding:${JSON.stringify({ ...backendStrengthBinding, numericOptions: [] })}`,
   );
 });
 

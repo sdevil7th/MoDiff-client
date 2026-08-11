@@ -17,6 +17,11 @@ const AUDIO_VISUAL_EXTENSION_ROLES = new Set([
 
 const DECLARATIVE_BINDING_KEY = 'studioBinding';
 const DECLARATIVE_BINDING_GROUP = /^[a-z][a-z0-9-]{0,63}$/;
+const DECLARATIVE_IDENTITY_FIELDS = new Set<keyof StudioFormState>([
+  'maxSequenceLength',
+  'strength',
+  'conditioningScale',
+]);
 
 type DeclarativeStudioFieldBinding =
   | Readonly<{
@@ -67,7 +72,7 @@ export function readDeclarativeStudioFieldBinding(param?: NodeParams): Declarati
 
   const formFields = raw.formFields as string[];
   if (raw.transform === 'identity') {
-    if (formFields.length !== 1 || formFields[0] !== 'maxSequenceLength') {
+    if (formFields.length !== 1 || !DECLARATIVE_IDENTITY_FIELDS.has(formFields[0] as keyof StudioFormState)) {
       return false;
     }
     return {
@@ -134,11 +139,6 @@ function legacyManagedControlSemanticKey(
   if (classification.formKey) return classification.formKey;
   if (node.data.studioRole === 'loadImage' && paramKey === 'file') {
     return binding.mode === 'control_image' ? 'controlImage' : 'referenceImages';
-  }
-  if (node.data.studioRole === 'wanGenerate' && paramKey === 'strength') {
-    return binding.modelType === 'LTXVideoPipeline' && binding.mode === 'video_to_video'
-      ? 'conditioningScale'
-      : 'strength';
   }
   return undefined;
 }

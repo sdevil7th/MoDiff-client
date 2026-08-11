@@ -13081,6 +13081,234 @@ test('Diffusers audio contract signals update generic fields from the selected p
   });
 });
 
+test('Diffusers video contract actions update generic fields and bindings from the selected pipeline', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const ltxContract = {
+    schemaVersion: 1,
+    library: 'diffusers',
+    mediaKind: 'video',
+    pipelineClass: 'LTXConditionPipeline',
+    modes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+  };
+  const vaceContract = {
+    schemaVersion: 1,
+    library: 'diffusers',
+    mediaKind: 'video',
+    pipelineClass: 'WanVACEPipeline',
+    modes: [
+      'text_to_video',
+      'video_to_video',
+      'video_inpaint',
+      'video_outpaint',
+      'reference_to_video',
+      'control_to_video',
+      'video_color_edit',
+    ],
+  };
+  const dynamicFields = [
+    'video',
+    'mask',
+    'reference_images',
+    'conditioning_scale',
+    'strength',
+    'denoise_strength',
+    'frame_rate',
+  ];
+  const studioBinding = (formField: 'strength' | 'conditioningScale') => ({
+    schemaVersion: 1,
+    group: `video-${formField === 'conditioningScale' ? 'conditioning-scale' : 'strength'}`,
+    formFields: [formField],
+    transform: 'identity',
+  });
+  const fieldOverlay = (pipelineClass: string, mode: string) => {
+    const visible =
+      pipelineClass === 'LTXConditionPipeline' && mode === 'video_to_video'
+        ? ['video', 'strength', 'denoise_strength', 'frame_rate']
+        : pipelineClass === 'WanVACEPipeline' && mode === 'video_to_video'
+          ? ['video', 'reference_images', 'conditioning_scale']
+          : [];
+    const overlay = Object.fromEntries(dynamicFields.map((field) => [field, { hidden: !visible.includes(field) }]));
+    for (const field of ['video', 'mask', 'reference_images']) {
+      overlay[field] = { ...overlay[field], required: field === 'video' && visible.includes(field) };
+    }
+    overlay.strength = {
+      ...overlay.strength,
+      fieldOptions: {
+        studioBinding: studioBinding(
+          pipelineClass === 'LTXConditionPipeline' && mode === 'video_to_video' ? 'conditioningScale' : 'strength',
+        ),
+      },
+    };
+    return overlay;
+  };
+
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Contract.VideoPipelineSelection': nodeDef('modules.Contract', 'VideoPipelineSelection', 'test', {
+            pipeline: {
+              type: 'video_diffusion_pipeline',
+              display: 'output',
+              signal: { direction: 'output', value: ltxContract },
+            },
+          }),
+          'modules.DiffusersVideo.Generate': nodeDef('modules.DiffusersVideo', 'Generate', 'Diffusers Video', {
+            pipeline: {
+              type: 'video_diffusion_pipeline',
+              display: 'input',
+              onSignal: [
+                { action: 'value', target: 'video_contract' },
+                { action: 'exec', data: 'update_adapter_modes' },
+              ],
+            },
+            video_contract: { type: 'object', value: ltxContract, hidden: true },
+            mode: { type: 'string', value: 'video_to_video', onChange: 'update_adapter_modes' },
+            video: { type: 'video', display: 'input', required: false },
+            mask: { type: 'video', display: 'input', required: false },
+            reference_images: { type: 'image', display: 'input', required: false },
+            conditioning_scale: { type: 'float', value: 1 },
+            strength: { type: 'float', value: 0.8 },
+            denoise_strength: { type: 'float', value: 1 },
+            frame_rate: { type: 'int', value: 25 },
+            video_out: { type: 'video', display: 'output' },
+          }),
+        },
+      }),
+    });
+  });
+
+  const actionSelections: string[] = [];
+  await page.route('**/fields/action', async (route) => {
+    const request = (route.request().postDataJSON() ?? {}) as {
+      node?: string;
+      fn?: string;
+      values?: { mode?: string; video_contract?: typeof ltxContract };
+    };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+    if (request.fn !== 'update_adapter_modes' || !request.node || !request.values?.video_contract) return;
+    const selected = request.values.video_contract;
+    const expected = selected.pipelineClass === 'LTXConditionPipeline' ? ltxContract : vaceContract;
+    if (JSON.stringify(selected) !== JSON.stringify(expected)) {
+      actionSelections.push('rejected');
+      return;
+    }
+    const mode = request.values.mode ?? expected.modes[0];
+    actionSelections.push(`${selected.pipelineClass}:${mode}`);
+    const updates = {
+      mode: { options: expected.modes, default: expected.modes[0], value: mode },
+      ...fieldOverlay(selected.pipelineClass, mode),
+    };
+    for (const [field, params] of Object.entries(updates)) {
+      await page.evaluate(
+        ({ node, field, params }) => {
+          window.__MODIFF_E2E__!.sendWebsocketMessage({ type: 'set_field_params', node, field, params });
+        },
+        { node: request.node, field, params },
+      );
+    }
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const ids = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const source = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Contract.VideoPipelineSelection');
+    const generate = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.DiffusersVideo.Generate');
+    window.__MODIFF_E2E__!.connectGraph({
+      source,
+      sourceHandle: 'pipeline',
+      target: generate,
+      targetHandle: 'pipeline',
+    });
+    return { source, generate };
+  });
+
+  const state = () =>
+    page.evaluate(({ generate }) => {
+      const graph = window.__MODIFF_E2E__!.exportWorkflowGraph() as unknown as {
+        nodes: Array<{
+          id: string;
+          data: {
+            params: Record<
+              string,
+              { hidden?: boolean; required?: boolean; fieldOptions?: { studioBinding?: { formFields?: string[] } } }
+            >;
+          };
+        }>;
+      };
+      const params = graph.nodes.find((node) => node.id === generate)!.data.params;
+      return {
+        videoRequired: params.video.required,
+        referenceHidden: params.reference_images.hidden,
+        conditioningHidden: params.conditioning_scale.hidden,
+        strengthHidden: params.strength.hidden,
+        denoiseHidden: params.denoise_strength.hidden,
+        strengthFormField: params.strength.fieldOptions?.studioBinding?.formFields?.[0],
+      };
+    }, ids);
+
+  await expect.poll(() => actionSelections.at(-1)).toBe('LTXConditionPipeline:video_to_video');
+  await expect.poll(state).toEqual({
+    videoRequired: true,
+    referenceHidden: true,
+    conditioningHidden: true,
+    strengthHidden: false,
+    denoiseHidden: false,
+    strengthFormField: 'conditioningScale',
+  });
+
+  await page.evaluate(
+    ({ source, selected }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'set_field_params',
+        node: source,
+        field: 'pipeline',
+        params: { signal: { direction: 'output', value: selected } },
+      });
+    },
+    { source: ids.source, selected: vaceContract },
+  );
+  await expect.poll(() => actionSelections.at(-1)).toBe('WanVACEPipeline:video_to_video');
+  await expect.poll(state).toEqual({
+    videoRequired: true,
+    referenceHidden: false,
+    conditioningHidden: false,
+    strengthHidden: true,
+    denoiseHidden: true,
+    strengthFormField: 'strength',
+  });
+
+  const beforeTamper = await state();
+  await page.evaluate(
+    ({ source, selected }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'set_field_params',
+        node: source,
+        field: 'pipeline',
+        params: { signal: { direction: 'output', value: selected } },
+      });
+    },
+    { source: ids.source, selected: { ...vaceContract, modes: ['video_to_video'] } },
+  );
+  await expect.poll(() => actionSelections.at(-1)).toBe('rejected');
+  await expect.poll(state).toEqual(beforeTamper);
+});
+
 test('workflow tabs remain a single horizontally scrollable row with pinned new-tab access', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
