@@ -1494,6 +1494,23 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     mode: 'multi_image_reference_edit',
     contentHash: 'studio-spec-v1-86a68b80',
   };
+  const qwenLayeredBindings = qwenModularBindingRows.map((item) =>
+    item[0] === 'loadImage' && item[1] === 'alpha_channel' ? ['loadImage', 'alpha_channel', 'addAlpha'] : item,
+  );
+  qwenLayeredBindings.splice(11, 0, ['prompt', 'max_sequence_length', 'maxSequenceLength']);
+  qwenLayeredBindings.push(['denoise', 'layers', 'layers']);
+  const qwenLayeredSpec = {
+    ...qwenModularSpec,
+    id: 'qwen-image-layered:layer-decomposition:v1',
+    modelType: 'QwenImageLayeredModularPipeline',
+    mode: 'layer_decomposition',
+    executionProfileId: 'qwen-layered:modular',
+    pipelineClass: 'QwenImageLayeredModularPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-Layered',
+    edges: qwenModularEdgeRows.filter(([, sourceHandle]) => sourceHandle !== 'route_state_out'),
+    bindings: qwenLayeredBindings,
+    contentHash: 'studio-spec-v1-dda194f0',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -2016,6 +2033,21 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: ['edit_image', 'multi_image_reference_edit'],
     studioExecutionSpecs: [qwenEditPlusSpec, qwenEditPlusMultiSpec],
   };
+  const qwenLayeredCapability = {
+    ...capability(qwenLayeredSpec),
+    modes: [qwenLayeredSpec.mode],
+    runnableModes: [qwenLayeredSpec.mode],
+    executionProfiles: [
+      {
+        ...profile(qwenLayeredSpec),
+        modes: [qwenLayeredSpec.mode],
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+      },
+    ],
+    studioExecutionSpecModes: [qwenLayeredSpec.mode],
+    studioExecutionSpecs: [qwenLayeredSpec],
+  };
   const kleinCapability = {
     ...capability(kleinSpec),
     modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
@@ -2088,6 +2120,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...wanVaceControlBindingRows,
     ...qwenOutpaintBindingRows,
     ...qwenModularBindingRows,
+    ...qwenLayeredSpec.bindings,
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
@@ -2184,6 +2217,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         fillCapability,
         qwenInpaintCapability,
         qwenEditPlusCapability,
+        qwenLayeredCapability,
         capability(i2vSpec),
         capability(ti2vSpec),
         {
@@ -2674,6 +2708,56 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       );
       assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenEditPlusForm), null);
     }
+
+    const qwenLayeredForm = {
+      ...qwenModularForm,
+      modelType: qwenLayeredSpec.modelType,
+      mode: qwenLayeredSpec.mode,
+      referenceImages: ['layer-source.png'],
+      layers: 3,
+      maxSequenceLength: 512,
+      width: 640,
+      height: 640,
+    };
+    const layeredRegistry = structuredClone(nodesStoreModule.useNodesStore.getState().nodesRegistry);
+    for (const key of [
+      'modules.ModularDiffusers.ImageEncode',
+      'modules.ModularDiffusers.Denoise',
+      'modules.ModularDiffusers.DecodeLatents',
+    ]) {
+      delete layeredRegistry[key].params.route_state_in;
+      delete layeredRegistry[key].params.route_state_out;
+    }
+    nodesStoreModule.useNodesStore.setState({ nodesRegistry: layeredRegistry });
+    flowStoreModule.useFlowStore.setState((state) => ({
+      nodes: state.nodes.map((node) => {
+        const key = `${node.data.module}.${node.data.action}`;
+        return layeredRegistry[key]
+          ? { ...node, data: { ...node.data, params: structuredClone(layeredRegistry[key].params) } }
+          : node;
+      }),
+    }));
+    studioStoreModule.useStudioStore.setState({ form: qwenLayeredForm });
+    await graphBridge.createOrUpdateStudioGraph(qwenLayeredForm);
+    const qwenLayeredBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenLayeredNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(qwenLayeredBinding.executionSpec.id, qwenLayeredSpec.id);
+    assert.equal(qwenLayeredBinding.executionSpec.contentHash, qwenLayeredSpec.contentHash);
+    assert.deepEqual(topology(qwenLayeredBinding), qwenLayeredSpec.edges.map((row) => [...row]).sort());
+    assert.equal(
+      qwenLayeredNodes.find((item) => item.id === qwenLayeredBinding.nodes.loadImage).data.params.alpha_channel.value,
+      'add alpha',
+    );
+    assert.equal(
+      qwenLayeredNodes.find((item) => item.id === qwenLayeredBinding.nodes.denoise).data.params.layers.value,
+      3,
+    );
+    assert.equal(
+      qwenLayeredNodes.find((item) => item.id === qwenLayeredBinding.nodes.prompt).data.params.max_sequence_length
+        .value,
+      512,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenLayeredForm), null);
 
     const i2vForm = {
       ...baseForm,

@@ -734,6 +734,46 @@ function mockQwenEditPlusExecutionCapability() {
   };
 }
 
+function mockQwenLayeredExecutionCapability() {
+  const base = mockQwenEditPlusExecutionCapability();
+  const modular = base.studioExecutionSpecs[0];
+  const bindings = modular.bindings.map((item) =>
+    item[0] === 'loadImage' && item[1] === 'alpha_channel' ? ['loadImage', 'alpha_channel', 'addAlpha'] : item,
+  );
+  bindings.splice(11, 0, ['prompt', 'max_sequence_length', 'maxSequenceLength']);
+  bindings.push(['denoise', 'layers', 'layers']);
+  const spec = {
+    ...modular,
+    id: 'qwen-image-layered:layer-decomposition:v1',
+    modelType: 'QwenImageLayeredModularPipeline',
+    mode: 'layer_decomposition',
+    executionProfileId: 'qwen-layered:modular',
+    pipelineClass: 'QwenImageLayeredModularPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-Layered',
+    edges: modular.edges.filter(([, sourceHandle]) => sourceHandle !== 'route_state_out'),
+    bindings,
+    contentHash: 'studio-spec-v1-dda194f0',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    modes: [spec.mode],
+    runnableModes: [spec.mode],
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: [spec.mode],
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+      },
+    ],
+    studioExecutionSpecModes: [spec.mode],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockFluxExecutionCapability(
   modelType:
     | 'FluxSchnellPipeline'
@@ -6201,6 +6241,7 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
 test('mocked Studio blocks missing models, marks loader red, and keeps local tabs', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-Edit');
+  mockInstalledRepos.add('Qwen/Qwen-Image-Layered');
   mockInstalledRepos.add('Qwen/Qwen-Image-Edit-2511');
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = true;
@@ -7609,6 +7650,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   page,
 }) => {
   mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-Layered');
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-schnell');
@@ -7645,6 +7687,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     mockFluxFillExecutionCapability(),
     mockQwenEditInpaintExecutionCapability(),
     mockQwenEditPlusExecutionCapability(),
+    mockQwenLayeredExecutionCapability(),
     mockWanI2vExecutionCapability(),
     mockWanTi2vExecutionCapability(),
     mockWanT2vExecutionCapability(),
@@ -7694,7 +7737,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(19);
+    .toHaveLength(20);
 
   const zImage = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7854,6 +7897,87 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     source: ['qwen-plus-a.png', 'qwen-plus-b.png'],
     topology: mockQwenEditPlusExecutionCapability()
       .studioExecutionSpecs[1].edges.map((item) => [...item])
+      .sort(),
+  });
+
+  const qwenLayered = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'layer_decomposition',
+      modelType: 'QwenImageLayeredModularPipeline',
+      resourceMode: 'auto',
+      referenceImages: ['qwen-layer-source.png'],
+      layers: 3,
+      maxSequenceLength: 512,
+      width: 640,
+      height: 640,
+    });
+    const finalization = window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const resolutionBinding = {
+      schemaVersion: 1,
+      group: 'source-resolution',
+      formFields: ['width', 'height'],
+      transform: 'nearest-option-to-long-edge',
+    };
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('EncodePrompt', {
+      prompt: { type: 'text', value: '' },
+      negative_prompt: { type: 'text', value: '' },
+      image: { type: 'image', display: 'input' },
+      resolution: { type: 'int', options: [640, 1024], fieldOptions: { studioBinding: resolutionBinding } },
+      use_en_prompt: { type: 'boolean', value: false },
+      max_sequence_length: { type: 'int', value: 1024 },
+      embeddings: { type: 'TextEmbeddings', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('ImageEncode', {
+      image: { type: 'image', display: 'input' },
+      resolution: { type: 'int', options: [640, 1024], fieldOptions: { studioBinding: resolutionBinding } },
+      seed: { type: 'int', value: 0 },
+      image_latents: { type: 'Latents', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('Denoise', {
+      scheduler: { type: 'Scheduler', display: 'input' },
+      embeddings: { type: 'TextEmbeddings', display: 'input' },
+      seed: { type: 'int', value: 0 },
+      num_inference_steps: { type: 'int', value: 50 },
+      guidance_scale: { type: 'float', value: 4 },
+      layers: { type: 'int', value: 4 },
+      image_latents: { type: 'Latents', display: 'input' },
+      latents: { type: 'Latents', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('DecodeLatents', {
+      latents: { type: 'Latents', display: 'input' },
+      images: { type: 'image', display: 'output' },
+    });
+    await finalization;
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const roles = new Map(Object.entries(binding.nodes).map(([role, id]) => [id, role]));
+    return {
+      receipt: binding.executionSpec,
+      source: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+      alpha: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.alpha_channel?.value,
+      layers: state.flow.nodes.find((node) => node.id === binding.nodes.denoise)?.params?.layers?.value,
+      maxSequenceLength: state.flow.nodes.find((node) => node.id === binding.nodes.prompt)?.params?.max_sequence_length
+        ?.value,
+      resolution: state.flow.nodes.find((node) => node.id === binding.nodes.imageEncode)?.params?.resolution?.value,
+      topology: state.flow.edges
+        .map((edge) => [roles.get(edge.source), edge.sourceHandle, roles.get(edge.target), edge.targetHandle])
+        .sort(),
+    };
+  });
+  expect(qwenLayered).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'qwen-image-layered:layer-decomposition:v1',
+      contentHash: 'studio-spec-v1-dda194f0',
+      executionProfileId: 'qwen-layered:modular',
+    },
+    source: ['qwen-layer-source.png'],
+    alpha: 'add alpha',
+    layers: 3,
+    maxSequenceLength: 512,
+    resolution: 640,
+    topology: mockQwenLayeredExecutionCapability()
+      .studioExecutionSpecs[0].edges.map((item) => [...item])
       .sort(),
   });
 

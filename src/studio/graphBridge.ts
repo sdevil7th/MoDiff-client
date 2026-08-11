@@ -3113,6 +3113,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     empty: '',
     true: true,
     false: false,
+    addAlpha: 'add alpha',
     removeAlpha: 'remove alpha',
     regionalCompile: false,
     denoiserCache: 'none',
@@ -3601,8 +3602,8 @@ export function syncStudioGraphValues(form: StudioFormState = useStudioStore.get
   const plannedForm = resolveGraphResourceForm(form);
   const binding = useStudioStore.getState().graphBinding;
   if (!binding) return false;
-  applyFormValues(binding, plannedForm);
   syncManagedFormControlAliases(plannedForm, binding);
+  applyFormValues(binding, plannedForm);
   return true;
 }
 
@@ -3660,8 +3661,8 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
     setStudioGraphDefinitionPending(binding, 'Graph changed.');
     return false;
   }
-  applyFormValues(binding, plannedForm);
   syncManagedFormControlAliases(plannedForm, binding);
+  applyFormValues(binding, plannedForm);
   if (binding.controlled) {
     const context = captureWorkflowOperationContext();
     const pendingHash = controlledDefinitionGraphHashes.get(context.workflowTabId);
@@ -4018,11 +4019,13 @@ async function finalizeModularGraph(
     }
   }
   assertGraphFinalizationActive(token);
-  applyFormValues(binding, form);
   // Dynamic action schemas may declare generic cross-node/form bindings. The
   // backend definition is authoritative, so synchronize only after all
   // Modular node-definition signals have settled.
   syncManagedFormControlAliases(form, binding);
+  // Explicit execution-spec bindings and reviewed per-mode constants are the
+  // final authority when a generic form alias targets the same field.
+  applyFormValues(binding, form);
   connectBaseGraph(binding);
   pinControlnetLoaderIdentity(binding.nodes.controlnetModel);
 }
@@ -4053,8 +4056,8 @@ async function finalizeStudioGraph(
     if (isAudioMode(form.mode)) {
       await finalizeAudioGraph(binding, form, timedOutGroups, token);
     } else if (modularVideoGroupObserved(binding)) {
-      applyFormValues(binding, form);
       syncManagedFormControlAliases(form, binding);
+      applyFormValues(binding, form);
       connectBaseGraph(binding);
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
