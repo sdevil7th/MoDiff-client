@@ -1653,6 +1653,38 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       role === 'audioGenerate' && param === 'task_type' ? 'cover' : source,
     ]),
   ];
+  const audioContinuationRoleRows = [
+    ...audioVariationRoleRows,
+    ['audioLoudnessMatch', 'modules.Audio.MatchLoudness', 300, -80],
+    ['audioJoin', 'modules.Audio.Join', 680, -80],
+  ];
+  const audioContinuationEdgeRows = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'audioPipeline', 'execution_recipe'],
+    ['audioPipeline', 'pipeline', 'audioGenerate', 'pipeline'],
+    ['loadAudio', 'audio', 'audioGenerate', 'source_audio'],
+    ['audioGenerate', 'audio', 'audioLoudnessMatch', 'audio'],
+    ['loadAudio', 'audio', 'audioLoudnessMatch', 'reference'],
+    ['audioLoudnessMatch', 'output', 'audioJoin', 'continuation'],
+    ['loadAudio', 'audio', 'audioJoin', 'source'],
+    ['audioJoin', 'output', 'audioExport', 'audio'],
+  ];
+  const audioContinuationBindingRows = [
+    ['loadAudio', 'file', 'sourceAudio'],
+    ...audioBindingRows.map(([role, param, source]) => [
+      role,
+      param,
+      role === 'audioGenerate' && param === 'task_type'
+        ? 'continuation'
+        : role === 'audioGenerate' && param === 'return_continuation_tail'
+          ? 'true'
+          : source,
+    ]),
+    ['audioLoudnessMatch', 'reference_window_seconds', 'referenceWindow15'],
+    ['audioLoudnessMatch', 'target_peak_dbfs', 'targetPeakMinus1'],
+    ['audioLoudnessMatch', 'max_adjustment_db', 'maxAdjustment12'],
+    ['audioJoin', 'boundary_fade_seconds', 'boundaryFade001'],
+  ];
   const aceSpec = {
     ...makeSpec(
       'AceStepAudioPipeline',
@@ -1677,6 +1709,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     edges: audioVariationEdgeRows,
     bindings: audioVariationBindingRows,
     contentHash: 'studio-spec-v1-eb222623',
+  };
+  const aceContinuationSpec = {
+    ...aceSpec,
+    id: 'ace-step-v1.5-xl-turbo:audio-continuation:v1',
+    mode: 'audio_continuation',
+    roles: audioContinuationRoleRows,
+    edges: audioContinuationEdgeRows,
+    bindings: audioContinuationBindingRows,
+    contentHash: 'studio-spec-v1-541adefc',
   };
   const profile = (spec) => ({
     id: spec.executionProfileId,
@@ -1749,8 +1790,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         quantizable_components: [],
       },
     ],
-    studioExecutionSpecModes: ['audio_variation', 'text_to_audio'],
-    studioExecutionSpecs: [aceSpec, aceVariationSpec],
+    studioExecutionSpecModes: ['audio_continuation', 'audio_variation', 'text_to_audio'],
+    studioExecutionSpecs: [aceSpec, aceVariationSpec, aceContinuationSpec],
   };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
@@ -1770,6 +1811,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['audioGenerate', 'modules.DiffusersAudio.Generate', -120, -80],
     ['audioExport', 'modules.Audio.Export', 1060, -80],
     ['loadAudio', 'modules.Audio.Load', -900, 300],
+    ['audioLoudnessMatch', 'modules.Audio.MatchLoudness', 300, -80],
+    ['audioJoin', 'modules.Audio.Join', 680, -80],
   ];
   const paramsByRole = Object.fromEntries(registryRoleRows.map(([role]) => [role, {}]));
   for (const [role, param] of [
@@ -1782,6 +1825,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...wanV2vBindingRows,
     ...ltxBindingRows,
     ...audioBindingRows,
+    ...audioContinuationBindingRows,
   ])
     paramsByRole[role][param] = scalar();
   for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [
@@ -1794,6 +1838,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['loadVideo', 'video', 'normalizeVideo', 'video'],
     ['normalizeVideo', 'output', 'wanGenerate', 'video'],
     ...audioEdgeRows,
+    ...audioContinuationEdgeRows,
   ]) {
     const type = sourceHandle;
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
@@ -1808,6 +1853,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   paramsByRole.loadAudio.audio = { type: 'audio', display: 'output' };
   paramsByRole.audioGenerate.source_audio = { type: 'audio', display: 'input' };
   paramsByRole.audioGenerate.reference_audio = { type: 'audio', display: 'input' };
+  paramsByRole.audioLoudnessMatch.output = { type: 'audio', display: 'output' };
+  paramsByRole.audioJoin.continuation = { type: 'audio', display: 'input' };
+  paramsByRole.audioJoin.output = { type: 'audio', display: 'output' };
+  paramsByRole.audioExport.audio = { type: 'audio', display: 'input' };
   paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
   const registry = Object.fromEntries(
     registryRoleRows.map(([role, nodeKey]) => {
@@ -2512,15 +2561,38 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceVariationForm), null);
 
-    const aceRepaintForm = {
+    const aceContinuationForm = {
       ...aceVariationForm,
-      mode: 'audio_repaint',
+      mode: 'audio_continuation',
     };
+    studioStoreModule.useStudioStore.setState({ form: aceContinuationForm });
+    await graphBridge.createOrUpdateStudioGraph(aceContinuationForm);
+    const aceContinuationBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    const aceContinuationNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const continuationGenerate = aceContinuationNodes.find(
+      (item) => item.id === aceContinuationBinding.nodes.audioGenerate,
+    ).data.params;
+    const continuationMatch = aceContinuationNodes.find(
+      (item) => item.id === aceContinuationBinding.nodes.audioLoudnessMatch,
+    ).data.params;
+    const continuationJoin = aceContinuationNodes.find((item) => item.id === aceContinuationBinding.nodes.audioJoin)
+      .data.params;
+    assert.equal(aceContinuationBinding.executionSpec.id, aceContinuationSpec.id);
+    assert.equal(aceContinuationBinding.executionSpec.contentHash, aceContinuationSpec.contentHash);
+    assert.deepEqual(topology(aceContinuationBinding), audioContinuationEdgeRows.map((row) => [...row]).sort());
+    assert.equal(continuationGenerate.task_type.value, 'continuation');
+    assert.equal(continuationGenerate.return_continuation_tail.value, true);
+    assert.equal(continuationMatch.reference_window_seconds.value, 15);
+    assert.equal(continuationMatch.target_peak_dbfs.value, -1);
+    assert.equal(continuationMatch.max_adjustment_db.value, 12);
+    assert.equal(continuationJoin.boundary_fade_seconds.value, 0.01);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceContinuationForm), null);
+
+    const aceRepaintForm = { ...aceContinuationForm, mode: 'audio_repaint' };
     studioStoreModule.useStudioStore.setState({ form: aceRepaintForm });
     await graphBridge.createOrUpdateStudioGraph(aceRepaintForm);
     const aceRepaintBinding = studioStoreModule.useStudioStore.getState().graphBinding;
     assert.equal(aceRepaintBinding.executionSpec, undefined);
-    assert.ok(aceRepaintBinding.nodes.loadAudio);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceRepaintForm), null);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });

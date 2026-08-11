@@ -1064,6 +1064,45 @@ function mockAceTextToAudioExecutionCapability() {
     ],
     contentHash: 'studio-spec-v1-eb222623',
   };
+  const continuationSpec = {
+    ...spec,
+    id: 'ace-step-v1.5-xl-turbo:audio-continuation:v1',
+    mode: 'audio_continuation',
+    roles: [
+      ['loadAudio', 'modules.Audio.Load', -520, 300],
+      ...roles,
+      ['audioLoudnessMatch', 'modules.Audio.MatchLoudness', 300, -80],
+      ['audioJoin', 'modules.Audio.Join', 680, -80],
+    ],
+    edges: [
+      ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+      ['diffusersRecipe', 'execution_recipe', 'audioPipeline', 'execution_recipe'],
+      ['audioPipeline', 'pipeline', 'audioGenerate', 'pipeline'],
+      ['loadAudio', 'audio', 'audioGenerate', 'source_audio'],
+      ['audioGenerate', 'audio', 'audioLoudnessMatch', 'audio'],
+      ['loadAudio', 'audio', 'audioLoudnessMatch', 'reference'],
+      ['audioLoudnessMatch', 'output', 'audioJoin', 'continuation'],
+      ['loadAudio', 'audio', 'audioJoin', 'source'],
+      ['audioJoin', 'output', 'audioExport', 'audio'],
+    ],
+    bindings: [
+      ['loadAudio', 'file', 'sourceAudio'],
+      ...bindings.map(([role, param, source]) => [
+        role,
+        param,
+        role === 'audioGenerate' && param === 'task_type'
+          ? 'continuation'
+          : role === 'audioGenerate' && param === 'return_continuation_tail'
+            ? 'true'
+            : source,
+      ]),
+      ['audioLoudnessMatch', 'reference_window_seconds', 'referenceWindow15'],
+      ['audioLoudnessMatch', 'target_peak_dbfs', 'targetPeakMinus1'],
+      ['audioLoudnessMatch', 'max_adjustment_db', 'maxAdjustment12'],
+      ['audioJoin', 'boundary_fade_seconds', 'boundaryFade001'],
+    ],
+    contentHash: 'studio-spec-v1-541adefc',
+  };
   const modes = ['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint'];
   return {
     modelType: spec.modelType,
@@ -1088,8 +1127,8 @@ function mockAceTextToAudioExecutionCapability() {
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
-    studioExecutionSpecModes: [variationSpec.mode, spec.mode],
-    studioExecutionSpecs: [spec, variationSpec],
+    studioExecutionSpecModes: [continuationSpec.mode, variationSpec.mode, spec.mode],
+    studioExecutionSpecs: [spec, variationSpec, continuationSpec],
   };
 }
 
@@ -1849,6 +1888,20 @@ const mockRegistry = {
     target_sample_rate: { type: 'int', value: 48000 },
     fade_in_seconds: { type: 'float', value: 0 },
     fade_out_seconds: { type: 'float', value: 0 },
+    output: { type: 'audio', display: 'output' },
+  }),
+  'modules.Audio.MatchLoudness': nodeDef('modules.Audio', 'MatchLoudness', 'audio', {
+    audio: { type: 'audio', display: 'input' },
+    reference: { type: 'audio', display: 'input' },
+    reference_window_seconds: { type: 'float', value: 15 },
+    target_peak_dbfs: { type: 'float', value: -1 },
+    max_adjustment_db: { type: 'float', value: 12 },
+    output: { type: 'audio', display: 'output' },
+  }),
+  'modules.Audio.Join': nodeDef('modules.Audio', 'Join', 'audio', {
+    source: { type: 'audio', display: 'input' },
+    continuation: { type: 'audio', display: 'input' },
+    boundary_fade_seconds: { type: 'float', value: 0.01 },
     output: { type: 'audio', display: 'output' },
   }),
 };
@@ -7978,6 +8031,45 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     taskType: 'cover',
     sourceFile: '@data/audio/source.wav',
   });
+
+  const aceContinuation = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'audio_continuation' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      taskType: state.flow.nodes.find((node) => node.id === binding.nodes.audioGenerate)?.params?.task_type?.value,
+      returnTail: state.flow.nodes.find((node) => node.id === binding.nodes.audioGenerate)?.params
+        ?.return_continuation_tail?.value,
+      loudness: state.flow.nodes.find((node) => node.id === binding.nodes.audioLoudnessMatch)?.params,
+      join: state.flow.nodes.find((node) => node.id === binding.nodes.audioJoin)?.params,
+    };
+  });
+  expect(aceContinuation.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'ace-step-v1.5-xl-turbo:audio-continuation:v1',
+    contentHash: 'studio-spec-v1-541adefc',
+    executionProfileId: 'ace-step-audio:direct',
+  });
+  expect(aceContinuation.edgeShape).toEqual([
+    'audio>audio',
+    'audio>reference',
+    'audio>source',
+    'audio>source_audio',
+    'execution_recipe>execution_recipe',
+    'output>audio',
+    'output>continuation',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+  ]);
+  expect(aceContinuation.taskType).toBe('continuation');
+  expect(aceContinuation.returnTail).toBe(true);
+  expect(aceContinuation.loudness?.reference_window_seconds?.value).toBe(15);
+  expect(aceContinuation.loudness?.target_peak_dbfs?.value).toBe(-1);
+  expect(aceContinuation.loudness?.max_adjustment_db?.value).toBe(12);
+  expect(aceContinuation.join?.boundary_fade_seconds?.value).toBe(0.01);
 
   const aceRepaint = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'audio_repaint' });

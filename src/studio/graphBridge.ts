@@ -3137,8 +3137,13 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     pipelineClass: spec.pipelineClass,
     text2music: 'text2music',
     cover: 'cover',
+    continuation: 'continuation',
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
     sampleRate48000: 48000,
+    referenceWindow15: 15,
+    targetPeakMinus1: -1,
+    maxAdjustment12: 12,
+    boundaryFade001: 0.01,
     seed: seedValue(form),
   };
   const candidateValues: Record<string, unknown> = {
