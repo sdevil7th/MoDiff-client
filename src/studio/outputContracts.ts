@@ -199,9 +199,6 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     attentionKwargsJson: stringValue(form.attentionKwargsJson, DEFAULT_STUDIO_FORM.attentionKwargsJson),
   };
   coerced.resourceMode = normalizeStudioResourceMode(form.resourceMode);
-  if (!['Qwen Image', 'FLUX Image'].includes(STUDIO_MODEL_PROFILES[coerced.modelType]?.family ?? '')) {
-    return { ...coerced, quantizationMode: 'none' };
-  }
   return coerced;
 }
 

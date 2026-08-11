@@ -3118,7 +3118,7 @@ test('every Studio model declares Auto requirements or an explicit Manual-only r
   }
 });
 
-test('Studio form migration normalizes legacy auto_cpu offload', () => {
+test('Studio form migration normalizes legacy offload and leaves quantization to exact readiness', () => {
   const legacy = outputContractsModule.coerceStudioFormState({
     ...profilesModule.DEFAULT_STUDIO_FORM,
     modelType: 'QwenImageModularPipeline',
@@ -3132,7 +3132,7 @@ test('Studio form migration normalizes legacy auto_cpu offload', () => {
     quantizationMode: 'bnb_4bit',
     offloadMode: 'group_disk',
   });
-  assert.equal(zImage.quantizationMode, 'none');
+  assert.equal(zImage.quantizationMode, 'bnb_4bit');
   assert.equal(zImage.offloadMode, 'group_disk');
 });
 
@@ -3309,6 +3309,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
             modes: ['text_to_image'],
             expert_cuda_policy: expertCudaPolicy,
             expert_quantization_policy: expertQuantizationPolicy,
+            expert_quantization_modes: ['bnb_4bit'],
             expert_mps_policy: expertMpsPolicy,
           },
         ],
@@ -3502,6 +3503,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
             modes: ['control_image'],
             execution_path: 'modular-diffusers',
             expert_quantization_policy: expertQuantizationPolicy,
+            expert_quantization_modes: ['bnb_4bit'],
           },
         ],
         studioExecutionSpecSchemaVersion: 1,
@@ -3596,6 +3598,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
             modes: ['text_to_image'],
             execution_path: 'direct-diffusers-image',
             expert_quantization_policy: expertQuantizationPolicy,
+            expert_quantization_modes: ['bnb_4bit'],
           },
         ],
         studioExecutionSpecSchemaVersion: 1,
@@ -3629,6 +3632,18 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   );
   assert.equal(directQuantizationIssue.blocking, true);
   assert.match(directQuantizationIssue.details, /quantized_components/);
+
+  const unsupportedQuantizationIssue = runReadinessModule.getStudioQuantizationCapabilityIssue(
+    {
+      ...form,
+      modelType: 'FluxKreaPipeline',
+      resourceMode: 'expert',
+      quantizationMode: 'bnb_4bit',
+    },
+    {},
+  );
+  assert.equal(unsupportedQuantizationIssue.blocking, true);
+  assert.match(unsupportedQuantizationIssue.message, /does not declare bnb_4bit/);
 
   const missingOffloadIssue = runReadinessModule.getStudioOffloadCapabilityIssue(
     { ...form, resourceMode: 'manual', offloadMode: 'group_disk' },

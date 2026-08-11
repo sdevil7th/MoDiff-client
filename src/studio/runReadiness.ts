@@ -475,6 +475,20 @@ export function getStudioQuantizationCapabilityIssue(
   const resolvedForm = resolveStudioResourceForm(form);
   const profile = getProfileForForm(resolvedForm);
   const executionProfile = readinessExecutionProfile(resolvedForm);
+  if (
+    resolvedForm.resourceMode === 'expert' &&
+    resolvedForm.quantizationMode !== 'none' &&
+    !executionProfile?.expert_quantization_modes?.includes(resolvedForm.quantizationMode)
+  ) {
+    return {
+      category: 'package',
+      severity: 'error',
+      blocking: true,
+      action: 'apply_low_vram_preset',
+      message: `${getStudioModelDisplayName(profile)} does not declare ${resolvedForm.quantizationMode} for this task.`,
+      details: 'Choose a quantization mode published by the exact backend execution profile.',
+    } satisfies Omit<RunReadinessIssue, 'id'>;
+  }
   const policy = executionProfile?.expert_quantization_policy;
   if (resolvedForm.resourceMode !== 'expert' || !policy || resolvedForm.quantizationMode !== policy.quantization_mode)
     return null;
