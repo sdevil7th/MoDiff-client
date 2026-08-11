@@ -88,6 +88,7 @@ function ids(value: unknown, pattern: RegExp, allowEmpty: boolean) {
   if (!Array.isArray(value) || value.length > 32 || (!allowEmpty && !value.length)) invalid();
   const result = value.map((id) => string(id, pattern));
   if (new Set(result).size !== result.length) invalid();
+  return result;
 }
 
 function contractKey(requirement: OptionalRuntimeRequirement) {
@@ -209,6 +210,11 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
         : parseExpertQuantizationPolicy(profile.expert_quantization_policy);
     const expertMpsPolicy =
       profile.expert_mps_policy === undefined ? undefined : parseExpertMpsPolicy(profile.expert_mps_policy);
+    const expertQuantizationModes =
+      profile.expert_quantization_modes === undefined
+        ? undefined
+        : (ids(profile.expert_quantization_modes, runtimeQuantization, false) as StudioRuntimeQuantization[]);
+    if (expertQuantizationModes && expertQuantizationModes.length > 4) invalid();
     if (
       (profile.optional_runtime_delivery !== undefined &&
         !delivery.test(profile.optional_runtime_delivery as string)) ||
@@ -225,6 +231,7 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     if (expertCudaPolicy) profile.expert_cuda_policy = expertCudaPolicy;
     if (expertQuantizationPolicy) profile.expert_quantization_policy = expertQuantizationPolicy;
     if (expertMpsPolicy) profile.expert_mps_policy = expertMpsPolicy;
+    if (expertQuantizationModes) profile.expert_quantization_modes = expertQuantizationModes;
     return profile as Record<string, unknown> & {
       id: string;
       modes: T[];
@@ -232,6 +239,7 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
       expert_cuda_policy?: StudioExpertCudaPolicy;
       expert_quantization_policy?: StudioExpertQuantizationPolicy;
       expert_mps_policy?: StudioExpertMpsPolicy;
+      expert_quantization_modes?: StudioRuntimeQuantization[];
     };
   });
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();

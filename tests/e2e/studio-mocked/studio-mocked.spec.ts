@@ -523,6 +523,7 @@ function mockZImageExecutionCapability() {
         default_repo: spec.defaultRepo,
         quantizable_components: [],
         default_quantized_components: [],
+        expert_quantization_modes: undefined,
         supported_offload_modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
         retry_offload_modes: ['model_cpu', 'group_disk'],
         max_low_memory_side: 1024,
@@ -655,6 +656,7 @@ function mockQwenImageExecutionCapability() {
         fallback_repo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: [],
+        expert_quantization_modes: ['bnb_4bit'],
         supported_offload_modes: ['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'],
         retry_offload_modes: ['model_cpu', 'sequential_cpu', 'group_disk'],
         max_low_memory_side: 1328,
@@ -675,6 +677,7 @@ function mockQwenImageExecutionCapability() {
         default_repo: controlSpec.defaultRepo,
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
+        expert_quantization_modes: ['bnb_4bit'],
         supported_offload_modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
         retry_offload_modes: ['group_disk'],
         max_low_memory_side: 768,
@@ -797,6 +800,7 @@ function mockQwenEditInpaintExecutionCapability() {
         default_repo: spec.defaultRepo,
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
+        expert_quantization_modes: ['bnb_4bit'],
         expert_quantization_policy: mockExpertQuantizationPolicy,
         expert_mps_policy: mockExpertMpsPolicy,
       },
@@ -813,6 +817,7 @@ function mockQwenEditInpaintExecutionCapability() {
         default_repo: spec.defaultRepo,
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
+        expert_quantization_modes: ['bnb_4bit'],
         expert_quantization_policy: mockExpertQuantizationPolicy,
         expert_mps_policy: mockExpertMpsPolicy,
       },
@@ -1050,6 +1055,7 @@ function mockFluxExecutionCapability(
         backend_path: 'modules.DiffusersImage.LoadPipeline',
         pipeline_class: spec.pipelineClass,
         default_repo: defaultRepo,
+        expert_quantization_modes: ['bnb_4bit', 'bnb_8bit', 'quanto_float8', 'torchao_float8'],
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
@@ -1651,6 +1657,31 @@ function mockAceTextToAudioExecutionCapability() {
     studioExecutionSpecModes: [continuationSpec.mode, repaintSpec.mode, variationSpec.mode, spec.mode],
     studioExecutionSpecs: [spec, variationSpec, continuationSpec, repaintSpec],
   };
+}
+
+function mockStudioExecutionCapabilities() {
+  return [
+    mockZImageExecutionCapability(),
+    mockQwenImageExecutionCapability(),
+    mockFluxExecutionCapability('FluxSchnellPipeline'),
+    mockFluxExecutionCapability('FluxDevPipeline'),
+    mockFluxExecutionCapability('FluxKreaPipeline'),
+    mockFluxExecutionCapability('Flux2KleinPipeline'),
+    mockFluxExecutionCapability('FluxDepthPipeline'),
+    mockFluxExecutionCapability('FluxCannyPipeline'),
+    mockFluxExecutionCapability('FluxReduxPipeline'),
+    mockFluxExecutionCapability('FluxKontextPipeline'),
+    mockFluxFillExecutionCapability(),
+    mockQwenEditInpaintExecutionCapability(),
+    mockQwenEditPlusExecutionCapability(),
+    mockQwenLayeredExecutionCapability(),
+    mockWanI2vExecutionCapability(),
+    mockWanTi2vExecutionCapability(),
+    mockWanT2vExecutionCapability(),
+    mockWanVaceT2vExecutionCapability(),
+    mockLtxT2vExecutionCapability(),
+    mockAceTextToAudioExecutionCapability(),
+  ];
 }
 
 function mockStudioExecutionSpecContract(modelType: string, mode: string) {
@@ -2582,7 +2613,7 @@ const mockGraphList = [
 ];
 
 async function installMockRoutes(page: Page) {
-  mockAdvertiseStudioExecutionSpecs = false;
+  mockAdvertiseStudioExecutionSpecs = true;
   mockFileUploadCalls = 0;
   const workflows = new Map<string, Record<string, unknown>>();
   const userBlocks = new Map<string, Record<string, unknown>>();
@@ -2833,7 +2864,16 @@ async function installMockRoutes(page: Page) {
     });
   });
   await page.route('**/model_capabilities**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ capabilities: [] }) });
+    const capabilities = mockStudioExecutionCapabilities();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities,
+        studioExecutionSpecs: capabilities.flatMap((capability) => capability.studioExecutionSpecs),
+      }),
+    });
   });
   await page.route('**/custom_modules', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ modules: [] }) });
@@ -4712,6 +4752,11 @@ test('mocked imported assets fill active Studio input slots', async ({ page }) =
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  mockAdvertiseStudioExecutionSpecs = false;
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ capabilities: [] }) });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
@@ -5171,6 +5216,11 @@ test('mocked workflow artifact requirements are contextual and role grouped', as
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  mockAdvertiseStudioExecutionSpecs = false;
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ capabilities: [] }) });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
 
@@ -5641,7 +5691,7 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
   const cases = [
-    ['fast_lora', ['lora.modular.v1'], { resourceMode: 'expert' }],
+    ['fast_lora', ['lora.diffusers-image.v1'], { resourceMode: 'expert' }],
     ['flux_lora_cinematic_octane_3d', ['lora.diffusers-image.v1'], {}],
     ['ace_step_custom_lora', ['lora.diffusers-audio.v1'], {}],
     ['qwen_upscale_finish', ['upscale.image.v1'], {}],
@@ -5672,6 +5722,7 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
         proofVersion: binding?.finalizationProof?.schemaVersion,
         proofContracts: binding?.finalizationProof?.contractIds,
         manifestContracts: binding?.controlled?.contractIds,
+        executionSpec: binding?.executionSpec,
         graphHash: binding?.finalizationProof?.managedGraphHash,
         divergence: window.__MODIFF_E2E__!.inspectStudioGraphBindingDivergence(),
         qualityFps: qualityGenerate
@@ -5689,6 +5740,7 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
       proofVersion: 3,
       proofContracts: [...expectedContracts].sort(),
       manifestContracts: [...expectedContracts].sort(),
+      executionSpec: expect.objectContaining({ schemaVersion: 1 }),
       graphHash: expect.stringMatching(/^graph-v1-/),
       divergence: null,
       qualityFps: true,
@@ -5714,12 +5766,14 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
         return {
           proof: current.studio.graphBinding?.finalizationProof?.schemaVersion,
           contracts: current.studio.graphBinding?.controlled?.contractIds,
+          executionSpec: current.studio.graphBinding?.executionSpec,
           loop: loop?.id,
           bodyParents: body.map((node) => node.parentId),
         };
       });
       expect(restored.proof).toBe(3);
       expect(restored.contracts).toEqual(['quality-video.i2v.v1', 'upscale.quality-loop.v1']);
+      expect(restored.executionSpec).toEqual(expect.objectContaining({ schemaVersion: 1 }));
       expect(restored.loop).toBeTruthy();
       expect(restored.bodyParents).toEqual(Array(5).fill(restored.loop));
     }
@@ -6263,6 +6317,9 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
     .poll(async () => {
       const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
       const decode = current.flow.nodes.find((node) => node.action === 'DecodeLatents');
+      const directGenerate = current.flow.nodes.find(
+        (node) => node.id === current.studio.graphBinding?.nodes.diffusersImageGenerate,
+      );
       const upscaler = current.flow.nodes.find((node) => node.action === 'Upscaler');
       const finishingPreview = current.flow.nodes.find((node) => node.studioRole === 'upscalePreview');
       return {
@@ -6271,7 +6328,9 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
         lastError: current.studio.lastError,
         model: upscaler?.params?.model_id?.value,
         downscale: upscaler?.params?.downscale?.value,
-        decodeConnected: current.flow.edges.some((edge) => edge.source === decode?.id && edge.target === upscaler?.id),
+        sourceConnected: current.flow.edges.some(
+          (edge) => edge.source === (decode ?? directGenerate)?.id && edge.target === upscaler?.id,
+        ),
         previewConnected: current.flow.edges.some(
           (edge) => edge.source === upscaler?.id && edge.target === finishingPreview?.id,
         ),
@@ -6289,7 +6348,7 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
         value: 'amd/realesrgan-x4plus/RealESRGAN_x4plus.pth',
       },
       downscale: 0.5,
-      decodeConnected: true,
+      sourceConnected: true,
       previewConnected: true,
       upscalerManaged: true,
     });
@@ -6300,12 +6359,15 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
       async () => {
         const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
         const decode = current.flow.nodes.find((node) => node.action === 'DecodeLatents');
+        const directGenerate = current.flow.nodes.find(
+          (node) => node.id === current.studio.graphBinding?.nodes.diffusersImageGenerate,
+        );
         const upscaler = current.flow.nodes.find((node) => node.studioRole === 'upscaler');
         const finishingPreview = current.flow.nodes.find((node) => node.studioRole === 'upscalePreview');
         return {
           resourceMode: current.studio.form.resourceMode,
-          decodeConnected: current.flow.edges.some(
-            (edge) => edge.source === decode?.id && edge.target === upscaler?.id,
+          sourceConnected: current.flow.edges.some(
+            (edge) => edge.source === (decode ?? directGenerate)?.id && edge.target === upscaler?.id,
           ),
           previewConnected: current.flow.edges.some(
             (edge) => edge.source === upscaler?.id && edge.target === finishingPreview?.id,
@@ -6320,7 +6382,7 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
     )
     .toEqual({
       resourceMode: 'auto',
-      decodeConnected: true,
+      sourceConnected: true,
       previewConnected: true,
       upscalerManaged: true,
       lastError: null,
@@ -6693,7 +6755,9 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
     .sort();
   expect(expertStudioRoles).toHaveLength(5);
   expect(
-    graphAfterSecondUpdate.flow.nodes.some((node) => node.studioRole === 'models' && node.action === 'ModelsLoader'),
+    graphAfterSecondUpdate.flow.nodes.some(
+      (node) => node.studioRole === 'diffusersImagePipeline' && node.action === 'LoadPipeline',
+    ),
   ).toBe(true);
   expect(graphAfterSecondUpdate.flow.edges.length).toBeGreaterThanOrEqual(graphAfterRunBlock.flow.edges.length);
 
@@ -7010,7 +7074,7 @@ test('busy one-shot action becomes Queue and submits once without stopping activ
   expect(destructiveRequests).toEqual([]);
 });
 
-test('restored finalized Modular workflow queues without replaying field actions or stopping active work', async ({
+test('restored finalized exact workflow queues without replaying field actions or stopping active work', async ({
   page,
 }) => {
   mockInstalledRepos.clear();
@@ -7022,7 +7086,7 @@ test('restored finalized Modular workflow queues without replaying field actions
   await ensureFrontend();
   await installMockRoutes(page);
 
-  const modelsLoader = mockRegistry['modules.ModularDiffusers.ModelsLoader'];
+  const imagePipeline = mockRegistry['modules.DiffusersImage.LoadPipeline'];
   await page.route('**/nodes**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -7031,13 +7095,13 @@ test('restored finalized Modular workflow queues without replaying field actions
         instance: 'mock',
         nodes: {
           ...mockRegistry,
-          'modules.ModularDiffusers.ModelsLoader': {
-            ...modelsLoader,
+          'modules.DiffusersImage.LoadPipeline': {
+            ...imagePipeline,
             params: {
-              ...modelsLoader.params,
-              model_type: {
-                ...modelsLoader.params.model_type,
-                onChange: 'refresh_model_type',
+              ...imagePipeline.params,
+              pipeline_class: {
+                ...imagePipeline.params.pipeline_class,
+                onChange: 'refresh_pipeline_class',
               },
             },
           },
@@ -7252,6 +7316,9 @@ test('backend declarative bindings synchronize both generic Layered actions afte
     return promptUpdated && imageUpdated;
   }, resolutionBinding);
   expect(refreshed).toBe(true);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.setFirstNodeCollapsedByAction('EncodePrompt', false))).toBe(
+    true,
+  );
 
   await expect
     .poll(async () => {
@@ -7278,7 +7345,11 @@ test('backend declarative bindings synchronize both generic Layered actions afte
     () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'EncodePrompt')?.id,
   );
   expect(promptNodeId).toBeTruthy();
-  const opaqueControl = page.locator(`.react-flow__node[data-id="${promptNodeId}"] [data-key="contract_alpha"]`);
+  expect(
+    await page.evaluate(() => window.__MODIFF_E2E__!.setFirstNodePositionByAction('EncodePrompt', { x: 120, y: 100 })),
+  ).toBe(true);
+  const promptNode = page.locator(`.react-flow__node[data-id="${promptNodeId}"]`);
+  const opaqueControl = promptNode.locator('[data-key="contract_alpha"]');
   await opaqueControl.getByRole('button').click();
   await page.getByRole('option', { name: '1024', exact: true }).click();
   await expect
@@ -7454,7 +7525,7 @@ test('Wan A14B resident I2V templates retain VAE tiling and configure both nativ
     });
 });
 
-test('mocked Studio blocks Expert Modular Qwen run while prompt embeddings are still finalizing', async ({ page }) => {
+test('mocked Studio keeps exact direct Qwen Expert graphs independent of unused Modular fields', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
@@ -7472,24 +7543,21 @@ test('mocked Studio blocks Expert Modular Qwen run while prompt embeddings are s
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
-    try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
-        resourceMode: 'expert',
-        quantizationMode: 'bnb_4bit',
-        dtype: 'bfloat16',
-        autoOffload: true,
-        offloadMode: 'model_cpu',
-        device: 'cuda:0',
-      });
-    } catch {
-      // The dynamic registry intentionally leaves prompt embeddings unresolved.
-    }
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      resourceMode: 'expert',
+      quantizationMode: 'bnb_4bit',
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'model_cpu',
+      device: 'cuda:0',
+    });
   });
-  await expect(page.getByTestId('studio-run')).toBeDisabled({ timeout: 30_000 });
-  await expect(page.getByTestId('studio-run-readiness')).toContainText('Run blocked', { timeout: 30_000 });
-  await expect(page.getByTestId('studio-graph-finalization')).toContainText(/prompt embeddings/i, {
-    timeout: 30_000,
-  });
+  await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
+  const graph = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes);
+  expect(graph.some((node) => node.studioRole === 'diffusersImagePipeline' && node.action === 'LoadPipeline')).toBe(
+    true,
+  );
+  expect(graph.some((node) => node.action === 'ModelsLoader' || node.action === 'EncodePrompt')).toBe(false);
 });
 
 test('mocked Studio consumes the exact execution-profile Expert CUDA policy', async ({ page }) => {
@@ -7532,6 +7600,39 @@ test('mocked Studio consumes the exact execution-profile Expert CUDA policy', as
     timeout: 30_000,
   });
   await expect(page.getByTestId('studio-run')).toBeDisabled();
+});
+
+test('mocked Studio derives Expert quantization choices from the exact execution profile', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const capability = mockQwenImageExecutionCapability();
+  capability.executionProfiles[0].expert_quantization_modes = ['torchao_float8'];
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, capabilities: [capability] }),
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'QwenImageModularPipeline',
+      mode: 'text_to_image',
+      resourceMode: 'expert',
+      quantizationMode: 'none',
+    }),
+  );
+  await setStudioViewMode(page, 'expert');
+
+  await page.getByTestId('studio-section-toggle-runtime').click();
+  await page.getByTestId('studio-quantization-select').click();
+  await expect(page.getByRole('option', { name: 'No quantization' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'TorchAO float8' })).toBeVisible();
+  await expect(page.getByRole('option', { name: '4-bit BnB' })).toHaveCount(0);
 });
 
 test('mocked Studio consumes the exact execution-profile Expert MPS policy', async ({ page }) => {
@@ -7785,6 +7886,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       installed: true,
       artifactStatus: { installed: true, complete: true },
       proof: { status: 'live_proven', source: 'mock_live_receipt' },
+      studioExecutionSpecContract: mockStudioExecutionSpecContract('QwenImageModularPipeline', 'text_to_image'),
     };
     await route.fulfill({
       status: 200,
@@ -7933,28 +8035,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await ensureFrontend();
   await installMockRoutes(page);
   mockAdvertiseStudioExecutionSpecs = true;
-  const capabilities = [
-    mockZImageExecutionCapability(),
-    mockQwenImageExecutionCapability(),
-    mockFluxExecutionCapability('FluxSchnellPipeline'),
-    mockFluxExecutionCapability('FluxDevPipeline'),
-    mockFluxExecutionCapability('FluxKreaPipeline'),
-    mockFluxExecutionCapability('Flux2KleinPipeline'),
-    mockFluxExecutionCapability('FluxDepthPipeline'),
-    mockFluxExecutionCapability('FluxCannyPipeline'),
-    mockFluxExecutionCapability('FluxReduxPipeline'),
-    mockFluxExecutionCapability('FluxKontextPipeline'),
-    mockFluxFillExecutionCapability(),
-    mockQwenEditInpaintExecutionCapability(),
-    mockQwenEditPlusExecutionCapability(),
-    mockQwenLayeredExecutionCapability(),
-    mockWanI2vExecutionCapability(),
-    mockWanTi2vExecutionCapability(),
-    mockWanT2vExecutionCapability(),
-    mockWanVaceT2vExecutionCapability(),
-    mockLtxT2vExecutionCapability(),
-    mockAceTextToAudioExecutionCapability(),
-  ];
+  const capabilities = mockStudioExecutionCapabilities();
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
     await route.fulfill({
@@ -10974,7 +11055,7 @@ test('mocked Studio leaves newly-created Expert Qwen quantization node expanded'
         controlImage: 'mock-control.png',
       });
     } catch (error) {
-      if (!String(error).includes('Graph preparation is still running')) throw error;
+      if (!/Graph preparation is still running|workflow changed/.test(String(error))) throw error;
     }
   });
 
@@ -11950,6 +12031,11 @@ test('late managed definitions adopt generic ControlNet routing only after its c
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  mockAdvertiseStudioExecutionSpecs = false;
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ capabilities: [] }) });
+  });
   await page.route('**/nodes**', async (route) => {
     await route.fulfill({
       status: 200,

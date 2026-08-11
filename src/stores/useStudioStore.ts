@@ -438,6 +438,7 @@ function reconcileSnapshotGraphBinding(
     managedEdgeIds:
       !binding || hasRecoveredExtensions ? currentManagedEdgeIds : Array.from(new Set(binding.managedEdgeIds)),
     fingerprint: binding?.fingerprint || `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}`,
+    ...(binding?.executionSpec ? { executionSpec: binding.executionSpec } : {}),
     ...(binding?.controlled ? { controlled: binding.controlled } : {}),
     ...(binding?.finalizationProof ? { finalizationProof: binding.finalizationProof } : {}),
     ...(binding?.finalizationProofInvalid ? { finalizationProofInvalid: true as const } : {}),

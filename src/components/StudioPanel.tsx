@@ -65,6 +65,7 @@ import {
   STUDIO_RESOURCE_MODES,
 } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
+import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
 import {
   autoPlanIsReady,
   fetchAutoResourcePlan,
@@ -160,6 +161,7 @@ export default function StudioPanel() {
     nodesRegistry,
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
+    studioExecutionSpecInvalid,
     installHfModel,
   } = useNodesStore(
     useShallow((state) => ({
@@ -170,6 +172,7 @@ export default function StudioPanel() {
       nodesRegistry: state.nodesRegistry,
       studioModelCapabilities: state.studioModelCapabilities,
       studioModelCapabilitiesAuthoritative: state.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: state.studioExecutionSpecInvalid,
       installHfModel: state.installHfModel,
     })),
   );
@@ -270,6 +273,9 @@ export default function StudioPanel() {
   const selectedModelName = getStudioModelDisplayName(STUDIO_MODEL_PROFILES[form.modelType]);
   const selectedModelRuntimeLabel = getStudioModelRuntimeLabel(STUDIO_MODEL_PROFILES[form.modelType], form);
   const selectedModelArtifactNote = getStudioModelArtifactNote(STUDIO_MODEL_PROFILES[form.modelType]);
+  const expertQuantizationModes =
+    exactStudioExecutionProfileForForm(studioModelCapabilities, studioExecutionSpecInvalid, form)
+      ?.expert_quantization_modes ?? [];
   const selectedModelInfo = `${selectedModelRuntimeLabel}. ${selectedModelName} defaults to ${STUDIO_MODEL_PROFILES[form.modelType].recommendedSteps} steps, ${STUDIO_MODEL_PROFILES[form.modelType].guidanceLabel.toLowerCase()} ${STUDIO_MODEL_PROFILES[form.modelType].recommendedGuidance}, ${STUDIO_MODEL_PROFILES[form.modelType].defaultDtype}. ${selectedModelArtifactNote}`;
   const selectedAutoPlanSummary = selectedAutoPlanCandidate
     ? `${selectedAutoPlanCandidate.resolvedArtifact ?? selectedAutoPlanCandidate.artifact ?? selectedAutoPlanCandidate.modelRepo} | ${selectedAutoPlanCandidate.qualityTier ?? 'quality plan'} | ${selectedAutoPlanCandidate.generation?.width ?? form.width}x${selectedAutoPlanCandidate.generation?.height ?? form.height} | ${selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps | ${selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}`
@@ -1654,15 +1660,8 @@ export default function StudioPanel() {
                   onChange={(checked) => updateAndSync({ autoOffload: checked })}
                   label="Auto-offload model components"
                 />
-                <div
-                  className={cx(
-                    'grid gap-2',
-                    capability.family === 'Qwen Image' || capability.family === 'FLUX Image'
-                      ? 'grid-cols-2'
-                      : 'grid-cols-1',
-                  )}
-                >
-                  {(capability.family === 'Qwen Image' || capability.family === 'FLUX Image') && (
+                <div className={cx('grid gap-2', expertQuantizationModes.length ? 'grid-cols-2' : 'grid-cols-1')}>
+                  {expertQuantizationModes.length > 0 && (
                     <StudioSelect
                       aria-label="Quantization"
                       data-testid="studio-quantization-select"
@@ -1673,14 +1672,17 @@ export default function StudioPanel() {
                       }}
                       options={[
                         { value: 'none', label: 'No quantization' },
-                        { value: 'bnb_4bit', label: '4-bit BnB' },
-                        ...(capability.family === 'FLUX Image'
-                          ? [
-                              { value: 'bnb_8bit', label: '8-bit BnB' },
-                              { value: 'quanto_float8', label: 'Quanto float8' },
-                              { value: 'torchao_float8', label: 'TorchAO float8' },
-                            ]
-                          : []),
+                        ...expertQuantizationModes.map((value) => ({
+                          value,
+                          label:
+                            value === 'bnb_4bit'
+                              ? '4-bit BnB'
+                              : value === 'bnb_8bit'
+                                ? '8-bit BnB'
+                                : value === 'quanto_float8'
+                                  ? 'Quanto float8'
+                                  : 'TorchAO float8',
+                        })),
                       ]}
                     />
                   )}

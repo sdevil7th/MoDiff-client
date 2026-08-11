@@ -422,6 +422,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
               expert_cuda_policy: expertCudaPolicy,
               expert_quantization_policy: expertQuantizationPolicy,
               expert_mps_policy: expertMpsPolicy,
+              expert_quantization_modes: ['bnb_4bit'],
             },
           ],
         },
@@ -440,6 +441,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
     expertQuantizationPolicy,
   );
   assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].expert_mps_policy, expertMpsPolicy);
+  assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].expert_quantization_modes, ['bnb_4bit']);
   assert.equal(state.studioModelCapabilities[0].executionProfiles[0].optional_runtime_requirement, undefined);
   const previousForm = studioStoreModule.useStudioStore.getState().form;
   const previousFlow = flowStoreModule.useFlowStore.getState();
@@ -539,6 +541,15 @@ test('mixed-version and conflicting execution runtime contracts fail closed', as
           },
         },
       ],
+    },
+    {
+      profiles: [{ id: firstId, modes: ['text_to_image'], expert_quantization_modes: [] }],
+    },
+    {
+      profiles: [{ id: firstId, modes: ['text_to_image'], expert_quantization_modes: ['bnb_4bit', 'bnb_4bit'] }],
+    },
+    {
+      profiles: [{ id: firstId, modes: ['text_to_image'], expert_quantization_modes: ['future_quantization'] }],
     },
     {
       profiles: [

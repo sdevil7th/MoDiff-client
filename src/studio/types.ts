@@ -643,6 +643,7 @@ export type StudioExecutionProfile = {
   default_quantized_components: string[];
   supported_offload_modes: StudioOffloadMode[];
   retry_offload_modes: StudioOffloadMode[];
+  expert_quantization_modes?: Exclude<StudioQuantizationMode, 'none'>[];
   max_low_memory_side?: number | null;
   max_low_memory_steps?: number | null;
   live_proof: boolean;

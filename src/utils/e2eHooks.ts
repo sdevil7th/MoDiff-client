@@ -171,6 +171,7 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
   if (!template) {
     throw new Error(`Unknown Studio template: ${templateId}`);
   }
+  await useNodesStore.getState().fetchStudioModelCapabilities();
 
   if (!useStudioStore.getState().workflowCanvasHydrated) {
     useStudioStore.getState().hydrateActiveWorkflowCanvas();
