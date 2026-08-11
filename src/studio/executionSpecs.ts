@@ -17,12 +17,12 @@ const REPO_ID = /^[A-Za-z\d_.-]+\/[A-Za-z\d_.-]+$/;
 const SPEC_KEYS =
   'actions,autoFields,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
 const SPEC_ROLES = new Set<StudioGraphRole>(
-  'diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport'.split(
+  'diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|normalizeVideo'.split(
     '|',
   ) as StudioGraphRole[],
 );
 const BINDING_SOURCES = new Set(
-  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|empty|true|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|outputType|maxSequenceLength|controlImage|referenceImages|maskImage|conditioningScale|alphaMode|removeAlpha|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson'.split(
+  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|empty|true|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|outputType|maxSequenceLength|controlImage|referenceImages|maskImage|sourceVideo|conditioningScale|alphaMode|removeAlpha|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson'.split(
     '|',
   ),
 );

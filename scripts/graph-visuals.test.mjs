@@ -1460,6 +1460,34 @@ test('backend execution specs materialize exact image and video recipes with sea
     defaultRepo: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
     contentHash: 'studio-spec-v1-10c9a3f2',
   };
+  const wanV2vRoleRows = [
+    ...videoRoleRows,
+    ['loadVideo', 'modules.Video.Load', -520, 260],
+    ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
+  ];
+  const wanV2vEdgeRows = [
+    ...videoEdgeRows,
+    ['loadVideo', 'video', 'normalizeVideo', 'video'],
+    ['normalizeVideo', 'output', 'wanGenerate', 'video'],
+  ];
+  const wanV2vBindingRows = [
+    ...videoBindingRows,
+    ['loadVideo', 'file', 'sourceVideo'],
+    ['normalizeVideo', 'width', 'width'],
+    ['normalizeVideo', 'height', 'height'],
+    ['normalizeVideo', 'num_frames', 'numFrames'],
+  ];
+  const wanV2vSpec = {
+    ...wanT2vSpec,
+    id: 'wan-21-t2v-1.3b:video-to-video:v1',
+    mode: 'video_to_video',
+    executionProfileId: 'wan-video-to-video:direct',
+    pipelineClass: 'WanVideoToVideoPipeline',
+    roles: wanV2vRoleRows,
+    edges: wanV2vEdgeRows,
+    bindings: wanV2vBindingRows,
+    contentHash: 'studio-spec-v1-473c930e',
+  };
   const i2vRoleRows = [...videoRoleRows, ['loadImage', 'modules.Image.Load', -520, 300]];
   const i2vEdgeRows = [...videoEdgeRows, ['loadImage', 'image', 'wanGenerate', 'reference_images']];
   const i2vBindingRows = [
@@ -1578,6 +1606,7 @@ test('backend execution specs materialize exact image and video recipes with sea
     ...inpaintBindingRows,
     ...videoBindingRows,
     ...i2vBindingRows,
+    ...wanV2vBindingRows,
   ])
     paramsByRole[role][param] = scalar();
   for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [
@@ -1657,12 +1686,12 @@ test('backend execution specs materialize exact image and video recipes with sea
           executionProfiles: [
             profile(wanT2vSpec),
             {
-              ...profile(wanT2vSpec),
-              id: 'wan-video-to-video:direct',
+              ...profile(wanV2vSpec),
               modes: ['video_to_video', 'video_color_edit'],
-              pipeline_class: 'WanVideoToVideoPipeline',
             },
           ],
+          studioExecutionSpecModes: ['text_to_video', 'video_to_video'],
+          studioExecutionSpecs: [wanT2vSpec, wanV2vSpec],
         },
       ],
       studioModelCapabilitiesAuthoritative: true,
@@ -2110,15 +2139,34 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioStoreModule.useStudioStore.setState({ form: wanV2vForm });
     await graphBridge.createOrUpdateStudioGraph(wanV2vForm);
     const wanV2vBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
-    assert.equal(wanV2vBinding.executionSpec, undefined, 'an unclaimed sibling mode remains on the legacy graph path');
+    assert.equal(wanV2vBinding.executionSpec.id, wanV2vSpec.id);
+    assert.equal(wanV2vBinding.executionSpec.contentHash, wanV2vSpec.contentHash);
     assert.ok(wanV2vBinding.nodes.loadVideo);
     assert.ok(wanV2vBinding.nodes.normalizeVideo);
+    assert.deepEqual(
+      topology(wanV2vBinding),
+      wanV2vEdgeRows
+        .map(([source, sourceHandle, target, targetHandle]) => [source, sourceHandle, target, targetHandle])
+        .sort(),
+    );
+    const wanV2vNodes = flowStoreModule.useFlowStore.getState().nodes;
     assert.equal(
-      flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === wanV2vBinding.nodes.wanPipeline).data
-        .params.pipeline_class.value,
+      wanV2vNodes.find((item) => item.id === wanV2vBinding.nodes.loadVideo).data.params.file.value,
+      wanV2vForm.sourceVideo,
+    );
+    assert.equal(
+      wanV2vNodes.find((item) => item.id === wanV2vBinding.nodes.wanPipeline).data.params.pipeline_class.value,
       'WanVideoToVideoPipeline',
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanV2vForm), null);
+
+    const wanColorForm = { ...wanV2vForm, mode: 'video_color_edit' };
+    studioStoreModule.useStudioStore.setState({ form: wanColorForm });
+    await graphBridge.createOrUpdateStudioGraph(wanColorForm);
+    const wanColorBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    assert.equal(wanColorBinding.executionSpec, undefined, 'the unclaimed color-edit sibling stays on its legacy path');
+    assert.ok(wanColorBinding.nodes.loadVideo);
+    assert.ok(wanColorBinding.nodes.normalizeVideo);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [

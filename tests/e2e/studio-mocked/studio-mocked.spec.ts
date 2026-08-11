@@ -819,6 +819,31 @@ function mockWanT2vExecutionCapability() {
     defaultRepo: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
     contentHash: 'studio-spec-v1-10c9a3f2',
   };
+  const videoSpec = {
+    ...spec,
+    id: 'wan-21-t2v-1.3b:video-to-video:v1',
+    mode: 'video_to_video',
+    executionProfileId: 'wan-video-to-video:direct',
+    pipelineClass: 'WanVideoToVideoPipeline',
+    roles: [
+      ...spec.roles,
+      ['loadVideo', 'modules.Video.Load', -520, 260] as const,
+      ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260] as const,
+    ],
+    edges: [
+      ...spec.edges,
+      ['loadVideo', 'video', 'normalizeVideo', 'video'] as const,
+      ['normalizeVideo', 'output', 'wanGenerate', 'video'] as const,
+    ],
+    bindings: [
+      ...spec.bindings,
+      ['loadVideo', 'file', 'sourceVideo'] as const,
+      ['normalizeVideo', 'width', 'width'] as const,
+      ['normalizeVideo', 'height', 'height'] as const,
+      ['normalizeVideo', 'num_frames', 'numFrames'] as const,
+    ],
+    contentHash: 'studio-spec-v1-473c930e',
+  };
   return {
     ...base,
     modelType: spec.modelType,
@@ -834,15 +859,15 @@ function mockWanT2vExecutionCapability() {
       },
       {
         ...base.executionProfiles[0],
-        id: 'wan-video-to-video:direct',
+        id: videoSpec.executionProfileId,
         model_type: spec.modelType,
         modes: ['video_to_video', 'video_color_edit'],
-        pipeline_class: 'WanVideoToVideoPipeline',
+        pipeline_class: videoSpec.pipelineClass,
         default_repo: spec.defaultRepo,
       },
     ],
-    studioExecutionSpecModes: [spec.mode],
-    studioExecutionSpecs: [spec],
+    studioExecutionSpecModes: [spec.mode, videoSpec.mode],
+    studioExecutionSpecs: [spec, videoSpec],
   };
 }
 
@@ -1397,6 +1422,7 @@ const mockRegistry = {
     prompt: { type: 'text', display: 'textarea', value: '' },
     negative_prompt: { type: 'text', display: 'textarea', value: '' },
     reference_images: { type: 'image', display: 'input' },
+    video: { type: 'video', display: 'input' },
     mode: { type: 'string', value: 'image_to_video' },
     width: { type: 'int', value: 768 },
     height: { type: 'int', value: 512 },
@@ -7397,14 +7423,45 @@ test('backend Studio execution specs materialize exact image and video recipes a
     return {
       receipt: binding.executionSpec,
       nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
       pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params?.pipeline_class
+        ?.value,
+      sourceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadVideo)?.params?.file?.value,
+      normalizedFrames: state.flow.nodes.find((node) => node.id === binding.nodes.normalizeVideo)?.params?.num_frames
         ?.value,
     };
   });
-  expect(wanV2v.receipt).toBeUndefined();
+  expect(wanV2v.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'wan-21-t2v-1.3b:video-to-video:v1',
+    contentHash: 'studio-spec-v1-473c930e',
+    executionProfileId: 'wan-video-to-video:direct',
+  });
   expect(wanV2v.nodes.loadVideo).toBeTruthy();
   expect(wanV2v.nodes.normalizeVideo).toBeTruthy();
+  expect(wanV2v.edgeShape).toEqual([
+    'execution_recipe>execution_recipe',
+    'output>video',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+    'video>video',
+    'video_out>video',
+  ]);
   expect(wanV2v.pipelineClass).toBe('WanVideoToVideoPipeline');
+  expect(wanV2v.sourceFile).toBe('@data/videos/source.mp4');
+  expect(wanV2v.normalizedFrames).toBe(81);
+
+  const wanColor = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'video_color_edit' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    return {
+      receipt: state.studio.graphBinding?.executionSpec,
+      hasLoadVideo: Boolean(state.studio.graphBinding?.nodes.loadVideo),
+      hasNormalizeVideo: Boolean(state.studio.graphBinding?.nodes.normalizeVideo),
+    };
+  });
+  expect(wanColor).toEqual({ receipt: undefined, hasLoadVideo: true, hasNormalizeVideo: true });
 });
 
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {
