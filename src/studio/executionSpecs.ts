@@ -17,12 +17,12 @@ const REPO_ID = /^[A-Za-z\d_.-]+\/[A-Za-z\d_.-]+$/;
 const SPEC_KEYS =
   'actions,autoFields,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
 const SPEC_ROLES = new Set<StudioGraphRole>(
-  'diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|normalizeVideo|audioPipeline|audioGenerate|audioExport'.split(
+  'diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|normalizeVideo|audioPipeline|audioGenerate|audioExport|loadAudio'.split(
     '|',
   ) as StudioGraphRole[],
 );
 const BINDING_SOURCES = new Set(
-  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|nativeMath|empty|true|false|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|outputType|maxSequenceLength|controlImage|referenceImages|maskImage|sourceVideo|conditioningScale|alphaMode|removeAlpha|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson|text2music|lyrics|audioDuration|extensionDuration|vocalLanguage|bpmNormalized|keyscale|timesignature|repaintingStart|repaintingEnd|audioCoverStrength|sampleRate48000'.split(
+  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|nativeMath|empty|true|false|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|outputType|maxSequenceLength|controlImage|referenceImages|maskImage|sourceVideo|conditioningScale|alphaMode|removeAlpha|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson|text2music|cover|sourceAudio|lyrics|audioDuration|extensionDuration|vocalLanguage|bpmNormalized|keyscale|timesignature|repaintingStart|repaintingEnd|audioCoverStrength|sampleRate48000'.split(
     '|',
   ),
 );

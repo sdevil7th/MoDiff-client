@@ -1637,6 +1637,22 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['audioGenerate', 'sample_rate', 'sampleRate48000'],
     ['audioExport', 'sample_rate', 'sampleRate48000'],
   ];
+  const audioVariationRoleRows = [['loadAudio', 'modules.Audio.Load', -520, 300], ...audioRoleRows];
+  const audioVariationEdgeRows = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'audioPipeline', 'execution_recipe'],
+    ['audioPipeline', 'pipeline', 'audioGenerate', 'pipeline'],
+    ['loadAudio', 'audio', 'audioGenerate', 'source_audio'],
+    ['audioGenerate', 'audio', 'audioExport', 'audio'],
+  ];
+  const audioVariationBindingRows = [
+    ['loadAudio', 'file', 'sourceAudio'],
+    ...audioBindingRows.map(([role, param, source]) => [
+      role,
+      param,
+      role === 'audioGenerate' && param === 'task_type' ? 'cover' : source,
+    ]),
+  ];
   const aceSpec = {
     ...makeSpec(
       'AceStepAudioPipeline',
@@ -1652,6 +1668,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     roles: audioRoleRows,
     edges: audioEdgeRows,
     bindings: audioBindingRows,
+  };
+  const aceVariationSpec = {
+    ...aceSpec,
+    id: 'ace-step-v1.5-xl-turbo:audio-variation:v1',
+    mode: 'audio_variation',
+    roles: audioVariationRoleRows,
+    edges: audioVariationEdgeRows,
+    bindings: audioVariationBindingRows,
+    contentHash: 'studio-spec-v1-eb222623',
   };
   const profile = (spec) => ({
     id: spec.executionProfileId,
@@ -1724,6 +1749,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         quantizable_components: [],
       },
     ],
+    studioExecutionSpecModes: ['audio_variation', 'text_to_audio'],
+    studioExecutionSpecs: [aceSpec, aceVariationSpec],
   };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
@@ -2471,8 +2498,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     await graphBridge.createOrUpdateStudioGraph(aceVariationForm);
     const aceVariationBinding = studioStoreModule.useStudioStore.getState().graphBinding;
     const aceVariationNodes = flowStoreModule.useFlowStore.getState().nodes;
-    assert.equal(aceVariationBinding.executionSpec, undefined);
+    assert.equal(aceVariationBinding.executionSpec.id, aceVariationSpec.id);
+    assert.equal(aceVariationBinding.executionSpec.contentHash, aceVariationSpec.contentHash);
     assert.ok(aceVariationBinding.nodes.loadAudio);
+    assert.deepEqual(topology(aceVariationBinding), audioVariationEdgeRows.map((row) => [...row]).sort());
     assert.equal(
       aceVariationNodes.find((item) => item.id === aceVariationBinding.nodes.loadAudio).data.params.file.value,
       aceVariationForm.sourceAudio,
@@ -2482,6 +2511,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'cover',
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceVariationForm), null);
+
+    const aceRepaintForm = {
+      ...aceVariationForm,
+      mode: 'audio_repaint',
+    };
+    studioStoreModule.useStudioStore.setState({ form: aceRepaintForm });
+    await graphBridge.createOrUpdateStudioGraph(aceRepaintForm);
+    const aceRepaintBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    assert.equal(aceRepaintBinding.executionSpec, undefined);
+    assert.ok(aceRepaintBinding.nodes.loadAudio);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceRepaintForm), null);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [

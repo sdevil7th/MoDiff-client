@@ -3136,6 +3136,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     artifact: audioTemplateBaseModel ?? spec.defaultRepo,
     pipelineClass: spec.pipelineClass,
     text2music: 'text2music',
+    cover: 'cover',
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
     sampleRate48000: 48000,
     seed: seedValue(form),

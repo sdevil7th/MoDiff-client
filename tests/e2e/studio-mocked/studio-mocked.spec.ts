@@ -1042,6 +1042,28 @@ function mockAceTextToAudioExecutionCapability() {
     actions: [],
     contentHash: 'studio-spec-v1-4bc8ed64',
   };
+  const variationSpec = {
+    ...spec,
+    id: 'ace-step-v1.5-xl-turbo:audio-variation:v1',
+    mode: 'audio_variation',
+    roles: [['loadAudio', 'modules.Audio.Load', -520, 300], ...roles],
+    edges: [
+      ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+      ['diffusersRecipe', 'execution_recipe', 'audioPipeline', 'execution_recipe'],
+      ['audioPipeline', 'pipeline', 'audioGenerate', 'pipeline'],
+      ['loadAudio', 'audio', 'audioGenerate', 'source_audio'],
+      ['audioGenerate', 'audio', 'audioExport', 'audio'],
+    ],
+    bindings: [
+      ['loadAudio', 'file', 'sourceAudio'],
+      ...bindings.map(([role, param, source]) => [
+        role,
+        param,
+        role === 'audioGenerate' && param === 'task_type' ? 'cover' : source,
+      ]),
+    ],
+    contentHash: 'studio-spec-v1-eb222623',
+  };
   const modes = ['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint'];
   return {
     modelType: spec.modelType,
@@ -1066,8 +1088,8 @@ function mockAceTextToAudioExecutionCapability() {
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
-    studioExecutionSpecModes: [spec.mode],
-    studioExecutionSpecs: [spec],
+    studioExecutionSpecModes: [variationSpec.mode, spec.mode],
+    studioExecutionSpecs: [spec, variationSpec],
   };
 }
 
@@ -7933,15 +7955,42 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     return {
       receipt: binding.executionSpec,
       hasLoadAudio: Boolean(binding.nodes.loadAudio),
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
       taskType: state.flow.nodes.find((node) => node.id === binding.nodes.audioGenerate)?.params?.task_type?.value,
       sourceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadAudio)?.params?.file?.value,
     };
   });
   expect(aceVariation).toEqual({
-    receipt: undefined,
+    receipt: {
+      schemaVersion: 1,
+      id: 'ace-step-v1.5-xl-turbo:audio-variation:v1',
+      contentHash: 'studio-spec-v1-eb222623',
+      executionProfileId: 'ace-step-audio:direct',
+    },
     hasLoadAudio: true,
+    edgeShape: [
+      'audio>audio',
+      'audio>source_audio',
+      'execution_recipe>execution_recipe',
+      'pipeline>pipeline',
+      'quantization_config>quantization_config',
+    ],
     taskType: 'cover',
     sourceFile: '@data/audio/source.wav',
+  });
+
+  const aceRepaint = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'audio_repaint' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const binding = window.__MODIFF_E2E__!.getState().studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      hasLoadAudio: Boolean(binding.nodes.loadAudio),
+    };
+  });
+  expect(aceRepaint).toEqual({
+    receipt: undefined,
+    hasLoadAudio: true,
   });
 });
 
