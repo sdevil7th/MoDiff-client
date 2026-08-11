@@ -17,7 +17,7 @@ const REPO_ID = /^[A-Za-z\d_.-]+\/[A-Za-z\d_.-]+$/;
 const SPEC_KEYS =
   'actions,autoFields,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
 const SPEC_ROLES = new Set<StudioGraphRole>(
-  'diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|qwenOutpaintCanvas|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|loadControlVideo|loadMaskVideo|normalizeVideo|alignMaskVideo|audioPipeline|audioGenerate|audioExport|loadAudio|audioLoudnessMatch|audioJoin'.split(
+  'models|prompt|imageEncode|denoise|decode|diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|qwenOutpaintCanvas|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|loadControlVideo|loadMaskVideo|normalizeVideo|alignMaskVideo|audioPipeline|audioGenerate|audioExport|loadAudio|audioLoudnessMatch|audioJoin'.split(
     '|',
   ) as StudioGraphRole[],
 );
@@ -49,8 +49,7 @@ export function parseStudioExecutionSpecs(
   modes: readonly StudioMode[],
   profiles: readonly StudioExecutionProfile[] | undefined,
 ): StudioExecutionSpec[] {
-  if (!Array.isArray(value)) invalid();
-  if (value.length > 16) invalid();
+  if (!Array.isArray(value) || value.length > 16) invalid();
   const specs = value.map((raw) => {
     if (!record(raw)) invalid();
     if (Object.keys(raw).sort().join() !== SPEC_KEYS) invalid();
@@ -61,7 +60,6 @@ export function parseStudioExecutionSpecs(
       typeof raw.id !== 'string' ||
       !SPEC_ID.test(raw.id) ||
       raw.modelType !== modelType ||
-      typeof raw.mode !== 'string' ||
       !modes.includes(raw.mode as StudioMode) ||
       !profile ||
       !profile.modes.includes(raw.mode as StudioMode) ||
@@ -71,16 +69,12 @@ export function parseStudioExecutionSpecs(
       raw.pipelineClass !== profile.pipeline_class ||
       raw.defaultRepo !== profile.default_repo ||
       typeof raw.executionPath !== 'string' ||
-      raw.executionPath.length > 128 ||
       !SPEC_ID.test(raw.executionPath) ||
       typeof raw.pipelineClass !== 'string' ||
       !PIPELINE_CLASS.test(raw.pipelineClass) ||
       typeof raw.defaultRepo !== 'string' ||
       raw.defaultRepo.length > 512 ||
-      raw.defaultRepo !== raw.defaultRepo.trim() ||
-      !REPO_ID.test(raw.defaultRepo) ||
-      typeof raw.contentHash !== 'string' ||
-      !/^studio-spec-v1-[0-9a-f]{8}$/.test(raw.contentHash)
+      !REPO_ID.test(raw.defaultRepo)
     )
       invalid();
 
@@ -164,7 +158,7 @@ export function parseStudioExecutionSpecs(
     if (
       !Array.isArray(autoFields) ||
       autoFields.length > 32 ||
-      !autoFields.every((item) => typeof item === 'string' && AUTO_FIELDS.has(item)) ||
+      !autoFields.every((item) => AUTO_FIELDS.has(item)) ||
       !unique(autoFields) ||
       !Array.isArray(raw.actions) ||
       raw.actions.length !== 0

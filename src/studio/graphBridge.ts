@@ -339,9 +339,7 @@ function hasDiffusersImageFacadeForMode(mode: StudioMode) {
 
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
-  if (!('nodes' in form) && executionSpecForForm(form)) return true;
-  if (!('nodes' in form) && executionProfileForForm(form)?.backend_path === 'modules.DiffusersImage.LoadPipeline')
-    return true;
+  if (!('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-image') return true;
   if (isFluxModel(form.modelType)) return true;
   if (
     !('nodes' in form) &&
@@ -1999,6 +1997,13 @@ function desiredExecutionSpecEdgeSpecs(binding: StudioGraphBinding) {
   const spec = executionSpecForBinding(binding);
   if (spec === undefined) return undefined;
   if (spec === null) return [];
+  if (
+    spec.bindings.some(([role, param]) => {
+      const field = getNodeParam(binding.nodes[role], param);
+      return !field || field.display === 'output';
+    })
+  )
+    return [];
   const edges = spec.edges.map(([sourceRole, sourceHandle, targetRole, targetHandle]) =>
     makeConnectionSpec(binding.nodes[sourceRole], [sourceHandle], binding.nodes[targetRole], [targetHandle]),
   );
@@ -2683,21 +2688,21 @@ function executionSpecMatchesRegistry(spec: StudioExecutionSpec, registry = useN
   return (
     spec.roles.every(
       ([role, nodeKey]) =>
-        Boolean(definitions[role]?.params) && `${definitions[role]?.module}.${definitions[role]?.action}` === nodeKey,
+        definitions[role]?.params && `${definitions[role]?.module}.${definitions[role]?.action}` === nodeKey,
     ) &&
-    spec.bindings.every(
-      ([role, param]) =>
-        Boolean(definitions[role]?.params[param]) && definitions[role]?.params[param]?.display !== 'output',
-    ) &&
-    spec.edges.every(([sourceRole, sourceHandle, targetRole, targetHandle]) => {
-      const source = definitions[sourceRole]?.params[sourceHandle];
-      const target = definitions[targetRole]?.params[targetHandle];
-      return (
-        source?.display === 'output' &&
-        target?.display === 'input' &&
-        connectionTypesAreCompatible(source.type, target.type)
-      );
-    })
+    (spec.executionPath === 'modular-diffusers' ||
+      (spec.bindings.every(
+        ([role, param]) => definitions[role]?.params[param] && definitions[role]?.params[param]?.display !== 'output',
+      ) &&
+        spec.edges.every(([sourceRole, sourceHandle, targetRole, targetHandle]) => {
+          const source = definitions[sourceRole]?.params[sourceHandle];
+          const target = definitions[targetRole]?.params[targetHandle];
+          return (
+            source?.display === 'output' &&
+            target?.display === 'input' &&
+            connectionTypesAreCompatible(source.type, target.type)
+          );
+        })))
   );
 }
 
@@ -3164,13 +3169,9 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   values.useGuidanceScale2 = form.guidanceScale2 > 0;
   for (const [role, param, source] of spec.bindings) {
     const nodeId = binding.nodes[role];
-    if (!nodeId || !(param in (getNode(nodeId)?.data.params ?? {}))) {
-      throw new Error('The Studio execution specification binding is unavailable.');
-    }
+    if (!nodeId || !(param in (getNode(nodeId)?.data.params ?? {}))) continue;
     if (source === 'artifact') setModelRepo(nodeId, String(values[source]));
-    else if (!setParamIfPresent(nodeId, [param], values[source])) {
-      throw new Error('The Studio execution specification binding is unavailable.');
-    }
+    else setParamIfPresent(nodeId, [param], values[source]);
   }
 }
 

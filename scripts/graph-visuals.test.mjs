@@ -1424,6 +1424,61 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: qwenOutpaintBindingRows,
     contentHash: 'studio-spec-v1-4ffd900b',
   };
+  const qwenModularRoleRows = [
+    ['models', 'modules.ModularDiffusers.ModelsLoader', -720, -80],
+    ['prompt', 'modules.ModularDiffusers.EncodePrompt', -360, -240],
+    ['loadImage', 'modules.Image.Load', -720, 320],
+    ['imageEncode', 'modules.ModularDiffusers.ImageEncode', -360, 320],
+    ['denoise', 'modules.ModularDiffusers.Denoise', 80, -80],
+    ['decode', 'modules.ModularDiffusers.DecodeLatents', 440, -80],
+    ['preview', 'modules.Image.Preview', 800, -80],
+  ];
+  const qwenModularEdgeRows = [
+    ['models', 'text_encoders', 'prompt', 'text_encoders'],
+    ['models', 'unet_out', 'denoise', 'unet'],
+    ['models', 'scheduler', 'denoise', 'scheduler'],
+    ['models', 'vae_out', 'imageEncode', 'vae'],
+    ['models', 'vae_out', 'decode', 'vae'],
+    ['loadImage', 'image', 'prompt', 'image'],
+    ['loadImage', 'image', 'imageEncode', 'image'],
+    ['prompt', 'embeddings', 'denoise', 'embeddings'],
+    ['imageEncode', 'image_latents', 'denoise', 'image_latents'],
+    ['imageEncode', 'route_state_out', 'denoise', 'route_state_in'],
+    ['denoise', 'latents', 'decode', 'latents'],
+    ['denoise', 'route_state_out', 'decode', 'route_state_in'],
+    ['decode', 'images', 'preview', 'image'],
+  ];
+  const qwenModularBindingRows = [
+    ['models', 'model_type', 'pipelineClass'],
+    ['models', 'repo_id', 'artifact'],
+    ['models', 'dtype', 'dtype'],
+    ['models', 'device', 'device'],
+    ['models', 'auto_offload', 'autoOffload'],
+    ['models', 'offload_mode', 'offloadMode'],
+    ['models', 'trust_remote_code', 'false'],
+    ['loadImage', 'file', 'referenceImages'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ['prompt', 'prompt', 'prompt'],
+    ['prompt', 'negative_prompt', 'negativePrompt'],
+    ['imageEncode', 'seed', 'seed'],
+    ['denoise', 'seed', 'seed'],
+    ['denoise', 'num_inference_steps', 'steps'],
+    ['denoise', 'guidance_scale', 'guidanceScale'],
+  ];
+  const qwenModularSpec = {
+    ...qwenInpaintSpec,
+    id: 'qwen-image-edit:edit-image:v1',
+    mode: 'edit_image',
+    executionProfileId: 'qwen-edit:modular',
+    loaderModule: 'modules.ModularDiffusers',
+    loaderAction: 'ModelsLoader',
+    executionPath: 'modular-diffusers',
+    pipelineClass: 'QwenImageEditModularPipeline',
+    roles: qwenModularRoleRows,
+    edges: qwenModularEdgeRows,
+    bindings: qwenModularBindingRows,
+    contentHash: 'studio-spec-v1-ae6a6ce8',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1921,9 +1976,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
       },
+      {
+        ...profile(qwenModularSpec),
+        modes: ['edit_image'],
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+      },
     ],
-    studioExecutionSpecModes: ['inpaint', 'outpaint'],
-    studioExecutionSpecs: [qwenInpaintSpec, qwenOutpaintSpec],
+    studioExecutionSpecModes: ['edit_image', 'inpaint', 'outpaint'],
+    studioExecutionSpecs: [qwenInpaintSpec, qwenOutpaintSpec, qwenModularSpec],
   };
   const kleinCapability = {
     ...capability(kleinSpec),
@@ -1963,6 +2024,12 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...qwenOutpaintRoleRows.filter(
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...inpaintRoleRows].some(([id]) => id === role),
     ),
+    ...qwenModularRoleRows.filter(
+      ([role]) =>
+        ![...roleRows, ...depthRoleRows, ...editRoleRows, ...inpaintRoleRows, ...qwenOutpaintRoleRows].some(
+          ([id]) => id === role,
+        ),
+    ),
     ...videoRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows].some(([id]) => id === role)),
     ...i2vRoleRows.filter(
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...videoRoleRows].some(([id]) => id === role),
@@ -1990,6 +2057,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...wanVaceInpaintBindingRows,
     ...wanVaceControlBindingRows,
     ...qwenOutpaintBindingRows,
+    ...qwenModularBindingRows,
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
@@ -2005,6 +2073,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...wanVaceInpaintEdgeRows,
     ...wanVaceControlEdgeRows,
     ...qwenOutpaintEdgeRows,
+    ...qwenModularEdgeRows,
     ...audioEdgeRows,
     ...audioContinuationEdgeRows,
   ]) {
@@ -2513,6 +2582,42 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(qwenCanvas.feather.value, 8);
     assert.equal(qwenCanvas.fill_color.value, 'black');
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenOutpaintForm), null);
+
+    const qwenModularForm = {
+      ...qwenInpaintForm,
+      mode: 'edit_image',
+      prompt: 'Retain the subject and change the lighting',
+      negativePrompt: 'artifacts',
+      referenceImages: ['qwen-edit-source.png'],
+      seed: 1337,
+      randomSeed: false,
+      steps: 24,
+      guidanceScale: 4,
+    };
+    studioStoreModule.useStudioStore.setState({ form: qwenModularForm });
+    await graphBridge.createOrUpdateStudioGraph(qwenModularForm);
+    const qwenModularBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenModularNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(qwenModularBinding.executionSpec.id, qwenModularSpec.id);
+    assert.equal(qwenModularBinding.executionSpec.contentHash, qwenModularSpec.contentHash);
+    assert.deepEqual(topology(qwenModularBinding), qwenModularEdgeRows.map((row) => [...row]).sort());
+    assert.equal(
+      qwenModularNodes.find((item) => item.id === qwenModularBinding.nodes.models).data.params.model_type.value,
+      'QwenImageEditModularPipeline',
+    );
+    assert.deepEqual(
+      qwenModularNodes.find((item) => item.id === qwenModularBinding.nodes.loadImage).data.params.file.value,
+      qwenModularForm.referenceImages,
+    );
+    assert.equal(
+      qwenModularNodes.find((item) => item.id === qwenModularBinding.nodes.prompt).data.params.prompt.value,
+      qwenModularForm.prompt,
+    );
+    assert.deepEqual(
+      qwenModularNodes.find((item) => item.id === qwenModularBinding.nodes.denoise).data.params.seed.value,
+      { value: 1337, isRandom: false },
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenModularForm), null);
 
     const i2vForm = {
       ...baseForm,

@@ -608,6 +608,58 @@ function mockQwenEditInpaintExecutionCapability() {
     ],
     contentHash: 'studio-spec-v1-4ffd900b',
   };
+  const editSpec = {
+    ...spec,
+    id: 'qwen-image-edit:edit-image:v1',
+    mode: 'edit_image',
+    executionProfileId: 'qwen-edit:modular',
+    loaderModule: 'modules.ModularDiffusers',
+    loaderAction: 'ModelsLoader',
+    executionPath: 'modular-diffusers',
+    pipelineClass: 'QwenImageEditModularPipeline',
+    roles: [
+      ['models', 'modules.ModularDiffusers.ModelsLoader', -720, -80],
+      ['prompt', 'modules.ModularDiffusers.EncodePrompt', -360, -240],
+      ['loadImage', 'modules.Image.Load', -720, 320],
+      ['imageEncode', 'modules.ModularDiffusers.ImageEncode', -360, 320],
+      ['denoise', 'modules.ModularDiffusers.Denoise', 80, -80],
+      ['decode', 'modules.ModularDiffusers.DecodeLatents', 440, -80],
+      ['preview', 'modules.Image.Preview', 800, -80],
+    ],
+    edges: [
+      ['models', 'text_encoders', 'prompt', 'text_encoders'],
+      ['models', 'unet_out', 'denoise', 'unet'],
+      ['models', 'scheduler', 'denoise', 'scheduler'],
+      ['models', 'vae_out', 'imageEncode', 'vae'],
+      ['models', 'vae_out', 'decode', 'vae'],
+      ['loadImage', 'image', 'prompt', 'image'],
+      ['loadImage', 'image', 'imageEncode', 'image'],
+      ['prompt', 'embeddings', 'denoise', 'embeddings'],
+      ['imageEncode', 'image_latents', 'denoise', 'image_latents'],
+      ['imageEncode', 'route_state_out', 'denoise', 'route_state_in'],
+      ['denoise', 'latents', 'decode', 'latents'],
+      ['denoise', 'route_state_out', 'decode', 'route_state_in'],
+      ['decode', 'images', 'preview', 'image'],
+    ],
+    bindings: [
+      ['models', 'model_type', 'pipelineClass'],
+      ['models', 'repo_id', 'artifact'],
+      ['models', 'dtype', 'dtype'],
+      ['models', 'device', 'device'],
+      ['models', 'auto_offload', 'autoOffload'],
+      ['models', 'offload_mode', 'offloadMode'],
+      ['models', 'trust_remote_code', 'false'],
+      ['loadImage', 'file', 'referenceImages'],
+      ['loadImage', 'alpha_channel', 'alphaMode'],
+      ['prompt', 'prompt', 'prompt'],
+      ['prompt', 'negative_prompt', 'negativePrompt'],
+      ['imageEncode', 'seed', 'seed'],
+      ['denoise', 'seed', 'seed'],
+      ['denoise', 'num_inference_steps', 'steps'],
+      ['denoise', 'guidance_scale', 'guidanceScale'],
+    ],
+    contentHash: 'studio-spec-v1-ae6a6ce8',
+  };
   return {
     ...base,
     modelType: spec.modelType,
@@ -639,8 +691,8 @@ function mockQwenEditInpaintExecutionCapability() {
         default_quantized_components: ['transformer', 'text_encoder'],
       },
     ],
-    studioExecutionSpecModes: [spec.mode, outpaintSpec.mode],
-    studioExecutionSpecs: [spec, outpaintSpec],
+    studioExecutionSpecModes: [editSpec.mode, spec.mode, outpaintSpec.mode],
+    studioExecutionSpecs: [spec, outpaintSpec, editSpec],
   };
 }
 
@@ -7663,6 +7715,72 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     },
     nodes: zImage.nodes,
     pipelineClass: 'QwenImagePipeline',
+  });
+
+  const qwenEdit = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'edit_image',
+      modelType: 'QwenImageEditModularPipeline',
+      resourceMode: 'auto',
+      referenceImages: ['qwen-edit-source.png'],
+      prompt: 'Preserve the subject and change the lighting',
+    });
+    const finalization = window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('EncodePrompt', {
+      prompt: { type: 'text', value: '' },
+      negative_prompt: { type: 'text', value: '' },
+      image: { type: 'image', display: 'input' },
+      embeddings: { type: 'TextEmbeddings', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('ImageEncode', {
+      image: { type: 'image', display: 'input' },
+      seed: { type: 'int', value: 0 },
+      image_latents: { type: 'Latents', display: 'output' },
+      route_state_out: { type: 'route_state', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('Denoise', {
+      scheduler: { type: 'Scheduler', display: 'input' },
+      embeddings: { type: 'TextEmbeddings', display: 'input' },
+      seed: { type: 'int', value: 0 },
+      num_inference_steps: { type: 'int', value: 24 },
+      guidance_scale: { type: 'float', value: 4 },
+      image_latents: { type: 'Latents', display: 'input' },
+      route_state_in: { type: 'route_state', display: 'input' },
+      latents: { type: 'Latents', display: 'output' },
+      route_state_out: { type: 'route_state', display: 'output' },
+    });
+    window.__MODIFF_E2E__!.applyNodeDefinitionForAction('DecodeLatents', {
+      latents: { type: 'Latents', display: 'input' },
+      route_state_in: { type: 'route_state', display: 'input' },
+      images: { type: 'image', display: 'output' },
+    });
+    await finalization;
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const roles = new Map(Object.entries(binding.nodes).map(([role, id]) => [id, role]));
+    return {
+      receipt: binding.executionSpec,
+      modelType: state.flow.nodes.find((node) => node.id === binding.nodes.models)?.params?.model_type?.value,
+      source: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+      topology: state.flow.edges
+        .map((edge) => [roles.get(edge.source), edge.sourceHandle, roles.get(edge.target), edge.targetHandle])
+        .sort(),
+    };
+  });
+  expect(qwenEdit).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'qwen-image-edit:edit-image:v1',
+      contentHash: 'studio-spec-v1-ae6a6ce8',
+      executionProfileId: 'qwen-edit:modular',
+    },
+    modelType: 'QwenImageEditModularPipeline',
+    source: ['qwen-edit-source.png'],
+    topology: mockQwenEditInpaintExecutionCapability()
+      .studioExecutionSpecs.find((item) => item.mode === 'edit_image')!
+      .edges.map((item) => [...item])
+      .sort(),
   });
 
   const schnell = await page.evaluate(async () => {
