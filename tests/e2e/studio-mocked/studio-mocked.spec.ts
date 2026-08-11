@@ -696,6 +696,44 @@ function mockQwenEditInpaintExecutionCapability() {
   };
 }
 
+function mockQwenEditPlusExecutionCapability() {
+  const base = mockQwenEditInpaintExecutionCapability();
+  const modular = base.studioExecutionSpecs.find((item) => item.mode === 'edit_image')!;
+  const editSpec = {
+    ...modular,
+    id: 'qwen-image-edit-plus:edit-image:v1',
+    modelType: 'QwenImageEditPlusModularPipeline',
+    executionProfileId: 'qwen-edit-plus:modular',
+    pipelineClass: 'QwenImageEditPlusModularPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-Edit-2511',
+    contentHash: 'studio-spec-v1-28b9f604',
+  };
+  const multiSpec = {
+    ...editSpec,
+    id: 'qwen-image-edit-plus:multi-image-reference-edit:v1',
+    mode: 'multi_image_reference_edit',
+    contentHash: 'studio-spec-v1-86a68b80',
+  };
+  return {
+    ...base,
+    modelType: editSpec.modelType,
+    modes: [editSpec.mode, multiSpec.mode],
+    runnableModes: [editSpec.mode, multiSpec.mode],
+    executionProfiles: [
+      {
+        ...base.executionProfiles.find((item) => item.id === 'qwen-edit:modular')!,
+        id: editSpec.executionProfileId,
+        model_type: editSpec.modelType,
+        modes: [editSpec.mode, multiSpec.mode],
+        pipeline_class: editSpec.pipelineClass,
+        default_repo: editSpec.defaultRepo,
+      },
+    ],
+    studioExecutionSpecModes: [editSpec.mode, multiSpec.mode],
+    studioExecutionSpecs: [editSpec, multiSpec],
+  };
+}
+
 function mockFluxExecutionCapability(
   modelType:
     | 'FluxSchnellPipeline'
@@ -6163,6 +6201,7 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
 test('mocked Studio blocks missing models, marks loader red, and keeps local tabs', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-Edit');
+  mockInstalledRepos.add('Qwen/Qwen-Image-Edit-2511');
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
@@ -7605,6 +7644,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     mockFluxExecutionCapability('FluxKontextPipeline'),
     mockFluxFillExecutionCapability(),
     mockQwenEditInpaintExecutionCapability(),
+    mockQwenEditPlusExecutionCapability(),
     mockWanI2vExecutionCapability(),
     mockWanTi2vExecutionCapability(),
     mockWanT2vExecutionCapability(),
@@ -7654,7 +7694,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(18);
+    .toHaveLength(19);
 
   const zImage = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7780,6 +7820,40 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     topology: mockQwenEditInpaintExecutionCapability()
       .studioExecutionSpecs.find((item) => item.mode === 'edit_image')!
       .edges.map((item) => [...item])
+      .sort(),
+  });
+
+  const qwenEditPlus = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'multi_image_reference_edit',
+      modelType: 'QwenImageEditPlusModularPipeline',
+      resourceMode: 'auto',
+      referenceImages: ['qwen-plus-a.png', 'qwen-plus-b.png'],
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const roles = new Map(Object.entries(binding.nodes).map(([role, id]) => [id, role]));
+    return {
+      receipt: binding.executionSpec,
+      modelType: state.flow.nodes.find((node) => node.id === binding.nodes.models)?.params?.model_type?.value,
+      source: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+      topology: state.flow.edges
+        .map((edge) => [roles.get(edge.source), edge.sourceHandle, roles.get(edge.target), edge.targetHandle])
+        .sort(),
+    };
+  });
+  expect(qwenEditPlus).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'qwen-image-edit-plus:multi-image-reference-edit:v1',
+      contentHash: 'studio-spec-v1-86a68b80',
+      executionProfileId: 'qwen-edit-plus:modular',
+    },
+    modelType: 'QwenImageEditPlusModularPipeline',
+    source: ['qwen-plus-a.png', 'qwen-plus-b.png'],
+    topology: mockQwenEditPlusExecutionCapability()
+      .studioExecutionSpecs[1].edges.map((item) => [...item])
       .sort(),
   });
 

@@ -1479,6 +1479,21 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: qwenModularBindingRows,
     contentHash: 'studio-spec-v1-ae6a6ce8',
   };
+  const qwenEditPlusSpec = {
+    ...qwenModularSpec,
+    id: 'qwen-image-edit-plus:edit-image:v1',
+    modelType: 'QwenImageEditPlusModularPipeline',
+    executionProfileId: 'qwen-edit-plus:modular',
+    pipelineClass: 'QwenImageEditPlusModularPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-Edit-2511',
+    contentHash: 'studio-spec-v1-28b9f604',
+  };
+  const qwenEditPlusMultiSpec = {
+    ...qwenEditPlusSpec,
+    id: 'qwen-image-edit-plus:multi-image-reference-edit:v1',
+    mode: 'multi_image_reference_edit',
+    contentHash: 'studio-spec-v1-86a68b80',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1986,6 +2001,21 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: ['edit_image', 'inpaint', 'outpaint'],
     studioExecutionSpecs: [qwenInpaintSpec, qwenOutpaintSpec, qwenModularSpec],
   };
+  const qwenEditPlusCapability = {
+    ...capability(qwenEditPlusSpec),
+    modes: ['edit_image', 'multi_image_reference_edit'],
+    runnableModes: ['edit_image', 'multi_image_reference_edit'],
+    executionProfiles: [
+      {
+        ...profile(qwenEditPlusSpec),
+        modes: ['edit_image', 'multi_image_reference_edit'],
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+      },
+    ],
+    studioExecutionSpecModes: ['edit_image', 'multi_image_reference_edit'],
+    studioExecutionSpecs: [qwenEditPlusSpec, qwenEditPlusMultiSpec],
+  };
   const kleinCapability = {
     ...capability(kleinSpec),
     modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
@@ -2153,6 +2183,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         kontextCapability,
         fillCapability,
         qwenInpaintCapability,
+        qwenEditPlusCapability,
         capability(i2vSpec),
         capability(ti2vSpec),
         {
@@ -2618,6 +2649,31 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       { value: 1337, isRandom: false },
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenModularForm), null);
+
+    for (const spec of [qwenEditPlusSpec, qwenEditPlusMultiSpec]) {
+      const qwenEditPlusForm = {
+        ...qwenModularForm,
+        modelType: spec.modelType,
+        mode: spec.mode,
+        referenceImages:
+          spec.mode === 'multi_image_reference_edit'
+            ? ['qwen-plus-a.png', 'qwen-plus-b.png']
+            : ['qwen-plus-source.png'],
+      };
+      studioStoreModule.useStudioStore.setState({ form: qwenEditPlusForm });
+      await graphBridge.createOrUpdateStudioGraph(qwenEditPlusForm);
+      const binding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+      const nodes = flowStoreModule.useFlowStore.getState().nodes;
+      assert.equal(binding.executionSpec.id, spec.id);
+      assert.equal(binding.executionSpec.contentHash, spec.contentHash);
+      assert.deepEqual(topology(binding), qwenModularEdgeRows.map((row) => [...row]).sort());
+      assert.equal(nodes.find((item) => item.id === binding.nodes.models).data.params.model_type.value, spec.modelType);
+      assert.deepEqual(
+        nodes.find((item) => item.id === binding.nodes.loadImage).data.params.file.value,
+        qwenEditPlusForm.referenceImages,
+      );
+      assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenEditPlusForm), null);
+    }
 
     const i2vForm = {
       ...baseForm,
