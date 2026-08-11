@@ -15,12 +15,8 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { createOrUpdateStudioGraph } from '../studio/graphBridge';
 import { autoProofIsReady, formPatchForAutoCandidate } from '../studio/autoResource';
 import { coordinateGraphRun } from '../studio/runCoordinator';
-import {
-  getFormDefaultsForModel,
-  getProfileForForm,
-  QWEN_LOW_VRAM_OFFLOAD_MODE,
-  STUDIO_OFFLOAD_RUNTIME_LABELS,
-} from '../studio/modelProfiles';
+import { getFormDefaultsForModel, getProfileForForm, STUDIO_OFFLOAD_RUNTIME_LABELS } from '../studio/modelProfiles';
+import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import type { RunReadinessIssue, RuntimeFailure } from '../studio/types';
 import { IssueCard, ModiffButton, ModiffDialog, ProgressBar, Spinner, type IssueCardTone } from '../ui';
 import { cleanupGpuMemory } from '../utils/serverActions';
@@ -216,47 +212,7 @@ export default function RunIssuesDialog() {
 
   const applyLowVramPreset = () => {
     const profile = getProfileForForm(form);
-    if (profile.family === 'Wan Video') {
-      const values = {
-        width: 832,
-        height: 480,
-        aspectRatio: '16:9' as const,
-        numFrames: 49,
-        fps: 16,
-        steps: profile.lowVram.steps,
-        guidanceScale: 4.5,
-        conditioningScale: 1,
-        resourceMode: 'auto' as const,
-        dtype: profile.lowVram.dtype,
-        quantizationMode: 'none' as const,
-        autoOffload: true,
-        offloadMode: profile.lowVram.offloadMode ?? profile.offloadSupport.lowVram,
-      };
-      updateForm(values);
-      void createOrUpdateStudioGraph({ ...form, ...values });
-      setRightPanelOpen(true);
-      setRightPanelTab('studio');
-      closeIssues();
-      closeFailure();
-      enqueueSnackbar('Applied video low-VRAM preset: 832x480, 49 frames, bfloat16 with offload.', {
-        variant: 'success',
-        autoHideDuration: 4200,
-      });
-      return;
-    }
-
-    const width = profile.family === 'Qwen Image' ? profile.defaultSize.width : form.width;
-    const height = profile.family === 'Qwen Image' ? profile.defaultSize.height : form.height;
-    const values = {
-      width,
-      height,
-      steps: profile.lowVram.steps,
-      resourceMode: 'auto' as const,
-      dtype: profile.lowVram.dtype,
-      quantizationMode: 'none' as const,
-      autoOffload: true,
-      offloadMode: profile.lowVram.offloadMode ?? profile.offloadSupport.lowVram,
-    };
+    const values = studioLowMemoryFormValues(form);
 
     updateForm(values);
     void createOrUpdateStudioGraph({ ...form, ...values });
@@ -264,14 +220,11 @@ export default function RunIssuesDialog() {
     setRightPanelTab('studio');
     closeIssues();
     closeFailure();
-    const offloadLabel =
-      values.offloadMode === QWEN_LOW_VRAM_OFFLOAD_MODE
-        ? 'RAM/CPU model offload'
-        : STUDIO_OFFLOAD_RUNTIME_LABELS[values.offloadMode];
-    enqueueSnackbar(
-      `Applied Auto resource plan defaults: ${width}x${height}, ${profile.lowVram.steps} steps, ${offloadLabel}.`,
-      { variant: 'success', autoHideDuration: 4200 },
-    );
+    const offloadLabel = STUDIO_OFFLOAD_RUNTIME_LABELS[values.offloadMode!];
+    enqueueSnackbar(`Applied ${profile.label} low-VRAM defaults with ${offloadLabel}.`, {
+      variant: 'success',
+      autoHideDuration: 4200,
+    });
   };
 
   const applyFailureLowVramPreset = () => {

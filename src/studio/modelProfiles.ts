@@ -431,7 +431,15 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedFrames: 81,
     recommendedFps: 15,
     conditioningScale: 1,
-    lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram, steps: 24 },
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 24,
+      width: 832,
+      height: 480,
+      numFrames: 49,
+    },
     modes: WAN_VACE_MODES,
     modeRequirements: {
       video_inpaint: {
@@ -462,7 +470,15 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     outputKind: 'video',
     recommendedFrames: 81,
     recommendedFps: 16,
-    lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram, steps: 24 },
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 24,
+      width: 832,
+      height: 480,
+      numFrames: 49,
+    },
     modes: WAN_VIDEO_MODES,
     modeRequirements: {
       video_to_video: { requiredVideos: ['sourceVideo'], note: 'Requires one source video.' },

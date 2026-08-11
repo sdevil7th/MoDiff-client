@@ -233,3 +233,20 @@ export function resolveStudioResourceForm(form: StudioFormState): StudioFormStat
     offloadMode: plan.offloadMode,
   });
 }
+
+export function studioLowMemoryFormValues(form: StudioFormState): Partial<StudioFormState> {
+  const profile = STUDIO_MODEL_PROFILES[form.modelType];
+  const preset = profile.lowVram;
+  return {
+    ...(preset.width && preset.height
+      ? { width: preset.width, height: preset.height, aspectRatio: profile.defaultSize.aspectRatio }
+      : {}),
+    ...(preset.numFrames ? { numFrames: preset.numFrames } : {}),
+    steps: preset.steps,
+    resourceMode: 'auto',
+    dtype: preset.dtype,
+    quantizationMode: 'none',
+    autoOffload: preset.autoOffload,
+    offloadMode: preset.offloadMode ?? profile.offloadSupport.lowVram,
+  };
+}

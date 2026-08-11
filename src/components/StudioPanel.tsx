@@ -61,6 +61,7 @@ import {
 import {
   getStudioResourceExecutionPathLabel,
   resolveStudioResourcePlan,
+  studioLowMemoryFormValues,
   STUDIO_RESOURCE_LABELS,
   STUDIO_RESOURCE_MODES,
 } from '../studio/resourcePlanner';
@@ -496,23 +497,13 @@ export default function StudioPanel() {
   const handlePresetApply = useCallback(
     (preset: (typeof STUDIO_PRESETS)[number]) => {
       const before = useStudioStore.getState().form;
-      const profile = STUDIO_MODEL_PROFILES[before.modelType];
       const appliedPreset =
         preset.id === 'low_vram'
           ? {
               ...preset,
               values: {
                 ...preset.values,
-                resourceMode: 'auto' as const,
-                ...(profile.family === 'Qwen Image'
-                  ? {
-                      width: profile.lowVram.width ?? profile.defaultSize.width,
-                      height: profile.lowVram.height ?? profile.defaultSize.height,
-                    }
-                  : {}),
-                quantizationMode: 'none' as StudioFormState['quantizationMode'],
-                offloadMode: (profile.lowVram.offloadMode ??
-                  profile.offloadSupport.lowVram) as StudioFormState['offloadMode'],
+                ...studioLowMemoryFormValues(before),
               },
             }
           : preset;

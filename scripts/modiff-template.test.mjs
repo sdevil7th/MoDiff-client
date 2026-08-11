@@ -3911,6 +3911,47 @@ test('all Studio profiles and templates keep offload plans compatible with their
   }
 });
 
+test('low-memory form patches follow the selected declarative profile without family switches', () => {
+  const qwen = resourcePlannerModule.studioLowMemoryFormValues({
+    ...profilesModule.DEFAULT_STUDIO_FORM,
+    modelType: 'QwenImageModularPipeline',
+  });
+  assert.deepEqual(
+    { width: qwen.width, height: qwen.height, steps: qwen.steps, numFrames: qwen.numFrames },
+    { width: 1024, height: 1024, steps: 50, numFrames: undefined },
+  );
+
+  const wanVace = resourcePlannerModule.studioLowMemoryFormValues({
+    ...profilesModule.DEFAULT_STUDIO_FORM,
+    modelType: 'WanVACEPipeline',
+    mode: 'text_to_video',
+  });
+  assert.deepEqual(
+    { width: wanVace.width, height: wanVace.height, steps: wanVace.steps, numFrames: wanVace.numFrames },
+    { width: 832, height: 480, steps: 24, numFrames: 49 },
+  );
+
+  const wanI2v = resourcePlannerModule.studioLowMemoryFormValues({
+    ...profilesModule.DEFAULT_STUDIO_FORM,
+    modelType: 'WanImageToVideoPipeline',
+    mode: 'image_to_video',
+  });
+  assert.deepEqual(
+    { width: wanI2v.width, height: wanI2v.height, steps: wanI2v.steps, numFrames: wanI2v.numFrames },
+    { width: 832, height: 480, steps: 40, numFrames: 81 },
+  );
+
+  const ltx = resourcePlannerModule.studioLowMemoryFormValues({
+    ...profilesModule.DEFAULT_STUDIO_FORM,
+    modelType: 'LTXVideoPipeline',
+    mode: 'text_to_video',
+  });
+  assert.deepEqual(
+    { width: ltx.width, height: ltx.height, steps: ltx.steps, numFrames: ltx.numFrames },
+    { width: 704, height: 480, steps: 8, numFrames: 65 },
+  );
+});
+
 test('Auto plans, form patches, cache keys, readiness, and persisted managed nodes share the device contract', () => {
   const cpuForm = {
     ...profilesModule.DEFAULT_STUDIO_FORM,
