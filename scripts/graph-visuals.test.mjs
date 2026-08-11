@@ -1582,6 +1582,12 @@ test('backend execution specs materialize exact image and video recipes with sea
     ],
     contentHash: 'studio-spec-v1-ad97d224',
   };
+  const ltxReferenceSpec = {
+    ...ltxImageSpec,
+    id: 'ltx-video-0.9.8-13b-distilled:reference-to-video:v1',
+    mode: 'reference_to_video',
+    contentHash: 'studio-spec-v1-0c5abd50',
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -1765,8 +1771,8 @@ test('backend execution specs materialize exact image and video recipes with sea
               quantizable_components: ['transformer', 'text_encoder'],
             },
           ],
-          studioExecutionSpecModes: ['image_to_video', 'text_to_video', 'video_to_video'],
-          studioExecutionSpecs: [ltxSpec, ltxImageSpec, ltxVideoSpec],
+          studioExecutionSpecModes: ['image_to_video', 'reference_to_video', 'text_to_video', 'video_to_video'],
+          studioExecutionSpecs: [ltxSpec, ltxImageSpec, ltxVideoSpec, ltxReferenceSpec],
         },
       ],
       studioModelCapabilitiesAuthoritative: true,
@@ -2308,10 +2314,21 @@ test('backend execution specs materialize exact image and video recipes with sea
       ltxVideoForm.sourceVideo,
     );
 
-    const ltxReferenceForm = { ...ltxImageForm, mode: 'reference_to_video' };
+    const ltxReferenceForm = {
+      ...ltxImageForm,
+      mode: 'reference_to_video',
+      referenceImages: ['@data/images/reference-a.png', '@data/images/reference-b.png'],
+    };
     studioStoreModule.useStudioStore.setState({ form: ltxReferenceForm });
     await graphBridge.createOrUpdateStudioGraph(ltxReferenceForm);
-    assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.executionSpec, undefined);
+    const ltxReferenceBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    const ltxReferenceNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(ltxReferenceBinding.executionSpec.id, ltxReferenceSpec.id);
+    assert.equal(ltxReferenceBinding.executionSpec.contentHash, ltxReferenceSpec.contentHash);
+    assert.deepEqual(
+      ltxReferenceNodes.find((item) => item.id === ltxReferenceBinding.nodes.loadImage).data.params.file.value,
+      ltxReferenceForm.referenceImages,
+    );
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
