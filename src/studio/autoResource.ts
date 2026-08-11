@@ -60,6 +60,12 @@ export type StudioAutoResourceCandidate = {
   loaderAction?: string;
   executionPath?: string;
   pipelineClass?: string;
+  studioExecutionSpecContract?: {
+    schemaVersion?: number;
+    id?: string;
+    contentHash?: string;
+    executionProfileId?: string;
+  };
   artifact?: string;
   artifactRevision?: string;
   modelRepo?: string;
@@ -508,13 +514,21 @@ export function autoResourcePlanTargetMatches(
   plan: StudioAutoResourcePlan | null | undefined,
   nodes: FlowGraphNode[],
   managedNodeIds: readonly string[] | null | undefined,
-  expected: { modelType: string; mode: string; executionProfileId?: string },
+  expected: {
+    modelType: string;
+    mode: string;
+    spec?: { schemaVersion: number; id: string; contentHash: string; executionProfileId: string };
+  },
 ): boolean {
   if (!isSchemaV2(plan)) return true;
   const selected = selectedAutoCandidate(plan);
   if (!selected) return !(plan.selectedCandidate || plan.compatibility?.state === 'ready');
   if (selected.modelType !== expected.modelType || selected.mode !== expected.mode) return false;
-  if (expected.executionProfileId && selected.executionProfileId !== expected.executionProfileId) return false;
+  if (
+    (expected.spec && selected.executionProfileId !== expected.spec.executionProfileId) ||
+    !deepEqual(selected.studioExecutionSpecContract, expected.spec)
+  )
+    return false;
   const identityKey = selected.loaderAction === 'ModelsLoader' ? 'model_type' : 'pipeline_class';
   const expectedIdentity = identityKey === 'model_type' ? selected.modelType : selected.pipelineClass;
   return executableFlowNodes(nodes).some((node) => {

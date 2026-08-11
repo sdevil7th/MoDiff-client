@@ -1803,6 +1803,64 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
       }),
     );
   }
+  const graphBoundCandidate = {
+    id: 'specified',
+    executionProfileId: 'flux-schnell:direct',
+    modelType: 'FluxSchnellPipeline',
+    mode: 'text_to_image',
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'FluxPipeline',
+    studioExecutionSpecContract: {
+      schemaVersion: 1,
+      id: 'flux-schnell:text-to-image:v1',
+      contentHash: 'studio-spec-v1-9cd1abb5',
+      executionProfileId: 'flux-schnell:direct',
+    },
+  };
+  const graphBoundPlan = {
+    schemaVersion: 2,
+    selectedCandidate: graphBoundCandidate,
+    candidates: [{ ...graphBoundCandidate }],
+  };
+  assert.equal(autoResourceModule.selectedAutoCandidate(graphBoundPlan)?.id, 'specified');
+  const graphSpec = { ...graphBoundCandidate.studioExecutionSpecContract };
+  const fluxLoader = node('flux-loader', 'modules.DiffusersImage', 'LoadPipeline', 'FluxPipeline');
+  assert.equal(
+    autoResourceModule.autoResourcePlanTargetMatches(graphBoundPlan, [fluxLoader], ['flux-loader'], {
+      modelType: 'FluxSchnellPipeline',
+      mode: 'text_to_image',
+      spec: graphSpec,
+    }),
+    true,
+  );
+  assert.equal(
+    autoResourceModule.autoResourcePlanTargetMatches(
+      {
+        ...graphBoundPlan,
+        selectedCandidate: { ...graphBoundCandidate, studioExecutionSpecContract: undefined },
+        candidates: [{ ...graphBoundCandidate, studioExecutionSpecContract: undefined }],
+      },
+      [fluxLoader],
+      ['flux-loader'],
+      { modelType: 'FluxSchnellPipeline', mode: 'text_to_image', spec: graphSpec },
+    ),
+    false,
+  );
+  assert.equal(
+    autoResourceModule.selectedAutoCandidate({
+      ...graphBoundPlan,
+      selectedCandidate: {
+        ...graphBoundCandidate,
+        studioExecutionSpecContract: {
+          ...graphBoundCandidate.studioExecutionSpecContract,
+          contentHash: 'studio-spec-v1-00000000',
+        },
+      },
+    }),
+    null,
+  );
   for (const selectedCandidate of [
     { ...qwenPlan.selectedCandidate, executionPath: 'direct-diffusers-image' },
     { ...qwenPlan.selectedCandidate, pipelineClass: 'FluxPipeline' },

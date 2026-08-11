@@ -296,15 +296,21 @@ test('schema-v2 Auto planning rejects a selected candidate without an exact boun
 
 test('schema-v2 Auto planning accepts and preserves the backend profile-bound candidate receipt', async () => {
   const candidate = {
-    id: 'qwen-direct',
+    id: 'flux-direct',
     autoResourceSchemaVersion: 2,
-    executionProfileId: 'qwen-image:t2i-direct',
-    modelType: 'QwenImageModularPipeline',
+    executionProfileId: 'flux-schnell:direct',
+    modelType: 'FluxSchnellPipeline',
     mode: 'text_to_image',
     loaderModule: 'modules.DiffusersImage',
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
-    pipelineClass: 'QwenImagePipeline',
+    pipelineClass: 'FluxPipeline',
+    studioExecutionSpecContract: {
+      schemaVersion: 1,
+      id: 'flux-schnell:text-to-image:v1',
+      contentHash: 'studio-spec-v1-9cd1abb5',
+      executionProfileId: 'flux-schnell:direct',
+    },
   };
   globalThis.fetch = async () =>
     jsonResponse({
@@ -324,8 +330,9 @@ test('schema-v2 Auto planning accepts and preserves the backend profile-bound ca
 
   const plan = await autoResourceModule.fetchAutoResourcePlan({ modelType: candidate.modelType });
   assert.equal(plan.error, undefined);
-  assert.equal(plan.selectedCandidate.executionProfileId, 'qwen-image:t2i-direct');
+  assert.equal(plan.selectedCandidate.executionProfileId, 'flux-schnell:direct');
   assert.equal(plan.selectedCandidate.autoResourceSchemaVersion, plan.schemaVersion);
+  assert.deepEqual(plan.selectedCandidate.studioExecutionSpecContract, candidate.studioExecutionSpecContract);
 });
 
 test('schema-v2 Auto planning bounds candidate identity depth, count, size, and syntax', async () => {

@@ -2954,7 +2954,7 @@ export function currentAutoResourcePlanTarget(
   return (
     !autoResourcePlanTargetMatches(plan, useFlowStore.getState().nodes, binding?.managedNodeIds, {
       ...form,
-      executionProfileId: binding?.executionSpec?.executionProfileId,
+      spec: binding?.executionSpec,
     }) && 'Auto mismatch.'
   );
 }

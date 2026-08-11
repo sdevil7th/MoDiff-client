@@ -282,6 +282,7 @@ let mockOptionalRuntimeMutationCalls = 0;
 let mockOptionalRuntimeProcessStatus = 'base';
 let mockOptionalRuntimeQualified = false;
 let mockOptionalRuntimeDelayMs = 0;
+let mockAdvertiseStudioExecutionSpecs = false;
 
 function mockAutoCompatibility(ready: boolean) {
   return {
@@ -1329,6 +1330,47 @@ function mockAceTextToAudioExecutionCapability() {
   };
 }
 
+function mockStudioExecutionSpecContract(modelType: string, mode: string) {
+  const fluxModel = [
+    'FluxSchnellPipeline',
+    'FluxDevPipeline',
+    'FluxKreaPipeline',
+    'Flux2KleinPipeline',
+    'FluxDepthPipeline',
+    'FluxCannyPipeline',
+    'FluxReduxPipeline',
+    'FluxKontextPipeline',
+  ] as const;
+  const capability = fluxModel.includes(modelType as (typeof fluxModel)[number])
+    ? mockFluxExecutionCapability(modelType as (typeof fluxModel)[number])
+    : modelType === 'FluxFillPipeline'
+      ? mockFluxFillExecutionCapability()
+      : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
+        ? mockQwenEditInpaintExecutionCapability()
+        : modelType === 'WanImageToVideoPipeline'
+          ? mockWanI2vExecutionCapability()
+          : modelType === 'WanTI2VPipeline'
+            ? mockWanTi2vExecutionCapability()
+            : modelType === 'WanVideoPipeline'
+              ? mockWanT2vExecutionCapability()
+              : modelType === 'WanVACEPipeline'
+                ? mockWanVaceT2vExecutionCapability()
+                : modelType === 'LTXVideoPipeline'
+                  ? mockLtxT2vExecutionCapability()
+                  : modelType === 'AceStepAudioPipeline'
+                    ? mockAceTextToAudioExecutionCapability()
+                    : null;
+  const spec = capability?.studioExecutionSpecs.find((item) => item.mode === mode);
+  return spec
+    ? {
+        schemaVersion: spec.schemaVersion,
+        id: spec.id,
+        contentHash: spec.contentHash,
+        executionProfileId: spec.executionProfileId,
+      }
+    : undefined;
+}
+
 function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
   const mode = String(form.mode ?? 'text_to_image');
@@ -1397,6 +1439,9 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
                       : modelType.startsWith('Flux')
                         ? 'FluxPipeline'
                         : modelType,
+      studioExecutionSpecContract: mockAdvertiseStudioExecutionSpecs
+        ? mockStudioExecutionSpecContract(modelType, mode)
+        : undefined,
       modelRepo: defaultRepo,
       resolvedArtifact: defaultRepo,
       artifact: defaultRepo,
@@ -2168,6 +2213,7 @@ const mockGraphList = [
 ];
 
 async function installMockRoutes(page: Page) {
+  mockAdvertiseStudioExecutionSpecs = false;
   mockFileUploadCalls = 0;
   const workflows = new Map<string, Record<string, unknown>>();
   const userBlocks = new Map<string, Record<string, unknown>>();
@@ -7394,6 +7440,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  mockAdvertiseStudioExecutionSpecs = true;
   const capabilities = [
     mockFluxExecutionCapability('FluxSchnellPipeline'),
     mockFluxExecutionCapability('FluxDevPipeline'),

@@ -2223,6 +2223,12 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       loaderAction: devSpec.loaderAction,
       executionPath: devSpec.executionPath,
       pipelineClass: devSpec.pipelineClass,
+      studioExecutionSpecContract: {
+        schemaVersion: devSpec.schemaVersion,
+        id: devSpec.id,
+        contentHash: devSpec.contentHash,
+        executionProfileId: devSpec.executionProfileId,
+      },
       modelRepo: 'reviewed/flux-dev-auto',
       dtype: 'float16',
       generation: { prompt: 'candidate-controlled prompt', width: 64 },
