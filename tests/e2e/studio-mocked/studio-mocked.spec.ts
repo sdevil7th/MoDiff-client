@@ -5803,6 +5803,43 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
       qualityFps: true,
     });
 
+    if (templateId === 'qwen_upscale_finish') {
+      const model = await page.evaluate(
+        () =>
+          window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.studioRole === 'upscaler')?.params.model_id
+            ?.value,
+      );
+      expect(model).toEqual(
+        expect.objectContaining({
+          revision: 'bda69abcaf525425b371622349e975245ae090c2',
+          sha256: '4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1',
+        }),
+      );
+    }
+    if (templateId === 'wan_22_ti2v_5b_seed_vault') {
+      const pipeline = await page.evaluate(() =>
+        window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.studioRole === 'soundtrackPipeline'),
+      );
+      expect(pipeline?.params.model_id?.value).toEqual(
+        expect.objectContaining({ revision: '200ba991ae448051e14b0183157e35c2d27c9fb0' }),
+      );
+    }
+    if (templateId === 'ace_step_lyric_music_video') {
+      const artifacts = await page.evaluate(() => {
+        const nodes = window.__MODIFF_E2E__!.getState().flow.nodes;
+        return {
+          pipeline: nodes.find((node) => node.studioRole === 'lyricVideoPipeline')?.params.model_id?.value,
+          upscaler: nodes.find((node) => node.studioRole === 'upscaler')?.params.model_id?.value,
+        };
+      });
+      expect(artifacts.pipeline).toEqual(
+        expect.objectContaining({ revision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd' }),
+      );
+      expect(artifacts.upscaler).toEqual(
+        expect.objectContaining({ sha256: '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb' }),
+      );
+    }
+
     if (templateId === 'ltx_video_long_showcase') {
       const qualityTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
       await page.getByTestId('workflow-tab-new').click();
@@ -5874,7 +5911,7 @@ test('controlled LoRA labels base-only Auto history until its exact artifacts ar
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('compatibility'));
   const compatibility = page.getByTestId('compatibility-panel');
   await expect(compatibility).toContainText('Base recipe ran here');
-  await expect(compatibility).toContainText('MoDiff verifies this exact controlled adapter set when Run starts.');
+  await expect(compatibility).toContainText('MoDiff verifies this exact controlled artifact set when Run starts.');
 });
 
 test('controlled workflow transactions are idempotent across supported reverse compositions', async ({ page }) => {
@@ -6427,6 +6464,10 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
       model: {
         source: 'hub',
         value: 'amd/realesrgan-x4plus/RealESRGAN_x4plus.pth',
+        revision: 'bda69abcaf525425b371622349e975245ae090c2',
+        sha256: '4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1',
+        byteSize: 67040989,
+        license: 'bsd-3-clause',
       },
       downscale: 0.5,
       sourceConnected: true,

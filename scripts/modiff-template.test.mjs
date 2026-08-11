@@ -2005,9 +2005,15 @@ test('controlled artifacts never inherit a base-only Ran here label at plan time
   const candidate = { id: 'selected', proof: { status: 'live_proven' } };
   assert.deepEqual(autoResourceModule.controlledArtifactProofNotice(candidate, ['lora.diffusers-image.v1']), {
     label: 'Base recipe ran here',
-    message: 'MoDiff verifies this exact controlled adapter set when Run starts.',
+    message: 'MoDiff verifies this exact controlled artifact set when Run starts.',
   });
-  assert.equal(autoResourceModule.controlledArtifactProofNotice(candidate, ['upscale.image.v1']), null);
+  for (const contractId of ['upscale.image.v1', 'soundtrack.v1', 'lyric-video.v1']) {
+    assert.equal(
+      autoResourceModule.controlledArtifactProofNotice(candidate, [contractId])?.label,
+      'Base recipe ran here',
+    );
+  }
+  assert.equal(autoResourceModule.controlledArtifactProofNotice(candidate, ['video-sequence.v1']), null);
   assert.equal(
     autoResourceModule.controlledArtifactProofNotice({ ...candidate, proof: { status: 'declared_safe' } }, [
       'lora.diffusers-image.v1',

@@ -3946,7 +3946,11 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     workflowBlocks: ['lyric_video'],
     workflowBlockSettings: {
       lyricVideo: {
-        visualModel: { source: 'hub', value: 'Lightricks/LTX-Video-0.9.8-13B-distilled' },
+        visualModel: {
+          source: 'hub',
+          value: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+          revision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd',
+        },
         transitionSeconds: 0.35,
         ['fontSize']: 58,
         bottomMargin: 70,

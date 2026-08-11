@@ -515,10 +515,14 @@ export function controlledArtifactProofNotice(
   candidate: StudioAutoResourceCandidate | null | undefined,
   contractIds: readonly string[] | null | undefined,
 ) {
-  if (candidate?.proof?.status !== 'live_proven' || !contractIds?.some((id) => id.startsWith('lora.'))) return null;
+  if (
+    candidate?.proof?.status !== 'live_proven' ||
+    !contractIds?.some((id) => /^(lora|upscale|soundtrack|lyric-video)\./.test(id))
+  )
+    return null;
   return {
     label: 'Base recipe ran here',
-    message: 'MoDiff verifies this exact controlled adapter set when Run starts.',
+    message: 'MoDiff verifies this exact controlled artifact set when Run starts.',
   } as const;
 }
 

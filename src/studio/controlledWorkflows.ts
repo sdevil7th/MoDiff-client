@@ -31,14 +31,20 @@ import type {
 
 export { CONTROLLED_WORKFLOW_NODE_KEYS } from './controlledWorkflowContracts';
 
+const VIDEO_DELIVERY_UPSCALER = {
+  model: {
+    source: 'hub' as const,
+    value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth',
+    revision: '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094',
+    sha256: '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb',
+    byteSize: 67061725,
+  },
+  downscale: 1,
+};
+
 type ControlledWorkflowOptions = {
   notify?: boolean;
   workflowContext?: WorkflowOperationContext;
-};
-
-const VIDEO_DELIVERY_UPSCALER = {
-  model: { source: 'hub' as const, value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth' },
-  downscale: 1,
 };
 
 function cloneNodeData(data: NodeData): NodeData {
@@ -443,10 +449,7 @@ export async function addUpscaleWorkflowBlock(
     );
     setParamIfPresent(upscalerNode, ['device'], form.device);
     if (settings?.model) {
-      setParamIfPresent(upscalerNode, ['model_id'], {
-        source: settings.model.source,
-        value: settings.model.value,
-      });
+      setParamIfPresent(upscalerNode, ['model_id'], settings.model);
     }
     if (settings?.downscale !== undefined) {
       setParamIfPresent(upscalerNode, ['downscale'], settings.downscale);
@@ -868,7 +871,7 @@ export async function addSoundtrackWorkflowBlock(
     setParamIfPresent(recipe, ['attention_components'], '');
     setParamIfPresent(recipe, ['vae_slicing'], true);
     setParamIfPresent(recipe, ['vae_tiling'], true);
-    setParamIfPresent(pipeline, ['model_id'], { source: settings.model.source, value: settings.model.value });
+    setParamIfPresent(pipeline, ['model_id'], settings.model);
     if (settings.model.revision) setParamIfPresent(pipeline, ['revision'], settings.model.revision);
     setParamIfPresent(pipeline, ['pipeline_class'], settings.pipelineClass);
     setParamIfPresent(pipeline, ['mode'], 'text_to_audio');
@@ -988,10 +991,7 @@ export async function addLyricVideoWorkflowBlock(
     setParamIfPresent(recipe, ['attention_components'], '');
     setParamIfPresent(recipe, ['vae_slicing'], true);
     setParamIfPresent(recipe, ['vae_tiling'], true);
-    setParamIfPresent(pipeline, ['model_id'], {
-      source: settings.visualModel.source,
-      value: settings.visualModel.value,
-    });
+    setParamIfPresent(pipeline, ['model_id'], settings.visualModel);
     setParamIfPresent(pipeline, ['pipeline_class'], 'LTXConditionPipeline');
     setParamIfPresent(pipeline, ['dtype'], executionForm.dtype);
     setParamIfPresent(pipeline, ['device'], executionForm.device);
@@ -1004,10 +1004,7 @@ export async function addLyricVideoWorkflowBlock(
     );
     setParamIfPresent(compose, ['fps'], 16);
     setParamIfPresent(compose, ['transition_seconds'], settings.transitionSeconds);
-    setParamIfPresent(upscaler, ['model_id'], {
-      source: VIDEO_DELIVERY_UPSCALER.model.source,
-      value: VIDEO_DELIVERY_UPSCALER.model.value,
-    });
+    setParamIfPresent(upscaler, ['model_id'], VIDEO_DELIVERY_UPSCALER.model);
     setParamIfPresent(upscaler, ['downscale'], VIDEO_DELIVERY_UPSCALER.downscale);
     setParamIfPresent(overlay, ['lrc'], settings.lrc);
     setParamIfPresent(overlay, ['fps'], 16);
