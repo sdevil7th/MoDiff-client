@@ -32,7 +32,6 @@ import {
   QWEN_T2I_GENERATE_NODE_KEY,
   QWEN_T2I_PIPELINE_NODE_KEY,
   AUDIO_STUDIO_MODES,
-  FLUX_STUDIO_MODEL_TYPES,
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
   WAN_VACE_REVISION,
@@ -312,55 +311,9 @@ function isAudioMode(mode: StudioMode) {
   return AUDIO_STUDIO_MODES.includes(mode);
 }
 
-function isFluxModel(modelType: StudioModelType) {
-  return FLUX_STUDIO_MODEL_TYPES.includes(modelType);
-}
-
-function hasRegistryNode(key: string) {
-  return Boolean(useNodesStore.getState().nodesRegistry[key]);
-}
-
-function hasDiffusersImageFacadeForMode(mode: StudioMode) {
-  const baseReady = hasRegistryNode(NODE_KEYS.diffusersImagePipeline) && hasRegistryNode(NODE_KEYS.preview);
-  if (!baseReady) return false;
-  if (mode === 'edit_image' || mode === 'multi_image_reference_edit') {
-    return hasRegistryNode(NODE_KEYS.diffusersImageEdit) && hasRegistryNode(NODE_KEYS.loadImage);
-  }
-  if (mode === 'inpaint' || mode === 'outpaint') {
-    return (
-      hasRegistryNode(NODE_KEYS.diffusersImageInpaint) &&
-      hasRegistryNode(NODE_KEYS.loadImage) &&
-      hasRegistryNode(NODE_KEYS.loadMask)
-    );
-  }
-  if (mode === 'control_image') {
-    return hasRegistryNode(NODE_KEYS.diffusersImageControl) && hasRegistryNode(NODE_KEYS.loadImage);
-  }
-  return hasRegistryNode(NODE_KEYS.diffusersImageGenerate);
-}
-
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
-  if (!('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-image') return true;
-  if (isFluxModel(form.modelType)) return true;
-  if (
-    !('nodes' in form) &&
-    ((form.modelType === 'QwenImageModularPipeline' &&
-      form.mode === 'text_to_image' &&
-      form.resourceMode !== 'expert') ||
-      (form.modelType === 'QwenImageEditModularPipeline' && (form.mode === 'inpaint' || form.mode === 'outpaint')))
-  ) {
-    return hasDiffusersImageFacadeForMode(form.mode);
-  }
-  if (
-    !('nodes' in form) &&
-    form.resourceMode !== 'expert' &&
-    form.modelType === 'ZImageModularPipeline' &&
-    form.mode === 'text_to_image'
-  ) {
-    return hasDiffusersImageFacadeForMode(form.mode);
-  }
-  return false;
+  return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-image';
 }
 
 function usesExpertProfileQuantization(form: StudioFormState) {
@@ -1455,16 +1408,6 @@ function setModelRepo(nodeId: string | undefined, repo: string) {
 
 function seedValue(form: StudioFormState) {
   return { value: form.seed, isRandom: form.randomSeed };
-}
-
-function fluxPipelineClassFor(form: StudioFormState) {
-  if (form.modelType === 'QwenImageModularPipeline') return 'QwenImagePipeline';
-  if (form.modelType === 'QwenImageEditModularPipeline' && (form.mode === 'inpaint' || form.mode === 'outpaint')) {
-    return 'QwenImageEditInpaintPipeline';
-  }
-  if (form.mode === 'edit_image' || form.mode === 'multi_image_reference_edit') return 'FluxImg2ImgPipeline';
-  if (form.mode === 'inpaint' || form.mode === 'outpaint') return 'FluxInpaintPipeline';
-  return 'FluxPipeline';
 }
 
 function audioTaskForMode(mode: StudioMode) {
@@ -3464,16 +3407,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     const autoOffloadMode = autoPatch.offloadMode ?? form.offloadMode;
     const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
     const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
-    const pipelineClass =
-      autoCandidate?.pipelineClass ??
-      executionProfileForForm(form)?.pipeline_class ??
-      (isFluxModel(form.modelType) ||
-      form.modelType === 'QwenImageModularPipeline' ||
-      form.modelType === 'QwenImageEditModularPipeline'
-        ? fluxPipelineClassFor(form)
-        : form.modelType === 'ZImageModularPipeline'
-          ? 'ZImagePipeline'
-          : undefined);
+    const pipelineClass = autoCandidate?.pipelineClass ?? executionProfileForForm(form)?.pipeline_class;
     const imageDtype = autoPatch.dtype ?? form.dtype;
 
     setParamIfPresent(diffusersQuantization, ['backend'], autoQuantizationMode);
