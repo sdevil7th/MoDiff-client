@@ -36,16 +36,10 @@ import {
   isHfDownloadActive,
   isHfDownloadComplete,
 } from '../studio/modelInstall';
-import {
-  getCatalogModelProfiles,
-  getFormDefaultsForModel,
-  QWEN_INPAINT_PIPELINE_NODE_KEY,
-  QWEN_T2I_PIPELINE_NODE_KEY,
-  STUDIO_MODEL_PROFILES,
-} from '../studio/modelProfiles';
+import { getCatalogModelProfiles, getFormDefaultsForModel, STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
 import { TEMPLATE_BROWSER_CATEGORIES, templateCategoryId } from '../studio/templateBrowser';
 import { STUDIO_TEMPLATES } from '../studio/templates';
-import type { StudioImportedAsset } from '../studio/types';
+import type { StudioImportedAsset, StudioModelProfile } from '../studio/types';
 import { ModiffButton, ModiffFileInput, StatusActionChip, type StatusActionChipTone } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { cx } from '../utils/classNames';
@@ -287,31 +281,42 @@ function profileForInstalledModel(item: unknown) {
   return Object.values(STUDIO_MODEL_PROFILES).find((profile) => profileMatchesModelText(profile, text));
 }
 
-function loaderCandidatesForModel(item: unknown) {
-  const profile = profileForInstalledModel(item);
-  if (profile?.modelType === 'WanVACEPipeline') {
-    return { profile, keys: ['modules.DiffusersVideo.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
-  }
-  if (profile?.modelType === 'AceStepAudioPipeline') {
-    return { profile, keys: ['modules.DiffusersAudio.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
-  }
-  if (profile?.family === 'Qwen Image') {
-    const qwenKeys =
-      profile.supportsImageInput || profile.supportsMask
-        ? [QWEN_INPAINT_PIPELINE_NODE_KEY, QWEN_T2I_PIPELINE_NODE_KEY]
-        : [QWEN_T2I_PIPELINE_NODE_KEY, QWEN_INPAINT_PIPELINE_NODE_KEY];
-    return { profile, keys: [...qwenKeys, 'modules.ModularDiffusers.ModelsLoader'] };
-  }
-  if (profile) {
-    return { profile, keys: ['modules.DiffusersImage.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
-  }
+type InstalledLoaderCandidate = {
+  key: string;
+  identityKey?: 'model_type' | 'pipeline_class';
+  identity?: string;
+};
 
-  const group = installedModelGroup(item);
-  if (group === 'Audio')
-    return { profile, keys: ['modules.DiffusersAudio.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
-  if (group === 'Video')
-    return { profile, keys: ['modules.DiffusersVideo.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
-  return { profile, keys: ['modules.DiffusersImage.LoadPipeline', 'modules.ModularDiffusers.ModelsLoader'] };
+function loaderCandidatesForModel(item: unknown, capabilities: StudioModelProfile[], authoritative: boolean) {
+  const profile = profileForInstalledModel(item);
+  const executionProfiles = capabilities.find((item) => item.modelType === profile?.modelType)?.executionProfiles ?? [];
+  if (executionProfiles.length > 0) {
+    const seen = new Set<string>();
+    const candidates = executionProfiles
+      .map((execution): InstalledLoaderCandidate => ({
+        key: `${execution.loader_module}.${execution.loader_action}`,
+        identityKey: execution.loader_action === 'ModelsLoader' ? 'model_type' : 'pipeline_class',
+        identity: execution.loader_action === 'ModelsLoader' ? execution.model_type : execution.pipeline_class,
+      }))
+      .filter((candidate) => {
+        const key = `${candidate.key}:${candidate.identityKey}:${candidate.identity}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    return candidates;
+  }
+  if (profile && authoritative) return [];
+
+  const group = profile ? supportedModelGroup(profile.surfaceCategory) : installedModelGroup(item);
+  const facade = group === 'Audio' ? 'Audio' : group === 'Video' ? 'Video' : 'Image';
+  return [
+    { key: `modules.Diffusers${facade}.LoadPipeline` },
+    {
+      key: 'modules.ModularDiffusers.ModelsLoader',
+      ...(profile ? { identityKey: 'model_type' as const, identity: profile.modelType } : {}),
+    },
+  ];
 }
 
 function findNodeParamKey(node: CustomNodeType, candidates: string[]) {
@@ -691,6 +696,8 @@ export function ModelsLibraryPanel() {
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
+  const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const studioModelCapabilitiesAuthoritative = useNodesStore((state) => state.studioModelCapabilitiesAuthoritative);
   const installHfModel = useNodesStore((state) => state.installHfModel);
   const fetchRuntimeStatus = useNodesStore((state) => state.fetchRuntimeStatus);
   const fetchHfCache = useNodesStore((state) => state.fetchHfCache);
@@ -835,25 +842,26 @@ export function ModelsLibraryPanel() {
   const handleInsertInstalledModel = useCallback(
     (item: unknown, source: 'HF' | 'Local') => {
       const modelText = modelItemText(item);
-      const { profile, keys } = loaderCandidatesForModel(item);
+      const candidates = loaderCandidatesForModel(item, studioModelCapabilities, studioModelCapabilitiesAuthoritative);
       const position = insertPositionForViewport(viewport, nodeCount);
-      const node = keys
-        .map((key) => createNodeFromRegistry(key, nodesRegistry, position))
-        .find((candidate): candidate is CustomNodeType =>
-          Boolean(
-            candidate &&
-            (findNodeParamKey(candidate, MODEL_REPO_PARAM_CANDIDATES) || findNodeParamKey(candidate, ['model_type'])),
-          ),
+      const selected = candidates
+        .map((candidate) => ({ candidate, node: createNodeFromRegistry(candidate.key, nodesRegistry, position) }))
+        .find(
+          ({ candidate, node }) =>
+            node &&
+            (findNodeParamKey(node, MODEL_REPO_PARAM_CANDIDATES) || findNodeParamKey(node, ['model_type'])) &&
+            (!candidate.identityKey || findNodeParamKey(node, [candidate.identityKey])),
         );
+      const node = selected?.node;
 
       if (!node) {
         enqueueSnackbar('No matching loader node is available yet.', { variant: 'error', autoHideDuration: 2800 });
         return;
       }
 
-      const modelTypeKey = profile ? findNodeParamKey(node, ['model_type']) : undefined;
-      if (profile && modelTypeKey) {
-        setNodeParamValue(node, modelTypeKey, profile.modelType);
+      const identityKey = selected.candidate.identityKey;
+      if (identityKey && selected.candidate.identity) {
+        setNodeParamValue(node, identityKey, selected.candidate.identity);
       }
 
       const modelFieldKey = findNodeParamKey(node, MODEL_REPO_PARAM_CANDIDATES);
@@ -864,7 +872,7 @@ export function ModelsLibraryPanel() {
       addNode({ ...node, selected: true });
       enqueueSnackbar(`Added ${modelItemLabel(item)} loader`, { variant: 'success', autoHideDuration: 1800 });
     },
-    [addNode, nodeCount, nodesRegistry, viewport],
+    [addNode, nodeCount, nodesRegistry, studioModelCapabilities, studioModelCapabilitiesAuthoritative, viewport],
   );
 
   return (

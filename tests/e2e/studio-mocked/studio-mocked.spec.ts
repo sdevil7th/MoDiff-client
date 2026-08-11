@@ -4440,6 +4440,61 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await expect(page.getByTestId('setup-workflow-model-health')).not.toContainText('Backend modes:');
 });
 
+test('installed model insertion uses the exact execution-profile loader identity', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
+    .not.toHaveLength(0);
+
+  await page.getByTestId('left-tab-models').click();
+  const installed = page.getByTestId('left-model-installed');
+  await installed.getByRole('button', { name: /^Image 1$/ }).click();
+  await installed.getByRole('button', { name: /Qwen\/Qwen-Image-2512/ }).click();
+
+  await expect
+    .poll(async () => {
+      const nodes = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).flow.nodes;
+      const loader = nodes.find((node) => node.module === 'modules.DiffusersImage' && node.action === 'LoadPipeline');
+      return {
+        model: loader?.params?.model_id?.value,
+        pipelineClass: loader?.params?.pipeline_class?.value,
+        modularLoaders: nodes.filter(
+          (node) => node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+        ).length,
+      };
+    })
+    .toEqual({
+      model: 'Qwen/Qwen-Image-2512',
+      pipelineClass: 'QwenImagePipeline',
+      modularLoaders: 0,
+    });
+
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, capabilities: [], studioExecutionSpecs: [] }),
+    });
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setGraphScenarioForTest('empty'));
+  await page.getByTestId('left-tab-models').click();
+  const restoredInstalled = page.getByTestId('left-model-installed');
+  if (!(await restoredInstalled.isVisible())) await page.getByTestId('left-tab-models').click();
+  await expect(restoredInstalled).toBeVisible();
+  await restoredInstalled.getByRole('button', { name: /^Image 1$/ }).click();
+  await restoredInstalled.getByRole('button', { name: /Qwen\/Qwen-Image-2512/ }).click();
+  await expect(page.getByText('No matching loader node is available yet.', { exact: true })).toBeVisible();
+  expect((await page.evaluate(() => window.__MODIFF_E2E__!.getState())).flow.nodes).toHaveLength(0);
+});
+
 test('restricted template installation requires the revision-bound terms acknowledgement', async ({ page }) => {
   mockInstalledRepos.clear();
   mockDownloadCalls = 0;
