@@ -294,6 +294,40 @@ test('schema-v2 Auto planning rejects a selected candidate without an exact boun
   assert.match(plan.message, /invalid response/i);
 });
 
+test('schema-v2 Auto planning accepts and preserves the backend profile-bound candidate receipt', async () => {
+  const candidate = {
+    id: 'qwen-direct',
+    autoResourceSchemaVersion: 2,
+    executionProfileId: 'qwen-image:t2i-direct',
+    modelType: 'QwenImageModularPipeline',
+    mode: 'text_to_image',
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'QwenImagePipeline',
+  };
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      status: 'ready',
+      compatibility: {
+        state: 'ready',
+        severity: 'success',
+        code: 'ready',
+        summary: 'Ready',
+        detail: 'Ready',
+        source: 'backend_auto_planner',
+      },
+      selectedCandidate: candidate,
+      candidates: [candidate],
+    });
+
+  const plan = await autoResourceModule.fetchAutoResourcePlan({ modelType: candidate.modelType });
+  assert.equal(plan.error, undefined);
+  assert.equal(plan.selectedCandidate.executionProfileId, 'qwen-image:t2i-direct');
+  assert.equal(plan.selectedCandidate.autoResourceSchemaVersion, plan.schemaVersion);
+});
+
 test('schema-v2 Auto planning bounds candidate identity depth, count, size, and syntax', async () => {
   const candidate = {
     id: 'qwen-direct',

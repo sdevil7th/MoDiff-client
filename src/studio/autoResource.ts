@@ -51,6 +51,7 @@ export type StudioAutoResourceArtifactStatus = {
 
 export type StudioAutoResourceCandidate = {
   id: string;
+  autoResourceSchemaVersion?: number;
   executionProfileId?: string;
   rank?: number;
   modelType?: string;
