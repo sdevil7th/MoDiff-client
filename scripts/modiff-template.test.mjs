@@ -3293,6 +3293,11 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
     compute_dtype: 'bfloat16',
     double_quant: true,
   };
+  const expertMpsPolicy = {
+    schema_version: 1,
+    qualification: 'experimental',
+    fallback_action: 'open_setup',
+  };
   nodesStoreModule.useNodesStore.setState({
     studioExecutionSpecInvalid: false,
     studioModelCapabilities: [
@@ -3304,6 +3309,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
             modes: ['text_to_image'],
             expert_cuda_policy: expertCudaPolicy,
             expert_quantization_policy: expertQuantizationPolicy,
+            expert_mps_policy: expertMpsPolicy,
           },
         ],
         studioExecutionSpecSchemaVersion: 1,
@@ -3321,6 +3327,9 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
     autoOffload: true,
     quantizationMode: 'none',
   };
+  const mpsIssue = runReadinessModule.getStudioMpsCompatibilityIssue({ ...form, device: 'mps:0' });
+  assert.match(mpsIssue.message, /experimental/);
+  assert.equal(mpsIssue.action, 'open_setup');
   const issue = runReadinessModule.getStudioCudaCapacityIssue(
     form,
     runtimeStatus({

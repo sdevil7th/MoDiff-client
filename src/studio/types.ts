@@ -1,6 +1,7 @@
 import type {
   OptionalRuntimeRequirement,
   StudioExpertCudaPolicy,
+  StudioExpertMpsPolicy,
   StudioExpertQuantizationPolicy,
 } from './optionalRuntimes';
 
@@ -650,6 +651,7 @@ export type StudioExecutionProfile = {
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   expert_cuda_policy?: StudioExpertCudaPolicy;
   expert_quantization_policy?: StudioExpertQuantizationPolicy;
+  expert_mps_policy?: StudioExpertMpsPolicy;
 };
 
 export type StudioExecutionSpec = {

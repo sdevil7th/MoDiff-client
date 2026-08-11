@@ -624,43 +624,21 @@ export function getStudioMpsCompatibilityIssue(form: StudioFormState) {
   if (!isMpsDevice(form.device)) return null;
 
   const profile = getProfileForForm(form);
-  if (profile.family === 'Qwen Image') {
-    return {
-      category: 'hardware_fit',
-      severity: 'warning',
-      blocking: false,
-      action: form.mode === 'text_to_image' ? 'switch_to_z_image' : 'open_setup',
-      message: `${profile.label} is not certified on Apple MPS.`,
-      details:
-        'This exact recipe has not been qualified on Apple Silicon. The run is allowed; use a CUDA backend or switch to Z-Image Turbo if MPS reports an unsupported operation or memory failure.',
-    } satisfies Omit<RunReadinessIssue, 'id'>;
-  }
-
-  if (profile.outputKind === 'video') {
-    return {
-      category: 'hardware_fit',
-      severity: 'warning',
-      blocking: false,
-      action: 'open_setup',
-      message: `${profile.label} is not certified on Apple MPS.`,
-      details:
-        'This exact video recipe has not been qualified on Apple Silicon. The run is allowed, but it may be slow or encounter an unsupported MPS operation; choose another device if that occurs.',
-    } satisfies Omit<RunReadinessIssue, 'id'>;
-  }
-
-  if (profile.family === 'Z-Image') {
-    return {
-      category: 'hardware_fit',
-      severity: 'warning',
-      blocking: false,
-      action: 'open_setup',
-      message: `${profile.label} on Apple MPS is experimental.`,
-      details:
-        'MoDiff can launch with MPS, but Z-Image output quality, memory behavior, and performance still need Apple Silicon proof before this is treated as production-ready.',
-    } satisfies Omit<RunReadinessIssue, 'id'>;
-  }
-
-  return null;
+  const policy = readinessExecutionProfile(form)?.expert_mps_policy;
+  if (!policy) return null;
+  const experimental = policy.qualification === 'experimental';
+  return {
+    category: 'hardware_fit',
+    severity: 'warning',
+    blocking: false,
+    action: policy.fallback_action,
+    message: experimental
+      ? `${profile.label} on Apple MPS is experimental.`
+      : `${profile.label} is not certified on Apple MPS.`,
+    details: experimental
+      ? 'This exact recipe has limited Apple Silicon qualification. The run is allowed, but output quality, memory behavior, and performance still need live proof before this is treated as production-ready.'
+      : 'This exact recipe has not been qualified on Apple Silicon. The run is allowed; use the offered fallback or another device if MPS reports an unsupported operation or memory failure.',
+  } satisfies Omit<RunReadinessIssue, 'id'>;
 }
 
 function getModelRepoFromNode(nodeId: string) {

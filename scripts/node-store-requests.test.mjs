@@ -399,6 +399,11 @@ test('optional runtime contracts normalize exact nested profile metadata', async
     compute_dtype: 'bfloat16',
     double_quant: true,
   };
+  const expertMpsPolicy = {
+    schema_version: 1,
+    qualification: 'unqualified',
+    fallback_action: 'switch_to_z_image',
+  };
   globalThis.fetch = async () =>
     jsonResponse({
       schemaVersion: 2,
@@ -416,6 +421,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
               optional_runtime_requirement: requirement,
               expert_cuda_policy: expertCudaPolicy,
               expert_quantization_policy: expertQuantizationPolicy,
+              expert_mps_policy: expertMpsPolicy,
             },
           ],
         },
@@ -433,6 +439,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
     state.studioModelCapabilities[0].executionProfiles[0].expert_quantization_policy,
     expertQuantizationPolicy,
   );
+  assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].expert_mps_policy, expertMpsPolicy);
   assert.equal(state.studioModelCapabilities[0].executionProfiles[0].optional_runtime_requirement, undefined);
   const previousForm = studioStoreModule.useStudioStore.getState().form;
   const previousFlow = flowStoreModule.useFlowStore.getState();
@@ -583,6 +590,33 @@ test('mixed-version and conflicting execution runtime contracts fail closed', as
             four_bit_quant_type: 'nf4',
             compute_dtype: 'bfloat16',
             double_quant: true,
+            unexpected: true,
+          },
+        },
+      ],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          expert_mps_policy: {
+            schema_version: 1,
+            qualification: 'certified',
+            fallback_action: 'open_setup',
+          },
+        },
+      ],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          expert_mps_policy: {
+            schema_version: 1,
+            qualification: 'unqualified',
+            fallback_action: 'open_setup',
             unexpected: true,
           },
         },

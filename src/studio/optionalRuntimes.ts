@@ -65,6 +65,12 @@ export type StudioExpertQuantizationPolicy = {
   double_quant: boolean;
 };
 
+export type StudioExpertMpsPolicy = {
+  schema_version: 1;
+  qualification: 'unqualified' | 'experimental';
+  fallback_action: 'open_setup' | 'switch_to_z_image';
+};
+
 const runtimeId = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const executionId = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
 const delivery = /^(?:base|optional_overlay)$/;
@@ -76,6 +82,7 @@ const EXPERT_CUDA_POLICY_KEYS =
   'blocked_dtypes,offloaded_vram_bytes,quantized_resident_vram_bytes,recommended_dtype,resident_vram_bytes,schema_version';
 const EXPERT_QUANTIZATION_POLICY_KEYS =
   'component,compute_dtype,double_quant,four_bit_quant_type,modular_node,offload_mode,quantization_mode,schema_version,subfolder';
+const EXPERT_MPS_POLICY_KEYS = 'fallback_action,qualification,schema_version';
 
 function ids(value: unknown, pattern: RegExp, allowEmpty: boolean) {
   if (!Array.isArray(value) || value.length > 32 || (!allowEmpty && !value.length)) invalid();
@@ -164,6 +171,22 @@ function parseExpertQuantizationPolicy(value: unknown): StudioExpertQuantization
   };
 }
 
+function parseExpertMpsPolicy(value: unknown): StudioExpertMpsPolicy {
+  const item = record(value);
+  if (Object.keys(item).sort().join() !== EXPERT_MPS_POLICY_KEYS || item.schema_version !== 1) invalid();
+  return {
+    schema_version: 1,
+    qualification: string(
+      item.qualification,
+      /^(?:unqualified|experimental)$/,
+    ) as StudioExpertMpsPolicy['qualification'],
+    fallback_action: string(
+      item.fallback_action,
+      /^(?:open_setup|switch_to_z_image)$/,
+    ) as StudioExpertMpsPolicy['fallback_action'],
+  };
+}
+
 export function parseOptionalRuntimeExecutionProfiles<T extends string>(
   value: unknown,
   aggregate: OptionalRuntimeRequirement | undefined,
@@ -184,6 +207,8 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
       profile.expert_quantization_policy === undefined
         ? undefined
         : parseExpertQuantizationPolicy(profile.expert_quantization_policy);
+    const expertMpsPolicy =
+      profile.expert_mps_policy === undefined ? undefined : parseExpertMpsPolicy(profile.expert_mps_policy);
     if (
       (profile.optional_runtime_delivery !== undefined &&
         !delivery.test(profile.optional_runtime_delivery as string)) ||
@@ -199,12 +224,14 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     profile.optionalRuntimeRequirement = requirement;
     if (expertCudaPolicy) profile.expert_cuda_policy = expertCudaPolicy;
     if (expertQuantizationPolicy) profile.expert_quantization_policy = expertQuantizationPolicy;
+    if (expertMpsPolicy) profile.expert_mps_policy = expertMpsPolicy;
     return profile as Record<string, unknown> & {
       id: string;
       modes: T[];
       optionalRuntimeRequirement?: OptionalRuntimeRequirement;
       expert_cuda_policy?: StudioExpertCudaPolicy;
       expert_quantization_policy?: StudioExpertQuantizationPolicy;
+      expert_mps_policy?: StudioExpertMpsPolicy;
     };
   });
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();

@@ -545,6 +545,12 @@ const mockExpertQuantizationPolicy = {
   double_quant: true,
 };
 
+const mockExpertMpsPolicy = {
+  schema_version: 1,
+  qualification: 'unqualified',
+  fallback_action: 'open_setup',
+};
+
 function mockQwenImageExecutionCapability() {
   const expertCudaPolicy = {
     schema_version: 1,
@@ -655,6 +661,7 @@ function mockQwenImageExecutionCapability() {
         max_low_memory_steps: 50,
         expert_cuda_policy: expertCudaPolicy,
         expert_quantization_policy: mockExpertQuantizationPolicy,
+        expert_mps_policy: { ...mockExpertMpsPolicy, fallback_action: 'switch_to_z_image' },
       },
       {
         id: controlSpec.executionProfileId,
@@ -674,6 +681,7 @@ function mockQwenImageExecutionCapability() {
         max_low_memory_steps: 28,
         expert_cuda_policy: expertCudaPolicy,
         expert_quantization_policy: mockExpertQuantizationPolicy,
+        expert_mps_policy: mockExpertMpsPolicy,
       },
     ],
     studioExecutionSpecModes: ['control_image', 'text_to_image'],
@@ -790,6 +798,7 @@ function mockQwenEditInpaintExecutionCapability() {
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
         expert_quantization_policy: mockExpertQuantizationPolicy,
+        expert_mps_policy: mockExpertMpsPolicy,
       },
       {
         ...base.executionProfiles[0],
@@ -805,6 +814,7 @@ function mockQwenEditInpaintExecutionCapability() {
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
         expert_quantization_policy: mockExpertQuantizationPolicy,
+        expert_mps_policy: mockExpertMpsPolicy,
       },
     ],
     studioExecutionSpecModes: [editSpec.mode, spec.mode, outpaintSpec.mode],
@@ -7522,6 +7532,68 @@ test('mocked Studio consumes the exact execution-profile Expert CUDA policy', as
     timeout: 30_000,
   });
   await expect(page.getByTestId('studio-run')).toBeDisabled();
+});
+
+test('mocked Studio consumes the exact execution-profile Expert MPS policy', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockIncludeQuantizationNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const capability = mockQwenImageExecutionCapability();
+  capability.executionProfiles[0].expert_mps_policy = {
+    schema_version: 1,
+    qualification: 'experimental',
+    fallback_action: 'open_setup',
+  };
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, capabilities: [capability] }),
+    });
+  });
+  await page.unroute('**/runtime/status**');
+  await page.route('**/runtime/status**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ready: true,
+        packages: {
+          torch: {
+            available: true,
+            cuda_available: false,
+            mps_available: true,
+            mps_device_count: 1,
+            mps_devices: [{ index: 0, name: 'Mock Apple MPS', total_memory: 32 * 1024 ** 3 }],
+          },
+        },
+      }),
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      resourceMode: 'expert',
+      quantizationMode: 'bnb_4bit',
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'model_cpu',
+      device: 'mps:0',
+    });
+  });
+  await setStudioViewMode(page, 'expert');
+  await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
+  await page.getByTestId('studio-run-readiness').click();
+  const issues = page.getByTestId('run-issues-dialog');
+  await expect(issues).toContainText('Qwen-Image-2512 on Apple MPS is experimental.');
+  await expect(issues).toContainText('limited Apple Silicon qualification');
 });
 
 test('mocked Studio preserves the exact Qwen graph across Auto and Expert on a 16GB CUDA device', async ({ page }) => {
