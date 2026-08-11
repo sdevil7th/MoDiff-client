@@ -12657,6 +12657,146 @@ test('registry-late field actions initialize once and live contract changes canc
   expect(requests.filter((request) => request.values?.repository?.value === pendingRepository)).toHaveLength(0);
 });
 
+test('Modular guider signals narrow single-select options and relay the reviewed pipeline identity', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const allGuiders = [
+    'ClassifierFreeGuidance',
+    'SkipLayerGuidance',
+    'AdaptiveProjectedGuidance',
+    'AdaptiveProjectedMixGuidance',
+    'ClassifierFreeZeroStarGuidance',
+    'AutoGuidance',
+    'SmoothedEnergyGuidance',
+    'PerturbedAttentionGuidance',
+    'TangentialClassifierFreeGuidance',
+    'FrequencyDecoupledGuidance',
+  ];
+  const nonLayerGuiders = allGuiders.filter(
+    (guider) =>
+      !['SkipLayerGuidance', 'AutoGuidance', 'SmoothedEnergyGuidance', 'PerturbedAttentionGuidance'].includes(guider),
+  );
+  const guiderOptions = {
+    QwenImageLayeredModularPipeline: allGuiders,
+    ZImageModularPipeline: nonLayerGuiders,
+  };
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Contract.GuiderSignalSource': nodeDef('modules.Contract', 'GuiderSignalSource', 'test', {
+            model: {
+              type: 'diffusers_auto_model',
+              display: 'output',
+              signal: { direction: 'output', value: 'QwenImageLayeredModularPipeline' },
+            },
+          }),
+          'modules.Contract.GuiderSignalRelay': nodeDef('modules.Contract', 'GuiderSignalRelay', 'test', {
+            model: {
+              type: 'diffusers_auto_model',
+              display: 'input',
+              onSignal: { action: 'signal', target: 'guider' },
+            },
+            guider: { type: 'custom_guider', display: 'input' },
+          }),
+          'modules.ModularDiffusers.Guider': nodeDef('modules.ModularDiffusers', 'Guider', 'sampler', {
+            guider: {
+              type: 'string',
+              display: 'select',
+              value: 'SkipLayerGuidance',
+              options: allGuiders,
+            },
+            guider_out: {
+              type: 'custom_guider',
+              display: 'output',
+              onSignal: [
+                { action: 'value', target: 'guider', prop: 'options', data: guiderOptions },
+                { action: 'signal', target: 'layers_config' },
+              ],
+            },
+            layers_config: { type: 'layers_config', display: 'input' },
+          }),
+          'modules.ModularDiffusers.Layers': nodeDef('modules.ModularDiffusers', 'Layers', 'sampler', {
+            layers_config: { type: 'layers_config', display: 'output' },
+          }),
+        },
+      }),
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+
+  const ids = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const source = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Contract.GuiderSignalSource');
+    const relay = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Contract.GuiderSignalRelay');
+    const guider = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.Guider');
+    const layers = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.Layers');
+    window.__MODIFF_E2E__!.connectGraph({
+      source: guider,
+      sourceHandle: 'guider_out',
+      target: relay,
+      targetHandle: 'guider',
+    });
+    window.__MODIFF_E2E__!.connectGraph({
+      source: layers,
+      sourceHandle: 'layers_config',
+      target: guider,
+      targetHandle: 'layers_config',
+    });
+    window.__MODIFF_E2E__!.connectGraph({
+      source,
+      sourceHandle: 'model',
+      target: relay,
+      targetHandle: 'model',
+    });
+    return { source, guider, layers };
+  });
+
+  const contractState = () =>
+    page.evaluate(({ guider, layers }) => {
+      const nodes = window.__MODIFF_E2E__!.getState().flow.nodes;
+      const guiderNode = nodes.find((node) => node.id === guider)!;
+      const layersNode = nodes.find((node) => node.id === layers)!;
+      return {
+        options: guiderNode.params.guider.options,
+        value: guiderNode.params.guider.value,
+        layersSignal: layersNode.params.layers_config.signal?.value,
+      };
+    }, ids);
+
+  await expect.poll(contractState).toEqual({
+    options: allGuiders,
+    value: 'SkipLayerGuidance',
+    layersSignal: 'QwenImageLayeredModularPipeline',
+  });
+
+  await page.evaluate(({ source }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'set_field_params',
+      node: source,
+      field: 'model',
+      params: { signal: { direction: 'output', value: 'ZImageModularPipeline' } },
+    });
+  }, ids);
+  await expect.poll(contractState).toEqual({
+    options: nonLayerGuiders,
+    value: '',
+    layersSignal: 'ZImageModularPipeline',
+  });
+});
+
 test('workflow tabs remain a single horizontally scrollable row with pinned new-tab access', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);

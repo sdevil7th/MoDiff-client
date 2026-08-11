@@ -870,6 +870,8 @@ export function installE2EHooks() {
                   value: param.value,
                   artifacts: param.artifacts,
                   display: param.display,
+                  options: param.options,
+                  signal: param.signal,
                   type: param.type,
                 },
               ]),

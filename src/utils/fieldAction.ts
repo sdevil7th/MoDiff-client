@@ -35,13 +35,6 @@ function normalizeCreatedParams(value: unknown): Record<string, NodeParams> {
 }
 
 export default async function fieldAction(props: FieldProps, value: unknown, event: string = 'onChange') {
-  if (!props.onChange && event === 'onChange') {
-    return;
-  }
-  if (!props.onSignal && event === 'onSignal') {
-    return;
-  }
-
   const onEvent = event === 'onChange' ? props.onChange : event === 'onSignal' ? props.onSignal : null;
   if (!onEvent) {
     return;
@@ -58,7 +51,7 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
   }
 
   let action = 'show';
-  let data: unknown = onEvent || {};
+  let data: unknown = onEvent;
   const eventData = isRecord(onEvent) ? (onEvent as FieldActionDescriptor) : {};
   const targetField = eventData.target;
 
@@ -67,7 +60,7 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
   if (typeof data === 'string') {
     action = 'exec';
   } else if (eventData.action && ['show', 'hide', 'create', 'value', 'exec', 'signal'].includes(eventData.action)) {
-    action = eventData.action || 'show';
+    action = eventData.action;
     if (eventData.data !== undefined) {
       data = eventData.data;
     }
@@ -204,18 +197,13 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
     if (propKey === 'options') {
       props.updateStore(targetField, true, 'disabled');
       const targetValue = flowState.getParam(props.nodeId, targetField, 'value');
+      const targetIsMultiple = !!flowState.getParam(props.nodeId, targetField, 'fieldOptions')?.multiple;
       const normTargetValue = targetValue ? (Array.isArray(targetValue) ? targetValue : [targetValue]) : [];
-      const validOptions = value
-        ? Array.isArray(value)
-          ? value.map(String)
-          : isRecord(value)
-            ? Object.keys(value)
-            : []
-        : [];
+      const validOptions = Array.isArray(value) ? value.map(String) : isRecord(value) ? Object.keys(value) : [];
       const filterValue = normTargetValue.filter((opt) => validOptions.includes(String(opt)));
 
       queueMicrotask(() => {
-        props.updateStore(targetField, filterValue, 'value');
+        props.updateStore(targetField, targetIsMultiple ? filterValue : (filterValue[0] ?? ''), 'value');
         // force a refresh by triggering the disabled state
         props.updateStore(targetField, false, 'disabled');
       });

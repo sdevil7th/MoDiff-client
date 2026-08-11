@@ -448,6 +448,68 @@ test('value signal actions pass structured execution identities without interpre
   assert.deepEqual(updates, [{ field: 'modiff_pipeline_identity', value: identity, prop: 'value' }]);
 });
 
+test('option signal actions preserve single- and multi-select value shapes', async () => {
+  flowStoreModule.useFlowStore.setState((state) => ({
+    nodes: state.nodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        params: {
+          guider: { type: 'string', display: 'select', value: 'ClassifierFreeGuidance' },
+          blocks: {
+            type: 'string',
+            display: 'select',
+            value: ['transformer_blocks'],
+            fieldOptions: { multiple: true },
+          },
+        },
+      },
+    })),
+  }));
+  const updateStore = (field, value, prop = 'value') =>
+    flowStoreModule.useFlowStore.getState().setParam('preview', field, value, prop);
+
+  await fieldActionModule.default(
+    {
+      nodeId: 'preview',
+      fieldKey: 'contract',
+      module: 'modules.Contract',
+      action: 'DynamicOptions',
+      onSignal: {
+        action: 'value',
+        target: 'guider',
+        prop: 'options',
+        data: { ModelA: ['ClassifierFreeGuidance', 'AutoGuidance'] },
+      },
+      updateStore,
+    },
+    'ModelA',
+    'onSignal',
+  );
+  await fieldActionModule.default(
+    {
+      nodeId: 'preview',
+      fieldKey: 'contract',
+      module: 'modules.Contract',
+      action: 'DynamicOptions',
+      onSignal: {
+        action: 'value',
+        target: 'blocks',
+        prop: 'options',
+        data: { ModelA: ['transformer_blocks', 'single_transformer_blocks'] },
+      },
+      updateStore,
+    },
+    'ModelA',
+    'onSignal',
+  );
+  await new Promise((resolve) => queueMicrotask(resolve));
+
+  const flow = flowStoreModule.useFlowStore.getState();
+  assert.equal(flow.getParam('preview', 'guider', 'value'), 'ClassifierFreeGuidance');
+  assert.deepEqual(flow.getParam('preview', 'blocks', 'value'), ['transformer_blocks']);
+});
+
 test('hidden execution identity changes participate in the Studio run input hash', () => {
   const form = studioStoreModule.useStudioStore.getState().form;
   const baseGraph = graph();
