@@ -1469,6 +1469,16 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     defaultRepo: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
     contentHash: 'studio-spec-v1-10c9a3f2',
   };
+  const wanVaceT2vSpec = {
+    ...wanT2vSpec,
+    id: 'wan-vace-1.3b:text-to-video:v1',
+    modelType: 'WanVACEPipeline',
+    executionProfileId: 'wan-vace:direct',
+    executionPath: 'direct-wan-vace',
+    pipelineClass: 'WanVACEPipeline',
+    defaultRepo: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+    contentHash: 'studio-spec-v1-b4b251f0',
+  };
   const wanV2vRoleRows = [
     ...videoRoleRows,
     ['loadVideo', 'modules.Video.Load', -520, 260],
@@ -1964,6 +1974,19 @@ test('backend execution specs materialize exact image, video, and audio recipes 
           studioExecutionSpecs: [wanT2vSpec, wanV2vSpec, wanColorSpec],
         },
         {
+          ...capability(wanVaceT2vSpec),
+          modes: ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'],
+          runnableModes: ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'],
+          executionProfiles: [
+            {
+              ...profile(wanVaceT2vSpec),
+              modes: ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'],
+            },
+          ],
+          studioExecutionSpecModes: ['text_to_video'],
+          studioExecutionSpecs: [wanVaceT2vSpec],
+        },
+        {
           ...capability(ltxSpec),
           modes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
           runnableModes: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
@@ -2448,6 +2471,28 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'WanPipeline',
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanT2vForm), null);
+
+    const wanVaceT2vForm = { ...wanT2vForm, modelType: 'WanVACEPipeline', shift: 5 };
+    studioStoreModule.useStudioStore.setState({ form: wanVaceT2vForm });
+    await graphBridge.createOrUpdateStudioGraph(wanVaceT2vForm);
+    const wanVaceT2vBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const wanVaceT2vNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(wanVaceT2vBinding.executionSpec.id, wanVaceT2vSpec.id);
+    assert.equal(wanVaceT2vBinding.executionSpec.contentHash, wanVaceT2vSpec.contentHash);
+    assert.deepEqual(topology(wanVaceT2vBinding), topology(wanT2vBinding));
+    assert.equal(
+      wanVaceT2vNodes.find((item) => item.id === wanVaceT2vBinding.nodes.wanPipeline).data.params.pipeline_class.value,
+      'WanVACEPipeline',
+    );
+    assert.equal(
+      wanVaceT2vNodes.find((item) => item.id === wanVaceT2vBinding.nodes.wanPipeline).data.params.model_id.value.value,
+      'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+    );
+    assert.equal(
+      wanVaceT2vNodes.find((item) => item.id === wanVaceT2vBinding.nodes.wanGenerate).data.params.mode.value,
+      'text_to_video',
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanVaceT2vForm), null);
 
     const wanV2vForm = { ...wanT2vForm, mode: 'video_to_video', sourceVideo: '@data/videos/source.mp4' };
     studioStoreModule.useStudioStore.setState({ form: wanV2vForm });

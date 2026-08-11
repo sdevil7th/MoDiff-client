@@ -924,6 +924,40 @@ function mockWanT2vExecutionCapability() {
   };
 }
 
+function mockWanVaceT2vExecutionCapability() {
+  const base = mockWanTi2vExecutionCapability();
+  const spec = {
+    ...base.studioExecutionSpecs[0],
+    id: 'wan-vace-1.3b:text-to-video:v1',
+    modelType: 'WanVACEPipeline',
+    executionProfileId: 'wan-vace:direct',
+    executionPath: 'direct-wan-vace',
+    pipelineClass: 'WanVACEPipeline',
+    defaultRepo: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+    contentHash: 'studio-spec-v1-b4b251f0',
+  };
+  const modes = ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'];
+  return {
+    ...base,
+    modelType: spec.modelType,
+    modes,
+    runnableModes: modes,
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes,
+        execution_path: spec.executionPath,
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+      },
+    ],
+    studioExecutionSpecModes: [spec.mode],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockLtxT2vExecutionCapability() {
   const base = mockWanTi2vExecutionCapability();
   const spec = {
@@ -7252,6 +7286,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   mockInstalledRepos.add('Qwen/Qwen-Image-Edit');
   mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
+  mockInstalledRepos.add('Wan-AI/Wan2.1-VACE-1.3B-diffusers');
   mockInstalledRepos.add('Lightricks/LTX-Video-0.9.8-13B-distilled');
   mockInstalledRepos.add('ACE-Step/acestep-v15-xl-turbo-diffusers');
   mockIncludeQuantizationNode = true;
@@ -7272,6 +7307,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     mockWanI2vExecutionCapability(),
     mockWanTi2vExecutionCapability(),
     mockWanT2vExecutionCapability(),
+    mockWanVaceT2vExecutionCapability(),
     mockLtxT2vExecutionCapability(),
     mockAceTextToAudioExecutionCapability(),
   ];
@@ -7313,7 +7349,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(15);
+    .toHaveLength(16);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7830,8 +7866,40 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   expect(wanT2v.recipe?.attention_components?.value).toBe('transformer');
   expect(wanT2v.generate?.scheduler_flow_shift?.value).toBe(5);
 
+  const wanVaceT2v = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'WanVACEPipeline',
+      mode: 'text_to_video',
+      shift: 5,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params?.pipeline_class
+        ?.value,
+      modelId: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params?.model_id?.value,
+      mode: state.flow.nodes.find((node) => node.id === binding.nodes.wanGenerate)?.params?.mode?.value,
+    };
+  });
+  expect(wanVaceT2v).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'wan-vace-1.3b:text-to-video:v1',
+      contentHash: 'studio-spec-v1-b4b251f0',
+      executionProfileId: 'wan-vace:direct',
+    },
+    edgeShape: ti2v.edgeShape,
+    pipelineClass: 'WanVACEPipeline',
+    modelId: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+    mode: 'text_to_video',
+  });
+
   const wanV2v = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'WanVideoPipeline',
       mode: 'video_to_video',
       sourceVideo: '@data/videos/source.mp4',
     });
