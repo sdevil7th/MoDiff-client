@@ -82,7 +82,7 @@ Proof is scoped. A successful text-to-image run does not prove inpaint, control,
 A usable candidate should declare enough information to reproduce and diagnose it:
 
 - Stable candidate identifier and exact execution-profile identifier
-- Model type, task, repository/artifact, and resolved revision when available
+- Model type, task, repository/artifact, resolved revision, and the exact immutable repository/revision receipt for every reviewed auxiliary model dependency
 - Exact loader module/action and runtime execution path
 - Dtype and quantization
 - Device and offload mode
@@ -96,7 +96,7 @@ A usable candidate should declare enough information to reproduce and diagnose i
 
 Avoid candidate fields that contain developer-specific absolute paths or secrets. Public exports and Gallery provenance should preserve reproducibility without disclosing workstation identity.
 
-For schema-v2 plans, the selected candidate must be the unique same-ID entry in the returned candidate list and retain the same workflow and execution identity. The client applies it only when the exact loader is executable and belongs to the current managed graph. A disabled loader, an unrelated matching loader elsewhere on a mixed graph, a stale model/task pair, or a missing target blocks Run and asks the user to refresh or rebuild. A target that is already configured correctly remains valid; applicability does not depend on changing a field.
+For schema-v2 plans, the selected candidate must be the unique same-ID entry in the returned candidate list and retain the same workflow and execution identity. Its `modelDependencies` receipt must exactly match the current model/mode profile as bounded `id`/`kind`/`repo`/immutable-`revision` entries. The client applies it only when the exact loader is executable and belongs to the current managed graph. A disabled loader, an unrelated matching loader elsewhere on a mixed graph, a stale model/task pair or dependency revision, or a missing target blocks Run and asks the user to refresh or rebuild. A target that is already configured correctly remains valid; applicability does not depend on changing a field.
 
 ## Current Model Policy
 
@@ -157,6 +157,7 @@ If any step is missing, keep the profile visible as Expert-only or blocked with 
 
 - Does the same form produce a stable candidate key?
 - Does the selected candidate target the exact managed loader module/action and preserve that target in every retry?
+- Do its auxiliary/base-model dependencies match the current immutable model/mode receipt in the plan, runtime hints, and history signature?
 - Is artifact completeness checked beyond directory presence?
 - Is the selected candidate's proof accepted rather than merely non-empty?
 - Are hardware and package errors actionable?

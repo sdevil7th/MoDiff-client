@@ -8,6 +8,7 @@ import {
   getFormDefaultsForMode,
   getProfileForForm,
   isModelCompatibleWithMode,
+  modelDependencyReceiptForMode,
 } from '../studio/modelProfiles';
 import {
   coerceStudioFormState,
@@ -2955,6 +2956,7 @@ export function currentAutoResourcePlanTarget(
     !autoResourcePlanTargetMatches(plan, useFlowStore.getState().nodes, binding?.managedNodeIds, {
       ...form,
       spec: binding?.executionSpec,
+      modelDependencies: modelDependencyReceiptForMode(getProfileForForm(form), form.mode),
     }) && 'Auto mismatch.'
   );
 }

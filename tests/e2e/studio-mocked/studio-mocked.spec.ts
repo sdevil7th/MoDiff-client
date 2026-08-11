@@ -1395,6 +1395,26 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     };
     const defaultRepo = defaultRepos[modelType] ?? 'Tongyi-MAI/Z-Image-Turbo';
     const installed = mockInstalledRepos.has(defaultRepo);
+    const modelDependencies =
+      modelType === 'QwenImageModularPipeline' && mode === 'control_image'
+        ? [
+            {
+              id: 'qwen-controlnet-union',
+              kind: 'controlnet',
+              repo: 'InstantX/Qwen-Image-ControlNet-Union',
+              revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+            },
+          ]
+        : modelType === 'FluxReduxPipeline' && mode === 'edit_image'
+          ? [
+              {
+                id: 'flux-redux-base',
+                kind: 'base',
+                repo: 'black-forest-labs/FLUX.1-dev',
+                revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
+              },
+            ]
+          : [];
     const directQwenEdit = modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint');
     const executionPath =
       modelType === 'WanVACEPipeline'
@@ -1439,6 +1459,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
                       : modelType.startsWith('Flux')
                         ? 'FluxPipeline'
                         : modelType,
+      modelDependencies,
       studioExecutionSpecContract: mockAdvertiseStudioExecutionSpecs
         ? mockStudioExecutionSpecContract(modelType, mode)
         : undefined,
@@ -1497,6 +1518,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
     pipelineClass: 'QwenImagePipeline',
+    modelDependencies: [],
     modelRepo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     resolvedArtifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
     artifact: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
@@ -7292,6 +7314,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       loaderAction: 'LoadPipeline',
       executionPath: 'direct-diffusers-image',
       pipelineClass: 'QwenImagePipeline',
+      modelDependencies: [],
       modelRepo: 'Qwen/Qwen-Image-2512',
       resolvedArtifact: 'Qwen/Qwen-Image-2512',
       artifact: 'Qwen/Qwen-Image-2512',
@@ -7480,7 +7503,11 @@ test('backend Studio execution specs materialize exact image, video, and audio r
         contentHash?: string;
         nodes?: Record<string, string>;
       };
-      autoResourcePlan?: { executionProfileId?: string };
+      modelDependencies?: Array<{ id?: string; kind?: string; repo?: string; revision?: string }>;
+      autoResourcePlan?: {
+        executionProfileId?: string;
+        modelDependencies?: Array<{ id?: string; kind?: string; repo?: string; revision?: string }>;
+      };
     };
   } | null = null;
   await page.route('**/graph', async (route) => {
@@ -7668,13 +7695,14 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     window.__MODIFF_E2E__!.setStudioFormForTest({
       modelType: 'FluxReduxPipeline',
       mode: 'edit_image',
-      resourceMode: 'expert',
+      resourceMode: 'auto',
       referenceImages: ['@data/images/redux.png'],
       conditioningScale: 0.8,
     });
     await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
     const state = window.__MODIFF_E2E__!.getState();
     const binding = state.studio.graphBinding!;
+    await window.__MODIFF_E2E__!.runActiveTemplate();
     return {
       receipt: binding.executionSpec,
       nodes: binding.nodes,
@@ -7704,6 +7732,16 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   expect(redux.pipelineClass).toBe('FluxReduxPipeline');
   expect(redux.referenceFile).toEqual(['@data/images/redux.png']);
   expect(redux.referenceStrength).toBe(0.8);
+  const reduxDependencies = [
+    {
+      id: 'flux-redux-base',
+      kind: 'base',
+      repo: 'black-forest-labs/FLUX.1-dev',
+      revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
+    },
+  ];
+  expect(submittedGraph?.runtimeHints?.modelDependencies).toEqual(reduxDependencies);
+  expect(submittedGraph?.runtimeHints?.autoResourcePlan?.modelDependencies).toEqual(reduxDependencies);
 
   const kontext = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

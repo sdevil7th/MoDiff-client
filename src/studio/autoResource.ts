@@ -60,6 +60,7 @@ export type StudioAutoResourceCandidate = {
   loaderAction?: string;
   executionPath?: string;
   pipelineClass?: string;
+  modelDependencies?: Array<{ id: string; kind: string; repo: string; revision: string }>;
   studioExecutionSpecContract?: {
     schemaVersion?: number;
     id?: string;
@@ -518,15 +519,18 @@ export function autoResourcePlanTargetMatches(
     modelType: string;
     mode: string;
     spec?: { schemaVersion: number; id: string; contentHash: string; executionProfileId: string };
+    modelDependencies: Array<{ id: string; kind: string; repo: string; revision: string }>;
   },
 ): boolean {
   if (!isSchemaV2(plan)) return true;
   const selected = selectedAutoCandidate(plan);
   if (!selected) return !(plan.selectedCandidate || plan.compatibility?.state === 'ready');
-  if (selected.modelType !== expected.modelType || selected.mode !== expected.mode) return false;
   if (
+    selected.modelType !== expected.modelType ||
+    selected.mode !== expected.mode ||
     (expected.spec && selected.executionProfileId !== expected.spec.executionProfileId) ||
-    !deepEqual(selected.studioExecutionSpecContract, expected.spec)
+    !deepEqual(selected.studioExecutionSpecContract, expected.spec) ||
+    !deepEqual(selected.modelDependencies, expected.modelDependencies)
   )
     return false;
   const identityKey = selected.loaderAction === 'ModelsLoader' ? 'model_type' : 'pipeline_class';

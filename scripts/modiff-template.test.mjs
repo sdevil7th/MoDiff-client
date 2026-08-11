@@ -107,6 +107,17 @@ test('schema-v2 capability modes are exact while legacy mode metadata can fall b
 test('the managed Qwen ControlNet requirement carries its reviewed immutable commit', () => {
   assert.equal(profilesModule.QWEN_CONTROLNET_REQUIREMENT.repo, 'InstantX/Qwen-Image-ControlNet-Union');
   assert.equal(profilesModule.QWEN_CONTROLNET_REQUIREMENT.revision, 'b13036f066d6dee7c20513e263d3d673055e9de8');
+  assert.deepEqual(
+    profilesModule.modelDependencyReceiptForMode(profilesModule.STUDIO_MODEL_PROFILES.FluxReduxPipeline, 'edit_image'),
+    [
+      {
+        id: 'flux-redux-base',
+        kind: 'base',
+        repo: 'black-forest-labs/FLUX.1-dev',
+        revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
+      },
+    ],
+  );
 });
 
 test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
@@ -1678,7 +1689,16 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
     },
   });
   const planFor = (modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass, id = 'selected') => {
-    const candidate = { id, modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass };
+    const candidate = {
+      id,
+      modelType,
+      mode,
+      loaderModule,
+      loaderAction,
+      executionPath,
+      pipelineClass,
+      modelDependencies: [],
+    };
     return {
       schemaVersion: 2,
       status: 'ready',
@@ -1699,7 +1719,11 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
     const managedId =
       loaderModule === 'modules.ModularDiffusers' ? 'modular' : loaderModule.includes('Video') ? 'video' : 'image';
     assert.equal(
-      autoResourceModule.autoResourcePlanTargetMatches(plan, nodes, [managedId], { modelType, mode }),
+      autoResourceModule.autoResourcePlanTargetMatches(plan, nodes, [managedId], {
+        modelType,
+        mode,
+        modelDependencies: [],
+      }),
       true,
       `${modelType}:${mode}`,
     );
@@ -1717,6 +1741,51 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
     node('managed-image', 'modules.DiffusersImage', 'LoadPipeline', 'QwenImagePipeline'),
     node('unrelated-modular', 'modules.ModularDiffusers', 'ModelsLoader', 'QwenImageModularPipeline'),
   ];
+  const qwenDependencies = [
+    {
+      id: 'qwen-controlnet-union',
+      kind: 'controlnet',
+      repo: 'InstantX/Qwen-Image-ControlNet-Union',
+      revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+    },
+  ];
+  const dependencyCandidate = { ...qwenPlan.selectedCandidate, modelDependencies: qwenDependencies };
+  const dependencyPlan = {
+    ...qwenPlan,
+    selectedCandidate: dependencyCandidate,
+    candidates: [{ ...dependencyCandidate }],
+  };
+  assert.equal(
+    autoResourceModule.autoResourcePlanTargetMatches(
+      dependencyPlan,
+      [node('managed-modular', 'modules.ModularDiffusers', 'ModelsLoader', 'QwenImageModularPipeline')],
+      ['managed-modular'],
+      { modelType: 'QwenImageModularPipeline', mode: 'control_image', modelDependencies: qwenDependencies },
+    ),
+    true,
+  );
+  assert.equal(
+    autoResourceModule.autoResourcePlanTargetMatches(
+      {
+        ...dependencyPlan,
+        selectedCandidate: {
+          ...dependencyCandidate,
+          modelDependencies: [{ ...qwenDependencies[0], revision: '0'.repeat(40) }],
+        },
+        candidates: [
+          {
+            ...dependencyCandidate,
+            modelDependencies: [{ ...qwenDependencies[0], revision: '0'.repeat(40) }],
+          },
+        ],
+      },
+      [node('managed-modular', 'modules.ModularDiffusers', 'ModelsLoader', 'QwenImageModularPipeline')],
+      ['managed-modular'],
+      { modelType: 'QwenImageModularPipeline', mode: 'control_image', modelDependencies: qwenDependencies },
+    ),
+    false,
+    'a stale auxiliary artifact revision cannot satisfy the current profile receipt',
+  );
   assert.ok(
     !autoResourceModule.autoResourcePlanTargetMatches(qwenPlan, mixedNodes, ['managed-image'], {
       modelType: 'QwenImageModularPipeline',
@@ -1812,6 +1881,7 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
     pipelineClass: 'FluxPipeline',
+    modelDependencies: [],
     studioExecutionSpecContract: {
       schemaVersion: 1,
       id: 'flux-schnell:text-to-image:v1',
@@ -1832,6 +1902,7 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
       modelType: 'FluxSchnellPipeline',
       mode: 'text_to_image',
       spec: graphSpec,
+      modelDependencies: [],
     }),
     true,
   );
@@ -3933,6 +4004,37 @@ test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-
   assert.equal(graph.runtimeHints.requestedCudaBudgetBytes, undefined);
 });
 
+test('Studio runtime hints carry immutable auxiliary model dependency revisions', () => {
+  const previous = studioStoreModule.useStudioStore.getState();
+  try {
+    studioStoreModule.useStudioStore.setState({
+      form: {
+        ...profilesModule.DEFAULT_STUDIO_FORM,
+        modelType: 'QwenImageModularPipeline',
+        mode: 'control_image',
+        resourceMode: 'expert',
+      },
+      autoResourcePlan: null,
+      graphBinding: null,
+    });
+    const graph = runMetadataModule.applyStudioRuntimeHints({ sid: 'dependencies', nodes: {}, paths: [] });
+    assert.deepEqual(graph.runtimeHints.modelDependencies, [
+      {
+        id: 'qwen-controlnet-union',
+        kind: 'controlnet',
+        repo: 'InstantX/Qwen-Image-ControlNet-Union',
+        revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+      },
+    ]);
+  } finally {
+    studioStoreModule.useStudioStore.setState({
+      form: previous.form,
+      autoResourcePlan: previous.autoResourcePlan,
+      graphBinding: previous.graphBinding,
+    });
+  }
+});
+
 test('ACE LoRA runtime hints replace the selected candidate and its complete artifact receipt', () => {
   const previousStudio = studioStoreModule.useStudioStore.getState();
   const previousFlow = flowStoreModule.useFlowStore.getState();
@@ -3948,6 +4050,7 @@ test('ACE LoRA runtime hints replace the selected candidate and its complete art
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-audio',
     pipelineClass: 'AceStepPipeline',
+    modelDependencies: [],
     modelRepo: originalRepo,
     resolvedArtifact: originalRepo,
     artifact: originalRepo,

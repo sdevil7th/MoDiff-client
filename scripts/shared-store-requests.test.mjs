@@ -305,6 +305,7 @@ test('schema-v2 Auto planning accepts and preserves the backend profile-bound ca
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
     pipelineClass: 'FluxPipeline',
+    modelDependencies: [],
     studioExecutionSpecContract: {
       schemaVersion: 1,
       id: 'flux-schnell:text-to-image:v1',

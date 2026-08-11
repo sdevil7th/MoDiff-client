@@ -65,6 +65,7 @@ export const QWEN_INPAINT_GENERATE_NODE_KEY = 'modules.DiffusersImage.Inpaint';
 export const ACE_STEP_REPO = 'ACE-Step/acestep-v15-xl-turbo-diffusers';
 export const FLUX_SCHNELL_REPO = 'black-forest-labs/FLUX.1-schnell';
 export const FLUX_DEV_REPO = 'black-forest-labs/FLUX.1-dev';
+export const FLUX_DEV_REVISION = '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21';
 export const FLUX_KREA_REPO = 'black-forest-labs/FLUX.1-Krea-dev';
 export const FLUX_KONTEXT_REPO = 'black-forest-labs/FLUX.1-Kontext-dev';
 export const FLUX_FILL_REPO = 'black-forest-labs/FLUX.1-Fill-dev';
@@ -81,7 +82,6 @@ export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   repo: QWEN_CONTROLNET_REPO,
   revision: QWEN_CONTROLNET_REVISION,
   kind: 'controlnet',
-  requiredForModes: ['control_image'],
   description: 'Required for Qwen Image Control image workflows.',
 };
 
@@ -336,7 +336,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       height: 1024,
     },
     modes: ['text_to_image', 'control_image'],
-    additionalRequirements: [QWEN_CONTROLNET_REQUIREMENT],
     modeRequirements: {
       control_image: {
         modelRequirements: [QWEN_CONTROLNET_REQUIREMENT],
@@ -751,8 +750,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
         id: 'flux-redux-base',
         label: 'FLUX.1-dev base pipeline',
         repo: FLUX_DEV_REPO,
+        revision: FLUX_DEV_REVISION,
         kind: 'base',
-        requiredForModes: ['edit_image', 'multi_image_reference_edit'],
         description: 'Redux supplies reference embeddings to the app-installed FLUX.1-dev base pipeline.',
       },
     ],
@@ -1244,7 +1243,14 @@ export function getProfileForForm(form: StudioFormState): StudioModelProfile {
 export function getModelRequirementsForMode(profile: StudioModelProfile, mode: StudioMode) {
   const modeRequirements = profile.modeRequirements?.[mode]?.modelRequirements ?? [];
   if (modeRequirements.length > 0) return modeRequirements;
-  return (profile.additionalRequirements ?? []).filter(
-    (requirement) => !requirement.requiredForModes || requirement.requiredForModes.includes(mode),
-  );
+  return profile.additionalRequirements ?? [];
+}
+
+export function modelDependencyReceiptForMode(profile: StudioModelProfile, mode: StudioMode) {
+  return getModelRequirementsForMode(profile, mode).map(({ id, kind, repo, revision }) => ({
+    id,
+    kind,
+    repo,
+    revision: revision!,
+  }));
 }

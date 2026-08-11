@@ -2223,6 +2223,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       loaderAction: devSpec.loaderAction,
       executionPath: devSpec.executionPath,
       pipelineClass: devSpec.pipelineClass,
+      modelDependencies: [],
       studioExecutionSpecContract: {
         schemaVersion: devSpec.schemaVersion,
         id: devSpec.id,

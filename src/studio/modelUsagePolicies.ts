@@ -1,4 +1,10 @@
-import { FLUX_DEV_FP8_REPO, FLUX_KONTEXT_NVFP4_REPO, STUDIO_MODEL_PROFILES } from './modelProfiles';
+import {
+  FLUX_DEV_FP8_REPO,
+  FLUX_DEV_REPO,
+  FLUX_DEV_REVISION,
+  FLUX_KONTEXT_NVFP4_REPO,
+  STUDIO_MODEL_PROFILES,
+} from './modelProfiles';
 import type { StudioTemplate, StudioTemplateModelArtifact } from './types';
 
 export type ModelUseScope =
@@ -48,10 +54,7 @@ const fluxDevPolicy = (
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
-  'black-forest-labs/FLUX.1-dev': fluxDevPolicy(
-    'black-forest-labs/FLUX.1-dev',
-    '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
-  ),
+  [FLUX_DEV_REPO]: fluxDevPolicy(FLUX_DEV_REPO, FLUX_DEV_REVISION),
   'black-forest-labs/FLUX.1-Krea-dev': fluxDevPolicy(
     'black-forest-labs/FLUX.1-Krea-dev',
     '8162a9c7b05a641be098422bf2fcf335615c2f28',

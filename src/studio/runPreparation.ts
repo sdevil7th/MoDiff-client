@@ -5,9 +5,9 @@ import type { JsonObject } from '../types/api';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import { studioExecutionSpecRuntimeReceipt } from './executionSpecs';
 import {
-  getModelRequirementsForMode,
   getProfileForForm,
   getStudioModelDisplayName,
+  modelDependencyReceiptForMode,
   QWEN_IMAGE_2512_PREQUANTIZED_REPO,
   QWEN_LOW_VRAM_OFFLOAD_MODE,
   QWEN_LOW_VRAM_QUANTIZATION_MODE,
@@ -193,11 +193,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
     (resolvedOffloadMode === QWEN_LOW_VRAM_OFFLOAD_MODE ||
       resolvedOffloadMode === 'sequential_cpu' ||
       resolvedOffloadMode === 'group_disk');
-  const modelDependencies = getModelRequirementsForMode(profile, form.mode).map((requirement) => ({
-    id: requirement.id,
-    kind: requirement.kind,
-    repo: requirement.repo,
-  }));
+  const modelDependencies = modelDependencyReceiptForMode(profile, form.mode);
 
   return {
     ...apiGraph,
