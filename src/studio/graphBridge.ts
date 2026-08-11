@@ -4339,7 +4339,7 @@ export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStud
     return null;
   }
   if (
-    STUDIO_MODEL_PROFILES[plannedForm.modelType]?.family !== 'Qwen Image' ||
+    (!binding?.nodes.models && exactExecutionProfileForForm(plannedForm)?.execution_path !== 'modular-diffusers') ||
     isVideoMode(plannedForm.mode) ||
     usesDiffusersImageFacade(plannedForm)
   ) {

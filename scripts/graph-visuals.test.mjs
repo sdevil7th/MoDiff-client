@@ -3225,6 +3225,11 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     const graphBridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
     assert.doesNotMatch(graphBridgeSource, /WanVideoPipeline|WanVideoToVideoPipeline|WAN_T2V_1_3B_REPO/);
     assert.doesNotMatch(graphBridgeSource, /isFluxModel|fluxPipelineClassFor|FLUX_STUDIO_MODEL_TYPES/);
+    assert.doesNotMatch(
+      graphBridgeSource,
+      /STUDIO_MODEL_PROFILES\[plannedForm\.modelType\]\?\.family/,
+      'managed readiness follows generic graph roles or the exact execution path',
+    );
 
     const ltxForm = { ...wanT2vForm, modelType: 'LTXVideoPipeline', shift: 11 };
     studioStoreModule.useStudioStore.setState({ form: ltxForm });
