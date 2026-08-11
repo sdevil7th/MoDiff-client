@@ -1561,19 +1561,6 @@ test('Qwen Auto never rewrites user generation controls while planning runtime r
     resourceMode: 'auto',
   };
 
-  assert.deepEqual(resourcePlannerModule.getQwenAutoDimensions({ ...base, width: 1024, height: 768 }), {
-    width: 1024,
-    height: 768,
-  });
-  assert.deepEqual(resourcePlannerModule.getQwenAutoDimensions({ ...base, width: 768, height: 1344 }), {
-    width: 768,
-    height: 1344,
-  });
-  assert.deepEqual(resourcePlannerModule.getQwenAutoDimensions({ ...base, width: 1328, height: 1328 }), {
-    width: 1024,
-    height: 1024,
-  });
-
   const resolved = resourcePlannerModule.resolveStudioResourceForm({ ...base, width: 1024, height: 768 });
   assert.equal(resolved.width, 1024);
   assert.equal(resolved.height, 768);
@@ -3704,14 +3691,14 @@ test('Studio resource plans expose user-facing execution path labels', () => {
       freeBytes: 15 * 1024 ** 3,
     }),
   });
-  assert.equal(qwenAutoPlan.executionPath, 'direct-diffusers-image');
-  assert.equal(resourcePlannerModule.getStudioResourceExecutionPathLabel(qwenAutoPlan), 'Auto: Diffusers image');
+  assert.equal(qwenAutoPlan.executionPath, undefined);
+  assert.equal(resourcePlannerModule.getStudioResourceExecutionPathLabel(qwenAutoPlan), 'Auto');
 
   const qwenExpertPlan = resourcePlannerModule.resolveStudioResourcePlan({
     ...qwenAutoForm,
     resourceMode: 'expert',
   });
-  assert.equal(qwenExpertPlan.executionPath, 'modular-diffusers');
+  assert.equal(qwenExpertPlan.executionPath, undefined);
   assert.equal(resourcePlannerModule.getStudioResourceExecutionPathLabel(qwenExpertPlan), 'Expert: full graph');
   assert.deepEqual(qwenExpertPlan.retryPlans, [], 'Expert must not retry through the direct-image Auto branch');
 
@@ -3719,8 +3706,8 @@ test('Studio resource plans expose user-facing execution path labels', () => {
     ...profilesModule.DEFAULT_STUDIO_FORM,
     modelType: 'ZImageModularPipeline',
   });
-  assert.equal(zImagePlan.executionPath, 'modular-diffusers');
-  assert.equal(resourcePlannerModule.getStudioResourceExecutionPathLabel(zImagePlan), 'Auto: Modular graph');
+  assert.equal(zImagePlan.executionPath, undefined);
+  assert.equal(resourcePlannerModule.getStudioResourceExecutionPathLabel(zImagePlan), 'Auto');
   assert.equal(
     resourcePlannerModule.getStudioResourceExecutionPathLabel({
       ...zImagePlan,
@@ -3728,6 +3715,16 @@ test('Studio resource plans expose user-facing execution path labels', () => {
     }),
     'Auto: Diffusers image',
   );
+
+  for (const profile of Object.values(profilesModule.STUDIO_MODEL_PROFILES)) {
+    for (const mode of profile.modes) {
+      const plan = resourcePlannerModule.resolveStudioResourcePlan({
+        ...profilesModule.getFormDefaultsForMode(mode, profile.modelType),
+        resourceMode: 'auto',
+      });
+      assert.equal(plan.executionPath, undefined, `${profile.modelType}:${mode} must wait for backend path authority`);
+    }
+  }
 });
 
 test('all Studio profiles and templates keep offload plans compatible with their execution device', () => {

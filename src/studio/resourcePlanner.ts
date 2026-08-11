@@ -16,7 +16,6 @@ export const STUDIO_RESOURCE_DESCRIPTIONS: Record<StudioResourceMode, string> = 
 };
 
 const RESOURCE_RETRY_ORDER: StudioOffloadMode[] = ['model_cpu', 'sequential_cpu', 'group_disk'];
-const QWEN_PRACTICAL_DIMENSION = 1024;
 export const AUTO_RESOURCE_TARGET_KEYS = [
   'executionProfileId',
   'modelType',
@@ -106,27 +105,6 @@ function retryModesFor(offloadMode: StudioOffloadMode, supportedModes: StudioOff
   return currentIndex >= 0 ? supported.slice(currentIndex + 1) : supported;
 }
 
-function qwenDimension(value: number, fallback: number) {
-  const finite = Number.isFinite(value) && value > 0 ? value : fallback;
-  return Math.max(256, Math.floor((finite + 1e-6) / 16) * 16);
-}
-
-export function getQwenAutoDimensions(form: Pick<StudioFormState, 'width' | 'height'>) {
-  const requestedWidth = qwenDimension(form.width, QWEN_PRACTICAL_DIMENSION);
-  const requestedHeight = qwenDimension(form.height, QWEN_PRACTICAL_DIMENSION);
-  const requestedPixels = requestedWidth * requestedHeight;
-  const scale = Math.min(
-    1,
-    Math.sqrt(QWEN_PRACTICAL_DIMENSION ** 2 / requestedPixels),
-    1344 / Math.max(requestedWidth, requestedHeight),
-  );
-
-  return {
-    width: qwenDimension(requestedWidth * scale, QWEN_PRACTICAL_DIMENSION),
-    height: qwenDimension(requestedHeight * scale, QWEN_PRACTICAL_DIMENSION),
-  };
-}
-
 export function qwenDirectRetryPlansFromCandidates(
   candidates:
     | Array<{
@@ -199,7 +177,6 @@ export function resolveStudioResourcePlan(form: StudioFormState): StudioResource
       quantizationMode: form.quantizationMode,
       autoOffload: execution.autoOffload,
       offloadMode: execution.offloadMode,
-      executionPath: 'modular-diffusers',
       resolvedModelRepo: profile.defaultRepo,
       resolvedArtifact: profile.defaultRepo,
       quantizedComponents: form.quantizationMode === 'bnb_4bit' ? ['transformer', 'text_encoder'] : [],
@@ -212,31 +189,13 @@ export function resolveStudioResourcePlan(form: StudioFormState): StudioResource
     };
   }
 
-  const isQwenT2I = form.modelType === 'QwenImageModularPipeline' && form.mode === 'text_to_image';
-  const requestedOffloadMode = supportedOffload(
-    supportedModes,
-    isQwenT2I ? 'model_cpu' : profile.offloadSupport.default,
-  );
+  const requestedOffloadMode = supportedOffload(supportedModes, profile.offloadSupport.default);
   const execution = normalizeStudioDeviceOffloadPlan({
     device: form.device,
     autoOffload: requestedOffloadMode !== 'none',
     offloadMode: requestedOffloadMode,
   });
   const offloadMode = execution.offloadMode;
-  const executionPath = isQwenT2I
-    ? 'direct-diffusers-image'
-    : profile.family === 'Wan Video'
-      ? 'direct-wan-vace'
-      : profile.family === 'LTX Video'
-        ? 'direct-diffusers-video'
-        : profile.family === 'ACE Audio'
-          ? 'direct-diffusers-audio'
-          : profile.family === 'FLUX Image'
-            ? 'direct-diffusers-image'
-            : 'modular-diffusers';
-
-  const qwenDimensions = isQwenT2I ? getQwenAutoDimensions(form) : null;
-
   return {
     resourceMode: 'auto',
     resolvedResourceMode: 'auto',
@@ -244,16 +203,13 @@ export function resolveStudioResourcePlan(form: StudioFormState): StudioResource
     quantizationMode: 'none',
     autoOffload: execution.autoOffload,
     offloadMode,
-    executionPath,
     resolvedModelRepo: profile.defaultRepo,
     resolvedArtifact: profile.defaultRepo,
     quantizedComponents: [],
     retryOffloadModes: !supportsStudioCpuOffload(form.device) ? [] : retryModesFor(offloadMode, supportedModes),
     retryPlans: [],
     offloadDiskPath: offloadMode === 'group_disk' ? 'data/offload/diffusers' : undefined,
-    summary: isQwenT2I
-      ? `Auto: awaiting local Qwen recipe, ${qwenDimensions?.width}x${qwenDimensions?.height}, 50 steps, CFG 4`
-      : `Auto: ${profile.defaultDtype}, ${STUDIO_OFFLOAD_RUNTIME_LABELS[offloadMode]}`,
+    summary: `Auto: ${profile.defaultDtype}, ${STUDIO_OFFLOAD_RUNTIME_LABELS[offloadMode]}`,
   };
 }
 

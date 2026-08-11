@@ -7676,6 +7676,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
     nodes?: Record<string, { module?: string; action?: string; params?: Record<string, { value?: unknown }> }>;
     runtimeHints?: {
       resourceMode?: string;
+      executionPath?: string;
       quantizationMode?: string;
       offloadMode?: string;
       autoOffload?: boolean;
@@ -7722,6 +7723,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       };
     }),
     graph: {
+      executionPath: submittedGraph?.runtimeHints?.executionPath,
       quantizationMode: submittedGraph?.runtimeHints?.quantizationMode,
       offloadMode: submittedGraph?.runtimeHints?.offloadMode,
       autoOffload: submittedGraph?.runtimeHints?.autoOffload,
@@ -7741,6 +7743,7 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       receiptSteps: 7,
     },
     graph: {
+      executionPath: 'direct-diffusers-image',
       quantizationMode: 'none',
       offloadMode: 'none',
       autoOffload: false,
