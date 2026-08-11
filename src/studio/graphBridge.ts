@@ -364,11 +364,7 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
     if (form.mode === 'video_inpaint' || form.mode === 'video_outpaint') {
       roles.push('loadMaskVideo', 'alignMaskVideo');
     }
-    if (
-      form.mode === 'image_to_video' ||
-      form.mode === 'reference_to_video' ||
-      (form.modelType === 'WanVACEPipeline' && form.referenceImages.length > 0)
-    ) {
+    if (form.mode === 'image_to_video' || form.mode === 'reference_to_video') {
       roles.push('loadImage');
     }
     return roles;
@@ -378,16 +374,6 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
     const runtimeRoles: StudioGraphRole[] = ['diffusersQuantization', 'diffusersRecipe'];
     if (form.mode === 'edit_image' || form.mode === 'multi_image_reference_edit') {
       return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'diffusersImageEdit', 'preview'];
-    }
-    if (form.mode === 'outpaint' && form.modelType === 'QwenImageEditModularPipeline') {
-      return [
-        ...runtimeRoles,
-        'diffusersImagePipeline',
-        'loadImage',
-        'qwenOutpaintCanvas',
-        'diffusersImageInpaint',
-        'preview',
-      ];
     }
     if (form.mode === 'inpaint' || form.mode === 'outpaint') {
       return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'loadMask', 'diffusersImageInpaint', 'preview'];
@@ -3222,6 +3208,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     applyExecutionSpecValues(binding, form, executionSpec);
     return;
   }
+  const executionProfile = executionProfileForForm(form);
 
   if (isAudioMode(form.mode)) {
     const autoArtifact =
@@ -3234,7 +3221,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     // deliberately restricted to Expert graphs where it remains visible.
     const audioQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
     const audioDtype = autoPatch.dtype ?? form.dtype;
-    const audioPipelineClass = autoCandidate?.pipelineClass ?? 'AceStepPipeline';
+    const audioPipelineClass = autoCandidate?.pipelineClass ?? executionProfile?.pipeline_class;
 
     setParamIfPresent(diffusersQuantization, ['backend'], audioQuantizationMode);
     setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
@@ -3256,7 +3243,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     // normal profile sync silently restores the default XL checkpoint and the
     // adapter fails with tensor-shape mismatches at run time.
     setModelRepo(audioPipeline, activeAudioTemplateBaseModel() ?? autoArtifact ?? capability.defaultRepo);
-    setParamIfPresent(audioPipeline, ['pipeline_class'], audioPipelineClass);
+    if (audioPipelineClass) setParamIfPresent(audioPipeline, ['pipeline_class'], audioPipelineClass);
     setParamIfPresent(audioPipeline, ['mode'], form.mode);
     setParamIfPresent(audioPipeline, ['dtype'], audioDtype);
     setParamIfPresent(audioPipeline, ['device'], form.device);
@@ -3298,9 +3285,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 
   if (isVideoMode(form.mode)) {
-    const pipelineClass =
-      autoCandidate?.pipelineClass ??
-      (form.modelType === 'LTXVideoPipeline' ? 'LTXConditionPipeline' : 'WanVACEPipeline');
+    const pipelineClass = autoCandidate?.pipelineClass ?? executionProfile?.pipeline_class;
     const resolvedArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
@@ -3311,7 +3296,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     const decodedVideoPixels = form.width * form.height * form.numFrames;
     const needsVaeTiling =
       form.resourceMode !== 'expert' || resolvedOffloadMode !== 'none' || decodedVideoPixels > 40_000_000;
-    const supportsNativeFlash = form.device.startsWith('cuda') && pipelineClass === 'Wan22Pipeline';
+    const supportsNativeFlash = form.device.startsWith('cuda') && autoCandidate?.attentionBackend === '_native_flash';
 
     setParamIfPresent(
       diffusersQuantization,
@@ -3323,13 +3308,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], resolvedOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    // LTX cross-attention always carries a text mask. On the qualified ROCm
-    // stack Diffusers' automatic dispatcher selects AITER native flash, whose
-    // masked path raises before the first denoising step. Keep LTX on portable
-    // math SDPA; Wan can still use native flash where its contract allows it.
-    const attentionBackend =
-      autoCandidate?.attentionBackend ??
-      (pipelineClass === 'LTXConditionPipeline' ? '_native_math' : supportsNativeFlash ? '_native_flash' : 'auto');
+    const attentionBackend = autoCandidate?.attentionBackend ?? 'auto';
     setParamIfPresent(diffusersRecipe, ['attention_backend'], attentionBackend);
     setParamIfPresent(diffusersRecipe, ['attention_components'], supportsNativeFlash ? 'transformer' : '');
     setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
@@ -3343,8 +3322,9 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
 
     setModelRepo(wanPipeline, resolvedArtifact);
-    setParamIfPresent(wanPipeline, ['pipeline_class'], pipelineClass);
-    setParamIfPresent(wanPipeline, ['revision'], pipelineClass === 'WanVACEPipeline' ? WAN_VACE_REVISION : '');
+    if (pipelineClass) setParamIfPresent(wanPipeline, ['pipeline_class'], pipelineClass);
+    const artifactRevision = autoCandidate?.artifactRevision ?? autoCandidate?.artifactResolution?.resolved?.revision;
+    if (artifactRevision) setParamIfPresent(wanPipeline, ['revision'], artifactRevision);
     setParamIfPresent(wanPipeline, ['dtype'], autoCandidate?.dtype ?? form.dtype);
     setParamIfPresent(wanPipeline, ['device'], form.device);
     setParamIfPresent(wanPipeline, ['auto_offload'], resolvedOffloadMode !== 'none');
@@ -3378,15 +3358,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(wanGenerate, ['num_inference_steps'], form.steps);
     setParamIfPresent(wanGenerate, ['guidance_scale'], form.guidanceScale);
     setParamIfPresent(wanGenerate, ['conditioning_scale'], form.conditioningScale);
-    // LTX exposes two separate controls for video-to-video: condition strength
-    // keeps the source trajectory attached, while denoise strength determines
-    // how far the generated appearance may move from the source. Reusing one
-    // value for both made those controls fight each other and prevented visible
-    // restyling. Other modes and adapters retain their existing normalized
-    // strength contract.
-    const conditionStrength =
-      form.modelType === 'LTXVideoPipeline' && form.mode === 'video_to_video' ? form.conditioningScale : form.strength;
-    setParamIfPresent(wanGenerate, ['strength'], conditionStrength);
+    setParamIfPresent(wanGenerate, ['strength'], form.strength);
     setParamIfPresent(wanGenerate, ['denoise_strength'], form.strength);
     setParamIfPresent(wanGenerate, ['frame_rate'], form.fps);
     setParamIfPresent(wanGenerate, ['guidance_scale_2'], form.guidanceScale2);
@@ -3407,7 +3379,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     const autoOffloadMode = autoPatch.offloadMode ?? form.offloadMode;
     const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
     const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
-    const pipelineClass = autoCandidate?.pipelineClass ?? executionProfileForForm(form)?.pipeline_class;
+    const pipelineClass = autoCandidate?.pipelineClass ?? executionProfile?.pipeline_class;
     const imageDtype = autoPatch.dtype ?? form.dtype;
 
     setParamIfPresent(diffusersQuantization, ['backend'], autoQuantizationMode);

@@ -3225,6 +3225,20 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     const graphBridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
     assert.doesNotMatch(graphBridgeSource, /WanVideoPipeline|WanVideoToVideoPipeline|WAN_T2V_1_3B_REPO/);
     assert.doesNotMatch(graphBridgeSource, /isFluxModel|fluxPipelineClassFor|FLUX_STUDIO_MODEL_TYPES/);
+    const roleSelectionSource = graphBridgeSource.match(
+      /function requiredRolesForForm[\s\S]*?\n\}\n\nfunction hasCompleteCombinedControlGroup/,
+    )?.[0];
+    const valueSyncSource = graphBridgeSource.match(
+      /function applyFormValues[\s\S]*?\n\}\n\nfunction graphFinalizationOwnerIsCurrent/,
+    )?.[0];
+    assert.ok(roleSelectionSource);
+    assert.ok(valueSyncSource);
+    assert.doesNotMatch(roleSelectionSource, /form\.modelType ===/);
+    assert.doesNotMatch(
+      valueSyncSource,
+      /AceStepPipeline|LTXConditionPipeline|WanVACEPipeline|Wan22Pipeline|form\.modelType ===/,
+      'the compatibility sync consumes declared profiles without pipeline-name switches',
+    );
     assert.doesNotMatch(
       graphBridgeSource,
       /STUDIO_MODEL_PROFILES\[plannedForm\.modelType\]\?\.family/,
