@@ -232,7 +232,6 @@ export const AUDIO_STUDIO_MODES: StudioMode[] = [
 export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = [
   'FluxSchnellPipeline',
   'FluxDevPipeline',
-  'FluxFillPipeline',
   'Flux2KleinPipeline',
 ];
 

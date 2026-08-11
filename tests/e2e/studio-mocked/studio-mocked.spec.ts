@@ -470,6 +470,12 @@ function mockFluxFillExecutionCapability() {
     bindings,
     contentHash: 'studio-spec-v1-ba8c8dd1',
   };
+  const outpaintSpec = {
+    ...spec,
+    id: 'flux-fill:outpaint:v1',
+    mode: 'outpaint',
+    contentHash: 'studio-spec-v1-5c0d7413',
+  };
   return {
     ...base,
     modelType: spec.modelType,
@@ -485,8 +491,8 @@ function mockFluxFillExecutionCapability() {
         default_repo: spec.defaultRepo,
       },
     ],
-    studioExecutionSpecModes: ['inpaint'],
-    studioExecutionSpecs: [spec],
+    studioExecutionSpecModes: ['inpaint', 'outpaint'],
+    studioExecutionSpecs: [spec, outpaintSpec],
   };
 }
 
@@ -7155,9 +7161,17 @@ test('backend Studio execution specs materialize exact image and video recipes a
     return {
       receipt: state.studio.graphBinding?.executionSpec,
       nodes: state.studio.graphBinding?.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
     };
   });
-  expect(fillOutpaint.receipt).toBeUndefined();
+  expect(fillOutpaint.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'flux-fill:outpaint:v1',
+    contentHash: 'studio-spec-v1-5c0d7413',
+    executionProfileId: 'flux-fill:direct',
+  });
+  expect(fillOutpaint.nodes).toEqual(fill.nodes);
+  expect(fillOutpaint.edgeShape).toEqual(fill.edgeShape);
   expect(fillOutpaint.nodes?.diffusersImageInpaint).toBeTruthy();
 
   const ti2v = await page.evaluate(async () => {

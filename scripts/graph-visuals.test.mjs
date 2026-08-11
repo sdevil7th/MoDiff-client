@@ -1348,6 +1348,12 @@ test('backend execution specs materialize exact image and video recipes with sea
     edges: inpaintEdgeRows,
     bindings: inpaintBindingRows,
   };
+  const fillOutpaintSpec = {
+    ...fillSpec,
+    id: 'flux-fill:outpaint:v1',
+    mode: 'outpaint',
+    contentHash: 'studio-spec-v1-5c0d7413',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1508,6 +1514,8 @@ test('backend execution specs materialize exact image and video recipes with sea
     modes: ['inpaint', 'outpaint'],
     runnableModes: ['inpaint', 'outpaint'],
     executionProfiles: [{ ...profile(fillSpec), modes: ['inpaint', 'outpaint'] }],
+    studioExecutionSpecModes: ['inpaint', 'outpaint'],
+    studioExecutionSpecs: [fillSpec, fillOutpaintSpec],
   };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
@@ -1871,7 +1879,10 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioStoreModule.useStudioStore.setState({ form: fillOutpaintForm });
     await graphBridge.createOrUpdateStudioGraph(fillOutpaintForm);
     const fillOutpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
-    assert.equal(fillOutpaintBinding.executionSpec, undefined, 'an unclaimed sibling mode remains on the legacy path');
+    assert.equal(fillOutpaintBinding.executionSpec.id, fillOutpaintSpec.id);
+    assert.equal(fillOutpaintBinding.executionSpec.contentHash, fillOutpaintSpec.contentHash);
+    assert.deepEqual(fillOutpaintBinding.nodes, fillBinding.nodes);
+    assert.deepEqual(topology(fillOutpaintBinding), topology(fillBinding));
     assert.ok(fillOutpaintBinding.nodes.diffusersImageInpaint);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(fillOutpaintForm), null);
 
