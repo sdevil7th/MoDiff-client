@@ -1296,6 +1296,15 @@ test('backend execution specs materialize exact image and video recipes with sea
     ['diffusersImageEdit', 'reference_strength', 'conditioningScale'],
     ...bindingRows.slice(31).map(([, param, source]) => ['diffusersImageEdit', param, source]),
   ];
+  const kleinEditSpec = {
+    ...kleinSpec,
+    id: 'flux2-klein:edit-image:v1',
+    mode: 'edit_image',
+    roles: editRoleRows,
+    edges: editEdgeRows,
+    bindings: editBindingRows,
+    contentHash: 'studio-spec-v1-ab4da919',
+  };
   const reduxSpec = {
     ...makeSpec(
       'FluxReduxPipeline',
@@ -1537,6 +1546,8 @@ test('backend execution specs materialize exact image and video recipes with sea
         modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
       },
     ],
+    studioExecutionSpecModes: ['text_to_image', 'edit_image'],
+    studioExecutionSpecs: [kleinSpec, kleinEditSpec],
   };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
@@ -1776,7 +1787,8 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioStoreModule.useStudioStore.setState({ form: kleinEditForm, autoResourcePlan: null });
     await graphBridge.createOrUpdateStudioGraph(kleinEditForm);
     const kleinEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
-    assert.equal(kleinEditBinding.executionSpec, undefined);
+    assert.equal(kleinEditBinding.executionSpec.id, kleinEditSpec.id);
+    assert.equal(kleinEditBinding.executionSpec.contentHash, kleinEditSpec.contentHash);
     assert.ok(kleinEditBinding.nodes.loadImage);
     assert.ok(kleinEditBinding.nodes.diffusersImageEdit);
     assert.equal(
@@ -1786,6 +1798,18 @@ test('backend execution specs materialize exact image and video recipes with sea
         .value,
       'Flux2KleinPipeline',
     );
+
+    const kleinMultiForm = {
+      ...kleinEditForm,
+      mode: 'multi_image_reference_edit',
+      referenceImages: ['@data/images/klein-a.png', '@data/images/klein-b.png'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: kleinMultiForm });
+    await graphBridge.createOrUpdateStudioGraph(kleinMultiForm);
+    const kleinMultiBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(kleinMultiBinding.executionSpec, undefined);
+    assert.ok(kleinMultiBinding.nodes.loadImage);
+    assert.ok(kleinMultiBinding.nodes.diffusersImageEdit);
 
     const depthForm = {
       ...baseForm,

@@ -319,6 +319,8 @@ const mockExecutionProfileIds: Record<string, string> = {
   'FluxDevPipeline:text_to_image': 'flux-dev:direct',
   'FluxKreaPipeline:text_to_image': 'flux-krea:direct',
   'Flux2KleinPipeline:text_to_image': 'flux2-klein:direct',
+  'Flux2KleinPipeline:edit_image': 'flux2-klein:direct',
+  'Flux2KleinPipeline:multi_image_reference_edit': 'flux2-klein:direct',
   'FluxKontextPipeline:edit_image': 'flux-kontext:direct',
   'FluxKontextPipeline:multi_image_reference_edit': 'flux-kontext:direct',
   'FluxFillPipeline:inpaint': 'flux-fill:direct',
@@ -617,6 +619,15 @@ function mockFluxExecutionCapability(
     mode: 'multi_image_reference_edit',
     contentHash: 'studio-spec-v1-aa060039',
   };
+  const kleinEditSpec = {
+    ...spec,
+    id: 'flux2-klein:edit-image:v1',
+    mode: 'edit_image',
+    roles: mockFluxEditExecutionRoles,
+    edges: mockFluxEditExecutionEdges,
+    bindings: mockFluxEditExecutionBindings,
+    contentHash: 'studio-spec-v1-ab4da919',
+  };
   return {
     modelType,
     modes,
@@ -635,8 +646,8 @@ function mockFluxExecutionCapability(
       },
     ],
     studioExecutionSpecSchemaVersion: 1,
-    studioExecutionSpecModes: kontext ? modes : [spec.mode],
-    studioExecutionSpecs: kontext ? [spec, multiSpec] : [spec],
+    studioExecutionSpecModes: kontext ? modes : klein ? ['text_to_image', 'edit_image'] : [spec.mode],
+    studioExecutionSpecs: kontext ? [spec, multiSpec] : klein ? [spec, kleinEditSpec] : [spec],
   };
 }
 
@@ -7156,6 +7167,49 @@ test('backend Studio execution specs materialize exact image and video recipes a
   expect(kontextMulti.nodes.loadImage).toBeTruthy();
   expect(kontextMulti.nodes.diffusersImageEdit).toBeTruthy();
   expect(kontextMulti.pipelineClass).toBe('FluxKontextPipeline');
+
+  const kleinEdit = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'Flux2KleinPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/klein-edit.png'],
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
+    };
+  });
+  expect(kleinEdit).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'flux2-klein:edit-image:v1',
+      contentHash: 'studio-spec-v1-ab4da919',
+      executionProfileId: 'flux2-klein:direct',
+    },
+    nodes: kontextMulti.nodes,
+    edgeShape: redux.edgeShape,
+    pipelineClass: 'Flux2KleinPipeline',
+  });
+
+  const kleinMulti = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'multi_image_reference_edit',
+      referenceImages: ['@data/images/klein-a.png', '@data/images/klein-b.png'],
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    return {
+      receipt: state.studio.graphBinding?.executionSpec,
+      hasEditNode: Boolean(state.studio.graphBinding?.nodes.diffusersImageEdit),
+    };
+  });
+  expect(kleinMulti).toEqual({ receipt: undefined, hasEditNode: true });
 
   const fill = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
