@@ -1379,6 +1379,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     mode: 'outpaint',
     contentHash: 'studio-spec-v1-5c0d7413',
   };
+  const qwenInpaintSpec = {
+    ...fillSpec,
+    id: 'qwen-image-edit:inpaint:v1',
+    modelType: 'QwenImageEditModularPipeline',
+    executionProfileId: 'qwen-edit:direct-inpaint',
+    pipelineClass: 'QwenImageEditInpaintPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-Edit',
+    contentHash: 'studio-spec-v1-ac52abb3',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1783,6 +1792,19 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: ['inpaint', 'outpaint'],
     studioExecutionSpecs: [fillSpec, fillOutpaintSpec],
   };
+  const qwenInpaintCapability = {
+    ...capability(qwenInpaintSpec),
+    modes: ['edit_image', 'inpaint', 'outpaint'],
+    runnableModes: ['edit_image', 'inpaint', 'outpaint'],
+    executionProfiles: [
+      {
+        ...profile(qwenInpaintSpec),
+        modes: ['inpaint', 'outpaint'],
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+      },
+    ],
+  };
   const kleinCapability = {
     ...capability(kleinSpec),
     modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
@@ -1924,6 +1946,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         capability(reduxSpec),
         kontextCapability,
         fillCapability,
+        qwenInpaintCapability,
         capability(i2vSpec),
         capability(ti2vSpec),
         {
@@ -2259,6 +2282,34 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(fillMask.alpha_channel.value, 'remove alpha');
     assert.equal(fillInpaint.reference_strength.value, fillForm.conditioningScale);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(fillForm), null);
+
+    const qwenInpaintForm = {
+      ...fillForm,
+      modelType: 'QwenImageEditModularPipeline',
+      referenceImages: ['qwen-source.png'],
+      maskImage: 'qwen-mask.png',
+    };
+    studioStoreModule.useStudioStore.setState({ form: qwenInpaintForm });
+    await graphBridge.createOrUpdateStudioGraph(qwenInpaintForm);
+    const qwenInpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(qwenInpaintBinding.executionSpec.id, qwenInpaintSpec.id);
+    assert.equal(qwenInpaintBinding.executionSpec.contentHash, qwenInpaintSpec.contentHash);
+    assert.deepEqual(topology(qwenInpaintBinding), inpaintEdgeRows.map((row) => [...row]).sort());
+    assert.equal(
+      qwenInpaintNodes.find((item) => item.id === qwenInpaintBinding.nodes.diffusersImagePipeline).data.params
+        .pipeline_class.value,
+      'QwenImageEditInpaintPipeline',
+    );
+    assert.deepEqual(
+      qwenInpaintNodes.find((item) => item.id === qwenInpaintBinding.nodes.loadImage).data.params.file.value,
+      qwenInpaintForm.referenceImages,
+    );
+    assert.equal(
+      qwenInpaintNodes.find((item) => item.id === qwenInpaintBinding.nodes.loadMask).data.params.file.value,
+      qwenInpaintForm.maskImage,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenInpaintForm), null);
 
     const fillOutpaintForm = { ...fillForm, mode: 'outpaint' };
     studioStoreModule.useStudioStore.setState({ form: fillOutpaintForm });
@@ -4760,15 +4811,7 @@ test('managed modular topology follows opaque route handles and retains the inpa
   )?.[0];
   assert.ok(routeTopologySource);
   assert.doesNotMatch(routeTopologySource, /Qwen|SDXL|modelType/);
-  for (const predicate of ['usesQwenDirectTextToImage', 'usesQwenDirectInpaint', 'usesQwenDirectOutpaint']) {
-    const predicateSource = bridgeSource.match(new RegExp(`function ${predicate}\\([\\s\\S]*?\\n\\}`))?.[0];
-    assert.match(predicateSource, /return false;/, `${predicate} cannot activate unreachable direct-role diagnostics`);
-    assert.equal(
-      bridgeSource.match(new RegExp(`${predicate}\\(`, 'g'))?.length,
-      2,
-      `${predicate} is retained only as its literal-false declaration and inert run-diagnostic guard`,
-    );
-  }
+  assert.doesNotMatch(bridgeSource, /usesQwenDirect(?:TextToImage|Inpaint|Outpaint)/);
   assert.doesNotMatch(
     bridgeSource,
     /finalizeDirectQwen|desiredQwen(?:TextToImage|Inpaint|Outpaint)EdgeSpecs|usesQwenDirectInpaintPipeline/,

@@ -499,6 +499,53 @@ function mockFluxFillExecutionCapability() {
   };
 }
 
+function mockQwenEditInpaintExecutionCapability() {
+  const base = mockFluxFillExecutionCapability();
+  const spec = {
+    ...base.studioExecutionSpecs[0],
+    id: 'qwen-image-edit:inpaint:v1',
+    modelType: 'QwenImageEditModularPipeline',
+    executionProfileId: 'qwen-edit:direct-inpaint',
+    pipelineClass: 'QwenImageEditInpaintPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-Edit',
+    contentHash: 'studio-spec-v1-ac52abb3',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    modes: ['edit_image', 'inpaint', 'outpaint'],
+    runnableModes: ['edit_image', 'inpaint', 'outpaint'],
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: ['inpaint', 'outpaint'],
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+      },
+      {
+        ...base.executionProfiles[0],
+        id: 'qwen-edit:modular',
+        model_type: spec.modelType,
+        modes: ['edit_image'],
+        loader_module: 'modules.ModularDiffusers',
+        loader_action: 'ModelsLoader',
+        execution_path: 'modular-diffusers',
+        backend_path: 'modules.ModularDiffusers.ModelsLoader',
+        pipeline_class: 'QwenImageEditModularPipeline',
+        default_repo: spec.defaultRepo,
+        quantizable_components: ['transformer', 'text_encoder'],
+        default_quantized_components: ['transformer', 'text_encoder'],
+      },
+    ],
+    studioExecutionSpecModes: [spec.mode],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockFluxExecutionCapability(
   modelType:
     | 'FluxSchnellPipeline'
@@ -7202,6 +7249,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Redux-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Kontext-dev');
   mockInstalledRepos.add('black-forest-labs/FLUX.1-Fill-dev');
+  mockInstalledRepos.add('Qwen/Qwen-Image-Edit');
   mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
   mockInstalledRepos.add('Lightricks/LTX-Video-0.9.8-13B-distilled');
@@ -7220,6 +7268,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     mockFluxExecutionCapability('FluxReduxPipeline'),
     mockFluxExecutionCapability('FluxKontextPipeline'),
     mockFluxFillExecutionCapability(),
+    mockQwenEditInpaintExecutionCapability(),
     mockWanI2vExecutionCapability(),
     mockWanTi2vExecutionCapability(),
     mockWanT2vExecutionCapability(),
@@ -7264,7 +7313,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(14);
+    .toHaveLength(15);
 
   const schnell = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -7646,6 +7695,51 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   expect(fillOutpaint.nodes).toEqual(fill.nodes);
   expect(fillOutpaint.edgeShape).toEqual(fill.edgeShape);
   expect(fillOutpaint.nodes?.diffusersImageInpaint).toBeTruthy();
+
+  const qwenInpaint = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'QwenImageEditModularPipeline',
+      mode: 'inpaint',
+      referenceImages: ['@data/images/qwen-source.png'],
+      maskImage: '@data/images/qwen-mask.png',
+      conditioningScale: 0.72,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImagePipeline)?.params
+        ?.pipeline_class?.value,
+      sourceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+      maskFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadMask)?.params?.file?.value,
+      referenceStrength: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersImageInpaint)?.params
+        ?.reference_strength?.value,
+    };
+  });
+  expect(qwenInpaint.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'qwen-image-edit:inpaint:v1',
+    contentHash: 'studio-spec-v1-ac52abb3',
+    executionProfileId: 'qwen-edit:direct-inpaint',
+  });
+  expect(qwenInpaint.nodes.loadImage).toBeTruthy();
+  expect(qwenInpaint.nodes.loadMask).toBeTruthy();
+  expect(qwenInpaint.nodes.diffusersImageInpaint).toBeTruthy();
+  expect(qwenInpaint.edgeShape).toEqual(fill.edgeShape);
+  expect(qwenInpaint.pipelineClass).toBe('QwenImageEditInpaintPipeline');
+  expect(qwenInpaint.sourceFile).toEqual(['@data/images/qwen-source.png']);
+  expect(qwenInpaint.maskFile).toBe('@data/images/qwen-mask.png');
+  expect(qwenInpaint.referenceStrength).toBe(0.72);
+
+  const qwenOutpaint = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'outpaint' });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    return window.__MODIFF_E2E__!.getState().studio.graphBinding?.executionSpec;
+  });
+  expect(qwenOutpaint).toBeUndefined();
 
   const ti2v = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

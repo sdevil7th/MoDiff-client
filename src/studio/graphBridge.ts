@@ -371,26 +371,6 @@ function usesQwenLowVramQuantization(form: StudioFormState) {
   );
 }
 
-function usesQwenDirectTextToImage(
-  _form: StudioFormState | StudioGraphBinding | Pick<StudioGraphBinding, 'mode' | 'modelType'>,
-) {
-  void _form;
-  return false;
-}
-
-function usesQwenDirectInpaint(
-  _form:
-    StudioFormState | (Pick<StudioGraphBinding, 'mode' | 'modelType'> & Partial<Pick<StudioGraphBinding, 'nodes'>>),
-) {
-  void _form;
-  return false;
-}
-
-function usesQwenDirectOutpaint(_form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType'>) {
-  void _form;
-  return false;
-}
-
 function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
   const executionSpec = executionSpecForForm(form);
   if (executionSpec === null) throw new Error('The Studio execution specification does not cover this workflow.');
@@ -4405,10 +4385,7 @@ export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStud
   if (
     STUDIO_MODEL_PROFILES[plannedForm.modelType]?.family !== 'Qwen Image' ||
     isVideoMode(plannedForm.mode) ||
-    usesDiffusersImageFacade(plannedForm) ||
-    usesQwenDirectTextToImage(plannedForm) ||
-    usesQwenDirectInpaint(plannedForm) ||
-    usesQwenDirectOutpaint(plannedForm)
+    usesDiffusersImageFacade(plannedForm)
   ) {
     return null;
   }
