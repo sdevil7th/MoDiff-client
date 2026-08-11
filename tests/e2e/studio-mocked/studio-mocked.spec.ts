@@ -844,6 +844,12 @@ function mockWanT2vExecutionCapability() {
     ],
     contentHash: 'studio-spec-v1-473c930e',
   };
+  const colorSpec = {
+    ...videoSpec,
+    id: 'wan-21-t2v-1.3b:video-color-edit:v1',
+    mode: 'video_color_edit',
+    contentHash: 'studio-spec-v1-0be460bc',
+  };
   return {
     ...base,
     modelType: spec.modelType,
@@ -866,8 +872,8 @@ function mockWanT2vExecutionCapability() {
         default_repo: spec.defaultRepo,
       },
     ],
-    studioExecutionSpecModes: [spec.mode, videoSpec.mode],
-    studioExecutionSpecs: [spec, videoSpec],
+    studioExecutionSpecModes: [spec.mode, colorSpec.mode, videoSpec.mode],
+    studioExecutionSpecs: [spec, videoSpec, colorSpec],
   };
 }
 
@@ -7459,9 +7465,23 @@ test('backend Studio execution specs materialize exact image and video recipes a
       receipt: state.studio.graphBinding?.executionSpec,
       hasLoadVideo: Boolean(state.studio.graphBinding?.nodes.loadVideo),
       hasNormalizeVideo: Boolean(state.studio.graphBinding?.nodes.normalizeVideo),
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      mode: state.flow.nodes.find((node) => node.id === state.studio.graphBinding?.nodes.wanGenerate)?.params?.mode
+        ?.value,
     };
   });
-  expect(wanColor).toEqual({ receipt: undefined, hasLoadVideo: true, hasNormalizeVideo: true });
+  expect(wanColor).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'wan-21-t2v-1.3b:video-color-edit:v1',
+      contentHash: 'studio-spec-v1-0be460bc',
+      executionProfileId: 'wan-video-to-video:direct',
+    },
+    hasLoadVideo: true,
+    hasNormalizeVideo: true,
+    edgeShape: wanV2v.edgeShape,
+    mode: 'video_color_edit',
+  });
 });
 
 test('mocked Studio blocks a schema-v2 Auto plan that targets a different managed loader', async ({ page }) => {

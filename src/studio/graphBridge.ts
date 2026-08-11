@@ -38,7 +38,6 @@ import {
   FLUX_STUDIO_MODEL_TYPES,
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
-  WAN_T2V_1_3B_REPO,
   WAN_VACE_REVISION,
 } from './modelProfiles';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
@@ -3338,20 +3337,15 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 
   if (isVideoMode(form.mode)) {
-    const preservationWanMode = form.modelType === 'WanVideoPipeline';
     const pipelineClass =
       autoCandidate?.pipelineClass ??
-      (form.modelType === 'LTXVideoPipeline'
-        ? 'LTXConditionPipeline'
-        : preservationWanMode
-          ? 'WanVideoToVideoPipeline'
-          : 'WanVACEPipeline');
+      (form.modelType === 'LTXVideoPipeline' ? 'LTXConditionPipeline' : 'WanVACEPipeline');
     const resolvedArtifact =
       autoCandidate?.resolvedArtifact ??
       autoCandidate?.artifact ??
       autoCandidate?.installTarget?.repo ??
       autoCandidate?.modelRepo ??
-      (preservationWanMode ? WAN_T2V_1_3B_REPO : capability.defaultRepo);
+      capability.defaultRepo;
     const resolvedOffloadMode = autoCandidate?.offloadMode ?? form.offloadMode;
     const decodedVideoPixels = form.width * form.height * form.numFrames;
     const needsVaeTiling =
@@ -3422,9 +3416,6 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(wanGenerate, ['num_frames'], form.numFrames);
     setParamIfPresent(wanGenerate, ['num_inference_steps'], form.steps);
     setParamIfPresent(wanGenerate, ['guidance_scale'], form.guidanceScale);
-    if (form.modelType === 'WanVideoPipeline') {
-      setParamIfPresent(wanGenerate, ['scheduler_flow_shift'], form.shift);
-    }
     setParamIfPresent(wanGenerate, ['conditioning_scale'], form.conditioningScale);
     // LTX exposes two separate controls for video-to-video: condition strength
     // keeps the source trajectory attached, while denoise strength determines

@@ -1488,6 +1488,12 @@ test('backend execution specs materialize exact image and video recipes with sea
     bindings: wanV2vBindingRows,
     contentHash: 'studio-spec-v1-473c930e',
   };
+  const wanColorSpec = {
+    ...wanV2vSpec,
+    id: 'wan-21-t2v-1.3b:video-color-edit:v1',
+    mode: 'video_color_edit',
+    contentHash: 'studio-spec-v1-0be460bc',
+  };
   const i2vRoleRows = [...videoRoleRows, ['loadImage', 'modules.Image.Load', -520, 300]];
   const i2vEdgeRows = [...videoEdgeRows, ['loadImage', 'image', 'wanGenerate', 'reference_images']];
   const i2vBindingRows = [
@@ -1690,8 +1696,8 @@ test('backend execution specs materialize exact image and video recipes with sea
               modes: ['video_to_video', 'video_color_edit'],
             },
           ],
-          studioExecutionSpecModes: ['text_to_video', 'video_to_video'],
-          studioExecutionSpecs: [wanT2vSpec, wanV2vSpec],
+          studioExecutionSpecModes: ['text_to_video', 'video_color_edit', 'video_to_video'],
+          studioExecutionSpecs: [wanT2vSpec, wanV2vSpec, wanColorSpec],
         },
       ],
       studioModelCapabilitiesAuthoritative: true,
@@ -2164,9 +2170,15 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioStoreModule.useStudioStore.setState({ form: wanColorForm });
     await graphBridge.createOrUpdateStudioGraph(wanColorForm);
     const wanColorBinding = studioStoreModule.useStudioStore.getState().graphBinding;
-    assert.equal(wanColorBinding.executionSpec, undefined, 'the unclaimed color-edit sibling stays on its legacy path');
+    assert.equal(wanColorBinding.executionSpec.id, wanColorSpec.id);
+    assert.equal(wanColorBinding.executionSpec.contentHash, wanColorSpec.contentHash);
+    assert.notEqual(wanColorBinding.executionSpec.contentHash, wanV2vBinding.executionSpec.contentHash);
     assert.ok(wanColorBinding.nodes.loadVideo);
     assert.ok(wanColorBinding.nodes.normalizeVideo);
+    assert.deepEqual(topology(wanColorBinding), topology(wanV2vBinding));
+
+    const graphBridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+    assert.doesNotMatch(graphBridgeSource, /WanVideoPipeline|WanVideoToVideoPipeline|WAN_T2V_1_3B_REPO/);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
