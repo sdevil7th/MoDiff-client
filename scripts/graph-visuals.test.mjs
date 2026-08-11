@@ -6586,7 +6586,19 @@ test('managed graph reconciliation preserves pinned Auto sample-rate overrides',
   assert.equal(exportAfterReset, 48000);
 });
 
-test('managed ACE-Step nodes hide controls that the active pipeline does not consume', () => {
+test('managed audio synchronization preserves backend-owned field visibility', () => {
+  const backendHidden = new Set([
+    'lora_scale',
+    'stable_audio_steps',
+    'stable_audio_guidance',
+    'num_waveforms',
+    'negative_prompt',
+    'extension_duration',
+    'repainting_start',
+    'repainting_end',
+    'audio_cover_strength',
+    'return_continuation_tail',
+  ]);
   const audioGenerate = managedNode('audio-generate-visibility', 'audioGenerate', {
     params: Object.fromEntries(
       [
@@ -6613,7 +6625,7 @@ test('managed ACE-Step nodes hide controls that the active pipeline does not con
         'stable_audio_steps',
         'stable_audio_guidance',
         'num_waveforms',
-      ].map((key) => [key, { label: key, value: null, hidden: false }]),
+      ].map((key) => [key, { label: key, value: null, hidden: backendHidden.has(key) }]),
     ),
   });
   flowStoreModule.useFlowStore.setState({ nodes: [audioGenerate], edges: [] });
@@ -6641,20 +6653,15 @@ test('managed ACE-Step nodes hide controls that the active pipeline does not con
     },
   });
 
+  const visibilityBeforeSync = Object.fromEntries(
+    Object.entries(audioGenerate.data.params).map(([key, param]) => [key, param.hidden]),
+  );
   assert.equal(graphBridge.syncStudioGraphValues(form), true);
   const params = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
-  assert.equal(params.lora_scale.hidden, true);
-  assert.equal(params.stable_audio_steps.hidden, true);
-  assert.equal(params.stable_audio_guidance.hidden, true);
-  assert.equal(params.num_waveforms.hidden, true);
-  assert.equal(params.negative_prompt.hidden, true);
-  assert.equal(params.extension_duration.hidden, true);
-  assert.equal(params.repainting_start.hidden, true);
-  assert.equal(params.audio_cover_strength.hidden, true);
-  assert.equal(params.prompt.hidden, false);
-  assert.equal(params.lyrics.hidden, false);
-  assert.equal(params.num_inference_steps.hidden, false);
-  assert.equal(params.guidance_scale.hidden, false);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(params).map(([key, param]) => [key, param.hidden])),
+    visibilityBeforeSync,
+  );
 });
 
 test('Arrange graph is one undoable history action', async () => {

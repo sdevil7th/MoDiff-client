@@ -3254,7 +3254,6 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     const audioQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
     const audioDtype = autoPatch.dtype ?? form.dtype;
     const audioPipelineClass = autoCandidate?.pipelineClass ?? 'AceStepPipeline';
-    const isStableAudioPipeline = audioPipelineClass === 'StableAudioPipeline';
 
     setParamIfPresent(diffusersQuantization, ['backend'], audioQuantizationMode);
     setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
@@ -3309,27 +3308,6 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(audioGenerate, ['audio_cover_strength'], form.audioCoverStrength);
     setParamIfPresent(audioGenerate, ['return_continuation_tail'], form.mode === 'audio_continuation');
     setParamIfPresent(audioGenerate, ['sample_rate'], capability.recommendedSampleRate ?? 48000);
-    // DiffusersAudio.Generate is shared by ACE-Step and Stable Audio, but the
-    // two pipelines do not consume the same controls. Keep managed nodes
-    // honest: never show an ACE user controls that this run will ignore.
-    setParamIfPresent(audioGenerate, ['lora_scale'], true, 'hidden');
-    setParamIfPresent(audioGenerate, ['stable_audio_steps'], !isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['stable_audio_guidance'], !isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['num_waveforms'], !isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['negative_prompt'], !isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['lyrics'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['extension_duration'], form.mode !== 'audio_continuation', 'hidden');
-    setParamIfPresent(audioGenerate, ['vocal_language'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['num_inference_steps'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['guidance_scale'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['shift'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['bpm'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['keyscale'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['timesignature'], isStableAudioPipeline, 'hidden');
-    setParamIfPresent(audioGenerate, ['repainting_start'], form.mode !== 'audio_repaint', 'hidden');
-    setParamIfPresent(audioGenerate, ['repainting_end'], form.mode !== 'audio_repaint', 'hidden');
-    setParamIfPresent(audioGenerate, ['audio_cover_strength'], form.mode !== 'audio_variation', 'hidden');
-    setParamIfPresent(audioGenerate, ['return_continuation_tail'], form.mode !== 'audio_continuation', 'hidden');
     setParamIfPresent(audioLoudnessMatch, ['reference_window_seconds'], 15);
     setParamIfPresent(audioLoudnessMatch, ['target_peak_dbfs'], -1);
     setParamIfPresent(audioLoudnessMatch, ['max_adjustment_db'], 12);

@@ -12878,6 +12878,194 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
   });
 });
 
+test('Diffusers audio contract signals update generic fields from the selected pipeline and mode', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const fieldParams = (visible: string[]) =>
+    Object.fromEntries(
+      [
+        'negative_prompt',
+        'stable_audio_steps',
+        'stable_audio_guidance',
+        'num_waveforms',
+        'lyrics',
+        'extension_duration',
+        'audio_cover_strength',
+      ].map((field) => [field, { hidden: !visible.includes(field) }]),
+    );
+  const contract = (pipelineClass: string, mode: string, visible: string[], sourceRequired = false) => ({
+    schemaVersion: 1,
+    pipelineClass,
+    mode,
+    fieldParams: {
+      ...fieldParams(visible),
+      source_audio: { required: sourceRequired, hidden: !sourceRequired },
+    },
+  });
+  const aceText = contract('AceStepPipeline', 'text_to_audio', ['lyrics']);
+  const aceVariation = contract('AceStepPipeline', 'audio_variation', ['lyrics', 'audio_cover_strength'], true);
+  const stableText = contract('StableAudioPipeline', 'text_to_audio', [
+    'negative_prompt',
+    'stable_audio_steps',
+    'stable_audio_guidance',
+    'num_waveforms',
+  ]);
+
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Contract.AudioPipelineSelection': nodeDef('modules.Contract', 'AudioPipelineSelection', 'test', {
+            pipeline: {
+              type: 'diffusers_audio_pipeline',
+              display: 'output',
+              signal: { direction: 'output', value: aceText },
+            },
+          }),
+          'modules.DiffusersAudio.Generate': nodeDef('modules.DiffusersAudio', 'Generate', 'Diffusers Audio', {
+            pipeline: {
+              type: 'diffusers_audio_pipeline',
+              display: 'input',
+              onSignal: [
+                { action: 'value', target: 'audio_contract' },
+                { action: 'exec', data: 'update_audio_contract' },
+              ],
+            },
+            audio_contract: { type: 'object', value: aceText, hidden: true },
+            source_audio: { type: 'audio', display: 'input', required: false, hidden: true },
+            negative_prompt: { type: 'text', value: '', hidden: true },
+            stable_audio_steps: { type: 'int', value: 100, hidden: true },
+            stable_audio_guidance: { type: 'float', value: 7, hidden: true },
+            num_waveforms: { type: 'int', value: 1, hidden: true },
+            lyrics: { type: 'text', value: '' },
+            extension_duration: { type: 'float', value: 15, hidden: true },
+            audio_cover_strength: { type: 'float', value: 0.85, hidden: true },
+            audio: { type: 'audio', display: 'output' },
+          }),
+        },
+      }),
+    });
+  });
+
+  const actionSelections: string[] = [];
+  await page.route('**/fields/action', async (route) => {
+    const request = (route.request().postDataJSON() ?? {}) as {
+      node?: string;
+      fn?: string;
+      values?: { audio_contract?: { pipelineClass?: string; mode?: string; fieldParams?: Record<string, unknown> } };
+    };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+    const selected = request.values?.audio_contract;
+    if (request.fn !== 'update_audio_contract' || !request.node || !selected?.fieldParams) return;
+    actionSelections.push(`${selected.pipelineClass}:${selected.mode}`);
+    for (const [field, params] of Object.entries(selected.fieldParams)) {
+      await page.evaluate(
+        ({ node, field, params }) => {
+          window.__MODIFF_E2E__!.sendWebsocketMessage({ type: 'set_field_params', node, field, params });
+        },
+        { node: request.node, field, params },
+      );
+    }
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const ids = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const source = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Contract.AudioPipelineSelection');
+    const generate = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.DiffusersAudio.Generate');
+    window.__MODIFF_E2E__!.connectGraph({
+      source,
+      sourceHandle: 'pipeline',
+      target: generate,
+      targetHandle: 'pipeline',
+    });
+    return { source, generate };
+  });
+
+  const state = () =>
+    page.evaluate(({ generate }) => {
+      const graph = window.__MODIFF_E2E__!.exportWorkflowGraph() as unknown as {
+        nodes: Array<{
+          id: string;
+          data: { params: Record<string, { hidden?: boolean; required?: boolean }> };
+        }>;
+      };
+      const params = graph.nodes.find((node) => node.id === generate)!.data.params;
+      return {
+        sourceRequired: params.source_audio.required,
+        sourceHidden: params.source_audio.hidden,
+        negativeHidden: params.negative_prompt.hidden,
+        lyricsHidden: params.lyrics.hidden ?? false,
+        stableStepsHidden: params.stable_audio_steps.hidden,
+        coverHidden: params.audio_cover_strength.hidden,
+      };
+    }, ids);
+
+  await expect.poll(state).toEqual({
+    sourceRequired: false,
+    sourceHidden: true,
+    negativeHidden: true,
+    lyricsHidden: false,
+    stableStepsHidden: true,
+    coverHidden: true,
+  });
+
+  await page.evaluate(
+    ({ source, selected }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'set_field_params',
+        node: source,
+        field: 'pipeline',
+        params: { signal: { direction: 'output', value: selected } },
+      });
+    },
+    { source: ids.source, selected: aceVariation },
+  );
+  await expect.poll(() => actionSelections.at(-1)).toBe('AceStepPipeline:audio_variation');
+  await expect.poll(state).toEqual({
+    sourceRequired: true,
+    sourceHidden: false,
+    negativeHidden: true,
+    lyricsHidden: false,
+    stableStepsHidden: true,
+    coverHidden: false,
+  });
+
+  await page.evaluate(
+    ({ source, selected }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'set_field_params',
+        node: source,
+        field: 'pipeline',
+        params: { signal: { direction: 'output', value: selected } },
+      });
+    },
+    { source: ids.source, selected: stableText },
+  );
+  await expect.poll(() => actionSelections.at(-1)).toBe('StableAudioPipeline:text_to_audio');
+
+  await expect.poll(state).toEqual({
+    sourceRequired: false,
+    sourceHidden: true,
+    negativeHidden: false,
+    lyricsHidden: true,
+    stableStepsHidden: false,
+    coverHidden: true,
+  });
+});
+
 test('workflow tabs remain a single horizontally scrollable row with pinned new-tab access', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
