@@ -1550,6 +1550,19 @@ test('backend execution specs materialize exact image and video recipes with sea
     edges: i2vEdgeRows,
     bindings: i2vBindingRows,
   };
+  const ltxImageSpec = {
+    ...ltxSpec,
+    id: 'ltx-video-0.9.8-13b-distilled:image-to-video:v1',
+    mode: 'image_to_video',
+    roles: i2vRoleRows,
+    edges: i2vEdgeRows,
+    bindings: [
+      ...ltxBindingRows,
+      ['loadImage', 'file', 'referenceImages'],
+      ['loadImage', 'alpha_channel', 'alphaMode'],
+    ],
+    contentHash: 'studio-spec-v1-71f17ad0',
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -1733,6 +1746,8 @@ test('backend execution specs materialize exact image and video recipes with sea
               quantizable_components: ['transformer', 'text_encoder'],
             },
           ],
+          studioExecutionSpecModes: ['image_to_video', 'text_to_video'],
+          studioExecutionSpecs: [ltxSpec, ltxImageSpec],
         },
       ],
       studioModelCapabilitiesAuthoritative: true,
@@ -2239,8 +2254,24 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioStoreModule.useStudioStore.setState({ form: ltxImageForm });
     await graphBridge.createOrUpdateStudioGraph(ltxImageForm);
     const ltxImageBinding = studioStoreModule.useStudioStore.getState().graphBinding;
-    assert.equal(ltxImageBinding.executionSpec, undefined);
+    const ltxImageNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(ltxImageBinding.executionSpec.id, ltxImageSpec.id);
+    assert.equal(ltxImageBinding.executionSpec.contentHash, ltxImageSpec.contentHash);
     assert.ok(ltxImageBinding.nodes.loadImage);
+    assert.deepEqual(
+      ltxImageNodes.find((item) => item.id === ltxImageBinding.nodes.loadImage).data.params.file.value,
+      ltxImageForm.referenceImages,
+    );
+    assert.equal(
+      ltxImageNodes.find((item) => item.id === ltxImageBinding.nodes.diffusersRecipe).data.params.attention_backend
+        .value,
+      '_native_math',
+    );
+
+    const ltxReferenceForm = { ...ltxImageForm, mode: 'reference_to_video' };
+    studioStoreModule.useStudioStore.setState({ form: ltxReferenceForm });
+    await graphBridge.createOrUpdateStudioGraph(ltxReferenceForm);
+    assert.equal(studioStoreModule.useStudioStore.getState().graphBinding.executionSpec, undefined);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
