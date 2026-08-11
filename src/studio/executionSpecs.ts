@@ -54,6 +54,22 @@ export function exactStudioExecutionSpecForForm(
   return matches.length === 1 ? matches[0] : null;
 }
 
+export function exactStudioExecutionProfileForForm(
+  capabilities: readonly StudioModelProfile[],
+  invalid: boolean,
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+): StudioExecutionProfile | null | undefined {
+  const spec = exactStudioExecutionSpecForForm(capabilities, invalid, form);
+  if (!spec) return spec;
+  const matches =
+    capabilities
+      .find((item) => item.modelType === form.modelType)
+      ?.executionProfiles?.filter(
+        (profile) => profile.id === spec.executionProfileId && profile.modes.includes(form.mode),
+      ) ?? [];
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export function parseStudioExecutionSpecs(
   value: unknown,
   modelType: StudioModelType,

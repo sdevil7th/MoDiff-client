@@ -388,6 +388,17 @@ test('optional runtime contracts normalize exact nested profile metadata', async
     resident_vram_bytes: 80 * 1024 ** 3,
     quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
   };
+  const expertQuantizationPolicy = {
+    schema_version: 1,
+    quantization_mode: 'bnb_4bit',
+    offload_mode: 'model_cpu',
+    modular_node: 'modules.ModularDiffusers.QuantizationConfigNode',
+    subfolder: 'transformer',
+    component: 'qwen_low_vram',
+    four_bit_quant_type: 'nf4',
+    compute_dtype: 'bfloat16',
+    double_quant: true,
+  };
   globalThis.fetch = async () =>
     jsonResponse({
       schemaVersion: 2,
@@ -404,6 +415,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
               optional_runtime_delivery: 'optional_overlay',
               optional_runtime_requirement: requirement,
               expert_cuda_policy: expertCudaPolicy,
+              expert_quantization_policy: expertQuantizationPolicy,
             },
           ],
         },
@@ -417,6 +429,10 @@ test('optional runtime contracts normalize exact nested profile metadata', async
   assert.deepEqual(state.studioModelCapabilities[0].optionalRuntimeRequirement, requirement);
   assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].optionalRuntimeRequirement, requirement);
   assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].expert_cuda_policy, expertCudaPolicy);
+  assert.deepEqual(
+    state.studioModelCapabilities[0].executionProfiles[0].expert_quantization_policy,
+    expertQuantizationPolicy,
+  );
   assert.equal(state.studioModelCapabilities[0].executionProfiles[0].optional_runtime_requirement, undefined);
   const previousForm = studioStoreModule.useStudioStore.getState().form;
   const previousFlow = flowStoreModule.useFlowStore.getState();
@@ -529,6 +545,45 @@ test('mixed-version and conflicting execution runtime contracts fail closed', as
             offloaded_vram_bytes: 10 * 1024 ** 3,
             resident_vram_bytes: 1025 * 1024 ** 3,
             quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
+          },
+        },
+      ],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          expert_quantization_policy: {
+            schema_version: 1,
+            quantization_mode: 'bnb_4bit',
+            offload_mode: 'model_cpu',
+            modular_node: '../../unsafe',
+            subfolder: 'transformer',
+            component: 'qwen_low_vram',
+            four_bit_quant_type: 'nf4',
+            compute_dtype: 'bfloat16',
+            double_quant: true,
+          },
+        },
+      ],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          expert_quantization_policy: {
+            schema_version: 1,
+            quantization_mode: 'bnb_4bit',
+            offload_mode: 'model_cpu',
+            modular_node: 'modules.ModularDiffusers.QuantizationConfigNode',
+            subfolder: 'transformer',
+            component: 'qwen_low_vram',
+            four_bit_quant_type: 'nf4',
+            compute_dtype: 'bfloat16',
+            double_quant: true,
+            unexpected: true,
           },
         },
       ],

@@ -19,7 +19,6 @@ const QWEN_MODULAR_EDIT_NODE_KEYS = [
 
 const CAPABILITY_NODE_KEYS: Record<string, readonly string[]> = {
   'Qwen direct Auto Diffusers path': [QWEN_T2I_PIPELINE_NODE_KEY, QWEN_T2I_GENERATE_NODE_KEY],
-  'Qwen low-VRAM quantized Modular Diffusers path': [QWEN_T2I_PIPELINE_NODE_KEY, QWEN_T2I_GENERATE_NODE_KEY],
   'Qwen ControlNet Union graph contract': [
     'modules.ModularDiffusers.AutoModelLoader',
     'modules.ModularDiffusers.Controlnet',

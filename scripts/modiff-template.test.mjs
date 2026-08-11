@@ -3282,6 +3282,17 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
     resident_vram_bytes: 80 * 1024 ** 3,
     quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
   };
+  const expertQuantizationPolicy = {
+    schema_version: 1,
+    quantization_mode: 'bnb_4bit',
+    offload_mode: 'model_cpu',
+    modular_node: 'modules.ModularDiffusers.QuantizationConfigNode',
+    subfolder: 'transformer',
+    component: 'reviewed_low_vram',
+    four_bit_quant_type: 'nf4',
+    compute_dtype: 'bfloat16',
+    double_quant: true,
+  };
   nodesStoreModule.useNodesStore.setState({
     studioExecutionSpecInvalid: false,
     studioModelCapabilities: [
@@ -3292,6 +3303,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
             id: 'qwen-image:t2i-direct',
             modes: ['text_to_image'],
             expert_cuda_policy: expertCudaPolicy,
+            expert_quantization_policy: expertQuantizationPolicy,
           },
         ],
         studioExecutionSpecSchemaVersion: 1,
@@ -3475,12 +3487,24 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
     studioModelCapabilities: [
       {
         modelType: 'QwenImageModularPipeline',
+        executionProfiles: [
+          {
+            id: 'qwen-image:modular',
+            modes: ['control_image'],
+            execution_path: 'modular-diffusers',
+            expert_quantization_policy: expertQuantizationPolicy,
+          },
+        ],
         studioExecutionSpecSchemaVersion: 1,
-        studioExecutionSpecModes: ['text_to_image'],
+        studioExecutionSpecModes: ['control_image'],
         studioExecutionSpecs: [
-          readinessSpec('text_to_image', 'modules.ModularDiffusers', 'ModelsLoader', [
-            ['models', 'modules.ModularDiffusers.ModelsLoader'],
-          ]),
+          {
+            ...readinessSpec('control_image', 'modules.ModularDiffusers', 'ModelsLoader', [
+              ['models', 'modules.ModularDiffusers.ModelsLoader'],
+            ]),
+            executionProfileId: 'qwen-image:modular',
+            bindings: [['models', 'offload_mode', 'offloadMode']],
+          },
         ],
       },
       {
@@ -3518,7 +3542,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   });
 
   const missingQuantNodeIssue = runReadinessModule.getStudioQuantizationCapabilityIssue(
-    { ...form, resourceMode: 'manual', quantizationMode: 'bnb_4bit' },
+    { ...form, mode: 'control_image', resourceMode: 'expert', quantizationMode: 'bnb_4bit' },
     {
       'modules.ModularDiffusers.ModelsLoader': {},
     },
@@ -3527,7 +3551,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   assert.match(missingQuantNodeIssue.details, /QuantizationConfigNode/);
 
   const quantNodeReadyIssue = runReadinessModule.getStudioQuantizationCapabilityIssue(
-    { ...form, resourceMode: 'manual', quantizationMode: 'bnb_4bit' },
+    { ...form, mode: 'control_image', resourceMode: 'expert', quantizationMode: 'bnb_4bit' },
     {
       'modules.ModularDiffusers.ModelsLoader': {
         params: {
@@ -3536,17 +3560,71 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
       },
       'modules.ModularDiffusers.QuantizationConfigNode': {
         params: {
-          component: { options: ['transformer', 'text_encoder', 'qwen_low_vram'] },
+          model_id: {},
+          subfolder: {},
+          component: { options: ['transformer', 'text_encoder', 'reviewed_low_vram'] },
+          quant_type: { options: ['bnb_4bit', 'bnb_8bit'] },
+          bnb_4bit_quant_type: { options: ['nf4', 'fp4'] },
+          bnb_4bit_compute_dtype: { options: ['', 'float32', 'float16', 'bfloat16'] },
+          bnb_4bit_use_double_quant: {},
+          quantization_config: { display: 'output' },
         },
       },
     },
   );
   assert.equal(quantNodeReadyIssue, null);
 
+  const otherCapabilities = nodesStoreModule.useNodesStore
+    .getState()
+    .studioModelCapabilities.filter((capability) => capability.modelType !== 'QwenImageModularPipeline');
+  nodesStoreModule.useNodesStore.setState({
+    studioModelCapabilities: [
+      {
+        modelType: 'QwenImageModularPipeline',
+        executionProfiles: [
+          {
+            id: 'qwen-image:t2i-direct',
+            modes: ['text_to_image'],
+            execution_path: 'direct-diffusers-image',
+            expert_quantization_policy: expertQuantizationPolicy,
+          },
+        ],
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['text_to_image'],
+        studioExecutionSpecs: [
+          {
+            ...readinessSpec('text_to_image', 'modules.DiffusersImage', 'LoadPipeline', [
+              ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline'],
+              ['diffusersImageGenerate', 'modules.DiffusersImage.Generate'],
+            ]),
+            executionProfileId: 'qwen-image:t2i-direct',
+            bindings: [
+              ['diffusersImagePipeline', 'quantization_mode', 'quantizationMode'],
+              ['diffusersImagePipeline', 'quantized_components', 'pipelineQuantizedComponents'],
+              ['diffusersImagePipeline', 'offload_mode', 'offloadMode'],
+            ],
+          },
+        ],
+      },
+      ...otherCapabilities,
+    ],
+  });
+  const directQuantizationIssue = runReadinessModule.getStudioQuantizationCapabilityIssue(
+    { ...form, resourceMode: 'expert', quantizationMode: 'bnb_4bit' },
+    {
+      'modules.DiffusersImage.LoadPipeline': {
+        params: { quantization_mode: {}, offload_mode: {} },
+      },
+      'modules.DiffusersImage.Generate': {},
+    },
+  );
+  assert.equal(directQuantizationIssue.blocking, true);
+  assert.match(directQuantizationIssue.details, /quantized_components/);
+
   const missingOffloadIssue = runReadinessModule.getStudioOffloadCapabilityIssue(
     { ...form, resourceMode: 'manual', offloadMode: 'group_disk' },
     {
-      'modules.ModularDiffusers.ModelsLoader': {
+      'modules.DiffusersImage.LoadPipeline': {
         params: {
           offload_mode: { options: ['auto_cpu', 'group_cpu'] },
         },
@@ -3559,7 +3637,7 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   const legacyModelCpuOffloadIssue = runReadinessModule.getStudioOffloadCapabilityIssue(
     { ...form, resourceMode: 'manual', offloadMode: 'model_cpu' },
     {
-      'modules.ModularDiffusers.ModelsLoader': {
+      'modules.DiffusersImage.LoadPipeline': {
         params: {
           offload_mode: { options: ['auto_cpu', 'group_cpu'] },
         },

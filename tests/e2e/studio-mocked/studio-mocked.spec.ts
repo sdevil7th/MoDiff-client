@@ -533,6 +533,18 @@ function mockZImageExecutionCapability() {
   };
 }
 
+const mockExpertQuantizationPolicy = {
+  schema_version: 1,
+  quantization_mode: 'bnb_4bit',
+  offload_mode: 'model_cpu',
+  modular_node: 'modules.ModularDiffusers.QuantizationConfigNode',
+  subfolder: 'transformer',
+  component: 'qwen_low_vram',
+  four_bit_quant_type: 'nf4',
+  compute_dtype: 'bfloat16',
+  double_quant: true,
+};
+
 function mockQwenImageExecutionCapability() {
   const expertCudaPolicy = {
     schema_version: 1,
@@ -642,6 +654,7 @@ function mockQwenImageExecutionCapability() {
         max_low_memory_side: 1328,
         max_low_memory_steps: 50,
         expert_cuda_policy: expertCudaPolicy,
+        expert_quantization_policy: mockExpertQuantizationPolicy,
       },
       {
         id: controlSpec.executionProfileId,
@@ -660,6 +673,7 @@ function mockQwenImageExecutionCapability() {
         max_low_memory_side: 768,
         max_low_memory_steps: 28,
         expert_cuda_policy: expertCudaPolicy,
+        expert_quantization_policy: mockExpertQuantizationPolicy,
       },
     ],
     studioExecutionSpecModes: ['control_image', 'text_to_image'],
@@ -775,6 +789,7 @@ function mockQwenEditInpaintExecutionCapability() {
         default_repo: spec.defaultRepo,
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
+        expert_quantization_policy: mockExpertQuantizationPolicy,
       },
       {
         ...base.executionProfiles[0],
@@ -789,6 +804,7 @@ function mockQwenEditInpaintExecutionCapability() {
         default_repo: spec.defaultRepo,
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
+        expert_quantization_policy: mockExpertQuantizationPolicy,
       },
     ],
     studioExecutionSpecModes: [editSpec.mode, spec.mode, outpaintSpec.mode],
@@ -8158,6 +8174,9 @@ test('backend Studio execution specs materialize exact image, video, and audio r
       mode: 'control_image',
       modelType: 'QwenImageModularPipeline',
       resourceMode: 'expert',
+      quantizationMode: 'bnb_4bit',
+      autoOffload: true,
+      offloadMode: 'model_cpu',
       controlImage: 'qwen-control-layout.png',
       referenceImages: [],
       conditioningScale: 1.2,
@@ -8225,6 +8244,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     const binding = state.studio.graphBinding!;
     const roles = new Map(Object.entries(binding.nodes).map(([role, id]) => [id, role]));
     const controlnetLoader = state.flow.nodes.find((node) => node.id === binding.nodes.controlnetModel)?.params;
+    const quantization = state.flow.nodes.find((node) => node.id === binding.nodes.qwenQuantization)?.params;
     return {
       receipt: binding.executionSpec,
       source: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
@@ -8234,6 +8254,14 @@ test('backend Studio execution specs materialize exact image, video, and audio r
       controlPipeline: state.flow.nodes.find((node) => node.id === binding.nodes.controlnet)?.params?.model_type?.value,
       conditioningScale: state.flow.nodes.find((node) => node.id === binding.nodes.controlnet)?.params
         ?.controlnet_conditioning_scale?.value,
+      quantization: {
+        subfolder: quantization?.subfolder?.value,
+        component: quantization?.component?.value,
+        quantType: quantization?.quant_type?.value,
+        fourBitType: quantization?.bnb_4bit_quant_type?.value,
+        computeDtype: quantization?.bnb_4bit_compute_dtype?.value,
+        doubleQuant: quantization?.bnb_4bit_use_double_quant?.value,
+      },
       topology: state.flow.edges
         .map((edge) => [roles.get(edge.source), edge.sourceHandle, roles.get(edge.target), edge.targetHandle])
         .sort(),
@@ -8252,10 +8280,20 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
     controlPipeline: 'QwenImageModularPipeline',
     conditioningScale: 1.2,
-    topology: mockQwenImageExecutionCapability()
-      .studioExecutionSpecs.find((item) => item.mode === 'control_image')!
-      .edges.map((item) => [...item])
-      .sort(),
+    quantization: {
+      subfolder: 'transformer',
+      component: 'qwen_low_vram',
+      quantType: 'bnb_4bit',
+      fourBitType: 'nf4',
+      computeDtype: 'bfloat16',
+      doubleQuant: true,
+    },
+    topology: [
+      ['qwenQuantization', 'quantization_config', 'models', 'quant_config'],
+      ...mockQwenImageExecutionCapability()
+        .studioExecutionSpecs.find((item) => item.mode === 'control_image')!
+        .edges.map((item) => [...item]),
+    ].sort(),
   });
 
   const schnell = await page.evaluate(async () => {
@@ -10826,11 +10864,25 @@ test('session activity and generation notifications open the originating workflo
 test('mocked Studio leaves newly-created Expert Qwen quantization node expanded', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('InstantX/Qwen-Image-ControlNet-Union');
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
   await ensureFrontend();
   await installMockRoutes(page);
+  const capability = mockQwenImageExecutionCapability();
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: [capability],
+        studioExecutionSpecs: capability.studioExecutionSpecs,
+      }),
+    });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
@@ -10839,14 +10891,19 @@ test('mocked Studio leaves newly-created Expert Qwen quantization node expanded'
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
-      resourceMode: 'expert',
-      quantizationMode: 'bnb_4bit',
-      dtype: 'bfloat16',
-      autoOffload: true,
-      offloadMode: 'model_cpu',
-      device: 'cuda:0',
-    });
+    try {
+      await window.__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+        resourceMode: 'expert',
+        quantizationMode: 'bnb_4bit',
+        dtype: 'bfloat16',
+        autoOffload: true,
+        offloadMode: 'model_cpu',
+        device: 'cuda:0',
+        controlImage: 'mock-control.png',
+      });
+    } catch (error) {
+      if (!String(error).includes('Graph preparation is still running')) throw error;
+    }
   });
 
   await expect
@@ -11285,11 +11342,25 @@ test('mocked Studio blocks Expert Modular Qwen 4-bit mode when backend quantizat
 }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('InstantX/Qwen-Image-ControlNet-Union');
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = false;
   mockIncludeOutpaintNode = true;
   await ensureFrontend();
   await installMockRoutes(page);
+  const capability = mockQwenImageExecutionCapability();
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: [capability],
+        studioExecutionSpecs: capability.studioExecutionSpecs,
+      }),
+    });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
@@ -11299,13 +11370,14 @@ test('mocked Studio blocks Expert Modular Qwen 4-bit mode when backend quantizat
   await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      await window.__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
         resourceMode: 'expert',
         quantizationMode: 'bnb_4bit',
         dtype: 'bfloat16',
         autoOffload: true,
         offloadMode: 'model_cpu',
         device: 'cuda:0',
+        controlImage: 'mock-control.png',
       });
     } catch {
       // The form remains applied so readiness can explain the missing backend node.
@@ -11316,7 +11388,7 @@ test('mocked Studio blocks Expert Modular Qwen 4-bit mode when backend quantizat
   await expect(quantizationReadiness).toContainText('Run blocked', { timeout: 30_000 });
   await quantizationReadiness.click();
   const quantizationIssues = page.getByTestId('run-issues-dialog');
-  await expect(quantizationIssues).toContainText('Expert 4-bit mode needs updated Diffusers backend support');
+  await expect(quantizationIssues).toContainText('Expert bnb_4bit needs updated Diffusers backend support');
   await expect(quantizationIssues).toContainText('QuantizationConfigNode');
   await expect(page.getByTestId('studio-run')).toBeDisabled();
 });

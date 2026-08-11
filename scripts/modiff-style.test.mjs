@@ -406,7 +406,6 @@ test('all graph option controls consume the shared runtime option descriptor con
     'src/fields/ToggleField.tsx',
     'src/components/NodeContent.tsx',
     'src/studio/runReadiness.ts',
-    'src/studio/templateReadiness.ts',
   ].map(readSource);
 
   assert.match(runtimeOptions, /export function runtimeOptionEntries/);

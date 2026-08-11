@@ -1,4 +1,8 @@
-import type { OptionalRuntimeRequirement, StudioExpertCudaPolicy } from './optionalRuntimes';
+import type {
+  OptionalRuntimeRequirement,
+  StudioExpertCudaPolicy,
+  StudioExpertQuantizationPolicy,
+} from './optionalRuntimes';
 
 export type StudioMode =
   | 'text_to_image'
@@ -645,6 +649,7 @@ export type StudioExecutionProfile = {
   optional_runtime_profiles?: string[];
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   expert_cuda_policy?: StudioExpertCudaPolicy;
+  expert_quantization_policy?: StudioExpertQuantizationPolicy;
 };
 
 export type StudioExecutionSpec = {

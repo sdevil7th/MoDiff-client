@@ -14,12 +14,6 @@ import {
   getStudioModelDisplayName,
   normalizeStudioOffloadMode,
   offloadModeIsSupported,
-  QWEN_LOW_VRAM_OFFLOAD_MODE,
-  QWEN_LOW_VRAM_QUANTIZATION_COMPONENT,
-  QWEN_LOW_VRAM_QUANTIZATION_MODE,
-  QWEN_QUANTIZATION_NODE_KEY,
-  QWEN_T2I_GENERATE_NODE_KEY,
-  QWEN_T2I_PIPELINE_NODE_KEY,
   STUDIO_MODE_LABELS,
   STUDIO_OFFLOAD_LABELS,
 } from './modelProfiles';
@@ -46,7 +40,7 @@ import type { RuntimeCudaDevice, RuntimeMpsDevice, RuntimeStatus, RuntimeXpuDevi
 import type { RuntimeResourceSnapshot } from './runtimeResources';
 import { getStudioGraphRunBlockingMessage } from './graphBridge';
 import { optionalRuntimeBlockState } from './optionalRuntimes';
-import { exactStudioExecutionSpecForForm } from './executionSpecs';
+import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
 
 const GIB = 1024 ** 3;
 const MODEL_PARAM_HINTS = [
@@ -381,25 +375,22 @@ export function getStudioCudaRecipePressureIssue(
   } satisfies Omit<RunReadinessIssue, 'id'>;
 }
 
-function isQwenQuantizedLowVram(form: StudioFormState) {
-  return form.quantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE;
-}
-
 function readinessExecutionSpec(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
   const nodeStore = useNodesStore.getState();
   return exactStudioExecutionSpecForForm(nodeStore.studioModelCapabilities, nodeStore.studioExecutionSpecInvalid, form);
 }
 
+function readinessExecutionProfile(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
+  const nodeStore = useNodesStore.getState();
+  return exactStudioExecutionProfileForForm(
+    nodeStore.studioModelCapabilities,
+    nodeStore.studioExecutionSpecInvalid,
+    form,
+  );
+}
+
 function expertCudaPolicyForForm(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
-  const spec = readinessExecutionSpec(form);
-  if (!spec) return null;
-  const capability = useNodesStore.getState().studioModelCapabilities.find((item) => item.modelType === form.modelType);
-  const matches =
-    capability?.executionProfiles?.filter(
-      (profile) => profile.id === spec.executionProfileId && profile.modes.includes(form.mode),
-    ) ?? [];
-  const [match] = matches;
-  return matches.length === 1 ? (match?.expert_cuda_policy ?? null) : null;
+  return readinessExecutionProfile(form)?.expert_cuda_policy ?? null;
 }
 
 function expectedLoaderNodeKey(form: StudioFormState) {
@@ -483,39 +474,48 @@ export function getStudioQuantizationCapabilityIssue(
 ) {
   const resolvedForm = resolveStudioResourceForm(form);
   const profile = getProfileForForm(resolvedForm);
-  if (profile.family !== 'Qwen Image' || !isQwenQuantizedLowVram(resolvedForm)) return null;
+  const executionProfile = readinessExecutionProfile(resolvedForm);
+  const policy = executionProfile?.expert_quantization_policy;
+  if (resolvedForm.resourceMode !== 'expert' || !policy || resolvedForm.quantizationMode !== policy.quantization_mode)
+    return null;
   if (Object.keys(registry).length === 0) return null;
 
+  const spec = readinessExecutionSpec(resolvedForm);
+  if (!spec) return null;
   const missing: string[] = [];
-  const usesDirectQwenText =
-    resolvedForm.mode === 'text_to_image' &&
-    resolvedForm.modelType === 'QwenImageModularPipeline' &&
-    resolvedForm.resourceMode !== 'expert';
-  if (usesDirectQwenText) {
-    if (!registry[QWEN_T2I_PIPELINE_NODE_KEY]) {
-      missing.push(QWEN_T2I_PIPELINE_NODE_KEY);
-    } else {
-      for (const key of ['quantization_mode', 'quantized_components', 'offload_mode']) {
-        if (!registryParam(registry, QWEN_T2I_PIPELINE_NODE_KEY, key)) {
-          missing.push(`${QWEN_T2I_PIPELINE_NODE_KEY}.${key}`);
+  for (const [role, param, source] of spec.bindings) {
+    if (!['quantizationMode', 'pipelineQuantizedComponents', 'offloadMode'].includes(source)) continue;
+    const nodeKey = spec.roles.find(([candidate]) => candidate === role)?.[1];
+    if (nodeKey && !registryParam(registry, nodeKey, param)) missing.push(`${nodeKey}.${param}`);
+  }
+  if (executionProfile.execution_path === 'modular-diffusers') {
+    const nodeKey = policy.modular_node;
+    const fields = [
+      'model_id',
+      'subfolder',
+      'component',
+      'quant_type',
+      'bnb_4bit_quant_type',
+      'bnb_4bit_compute_dtype',
+      'bnb_4bit_use_double_quant',
+      'quantization_config',
+    ];
+    if (!registry[nodeKey]) missing.push(nodeKey);
+    else {
+      fields.forEach((field) => {
+        if (!registryParam(registry, nodeKey, field)) missing.push(`${nodeKey}.${field}`);
+      });
+      for (const [field, value] of [
+        ['component', policy.component],
+        ['quant_type', policy.quantization_mode],
+        ['bnb_4bit_quant_type', policy.four_bit_quant_type],
+        ['bnb_4bit_compute_dtype', policy.compute_dtype],
+      ] satisfies Array<[string, string]>) {
+        if (!registryParamOptions(registry, nodeKey, field).includes(value)) {
+          missing.push(`${nodeKey}.${field}=${value}`);
         }
       }
     }
-    if (!registry[QWEN_T2I_GENERATE_NODE_KEY]) {
-      missing.push(QWEN_T2I_GENERATE_NODE_KEY);
-    }
-  } else if (!registry[QWEN_QUANTIZATION_NODE_KEY]) {
-    missing.push(QWEN_QUANTIZATION_NODE_KEY);
-  } else if (
-    !registryParamOptions(registry, QWEN_QUANTIZATION_NODE_KEY, 'component').includes(
-      QWEN_LOW_VRAM_QUANTIZATION_COMPONENT,
-    )
-  ) {
-    missing.push(`${QWEN_QUANTIZATION_NODE_KEY}.component=${QWEN_LOW_VRAM_QUANTIZATION_COMPONENT}`);
-  }
-  const loaderNodeKey = expectedLoaderNodeKey(resolvedForm);
-  if (loaderNodeKey && !registryParam(registry, loaderNodeKey, 'offload_mode')) {
-    missing.push(`${loaderNodeKey}.offload_mode`);
   }
   if (missing.length === 0) return null;
 
@@ -524,8 +524,8 @@ export function getStudioQuantizationCapabilityIssue(
     severity: 'error',
     blocking: true,
     action: 'open_setup',
-    message: `${getStudioModelDisplayName(profile)} Expert 4-bit mode needs updated Diffusers backend support.`,
-    details: `This backend did not expose ${missing.join(', ')}. Restart or update MoDiff so Qwen can run with Diffusers quantization and ${QWEN_LOW_VRAM_OFFLOAD_MODE} offload.`,
+    message: `${getStudioModelDisplayName(profile)} Expert ${policy.quantization_mode} needs updated Diffusers backend support.`,
+    details: `This backend did not expose ${missing.join(', ')}. Restart or update MoDiff so this reviewed recipe can use Diffusers quantization and ${policy.offload_mode} offload.`,
   } satisfies Omit<RunReadinessIssue, 'id'>;
 }
 

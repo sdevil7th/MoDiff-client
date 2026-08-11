@@ -13,7 +13,6 @@ export const QWEN_IMAGE_2512_REPO = 'Qwen/Qwen-Image-2512';
 export const QWEN_IMAGE_2512_PREQUANTIZED_REPO = 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit';
 export const QWEN_IMAGE_EDIT_PREQUANTIZED_REPO = 'ovedrive/qwen-image-edit-4bit';
 export const QWEN_LOW_VRAM_QUANTIZATION_MODE = 'bnb_4bit';
-export const QWEN_LOW_VRAM_QUANTIZATION_COMPONENT = 'qwen_low_vram';
 export const QWEN_TRANSFORMER_ONLY_QUANTIZED_COMPONENTS = ['transformer'] as const;
 export const QWEN_LOW_VRAM_OFFLOAD_MODE = 'model_cpu';
 export const STUDIO_OFFLOAD_MODES = ['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'] as const;
@@ -56,7 +55,6 @@ export const QWEN_DIRECT_OFFLOAD_SUPPORT = {
   lowVram: QWEN_LOW_VRAM_OFFLOAD_MODE as StudioFormState['offloadMode'],
   emergency: 'group_disk' as const,
 };
-export const QWEN_QUANTIZATION_NODE_KEY = 'modules.ModularDiffusers.QuantizationConfigNode';
 export const QWEN_T2I_PIPELINE_NODE_KEY = 'modules.DiffusersImage.LoadPipeline';
 export const QWEN_T2I_GENERATE_NODE_KEY = 'modules.DiffusersImage.Generate';
 export const QWEN_INPAINT_PIPELINE_NODE_KEY = 'modules.DiffusersImage.LoadPipeline';

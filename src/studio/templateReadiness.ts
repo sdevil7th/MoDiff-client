@@ -7,14 +7,7 @@ import {
   type StudioCompatibilityAssessment,
   type StudioAutoResourcePlan,
 } from './autoResource';
-import {
-  getModelRequirementsForMode,
-  QWEN_LOW_VRAM_QUANTIZATION_COMPONENT,
-  QWEN_T2I_GENERATE_NODE_KEY,
-  QWEN_T2I_PIPELINE_NODE_KEY,
-  STUDIO_MODEL_LABELS,
-  STUDIO_MODEL_PROFILES,
-} from './modelProfiles';
+import { getModelRequirementsForMode, STUDIO_MODEL_LABELS, STUDIO_MODEL_PROFILES } from './modelProfiles';
 import { resolveTemplateInputs } from './templateInputs';
 import { buildRunReadinessDecision } from './runReadiness';
 import type {
@@ -28,7 +21,6 @@ import type {
   StudioTemplateInputRequirements,
   StudioTemplateModelArtifact,
 } from './types';
-import { runtimeOptionValues } from './runtimeOptions';
 import { backendNodeKeysForCapability } from './templateBackendCapabilities';
 export { isTemplateBackendCapabilityRecognized, templateBackendNodeKeys } from './templateBackendCapabilities';
 
@@ -109,47 +101,11 @@ function hasRegistry(nodesRegistry: Record<string, NodeData>) {
   return Object.keys(nodesRegistry).length > 0;
 }
 
-function nodeParam(nodesRegistry: Record<string, NodeData>, nodeKey: string, paramKey: string) {
-  return nodesRegistry[nodeKey]?.params?.[paramKey];
-}
-
-function paramOptions(param: unknown) {
-  if (!param || typeof param !== 'object' || !('options' in param)) return [];
-  const options = (param as { options?: unknown }).options;
-  return runtimeOptionValues(options);
-}
-
-function hasQwenLowVramBackend(nodesRegistry: Record<string, NodeData>) {
-  const hasDirectPath = Boolean(
-    nodesRegistry[QWEN_T2I_PIPELINE_NODE_KEY] &&
-    nodesRegistry[QWEN_T2I_GENERATE_NODE_KEY] &&
-    nodeParam(nodesRegistry, QWEN_T2I_PIPELINE_NODE_KEY, 'quantization_mode') &&
-    nodeParam(nodesRegistry, QWEN_T2I_PIPELINE_NODE_KEY, 'quantized_components') &&
-    nodeParam(nodesRegistry, QWEN_T2I_PIPELINE_NODE_KEY, 'offload_mode'),
-  );
-  const hasModularPath = Boolean(
-    nodesRegistry['modules.ModularDiffusers.ModelsLoader'] &&
-    nodesRegistry['modules.ModularDiffusers.QuantizationConfigNode'] &&
-    nodeParam(nodesRegistry, 'modules.ModularDiffusers.ModelsLoader', 'offload_mode') &&
-    paramOptions(nodeParam(nodesRegistry, 'modules.ModularDiffusers.QuantizationConfigNode', 'component')).includes(
-      QWEN_LOW_VRAM_QUANTIZATION_COMPONENT,
-    ),
-  );
-  return hasDirectPath || hasModularPath;
-}
-
 function missingBackendCapabilities(template: StudioTemplate, nodesRegistry: Record<string, NodeData>) {
   const capabilities = template.requiredBackendCapabilities ?? [];
   if (capabilities.length === 0) return [];
 
   return capabilities.filter((capability) => {
-    if (
-      capability === 'Qwen direct Auto Diffusers path' ||
-      capability === 'Qwen low-VRAM quantized Modular Diffusers path'
-    ) {
-      return hasRegistry(nodesRegistry) && !hasQwenLowVramBackend(nodesRegistry);
-    }
-
     const nodeKeys = backendNodeKeysForCapability(capability);
     if (!nodeKeys) return true;
     return hasRegistry(nodesRegistry) && !nodeKeys.every((nodeKey) => nodesRegistry[nodeKey]);

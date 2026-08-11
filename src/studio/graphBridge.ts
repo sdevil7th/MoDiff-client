@@ -28,10 +28,7 @@ import {
   QWEN_CONTROLNET_REQUIREMENT,
   QWEN_INPAINT_GENERATE_NODE_KEY,
   QWEN_INPAINT_PIPELINE_NODE_KEY,
-  QWEN_LOW_VRAM_QUANTIZATION_COMPONENT,
-  QWEN_LOW_VRAM_QUANTIZATION_MODE,
   QWEN_OUTPAINT_CANVAS_NODE_KEY,
-  QWEN_QUANTIZATION_NODE_KEY,
   QWEN_T2I_GENERATE_NODE_KEY,
   QWEN_T2I_PIPELINE_NODE_KEY,
   AUDIO_STUDIO_MODES,
@@ -41,7 +38,7 @@ import {
   WAN_VACE_REVISION,
 } from './modelProfiles';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
-import { exactStudioExecutionSpecForForm } from './executionSpecs';
+import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
 import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { hashString, stableStringify } from './templateExactness';
@@ -86,6 +83,15 @@ function executionProfileForForm(form: Pick<StudioFormState, 'modelType' | 'mode
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+function exactExecutionProfileForForm(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
+  const store = useNodesStore.getState();
+  return exactStudioExecutionProfileForForm(store.studioModelCapabilities, store.studioExecutionSpecInvalid, form);
+}
+
+function expertQuantizationPolicyForForm(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
+  return exactExecutionProfileForForm(form)?.expert_quantization_policy;
+}
+
 function specRole(spec: StudioExecutionSpec | null | undefined, role: StudioGraphRole) {
   return spec?.roles.find((item) => item[0] === role);
 }
@@ -124,7 +130,7 @@ function resolveGraphResourceForm(form: StudioFormState): StudioFormState {
 
 const NODE_KEYS = {
   models: 'modules.ModularDiffusers.ModelsLoader',
-  qwenQuantization: QWEN_QUANTIZATION_NODE_KEY,
+  qwenQuantization: '',
   qwenPipeline: QWEN_T2I_PIPELINE_NODE_KEY,
   qwenGenerate: QWEN_T2I_GENERATE_NODE_KEY,
   qwenInpaintPipeline: QWEN_INPAINT_PIPELINE_NODE_KEY,
@@ -357,18 +363,23 @@ function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBindin
   return false;
 }
 
-function usesQwenLowVramQuantization(form: StudioFormState) {
+function usesExpertProfileQuantization(form: StudioFormState) {
+  const policy = expertQuantizationPolicyForForm(form);
   return (
     form.resourceMode === 'expert' &&
-    STUDIO_MODEL_PROFILES[form.modelType]?.family === 'Qwen Image' &&
-    form.quantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE
+    form.quantizationMode === policy?.quantization_mode &&
+    exactExecutionProfileForForm(form)?.execution_path === 'modular-diffusers'
   );
 }
 
 function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
   const executionSpec = executionSpecForForm(form);
   if (executionSpec === null) throw new Error('The Studio execution specification does not cover this workflow.');
-  if (executionSpec) return executionSpec.roles.map(([role]) => role);
+  if (executionSpec) {
+    const roles = executionSpec.roles.map(([role]) => role);
+    if (usesExpertProfileQuantization(form)) roles.unshift('qwenQuantization');
+    return roles;
+  }
   if (isAudioMode(form.mode)) {
     const roles: StudioGraphRole[] = [
       'diffusersQuantization',
@@ -435,7 +446,7 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
   }
 
   const roles = [...REQUIRED_BASE_ROLES];
-  if (usesQwenLowVramQuantization(form)) {
+  if (usesExpertProfileQuantization(form)) {
     roles.unshift('qwenQuantization');
   }
   if (form.mode === 'inpaint') {
@@ -630,8 +641,19 @@ export function inspectStudioGraphBindingDivergence(
   return null;
 }
 
+function nodeKeyForFormRole(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+  role: StudioGraphRole,
+  spec?: StudioExecutionSpec | null,
+) {
+  return (
+    specRole(spec, role)?.[1] ??
+    (role === 'qwenQuantization' ? expertQuantizationPolicyForForm(form)?.modular_node : NODE_KEYS[role])
+  );
+}
+
 function nodeKeyForRole(role: StudioGraphRole, binding?: StudioGraphBinding) {
-  return specRole(binding ? executionSpecForBinding(binding) : undefined, role)?.[1] ?? NODE_KEYS[role];
+  return binding ? nodeKeyForFormRole(binding, role, executionSpecForBinding(binding)) : NODE_KEYS[role];
 }
 
 function nodeMatchesRole(nodeId: string | undefined, role: StudioGraphRole, binding?: StudioGraphBinding) {
@@ -2003,7 +2025,14 @@ function desiredExecutionSpecEdgeSpecs(binding: StudioGraphBinding) {
   const edges = spec.edges.map(([sourceRole, sourceHandle, targetRole, targetHandle]) =>
     makeConnectionSpec(binding.nodes[sourceRole], [sourceHandle], binding.nodes[targetRole], [targetHandle]),
   );
-  return edges.every(Boolean) ? (edges as StudioEdgeSpec[]) : [];
+  const expertQuantizationEdge = binding.nodes.qwenQuantization
+    ? makeConnectionSpec(binding.nodes.qwenQuantization, ['quantization_config'], binding.nodes.models, [
+        'quant_config',
+      ])
+    : undefined;
+  return edges.every(Boolean) && (!binding.nodes.qwenQuantization || expertQuantizationEdge)
+    ? ([...edges, ...(expertQuantizationEdge ? [expertQuantizationEdge] : [])] as StudioEdgeSpec[])
+    : [];
 }
 
 function desiredEdgeSpecs(binding: StudioGraphBinding) {
@@ -2670,11 +2699,12 @@ async function waitForFieldGroupsTracked(wait: FieldGroupWait, timedOutGroups: s
 }
 
 function missingRegistryRoles(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
   roles: StudioGraphRole[],
   registry = useNodesStore.getState().nodesRegistry,
   spec?: StudioExecutionSpec | null,
 ) {
-  return roles.filter((role) => !registry[specRole(spec, role)?.[1] ?? NODE_KEYS[role]]);
+  return roles.filter((role) => !registry[nodeKeyForFormRole(form, role, spec) ?? '']);
 }
 
 function executionSpecMatchesRegistry(spec: StudioExecutionSpec, registry = useNodesStore.getState().nodesRegistry) {
@@ -2702,15 +2732,19 @@ function executionSpecMatchesRegistry(spec: StudioExecutionSpec, registry = useN
   );
 }
 
-async function ensureRegistryForRoles(roles: StudioGraphRole[], spec?: StudioExecutionSpec | null) {
+async function ensureRegistryForRoles(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+  roles: StudioGraphRole[],
+  spec?: StudioExecutionSpec | null,
+) {
   const nodesStore = useNodesStore.getState();
   let registry = nodesStore.nodesRegistry;
-  let missingRoles = missingRegistryRoles(roles, registry, spec);
+  let missingRoles = missingRegistryRoles(form, roles, registry, spec);
 
   if (Object.keys(registry).length === 0 || missingRoles.length > 0) {
     await nodesStore.fetchNodes();
     registry = useNodesStore.getState().nodesRegistry;
-    missingRoles = missingRegistryRoles(roles, registry, spec);
+    missingRoles = missingRegistryRoles(form, roles, registry, spec);
   }
 
   if (Object.keys(registry).length === 0) {
@@ -2728,12 +2762,14 @@ async function ensureRegistryForRoles(roles: StudioGraphRole[], spec?: StudioExe
 }
 
 function ensureNode(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
   role: StudioGraphRole,
   bindingNodes: Partial<Record<StudioGraphRole, string>>,
   assignedNodeIds: Set<string>,
   spec?: StudioExecutionSpec | null,
 ) {
-  const nodeKey = specRole(spec, role)?.[1] ?? NODE_KEYS[role];
+  const nodeKey = nodeKeyForFormRole(form, role, spec);
+  if (!nodeKey) return undefined;
   const existing = getNode(bindingNodes[role]);
   const existingNode = existing && graphNodeKey(existing) === nodeKey ? existing : undefined;
   if (existingNode && !assignedNodeIds.has(existingNode.id)) {
@@ -2828,7 +2864,7 @@ function buildOrReuseBinding(form: StudioFormState) {
   const assignedNodeIds = new Set<string>();
 
   roles.forEach((role) => {
-    nodes[role] = ensureNode(role, previous?.nodes ?? nodes, assignedNodeIds, executionSpec);
+    nodes[role] = ensureNode(form, role, previous?.nodes ?? nodes, assignedNodeIds, executionSpec);
   });
   pruneObsoleteManagedNodes(previous, nodes, roles);
   pruneDuplicateStudioOwnedNodes(nodes, roles);
@@ -3005,18 +3041,19 @@ async function applyControlnetPipelineType(binding: StudioGraphBinding, modelTyp
   }
 }
 
-function applyQwenQuantizationConfig(binding: StudioGraphBinding, form: StudioFormState) {
+function applyExpertQuantizationConfig(binding: StudioGraphBinding, form: StudioFormState) {
   const quantizationNode = binding.nodes.qwenQuantization;
-  if (!quantizationNode) return;
-  const capability = STUDIO_MODEL_PROFILES[form.modelType];
+  const profile = exactExecutionProfileForForm(form);
+  const policy = profile?.expert_quantization_policy;
+  if (!quantizationNode || !profile || !policy) return;
 
-  setModelRepo(quantizationNode, capability.defaultRepo);
-  setParamIfPresent(quantizationNode, ['subfolder'], 'transformer');
-  setParamIfPresent(quantizationNode, ['component'], QWEN_LOW_VRAM_QUANTIZATION_COMPONENT);
-  setParamIfPresent(quantizationNode, ['quant_type'], QWEN_LOW_VRAM_QUANTIZATION_MODE);
-  setParamIfPresent(quantizationNode, ['bnb_4bit_quant_type'], 'nf4');
-  setParamIfPresent(quantizationNode, ['bnb_4bit_compute_dtype'], 'bfloat16');
-  setParamIfPresent(quantizationNode, ['bnb_4bit_use_double_quant'], true);
+  setModelRepo(quantizationNode, profile.default_repo);
+  setParamIfPresent(quantizationNode, ['subfolder'], policy.subfolder);
+  setParamIfPresent(quantizationNode, ['component'], policy.component);
+  setParamIfPresent(quantizationNode, ['quant_type'], policy.quantization_mode);
+  setParamIfPresent(quantizationNode, ['bnb_4bit_quant_type'], policy.four_bit_quant_type);
+  setParamIfPresent(quantizationNode, ['bnb_4bit_compute_dtype'], policy.compute_dtype);
+  setParamIfPresent(quantizationNode, ['bnb_4bit_use_double_quant'], policy.double_quant);
 }
 
 function connectBaseGraph(binding: StudioGraphBinding) {
@@ -3172,6 +3209,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     if (source === 'artifact') setModelRepo(nodeId, String(values[source]));
     else setParamIfPresent(nodeId, [param], values[source]);
   }
+  if (binding.nodes.qwenQuantization) applyExpertQuantizationConfig(binding, form);
 }
 
 function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
@@ -3517,7 +3555,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   setParamIfPresent(models, ['offload_mode'], form.offloadMode);
   setParamIfPresent(models, ['trust_remote_code'], form.trustRemoteCode);
   if (qwenQuantization) {
-    applyQwenQuantizationConfig(binding, form);
+    applyExpertQuantizationConfig(binding, form);
   }
 
   setParamIfPresent(prompt, ['prompt'], form.prompt);
@@ -4213,13 +4251,13 @@ async function createOrUpdateStudioGraphInner(
   const roles = participatingRoles(form, useStudioStore.getState().graphBinding);
   const executionSpec = executionSpecForForm(form);
   if (executionSpec === null) throw new Error('The Studio execution specification does not cover this workflow.');
-  const missingRoles = await ensureRegistryForRoles(roles, executionSpec);
+  const missingRoles = await ensureRegistryForRoles(form, roles, executionSpec);
   assertWorkflowOperationContext(context);
   if (missingRoles.length > 0) {
     const message = missingRoles.includes('qwenQuantization')
-      ? `Qwen low-VRAM mode needs the MoDiff backend to expose ${QWEN_QUANTIZATION_NODE_KEY}. Restart or update the backend with Modular Diffusers quantization support.`
+      ? `This Expert quantization recipe needs the MoDiff backend to expose ${expertQuantizationPolicyForForm(form)?.modular_node}. Restart or update the backend with the reviewed quantization node.`
       : `Missing MoDiff node registry entries: ${missingRoles
-          .map((role) => specRole(executionSpec, role)?.[1] ?? NODE_KEYS[role])
+          .map((role) => nodeKeyForFormRole(form, role, executionSpec))
           .join(', ')}`;
     useStudioStore.getState().setLastError(message);
     throw new Error(message);

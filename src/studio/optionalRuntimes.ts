@@ -53,6 +53,18 @@ export type StudioExpertCudaPolicy = {
   quantized_resident_vram_bytes: Array<[StudioRuntimeQuantization, number]>;
 };
 
+export type StudioExpertQuantizationPolicy = {
+  schema_version: 1;
+  quantization_mode: 'bnb_4bit';
+  offload_mode: 'model_cpu' | 'sequential_cpu' | 'group_cpu' | 'group_disk';
+  modular_node: string;
+  subfolder: string;
+  component: string;
+  four_bit_quant_type: 'nf4' | 'fp4';
+  compute_dtype: StudioRuntimeDtype;
+  double_quant: boolean;
+};
+
 const runtimeId = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const executionId = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
 const delivery = /^(?:base|optional_overlay)$/;
@@ -62,6 +74,8 @@ const runtimeDtype = /^(?:float32|float16|bfloat16)$/;
 const runtimeQuantization = /^(?:bnb_4bit|bnb_8bit|quanto_float8|torchao_float8)$/;
 const EXPERT_CUDA_POLICY_KEYS =
   'blocked_dtypes,offloaded_vram_bytes,quantized_resident_vram_bytes,recommended_dtype,resident_vram_bytes,schema_version';
+const EXPERT_QUANTIZATION_POLICY_KEYS =
+  'component,compute_dtype,double_quant,four_bit_quant_type,modular_node,offload_mode,quantization_mode,schema_version,subfolder';
 
 function ids(value: unknown, pattern: RegExp, allowEmpty: boolean) {
   if (!Array.isArray(value) || value.length > 32 || (!allowEmpty && !value.length)) invalid();
@@ -125,6 +139,31 @@ function parseExpertCudaPolicy(value: unknown): StudioExpertCudaPolicy {
   };
 }
 
+function parseExpertQuantizationPolicy(value: unknown): StudioExpertQuantizationPolicy {
+  const item = record(value);
+  if (
+    Object.keys(item).sort().join() !== EXPERT_QUANTIZATION_POLICY_KEYS ||
+    item.schema_version !== 1 ||
+    item.quantization_mode !== 'bnb_4bit' ||
+    typeof item.double_quant !== 'boolean'
+  )
+    invalid();
+  return {
+    schema_version: 1,
+    quantization_mode: 'bnb_4bit',
+    offload_mode: string(
+      item.offload_mode,
+      /^(?:model_cpu|sequential_cpu|group_cpu|group_disk)$/,
+    ) as StudioExpertQuantizationPolicy['offload_mode'],
+    modular_node: string(item.modular_node, /^modules\.[A-Za-z\d_]+\.[A-Za-z\d_]+$/)!,
+    subfolder: string(item.subfolder, /^[a-z][a-z\d_]{0,63}$/)!,
+    component: string(item.component, /^[a-z][a-z\d_]{0,63}$/)!,
+    four_bit_quant_type: string(item.four_bit_quant_type, /^(?:nf4|fp4)$/) as 'nf4' | 'fp4',
+    compute_dtype: string(item.compute_dtype, runtimeDtype) as StudioRuntimeDtype,
+    double_quant: item.double_quant,
+  };
+}
+
 export function parseOptionalRuntimeExecutionProfiles<T extends string>(
   value: unknown,
   aggregate: OptionalRuntimeRequirement | undefined,
@@ -141,6 +180,10 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     const requirement = rawRequirement === undefined ? undefined : parseOptionalRuntimeRequirement(rawRequirement);
     const expertCudaPolicy =
       profile.expert_cuda_policy === undefined ? undefined : parseExpertCudaPolicy(profile.expert_cuda_policy);
+    const expertQuantizationPolicy =
+      profile.expert_quantization_policy === undefined
+        ? undefined
+        : parseExpertQuantizationPolicy(profile.expert_quantization_policy);
     if (
       (profile.optional_runtime_delivery !== undefined &&
         !delivery.test(profile.optional_runtime_delivery as string)) ||
@@ -155,11 +198,13 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     profile.modes = modes;
     profile.optionalRuntimeRequirement = requirement;
     if (expertCudaPolicy) profile.expert_cuda_policy = expertCudaPolicy;
+    if (expertQuantizationPolicy) profile.expert_quantization_policy = expertQuantizationPolicy;
     return profile as Record<string, unknown> & {
       id: string;
       modes: T[];
       optionalRuntimeRequirement?: OptionalRuntimeRequirement;
       expert_cuda_policy?: StudioExpertCudaPolicy;
+      expert_quantization_policy?: StudioExpertQuantizationPolicy;
     };
   });
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();
