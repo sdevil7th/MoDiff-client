@@ -3118,6 +3118,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     wanVaceRevision: WAN_VACE_REVISION,
     maskThreshold127: 127,
     inpaintMaskGrow96: 96,
+    outpaintMaskGrow0: 0,
     text2music: 'text2music',
     cover: 'cover',
     continuation: 'continuation',

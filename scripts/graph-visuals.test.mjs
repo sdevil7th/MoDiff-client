@@ -1531,6 +1531,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: wanVaceInpaintBindingRows,
     contentHash: 'studio-spec-v1-d0b56303',
   };
+  const wanVaceOutpaintSpec = {
+    ...wanVaceInpaintSpec,
+    id: 'wan-vace-1.3b:video-outpaint:v1',
+    mode: 'video_outpaint',
+    bindings: wanVaceInpaintSpec.bindings.map(([role, param, source]) => [
+      role,
+      param,
+      role === 'alignMaskVideo' && param === 'grow_pixels' ? 'outpaintMaskGrow0' : source,
+    ]),
+    contentHash: 'studio-spec-v1-1fd16911',
+  };
   const wanV2vSpec = {
     ...wanT2vSpec,
     id: 'wan-21-t2v-1.3b:video-to-video:v1',
@@ -2022,8 +2033,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
               modes: ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'],
             },
           ],
-          studioExecutionSpecModes: ['text_to_video', 'video_inpaint'],
-          studioExecutionSpecs: [wanVaceT2vSpec, wanVaceInpaintSpec],
+          studioExecutionSpecModes: ['text_to_video', 'video_inpaint', 'video_outpaint'],
+          studioExecutionSpecs: [wanVaceT2vSpec, wanVaceInpaintSpec, wanVaceOutpaintSpec],
         },
         {
           ...capability(ltxSpec),
@@ -2582,6 +2593,45 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'video_inpaint',
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanVaceInpaintForm), null);
+
+    const wanVaceOutpaintForm = {
+      ...wanVaceInpaintForm,
+      mode: 'video_outpaint',
+      sourceVideo: '@data/videos/vace-outpaint-source.mp4',
+      maskVideo: '@data/videos/vace-outpaint-mask.mp4',
+    };
+    studioStoreModule.useStudioStore.setState({ form: wanVaceOutpaintForm });
+    await graphBridge.createOrUpdateStudioGraph(wanVaceOutpaintForm);
+    const wanVaceOutpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const wanVaceOutpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(wanVaceOutpaintBinding.executionSpec.id, wanVaceOutpaintSpec.id);
+    assert.equal(wanVaceOutpaintBinding.executionSpec.contentHash, wanVaceOutpaintSpec.contentHash);
+    assert.notEqual(wanVaceOutpaintBinding.executionSpec.contentHash, wanVaceInpaintBinding.executionSpec.contentHash);
+    assert.deepEqual(topology(wanVaceOutpaintBinding), topology(wanVaceInpaintBinding));
+    assert.equal(
+      wanVaceOutpaintNodes.find((item) => item.id === wanVaceOutpaintBinding.nodes.loadVideo).data.params.file.value,
+      wanVaceOutpaintForm.sourceVideo,
+    );
+    assert.equal(
+      wanVaceOutpaintNodes.find((item) => item.id === wanVaceOutpaintBinding.nodes.loadMaskVideo).data.params.file
+        .value,
+      wanVaceOutpaintForm.maskVideo,
+    );
+    assert.equal(
+      wanVaceOutpaintNodes.find((item) => item.id === wanVaceOutpaintBinding.nodes.alignMaskVideo).data.params.threshold
+        .value,
+      127,
+    );
+    assert.equal(
+      wanVaceOutpaintNodes.find((item) => item.id === wanVaceOutpaintBinding.nodes.alignMaskVideo).data.params
+        .grow_pixels.value,
+      0,
+    );
+    assert.equal(
+      wanVaceOutpaintNodes.find((item) => item.id === wanVaceOutpaintBinding.nodes.wanGenerate).data.params.mode.value,
+      'video_outpaint',
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(wanVaceOutpaintForm), null);
 
     const wanV2vForm = { ...wanT2vForm, mode: 'video_to_video', sourceVideo: '@data/videos/source.mp4' };
     studioStoreModule.useStudioStore.setState({ form: wanV2vForm });

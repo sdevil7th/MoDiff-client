@@ -972,6 +972,17 @@ function mockWanVaceT2vExecutionCapability() {
     ],
     contentHash: 'studio-spec-v1-d0b56303',
   };
+  const outpaintSpec = {
+    ...inpaintSpec,
+    id: 'wan-vace-1.3b:video-outpaint:v1',
+    mode: 'video_outpaint',
+    bindings: inpaintSpec.bindings.map(([role, param, source]) =>
+      role === 'alignMaskVideo' && param === 'grow_pixels'
+        ? ([role, param, 'outpaintMaskGrow0'] as const)
+        : [role, param, source],
+    ),
+    contentHash: 'studio-spec-v1-1fd16911',
+  };
   const modes = ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'];
   return {
     ...base,
@@ -989,8 +1000,8 @@ function mockWanVaceT2vExecutionCapability() {
         default_repo: spec.defaultRepo,
       },
     ],
-    studioExecutionSpecModes: [spec.mode, inpaintSpec.mode],
-    studioExecutionSpecs: [spec, inpaintSpec],
+    studioExecutionSpecModes: [spec.mode, inpaintSpec.mode, outpaintSpec.mode],
+    studioExecutionSpecs: [spec, inpaintSpec, outpaintSpec],
   };
 }
 
@@ -7984,6 +7995,42 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   expect(wanVaceInpaint.threshold).toBe(127);
   expect(wanVaceInpaint.growPixels).toBe(96);
   expect(wanVaceInpaint.mode).toBe('video_inpaint');
+
+  const wanVaceOutpaint = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'video_outpaint',
+      sourceVideo: '@data/videos/vace-outpaint-source.mp4',
+      maskVideo: '@data/videos/vace-outpaint-mask.mp4',
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const params = (role: string) =>
+      state.flow.nodes.find((node) => node.id === binding.nodes[role as keyof typeof binding.nodes])?.params;
+    return {
+      receipt: binding.executionSpec,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      sourceFile: params('loadVideo')?.file?.value,
+      maskFile: params('loadMaskVideo')?.file?.value,
+      threshold: params('alignMaskVideo')?.threshold?.value,
+      growPixels: params('alignMaskVideo')?.grow_pixels?.value,
+      mode: params('wanGenerate')?.mode?.value,
+    };
+  });
+  expect(wanVaceOutpaint).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'wan-vace-1.3b:video-outpaint:v1',
+      contentHash: 'studio-spec-v1-1fd16911',
+      executionProfileId: 'wan-vace:direct',
+    },
+    edgeShape: wanVaceInpaint.edgeShape,
+    sourceFile: '@data/videos/vace-outpaint-source.mp4',
+    maskFile: '@data/videos/vace-outpaint-mask.mp4',
+    threshold: 127,
+    growPixels: 0,
+    mode: 'video_outpaint',
+  });
 
   const wanV2v = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
