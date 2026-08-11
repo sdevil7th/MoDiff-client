@@ -380,6 +380,14 @@ test('optional runtime contracts normalize exact nested profile metadata', async
     state: 'missing',
     reason: 'optional_runtime_missing',
   });
+  const expertCudaPolicy = {
+    schema_version: 1,
+    blocked_dtypes: ['float32'],
+    recommended_dtype: 'bfloat16',
+    offloaded_vram_bytes: 10 * 1024 ** 3,
+    resident_vram_bytes: 80 * 1024 ** 3,
+    quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
+  };
   globalThis.fetch = async () =>
     jsonResponse({
       schemaVersion: 2,
@@ -395,6 +403,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
               modes: ['text_to_image'],
               optional_runtime_delivery: 'optional_overlay',
               optional_runtime_requirement: requirement,
+              expert_cuda_policy: expertCudaPolicy,
             },
           ],
         },
@@ -407,6 +416,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
   assert.equal(state.discoveryRequests.capabilities.status, 'success');
   assert.deepEqual(state.studioModelCapabilities[0].optionalRuntimeRequirement, requirement);
   assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].optionalRuntimeRequirement, requirement);
+  assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].expert_cuda_policy, expertCudaPolicy);
   assert.equal(state.studioModelCapabilities[0].executionProfiles[0].optional_runtime_requirement, undefined);
   const previousForm = studioStoreModule.useStudioStore.getState().form;
   const previousFlow = flowStoreModule.useFlowStore.getState();
@@ -489,6 +499,39 @@ test('mixed-version and conflicting execution runtime contracts fail closed', as
     {
       aggregate: base,
       profiles: [{ id: firstId, modes: ['text_to_image'], optionalRuntimeRequirement: requiredFirst }],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          expert_cuda_policy: {
+            schema_version: 1,
+            blocked_dtypes: ['float32'],
+            recommended_dtype: 'bfloat16',
+            offloaded_vram_bytes: 10 * 1024 ** 3,
+            resident_vram_bytes: 80 * 1024 ** 3,
+            quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
+            unexpected: true,
+          },
+        },
+      ],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          expert_cuda_policy: {
+            schema_version: 1,
+            blocked_dtypes: ['float32'],
+            recommended_dtype: 'bfloat16',
+            offloaded_vram_bytes: 10 * 1024 ** 3,
+            resident_vram_bytes: 1025 * 1024 ** 3,
+            quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
+          },
+        },
+      ],
     },
   ];
   for (const { aggregate, profiles } of invalidProfiles) {

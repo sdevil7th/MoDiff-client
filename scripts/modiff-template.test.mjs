@@ -3269,6 +3269,37 @@ test('controlled graph declarations require an exact schema-v3 persistence proof
 });
 
 test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe settings', (t) => {
+  const previousCapabilityState = {
+    studioModelCapabilities: nodesStoreModule.useNodesStore.getState().studioModelCapabilities,
+    studioExecutionSpecInvalid: nodesStoreModule.useNodesStore.getState().studioExecutionSpecInvalid,
+  };
+  t.after(() => nodesStoreModule.useNodesStore.setState(previousCapabilityState));
+  const expertCudaPolicy = {
+    schema_version: 1,
+    blocked_dtypes: ['float32'],
+    recommended_dtype: 'bfloat16',
+    offloaded_vram_bytes: 12 * 1024 ** 3,
+    resident_vram_bytes: 80 * 1024 ** 3,
+    quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
+  };
+  nodesStoreModule.useNodesStore.setState({
+    studioExecutionSpecInvalid: false,
+    studioModelCapabilities: [
+      {
+        modelType: 'QwenImageModularPipeline',
+        executionProfiles: [
+          {
+            id: 'qwen-image:t2i-direct',
+            modes: ['text_to_image'],
+            expert_cuda_policy: expertCudaPolicy,
+          },
+        ],
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['text_to_image'],
+        studioExecutionSpecs: [{ mode: 'text_to_image', executionProfileId: 'qwen-image:t2i-direct' }],
+      },
+    ],
+  });
   const form = {
     ...profilesModule.DEFAULT_STUDIO_FORM,
     mode: 'text_to_image',
@@ -3353,6 +3384,17 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   );
   assert.equal(residentBfloat16Issue, null);
 
+  const policyPressureIssue = runReadinessModule.getStudioCudaRecipePressureIssue(
+    { ...form, resourceMode: 'expert', autoOffload: true },
+    null,
+    runtimeStatus({
+      totalBytes: 16 * 1024 ** 3,
+      freeBytes: 11 * 1024 ** 3,
+    }),
+  );
+  assert.equal(policyPressureIssue?.severity, 'warning');
+  assert.match(policyPressureIssue?.details ?? '', /12 GB/);
+
   const autoCandidate = {
     id: 'qwen-auto-offload',
     requirements: { vramBytes: 10 * 1024 ** 3 },
@@ -3422,11 +3464,6 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
   );
   assert.equal(ownRunIssue, null);
 
-  const previousCapabilityState = {
-    studioModelCapabilities: nodesStoreModule.useNodesStore.getState().studioModelCapabilities,
-    studioExecutionSpecInvalid: nodesStoreModule.useNodesStore.getState().studioExecutionSpecInvalid,
-  };
-  t.after(() => nodesStoreModule.useNodesStore.setState(previousCapabilityState));
   const readinessSpec = (mode, loaderModule, loaderAction, roles) => ({
     mode,
     loaderModule,

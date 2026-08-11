@@ -358,14 +358,15 @@ export function getStudioCudaRecipePressureIssue(
     ? Math.min(totalBytes ?? Number.POSITIVE_INFINITY, rawAvailableBytes + reclaimableBytes)
     : null;
   const candidateBytes = positiveByteRequirement(autoCandidate?.requirements?.vramBytes);
-  const expertBytes =
-    profile.family !== 'Qwen Image'
-      ? null
-      : form.autoOffload
-        ? 10 * GIB
-        : form.quantizationMode === QWEN_LOW_VRAM_QUANTIZATION_MODE
-          ? 24 * GIB
-          : 80 * GIB;
+  const policy = expertCudaPolicyForForm(form);
+  const quantizedResidentBytes = policy?.quantized_resident_vram_bytes.find(
+    ([mode]) => mode === form.quantizationMode,
+  )?.[1];
+  const expertBytes = policy
+    ? form.autoOffload
+      ? policy.offloaded_vram_bytes
+      : (quantizedResidentBytes ?? policy.resident_vram_bytes)
+    : null;
   const requiredBytes = candidateBytes ?? expertBytes;
   if (!availableBytes || !requiredBytes || requiredBytes < availableBytes) return null;
 
@@ -387,6 +388,18 @@ function isQwenQuantizedLowVram(form: StudioFormState) {
 function readinessExecutionSpec(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
   const nodeStore = useNodesStore.getState();
   return exactStudioExecutionSpecForForm(nodeStore.studioModelCapabilities, nodeStore.studioExecutionSpecInvalid, form);
+}
+
+function expertCudaPolicyForForm(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
+  const spec = readinessExecutionSpec(form);
+  if (!spec) return null;
+  const capability = useNodesStore.getState().studioModelCapabilities.find((item) => item.modelType === form.modelType);
+  const matches =
+    capability?.executionProfiles?.filter(
+      (profile) => profile.id === spec.executionProfileId && profile.modes.includes(form.mode),
+    ) ?? [];
+  const [match] = matches;
+  return matches.length === 1 ? (match?.expert_cuda_policy ?? null) : null;
 }
 
 function expectedLoaderNodeKey(form: StudioFormState) {
@@ -430,26 +443,27 @@ export function getStudioCudaCapacityIssue(
   const resolvedForm = resolveStudioResourceForm(form);
   if (resolvedForm.resourceMode !== 'expert') return null;
   const profile = getProfileForForm(resolvedForm);
-  if (profile.family !== 'Qwen Image' || cudaIndexFromDevice(resolvedForm.device) === null) return null;
+  const policy = expertCudaPolicyForForm(resolvedForm);
+  if (!policy || cudaIndexFromDevice(resolvedForm.device) === null) return null;
 
   const modelName = getStudioModelDisplayName(profile);
   const totalBytes = cudaTotalBytes(status, resolvedForm.device);
-  if (resolvedForm.resourceMode === 'expert' && resolvedForm.dtype === 'float32') {
+  if (policy.blocked_dtypes.includes(resolvedForm.dtype)) {
     return {
       category: 'hardware_fit',
       severity: 'error',
       blocking: true,
       action: 'apply_low_vram_preset',
-      message: `${modelName} needs bfloat16 before running on CUDA.`,
-      details: `${modelName} is memory-heavy in Diffusers. Use Auto for a hardware-aware recipe, or keep Expert on bfloat16 with offload enabled.`,
+      message: `${modelName} needs ${policy.recommended_dtype} before running on CUDA.`,
+      details: `${modelName} is memory-heavy in Diffusers. Use Auto for a hardware-aware recipe, or keep Expert on ${policy.recommended_dtype} with offload enabled.`,
     } satisfies Omit<RunReadinessIssue, 'id'>;
   }
 
-  const hasSafeResidentBudget =
-    Boolean(totalBytes) &&
-    ((resolvedForm.quantizationMode === 'bnb_4bit' && totalBytes! >= 24 * GIB) ||
-      (resolvedForm.quantizationMode === 'none' && totalBytes! >= 80 * GIB));
-  if (resolvedForm.resourceMode === 'expert' && !resolvedForm.autoOffload && !hasSafeResidentBudget) {
+  const residentBytes =
+    policy.quantized_resident_vram_bytes.find(([mode]) => mode === resolvedForm.quantizationMode)?.[1] ??
+    policy.resident_vram_bytes;
+  const hasSafeResidentBudget = Boolean(totalBytes) && totalBytes! >= residentBytes;
+  if (!resolvedForm.autoOffload && !hasSafeResidentBudget) {
     return {
       category: 'hardware_fit',
       severity: 'error',

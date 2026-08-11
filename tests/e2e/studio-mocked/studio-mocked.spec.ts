@@ -534,6 +534,14 @@ function mockZImageExecutionCapability() {
 }
 
 function mockQwenImageExecutionCapability() {
+  const expertCudaPolicy = {
+    schema_version: 1,
+    blocked_dtypes: ['float32'],
+    recommended_dtype: 'bfloat16',
+    offloaded_vram_bytes: 10 * 1024 ** 3,
+    resident_vram_bytes: 80 * 1024 ** 3,
+    quantized_resident_vram_bytes: [['bnb_4bit', 24 * 1024 ** 3]],
+  };
   const base = mockFluxExecutionCapability('FluxSchnellPipeline');
   const spec = {
     ...base.studioExecutionSpecs[0],
@@ -633,6 +641,7 @@ function mockQwenImageExecutionCapability() {
         retry_offload_modes: ['model_cpu', 'sequential_cpu', 'group_disk'],
         max_low_memory_side: 1328,
         max_low_memory_steps: 50,
+        expert_cuda_policy: expertCudaPolicy,
       },
       {
         id: controlSpec.executionProfileId,
@@ -650,6 +659,7 @@ function mockQwenImageExecutionCapability() {
         retry_offload_modes: ['group_disk'],
         max_low_memory_side: 768,
         max_low_memory_steps: 28,
+        expert_cuda_policy: expertCudaPolicy,
       },
     ],
     studioExecutionSpecModes: ['control_image', 'text_to_image'],
@@ -7454,6 +7464,48 @@ test('mocked Studio blocks Expert Modular Qwen run while prompt embeddings are s
   await expect(page.getByTestId('studio-graph-finalization')).toContainText(/prompt embeddings/i, {
     timeout: 30_000,
   });
+});
+
+test('mocked Studio consumes the exact execution-profile Expert CUDA policy', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
+  mockIncludeQuantizationNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const capability = mockQwenImageExecutionCapability();
+  capability.executionProfiles[0].expert_cuda_policy = {
+    ...capability.executionProfiles[0].expert_cuda_policy,
+    blocked_dtypes: ['float16'],
+  };
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, capabilities: [capability] }),
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      resourceMode: 'expert',
+      quantizationMode: 'bnb_4bit',
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: 'model_cpu',
+      device: 'cuda:0',
+    });
+  });
+  await setStudioViewMode(page, 'expert');
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('needs bfloat16 before running on CUDA', {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('studio-run')).toBeDisabled();
 });
 
 test('mocked Studio preserves the exact Qwen graph across Auto and Expert on a 16GB CUDA device', async ({ page }) => {
