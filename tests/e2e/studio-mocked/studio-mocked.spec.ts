@@ -510,6 +510,36 @@ function mockQwenEditInpaintExecutionCapability() {
     defaultRepo: 'Qwen/Qwen-Image-Edit',
     contentHash: 'studio-spec-v1-ac52abb3',
   };
+  const outpaintSpec = {
+    ...spec,
+    id: 'qwen-image-edit:outpaint:v1',
+    mode: 'outpaint',
+    roles: [
+      ...spec.roles.slice(0, 4),
+      ['qwenOutpaintCanvas', 'modules.DiffusersImage.OutpaintCanvas', -520, 300],
+      ...spec.roles.slice(5),
+    ],
+    edges: [
+      ...spec.edges.slice(0, 3),
+      ['loadImage', 'image', 'qwenOutpaintCanvas', 'image'],
+      ['qwenOutpaintCanvas', 'canvas', 'diffusersImageInpaint', 'image'],
+      ['qwenOutpaintCanvas', 'mask_image', 'diffusersImageInpaint', 'mask_image'],
+      spec.edges.at(-1),
+    ],
+    bindings: [
+      ...spec.bindings.filter(([role]) => role !== 'loadMask'),
+      ['qwenOutpaintCanvas', 'width', 'width'],
+      ['qwenOutpaintCanvas', 'height', 'height'],
+      ['qwenOutpaintCanvas', 'left', 'outpaintLeft'],
+      ['qwenOutpaintCanvas', 'right', 'outpaintRight'],
+      ['qwenOutpaintCanvas', 'top', 'outpaintTop'],
+      ['qwenOutpaintCanvas', 'bottom', 'outpaintBottom'],
+      ['qwenOutpaintCanvas', 'overlap', 'outpaintOverlap'],
+      ['qwenOutpaintCanvas', 'feather', 'outpaintFeather'],
+      ['qwenOutpaintCanvas', 'fill_color', 'outpaintFillColor'],
+    ],
+    contentHash: 'studio-spec-v1-4ffd900b',
+  };
   return {
     ...base,
     modelType: spec.modelType,
@@ -541,8 +571,8 @@ function mockQwenEditInpaintExecutionCapability() {
         default_quantized_components: ['transformer', 'text_encoder'],
       },
     ],
-    studioExecutionSpecModes: [spec.mode],
-    studioExecutionSpecs: [spec],
+    studioExecutionSpecModes: [spec.mode, outpaintSpec.mode],
+    studioExecutionSpecs: [spec, outpaintSpec],
   };
 }
 
@@ -7842,11 +7872,55 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   expect(qwenInpaint.referenceStrength).toBe(0.72);
 
   const qwenOutpaint = await page.evaluate(async () => {
-    window.__MODIFF_E2E__!.setStudioFormForTest({ mode: 'outpaint' });
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'outpaint',
+      referenceImages: ['@data/images/qwen-outpaint-source.png'],
+      outpaintLeft: 288,
+      outpaintRight: 192,
+      outpaintTop: 16,
+      outpaintBottom: 32,
+      outpaintOverlap: 24,
+      outpaintFeather: 8,
+      outpaintFillColor: 'black',
+    });
     await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
-    return window.__MODIFF_E2E__!.getState().studio.graphBinding?.executionSpec;
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      nodes: binding.nodes,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      sourceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadImage)?.params?.file?.value,
+      canvas: state.flow.nodes.find((node) => node.id === binding.nodes.qwenOutpaintCanvas)?.params,
+    };
   });
-  expect(qwenOutpaint).toBeUndefined();
+  expect(qwenOutpaint.receipt).toEqual({
+    schemaVersion: 1,
+    id: 'qwen-image-edit:outpaint:v1',
+    contentHash: 'studio-spec-v1-4ffd900b',
+    executionProfileId: 'qwen-edit:direct-inpaint',
+  });
+  expect(qwenOutpaint.nodes.loadImage).toBeTruthy();
+  expect(qwenOutpaint.nodes.loadMask).toBeUndefined();
+  expect(qwenOutpaint.nodes.qwenOutpaintCanvas).toBeTruthy();
+  expect(qwenOutpaint.nodes.diffusersImageInpaint).toBeTruthy();
+  expect(qwenOutpaint.edgeShape).toEqual([
+    'canvas>image',
+    'execution_recipe>execution_recipe',
+    'image>image',
+    'images>image',
+    'mask_image>mask_image',
+    'pipeline>pipeline',
+    'quantization_config>quantization_config',
+  ]);
+  expect(qwenOutpaint.sourceFile).toEqual(['@data/images/qwen-outpaint-source.png']);
+  expect(qwenOutpaint.canvas?.left?.value).toBe(288);
+  expect(qwenOutpaint.canvas?.right?.value).toBe(192);
+  expect(qwenOutpaint.canvas?.top?.value).toBe(16);
+  expect(qwenOutpaint.canvas?.bottom?.value).toBe(32);
+  expect(qwenOutpaint.canvas?.overlap?.value).toBe(24);
+  expect(qwenOutpaint.canvas?.feather?.value).toBe(8);
+  expect(qwenOutpaint.canvas?.fill_color?.value).toBe('black');
 
   const ti2v = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

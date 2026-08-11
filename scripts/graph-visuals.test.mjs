@@ -1388,6 +1388,42 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     defaultRepo: 'Qwen/Qwen-Image-Edit',
     contentHash: 'studio-spec-v1-ac52abb3',
   };
+  const qwenOutpaintRoleRows = [
+    ...roleRows.slice(0, 3),
+    ['loadImage', 'modules.Image.Load', -520, 300],
+    ['qwenOutpaintCanvas', 'modules.DiffusersImage.OutpaintCanvas', -520, 300],
+    ['diffusersImageInpaint', 'modules.DiffusersImage.Inpaint', -120, -80],
+    roleRows[4],
+  ];
+  const qwenOutpaintEdgeRows = [
+    ...edgeRows.slice(0, 2),
+    ['diffusersImagePipeline', 'pipeline', 'diffusersImageInpaint', 'pipeline'],
+    ['loadImage', 'image', 'qwenOutpaintCanvas', 'image'],
+    ['qwenOutpaintCanvas', 'canvas', 'diffusersImageInpaint', 'image'],
+    ['qwenOutpaintCanvas', 'mask_image', 'diffusersImageInpaint', 'mask_image'],
+    ['diffusersImageInpaint', 'images', 'preview', 'image'],
+  ];
+  const qwenOutpaintBindingRows = [
+    ...inpaintBindingRows.filter(([role]) => role !== 'loadMask'),
+    ['qwenOutpaintCanvas', 'width', 'width'],
+    ['qwenOutpaintCanvas', 'height', 'height'],
+    ['qwenOutpaintCanvas', 'left', 'outpaintLeft'],
+    ['qwenOutpaintCanvas', 'right', 'outpaintRight'],
+    ['qwenOutpaintCanvas', 'top', 'outpaintTop'],
+    ['qwenOutpaintCanvas', 'bottom', 'outpaintBottom'],
+    ['qwenOutpaintCanvas', 'overlap', 'outpaintOverlap'],
+    ['qwenOutpaintCanvas', 'feather', 'outpaintFeather'],
+    ['qwenOutpaintCanvas', 'fill_color', 'outpaintFillColor'],
+  ];
+  const qwenOutpaintSpec = {
+    ...qwenInpaintSpec,
+    id: 'qwen-image-edit:outpaint:v1',
+    mode: 'outpaint',
+    roles: qwenOutpaintRoleRows,
+    edges: qwenOutpaintEdgeRows,
+    bindings: qwenOutpaintBindingRows,
+    contentHash: 'studio-spec-v1-4ffd900b',
+  };
   const videoRoleRows = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
     ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
@@ -1886,6 +1922,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         default_quantized_components: ['transformer', 'text_encoder'],
       },
     ],
+    studioExecutionSpecModes: ['inpaint', 'outpaint'],
+    studioExecutionSpecs: [qwenInpaintSpec, qwenOutpaintSpec],
   };
   const kleinCapability = {
     ...capability(kleinSpec),
@@ -1922,6 +1960,9 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...inpaintRoleRows.filter(
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows].some(([id]) => id === role),
     ),
+    ...qwenOutpaintRoleRows.filter(
+      ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...inpaintRoleRows].some(([id]) => id === role),
+    ),
     ...videoRoleRows.filter(([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows].some(([id]) => id === role)),
     ...i2vRoleRows.filter(
       ([role]) => ![...roleRows, ...depthRoleRows, ...editRoleRows, ...videoRoleRows].some(([id]) => id === role),
@@ -1948,6 +1989,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...i2vBindingRows,
     ...wanVaceInpaintBindingRows,
     ...wanVaceControlBindingRows,
+    ...qwenOutpaintBindingRows,
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
@@ -1962,6 +2004,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...i2vEdgeRows,
     ...wanVaceInpaintEdgeRows,
     ...wanVaceControlEdgeRows,
+    ...qwenOutpaintEdgeRows,
     ...audioEdgeRows,
     ...audioContinuationEdgeRows,
   ]) {
@@ -1969,6 +2012,11 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
     paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
   }
+  paramsByRole.qwenOutpaintCanvas.image = { type: 'image', display: 'input' };
+  paramsByRole.qwenOutpaintCanvas.canvas = { type: 'image', display: 'output' };
+  paramsByRole.qwenOutpaintCanvas.mask_image = { type: 'image', display: 'output' };
+  paramsByRole.diffusersImageInpaint.image = { type: 'image', display: 'input' };
+  paramsByRole.diffusersImageInpaint.mask_image = { type: 'image', display: 'input' };
   paramsByRole.loadVideo.file = scalar();
   paramsByRole.normalizeVideo.width = scalar();
   paramsByRole.normalizeVideo.height = scalar();
@@ -2423,6 +2471,41 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.deepEqual(topology(fillOutpaintBinding), topology(fillBinding));
     assert.ok(fillOutpaintBinding.nodes.diffusersImageInpaint);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(fillOutpaintForm), null);
+
+    const qwenOutpaintForm = {
+      ...qwenInpaintForm,
+      mode: 'outpaint',
+      referenceImages: ['qwen-outpaint-source.png'],
+      outpaintLeft: 288,
+      outpaintRight: 192,
+      outpaintTop: 16,
+      outpaintBottom: 32,
+      outpaintOverlap: 24,
+      outpaintFeather: 8,
+      outpaintFillColor: 'black',
+    };
+    studioStoreModule.useStudioStore.setState({ form: qwenOutpaintForm });
+    await graphBridge.createOrUpdateStudioGraph(qwenOutpaintForm);
+    const qwenOutpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenOutpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const qwenCanvas = qwenOutpaintNodes.find((item) => item.id === qwenOutpaintBinding.nodes.qwenOutpaintCanvas).data
+      .params;
+    assert.equal(qwenOutpaintBinding.executionSpec.id, qwenOutpaintSpec.id);
+    assert.equal(qwenOutpaintBinding.executionSpec.contentHash, qwenOutpaintSpec.contentHash);
+    assert.equal(qwenOutpaintBinding.nodes.loadMask, undefined);
+    assert.deepEqual(topology(qwenOutpaintBinding), qwenOutpaintEdgeRows.map((row) => [...row]).sort());
+    assert.deepEqual(
+      qwenOutpaintNodes.find((item) => item.id === qwenOutpaintBinding.nodes.loadImage).data.params.file.value,
+      qwenOutpaintForm.referenceImages,
+    );
+    assert.equal(qwenCanvas.left.value, 288);
+    assert.equal(qwenCanvas.right.value, 192);
+    assert.equal(qwenCanvas.top.value, 16);
+    assert.equal(qwenCanvas.bottom.value, 32);
+    assert.equal(qwenCanvas.overlap.value, 24);
+    assert.equal(qwenCanvas.feather.value, 8);
+    assert.equal(qwenCanvas.fill_color.value, 'black');
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenOutpaintForm), null);
 
     const i2vForm = {
       ...baseForm,
