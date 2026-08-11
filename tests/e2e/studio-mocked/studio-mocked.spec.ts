@@ -934,7 +934,12 @@ function mockWanVaceT2vExecutionCapability() {
     executionPath: 'direct-wan-vace',
     pipelineClass: 'WanVACEPipeline',
     defaultRepo: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
-    contentHash: 'studio-spec-v1-b4b251f0',
+    bindings: base.studioExecutionSpecs[0].bindings.map(([role, param, source]) =>
+      role === 'wanPipeline' && param === 'revision'
+        ? ([role, param, 'wanVaceRevision'] as const)
+        : [role, param, source],
+    ),
+    contentHash: 'studio-spec-v1-4a34e319',
   };
   const modes = ['text_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'];
   return {
@@ -7881,6 +7886,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
       pipelineClass: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params?.pipeline_class
         ?.value,
       modelId: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params?.model_id?.value,
+      revision: state.flow.nodes.find((node) => node.id === binding.nodes.wanPipeline)?.params?.revision?.value,
       mode: state.flow.nodes.find((node) => node.id === binding.nodes.wanGenerate)?.params?.mode?.value,
     };
   });
@@ -7888,12 +7894,13 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     receipt: {
       schemaVersion: 1,
       id: 'wan-vace-1.3b:text-to-video:v1',
-      contentHash: 'studio-spec-v1-b4b251f0',
+      contentHash: 'studio-spec-v1-4a34e319',
       executionProfileId: 'wan-vace:direct',
     },
     edgeShape: ti2v.edgeShape,
     pipelineClass: 'WanVACEPipeline',
     modelId: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+    revision: 'ec4d2cb062b548996b179d493fdd05340de702a1',
     mode: 'text_to_video',
   });
 

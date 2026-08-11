@@ -1477,7 +1477,12 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     executionPath: 'direct-wan-vace',
     pipelineClass: 'WanVACEPipeline',
     defaultRepo: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
-    contentHash: 'studio-spec-v1-b4b251f0',
+    bindings: wanT2vSpec.bindings.map(([role, param, source]) => [
+      role,
+      param,
+      role === 'wanPipeline' && param === 'revision' ? 'wanVaceRevision' : source,
+    ]),
+    contentHash: 'studio-spec-v1-4a34e319',
   };
   const wanV2vRoleRows = [
     ...videoRoleRows,
@@ -2487,6 +2492,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(
       wanVaceT2vNodes.find((item) => item.id === wanVaceT2vBinding.nodes.wanPipeline).data.params.model_id.value.value,
       'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+    );
+    assert.equal(
+      wanVaceT2vNodes.find((item) => item.id === wanVaceT2vBinding.nodes.wanPipeline).data.params.revision.value,
+      'ec4d2cb062b548996b179d493fdd05340de702a1',
     );
     assert.equal(
       wanVaceT2vNodes.find((item) => item.id === wanVaceT2vBinding.nodes.wanGenerate).data.params.mode.value,
