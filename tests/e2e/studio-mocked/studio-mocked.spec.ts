@@ -12657,9 +12657,7 @@ test('registry-late field actions initialize once and live contract changes canc
   expect(requests.filter((request) => request.values?.repository?.value === pendingRepository)).toHaveLength(0);
 });
 
-test('Modular guider signals narrow single-select options and relay the reviewed pipeline identity', async ({
-  page,
-}) => {
+test('Modular guider and scheduler signals narrow options for the reviewed pipeline identity', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
 
@@ -12683,6 +12681,27 @@ test('Modular guider signals narrow single-select options and relay the reviewed
     QwenImageLayeredModularPipeline: allGuiders,
     ZImageModularPipeline: nonLayerGuiders,
   };
+  const compatibleSchedulers = [
+    'DDIMScheduler',
+    'DDPMScheduler',
+    'DEISMultistepScheduler',
+    'DPMSolverMultistepScheduler',
+    'DPMSolverSinglestepScheduler',
+    'DPMSolverSDEScheduler',
+    'EulerDiscreteScheduler',
+    'EulerAncestralDiscreteScheduler',
+    'HeunDiscreteScheduler',
+    'KDPM2DiscreteScheduler',
+    'KDPM2AncestralDiscreteScheduler',
+    'LMSDiscreteScheduler',
+    'PNDMScheduler',
+    'UniPCMultistepScheduler',
+  ];
+  const schedulerOptions = {
+    StableDiffusionXLModularPipeline: compatibleSchedulers,
+    WanModularPipeline: compatibleSchedulers,
+    WanImage2VideoModularPipeline: compatibleSchedulers,
+  };
   await page.route('**/nodes**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -12696,6 +12715,11 @@ test('Modular guider signals narrow single-select options and relay the reviewed
               type: 'diffusers_auto_model',
               display: 'output',
               signal: { direction: 'output', value: 'QwenImageLayeredModularPipeline' },
+            },
+            scheduler_model: {
+              type: 'diffusers_auto_model',
+              display: 'output',
+              signal: { direction: 'output', value: 'StableDiffusionXLModularPipeline' },
             },
           }),
           'modules.Contract.GuiderSignalRelay': nodeDef('modules.Contract', 'GuiderSignalRelay', 'test', {
@@ -12726,6 +12750,20 @@ test('Modular guider signals narrow single-select options and relay the reviewed
           'modules.ModularDiffusers.Layers': nodeDef('modules.ModularDiffusers', 'Layers', 'sampler', {
             layers_config: { type: 'layers_config', display: 'output' },
           }),
+          'modules.ModularDiffusers.Scheduler': nodeDef('modules.ModularDiffusers', 'Scheduler', 'sampler', {
+            scheduler_in: {
+              type: 'diffusers_auto_model',
+              display: 'input',
+              onSignal: { action: 'value', target: 'scheduler', prop: 'options', data: schedulerOptions },
+            },
+            scheduler: {
+              type: 'string',
+              display: 'select',
+              value: 'EulerDiscreteScheduler',
+              options: compatibleSchedulers,
+            },
+            scheduler_out: { type: 'diffusers_scheduler', display: 'output' },
+          }),
         },
       }),
     });
@@ -12743,6 +12781,7 @@ test('Modular guider signals narrow single-select options and relay the reviewed
     const relay = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Contract.GuiderSignalRelay');
     const guider = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.Guider');
     const layers = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.Layers');
+    const scheduler = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.Scheduler');
     window.__MODIFF_E2E__!.connectGraph({
       source: guider,
       sourceHandle: 'guider_out',
@@ -12761,25 +12800,36 @@ test('Modular guider signals narrow single-select options and relay the reviewed
       target: relay,
       targetHandle: 'model',
     });
-    return { source, guider, layers };
+    window.__MODIFF_E2E__!.connectGraph({
+      source,
+      sourceHandle: 'scheduler_model',
+      target: scheduler,
+      targetHandle: 'scheduler_in',
+    });
+    return { source, guider, layers, scheduler };
   });
 
   const contractState = () =>
-    page.evaluate(({ guider, layers }) => {
+    page.evaluate(({ guider, layers, scheduler }) => {
       const nodes = window.__MODIFF_E2E__!.getState().flow.nodes;
       const guiderNode = nodes.find((node) => node.id === guider)!;
       const layersNode = nodes.find((node) => node.id === layers)!;
+      const schedulerNode = nodes.find((node) => node.id === scheduler)!;
       return {
-        options: guiderNode.params.guider.options,
-        value: guiderNode.params.guider.value,
+        guiderOptions: guiderNode.params.guider.options,
+        guiderValue: guiderNode.params.guider.value,
         layersSignal: layersNode.params.layers_config.signal?.value,
+        schedulerOptions: schedulerNode.params.scheduler.options,
+        schedulerValue: schedulerNode.params.scheduler.value,
       };
     }, ids);
 
   await expect.poll(contractState).toEqual({
-    options: allGuiders,
-    value: 'SkipLayerGuidance',
+    guiderOptions: allGuiders,
+    guiderValue: 'SkipLayerGuidance',
     layersSignal: 'QwenImageLayeredModularPipeline',
+    schedulerOptions: compatibleSchedulers,
+    schedulerValue: 'EulerDiscreteScheduler',
   });
 
   await page.evaluate(({ source }) => {
@@ -12791,9 +12841,27 @@ test('Modular guider signals narrow single-select options and relay the reviewed
     });
   }, ids);
   await expect.poll(contractState).toEqual({
-    options: nonLayerGuiders,
-    value: '',
+    guiderOptions: nonLayerGuiders,
+    guiderValue: '',
     layersSignal: 'ZImageModularPipeline',
+    schedulerOptions: compatibleSchedulers,
+    schedulerValue: 'EulerDiscreteScheduler',
+  });
+
+  await page.evaluate(({ source }) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'set_field_params',
+      node: source,
+      field: 'scheduler_model',
+      params: { signal: { direction: 'output', value: 'QwenImageModularPipeline' } },
+    });
+  }, ids);
+  await expect.poll(contractState).toEqual({
+    guiderOptions: nonLayerGuiders,
+    guiderValue: '',
+    layersSignal: 'ZImageModularPipeline',
+    schedulerOptions: undefined,
+    schedulerValue: '',
   });
 });
 
