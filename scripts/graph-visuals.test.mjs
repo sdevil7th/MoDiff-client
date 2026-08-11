@@ -1226,6 +1226,16 @@ test('backend execution specs materialize exact image and video recipes with sea
     'black-forest-labs/FLUX.1-Krea-dev',
     'studio-spec-v1-34a1abeb',
   );
+  const kleinSpec = {
+    ...makeSpec(
+      'Flux2KleinPipeline',
+      'flux2-klein:direct',
+      'black-forest-labs/FLUX.2-klein-4B',
+      'studio-spec-v1-e11dfdc6',
+    ),
+    id: 'flux2-klein:text-to-image:v1',
+    pipelineClass: 'Flux2KleinPipeline',
+  };
   const depthRoleRows = [
     ...roleRows.slice(0, 3),
     ['loadImage', 'modules.Image.Load', -520, 300],
@@ -1517,6 +1527,17 @@ test('backend execution specs materialize exact image and video recipes with sea
     studioExecutionSpecModes: ['inpaint', 'outpaint'],
     studioExecutionSpecs: [fillSpec, fillOutpaintSpec],
   };
+  const kleinCapability = {
+    ...capability(kleinSpec),
+    modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    runnableModes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    executionProfiles: [
+      {
+        ...profile(kleinSpec),
+        modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+      },
+    ],
+  };
   const scalar = (value = null) => ({ type: 'string', display: 'text', value });
   const registryRoleRows = [
     ...roleRows,
@@ -1604,6 +1625,7 @@ test('backend execution specs materialize exact image and video recipes with sea
         capability(schnellSpec),
         capability(devSpec),
         capability(kreaSpec),
+        kleinCapability,
         capability(depthSpec),
         capability(cannySpec),
         capability(reduxSpec),
@@ -1665,6 +1687,27 @@ test('backend execution specs materialize exact image and video recipes with sea
       kreaSpec.defaultRepo,
     );
 
+    const kleinForm = {
+      ...baseForm,
+      modelType: 'Flux2KleinPipeline',
+      steps: 4,
+      guidanceScale: 1,
+    };
+    studioStoreModule.useStudioStore.setState({ form: kleinForm });
+    await graphBridge.createOrUpdateStudioGraph(kleinForm);
+    const kleinBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.deepEqual(kleinBinding.nodes, schnellBinding.nodes);
+    assert.deepEqual(topology(kleinBinding), schnellTopology);
+    assert.equal(kleinBinding.executionSpec.id, kleinSpec.id);
+    assert.equal(kleinBinding.executionSpec.contentHash, kleinSpec.contentHash);
+    assert.equal(
+      flowStoreModule.useFlowStore
+        .getState()
+        .nodes.find((item) => item.id === kleinBinding.nodes.diffusersImagePipeline).data.params.pipeline_class.value,
+      'Flux2KleinPipeline',
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(kleinForm), null);
+
     const devForm = { ...baseForm, modelType: 'FluxDevPipeline', steps: 20, guidanceScale: 3.5 };
     studioStoreModule.useStudioStore.setState({ form: devForm });
     await graphBridge.createOrUpdateStudioGraph(devForm);
@@ -1724,6 +1767,25 @@ test('backend execution specs materialize exact image and video recipes with sea
       'undeclared candidate generation data cannot override form input',
     );
     assert.equal(autoGenerate.width.value, autoForm.width);
+
+    const kleinEditForm = {
+      ...kleinForm,
+      mode: 'edit_image',
+      referenceImages: ['@data/images/klein-edit.png'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: kleinEditForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(kleinEditForm);
+    const kleinEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    assert.equal(kleinEditBinding.executionSpec, undefined);
+    assert.ok(kleinEditBinding.nodes.loadImage);
+    assert.ok(kleinEditBinding.nodes.diffusersImageEdit);
+    assert.equal(
+      flowStoreModule.useFlowStore
+        .getState()
+        .nodes.find((item) => item.id === kleinEditBinding.nodes.diffusersImagePipeline).data.params.pipeline_class
+        .value,
+      'Flux2KleinPipeline',
+    );
 
     const depthForm = {
       ...baseForm,
