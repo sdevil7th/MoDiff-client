@@ -911,6 +911,33 @@ function mockLtxT2vExecutionCapability() {
     bindings: [...spec.bindings, ['loadImage', 'file', 'referenceImages'], ['loadImage', 'alpha_channel', 'alphaMode']],
     contentHash: 'studio-spec-v1-71f17ad0',
   };
+  const videoSpec = {
+    ...spec,
+    id: 'ltx-video-0.9.8-13b-distilled:video-to-video:v1',
+    mode: 'video_to_video',
+    roles: [
+      ...spec.roles,
+      ['loadVideo', 'modules.Video.Load', -520, 260],
+      ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
+    ],
+    edges: [
+      ...spec.edges,
+      ['loadVideo', 'video', 'normalizeVideo', 'video'],
+      ['normalizeVideo', 'output', 'wanGenerate', 'video'],
+    ],
+    bindings: [
+      ...spec.bindings.map(([role, param, source]) => [
+        role,
+        param,
+        role === 'wanGenerate' && param === 'strength' ? 'conditioningScale' : source,
+      ]),
+      ['loadVideo', 'file', 'sourceVideo'],
+      ['normalizeVideo', 'width', 'width'],
+      ['normalizeVideo', 'height', 'height'],
+      ['normalizeVideo', 'num_frames', 'numFrames'],
+    ],
+    contentHash: 'studio-spec-v1-ad97d224',
+  };
   return {
     ...base,
     modelType: spec.modelType,
@@ -928,8 +955,8 @@ function mockLtxT2vExecutionCapability() {
         quantizable_components: ['transformer', 'text_encoder'],
       },
     ],
-    studioExecutionSpecModes: [imageSpec.mode, spec.mode],
-    studioExecutionSpecs: [spec, imageSpec],
+    studioExecutionSpecModes: [imageSpec.mode, spec.mode, videoSpec.mode],
+    studioExecutionSpecs: [spec, imageSpec, videoSpec],
   };
 }
 
@@ -7619,6 +7646,53 @@ test('backend Studio execution specs materialize exact image and video recipes a
     ],
     imageFile: ['@data/images/ltx-opening.png'],
     alphaMode: 'remove alpha',
+    attentionBackend: '_native_math',
+    schedulerShift: 5,
+  });
+
+  const ltxVideo = await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'video_to_video',
+      sourceVideo: '@data/videos/ltx-source.mp4',
+      conditioningScale: 0.72,
+      strength: 0.31,
+      shift: 17,
+    });
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    return {
+      receipt: binding.executionSpec,
+      edgeShape: state.flow.edges.map((edge) => `${edge.sourceHandle}>${edge.targetHandle}`).toSorted(),
+      sourceFile: state.flow.nodes.find((node) => node.id === binding.nodes.loadVideo)?.params?.file?.value,
+      conditionStrength: state.flow.nodes.find((node) => node.id === binding.nodes.wanGenerate)?.params?.strength
+        ?.value,
+      denoiseStrength: state.flow.nodes.find((node) => node.id === binding.nodes.wanGenerate)?.params?.denoise_strength
+        ?.value,
+      attentionBackend: state.flow.nodes.find((node) => node.id === binding.nodes.diffusersRecipe)?.params
+        ?.attention_backend?.value,
+      schedulerShift: state.flow.nodes.find((node) => node.id === binding.nodes.wanGenerate)?.params
+        ?.scheduler_flow_shift?.value,
+    };
+  });
+  expect(ltxVideo).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'ltx-video-0.9.8-13b-distilled:video-to-video:v1',
+      contentHash: 'studio-spec-v1-ad97d224',
+      executionProfileId: 'ltx-video:direct',
+    },
+    edgeShape: [
+      'execution_recipe>execution_recipe',
+      'output>video',
+      'pipeline>pipeline',
+      'quantization_config>quantization_config',
+      'video>video',
+      'video_out>video',
+    ],
+    sourceFile: '@data/videos/ltx-source.mp4',
+    conditionStrength: 0.72,
+    denoiseStrength: 0.31,
     attentionBackend: '_native_math',
     schedulerShift: 5,
   });

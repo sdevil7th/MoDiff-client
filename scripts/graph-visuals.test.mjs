@@ -1563,6 +1563,25 @@ test('backend execution specs materialize exact image and video recipes with sea
     ],
     contentHash: 'studio-spec-v1-71f17ad0',
   };
+  const ltxVideoSpec = {
+    ...ltxSpec,
+    id: 'ltx-video-0.9.8-13b-distilled:video-to-video:v1',
+    mode: 'video_to_video',
+    roles: wanV2vRoleRows,
+    edges: wanV2vEdgeRows,
+    bindings: [
+      ...ltxBindingRows.map(([role, param, source]) => [
+        role,
+        param,
+        role === 'wanGenerate' && param === 'strength' ? 'conditioningScale' : source,
+      ]),
+      ['loadVideo', 'file', 'sourceVideo'],
+      ['normalizeVideo', 'width', 'width'],
+      ['normalizeVideo', 'height', 'height'],
+      ['normalizeVideo', 'num_frames', 'numFrames'],
+    ],
+    contentHash: 'studio-spec-v1-ad97d224',
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -1746,8 +1765,8 @@ test('backend execution specs materialize exact image and video recipes with sea
               quantizable_components: ['transformer', 'text_encoder'],
             },
           ],
-          studioExecutionSpecModes: ['image_to_video', 'text_to_video'],
-          studioExecutionSpecs: [ltxSpec, ltxImageSpec],
+          studioExecutionSpecModes: ['image_to_video', 'text_to_video', 'video_to_video'],
+          studioExecutionSpecs: [ltxSpec, ltxImageSpec, ltxVideoSpec],
         },
       ],
       studioModelCapabilitiesAuthoritative: true,
@@ -2266,6 +2285,27 @@ test('backend execution specs materialize exact image and video recipes with sea
       ltxImageNodes.find((item) => item.id === ltxImageBinding.nodes.diffusersRecipe).data.params.attention_backend
         .value,
       '_native_math',
+    );
+
+    const ltxVideoForm = {
+      ...ltxForm,
+      mode: 'video_to_video',
+      sourceVideo: '@data/videos/ltx-source.mp4',
+      conditioningScale: 0.72,
+      strength: 0.31,
+    };
+    studioStoreModule.useStudioStore.setState({ form: ltxVideoForm });
+    await graphBridge.createOrUpdateStudioGraph(ltxVideoForm);
+    const ltxVideoBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    const ltxVideoNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const ltxVideoGenerate = ltxVideoNodes.find((item) => item.id === ltxVideoBinding.nodes.wanGenerate).data.params;
+    assert.equal(ltxVideoBinding.executionSpec.id, ltxVideoSpec.id);
+    assert.equal(ltxVideoBinding.executionSpec.contentHash, ltxVideoSpec.contentHash);
+    assert.equal(ltxVideoGenerate.strength.value, ltxVideoForm.conditioningScale);
+    assert.equal(ltxVideoGenerate.denoise_strength.value, ltxVideoForm.strength);
+    assert.equal(
+      ltxVideoNodes.find((item) => item.id === ltxVideoBinding.nodes.loadVideo).data.params.file.value,
+      ltxVideoForm.sourceVideo,
     );
 
     const ltxReferenceForm = { ...ltxImageForm, mode: 'reference_to_video' };
