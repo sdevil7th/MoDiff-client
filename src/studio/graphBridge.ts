@@ -3116,6 +3116,8 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     artifact: audioTemplateBaseModel ?? spec.defaultRepo,
     pipelineClass: spec.pipelineClass,
     wanVaceRevision: WAN_VACE_REVISION,
+    maskThreshold127: 127,
+    inpaintMaskGrow96: 96,
     text2music: 'text2music',
     cover: 'cover',
     continuation: 'continuation',
