@@ -11,9 +11,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 const MAX_ENTRY_GZIP_BYTES = 438 * 1024;
 // Media contracts, task-template validation, and queue/workflow-ownership
 // guards are intentionally fail-closed. The reviewed production surface is
-// currently about 512.2 KiB; retain a sub-KiB ceiling so unrelated growth still
+// currently about 513.6 KiB after the P3.1 unconditional-image controls; retain
+// a sub-KiB ceiling so unrelated growth still
 // fails this gate.
-const MAX_TOTAL_GZIP_BYTES = 513 * 1024;
+const MAX_TOTAL_GZIP_BYTES = 514 * 1024;
 
 function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`;

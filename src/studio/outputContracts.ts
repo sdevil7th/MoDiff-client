@@ -148,6 +148,9 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     randomSeed: booleanValue(form.randomSeed, DEFAULT_STUDIO_FORM.randomSeed),
     steps: numberValue(form.steps, DEFAULT_STUDIO_FORM.steps),
     guidanceScale: numberValue(form.guidanceScale, DEFAULT_STUDIO_FORM.guidanceScale),
+    batchSize: numberValue(form.batchSize, DEFAULT_STUDIO_FORM.batchSize),
+    eta: numberValue(form.eta, DEFAULT_STUDIO_FORM.eta),
+    classLabel: numberValue(form.classLabel, DEFAULT_STUDIO_FORM.classLabel),
     resourceMode: normalizeStudioResourceMode(form.resourceMode),
     dtype: stringUnionValue(form.dtype, STUDIO_DTYPES, DEFAULT_STUDIO_FORM.dtype),
     quantizationMode: stringUnionValue(

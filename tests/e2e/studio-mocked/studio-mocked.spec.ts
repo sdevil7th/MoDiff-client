@@ -55,6 +55,9 @@ declare global {
             maskImage?: string;
             width?: number;
             height?: number;
+            batchSize?: number;
+            eta?: number;
+            classLabel?: number;
             outpaintLeft?: number;
             outpaintRight?: number;
             outpaintTop?: number;
@@ -219,7 +222,17 @@ declare global {
       selectFirstNodeByAction: (action: string) => boolean;
       selectNodesByAction: (actions: string[]) => number;
       setWebsocketConnection: (connection: { sid?: string | null; isConnected?: boolean }) => void;
-      setStudioFormForTest: (form: { mode?: string; modelType?: string; resourceMode?: string }) => void;
+      setStudioFormForTest: (form: {
+        mode?: string;
+        modelType?: string;
+        resourceMode?: string;
+        width?: number;
+        height?: number;
+        steps?: number;
+        batchSize?: number;
+        eta?: number;
+        classLabel?: number;
+      }) => void;
       bindManagedGraphForTest: (form: Record<string, unknown>, nodes: Record<string, string>) => boolean;
       startManagedGraphFinalizationForTest: () => Promise<void>;
       waitForManagedGraphFinalizationForTest: () => Promise<void>;
@@ -8336,6 +8349,56 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
       candidateSteps: 7,
     },
   });
+});
+
+test('unconditional image forms stay prompt-free and expose only adapter-specific sampling controls', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'unconditional_image',
+      modelType: 'DDPMPipeline',
+      width: 32,
+      height: 32,
+      steps: 1000,
+      batchSize: 1,
+    }),
+  );
+  await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Generation', exact: true }).click();
+  await expect(page.getByTestId('studio-unconditional-native-size')).toContainText('32×32');
+  await expect(page.getByLabel('Batch size')).toHaveValue('1');
+  await expect(page.getByText(/^Eta:/)).toHaveCount(0);
+  await expect(page.getByLabel('Class label (-1 is unconditional)')).toHaveCount(0);
+
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'DDIMPipeline',
+      eta: 0.25,
+    }),
+  );
+  await expect(page.getByText('Eta: 0.25', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Class label (-1 is unconditional)')).toHaveCount(0);
+
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      modelType: 'ConsistencyModelPipeline',
+      width: 64,
+      height: 64,
+      steps: 1,
+      classLabel: -1,
+    }),
+  );
+  await expect(page.getByTestId('studio-unconditional-native-size')).toContainText('64×64');
+  await expect(page.getByText(/^Eta:/)).toHaveCount(0);
+  await expect(page.getByLabel('Class label (-1 is unconditional)')).toHaveValue('-1');
 });
 
 test('backend Studio execution specs materialize exact image, video, and audio recipes and submit the sealed receipt', async ({

@@ -74,6 +74,8 @@ export const FLUX2_KLEIN_REPO = 'black-forest-labs/FLUX.2-klein-4B';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
+export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
+export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
 
 export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   id: 'qwen-controlnet-union',
@@ -163,9 +165,13 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'FLUX.1-Redux-dev',
   'FLUX.2-klein-4B',
   'Stable Diffusion XL 1.0',
+  'DDPM CIFAR-10 32x32',
+  'DDIM CIFAR-10 32x32',
+  'Consistency Model ImageNet 64x64',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
+  unconditional_image: 'Sample images without a text prompt from a compatible unconditional model.',
   text_to_image: 'Generate from a prompt with a compatible image model.',
   edit_image: 'Use one source image and a prompt to guide an edit.',
   multi_image_reference_edit: 'Blend multiple references into one guided edit.',
@@ -315,7 +321,10 @@ type StudioModelProfileSource = Omit<
   | 'offloadSupport'
 > &
   Partial<
-    Pick<StudioModelProfile, 'displayName' | 'artifactLabel' | 'guidanceLabel' | 'defaultSize' | 'offloadSupport'>
+    Pick<
+      StudioModelProfile,
+      'displayName' | 'artifactLabel' | 'defaultDtype' | 'guidanceLabel' | 'defaultSize' | 'offloadSupport'
+    >
   > & {
     supportFlags: number;
   };
@@ -980,6 +989,57 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  DDPMPipeline: {
+    family: 'DDPM',
+    surfaceCategory: 'Image',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: DDPM_CIFAR10_REPO,
+    artifactLabel: 'Unconditional image repo',
+    defaultDtype: 'float32',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 32, height: 32, aspectRatio: '1:1' },
+    offloadSupport: { modes: ['none', 'model_cpu'], default: 'none', lowVram: 'none', emergency: 'model_cpu' },
+    recommendedSteps: 1000,
+    recommendedGuidance: 0,
+    supportFlags: 0,
+    supportsNegativePrompt: false,
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1000, width: 32, height: 32 },
+    modes: ['unconditional_image'],
+  },
+  DDIMPipeline: {
+    family: 'DDIM',
+    surfaceCategory: 'Image',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: DDPM_CIFAR10_REPO,
+    artifactLabel: 'Unconditional image repo',
+    defaultDtype: 'float32',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 32, height: 32, aspectRatio: '1:1' },
+    offloadSupport: { modes: ['none', 'model_cpu'], default: 'none', lowVram: 'none', emergency: 'model_cpu' },
+    recommendedSteps: 50,
+    recommendedGuidance: 0,
+    supportFlags: 0,
+    supportsNegativePrompt: false,
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 50, width: 32, height: 32 },
+    modes: ['unconditional_image'],
+  },
+  ConsistencyModelPipeline: {
+    family: 'Consistency Models',
+    surfaceCategory: 'Image',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: CONSISTENCY_IMAGENET64_REPO,
+    artifactLabel: 'Unconditional image repo',
+    defaultDtype: 'float32',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 64, height: 64, aspectRatio: '1:1' },
+    offloadSupport: { modes: ['none', 'model_cpu'], default: 'none', lowVram: 'none', emergency: 'model_cpu' },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    supportFlags: 0,
+    supportsNegativePrompt: false,
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1, width: 64, height: 64 },
+    modes: ['unconditional_image'],
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 export const STUDIO_MODEL_PROFILES = Object.fromEntries(
@@ -1302,6 +1362,39 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Pinned graphs ready; output qualification pending.',
     manualOnlyReason: 'Live resource and Gallery qualification pending.',
   },
+  DDPMPipeline: {
+    modelType: 'DDPMPipeline',
+    supportedModes: ['unconditional_image'],
+    autoStatus: 'manual_only',
+    minimum: 'CPU with the pinned snapshot.',
+    recommended: 'Use the reviewed float32 profile.',
+    qualityDefaults: '32x32, 1000 steps, batch 1.',
+    artifacts: [DDPM_CIFAR10_REPO],
+    notes: 'Bounded local execution passed.',
+    manualOnlyReason: 'Remote output and Gallery qualification pending.',
+  },
+  DDIMPipeline: {
+    modelType: 'DDIMPipeline',
+    supportedModes: ['unconditional_image'],
+    autoStatus: 'manual_only',
+    minimum: 'CPU with the pinned snapshot.',
+    recommended: 'Use the reviewed float32 profile.',
+    qualityDefaults: '32x32, 50 steps, eta 0, batch 1.',
+    artifacts: [DDPM_CIFAR10_REPO],
+    notes: 'Bounded local execution passed.',
+    manualOnlyReason: 'Remote output and Gallery qualification pending.',
+  },
+  ConsistencyModelPipeline: {
+    modelType: 'ConsistencyModelPipeline',
+    supportedModes: ['unconditional_image'],
+    autoStatus: 'manual_only',
+    minimum: 'CPU with the pinned snapshot.',
+    recommended: 'Use the reviewed float32 profile.',
+    qualityDefaults: '64x64, one step, optional class, batch 1.',
+    artifacts: [CONSISTENCY_IMAGENET64_REPO],
+    notes: 'Bounded local execution passed.',
+    manualOnlyReason: 'Remote output and Gallery qualification pending.',
+  },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {
@@ -1341,6 +1434,9 @@ export const DEFAULT_STUDIO_FORM: StudioFormState = {
   randomSeed: true,
   steps: 8,
   guidanceScale: 1,
+  batchSize: 1,
+  eta: 0,
+  classLabel: -1,
   resourceMode: 'auto',
   dtype: 'bfloat16',
   quantizationMode: 'none',
@@ -1401,6 +1497,9 @@ export function isModelCompatibleWithMode(modelType: StudioModelType, mode: Stud
 }
 
 export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
+  if (mode === 'unconditional_image') {
+    return 'DDPMPipeline';
+  }
   if (VIDEO_STUDIO_MODES.includes(mode)) {
     return 'WanVACEPipeline';
   }

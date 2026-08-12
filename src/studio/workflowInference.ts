@@ -331,6 +331,8 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   }
 
   if (modelType.startsWith('Flux') || keys.has('modules.DiffusersImage.LoadPipeline')) {
+    if (roles.has('diffusersUnconditionalGenerate') || keys.has('modules.DiffusersImage.UnconditionalGenerate'))
+      return 'unconditional_image';
     if (roles.has('diffusersImageControl') || keys.has('modules.DiffusersImage.ControlGenerate'))
       return 'control_image';
     if (roles.has('diffusersImageInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
@@ -366,12 +368,15 @@ export function inferStudioFormFromWorkflow(
         'qwenGenerate',
         'qwenInpaint',
         'diffusersImageGenerate',
+        'diffusersUnconditionalGenerate',
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
         'audioGenerate',
       ].includes(String(node.data?.studioRole)) ||
-      ['EncodePrompt', 'Generate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(String(node.data?.action)),
+      ['EncodePrompt', 'Generate', 'UnconditionalGenerate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(
+        String(node.data?.action),
+      ),
   );
   const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
   const modelNode = findNode(
@@ -399,12 +404,13 @@ export function inferStudioFormFromWorkflow(
         'qwenGenerate',
         'qwenInpaint',
         'diffusersImageGenerate',
+        'diffusersUnconditionalGenerate',
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
         'audioGenerate',
       ].includes(String(node.data?.studioRole)) ||
-      ['Generate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(String(node.data?.action)),
+      ['Generate', 'UnconditionalGenerate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(String(node.data?.action)),
   );
   const outpaintNode = findNode(
     nodes,
@@ -464,6 +470,9 @@ export function inferStudioFormFromWorkflow(
       paramValue(sizeNode, ['true_cfg_scale', 'guidance_scale', 'guidance']),
       defaults.guidanceScale,
     ),
+    batchSize: numberValue(paramValue(sizeNode, ['batch_size']), defaults.batchSize),
+    eta: numberValue(paramValue(sizeNode, ['eta']), defaults.eta),
+    classLabel: numberValue(paramValue(sizeNode, ['class_label']), defaults.classLabel),
     resourceMode: normalizeStudioResourceMode(undefined),
     dtype: (stringValue(paramValue(modelNode, ['dtype'])) as StudioFormState['dtype']) || defaults.dtype,
     quantizationMode,

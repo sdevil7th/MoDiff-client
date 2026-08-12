@@ -6,6 +6,7 @@ import type {
 } from './optionalRuntimes';
 
 export type StudioMode =
+  | 'unconditional_image'
   | 'text_to_image'
   | 'edit_image'
   | 'multi_image_reference_edit'
@@ -30,6 +31,9 @@ export type StudioMode =
   | 'advanced_workflow';
 
 export type StudioModelType =
+  | 'DDPMPipeline'
+  | 'DDIMPipeline'
+  | 'ConsistencyModelPipeline'
   | 'ZImageModularPipeline'
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
@@ -368,6 +372,7 @@ export type StudioGraphRole =
   | 'videoExport'
   | 'diffusersImagePipeline'
   | 'diffusersImageGenerate'
+  | 'diffusersUnconditionalGenerate'
   | 'diffusersImageEdit'
   | 'diffusersImageInpaint'
   | 'diffusersImageControl'
@@ -585,6 +590,9 @@ export type StudioFormState = {
   randomSeed: boolean;
   steps: number;
   guidanceScale: number;
+  batchSize: number;
+  eta: number;
+  classLabel: number;
   resourceMode: StudioResourceMode;
   resourcePreference?: StudioResourcePreference;
   confirmedCommunityArtifact?: string;
@@ -752,7 +760,10 @@ export type StudioModelProfile = {
     | 'ACE Audio'
     | 'Stable Audio'
     | 'FLUX Image'
-    | 'Stable Diffusion XL';
+    | 'Stable Diffusion XL'
+    | 'DDPM'
+    | 'DDIM'
+    | 'Consistency Models';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
   runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';

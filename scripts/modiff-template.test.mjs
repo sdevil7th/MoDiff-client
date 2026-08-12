@@ -120,6 +120,33 @@ test('the managed Qwen ControlNet requirement carries its reviewed immutable com
   );
 });
 
+test('unconditional image profiles expose prompt-free native sampling defaults', () => {
+  assert.equal(profilesModule.getDefaultModelForMode('unconditional_image'), 'DDPMPipeline');
+  assert.deepEqual(profilesModule.getCompatibleModelsForMode('unconditional_image', { includeWorkflowOnly: true }), [
+    'DDPMPipeline',
+    'DDIMPipeline',
+    'ConsistencyModelPipeline',
+  ]);
+
+  const expected = {
+    DDPMPipeline: { repo: profilesModule.DDPM_CIFAR10_REPO, side: 32, steps: 1000 },
+    DDIMPipeline: { repo: profilesModule.DDPM_CIFAR10_REPO, side: 32, steps: 50 },
+    ConsistencyModelPipeline: { repo: profilesModule.CONSISTENCY_IMAGENET64_REPO, side: 64, steps: 1 },
+  };
+  for (const [modelType, contract] of Object.entries(expected)) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    const form = profilesModule.getFormDefaultsForMode('unconditional_image', modelType);
+    assert.equal(profile.defaultRepo, contract.repo);
+    assert.equal(profile.supportsNegativePrompt, false);
+    assert.equal(form.width, contract.side);
+    assert.equal(form.height, contract.side);
+    assert.equal(form.steps, contract.steps);
+    assert.equal(form.batchSize, 1);
+    assert.equal(form.eta, 0);
+    assert.equal(form.classLabel, -1);
+  }
+});
+
 test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
