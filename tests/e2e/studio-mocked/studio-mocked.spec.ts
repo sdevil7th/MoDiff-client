@@ -13710,6 +13710,76 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
   });
 });
 
+test('Expert renders backend-registered contract-only Modular image video and multimodal classes', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const contractOnlyModels = {
+    AnimaModularPipeline: 'Anima (Contract only)',
+    HeliosModularPipeline: 'Helios (Contract only)',
+    Cosmos3OmniModularPipeline: 'Cosmos 3 Omni (Contract only)',
+  };
+  const nodeKey = 'modules.Contract.ContractOnlyModelsLoader';
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          [nodeKey]: nodeDef('modules.Contract', 'ContractOnlyModelsLoader', 'loader', {
+            model_type: {
+              label: 'Model type',
+              type: 'string',
+              display: 'select',
+              value: '',
+              options: { '': '', ...contractOnlyModels },
+            },
+            contract_status: {
+              label: 'Execution status',
+              type: 'string',
+              value: 'Contract discovery only; no reviewed artifact or executable action contract.',
+              disabled: true,
+            },
+          }),
+        },
+      }),
+    });
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await setStudioViewMode(page, 'expert');
+  const nodeId = await page.evaluate((key) => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    return window.__MODIFF_E2E__!.addCustomNodeForTest(key);
+  }, nodeKey);
+
+  const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  await expect(node.getByText('Execution status', { exact: true })).toBeVisible();
+  await node.locator('[data-key="model_type"] button').click();
+  for (const label of Object.values(contractOnlyModels)) {
+    await expect(page.getByRole('option', { name: label, exact: true })).toBeVisible();
+  }
+  await page.getByRole('option', { name: contractOnlyModels.Cosmos3OmniModularPipeline, exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ nodeId }) => {
+          const graphNode = window.__MODIFF_E2E__!.getState().flow.nodes.find((item) => item.id === nodeId);
+          return graphNode?.params.model_type.value;
+        },
+        { nodeId },
+      ),
+    )
+    .toBe('Cosmos3OmniModularPipeline');
+});
+
 test('Diffusers audio contract signals update generic fields from the selected pipeline and mode', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
