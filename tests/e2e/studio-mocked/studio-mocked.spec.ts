@@ -13287,6 +13287,78 @@ test('custom pipeline repository review surfaces every actionable admission reco
   }
 });
 
+test('reviewed modular task contracts drive generic field visibility without pipeline-name inference', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const nodeKey = 'modules.Contract.ReviewedModularTasks';
+  const definition = nodeDef('modules.Contract', 'ReviewedModularTasks', 'test', {
+    workflow: {
+      label: 'Task',
+      type: 'string',
+      display: 'select',
+      value: 'text_to_image',
+      options: {
+        text_to_image: 'Text To Image',
+        image_to_image: 'Image To Image',
+      },
+      onChange: {
+        action: 'show',
+        data: {
+          text_to_image: ['prompt', 'out_images'],
+          image_to_image: ['prompt', 'image', 'strength', 'out_images'],
+        },
+      },
+    },
+    prompt: { label: 'Prompt', type: 'text', value: '' },
+    image: { label: 'Source image', type: 'image', display: 'input', hidden: true },
+    strength: { label: 'Strength', type: 'float', value: 0.75, hidden: true },
+    out_images: { label: 'Images', type: 'image', display: 'output' },
+  });
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ instance: 'mock', nodes: { ...mockRegistry, [nodeKey]: definition } }),
+    });
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const nodeId = await page.evaluate((key) => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    return window.__MODIFF_E2E__!.addCustomNodeForTest(key);
+  }, nodeKey);
+
+  const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  await expect(node.getByText('Task', { exact: true })).toBeVisible();
+  await expect(node.getByText('Prompt', { exact: true })).toBeVisible();
+  await expect(node.getByText('Source image', { exact: true })).not.toBeVisible();
+  await expect(node.getByText('Strength', { exact: true })).not.toBeVisible();
+
+  await node.locator('[data-key="workflow"] button').click();
+  await page.getByRole('option', { name: 'Image To Image', exact: true }).click();
+  await expect(node.getByText('Source image', { exact: true })).toBeVisible();
+  await expect(node.getByText('Strength', { exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ nodeId }) => {
+          const graphNode = window.__MODIFF_E2E__!.getState().flow.nodes.find((item) => item.id === nodeId);
+          return graphNode?.params.workflow.value;
+        },
+        { nodeId },
+      ),
+    )
+    .toBe('image_to_image');
+});
+
 test('registry-late field actions initialize once and live contract changes cancel pending model actions', async ({
   page,
 }) => {
