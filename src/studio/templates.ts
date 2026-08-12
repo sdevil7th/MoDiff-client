@@ -1241,6 +1241,10 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
     "Documentary still life on a field botanist's worn oak workbench beside a north-facing greenhouse window. Arrange an open linen specimen journal, three pressed ferns, brass magnifier, cotton gloves, and an unbranded amber bottle with accurate contact shadows. Eye-level 50 mm composition; soft overcast light from camera left; restrained timber bounce, paper fibers, leaf veins, glass reflections, and negative space. Keep it photographic and grounded, without people, labels, logos, or readable text.",
     'illustration, CGI, plastic materials, floating objects, duplicate tools, malformed leaves, illegible writing, logo, watermark, harsh glow, excessive blur',
   ],
+  [
+    'Relight the source workbench photo to blue hour. Preserve composition, camera, objects and scale; match reflections and contact shadows.',
+    'moved objects, duplicates, warped journal, floating bottle, wrong shadows, CGI',
+  ],
 ];
 
 const WAN_VIDEO_DEFORMITY_GUARD =
@@ -1493,6 +1497,32 @@ const QWEN_LOW_VRAM_TEMPLATE_SETTINGS: Partial<StudioTemplateLockedSettings> = {
   autoOffload: true,
   offloadMode: QWEN_LOW_VRAM_OFFLOAD_MODE,
 };
+
+function sdxlPlanningTemplate(edit: boolean): Omit<StudioTemplateSource, 'id'> {
+  const mode = edit ? 'edit_image' : 'text_to_image';
+  return {
+    label: `Stable Diffusion XL 1.0 — ${edit ? 'Edit' : 'Generate'}`,
+    mode,
+    modelType: 'StableDiffusionXLPipeline',
+    category: edit ? 'edit' : 'concept',
+    tags: [],
+    difficulty: 'blocked',
+    ...(edit ? { inputRequirements: { sourceImage: true } } : {}),
+    vramEstimate: 'Pending',
+    runtimeEstimate: 'Pending',
+    description: 'Pending',
+    presetId: 'quality',
+    example: {
+      ...example(edit ? 8602 : 8601, 'Qualification pending', {
+        ...(edit ? { strength: 0.65 } : { width: 1024, height: 1024 }),
+        steps: 30,
+        guidanceScale: 5,
+        resourceMode: 'expert',
+      }),
+      status: 'blocked',
+    },
+  };
+}
 
 const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
   {
@@ -3900,31 +3930,8 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       { steps: 40, guidanceScale: 4, resourceMode: 'auto' },
     ),
   },
-  {
-    id: 'sdxl_text_to_image',
-    label: 'Stable Diffusion XL 1.0 — Text to Image: Botanical Workbench',
-    mode: 'text_to_image',
-    modelType: 'StableDiffusionXLPipeline',
-    category: 'concept',
-    tags: ['sdxl', 'text to image', 'still life', 'planning'],
-    difficulty: 'blocked',
-    requiredBackendCapabilities: ['modules.DiffusersImage.LoadPipeline', 'modules.DiffusersImage.Generate'],
-    vramEstimate: 'Pending measurement; use Expert offload controls on constrained hardware',
-    runtimeEstimate: 'Paired-graph and pinned-revision qualification pending',
-    description: 'Planning-only SDXL base recipe; hidden from Gallery until remote output review.',
-    presetId: 'quality',
-    example: {
-      ...example(8601, 'Qualification pending', {
-        width: 1024,
-        height: 1024,
-        steps: 30,
-        guidanceScale: 5,
-        resourceMode: 'expert',
-      }),
-      status: 'blocked',
-      notes: 'The graph is ready; live output and public media review are pending.',
-    },
-  },
+  { id: 'sdxl_text_to_image', ...sdxlPlanningTemplate(false) },
+  { id: 'sdxl_image_to_image', ...sdxlPlanningTemplate(true) },
 ];
 
 function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number): StudioTemplate {

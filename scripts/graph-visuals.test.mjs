@@ -1337,6 +1337,16 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     edges: editEdgeRows,
     bindings: editBindingRows,
   };
+  const sdxlEditSpec = {
+    ...reduxSpec,
+    id: 'sdxl-base:edit-image:v1',
+    modelType: 'StableDiffusionXLPipeline',
+    executionProfileId: 'sdxl-base:img2img-direct',
+    pipelineClass: 'StableDiffusionXLImg2ImgPipeline',
+    defaultRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
+    bindings: [...editBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-sdxledit',
+  };
   const kontextSpec = {
     ...reduxSpec,
     id: 'flux-kontext:edit-image:v1',
@@ -2310,7 +2320,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       nodesRegistry: registry,
       studioModelCapabilities: [
         capability(schnellSpec),
-        { ...capability(sdxlSpec), revisionCandidates: [sdxlRevision] },
+        {
+          ...capability(sdxlSpec),
+          modes: ['text_to_image', 'edit_image'],
+          runnableModes: ['text_to_image', 'edit_image'],
+          executionProfiles: [profile(sdxlSpec), profile(sdxlEditSpec)],
+          studioExecutionSpecModes: ['edit_image', 'text_to_image'],
+          studioExecutionSpecs: [sdxlSpec, sdxlEditSpec],
+          revisionCandidates: [sdxlRevision],
+        },
         capability(devSpec),
         capability(kreaSpec),
         kleinCapability,
@@ -2523,6 +2541,29 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'undeclared candidate generation data cannot override form input',
     );
     assert.equal(autoGenerate.width.value, autoForm.width);
+
+    const sdxlEditForm = {
+      ...baseForm,
+      modelType: 'StableDiffusionXLPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/sdxl-source.png'],
+      steps: 30,
+      guidanceScale: 5,
+      strength: 0.65,
+    };
+    studioStoreModule.useStudioStore.setState({ form: sdxlEditForm });
+    await graphBridge.createOrUpdateStudioGraph(sdxlEditForm);
+    const sdxlEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const sdxlEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const sdxlEditPipeline = sdxlEditNodes.find((item) => item.id === sdxlEditBinding.nodes.diffusersImagePipeline);
+    assert.equal(sdxlEditBinding.executionSpec.id, sdxlEditSpec.id);
+    assert.equal(sdxlEditPipeline.data.params.pipeline_class.value, sdxlEditSpec.pipelineClass);
+    assert.equal(sdxlEditPipeline.data.params.revision.value, sdxlRevision);
+    assert.deepEqual(
+      sdxlEditNodes.find((item) => item.id === sdxlEditBinding.nodes.loadImage).data.params.file.value,
+      sdxlEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlEditForm), null);
 
     const kleinEditForm = {
       ...kleinForm,

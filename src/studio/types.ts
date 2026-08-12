@@ -164,7 +164,8 @@ export type StudioTemplateId =
   | 'ltx_video_animated_story'
   | 'ace_step_lyric_music_video'
   | 'qwen_edit_plus_single_image'
-  | 'sdxl_text_to_image';
+  | 'sdxl_text_to_image'
+  | 'sdxl_image_to_image';
 
 export type WorkspacePanelTab =
   'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints';

@@ -819,7 +819,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     defaultRepo: SDXL_BASE_REPO,
     recommendedSteps: 30,
     recommendedGuidance: 5,
-    supportFlags: 32,
+    supportFlags: 33,
     lowVram: {
       dtype: 'bfloat16',
       autoOffload: true,
@@ -828,7 +828,13 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       width: 768,
       height: 768,
     },
-    modes: ['text_to_image'],
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: {
+      edit_image: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one source image.',
+      },
+    },
   },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
@@ -1111,14 +1117,14 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   StableDiffusionXLPipeline: {
     modelType: 'StableDiffusionXLPipeline',
-    supportedModes: ['text_to_image'],
+    supportedModes: ['text_to_image', 'edit_image'],
     autoStatus: 'manual_only',
     minimum: 'Expert-only pending a measured runtime envelope for SDXL base.',
     recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
     qualityDefaults: '1024x1024, 30 steps, guidance 5.',
     artifacts: [SDXL_BASE_REPO],
-    notes: 'The graph and immutable artifact contract are ready; live output qualification is pending.',
-    manualOnlyReason: 'Stable Diffusion XL has not completed live resource and Gallery qualification.',
+    notes: 'Pinned graphs ready; output qualification pending.',
+    manualOnlyReason: 'Live resource and Gallery qualification pending.',
   },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
