@@ -13179,6 +13179,114 @@ test('generic text and model-source actions debounce queries and send the latest
   expect(requests.filter((request) => request.fieldKey === 'review' || request.fieldKey === 'refresh')).toHaveLength(0);
 });
 
+test('custom pipeline repository review surfaces every actionable admission recovery without legacy naming', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+
+  const nodeKey = 'modules.Contract.CustomPipelineAdmission';
+  const definition = nodeDef('modules.Contract', 'CustomPipelineAdmission', 'test', {
+    repository: {
+      label: 'Repository',
+      type: 'string',
+      display: 'modelselect',
+      value: { source: 'hub', value: '' },
+      fieldOptions: { noValidation: true, sources: ['hub'] },
+      onChange: 'review_pipeline',
+    },
+    revision: {
+      label: 'Immutable revision',
+      type: 'string',
+      value: 'a'.repeat(40),
+    },
+    modiff_pipeline_identity: { type: 'object', value: null, hidden: true },
+  });
+  await page.route('**/nodes**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ instance: 'mock', nodes: { ...mockRegistry, [nodeKey]: definition } }),
+    });
+  });
+
+  const failures = [
+    {
+      repository: 'fixture/missing-sidecar',
+      code: 'custom_pipeline_sidecar_missing',
+      message: 'The declarative sidecar is missing.',
+      recovery: 'Add modiff_pipeline_config.json at the exact revision.',
+    },
+    {
+      repository: 'fixture/unpinned-auxiliary',
+      code: 'custom_pipeline_unpinned_auxiliary',
+      message: 'An auxiliary repository is mutable.',
+      recovery: 'Pin every auxiliary repository to a 40-character commit.',
+    },
+    {
+      repository: 'fixture/unapproved-component',
+      code: 'custom_pipeline_component_unapproved',
+      message: 'A component library or class is not approved.',
+      recovery: 'Use the exact official Diffusers or Transformers component contract.',
+    },
+    {
+      repository: 'fixture/mutable-snapshot',
+      code: 'custom_pipeline_immutable_snapshot_required',
+      message: 'The selected source is mutable.',
+      recovery: 'Select an immutable Hub commit and review it again.',
+    },
+    {
+      repository: 'fixture/repository-python',
+      code: 'custom_pipeline_authorization_required',
+      message: 'Repository Python is not authorized.',
+      recovery: 'Provide fresh task-scoped operator authorization; workflow data is not consent.',
+    },
+  ];
+  await page.route('**/fields/action', async (route) => {
+    const request = route.request().postDataJSON() as {
+      values?: { repository?: { value?: string } };
+    };
+    const selected = failures.find((failure) => failure.repository === request.values?.repository?.value);
+    if (!selected) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+      return;
+    }
+    await route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: true,
+        category: 'custom_pipeline',
+        error_code: selected.code,
+        message: `${selected.message} ${selected.recovery}`,
+        recovery_hint: selected.recovery,
+      }),
+    });
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  const nodeId = await page.evaluate((key) => {
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    return window.__MODIFF_E2E__!.addCustomNodeForTest(key);
+  }, nodeKey);
+
+  const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  await expect(node.getByText('Repository', { exact: true })).toBeVisible();
+  await expect(node.getByText(/Mellon/i)).toHaveCount(0);
+  const repositoryInput = node.locator('[data-key="repository"] input');
+  for (const failure of failures) {
+    await repositoryInput.fill(failure.repository);
+    await repositoryInput.blur();
+    await expect(page.getByText(failure.recovery, { exact: false }).last()).toBeVisible();
+  }
+});
+
 test('registry-late field actions initialize once and live contract changes cancel pending model actions', async ({
   page,
 }) => {
