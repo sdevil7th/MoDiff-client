@@ -311,10 +311,16 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedSteps: 8,
     recommendedGuidance: 1,
     supportsNegativePrompt: false,
-    supportFlags: 34,
+    supportFlags: 33,
     offloadSupport: MODULAR_OFFLOAD_SUPPORT,
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: MODULAR_OFFLOAD_SUPPORT.lowVram, steps: 8 },
-    modes: ['text_to_image'],
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: {
+      edit_image: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one source image.',
+      },
+    },
   },
   QwenImageModularPipeline: {
     family: 'Qwen Image',

@@ -1226,6 +1226,12 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     pipelineClass: 'StableDiffusionXLPipeline',
     bindings: [...bindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
   };
+  const zRevision = 'f332072aa78be7aecdf3ee76d5c247082da564a6';
+  const zSpec = {
+    ...makeSpec('ZImageModularPipeline', 'z-image:auto', 'Tongyi-MAI/Z-Image-Turbo', 'studio-spec-v1-zimage'),
+    id: 'z-image:text-to-image:v1',
+    pipelineClass: 'ZImagePipeline',
+  };
   const devSpec = makeSpec(
     'FluxDevPipeline',
     'flux-dev:direct',
@@ -1356,6 +1362,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     defaultRepo: devSpec.defaultRepo,
     bindings: [...editBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
     contentHash: 'studio-spec-v1-fluxdevedit',
+  };
+  const zEditSpec = {
+    ...devEditSpec,
+    id: 'z-image:edit-image:v1',
+    modelType: 'ZImageModularPipeline',
+    executionProfileId: 'z-image:img2img-direct',
+    pipelineClass: 'ZImageImg2ImgPipeline',
+    defaultRepo: zSpec.defaultRepo,
+    contentHash: 'studio-spec-v1-zimageedit',
   };
   const kontextSpec = {
     ...reduxSpec,
@@ -2352,6 +2367,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       studioModelCapabilities: [
         capability(schnellSpec),
         {
+          ...capability(zSpec),
+          modes: ['text_to_image', 'edit_image'],
+          runnableModes: ['text_to_image', 'edit_image'],
+          executionProfiles: [profile(zSpec), profile(zEditSpec)],
+          studioExecutionSpecModes: ['edit_image', 'text_to_image'],
+          studioExecutionSpecs: [zSpec, zEditSpec],
+          revisionCandidates: [zRevision],
+        },
+        {
           ...capability(sdxlSpec),
           modes: ['text_to_image', 'edit_image', 'inpaint'],
           runnableModes: ['text_to_image', 'edit_image', 'inpaint'],
@@ -2580,6 +2604,29 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'undeclared candidate generation data cannot override form input',
     );
     assert.equal(autoGenerate.width.value, autoForm.width);
+
+    const zEditForm = {
+      ...baseForm,
+      modelType: 'ZImageModularPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/z-image-source.png'],
+      steps: 8,
+      guidanceScale: 1,
+      strength: 0.65,
+    };
+    studioStoreModule.useStudioStore.setState({ form: zEditForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(zEditForm);
+    const zEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const zEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const zEditPipeline = zEditNodes.find((item) => item.id === zEditBinding.nodes.diffusersImagePipeline);
+    assert.equal(zEditBinding.executionSpec.id, zEditSpec.id);
+    assert.equal(zEditPipeline.data.params.pipeline_class.value, zEditSpec.pipelineClass);
+    assert.equal(zEditPipeline.data.params.revision.value, zRevision);
+    assert.deepEqual(
+      zEditNodes.find((item) => item.id === zEditBinding.nodes.loadImage).data.params.file.value,
+      zEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(zEditForm), null);
 
     const devEditForm = {
       ...devForm,
