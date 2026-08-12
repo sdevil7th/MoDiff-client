@@ -330,7 +330,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     defaultSize: { width: 1328, height: 1328, aspectRatio: '1:1' },
     recommendedSteps: 50,
     recommendedGuidance: 4,
-    supportFlags: 40,
+    supportFlags: 41,
     offloadSupport: QWEN_MODULAR_OFFLOAD_SUPPORT,
     lowVram: {
       dtype: 'bfloat16',
@@ -341,8 +341,12 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       width: 1024,
       height: 1024,
     },
-    modes: ['text_to_image', 'control_image'],
+    modes: ['text_to_image', 'edit_image', 'control_image'],
     modeRequirements: {
+      edit_image: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one source image.',
+      },
       control_image: {
         modelRequirements: [QWEN_CONTROLNET_REQUIREMENT],
         requiredImages: ['controlImage'],

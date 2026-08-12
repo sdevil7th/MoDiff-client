@@ -1232,6 +1232,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     id: 'z-image:text-to-image:v1',
     pipelineClass: 'ZImagePipeline',
   };
+  const qwenImageRevision = '25468b98e3276ca6700de15c6628e51b7de54a26';
+  const qwenImageSpec = {
+    ...makeSpec(
+      'QwenImageModularPipeline',
+      'qwen-image:t2i-direct',
+      'Qwen/Qwen-Image-2512',
+      'studio-spec-v1-qwenimage',
+    ),
+    id: 'qwen-image-2512:text-to-image:v1',
+    pipelineClass: 'QwenImagePipeline',
+  };
   const devSpec = makeSpec(
     'FluxDevPipeline',
     'flux-dev:direct',
@@ -1371,6 +1382,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     pipelineClass: 'ZImageImg2ImgPipeline',
     defaultRepo: zSpec.defaultRepo,
     contentHash: 'studio-spec-v1-zimageedit',
+  };
+  const qwenImageEditSpec = {
+    ...devEditSpec,
+    id: 'qwen-image-2512:edit-image:v1',
+    modelType: 'QwenImageModularPipeline',
+    executionProfileId: 'qwen-image:img2img-direct',
+    pipelineClass: 'QwenImageImg2ImgPipeline',
+    defaultRepo: qwenImageSpec.defaultRepo,
+    contentHash: 'studio-spec-v1-qwenimageedit',
   };
   const kontextSpec = {
     ...reduxSpec,
@@ -2182,15 +2202,28 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: [qwenLayeredSpec.mode],
     studioExecutionSpecs: [qwenLayeredSpec],
   };
-  const qwenControlCapability = {
-    ...capability(qwenControlSpec),
+  const qwenImageCapability = {
+    ...capability(qwenImageSpec),
+    modes: ['text_to_image', 'edit_image', 'control_image'],
+    runnableModes: ['text_to_image', 'edit_image', 'control_image'],
     executionProfiles: [
+      {
+        ...profile(qwenImageSpec),
+        quantizable_components: ['transformer', 'text_encoder'],
+      },
+      {
+        ...profile(qwenImageEditSpec),
+        quantizable_components: ['transformer', 'text_encoder'],
+      },
       {
         ...profile(qwenControlSpec),
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
       },
     ],
+    studioExecutionSpecModes: ['control_image', 'edit_image', 'text_to_image'],
+    studioExecutionSpecs: [qwenImageSpec, qwenImageEditSpec, qwenControlSpec],
+    revisionCandidates: [qwenImageRevision],
   };
   const kleinCapability = {
     ...capability(kleinSpec),
@@ -2403,7 +2436,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         qwenInpaintCapability,
         qwenEditPlusCapability,
         qwenLayeredCapability,
-        qwenControlCapability,
+        qwenImageCapability,
         capability(i2vSpec),
         capability(ti2vSpec),
         {
@@ -2627,6 +2660,31 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       zEditForm.referenceImages,
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(zEditForm), null);
+
+    const qwenImageEditForm = {
+      ...baseForm,
+      modelType: 'QwenImageModularPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/qwen-image-source.png'],
+      steps: 50,
+      guidanceScale: 4,
+      strength: 0.65,
+    };
+    studioStoreModule.useStudioStore.setState({ form: qwenImageEditForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(qwenImageEditForm);
+    const qwenImageEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenImageEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const qwenImageEditPipeline = qwenImageEditNodes.find(
+      (item) => item.id === qwenImageEditBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(qwenImageEditBinding.executionSpec.id, qwenImageEditSpec.id);
+    assert.equal(qwenImageEditPipeline.data.params.pipeline_class.value, qwenImageEditSpec.pipelineClass);
+    assert.equal(qwenImageEditPipeline.data.params.revision.value, qwenImageRevision);
+    assert.deepEqual(
+      qwenImageEditNodes.find((item) => item.id === qwenImageEditBinding.nodes.loadImage).data.params.file.value,
+      qwenImageEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenImageEditForm), null);
 
     const devEditForm = {
       ...devForm,
