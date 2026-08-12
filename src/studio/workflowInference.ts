@@ -470,6 +470,8 @@ export function inferStudioFormFromWorkflow(
       paramValue(sizeNode, ['true_cfg_scale', 'guidance_scale', 'guidance']),
       defaults.guidanceScale,
     ),
+    pagScale: numberValue(paramValue(sizeNode, ['pag_scale']), defaults.pagScale),
+    pagAdaptiveScale: numberValue(paramValue(sizeNode, ['pag_adaptive_scale']), defaults.pagAdaptiveScale),
     batchSize: numberValue(paramValue(sizeNode, ['batch_size']), defaults.batchSize),
     eta: numberValue(paramValue(sizeNode, ['eta']), defaults.eta),
     classLabel: numberValue(paramValue(sizeNode, ['class_label']), defaults.classLabel),

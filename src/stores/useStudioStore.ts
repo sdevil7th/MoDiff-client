@@ -808,6 +808,13 @@ function studioFormInputs(): AppModeInput[] {
     { id: 'studio:seed', kind: 'studio-form', label: 'Seed', formKey: 'seed' },
     { id: 'studio:steps', kind: 'studio-form', label: 'Steps', formKey: 'steps' },
     { id: 'studio:guidanceScale', kind: 'studio-form', label: 'Guidance', formKey: 'guidanceScale' },
+    { id: 'studio:pagScale', kind: 'studio-form', label: 'PAG scale', formKey: 'pagScale' },
+    {
+      id: 'studio:pagAdaptiveScale',
+      kind: 'studio-form',
+      label: 'PAG adaptive scale',
+      formKey: 'pagAdaptiveScale',
+    },
     { id: 'studio:strength', kind: 'studio-form', label: 'Strength', formKey: 'strength' },
     { id: 'studio:width', kind: 'studio-form', label: 'Width', formKey: 'width' },
     { id: 'studio:height', kind: 'studio-form', label: 'Height', formKey: 'height' },

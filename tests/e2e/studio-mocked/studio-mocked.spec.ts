@@ -1080,6 +1080,45 @@ function mockFluxExecutionCapability(
   };
 }
 
+function mockPagExecutionCapability() {
+  const base = mockFluxExecutionCapability('FluxSchnellPipeline');
+  const baseSpec = base.studioExecutionSpecs[0];
+  const spec = {
+    ...baseSpec,
+    id: 'sd15-pag:text-to-image:v1',
+    modelType: 'StableDiffusionPAGPipeline',
+    executionProfileId: 'sd15-pag:direct',
+    pipelineClass: 'StableDiffusionPAGPipeline',
+    defaultRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+    bindings: [
+      ...baseSpec.bindings,
+      ['diffusersImagePipeline', 'revision', 'defaultRevision'],
+      ['diffusersImageGenerate', 'pag_scale', 'pagScale'],
+      ['diffusersImageGenerate', 'pag_adaptive_scale', 'pagAdaptiveScale'],
+    ],
+    contentHash: 'studio-spec-v1-5fdb2d9e',
+  };
+  return {
+    ...base,
+    modelType: spec.modelType,
+    modes: ['text_to_image'],
+    runnableModes: ['text_to_image'],
+    revisionCandidates: ['451f4fe16113bff5a5d2269ed5ad43b0592e9a14'],
+    executionProfiles: [
+      {
+        ...base.executionProfiles[0],
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: ['text_to_image'],
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+      },
+    ],
+    studioExecutionSpecModes: ['text_to_image'],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockWanTi2vExecutionCapability() {
   const roles = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
@@ -1687,6 +1726,7 @@ function mockStudioExecutionCapabilities() {
     mockFluxExecutionCapability('FluxCannyPipeline'),
     mockFluxExecutionCapability('FluxReduxPipeline'),
     mockFluxExecutionCapability('FluxKontextPipeline'),
+    mockPagExecutionCapability(),
     mockFluxFillExecutionCapability(),
     mockQwenEditInpaintExecutionCapability(),
     mockQwenEditPlusExecutionCapability(),
@@ -2225,6 +2265,7 @@ const mockRegistry = {
   ),
   'modules.DiffusersImage.LoadPipeline': nodeDef('modules.DiffusersImage', 'LoadPipeline', 'Diffusers Image', {
     model_id: { type: 'string', value: 'black-forest-labs/FLUX.1-schnell' },
+    revision: { type: 'string', value: '' },
     pipeline_class: { type: 'string', value: 'FluxPipeline' },
     mode: { type: 'string', value: 'text_to_image' },
     dtype: { type: 'string', value: 'bfloat16' },
@@ -2256,6 +2297,8 @@ const mockRegistry = {
     seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
     num_inference_steps: { type: 'int', value: 50 },
     guidance_scale: { type: 'float', value: 4 },
+    pag_scale: { type: 'float', value: 3 },
+    pag_adaptive_scale: { type: 'float', value: 0 },
     strength: { type: 'float', value: 1 },
     output_type: { type: 'string', value: 'pil' },
     max_sequence_length: { type: 'int', value: 512 },
@@ -7978,6 +8021,38 @@ test('mocked Studio preserves Expert quantization only when the target execution
     .toEqual(['ZImageModularPipeline', 'none']);
 });
 
+test('mocked Studio exposes and binds generic PAG controls for the exact PAG profile', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-text_to_image').click();
+
+  await page.getByTestId('studio-model-select').click();
+  await page.getByRole('option', { name: 'Stable Diffusion 1.5 PAG', exact: true }).click();
+
+  await expect
+    .poll(async () => {
+      const state = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).studio;
+      return [state.form.modelType, state.form.pagScale, state.form.pagAdaptiveScale];
+    })
+    .toEqual(['StableDiffusionPAGPipeline', 3, 0]);
+  await page.getByRole('button', { name: 'Generation', exact: true }).click();
+  await expect(page.getByText('PAG scale: 3', { exact: true })).toBeVisible();
+  await expect(page.getByText('PAG adaptive scale: 0', { exact: true })).toBeVisible();
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const state = window.__MODIFF_E2E__!.getState();
+        const nodeId = state.studio.graphBinding?.nodes.diffusersImageGenerate;
+        const node = state.flow.nodes.find((item) => item.id === nodeId);
+        return [node?.params?.pag_scale?.value, node?.params?.pag_adaptive_scale?.value];
+      }),
+    )
+    .toEqual([3, 0]);
+});
+
 test('mocked Studio consumes the exact execution-profile Expert MPS policy', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
@@ -8471,7 +8546,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(20);
+    .toHaveLength(21);
 
   const zImage = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

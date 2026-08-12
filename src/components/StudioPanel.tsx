@@ -1421,6 +1421,28 @@ export default function StudioPanel() {
                     />
                   </ModiffFieldShell>
                 )}
+                {capability.recommendedPagScale !== undefined && (
+                  <>
+                    <ModiffFieldShell label={`PAG scale: ${form.pagScale}`}>
+                      <StudioSlider
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        value={form.pagScale}
+                        onChange={(value) => updateAndSync({ pagScale: value })}
+                      />
+                    </ModiffFieldShell>
+                    <ModiffFieldShell label={`PAG adaptive scale: ${form.pagAdaptiveScale}`}>
+                      <StudioSlider
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        value={form.pagAdaptiveScale}
+                        onChange={(value) => updateAndSync({ pagAdaptiveScale: value })}
+                      />
+                    </ModiffFieldShell>
+                  </>
+                )}
                 {isVideoMode && (
                   <>
                     <div className="grid grid-cols-2 gap-2">

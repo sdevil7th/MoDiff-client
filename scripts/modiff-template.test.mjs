@@ -175,6 +175,20 @@ test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => 
   assert.equal(form.guidanceScale, 8.5);
 });
 
+test('Stable Diffusion PAG exposes generic PAG controls over the pinned 1.5 base', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPAGPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionPAGPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.pagScale, 3);
+  assert.equal(form.pagAdaptiveScale, 0);
+});
+
 test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;

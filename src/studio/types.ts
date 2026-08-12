@@ -36,6 +36,7 @@ export type StudioModelType =
   | 'ConsistencyModelPipeline'
   | 'StableDiffusionPipeline'
   | 'LatentConsistencyModelPipeline'
+  | 'StableDiffusionPAGPipeline'
   | 'ZImageModularPipeline'
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
@@ -592,6 +593,8 @@ export type StudioFormState = {
   randomSeed: boolean;
   steps: number;
   guidanceScale: number;
+  pagScale: number;
+  pagAdaptiveScale: number;
   batchSize: number;
   eta: number;
   classLabel: number;
@@ -781,6 +784,8 @@ export type StudioModelProfile = {
   defaultSize: { width: number; height: number; aspectRatio: StudioAspectRatio };
   recommendedSteps: number;
   recommendedGuidance: number;
+  recommendedPagScale?: number;
+  recommendedPagAdaptiveScale?: number;
   guidanceLabel: string;
   supportsNegativePrompt?: boolean;
   supportsImageInput: boolean;

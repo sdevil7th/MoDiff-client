@@ -32,6 +32,13 @@ const FORM_INPUTS: AppModeInput[] = [
   { id: 'studio:seed', kind: 'studio-form', label: 'Seed', formKey: 'seed' },
   { id: 'studio:steps', kind: 'studio-form', label: 'Steps', formKey: 'steps' },
   { id: 'studio:guidanceScale', kind: 'studio-form', label: 'Guidance', formKey: 'guidanceScale' },
+  { id: 'studio:pagScale', kind: 'studio-form', label: 'PAG scale', formKey: 'pagScale' },
+  {
+    id: 'studio:pagAdaptiveScale',
+    kind: 'studio-form',
+    label: 'PAG adaptive scale',
+    formKey: 'pagAdaptiveScale',
+  },
   { id: 'studio:strength', kind: 'studio-form', label: 'Strength', formKey: 'strength' },
   { id: 'studio:width', kind: 'studio-form', label: 'Width', formKey: 'width' },
   { id: 'studio:height', kind: 'studio-form', label: 'Height', formKey: 'height' },
@@ -297,7 +304,12 @@ export default function AppModePanel() {
               {selectedConfig.exposedInputs.map((input) => {
                 if (input.kind === 'studio-form' && input.formKey) {
                   const current = form[input.formKey];
-                  if (input.formKey === 'guidanceScale' || input.formKey === 'strength') {
+                  if (
+                    input.formKey === 'guidanceScale' ||
+                    input.formKey === 'pagScale' ||
+                    input.formKey === 'pagAdaptiveScale' ||
+                    input.formKey === 'strength'
+                  ) {
                     return (
                       <ModiffFieldShell key={input.id} label={`${input.label}: ${String(current)}`}>
                         <StudioSlider

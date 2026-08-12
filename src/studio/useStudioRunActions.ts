@@ -30,6 +30,7 @@ import { coordinateGraphRun } from './runCoordinator';
 import { materializeTemplateDefaultInputs } from './templateInputs';
 import { STUDIO_TEMPLATES } from './templates';
 import { exactStudioExecutionProfileForForm } from './executionSpecs';
+import { DEFAULT_STUDIO_FORM, STUDIO_MODEL_PROFILES } from './modelProfiles';
 import type { StudioFormState, StudioMode, StudioModelType, StudioResourceMode } from './types';
 
 export async function ensureStudioAutoPlanReadyForRun(
@@ -220,7 +221,13 @@ export function useStudioRunActions({
       )
         ? current.quantizationMode
         : 'none';
-      useStudioStore.getState().updateForm({ modelType, quantizationMode });
+      const profile = STUDIO_MODEL_PROFILES[modelType];
+      useStudioStore.getState().updateForm({
+        modelType,
+        quantizationMode,
+        pagScale: profile.recommendedPagScale ?? DEFAULT_STUDIO_FORM.pagScale,
+        pagAdaptiveScale: profile.recommendedPagAdaptiveScale ?? DEFAULT_STUDIO_FORM.pagAdaptiveScale,
+      });
       void handleCreateGraph();
     },
     [handleCreateGraph],

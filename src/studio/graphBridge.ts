@@ -3490,6 +3490,8 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(targetNode, ['seed'], seedValue(form));
     setParamIfPresent(targetNode, ['num_inference_steps', 'steps'], form.steps);
     setParamIfPresent(targetNode, ['guidance_scale', 'guidance'], form.guidanceScale);
+    setParamIfPresent(targetNode, ['pag_scale'], form.pagScale);
+    setParamIfPresent(targetNode, ['pag_adaptive_scale'], form.pagAdaptiveScale);
     setParamIfPresent(targetNode, ['strength'], form.strength);
     setParamIfPresent(targetNode, ['reference_strength'], form.conditioningScale);
     setParamIfPresent(targetNode, ['output_type'], form.outputType);
