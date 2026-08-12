@@ -239,6 +239,40 @@ function fluxCapability(spec = fluxExecutionSpec(), overrides = {}) {
   };
 }
 
+function fluxTaskTemplateContract(spec = fluxExecutionSpec(), overrides = {}) {
+  const semantic = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: `task-template:${spec.id}`,
+    modelType: spec.modelType,
+    mode: spec.mode,
+    mediaKind: 'image',
+    executionProfileId: spec.executionProfileId,
+    executionSpecId: spec.id,
+    executionSpecContentHash: spec.contentHash,
+    loaderModule: spec.loaderModule,
+    loaderAction: spec.loaderAction,
+    loaderRole: 'diffusersImagePipeline',
+    pipelineClass: spec.pipelineClass,
+    defaultRepo: spec.defaultRepo,
+    loaderRepositories: [spec.defaultRepo],
+    requiredMedia: [],
+    output: {
+      mediaKind: 'image',
+      role: 'preview',
+      nodeKey: 'modules.Image.Preview',
+      inputHandle: 'image',
+    },
+    qualificationStatus: 'graph-qualified-execution-pending',
+    galleryEligible: false,
+    ...overrides,
+  };
+  return {
+    ...semantic,
+    contentHash: `task-template-v1-${stableHashModule.hashString(stableHashModule.stableStringify(semantic))}`,
+  };
+}
+
 test('requestJson normalizes non-OK JSON responses', async () => {
   globalThis.fetch = async () => jsonResponse({ error: true, message: 'Backend unavailable' }, 503);
 
@@ -361,6 +395,40 @@ test('Studio execution specifications require an exact versioned capability cont
   state = nodesStoreModule.useNodesStore.getState();
   assert.equal(state.discoveryRequests.capabilities.status, 'error');
   assert.equal(state.studioExecutionSpecInvalid, true);
+});
+
+test('task-template contracts generate stable planning skeletons from the exact execution spec', async () => {
+  const spec = fluxExecutionSpec();
+  const contract = fluxTaskTemplateContract(spec);
+  const capability = fluxCapability(spec, {
+    taskTemplateContractSchemaVersion: 1,
+    taskTemplateContractModes: [spec.mode],
+    taskTemplateContracts: [contract],
+  });
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [capability],
+      taskTemplateContractSchemaVersion: 1,
+      taskTemplateContracts: [contract],
+    });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioTaskTemplateContracts, [contract]);
+  assert.deepEqual(state.studioTaskTemplateSkeletons, [
+    {
+      id: contract.id,
+      modelType: contract.modelType,
+      mode: contract.mode,
+      mediaKind: 'image',
+      executionSpecId: spec.id,
+      requiredMedia: [],
+      output: contract.output,
+      galleryVisible: false,
+    },
+  ]);
 });
 
 test('legacy model capabilities remain non-authoritative when schemaVersion is absent', async () => {

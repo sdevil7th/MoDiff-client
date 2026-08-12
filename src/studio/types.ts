@@ -681,6 +681,48 @@ export type StudioExecutionSpec = {
   contentHash: string;
 };
 
+export type StudioTaskTemplateRequiredMedia = {
+  kind: 'image' | 'video' | 'audio';
+  field:
+    | 'referenceImages'
+    | 'maskImage'
+    | 'controlImage'
+    | 'sourceVideo'
+    | 'maskVideo'
+    | 'controlVideo'
+    | 'sourceAudio'
+    | 'referenceAudio';
+  minimumCount: 1;
+};
+
+export type StudioTaskTemplateContract = {
+  schemaVersion: 1;
+  canonicalizationVersion: 1;
+  id: string;
+  modelType: StudioModelType;
+  mode: StudioMode;
+  mediaKind: 'image' | 'video' | 'audio' | 'json';
+  executionProfileId: string;
+  executionSpecId: string;
+  executionSpecContentHash: string;
+  loaderModule: string;
+  loaderAction: string;
+  loaderRole: StudioGraphRole;
+  pipelineClass: string;
+  defaultRepo: string;
+  loaderRepositories: string[];
+  requiredMedia: StudioTaskTemplateRequiredMedia[];
+  output: {
+    mediaKind: 'image' | 'video' | 'audio' | 'json';
+    role: StudioGraphRole;
+    nodeKey: string;
+    inputHandle: string;
+  };
+  qualificationStatus: string;
+  galleryEligible: boolean;
+  contentHash: string;
+};
+
 export type StudioModelProfile = {
   modelType: StudioModelType;
   label: string;
@@ -744,6 +786,9 @@ export type StudioModelProfile = {
   studioExecutionSpecs?: StudioExecutionSpec[];
   studioExecutionSpecSchemaVersion?: 1;
   studioExecutionSpecModes?: StudioMode[];
+  taskTemplateContracts?: StudioTaskTemplateContract[];
+  taskTemplateContractSchemaVersion?: 1;
+  taskTemplateContractModes?: StudioMode[];
   runnableModes?: StudioMode[];
   downloadFiles?: string[];
   inputContracts?: Partial<Record<StudioMode, StudioModeRequirement>>;

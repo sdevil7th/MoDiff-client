@@ -16,6 +16,11 @@ import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runt
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
 import {
+  buildTaskTemplateSkeleton,
+  parseTaskTemplateContracts,
+  type StudioTaskTemplateSkeleton,
+} from '../studio/taskTemplateContracts';
+import {
   parseOptionalRuntimeCatalog,
   parseOptionalRuntimeExecutionProfiles,
   parseOptionalRuntimeRequirement,
@@ -27,6 +32,7 @@ import type {
   RunReadinessIssue,
   StudioExecutionProfile,
   StudioModelProfile,
+  StudioTaskTemplateContract,
   UserBlockDefinition,
 } from '../studio/types';
 import type { ModiffFieldStyle, ModiffNodeStyle } from '../theme';
@@ -341,6 +347,8 @@ type NodesStore = {
   studioModelCapabilities: StudioModelProfile[];
   studioModelCapabilitiesAuthoritative: boolean;
   studioExecutionSpecInvalid: boolean;
+  studioTaskTemplateContracts: StudioTaskTemplateContract[];
+  studioTaskTemplateSkeletons: StudioTaskTemplateSkeleton[];
   runtimeStatus: RuntimeStatus | null;
   runtimeResources: RuntimeResourceSnapshot | null;
   runtimeError: string | null;
@@ -639,9 +647,39 @@ function parseStudioModelCapabilities(value: unknown) {
     if (item.studioExecutionSpecSchemaVersion === 1) item.studioExecutionSpecSchemaVersion = 1;
     return [item as unknown as StudioModelProfile];
   });
+  const taskTemplateFields = [payload.taskTemplateContractSchemaVersion, payload.taskTemplateContracts];
+  const taskTemplateContracts = taskTemplateFields.every((field) => field === undefined)
+    ? []
+    : parseTaskTemplateContracts(
+        payload.taskTemplateContracts,
+        payload.taskTemplateContractSchemaVersion,
+        capabilities,
+      );
+  if (taskTemplateContracts.length > 0) {
+    for (const capability of capabilities) {
+      const expected = taskTemplateContracts.filter((contract) => contract.modelType === capability.modelType);
+      const declaredModes = capability.taskTemplateContractModes;
+      if (
+        capability.taskTemplateContractSchemaVersion !== 1 ||
+        !Array.isArray(capability.taskTemplateContracts) ||
+        !Array.isArray(declaredModes) ||
+        declaredModes.length !== expected.length ||
+        expected.some(
+          (contract) =>
+            !declaredModes.includes(contract.mode) ||
+            !capability.taskTemplateContracts?.some(
+              (declared) => declared.id === contract.id && declared.contentHash === contract.contentHash,
+            ),
+        )
+      )
+        throw new Error('Invalid Studio task-template contract.');
+      capability.taskTemplateContracts = expected;
+    }
+  }
   return {
     authoritative: payload.schemaVersion === 2,
     capabilities,
+    taskTemplateContracts,
   };
 }
 
@@ -711,6 +749,8 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   studioModelCapabilities: [],
   studioModelCapabilitiesAuthoritative: false,
   studioExecutionSpecInvalid: false,
+  studioTaskTemplateContracts: [],
+  studioTaskTemplateSkeletons: [],
   runtimeStatus: null,
   runtimeResources: null,
   runtimeError: null,
@@ -1012,10 +1052,12 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           signal,
           parse: parseStudioModelCapabilities,
         }),
-      ({ authoritative, capabilities }) => ({
+      ({ authoritative, capabilities, taskTemplateContracts }) => ({
         studioModelCapabilities: capabilities,
         studioModelCapabilitiesAuthoritative: authoritative,
         studioExecutionSpecInvalid: false,
+        studioTaskTemplateContracts: taskTemplateContracts,
+        studioTaskTemplateSkeletons: taskTemplateContracts.map(buildTaskTemplateSkeleton),
       }),
       (message) =>
         message.includes('Studio execution specification')
@@ -1023,6 +1065,8 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
               studioModelCapabilities: [],
               studioModelCapabilitiesAuthoritative: false,
               studioExecutionSpecInvalid: true,
+              studioTaskTemplateContracts: [],
+              studioTaskTemplateSkeletons: [],
             }
           : {},
       'Could not read model capabilities.',
