@@ -13510,6 +13510,7 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
     'SkipLayerGuidance',
     'AdaptiveProjectedGuidance',
     'AdaptiveProjectedMixGuidance',
+    'MagnitudeAwareGuidance',
     'ClassifierFreeZeroStarGuidance',
     'AutoGuidance',
     'SmoothedEnergyGuidance',
@@ -13522,7 +13523,7 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
       !['SkipLayerGuidance', 'AutoGuidance', 'SmoothedEnergyGuidance', 'PerturbedAttentionGuidance'].includes(guider),
   );
   const guiderOptions = {
-    QwenImageLayeredModularPipeline: allGuiders,
+    QwenImageModularPipeline: allGuiders,
     ZImageModularPipeline: nonLayerGuiders,
   };
   const compatibleSchedulers = [
@@ -13558,7 +13559,7 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
             model: {
               type: 'diffusers_auto_model',
               display: 'output',
-              signal: { direction: 'output', value: 'QwenImageLayeredModularPipeline' },
+              signal: { direction: 'output', value: 'QwenImageModularPipeline' },
             },
             scheduler_model: {
               type: 'diffusers_auto_model',
@@ -13671,7 +13672,7 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
   await expect.poll(contractState).toEqual({
     guiderOptions: allGuiders,
     guiderValue: 'SkipLayerGuidance',
-    layersSignal: 'QwenImageLayeredModularPipeline',
+    layersSignal: 'QwenImageModularPipeline',
     schedulerOptions: compatibleSchedulers,
     schedulerValue: 'EulerDiscreteScheduler',
   });
