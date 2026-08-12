@@ -232,7 +232,15 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
     }
     await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
     await useFlowStore.getState().arrangeGraph({ history: false });
-    validateStudioGraphReadyForRun(useStudioStore.getState().form);
+    try {
+      validateStudioGraphReadyForRun(useStudioStore.getState().form);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'Graph changed.') throw error;
+      if (!syncStudioGraphDefinition(useStudioStore.getState().form)) {
+        throw new Error('The template graph schema could not be revalidated after layout.');
+      }
+      validateStudioGraphReadyForRun(useStudioStore.getState().form);
+    }
     useStudioStore.getState().saveActiveWorkflowTab(true);
   } catch (error) {
     if (useFlowStore.getState().nodes.length === 0) {

@@ -11,6 +11,11 @@ const LAYOUT_ALGORITHM = 'modiff-layered-v1';
 const LAYOUT_HORIZONTAL_GAP = 140;
 const LAYOUT_VERTICAL_GAP = 72;
 const LAYOUT_EPSILON = 0.01;
+const pairArgument = process.argv.find((argument) => argument.startsWith('--pair='));
+const requestedPair = pairArgument?.slice('--pair='.length) ?? null;
+if (requestedPair && !/^[A-Za-z\d_]+\|[a-z\d_]+$/.test(requestedPair)) {
+  throw new Error('The workflow pair must use --pair=ModelType|mode.');
+}
 const manifestPath = join(BACKEND_ROOT, 'data', 'workflow-library-manifest.json');
 if (!existsSync(manifestPath)) throw new Error('Workflow manifest is missing. Run npm run workflows:generate.');
 
@@ -355,7 +360,20 @@ const layoutModuleServer = await createServer({
 });
 try {
   const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
-  for (const workflow of manifest.workflows) verifyWorkflow(workflow, 'supported', graphLayout);
+  const selectedSupported = requestedPair
+    ? manifest.workflows.filter(
+        (workflow) => !workflow.variant && `${workflow.modelType}|${workflow.mode}` === requestedPair,
+      )
+    : manifest.workflows;
+  const selectedExperimental = requestedPair
+    ? (manifest.experimentalWorkflows ?? []).filter(
+        (workflow) => !workflow.variant && `${workflow.modelType}|${workflow.mode}` === requestedPair,
+      )
+    : (manifest.experimentalWorkflows ?? []);
+  if (requestedPair && selectedSupported.length + selectedExperimental.length !== 1) {
+    throw new Error(`The requested canonical workflow pair is not unique: ${requestedPair}.`);
+  }
+  for (const workflow of selectedSupported) verifyWorkflow(workflow, 'supported', graphLayout);
 
   const expectedExperimentalCount = Number(manifest.experimentalWorkflowCount ?? 0);
   if (!Number.isInteger(expectedExperimentalCount) || expectedExperimentalCount < 0) {
@@ -369,10 +387,10 @@ try {
       `Expected ${expectedExperimentalCount} qualified experimental workflows, found ${manifest.experimentalWorkflows?.length ?? 0}.`,
     );
   }
-  for (const workflow of manifest.experimentalWorkflows) verifyWorkflow(workflow, 'experimental', graphLayout);
+  for (const workflow of selectedExperimental) verifyWorkflow(workflow, 'experimental', graphLayout);
 
   process.stdout.write(
-    `Verified ${manifest.workflows.length} supported and ${manifest.experimentalWorkflows.length} qualified experimental portable workflows with deterministic canonical layouts.\n`,
+    `Verified ${selectedSupported.length} supported and ${selectedExperimental.length} qualified experimental portable workflows with deterministic canonical layouts.\n`,
   );
 } finally {
   await layoutModuleServer.close();

@@ -338,6 +338,7 @@ test('model capabilities keep schema-v2 runnable modes exact and ignore experime
 
 test('Studio execution specifications require an exact versioned capability contract', async () => {
   const spec = fluxExecutionSpec();
+  const reviewedRevision = '462165984030d82259a11f4367a4eed129e94a7b';
   const reordered = Object.fromEntries(Object.entries(spec).reverse());
   globalThis.fetch = async () =>
     jsonResponse({
@@ -351,6 +352,19 @@ test('Studio execution specifications require an exact versioned capability cont
   assert.equal(state.studioModelCapabilitiesAuthoritative, true);
   assert.equal(state.studioExecutionSpecInvalid, false);
   assert.equal(state.studioModelCapabilities[0].studioExecutionSpecs[0].contentHash, spec.contentHash);
+
+  const pinnedSpec = fluxExecutionSpec({
+    bindings: [...spec.bindings, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+  });
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [fluxCapability(pinnedSpec, { revisionCandidates: [reviewedRevision] })],
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].revisionCandidates, [reviewedRevision]);
 
   const partial = fluxCapability(spec, { modes: ['text_to_image', 'edit_image'] });
   globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [partial] });
@@ -380,6 +394,8 @@ test('Studio execution specifications require an exact versioned capability cont
     { ...fluxCapability(spec), studioExecutionSpecModes: [spec.mode, spec.mode] },
     { ...fluxCapability(spec), studioExecutionSpecModes: ['edit_image'] },
     { ...fluxCapability(spec), studioExecutionSpecModes: [spec.mode, 'future_mode'] },
+    fluxCapability(spec, { revisionCandidates: ['main'] }),
+    fluxCapability(spec, { revisionCandidates: [reviewedRevision, reviewedRevision] }),
   ];
   for (const capability of malformed) {
     globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });

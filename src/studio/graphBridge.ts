@@ -2111,6 +2111,15 @@ function participatingRoleNodesAreValid(binding: StudioGraphBinding, form: Studi
   );
 }
 
+function participatingNodeSchemasMatchRegistry(binding: StudioGraphBinding, form: StudioFormState) {
+  const registry = useNodesStore.getState().nodesRegistry;
+  return participatingRoles(form, binding).every((role) => {
+    const node = getNode(binding.nodes[role]);
+    if (!node) return false;
+    return managedParamSchemaMatchesRegistry(node.data.params, registry[graphNodeKey(node)]?.params);
+  });
+}
+
 function bindingHasExecutableFinalizationShape(binding: StudioGraphBinding, form: StudioFormState) {
   if (!bindingMatchesForm(binding, form) || !participatingRoleNodesAreValid(binding, form)) return false;
   const desiredSpecs = desiredEdgeSpecs(binding);
@@ -3065,6 +3074,12 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   }
   const quantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
   const audioTemplateBaseModel = binding.nodes.audioPipeline ? activeAudioTemplateBaseModel() : null;
+  const capability = useNodesStore.getState().studioModelCapabilities.find((item) => item.modelType === spec.modelType);
+  const bindsDefaultRevision = spec.bindings.some(([, , source]) => source === 'defaultRevision');
+  const defaultRevision = capability?.revisionCandidates ?? [];
+  if (bindsDefaultRevision && defaultRevision.length !== 1) {
+    throw new Error('The Studio execution specification requires one reviewed default model revision.');
+  }
   const values: Record<string, unknown> = {
     ...form,
     quantizationMode,
@@ -3082,6 +3097,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     layerwiseCasting: false,
     channelsLast: false,
     artifact: audioTemplateBaseModel ?? spec.defaultRepo,
+    defaultRevision: defaultRevision[0],
     pipelineClass: spec.pipelineClass,
     ...QWEN_CONTROLNET_REQUIREMENT,
     repo: { source: 'hub', value: QWEN_CONTROLNET_REQUIREMENT.repo },
@@ -3621,6 +3637,37 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
     return true;
   }
   if (!requiresDynamicGraphChannel(plannedForm, binding)) {
+    // Static execution-spec graphs can still receive a newer reviewed node
+    // schema after registry refresh. Re-seal the unchanged graph against that
+    // schema; otherwise its old proof remains stale even though no node or edge
+    // topology needs rebuilding.
+    if (!participatingNodeSchemasMatchRegistry(binding, plannedForm)) {
+      setStudioGraphDefinitionPending(binding, 'Graph changed.');
+      return false;
+    }
+    const finalizedAt = Date.now();
+    const updatedBinding = reconcileManagedGraphBinding({
+      ...binding,
+      finalizationProof: undefined,
+      finalizationProofInvalid: undefined,
+    });
+    const finalized = bindingWithFinalizationProof(updatedBinding, plannedForm, finalizedAt);
+    if (!finalized.finalizationProof) {
+      setStudioGraphDefinitionPending(updatedBinding, 'Graph changed.');
+      return false;
+    }
+    studio.setGraphBinding(finalized);
+    studio.setGraphFinalization({
+      status: 'complete',
+      bindingFingerprint: finalized.fingerprint,
+      startedAt: studio.graphFinalization?.startedAt ?? finalizedAt,
+      skeletonMs: studio.graphFinalization?.skeletonMs,
+      finalizedAt,
+      finalizationMs: 0,
+      timedOutGroups: [],
+      managedEdgeCount: finalized.managedEdgeIds.length,
+      message: 'Static workflow schema revalidated.',
+    });
     studio.saveActiveWorkflowTab(true);
     return true;
   }

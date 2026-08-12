@@ -47,7 +47,8 @@ export type StudioModelType =
   | 'FluxDepthPipeline'
   | 'FluxCannyPipeline'
   | 'FluxReduxPipeline'
-  | 'Flux2KleinPipeline';
+  | 'Flux2KleinPipeline'
+  | 'StableDiffusionXLPipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -162,7 +163,8 @@ export type StudioTemplateId =
   | 'wan_22_ti2v_5b_seed_vault'
   | 'ltx_video_animated_story'
   | 'ace_step_lyric_music_video'
-  | 'qwen_edit_plus_single_image';
+  | 'qwen_edit_plus_single_image'
+  | 'sdxl_text_to_image';
 
 export type WorkspacePanelTab =
   'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints';
@@ -727,7 +729,7 @@ export type StudioModelProfile = {
   modelType: StudioModelType;
   label: string;
   displayName: string;
-  family: 'Z-Image' | 'Qwen Image' | 'Wan Video' | 'LTX Video' | 'ACE Audio' | 'FLUX Image';
+  family: 'Z-Image' | 'Qwen Image' | 'Wan Video' | 'LTX Video' | 'ACE Audio' | 'FLUX Image' | 'Stable Diffusion XL';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
   runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';
@@ -782,6 +784,7 @@ export type StudioModelProfile = {
   mediaKind?: 'image' | 'video' | 'audio' | 'json';
   supportTier?: 'supported' | 'experimental';
   pipelineClasses?: string[];
+  revisionCandidates?: string[];
   executionProfiles?: StudioExecutionProfile[];
   studioExecutionSpecs?: StudioExecutionSpec[];
   studioExecutionSpecSchemaVersion?: 1;

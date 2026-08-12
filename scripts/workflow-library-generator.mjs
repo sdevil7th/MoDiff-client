@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { chromium } from 'playwright';
@@ -26,6 +26,11 @@ const FRONTEND_URL = process.env.MODIFF_FRONTEND || 'http://127.0.0.1:5173';
 const LAYOUT_ALGORITHM = 'modiff-layered-v1';
 const LAYOUT_HORIZONTAL_GAP = 140;
 const LAYOUT_VERTICAL_GAP = 72;
+const pairArgument = process.argv.find((argument) => argument.startsWith('--pair='));
+const requestedPair = pairArgument?.slice('--pair='.length) ?? null;
+if (requestedPair && !/^[A-Za-z\d_]+\|[a-z\d_]+$/.test(requestedPair)) {
+  throw new Error('The workflow pair must use --pair=ModelType|mode.');
+}
 
 function slug(value) {
   return String(value)
@@ -183,6 +188,14 @@ async function loadCapabilities() {
 
 async function main() {
   const capabilities = await loadCapabilities();
+  const selectedCapabilities = requestedPair
+    ? capabilities.capabilities.filter((capability) =>
+        (capability.runnableModes ?? []).some((mode) => `${capability.modelType}|${mode}` === requestedPair),
+      )
+    : capabilities.capabilities;
+  if (requestedPair && selectedCapabilities.length !== 1) {
+    throw new Error(`The requested workflow pair is not uniquely runnable: ${requestedPair}.`);
+  }
   const installedChrome = join(
     process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), '.cache', 'ms-playwright'),
     'chromium-1228',
@@ -223,7 +236,7 @@ async function main() {
         const currentIsLoraVariant = current?.category === 'lora';
         if (!current || (currentIsLoraVariant && !isLoraVariant)) byPair.set(pair, template);
       }
-      missingPairs = capabilities.capabilities.flatMap((capability) =>
+      missingPairs = selectedCapabilities.flatMap((capability) =>
         (capability.runnableModes ?? [])
           .map((mode) => `${capability.modelType}|${mode}`)
           .filter((pair) => !byPair.has(pair)),
@@ -234,8 +247,15 @@ async function main() {
     if (missingPairs.length > 0) {
       throw new Error(`No Studio template can build: ${missingPairs.join(', ')}.`);
     }
-    const records = [];
-    const experimentalRecords = [];
+    let records = [];
+    let experimentalRecords = [];
+    if (requestedPair && existsSync(MANIFEST_PATH)) {
+      const existingManifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+      const retainOtherCanonicalPairs = (record) =>
+        record.variant || `${record.modelType}|${record.mode}` !== requestedPair;
+      records = (existingManifest.workflows ?? []).filter(retainOtherCanonicalPairs);
+      experimentalRecords = (existingManifest.experimentalWorkflows ?? []).filter(retainOtherCanonicalPairs);
+    }
 
     const arrangeSnapshot = async (graph) => {
       const arranged = await page.evaluate(
@@ -283,11 +303,14 @@ async function main() {
       return finalizeCanonicalGraph(applyPortableContracts(sanitize(exported), mode));
     };
 
-    rmSync(OUTPUT_ROOT, { recursive: true, force: true });
-    rmSync(EXPERIMENTAL_OUTPUT_ROOT, { recursive: true, force: true });
-    for (const capability of capabilities.capabilities) {
+    if (!requestedPair) {
+      rmSync(OUTPUT_ROOT, { recursive: true, force: true });
+      rmSync(EXPERIMENTAL_OUTPUT_ROOT, { recursive: true, force: true });
+    }
+    for (const capability of selectedCapabilities) {
       for (const mode of capability.runnableModes ?? []) {
         const pair = `${capability.modelType}|${mode}`;
+        if (requestedPair && pair !== requestedPair) continue;
         const template = byPair.get(pair);
         if (!template) throw new Error(`No Studio template can build ${pair}.`);
         const graph = await buildTemplateGraph(template, mode, `canonical workflow ${pair}`);
@@ -328,7 +351,7 @@ async function main() {
     const capabilitiesByType = new Map(
       capabilities.capabilities.map((capability) => [capability.modelType, capability]),
     );
-    for (const template of templates.filter((candidate) => candidate.category === 'lora')) {
+    for (const template of requestedPair ? [] : templates.filter((candidate) => candidate.category === 'lora')) {
       const capability = capabilitiesByType.get(template.modelType);
       if (!capability?.runnableModes?.includes(template.mode)) {
         throw new Error(
@@ -414,7 +437,10 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
       '  MODIFF_FRONTEND     Client URL (default http://127.0.0.1:5173)',
       '  MODIFF_BACKEND_DIR  Backend repository root (default ../MoDiff)',
       '',
-      'This command replaces data/graphs/studio, data/graphs/experimental, and the workflow manifest.',
+      'Options:',
+      '  --pair=ModelType|mode  Regenerate one canonical pair and merge it into the manifest.',
+      '',
+      'Full generation replaces both graph catalogs and the workflow manifest; --pair updates only that canonical pair.',
     ].join('\n') + '\n',
   );
 } else {

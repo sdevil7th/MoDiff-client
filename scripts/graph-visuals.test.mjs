@@ -1214,6 +1214,18 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     'black-forest-labs/FLUX.1-schnell',
     'studio-spec-v1-9cd1abb5',
   );
+  const sdxlRevision = '462165984030d82259a11f4367a4eed129e94a7b';
+  const sdxlSpec = {
+    ...makeSpec(
+      'StableDiffusionXLPipeline',
+      'sdxl-base:direct',
+      'stabilityai/stable-diffusion-xl-base-1.0',
+      'studio-spec-v1-27ba61cf',
+    ),
+    id: 'sdxl-base:text-to-image:v1',
+    pipelineClass: 'StableDiffusionXLPipeline',
+    bindings: [...bindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+  };
   const devSpec = makeSpec(
     'FluxDevPipeline',
     'flux-dev:direct',
@@ -2212,6 +2224,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
+    ...sdxlSpec.bindings,
   ])
     paramsByRole[role][param] = scalar();
   for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [
@@ -2297,6 +2310,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       nodesRegistry: registry,
       studioModelCapabilities: [
         capability(schnellSpec),
+        { ...capability(sdxlSpec), revisionCandidates: [sdxlRevision] },
         capability(devSpec),
         capability(kreaSpec),
         kleinCapability,
@@ -2379,6 +2393,34 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       .nodes.find((item) => item.id === schnellBinding.nodes.diffusersImagePipeline);
     assert.equal(schnellPipeline.data.params.model_id.value.value, schnellSpec.defaultRepo);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(baseForm), null);
+
+    const sdxlForm = {
+      ...baseForm,
+      modelType: 'StableDiffusionXLPipeline',
+      steps: 30,
+      guidanceScale: 5,
+    };
+    studioStoreModule.useStudioStore.setState({ form: sdxlForm });
+    await graphBridge.createOrUpdateStudioGraph(sdxlForm);
+    const sdxlBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const sdxlPipeline = flowStoreModule.useFlowStore
+      .getState()
+      .nodes.find((item) => item.id === sdxlBinding.nodes.diffusersImagePipeline);
+    assert.equal(sdxlPipeline.data.params.model_id.value.value, sdxlSpec.defaultRepo);
+    assert.equal(sdxlPipeline.data.params.pipeline_class.value, sdxlSpec.pipelineClass);
+    assert.equal(sdxlPipeline.data.params.revision.value, sdxlRevision);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), null);
+    flowStoreModule.useFlowStore
+      .getState()
+      .setParam(sdxlPipeline.id, 'revision', { noValidation: true }, 'fieldOptions');
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), /graph changed/i);
+    assert.equal(graphBridge.syncStudioGraphDefinition(sdxlForm), true);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), null);
+    flowStoreModule.useFlowStore.getState().setParam(sdxlPipeline.id, 'revision', 'tampered', 'type');
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), /graph changed/i);
+    assert.equal(graphBridge.syncStudioGraphDefinition(sdxlForm), false, 'static proofs only reseal reviewed schemas');
+    flowStoreModule.useFlowStore.getState().setParam(sdxlPipeline.id, 'revision', 'string', 'type');
+    assert.equal(graphBridge.syncStudioGraphDefinition(sdxlForm), true);
 
     const kreaForm = { ...baseForm, modelType: 'FluxKreaPipeline', steps: 24, guidanceScale: 3.5 };
     studioStoreModule.useStudioStore.setState({ form: kreaForm });

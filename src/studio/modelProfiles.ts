@@ -73,6 +73,7 @@ export const FLUX_REDUX_REPO = 'black-forest-labs/FLUX.1-Redux-dev';
 export const FLUX2_KLEIN_REPO = 'black-forest-labs/FLUX.2-klein-4B';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
+export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
 
 export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   id: 'qwen-controlnet-union',
@@ -154,6 +155,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'FLUX.1-Canny-dev',
   'FLUX.1-Redux-dev',
   'FLUX.2-klein-4B',
+  'Stable Diffusion XL 1.0',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -810,6 +812,24 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  StableDiffusionXLPipeline: {
+    family: 'Stable Diffusion XL',
+    surfaceCategory: 'Image',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SDXL_BASE_REPO,
+    recommendedSteps: 30,
+    recommendedGuidance: 5,
+    supportFlags: 32,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 24,
+      width: 768,
+      height: 768,
+    },
+    modes: ['text_to_image'],
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 export const STUDIO_MODEL_PROFILES = Object.fromEntries(
@@ -1088,6 +1108,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     qualityDefaults: '1024x1024, 4 steps, guidance 1.',
     artifacts: [FLUX2_KLEIN_REPO],
     notes: 'Qualified through the generic Diffusers image façade with zero, one, and two reference images.',
+  },
+  StableDiffusionXLPipeline: {
+    modelType: 'StableDiffusionXLPipeline',
+    supportedModes: ['text_to_image'],
+    autoStatus: 'manual_only',
+    minimum: 'Expert-only pending a measured runtime envelope for SDXL base.',
+    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    qualityDefaults: '1024x1024, 30 steps, guidance 5.',
+    artifacts: [SDXL_BASE_REPO],
+    notes: 'The graph and immutable artifact contract are ready; live output qualification is pending.',
+    manualOnlyReason: 'Stable Diffusion XL has not completed live resource and Gallery qualification.',
   },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 

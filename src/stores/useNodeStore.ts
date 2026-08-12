@@ -597,6 +597,15 @@ function parseStudioModelCapabilities(value: unknown) {
     const modes = parseRuntimeModes(item.modes, isStudioMode);
     const runnableModes =
       item.runnableModes === undefined ? undefined : parseRuntimeModes(item.runnableModes, isStudioMode);
+    const revisionCandidates = item.revisionCandidates;
+    if (
+      revisionCandidates !== undefined &&
+      (!Array.isArray(revisionCandidates) ||
+        revisionCandidates.length > 32 ||
+        revisionCandidates.some((revision) => typeof revision !== 'string' || !/^[0-9a-f]{40}$/.test(revision)) ||
+        new Set(revisionCandidates).size !== revisionCandidates.length)
+    )
+      invalidModelCapabilities();
     const optionalRuntimeRequirement =
       item.optionalRuntimeRequirement === undefined
         ? undefined
@@ -640,6 +649,7 @@ function parseStudioModelCapabilities(value: unknown) {
     )
       invalidModelCapabilities();
     item.modes = modes;
+    if (revisionCandidates) item.revisionCandidates = [...revisionCandidates];
     if (runnableModes) item.runnableModes = runnableModes;
     if (executionProfiles) item.executionProfiles = executionProfiles;
     if (studioExecutionSpecs) item.studioExecutionSpecs = studioExecutionSpecs;

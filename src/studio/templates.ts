@@ -1237,6 +1237,10 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
     'Source contract: preserve the photographed product identity, silhouette, proportions, controls, logo spelling, camera angle, crop, background geometry, and depth of field. Change only the tabletop setting into a quiet rain-lit hotel desk with dark walnut, one folded linen napkin, and a soft window reflection; keep the product fixed in place. Match source perspective, key-light direction, exposure, contact shadow, reflections, texture scale, grain, and occlusion so the edit reads as one photograph. Do not redesign the product, add controls, move branding, duplicate objects, change the lens, create halos, or alter unrelated details.',
     'identity drift, changed product geometry, misspelled branding, moved controls, duplicate product, changed camera angle, pasted edge, halo, mismatched light, floating base, clutter, blur',
   ],
+  [
+    "Documentary still life on a field botanist's worn oak workbench beside a north-facing greenhouse window. Arrange an open linen specimen journal, three pressed ferns, brass magnifier, cotton gloves, and an unbranded amber bottle with accurate contact shadows. Eye-level 50 mm composition; soft overcast light from camera left; restrained timber bounce, paper fibers, leaf veins, glass reflections, and negative space. Keep it photographic and grounded, without people, labels, logos, or readable text.",
+    'illustration, CGI, plastic materials, floating objects, duplicate tools, malformed leaves, illegible writing, logo, watermark, harsh glow, excessive blur',
+  ],
 ];
 
 const WAN_VIDEO_DEFORMITY_GUARD =
@@ -3895,6 +3899,31 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'About 19-21 min once resident; about 60-65 min including a cold native-BF16 load on the qualified ROCm host',
       { steps: 40, guidanceScale: 4, resourceMode: 'auto' },
     ),
+  },
+  {
+    id: 'sdxl_text_to_image',
+    label: 'Stable Diffusion XL 1.0 — Text to Image: Botanical Workbench',
+    mode: 'text_to_image',
+    modelType: 'StableDiffusionXLPipeline',
+    category: 'concept',
+    tags: ['sdxl', 'text to image', 'still life', 'planning'],
+    difficulty: 'blocked',
+    requiredBackendCapabilities: ['modules.DiffusersImage.LoadPipeline', 'modules.DiffusersImage.Generate'],
+    vramEstimate: 'Pending measurement; use Expert offload controls on constrained hardware',
+    runtimeEstimate: 'Paired-graph and pinned-revision qualification pending',
+    description: 'Planning-only SDXL base recipe; hidden from Gallery until remote output review.',
+    presetId: 'quality',
+    example: {
+      ...example(8601, 'Qualification pending', {
+        width: 1024,
+        height: 1024,
+        steps: 30,
+        guidanceScale: 5,
+        resourceMode: 'expert',
+      }),
+      status: 'blocked',
+      notes: 'The graph is ready; live output and public media review are pending.',
+    },
   },
 ];
 
