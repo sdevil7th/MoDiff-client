@@ -146,6 +146,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Wan 2.2 TI2V 5B',
   'LTX-Video',
   'ACE-Step Audio',
+  'Stable Audio Open 1.0',
   'FLUX.1-schnell',
   'FLUX.1-dev',
   'FLUX.1-Krea-dev',
@@ -196,6 +197,7 @@ export const WAN_T2V_1_3B_REPO = 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers';
 export const WAN_22_I2V_A14B_REPO = 'Wan-AI/Wan2.2-I2V-A14B-Diffusers';
 export const WAN_22_TI2V_5B_REPO = 'Wan-AI/Wan2.2-TI2V-5B-Diffusers';
 export const LTX_VIDEO_REPO = 'Lightricks/LTX-Video-0.9.8-13B-distilled';
+export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 
 export const LTX_VIDEO_MODES: StudioMode[] = [
   'text_to_video',
@@ -633,6 +635,30 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  StableAudioPipeline: {
+    displayName: 'stable-audio-open-1.0',
+    family: 'Stable Audio',
+    surfaceCategory: 'Audio',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: STABLE_AUDIO_REPO,
+    artifactLabel: 'Diffusers audio repo',
+    recommendedSteps: 100,
+    recommendedGuidance: 7,
+    guidanceLabel: 'Guidance',
+    supportFlags: 0,
+    supportsAudioInput: false,
+    outputKind: 'audio',
+    recommendedDuration: 30,
+    recommendedSampleRate: 48000,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 100,
+    },
+    modes: ['text_to_audio'],
+    modeRequirements: {},
+  },
   FluxSchnellPipeline: {
     family: 'FLUX Image',
     surfaceCategory: 'Image',
@@ -1042,6 +1068,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     artifacts: [ACE_STEP_REPO],
     notes:
       'Auto enables Diffusers offload by default. XL Turbo is guidance-distilled, so guidance above 1 is ignored; source audio is used only for variation, continuation, and repaint tasks.',
+  },
+  StableAudioPipeline: {
+    modelType: 'StableAudioPipeline',
+    supportedModes: ['text_to_audio'],
+    autoStatus: 'manual_only',
+    minimum: 'Expert-only pending a measured Stable Audio runtime envelope.',
+    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    qualityDefaults: '30 seconds, 100 steps, guidance 7, one waveform.',
+    artifacts: [STABLE_AUDIO_REPO],
+    notes: 'Uses the generic Diffusers audio loader and generation nodes with a pinned model revision.',
+    manualOnlyReason: 'Live resource and Gallery qualification pending.',
   },
   FluxSchnellPipeline: {
     modelType: 'FluxSchnellPipeline',

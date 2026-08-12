@@ -233,10 +233,11 @@ function applyCatalogArtifactPins(graph, artifactPins) {
 }
 
 function requiredArtifactsForGraph(graph, defaultRepo) {
-  const artifacts = new Set([defaultRepo].filter(Boolean));
+  const artifacts = new Set();
   for (const node of graph?.nodes ?? []) {
     for (const repository of hubRepositoriesForNode(node)) artifacts.add(repository);
   }
+  if (artifacts.size === 0 && defaultRepo) artifacts.add(defaultRepo);
   return [...artifacts];
 }
 
@@ -312,8 +313,7 @@ async function main() {
     let experimentalRecords = [];
     if (requestedPair && existsSync(MANIFEST_PATH)) {
       const existingManifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-      const retainOtherCanonicalPairs = (record) =>
-        record.variant || `${record.modelType}|${record.mode}` !== requestedPair;
+      const retainOtherCanonicalPairs = (record) => `${record.modelType}|${record.mode}` !== requestedPair;
       records = (existingManifest.workflows ?? []).filter(retainOtherCanonicalPairs);
       experimentalRecords = (existingManifest.experimentalWorkflows ?? []).filter(retainOtherCanonicalPairs);
     }
@@ -420,7 +420,12 @@ async function main() {
     const capabilitiesByType = new Map(
       capabilities.capabilities.map((capability) => [capability.modelType, capability]),
     );
-    for (const template of requestedPair ? [] : templates.filter((candidate) => candidate.category === 'lora')) {
+    const loraTemplates = templates.filter(
+      (candidate) =>
+        candidate.category === 'lora' &&
+        (!requestedPair || `${candidate.modelType}|${candidate.mode}` === requestedPair),
+    );
+    for (const template of loraTemplates) {
       const capability = capabilitiesByType.get(template.modelType);
       if (!capability?.runnableModes?.includes(template.mode)) {
         throw new Error(
@@ -507,9 +512,9 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
       '  MODIFF_BACKEND_DIR  Backend repository root (default ../MoDiff)',
       '',
       'Options:',
-      '  --pair=ModelType|mode  Regenerate one canonical pair and merge it into the manifest.',
+      '  --pair=ModelType|mode  Regenerate one canonical pair and its variants, then merge them into the manifest.',
       '',
-      'Full generation replaces both graph catalogs and the workflow manifest; --pair updates only that canonical pair.',
+      'Full generation replaces both graph catalogs and the workflow manifest; --pair updates only that model/mode pair.',
     ].join('\n') + '\n',
   );
 } else {

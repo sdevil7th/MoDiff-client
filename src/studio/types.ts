@@ -39,6 +39,7 @@ export type StudioModelType =
   | 'WanTI2VPipeline'
   | 'LTXVideoPipeline'
   | 'AceStepAudioPipeline'
+  | 'StableAudioPipeline'
   | 'FluxSchnellPipeline'
   | 'FluxDevPipeline'
   | 'FluxKreaPipeline'
@@ -728,7 +729,15 @@ export type StudioModelProfile = {
   modelType: StudioModelType;
   label: string;
   displayName: string;
-  family: 'Z-Image' | 'Qwen Image' | 'Wan Video' | 'LTX Video' | 'ACE Audio' | 'FLUX Image' | 'Stable Diffusion XL';
+  family:
+    | 'Z-Image'
+    | 'Qwen Image'
+    | 'Wan Video'
+    | 'LTX Video'
+    | 'ACE Audio'
+    | 'Stable Audio'
+    | 'FLUX Image'
+    | 'Stable Diffusion XL';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
   runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';

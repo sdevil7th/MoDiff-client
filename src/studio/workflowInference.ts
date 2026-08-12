@@ -313,6 +313,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
 
   if (
     modelType === 'AceStepAudioPipeline' ||
+    modelType === 'StableAudioPipeline' ||
     roles.has('audioGenerate') ||
     keys.has('modules.DiffusersAudio.Generate')
   ) {

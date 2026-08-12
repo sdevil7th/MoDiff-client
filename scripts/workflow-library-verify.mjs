@@ -361,16 +361,17 @@ const layoutModuleServer = await createServer({
 try {
   const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
   const selectedSupported = requestedPair
-    ? manifest.workflows.filter(
-        (workflow) => !workflow.variant && `${workflow.modelType}|${workflow.mode}` === requestedPair,
-      )
+    ? manifest.workflows.filter((workflow) => `${workflow.modelType}|${workflow.mode}` === requestedPair)
     : manifest.workflows;
   const selectedExperimental = requestedPair
     ? (manifest.experimentalWorkflows ?? []).filter(
-        (workflow) => !workflow.variant && `${workflow.modelType}|${workflow.mode}` === requestedPair,
+        (workflow) => `${workflow.modelType}|${workflow.mode}` === requestedPair,
       )
     : (manifest.experimentalWorkflows ?? []);
-  if (requestedPair && selectedSupported.length + selectedExperimental.length !== 1) {
+  const selectedCanonicalCount = [...selectedSupported, ...selectedExperimental].filter(
+    (workflow) => !workflow.variant,
+  ).length;
+  if (requestedPair && selectedCanonicalCount !== 1) {
     throw new Error(`The requested canonical workflow pair is not unique: ${requestedPair}.`);
   }
   for (const workflow of selectedSupported) verifyWorkflow(workflow, 'supported', graphLayout);
