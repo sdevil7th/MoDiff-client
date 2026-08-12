@@ -74,6 +74,7 @@ export const FLUX2_KLEIN_REPO = 'black-forest-labs/FLUX.2-klein-4B';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
+export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
 
@@ -165,6 +166,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'FLUX.1-Redux-dev',
   'FLUX.2-klein-4B',
   'Stable Diffusion XL 1.0',
+  'Stable Diffusion 1.5',
   'DDPM CIFAR-10 32x32',
   'DDIM CIFAR-10 32x32',
   'Consistency Model ImageNet 64x64',
@@ -989,6 +991,33 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  StableDiffusionPipeline: {
+    family: 'Stable Diffusion 1.x',
+    surfaceCategory: 'Image',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SD15_BASE_REPO,
+    artifactLabel: 'Diffusers safetensors repo',
+    defaultDtype: 'float32',
+    defaultSize: { width: 512, height: 512, aspectRatio: '1:1' },
+    offloadSupport: {
+      modes: [...STUDIO_OFFLOAD_MODES],
+      default: 'none',
+      lowVram: 'model_cpu',
+      emergency: 'sequential_cpu',
+    },
+    recommendedSteps: 30,
+    recommendedGuidance: 7.5,
+    supportFlags: 35,
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 20, width: 512, height: 512 },
+    modes: ['text_to_image', 'edit_image', 'inpaint'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'], note: 'Requires one source image.' },
+      inpaint: {
+        requiredImages: ['referenceImages', 'maskImage'],
+        note: 'Requires one source image and one mask image.',
+      },
+    },
+  },
   DDPMPipeline: {
     family: 'DDPM',
     surfaceCategory: 'Image',
@@ -1361,6 +1390,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     artifacts: [SDXL_BASE_REPO],
     notes: 'Pinned graphs ready; output qualification pending.',
     manualOnlyReason: 'Live resource and Gallery qualification pending.',
+  },
+  StableDiffusionPipeline: {
+    modelType: 'StableDiffusionPipeline',
+    supportedModes: ['text_to_image', 'edit_image', 'inpaint'],
+    autoStatus: 'manual_only',
+    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot.',
+    recommended: 'Use the reviewed 512px profile.',
+    qualityDefaults: '512x512, 30 steps, guidance 7.5.',
+    artifacts: [SD15_BASE_REPO],
+    notes: 'Generic text-to-image, img2img, and inpaint graphs are available.',
+    manualOnlyReason: 'Remote quality review and Gallery qualification pending.',
   },
   DDPMPipeline: {
     modelType: 'DDPMPipeline',

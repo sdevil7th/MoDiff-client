@@ -147,6 +147,21 @@ test('unconditional image profiles expose prompt-free native sampling defaults',
   }
 });
 
+test('Stable Diffusion 1.5 exposes three exact generic 512px modes', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPipeline;
+  assert.equal(profile.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint']);
+  for (const mode of profile.modes) {
+    const form = profilesModule.getFormDefaultsForMode(mode, 'StableDiffusionPipeline');
+    assert.equal(form.modelType, 'StableDiffusionPipeline');
+    assert.equal(form.width, 512);
+    assert.equal(form.height, 512);
+    assert.equal(form.steps, 30);
+    assert.equal(form.guidanceScale, 7.5);
+  }
+});
+
 test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
