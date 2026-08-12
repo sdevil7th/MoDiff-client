@@ -645,7 +645,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     alternateArtifact: FLUX_DEV_FP8_REPO,
     recommendedSteps: 28,
     recommendedGuidance: 3.5,
-    supportFlags: 33,
+    supportFlags: 35,
     lowVram: {
       dtype: 'bfloat16',
       quantizationMode: 'quanto_float8',
@@ -655,11 +655,15 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       width: 1024,
       height: 1024,
     },
-    modes: ['text_to_image', 'edit_image'],
+    modes: ['text_to_image', 'edit_image', 'inpaint'],
     modeRequirements: {
       edit_image: {
         requiredImages: ['referenceImages'],
         note: 'Requires one source image.',
+      },
+      inpaint: {
+        requiredImages: ['referenceImages', 'maskImage'],
+        note: 'Requires one source image and one mask image.',
       },
     },
   },

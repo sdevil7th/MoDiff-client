@@ -1407,6 +1407,16 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: [...inpaintBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
     contentHash: 'studio-spec-v1-sdxlinpaint',
   };
+  const devInpaintSpec = {
+    ...sdxlInpaintSpec,
+    id: 'flux-dev:inpaint:v1',
+    modelType: 'FluxDevPipeline',
+    executionProfileId: 'flux-dev:inpaint-direct',
+    pipelineClass: 'FluxInpaintPipeline',
+    defaultRepo: devSpec.defaultRepo,
+    bindings: [...inpaintBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-fluxdevinpaint',
+  };
   const fillSpec = {
     ...makeSpec('FluxFillPipeline', 'flux-fill:direct', 'black-forest-labs/FLUX.1-Fill-dev', 'studio-spec-v1-ba8c8dd1'),
     id: 'flux-fill:inpaint:v1',
@@ -2352,11 +2362,11 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         },
         {
           ...capability(devSpec),
-          modes: ['text_to_image', 'edit_image'],
-          runnableModes: ['text_to_image', 'edit_image'],
-          executionProfiles: [profile(devSpec), profile(devEditSpec)],
-          studioExecutionSpecModes: ['edit_image', 'text_to_image'],
-          studioExecutionSpecs: [devSpec, devEditSpec],
+          modes: ['text_to_image', 'edit_image', 'inpaint'],
+          runnableModes: ['text_to_image', 'edit_image', 'inpaint'],
+          executionProfiles: [profile(devSpec), profile(devEditSpec), profile(devInpaintSpec)],
+          studioExecutionSpecModes: ['edit_image', 'inpaint', 'text_to_image'],
+          studioExecutionSpecs: [devSpec, devEditSpec, devInpaintSpec],
           revisionCandidates: ['3de623fc3c33e44ffbe2bad470d0f45bccf2eb21'],
         },
         capability(kreaSpec),
@@ -2598,6 +2608,31 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       devEditForm.referenceImages,
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(devEditForm), null);
+
+    const devInpaintForm = {
+      ...devEditForm,
+      mode: 'inpaint',
+      maskImage: '@data/images/flux-dev-mask.png',
+    };
+    studioStoreModule.useStudioStore.setState({ form: devInpaintForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(devInpaintForm);
+    const devInpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const devInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const devInpaintPipeline = devInpaintNodes.find(
+      (item) => item.id === devInpaintBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(devInpaintBinding.executionSpec.id, devInpaintSpec.id);
+    assert.equal(devInpaintPipeline.data.params.pipeline_class.value, devInpaintSpec.pipelineClass);
+    assert.equal(devInpaintPipeline.data.params.revision.value, '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21');
+    assert.deepEqual(
+      devInpaintNodes.find((item) => item.id === devInpaintBinding.nodes.loadImage).data.params.file.value,
+      devInpaintForm.referenceImages,
+    );
+    assert.equal(
+      devInpaintNodes.find((item) => item.id === devInpaintBinding.nodes.loadMask).data.params.file.value,
+      devInpaintForm.maskImage,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(devInpaintForm), null);
 
     const sdxlEditForm = {
       ...baseForm,
