@@ -1347,6 +1347,16 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: [...editBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
     contentHash: 'studio-spec-v1-sdxledit',
   };
+  const devEditSpec = {
+    ...sdxlEditSpec,
+    id: 'flux-dev:edit-image:v1',
+    modelType: 'FluxDevPipeline',
+    executionProfileId: 'flux-dev:img2img-direct',
+    pipelineClass: 'FluxImg2ImgPipeline',
+    defaultRepo: devSpec.defaultRepo,
+    bindings: [...editBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-fluxdevedit',
+  };
   const kontextSpec = {
     ...reduxSpec,
     id: 'flux-kontext:edit-image:v1',
@@ -2340,7 +2350,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
           studioExecutionSpecs: [sdxlSpec, sdxlEditSpec, sdxlInpaintSpec],
           revisionCandidates: [sdxlRevision],
         },
-        capability(devSpec),
+        {
+          ...capability(devSpec),
+          modes: ['text_to_image', 'edit_image'],
+          runnableModes: ['text_to_image', 'edit_image'],
+          executionProfiles: [profile(devSpec), profile(devEditSpec)],
+          studioExecutionSpecModes: ['edit_image', 'text_to_image'],
+          studioExecutionSpecs: [devSpec, devEditSpec],
+          revisionCandidates: ['3de623fc3c33e44ffbe2bad470d0f45bccf2eb21'],
+        },
         capability(kreaSpec),
         kleinCapability,
         capability(depthSpec),
@@ -2552,6 +2570,34 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'undeclared candidate generation data cannot override form input',
     );
     assert.equal(autoGenerate.width.value, autoForm.width);
+
+    const devEditForm = {
+      ...devForm,
+      mode: 'edit_image',
+      referenceImages: ['@data/images/flux-dev-source.png'],
+      resourceMode: 'expert',
+      strength: 0.7,
+    };
+    studioStoreModule.useStudioStore.setState({ form: devEditForm, autoResourcePlan: null });
+    assert.ok(devEditSpec.bindings.some(([, param, source]) => param === 'revision' && source === 'defaultRevision'));
+    assert.deepEqual(
+      nodesStoreModule.useNodesStore
+        .getState()
+        .studioModelCapabilities.find((item) => item.modelType === devEditForm.modelType).revisionCandidates,
+      ['3de623fc3c33e44ffbe2bad470d0f45bccf2eb21'],
+    );
+    await graphBridge.createOrUpdateStudioGraph(devEditForm);
+    const devEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const devEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const devEditPipeline = devEditNodes.find((item) => item.id === devEditBinding.nodes.diffusersImagePipeline);
+    assert.equal(devEditBinding.executionSpec.id, devEditSpec.id);
+    assert.equal(devEditPipeline.data.params.pipeline_class.value, devEditSpec.pipelineClass);
+    assert.equal(devEditPipeline.data.params.revision.value, '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21');
+    assert.deepEqual(
+      devEditNodes.find((item) => item.id === devEditBinding.nodes.loadImage).data.params.file.value,
+      devEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(devEditForm), null);
 
     const sdxlEditForm = {
       ...baseForm,
