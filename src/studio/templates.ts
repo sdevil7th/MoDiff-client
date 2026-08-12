@@ -1498,32 +1498,6 @@ const QWEN_LOW_VRAM_TEMPLATE_SETTINGS: Partial<StudioTemplateLockedSettings> = {
   offloadMode: QWEN_LOW_VRAM_OFFLOAD_MODE,
 };
 
-function sdxlPlanningTemplate(edit: boolean): Omit<StudioTemplateSource, 'id'> {
-  const mode = edit ? 'edit_image' : 'text_to_image';
-  return {
-    label: `Stable Diffusion XL 1.0 — ${edit ? 'Edit' : 'Generate'}`,
-    mode,
-    modelType: 'StableDiffusionXLPipeline',
-    category: edit ? 'edit' : 'concept',
-    tags: [],
-    difficulty: 'blocked',
-    ...(edit ? { inputRequirements: { sourceImage: true } } : {}),
-    vramEstimate: 'Pending',
-    runtimeEstimate: 'Pending',
-    description: 'Pending',
-    presetId: 'quality',
-    example: {
-      ...example(edit ? 8602 : 8601, 'Qualification pending', {
-        ...(edit ? { strength: 0.65 } : { width: 1024, height: 1024 }),
-        steps: 30,
-        guidanceScale: 5,
-        resourceMode: 'expert',
-      }),
-      status: 'blocked',
-    },
-  };
-}
-
 const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
   {
     id: 'z_image_quick_concept',
@@ -3930,8 +3904,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       { steps: 40, guidanceScale: 4, resourceMode: 'auto' },
     ),
   },
-  { id: 'sdxl_text_to_image', ...sdxlPlanningTemplate(false) },
-  { id: 'sdxl_image_to_image', ...sdxlPlanningTemplate(true) },
 ];
 
 function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number): StudioTemplate {

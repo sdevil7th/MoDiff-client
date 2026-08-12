@@ -6884,6 +6884,9 @@ test('canonical workflow generation persists the final layout and library open d
   const metadataIndex = generator.indexOf('addLayoutMetadata(repeated)');
   assert.match(generator, /new Set\(\['modiff\.studio', 'modiff\.flow'\]\)/);
   assert.match(generator, /this === localStorage && generatedGraphKeys\.has\(String\(key\)\)/);
+  assert.match(generator, /listTaskTemplateSkeletons/);
+  assert.match(generator, /applyTaskTemplateSkeleton/);
+  assert.match(generator, /if \(!byPair\.has\(pair\)\)/);
   assert.ok(ephemeralStorageIndex >= 0 && ephemeralStorageIndex < navigationIndex);
   assert.ok(prepareIndex >= 0);
   assert.ok(preCanonicalArrangeIndex >= 0 && canonicalizeIndex > preCanonicalArrangeIndex);

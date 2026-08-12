@@ -224,10 +224,12 @@ async function main() {
     // portable and migration-safe even when the browser correctly hides an
     // execution path that has not passed live qualification yet.
     let templates = [];
+    let taskTemplates = [];
     let byPair = new Map();
     let missingPairs = [];
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       templates = await page.evaluate(() => window.__MODIFF_E2E__?.listTemplates(true) ?? []);
+      taskTemplates = await page.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons() ?? []);
       byPair = new Map();
       for (const template of templates) {
         const pair = `${template.modelType}|${template.mode}`;
@@ -235,6 +237,10 @@ async function main() {
         const isLoraVariant = template.category === 'lora';
         const currentIsLoraVariant = current?.category === 'lora';
         if (!current || (currentIsLoraVariant && !isLoraVariant)) byPair.set(pair, template);
+      }
+      for (const template of taskTemplates) {
+        const pair = `${template.modelType}|${template.mode}`;
+        if (!byPair.has(pair)) byPair.set(pair, { ...template, taskContract: true });
       }
       missingPairs = selectedCapabilities.flatMap((capability) =>
         (capability.runnableModes ?? [])
@@ -283,7 +289,13 @@ async function main() {
       let buildError = null;
       for (let attempt = 1; attempt <= 4; attempt += 1) {
         try {
-          await page.evaluate((templateId) => window.__MODIFF_E2E__?.applyTemplate(templateId), template.id);
+          await page.evaluate(
+            ({ templateId, taskContract }) =>
+              taskContract
+                ? window.__MODIFF_E2E__?.applyTaskTemplateSkeleton(templateId)
+                : window.__MODIFF_E2E__?.applyTemplate(templateId),
+            { templateId: template.id, taskContract: template.taskContract === true },
+          );
           buildError = null;
           break;
         } catch (error) {

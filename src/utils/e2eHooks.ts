@@ -26,6 +26,8 @@ import { handleWebsocketMessage } from '../stores/websocketMessageHandler';
 import { inspectCurrentGraph, validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
+import { getFormDefaultsForMode } from '../studio/modelProfiles';
+import type { StudioTaskTemplateSkeleton } from '../studio/taskTemplateContracts';
 import { materializeTemplateDefaultInputs } from '../studio/templateInputs';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { UserBlockDefinition } from '../studio/types';
@@ -84,7 +86,9 @@ type ControlledWorkflowBlockForTest = 'upscaler' | 'video_sequence' | 'quality_v
 type ModiffE2EHooks = {
   getState: () => unknown;
   listTemplates: (includePlanning?: boolean) => GalleryTemplateSummary[];
+  listTaskTemplateSkeletons: () => StudioTaskTemplateSkeleton[];
   applyTemplate: (templateId: StudioTemplateId, formOverrides?: Partial<StudioFormState>) => Promise<void>;
+  applyTaskTemplateSkeleton: (templateId: string) => Promise<void>;
   applyControlledWorkflowBlockForTest: (
     block: ControlledWorkflowBlockForTest,
     settingsTemplateId: StudioTemplateId,
@@ -164,6 +168,31 @@ function listTemplates(includePlanning = false): GalleryTemplateSummary[] {
     workflowBlocks: [...(template.workflowBlocks ?? [])],
     runtimeReuseKey: template.runtimeReuseKey,
   }));
+}
+
+function listTaskTemplateSkeletons() {
+  return cloneJson(useNodesStore.getState().studioTaskTemplateSkeletons);
+}
+
+async function applyTaskTemplateSkeleton(templateId: string) {
+  await useNodesStore.getState().fetchStudioModelCapabilities();
+  const template = useNodesStore
+    .getState()
+    .studioTaskTemplateSkeletons.find((candidate) => candidate.id === templateId);
+  if (!template) throw new Error(`Unknown Studio task-template skeleton: ${templateId}`);
+
+  if (!useStudioStore.getState().workflowCanvasHydrated) {
+    useStudioStore.getState().hydrateActiveWorkflowCanvas();
+  }
+  setGraphScenarioForTest('empty');
+  const form = {
+    ...getFormDefaultsForMode(template.mode, template.modelType),
+    // Canonical graphs must not absorb a host-specific Auto candidate.
+    resourceMode: 'expert' as const,
+  };
+  useStudioStore.getState().updateForm(form);
+  await createOrUpdateStudioGraph(useStudioStore.getState().form);
+  useStudioStore.getState().saveActiveWorkflowTab(true);
 }
 
 async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partial<StudioFormState> = {}) {
@@ -951,7 +980,9 @@ export function installE2EHooks() {
         },
       }),
     listTemplates,
+    listTaskTemplateSkeletons,
     applyTemplate,
+    applyTaskTemplateSkeleton,
     applyControlledWorkflowBlockForTest,
     refreshModelIndexes: () => useNodesStore.getState().refreshModelIndexes(true),
     installHfModel: (repoId: string, repair = false, files: string[] = []) =>
