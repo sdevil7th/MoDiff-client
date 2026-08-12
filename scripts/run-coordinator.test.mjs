@@ -318,6 +318,22 @@ test('field actions send the workflow tab and canvas epoch captured at dispatch'
 });
 
 test('field schema actions invert hide conditions, merge the target, and preserve registry defaults', async () => {
+  const showVisibility = [];
+  const showProps = {
+    nodeId: 'preview',
+    fieldKey: 'controlnet_variant',
+    module: 'modules.ModularDiffusers',
+    action: 'Controlnet',
+    onChange: { union: ['control_mode'] },
+    updateStore: (field, value, prop) => showVisibility.push({ field, value, prop }),
+  };
+  await fieldActionModule.default(showProps, 'ordinary');
+  await fieldActionModule.default(showProps, 'union');
+  assert.deepEqual(showVisibility, [
+    { field: 'control_mode', value: true, prop: 'hidden' },
+    { field: 'control_mode', value: false, prop: 'hidden' },
+  ]);
+
   const visibility = [];
   const visibilityProps = {
     nodeId: 'preview',
