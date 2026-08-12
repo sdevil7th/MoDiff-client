@@ -9980,6 +9980,35 @@ test('mocked Studio blocks a schema-v2 Auto plan that targets a different manage
   ).toBe(false);
 });
 
+test('mocked Studio binds schema-v2 Auto to the exact managed loader repository', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      resourceMode: 'auto',
+      device: 'cuda:0',
+    });
+    const state = window.__MODIFF_E2E__!.getState();
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'set_field_value',
+      node: state.studio.graphBinding!.nodes.diffusersImagePipeline,
+      fields: { model_id: { source: 'hub', value: 'Qwen/Qwen-Image-2512' } },
+    });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
+  });
+
+  const readiness = page.getByTestId('studio-run-readiness');
+  await expect(readiness).toContainText('Run blocked');
+  await readiness.click();
+  await expect(page.getByTestId('run-issues-dialog')).toContainText('Auto mismatch');
+  await expect(page.getByTestId('studio-run')).toBeDisabled();
+});
+
 test('mocked Studio image preview actions and progress ignore stale websocket messages', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');

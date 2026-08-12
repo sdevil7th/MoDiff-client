@@ -275,7 +275,9 @@ function validCandidateBoundary(value: unknown, targetRequired: boolean) {
     AUTO_RESOURCE_TARGET_KEYS.every((key) => {
       const item = value[key];
       return typeof item === 'string' && item && item === item.trim() && item.length < 513;
-    }) && candidateTargetIsConsistent(value as StudioAutoResourceCandidate)
+    }) &&
+    candidateTargetIsConsistent(value as StudioAutoResourceCandidate) &&
+    Boolean(candidateRepo(value as StudioAutoResourceCandidate))
   );
 }
 
@@ -535,6 +537,7 @@ export function autoResourcePlanTargetMatches(
     mode: string;
     spec?: { schemaVersion: number; id: string; contentHash: string; executionProfileId: string };
     modelDependencies: Array<{ id: string; kind: string; repo: string; revision: string }>;
+    repo?: string | boolean;
   },
 ): boolean {
   if (!isSchemaV2(plan)) return true;
@@ -550,13 +553,17 @@ export function autoResourcePlanTargetMatches(
     return false;
   const identityKey = selected.loaderAction === 'ModelsLoader' ? 'model_type' : 'pipeline_class';
   const expectedIdentity = identityKey === 'model_type' ? selected.modelType : selected.pipelineClass;
+  const candidateArtifact = candidateRepo(selected);
+  if (expected.repo !== false && !candidateArtifact) return false;
+  const expectedRepo = expected.repo === true ? candidateArtifact : (expected.repo ?? candidateArtifact);
   return executableFlowNodes(nodes).some((node) => {
     const field = node.data.params[identityKey];
     return (
       managedNodeIds?.includes(node.id) &&
       node.data.module === selected.loaderModule &&
       node.data.action === selected.loaderAction &&
-      (field?.value ?? field?.default) === expectedIdentity
+      (field?.value ?? field?.default) === expectedIdentity &&
+      (!expectedRepo || selectedHubRepo(node) === expectedRepo)
     );
   });
 }
@@ -585,9 +592,25 @@ export function autoPlanIsReady(
 }
 
 function candidateRepo(candidate: StudioAutoResourceCandidate | null | undefined) {
-  return (
-    candidate?.installTarget?.repo || candidate?.resolvedArtifact || candidate?.artifact || candidate?.modelRepo || ''
-  );
+  const repos = [
+    candidate?.installTarget?.repo,
+    candidate?.resolvedArtifact,
+    candidate?.artifact,
+    candidate?.modelRepo,
+    candidate?.artifactResolution?.resolved?.repo,
+  ].filter(Boolean);
+  return new Set(repos).size === 1 ? repos[0] : undefined;
+}
+
+export function selectedHubRepo(node: FlowGraphNode) {
+  const raw = (node.data.params.model_id ?? node.data.params.repo_id)?.value;
+  if (typeof raw === 'string') return raw.trim();
+  return raw &&
+    typeof raw === 'object' &&
+    Object.keys(raw).length === 2 &&
+    (raw as { source?: unknown }).source === 'hub'
+    ? String((raw as { value?: unknown }).value).trim()
+    : '';
 }
 
 function candidateNeedsArtifactInstall(candidate: StudioAutoResourceCandidate) {
@@ -645,7 +668,7 @@ export function autoResourceInstallTarget(
     );
   });
   if (!candidate) return null;
-  const repo = candidateRepo(candidate);
+  const repo = candidateRepo(candidate)!;
   const incomplete = candidate.artifactStatus?.installed && candidate.artifactStatus.complete === false;
   return {
     repo,

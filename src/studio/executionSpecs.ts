@@ -14,7 +14,7 @@ const SPEC_ID = /^[a-z\d][a-z\d._:-]{0,127}$/;
 const FIELD_ID = /^[A-Za-z_][A-Za-z\d_]{0,63}$/;
 const NODE_KEY = /^modules\.[A-Za-z\d_]+\.[A-Za-z\d_]+$/;
 const PIPELINE_CLASS = /^[A-Za-z_][A-Za-z\d_.]{0,255}$/;
-const REPO_ID = /^[A-Za-z\d_.-]+\/[A-Za-z\d_.-]+$/;
+export const REPO_ID = /^[A-Za-z\d_.-]+\/[A-Za-z\d_.-]+$/;
 const SPEC_KEYS =
   'actions,autoFields,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
 function listed<T extends string>(value: string) {

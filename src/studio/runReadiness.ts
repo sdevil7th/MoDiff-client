@@ -25,6 +25,7 @@ import {
   autoResourceCompatibility,
   autoResourceInstallTarget,
   controlledArtifactProofNotice,
+  selectedHubRepo,
   selectedAutoCandidate,
 } from './autoResource';
 import { studioOffloadPlanConflict } from './deviceOffload';
@@ -41,7 +42,7 @@ import type { RuntimeCudaDevice, RuntimeMpsDevice, RuntimeStatus, RuntimeXpuDevi
 import type { RuntimeResourceSnapshot } from './runtimeResources';
 import { getStudioGraphRunBlockingMessage } from './graphBridge';
 import { optionalRuntimeBlockState } from './optionalRuntimes';
-import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
+import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm, REPO_ID } from './executionSpecs';
 
 const GIB = 1024 ** 3;
 const MODEL_PARAM_HINTS = [
@@ -58,7 +59,6 @@ const MODEL_PARAM_HINTS = [
   'adapter',
 ];
 const MODEL_FILE_PATTERN = /\.(safetensors|ckpt|pt|pth|bin|onnx|gguf)$/i;
-const HF_REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
 const LOCAL_PATH_PREFIX_PATTERN = /^(?:\.{1,2}\/|\/|[a-z]:|models\/|checkpoints\/|loras\/|vae\/|controlnet\/)/i;
 
 function issue(values: Omit<RunReadinessIssue, 'id'> & { id?: string }): RunReadinessIssue {
@@ -147,7 +147,7 @@ function isHfRepoId(value: string) {
     LOCAL_PATH_PREFIX_PATTERN.test(value)
   )
     return false;
-  return HF_REPO_PATTERN.test(value);
+  return REPO_ID.test(value);
 }
 
 function isModelFilePath(value: string) {
@@ -904,13 +904,49 @@ function blockingOptionalRuntimeState(
   stale: boolean,
 ) {
   if (!profile) return null;
-  const matching = profile.executionProfiles?.find((item) => item.modes.includes(mode));
+  let matching = profile.executionProfiles?.find((item) => item.modes.includes(mode));
   if (profile.executionProfiles && !matching) {
     return profile.optionalRuntimeRequirement?.requiredNow ? 'unavailable' : null;
   }
-  const requirement =
+  let requirement =
     matching?.optionalRuntimeRequirement ??
     (profile.executionProfiles ? undefined : profile.optionalRuntimeRequirement);
+  const binding = useStudioStore.getState().graphBinding;
+  if (matching && binding) {
+    const initial = matching;
+    const loader = useFlowStore
+      .getState()
+      .nodes.find(
+        (node) =>
+          binding.managedNodeIds.includes(node.id) &&
+          node.data.module === initial.loader_module &&
+          node.data.action === initial.loader_action,
+      );
+    if (loader) {
+      const profiles = useNodesStore
+        .getState()
+        .studioModelCapabilities.flatMap((item) => item.executionProfiles ?? [])
+        .filter((item) => item.backend_path === initial.backend_path);
+      const key = initial.loader_action === 'ModelsLoader' ? 'model_type' : 'pipeline_class';
+      const sameIdentity = profiles.filter((item) => item[key] === loader.data.params[key]?.value);
+      const repo = selectedHubRepo(loader);
+      const resolved =
+        sameIdentity.length === 1
+          ? sameIdentity
+          : sameIdentity.filter(
+              (item) =>
+                repo && [item.default_repo, item.fallback_repo, ...(item.compatible_repos ?? [])].includes(repo),
+            );
+      matching = resolved.length === 1 ? resolved[0] : undefined;
+      if (!matching)
+        return (sameIdentity.length ? sameIdentity : profiles).some(
+          (item) => item.optionalRuntimeRequirement?.requiredNow,
+        )
+          ? 'unavailable'
+          : null;
+      requirement = matching?.optionalRuntimeRequirement;
+    }
+  }
   return requirement?.requiredNow && stale ? 'unavailable' : optionalRuntimeBlockState(requirement, catalog);
 }
 
@@ -932,7 +968,8 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   const autoCandidate = auto ? selectedAutoCandidate(autoResourcePlan, form) : null;
   const autoInstallTarget = auto ? autoResourceInstallTarget(autoResourcePlan, form) : null;
   const autoCompatibility = autoResourceCompatibility(autoResourcePlan, form);
-  const autoTarget = auto && graphBinding ? currentAutoResourcePlanTarget(autoResourcePlan, form, graphBinding) : null;
+  const autoTarget =
+    auto && graphBinding ? currentAutoResourcePlanTarget(autoResourcePlan, form, graphBinding, true) : null;
   const exactCapability = exactStudioCapabilitySupport(
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,

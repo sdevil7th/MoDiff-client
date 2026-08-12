@@ -302,6 +302,119 @@ test('optional runtime readiness is exact-mode scoped and base delivery stays ne
   }
 });
 
+test('optional runtime readiness mirrors repository disambiguation for shared loaders', () => {
+  const nodesState = nodesStoreModule.useNodesStore.getState();
+  const studioState = studioStoreModule.useStudioStore.getState();
+  const flowState = flowStoreModule.useFlowStore.getState();
+  const runtime = (id, delivery, state, reason) =>
+    optionalRequirement({
+      delivery,
+      requiredNow: delivery === 'optional_overlay',
+      executionProfileIds: [id],
+      state,
+      reason,
+    });
+  const base = runtime('flux-schnell:direct', 'base', 'base_satisfied', 'base_runtime_contract');
+  const required = runtime('flux-dev:direct', 'optional_overlay', 'active', 'optional_runtime_active');
+  const executionProfile = (id, modelType, repo, requirement) => ({
+    id,
+    model_type: modelType,
+    modes: ['text_to_image'],
+    loader_module: 'modules.DiffusersImage',
+    loader_action: 'LoadPipeline',
+    execution_path: 'direct-diffusers-image',
+    backend_path: 'modules.DiffusersImage.LoadPipeline',
+    pipeline_class: 'FluxPipeline',
+    default_repo: repo,
+    fallback_repo: null,
+    compatible_repos: [],
+    optionalRuntimeRequirement: requirement,
+  });
+  const capability = (modelType, executionProfile, requirement) => ({
+    modelType,
+    modes: ['text_to_image'],
+    runnableModes: ['text_to_image'],
+    optionalRuntimeRequirement: requirement,
+    executionProfiles: [executionProfile],
+  });
+  const schnell = executionProfile(
+    'flux-schnell:direct',
+    'FluxSchnellPipeline',
+    'black-forest-labs/FLUX.1-schnell',
+    base,
+  );
+  const dev = executionProfile('flux-dev:direct', 'FluxDevPipeline', 'black-forest-labs/FLUX.1-dev', required);
+  const loader = (modelId) => ({
+    id: 'flux-loader',
+    data: {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'LoadPipeline',
+      params: { pipeline_class: { value: 'FluxPipeline' }, model_id: { value: modelId } },
+    },
+  });
+  const optionalIssue = () =>
+    runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'optional_runtime_required');
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilitiesAuthoritative: true,
+      optionalRuntimeCatalog: qualifiedOptionalRuntimeCatalog(),
+      discoveryRequests: {
+        ...nodesState.discoveryRequests,
+        capabilities: { status: 'success', error: null, requestId: 1 },
+        optionalRuntimes: { status: 'success', error: null, requestId: 1 },
+      },
+      studioModelCapabilities: [
+        capability('FluxSchnellPipeline', schnell, base),
+        capability('FluxDevPipeline', dev, required),
+      ],
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: { ...studioState.form, modelType: 'FluxDevPipeline', mode: 'text_to_image', resourceMode: 'expert' },
+      graphBinding: {
+        mode: 'text_to_image',
+        modelType: 'FluxDevPipeline',
+        nodes: { diffusersImagePipeline: 'flux-loader' },
+        managedNodeIds: ['flux-loader'],
+        managedEdgeIds: [],
+        fingerprint: 'repo-aware-runtime-test',
+      },
+    });
+
+    flowStoreModule.useFlowStore.setState({ nodes: [loader('black-forest-labs/FLUX.1-dev')], edges: [] });
+    assert.equal(optionalIssue(), undefined);
+    flowStoreModule.useFlowStore.setState({
+      nodes: [loader({ source: 'local', value: 'black-forest-labs/FLUX.1-dev' })],
+    });
+    assert.equal(optionalIssue()?.blocking, true, 'local selections cannot prove a shared loader profile');
+    flowStoreModule.useFlowStore.setState({ nodes: [loader('example/unknown-flux')] });
+    assert.equal(optionalIssue()?.blocking, true, 'unknown Hub repositories remain ambiguous');
+    flowStoreModule.useFlowStore.setState({ nodes: [loader('black-forest-labs/FLUX.1-schnell')] });
+    assert.equal(optionalIssue(), undefined, 'a known sibling repository uses that sibling runtime delivery');
+
+    const baseDev = { ...dev, optionalRuntimeRequirement: { ...base, executionProfileIds: ['flux-dev:direct'] } };
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [
+        capability('FluxSchnellPipeline', schnell, base),
+        capability('FluxDevPipeline', baseDev, baseDev.optionalRuntimeRequirement),
+      ],
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [loader('example/unknown-flux')] });
+    assert.equal(optionalIssue(), undefined, 'ambiguous base-delivered loaders remain readiness-neutral');
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: nodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: nodesState.studioModelCapabilitiesAuthoritative,
+      optionalRuntimeCatalog: nodesState.optionalRuntimeCatalog,
+      discoveryRequests: nodesState.discoveryRequests,
+    });
+    studioStoreModule.useStudioStore.setState({ form: studioState.form, graphBinding: studioState.graphBinding });
+    flowStoreModule.useFlowStore.setState({ nodes: flowState.nodes, edges: flowState.edges });
+  }
+});
+
 test('a required runtime becomes ready only with the exact qualified active catalog', () => {
   const previousNodesState = nodesStoreModule.useNodesStore.getState();
   const previousForm = studioStoreModule.useStudioStore.getState().form;
@@ -1662,7 +1775,7 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
       'WanPipeline',
     ],
   ];
-  const node = (id, module, action, identity, disabled = false, parentId) => ({
+  const node = (id, module, action, identity, disabled = false, parentId, repo) => ({
     id,
     parentId,
     data: {
@@ -1671,6 +1784,7 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
       type: 'custom',
       params: {
         [module === 'modules.ModularDiffusers' ? 'model_type' : 'pipeline_class']: { value: identity },
+        ...(repo ? { model_id: { value: repo } } : {}),
       },
       uiState: disabled ? { disabled: true } : undefined,
     },
@@ -1684,6 +1798,7 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
       loaderAction,
       executionPath,
       pipelineClass,
+      modelRepo: 'owner/model',
       modelDependencies: [],
     };
     return {
@@ -1699,9 +1814,9 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
   for (const [modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass] of cases) {
     const plan = planFor(modelType, mode, loaderModule, loaderAction, executionPath, pipelineClass);
     const nodes = [
-      node('modular', 'modules.ModularDiffusers', 'ModelsLoader', modelType),
-      node('image', 'modules.DiffusersImage', 'LoadPipeline', pipelineClass),
-      node('video', 'modules.DiffusersVideo', 'LoadPipeline', pipelineClass),
+      node('modular', 'modules.ModularDiffusers', 'ModelsLoader', modelType, false, undefined, 'owner/model'),
+      node('image', 'modules.DiffusersImage', 'LoadPipeline', pipelineClass, false, undefined, 'owner/model'),
+      node('video', 'modules.DiffusersVideo', 'LoadPipeline', pipelineClass, false, undefined, 'owner/model'),
     ];
     const managedId =
       loaderModule === 'modules.ModularDiffusers' ? 'modular' : loaderModule.includes('Video') ? 'video' : 'image';
@@ -1745,7 +1860,17 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
   assert.equal(
     autoResourceModule.autoResourcePlanTargetMatches(
       dependencyPlan,
-      [node('managed-modular', 'modules.ModularDiffusers', 'ModelsLoader', 'QwenImageModularPipeline')],
+      [
+        node(
+          'managed-modular',
+          'modules.ModularDiffusers',
+          'ModelsLoader',
+          'QwenImageModularPipeline',
+          false,
+          undefined,
+          'owner/model',
+        ),
+      ],
       ['managed-modular'],
       { modelType: 'QwenImageModularPipeline', mode: 'control_image', modelDependencies: qwenDependencies },
     ),
@@ -1868,6 +1993,7 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
     pipelineClass: 'FluxPipeline',
+    modelRepo: 'black-forest-labs/FLUX.1-schnell',
     modelDependencies: [],
     studioExecutionSpecContract: {
       schemaVersion: 1,
@@ -1883,7 +2009,15 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
   };
   assert.equal(autoResourceModule.selectedAutoCandidate(graphBoundPlan)?.id, 'specified');
   const graphSpec = { ...graphBoundCandidate.studioExecutionSpecContract };
-  const fluxLoader = node('flux-loader', 'modules.DiffusersImage', 'LoadPipeline', 'FluxPipeline');
+  const fluxLoader = node(
+    'flux-loader',
+    'modules.DiffusersImage',
+    'LoadPipeline',
+    'FluxPipeline',
+    false,
+    undefined,
+    'black-forest-labs/FLUX.1-schnell',
+  );
   assert.equal(
     autoResourceModule.autoResourcePlanTargetMatches(graphBoundPlan, [fluxLoader], ['flux-loader'], {
       modelType: 'FluxSchnellPipeline',
@@ -1905,6 +2039,44 @@ test('schema-v2 Auto targets only the exact managed loader for Qwen and Wan prof
       { modelType: 'FluxSchnellPipeline', mode: 'text_to_image', spec: graphSpec },
     ),
     false,
+  );
+  assert.equal(
+    autoResourceModule.autoResourcePlanTargetMatches(
+      graphBoundPlan,
+      [
+        node(
+          'flux-loader',
+          'modules.DiffusersImage',
+          'LoadPipeline',
+          'FluxPipeline',
+          false,
+          undefined,
+          'black-forest-labs/FLUX.1-dev',
+        ),
+      ],
+      ['flux-loader'],
+      { modelType: 'FluxSchnellPipeline', mode: 'text_to_image', spec: graphSpec, modelDependencies: [] },
+    ),
+    false,
+    'a shared loader class cannot satisfy Auto with a different live repository',
+  );
+  const inconsistentArtifact = {
+    ...graphBoundCandidate,
+    resolvedArtifact: 'black-forest-labs/FLUX.1-dev',
+  };
+  assert.equal(
+    autoResourceModule.autoResourcePlanTargetMatches(
+      {
+        ...graphBoundPlan,
+        selectedCandidate: inconsistentArtifact,
+        candidates: [inconsistentArtifact],
+      },
+      [fluxLoader],
+      ['flux-loader'],
+      { modelType: 'FluxSchnellPipeline', mode: 'text_to_image', spec: graphSpec, modelDependencies: [] },
+    ),
+    false,
+    'conflicting artifact identities cannot bind a selected Auto plan',
   );
   assert.equal(
     autoResourceModule.selectedAutoCandidate({
@@ -4396,7 +4568,10 @@ test('ACE LoRA runtime hints replace the selected candidate and its complete art
             type: 'custom',
             module: 'modules.DiffusersAudio',
             action: 'LoadPipeline',
-            params: { pipeline_class: { value: 'AceStepPipeline' } },
+            params: {
+              pipeline_class: { value: 'AceStepPipeline' },
+              model_id: { value: reviewedRepo },
+            },
           },
         },
       ],

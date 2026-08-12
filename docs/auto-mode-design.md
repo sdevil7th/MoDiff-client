@@ -51,7 +51,7 @@ Studio form
   -> inspect runtime, packages, model indexes, artifact metadata, and history
   -> rank candidates
   -> select one candidate only when its proof is accepted
-  -> verify its exact loader module/action and execution path against the managed visible graph
+  -> verify its exact loader module/action, execution path, and selected Hub repository against the managed visible graph
   -> apply candidate to form and visible graph
   -> run-readiness validation
   -> user presses Run
@@ -96,7 +96,7 @@ A usable candidate should declare enough information to reproduce and diagnose i
 
 Avoid candidate fields that contain developer-specific absolute paths or secrets. Public exports and Gallery provenance should preserve reproducibility without disclosing workstation identity.
 
-For schema-v2 plans, the selected candidate must be the unique same-ID entry in the returned candidate list and retain the same workflow and execution identity. Its `modelDependencies` receipt must exactly match the current model/mode profile as bounded `id`/`kind`/`repo`/immutable-`revision` entries. The client applies it only when the exact loader is executable and belongs to the current managed graph. A disabled loader, an unrelated matching loader elsewhere on a mixed graph, a stale model/task pair or dependency revision, or a missing target blocks Run and asks the user to refresh or rebuild. A target that is already configured correctly remains valid; applicability does not depend on changing a field.
+For schema-v2 plans, the selected candidate must be the unique same-ID entry in the returned candidate list and retain the same workflow and execution identity. Its artifact repository fields must agree, and its `modelDependencies` receipt must exactly match the current model/mode profile as bounded `id`/`kind`/`repo`/immutable-`revision` entries. The client applies it only when the exact loader is executable, belongs to the current managed graph, and selects that exact Hub repository. Local selectors, unknown repositories, conflicting artifact identities, disabled loaders, unrelated matching loaders elsewhere on a mixed graph, stale model/task pairs or dependency revisions, and missing targets block Run and ask the user to refresh or rebuild. A target that is already configured correctly remains valid; applicability does not depend on changing a field.
 
 ## Current Model Policy
 

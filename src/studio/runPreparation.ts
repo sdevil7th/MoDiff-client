@@ -75,9 +75,51 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   const baseForm = studio.form;
   const autoResourcePlan = studio.autoResourcePlan;
   const auto = baseForm.resourceMode === 'auto';
-  const target = currentAutoResourcePlanTarget(autoResourcePlan, baseForm, studio.graphBinding);
+  const activeTemplate = STUDIO_TEMPLATES.find((template) => template.id === studio.activeTemplateId);
+  const templateBaseModel = activeTemplate?.workflowBlockSettings?.lora?.baseModel;
+  const templateBaseModelRepo = templateBaseModel?.source === 'hub' ? templateBaseModel.value : undefined;
+  const templateBaseModelRevision = templateBaseModel?.revision;
+  const selectedCandidate = auto ? selectedAutoCandidate(autoResourcePlan, baseForm) : null;
+  // Architecture-locked LoRA bases replace the complete candidate receipt and
+  // visible loader together, so exact target validation must use that same
+  // effective identity rather than the planner's pre-template repository.
+  const autoCandidate =
+    selectedCandidate && templateBaseModelRepo
+      ? {
+          ...selectedCandidate,
+          modelRepo: templateBaseModelRepo,
+          resolvedArtifact: templateBaseModelRepo,
+          artifact: templateBaseModelRepo,
+          baseArtifact: templateBaseModelRepo,
+          artifactRevision: templateBaseModelRevision,
+          artifactResolution: {
+            ...(selectedCandidate.artifactResolution ?? {}),
+            base: {
+              ...(selectedCandidate.artifactResolution?.base ?? {}),
+              repo: templateBaseModelRepo,
+              revision: templateBaseModelRevision,
+            },
+            resolved: {
+              ...(selectedCandidate.artifactResolution?.resolved ?? {}),
+              repo: templateBaseModelRepo,
+              revision: templateBaseModelRevision,
+            },
+            substituted: false,
+          },
+          installTarget: { ...(selectedCandidate.installTarget ?? {}), repo: templateBaseModelRepo },
+        }
+      : selectedCandidate;
+  const autoCandidates = autoResourcePlan?.candidates?.map((candidate) =>
+    autoCandidate && candidate.id === autoCandidate.id ? autoCandidate : candidate,
+  );
+  const target = currentAutoResourcePlanTarget(
+    autoResourcePlan,
+    baseForm,
+    studio.graphBinding,
+    templateBaseModelRepo ?? true,
+  );
   if (auto && target) throw new Error(target);
-  const committedAutoCandidate = auto ? selectedAutoCandidate(autoResourcePlan, baseForm) : null;
+  const committedAutoCandidate = autoCandidate;
   const autoFieldOverrides = studio.autoFieldOverrides;
   const pinnedAutoFormKeys = new Set(
     Object.values(autoFieldOverrides)
@@ -102,47 +144,6 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   const profile = getProfileForForm(form);
   const resourcePlan = resolveStudioResourcePlan(form);
   const workflowTab = studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId);
-  const activeTemplate = STUDIO_TEMPLATES.find((template) => template.id === studio.activeTemplateId);
-  const templateBaseModel = activeTemplate?.workflowBlockSettings?.lora?.baseModel;
-  const templateBaseModelRepo = templateBaseModel?.source === 'hub' ? templateBaseModel.value : undefined;
-  const templateBaseModelRevision = templateBaseModel?.revision;
-  const selectedCandidate = auto ? selectedAutoCandidate(autoResourcePlan, form) : null;
-  // The backend applies a proven Auto plan directly to loader nodes. Mirror an
-  // architecture-locked audio LoRA base into that plan as well as the visible
-  // graph, or the backend would replace the correct checkpoint with the
-  // profile default immediately before execution.
-  const autoCandidate =
-    selectedCandidate && templateBaseModelRepo
-      ? {
-          ...selectedCandidate,
-          modelRepo: templateBaseModelRepo,
-          resolvedArtifact: templateBaseModelRepo,
-          artifact: templateBaseModelRepo,
-          baseArtifact: templateBaseModelRepo,
-          artifactRevision: templateBaseModelRevision,
-          artifactResolution: {
-            ...(selectedCandidate.artifactResolution ?? {}),
-            base: {
-              ...(selectedCandidate.artifactResolution?.base ?? {}),
-              repo: templateBaseModelRepo,
-              revision: templateBaseModelRevision,
-            },
-            resolved: {
-              ...(selectedCandidate.artifactResolution?.resolved ?? {}),
-              repo: templateBaseModelRepo,
-              revision: templateBaseModelRevision,
-            },
-            substituted: false,
-          },
-          installTarget: {
-            ...(selectedCandidate.installTarget ?? {}),
-            repo: templateBaseModelRepo,
-          },
-        }
-      : selectedCandidate;
-  const autoCandidates = autoResourcePlan?.candidates?.map((candidate) =>
-    autoCandidate && candidate.id === autoCandidate.id ? autoCandidate : candidate,
-  );
   const autoRetryPlans = auto
     ? qwenDirectRetryPlansFromCandidates(autoCandidates, autoCandidate?.id)
     : resourcePlan.retryPlans;

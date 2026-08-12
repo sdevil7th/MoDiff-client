@@ -2948,10 +2948,12 @@ export function currentAutoResourcePlanTarget(
   plan: StudioAutoResourcePlan | null,
   form: StudioFormState,
   binding: StudioGraphBinding | null,
+  repo: string | boolean = false,
 ) {
   return (
     !autoResourcePlanTargetMatches(plan, useFlowStore.getState().nodes, binding?.managedNodeIds, {
       ...form,
+      repo,
       spec: binding?.executionSpec,
       modelDependencies: modelDependencyReceiptForMode(getProfileForForm(form), form.mode),
     }) && 'Auto mismatch.'

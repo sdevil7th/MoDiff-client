@@ -3,6 +3,7 @@ import {
   runtimeRecord as record,
   runtimeText as string,
 } from './runtimeOptimizations';
+import { REPO_ID } from './executionSpecs';
 
 export type OptionalRuntimeRequirement = {
   schemaVersion: 1;
@@ -235,6 +236,8 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     const profile = record(raw);
     const id = string(profile.id, executionId);
     const modes = parseRuntimeModes(profile.modes, isMode);
+    for (const repo of [profile.default_repo, profile.fallback_repo]) if (repo != null) string(repo, REPO_ID);
+    if (profile.compatible_repos !== undefined) ids(profile.compatible_repos, REPO_ID, true);
     if (profile.optionalRuntimeRequirement !== undefined && profile.optional_runtime_requirement !== undefined)
       invalid();
     const rawRequirement = profile.optionalRuntimeRequirement ?? profile.optional_runtime_requirement;

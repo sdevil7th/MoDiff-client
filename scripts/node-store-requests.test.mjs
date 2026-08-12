@@ -174,6 +174,7 @@ function fluxExecutionProfile(
     pipeline_class: 'FluxPipeline',
     default_repo: repo,
     fallback_repo: null,
+    compatible_repos: [],
     quantizable_components: ['transformer', 'text_encoder_2'],
     default_quantized_components: [],
     supported_offload_modes: ['none', 'model_cpu'],
@@ -608,6 +609,15 @@ test('mixed-version and conflicting execution runtime contracts fail closed', as
             double_quant: true,
             unexpected: true,
           },
+        },
+      ],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          compatible_repos: ['owner/repo', 'owner/repo'],
         },
       ],
     },

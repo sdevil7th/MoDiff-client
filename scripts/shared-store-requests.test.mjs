@@ -305,6 +305,7 @@ test('schema-v2 Auto planning accepts and preserves the backend profile-bound ca
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
     pipelineClass: 'FluxPipeline',
+    modelRepo: 'black-forest-labs/FLUX.1-schnell',
     modelDependencies: [],
     studioExecutionSpecContract: {
       schemaVersion: 1,
@@ -345,6 +346,7 @@ test('schema-v2 Auto planning bounds candidate identity depth, count, size, and 
     loaderAction: 'LoadPipeline',
     executionPath: 'direct-diffusers-image',
     pipelineClass: 'QwenImagePipeline',
+    modelRepo: 'Qwen/Qwen-Image-2512',
   };
   const plan = (selectedCandidate, candidates) => ({
     schemaVersion: 2,

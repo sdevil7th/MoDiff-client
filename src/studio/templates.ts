@@ -1242,8 +1242,18 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
 const WAN_VIDEO_DEFORMITY_GUARD =
   'deformity, deformed anatomy, deformed limbs, deformed wheels, deformed rigid-body geometry, identity drift';
 
-type StudioTemplateSource = Omit<StudioTemplate, 'prompt' | 'negativePrompt' | 'promptGuide' | 'predictability'> &
-  Partial<Pick<StudioTemplate, 'promptGuide' | 'predictability'>>;
+type StudioTemplateSource = Omit<
+  StudioTemplate,
+  | 'prompt'
+  | 'negativePrompt'
+  | 'promptGuide'
+  | 'predictability'
+  | 'intentGroup'
+  | 'readinessPolicy'
+  | 'recipeSummary'
+  | 'verificationStatus'
+  | 'example'
+> & { example: StudioTemplateExample } & Partial<Pick<StudioTemplate, 'promptGuide' | 'predictability'>>;
 
 function inferIntentGroup(template: StudioTemplateSource): StudioTemplateIntentGroup {
   if (template.difficulty === 'blocked' || template.example?.status === 'blocked') return 'planning';
@@ -1252,8 +1262,6 @@ function inferIntentGroup(template: StudioTemplateSource): StudioTemplateIntentG
   if (template.category === 'low_vram') return 'performance';
   if (template.category === 'lora') return 'adapters';
   if (template.category === 'upscale') return 'upscale';
-  if (template.category === 'product' || template.category === 'poster' || template.category === 'text')
-    return 'generate_image';
   if (template.category === 'control' || template.category === 'reference' || template.category === 'layers')
     return 'reference_control';
   if (template.category === 'edit' || template.category === 'inpaint' || template.category === 'outpaint')
@@ -1262,29 +1270,37 @@ function inferIntentGroup(template: StudioTemplateSource): StudioTemplateIntentG
 }
 
 function readinessPolicy(template: StudioTemplateSource): StudioTemplateReadinessPolicy {
-  if (template.difficulty === 'blocked' || template.example?.status === 'blocked') return 'planning';
+  if (template.difficulty === 'blocked' || template.example.status === 'blocked') return 'planning';
   if (template.inputRequirements) return 'requires_input';
   return 'runnable';
 }
 
 function defaultOutputKinds(mode: StudioTemplate['mode']): NonNullable<StudioTemplate['outputKinds']> {
-  if (VIDEO_STUDIO_MODES.includes(mode)) return ['video'];
-  if (mode === 'text_to_audio' || mode.startsWith('audio_')) return ['audio'];
-  return ['image'];
+  return VIDEO_STUDIO_MODES.includes(mode)
+    ? ['video']
+    : mode === 'text_to_audio' || mode.startsWith('audio_')
+      ? ['audio']
+      : ['image'];
 }
 
-function defaultThumbnailVariant(outputKinds: NonNullable<StudioTemplate['outputKinds']>) {
-  return outputKinds[0] === 'video'
-    ? ('video' as const)
-    : outputKinds[0] === 'audio'
-      ? ('audio' as const)
-      : ('image' as const);
+function defaultThumbnailVariant(
+  outputKinds: NonNullable<StudioTemplate['outputKinds']>,
+  mode: StudioTemplate['mode'],
+) {
+  return /edit|inpaint|outpaint|control_image|image_to_video|video_to_video/.test(mode)
+    ? ('compareSlider' as const)
+    : outputKinds[0] === 'video'
+      ? ('video' as const)
+      : outputKinds[0] === 'audio'
+        ? ('audio' as const)
+        : ('image' as const);
 }
 
-function mediaSlotsForTemplate(template: StudioTemplateSource): StudioTemplateMediaSlot[] {
-  const outputKinds = template.outputKinds ?? defaultOutputKinds(template.mode);
-  const mediaType = template.example?.mediaType ?? outputKinds[0];
-  const variant = template.thumbnailVariant ?? defaultThumbnailVariant(outputKinds);
+function mediaSlotsForTemplate(
+  template: StudioTemplateSource,
+  variant: StudioTemplate['thumbnailVariant'],
+): StudioTemplateMediaSlot[] {
+  const mediaType = template.example.mediaType;
   if (variant === 'compareSlider' || variant === 'hoverDissolve') {
     return [
       { id: 'before', label: 'Before', kind: 'comparison_before', role: 'before', placeholder: 'source asset pending' },
@@ -1328,10 +1344,6 @@ function mediaSlotsForTemplate(template: StudioTemplateSource): StudioTemplateMe
 
 function userGoalForTemplate(template: StudioTemplateSource) {
   const intent = inferIntentGroup(template);
-  if (intent === 'product_brand')
-    return 'Create polished product, packaging, or campaign imagery with realistic materials and brand-safe structure.';
-  if (intent === 'typography_poster')
-    return 'Generate layouts where hierarchy, spacing, and short readable text matter.';
   if (intent === 'edit_image')
     return 'Use source imagery deliberately while preserving identity, perspective, lighting, and unedited regions.';
   if (intent === 'reference_control')
@@ -1344,8 +1356,6 @@ function userGoalForTemplate(template: StudioTemplateSource) {
     return 'Prepare a finishing recipe that sends the generated result through an upscaling pass.';
   if (intent === 'performance')
     return 'Use hardware-aware settings for lower-memory local runs without hand-editing backend runtime nodes.';
-  if (intent === 'utility')
-    return 'Prepare practical graph helpers such as low-VRAM runs, LoRA studies, or finishing passes.';
   if (intent === 'planning')
     return 'Inspect a recipe that needs a backend contract before MoDiff should present it as runnable.';
   return 'Generate a strong first image concept from a detailed prompt and model-appropriate settings.';
@@ -1364,6 +1374,7 @@ function withTemplateRecipeDefaults(
     ? `/template-gallery/${template.id}.${index === 39 ? 'poster' : 'card-poster'}.${WEBP_CARD_POSTER_INDEXES.has(index) ? 'webp' : 'png'}`
     : undefined;
   const outputKinds = template.outputKinds ?? defaultOutputKinds(template.mode);
+  const thumbnailVariant = template.thumbnailVariant ?? defaultThumbnailVariant(outputKinds, template.mode);
   const promptGuide =
     template.promptGuide ??
     (outputKinds.includes('video')
@@ -1377,11 +1388,10 @@ function withTemplateRecipeDefaults(
             : ['edit_image', 'multi_image_reference_edit', 'inpaint', 'outpaint'].includes(template.mode)
               ? EDIT_PROMPT_GUIDE
               : BASE_PROMPT_GUIDE);
-  const seed = template.example?.lockedSeed;
-  if (!template.predictability && seed === undefined) throw new Error(`Template ${template.id} needs a locked seed.`);
+  const seed = template.example.lockedSeed;
   const templatePredictability =
     template.predictability ?? (outputKinds.includes('video') ? videoPredictability(seed!) : predictability(seed!));
-  const lockedSettings = template.example?.lockedSettings;
+  const lockedSettings = template.example.lockedSettings;
   const loaderSettings = {
     ...DEFAULT_STUDIO_FORM,
     ...(getPreset(template.presetId)?.values ?? {}),
@@ -1415,19 +1425,18 @@ function withTemplateRecipeDefaults(
             : [template.modelType, ...runtimeContract].join(':'));
   return {
     ...template,
-    intentGroup: template.intentGroup ?? inferIntentGroup(template),
-    readinessPolicy: template.readinessPolicy ?? readinessPolicy(template),
+    intentGroup: inferIntentGroup(template),
+    readinessPolicy: readinessPolicy(template),
     userGoal: template.userGoal ?? userGoalForTemplate(template),
-    recipeSummary: template.recipeSummary ?? template.description,
+    recipeSummary: template.description,
     outputKinds,
-    thumbnailVariant: template.thumbnailVariant ?? defaultThumbnailVariant(outputKinds),
-    mediaSlots: template.mediaSlots ?? mediaSlotsForTemplate(template),
-    verificationStatus: template.verificationStatus ?? template.example?.status ?? 'unverified',
+    thumbnailVariant,
+    mediaSlots: template.mediaSlots ?? mediaSlotsForTemplate(template, thumbnailVariant),
+    verificationStatus: template.example.status,
     runtimeReuseKey,
-    example:
-      template.example && cardPoster
-        ? { ...template.example, thumbnailPath: template.example.thumbnailPath ?? cardPoster }
-        : template.example,
+    example: cardPoster
+      ? { ...template.example, thumbnailPath: template.example.thumbnailPath ?? cardPoster }
+      : template.example,
     prompt,
     negativePrompt,
     promptGuide,
@@ -1672,7 +1681,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'control',
     tags: ['control image', 'layout', 'composition'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { controlImage: true, sampleAssets: ['layout or edge/control image'] },
     requiredBackendCapabilities: ['Qwen ControlNet Union graph contract'],
     vramEstimate: 'Auto selects native BF16 on high-memory GPUs or a bounded offload plan on smaller supported GPUs',
@@ -1724,7 +1732,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'product',
     tags: ['product', 'poster', 'reference ad'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['layout/ad reference', 'product reference'] },
     requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -1753,7 +1760,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'product',
     tags: ['product', 'relight', 'composite'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['scene/background reference', 'product reference'] },
     requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -1825,7 +1831,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'edit',
     tags: ['contact sheet', 'upres', 'selection'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['generated 3x3 contact sheet'] },
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
     runtimeEstimate: QWEN_EDIT_RUNTIME_ESTIMATE,
@@ -1841,7 +1846,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'product',
     tags: ['brand', 'logo', 'texture'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['logo/mark image', 'material texture reference'] },
     requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -1898,7 +1902,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'outpaint',
     tags: ['outpaint', 'aspect ratio', 'canvas'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source product or lifestyle image'] },
     inputBindings: [
       {
@@ -1959,7 +1962,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'inpaint',
     tags: ['inpaint', 'object replace', 'mask'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, maskImage: true, sampleAssets: ['source image', 'object mask'] },
     requiredBackendCapabilities: ['native inpaint mask graph contract'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -1981,7 +1983,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'edit',
     tags: ['before/after', 'identity', 'retouch'],
     difficulty: 'intermediate',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source portrait or character image'] },
     requiredBackendCapabilities: ['Qwen single-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -2023,7 +2024,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'reference',
     tags: ['multi-reference', 'fusion', 'style transfer'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['subject reference', 'style/material reference'] },
     requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -2042,7 +2042,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'product',
     tags: ['multi-reference', 'product', 'material'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['product geometry', 'material finish'] },
     requiredBackendCapabilities: ['Qwen multi-image reference edit', 'Modular Diffusers LoRA scheduler metadata'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -2068,7 +2067,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'inpaint',
     tags: ['mask', 'localized edit', 'inpaint'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, maskImage: true, sampleAssets: ['source image', 'mask image'] },
     requiredBackendCapabilities: ['native inpaint mask graph contract'],
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
@@ -2152,7 +2150,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'outpaint',
     tags: ['canvas expansion', 'mask', 'edit'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source portrait or scene image'] },
     inputBindings: [
       {
@@ -2412,7 +2409,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_edit',
     tags: ['video', 'image to video', 'ltx', 'rally car', 'tracking shot', 'parallax'],
     difficulty: 'starter',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 1, sampleAssets: ['rally car source still'] },
     requiredBackendCapabilities: [
       'modules.DiffusersVideo.LoadPipeline',
@@ -2456,7 +2452,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_edit',
     tags: ['video', 'video to video', 'ltx', 'rocket', 'remaster', 'restoration'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceVideo: true, sampleAssets: ['daylight rocket launch source video'] },
     videoDelivery: 'spatial_upscale',
     requiredBackendCapabilities: [
@@ -2583,7 +2578,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_edit',
     tags: ['video', 'image to video', 'food', 'photoreal'],
     difficulty: 'blocked',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 1, sampleAssets: ['landscape beverage still'] },
     requiredBackendCapabilities: ['modules.DiffusersVideo.Generate', 'modules.VideoConditioning.ReferenceImages'],
     vramEstimate: '16 GB recommended',
@@ -2615,7 +2609,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_color',
     tags: ['video', 'color', 'edit'],
     difficulty: 'intermediate',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceVideo: true, sampleAssets: ['source video'] },
     requiredBackendCapabilities: ['modules.Video.Load', 'modules.DiffusersVideo.Generate', 'modules.Video.Export'],
     vramEstimate: '16 GB recommended',
@@ -2657,7 +2650,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_inpaint',
     tags: ['video', 'mask', 'inpaint', 'product', 'glass'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: {
       sourceVideo: true,
       maskVideo: true,
@@ -2701,7 +2693,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_outpaint',
     tags: ['video', 'outpaint', 'reframe', 'robotics', 'laboratory'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceVideo: true, maskVideo: true, sampleAssets: ['source video', 'boundary mask video'] },
     requiredBackendCapabilities: [
       'modules.VideoConditioning.Normalize',
@@ -3152,7 +3143,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'kontext', 'edit'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source image'] },
     requiredBackendCapabilities: ['Diffusers image edit pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
@@ -3169,7 +3159,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'fill', 'inpaint'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, maskImage: true, sampleAssets: ['source image', 'mask image'] },
     requiredBackendCapabilities: ['Diffusers image inpaint pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
@@ -3191,6 +3180,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'canny', 'control'],
     difficulty: 'advanced',
+    thumbnailVariant: 'image',
     inputRequirements: { controlImage: true, sampleAssets: ['control image'] },
     requiredBackendCapabilities: ['Diffusers image control pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
@@ -3226,7 +3216,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'kontext', 'multi-reference'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['source image', 'material reference'] },
     requiredBackendCapabilities: ['Diffusers image edit pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
@@ -3243,7 +3232,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'fill', 'outpaint'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: {
       sourceImage: true,
       maskImage: true,
@@ -3277,7 +3265,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'depth', 'control'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { controlImage: true, sampleAssets: ['depth control image'] },
     requiredBackendCapabilities: ['Diffusers image control pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
@@ -3294,7 +3281,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'redux', 'edit'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source image'] },
     requiredBackendCapabilities: ['Diffusers image edit pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
@@ -3312,7 +3298,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux', 'redux', 'multi-reference', 'visual blend'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['rainy underpass reference', 'bicycle courier reference'] },
     requiredBackendCapabilities: ['Diffusers image edit pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
@@ -3359,7 +3344,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux2', 'klein', 'edit'],
     difficulty: 'starter',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source image'] },
     requiredBackendCapabilities: ['Diffusers image edit pipeline'],
     vramEstimate: '13 GB native or model offload',
@@ -3380,7 +3364,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'flux',
     tags: ['flux2', 'klein', 'multi-reference'],
     difficulty: 'intermediate',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { referenceImages: 2, sampleAssets: ['composition reference', 'material reference'] },
     requiredBackendCapabilities: ['Diffusers image edit pipeline'],
     vramEstimate: '13 GB native or model offload',
@@ -3401,7 +3384,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_edit',
     tags: ['wan', 'video-to-video', 'photoreal', 'cat', 'courtyard', 'environment restyle'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceVideo: true, sampleAssets: ['source video'] },
     requiredBackendCapabilities: ['Diffusers video direct pipeline', 'modules.Video.Load'],
     vramEstimate: '24 GB with offload',
@@ -3426,6 +3408,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_generation',
     tags: ['video', 'long-form', 'sequence', 'road thriller', 'story', 'ltx'],
     difficulty: 'advanced',
+    thumbnailVariant: 'video',
     inputRequirements: {
       referenceImages: 6,
       sampleAssets: [
@@ -3717,6 +3700,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'video_generation',
     tags: ['wan 2.2', 'image-to-video', 'photoreal', 'fine dining', 'chef', 'food preparation', 'five seconds'],
     difficulty: 'advanced',
+    thumbnailVariant: 'video',
     inputRequirements: {
       referenceImages: 1,
       sampleAssets: ['identity-locked fine-dining kitchen opening keyframe'],
@@ -3807,8 +3791,8 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'audio_generation',
     tags: ['audio', 'video', 'lyrics', 'music video', 'ace-step', 'ltx', 'photoreal', 'story'],
     difficulty: 'advanced',
-    thumbnailVariant: 'audio',
     inputRequirements: {},
+    thumbnailVariant: 'audio',
     outputKinds: ['video', 'audio'],
     requiredBackendCapabilities: [
       'modules.DiffusersAudio.Generate',
@@ -3898,7 +3882,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'edit',
     tags: ['qwen', 'edit', 'single-image'],
     difficulty: 'advanced',
-    thumbnailVariant: 'compareSlider',
     inputRequirements: { sourceImage: true, sampleAssets: ['source product image'] },
     requiredBackendCapabilities: ['Modular Diffusers Qwen Image Edit Plus'],
     vramEstimate:

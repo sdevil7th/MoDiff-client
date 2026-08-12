@@ -639,6 +639,7 @@ export type StudioExecutionProfile = {
   pipeline_class: string;
   default_repo: string;
   fallback_repo?: string | null;
+  compatible_repos?: string[];
   quantizable_components: string[];
   default_quantized_components: string[];
   supported_offload_modes: StudioOffloadMode[];
