@@ -186,8 +186,63 @@ async function loadCapabilities() {
   return payload;
 }
 
+async function loadArtifactPins() {
+  const response = await fetch(`${BACKEND_URL}/model_artifact_catalog`);
+  if (!response.ok) throw new Error(`Artifact catalog request failed: HTTP ${response.status}`);
+  const payload = await response.json();
+  if (payload.schemaVersion !== 1 || !Array.isArray(payload.models) || !Array.isArray(payload.repositoryPins)) {
+    throw new Error('Backend must expose /model_artifact_catalog schemaVersion 1.');
+  }
+  const entries = [
+    ...payload.models.flatMap((model) => [
+      { repo: model.baseRepo, revision: model.baseRevision },
+      ...(Array.isArray(model.artifacts) ? model.artifacts : []),
+    ]),
+    ...payload.repositoryPins,
+  ];
+  return new Map(
+    entries
+      .filter((entry) => typeof entry?.repo === 'string' && /^[0-9a-f]{40}$/i.test(String(entry?.revision ?? '')))
+      .map((entry) => [entry.repo.toLowerCase(), { repo: entry.repo, revision: entry.revision.toLowerCase() }]),
+  );
+}
+
+function hubRepositoriesForNode(node) {
+  return Object.values(node?.data?.params ?? {})
+    .map((field) => field?.value)
+    .filter(
+      (value) =>
+        value &&
+        typeof value === 'object' &&
+        value.source === 'hub' &&
+        typeof value.value === 'string' &&
+        value.value.length > 0,
+    )
+    .map((value) => value.value);
+}
+
+function applyCatalogArtifactPins(graph, artifactPins) {
+  for (const node of graph?.nodes ?? []) {
+    const repositories = hubRepositoriesForNode(node);
+    if (repositories.length !== 1 || !node?.data?.params?.revision) continue;
+    const pin = artifactPins.get(repositories[0].toLowerCase());
+    if (!pin) continue;
+    node.data.params.revision = { ...node.data.params.revision, value: pin.revision };
+  }
+  return graph;
+}
+
+function requiredArtifactsForGraph(graph, defaultRepo) {
+  const artifacts = new Set([defaultRepo].filter(Boolean));
+  for (const node of graph?.nodes ?? []) {
+    for (const repository of hubRepositoriesForNode(node)) artifacts.add(repository);
+  }
+  return [...artifacts];
+}
+
 async function main() {
   const capabilities = await loadCapabilities();
+  const artifactPins = await loadArtifactPins();
   const selectedCapabilities = requestedPair
     ? capabilities.capabilities.filter((capability) =>
         (capability.runnableModes ?? []).some((mode) => `${capability.modelType}|${mode}` === requestedPair),
@@ -312,7 +367,9 @@ async function main() {
       if (!exported || !Array.isArray(exported.nodes) || !Array.isArray(exported.edges)) {
         throw new Error(`Could not export a completed graph for ${description}.`);
       }
-      return finalizeCanonicalGraph(applyPortableContracts(sanitize(exported), mode));
+      return finalizeCanonicalGraph(
+        applyCatalogArtifactPins(applyPortableContracts(sanitize(exported), mode), artifactPins),
+      );
     };
 
     if (!requestedPair) {
@@ -347,7 +404,7 @@ async function main() {
           supportTier: capability.supportTier,
           qualificationStatus,
           ...qualificationDimensions(qualificationStatus),
-          requiredArtifacts: [capability.defaultRepo].filter(Boolean),
+          requiredArtifacts: requiredArtifactsForGraph(graph, capability.defaultRepo),
           requiredInputs: capability.inputContracts?.[mode] ?? [],
           pipelineClasses: capability.pipelineClasses ?? [],
           sourceTemplateId: template.id,
@@ -402,7 +459,7 @@ async function main() {
         qualificationStatus,
         ...qualificationDimensions(qualificationStatus),
         variant: 'lora-theme',
-        requiredArtifacts: [capability.defaultRepo, adapterRepo].filter(Boolean),
+        requiredArtifacts: requiredArtifactsForGraph(graph, capability.defaultRepo || adapterRepo),
         requiredInputs: capability.inputContracts?.[template.mode] ?? [],
         pipelineClasses: capability.pipelineClasses ?? [],
         sourceTemplateId: template.id,
