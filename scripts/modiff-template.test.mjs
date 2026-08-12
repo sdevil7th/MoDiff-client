@@ -162,6 +162,19 @@ test('Stable Diffusion 1.5 exposes three exact generic 512px modes', () => {
   }
 });
 
+test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.LCM_DREAMSHAPER_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 4);
+  assert.equal(form.guidanceScale, 8.5);
+});
+
 test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;

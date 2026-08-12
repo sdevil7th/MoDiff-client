@@ -35,6 +35,7 @@ export type StudioModelType =
   | 'DDIMPipeline'
   | 'ConsistencyModelPipeline'
   | 'StableDiffusionPipeline'
+  | 'LatentConsistencyModelPipeline'
   | 'ZImageModularPipeline'
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
@@ -765,7 +766,8 @@ export type StudioModelProfile = {
     | 'DDPM'
     | 'DDIM'
     | 'Consistency Models'
-    | 'Stable Diffusion 1.x';
+    | 'Stable Diffusion 1.x'
+    | 'Latent Consistency Models';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
   runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';
