@@ -1386,6 +1386,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['diffusersImageInpaint', 'reference_strength', 'conditioningScale'],
     ...bindingRows.slice(31).map(([, param, source]) => ['diffusersImageInpaint', param, source]),
   ];
+  const sdxlInpaintSpec = {
+    ...sdxlEditSpec,
+    id: 'sdxl-base:inpaint:v1',
+    mode: 'inpaint',
+    executionProfileId: 'sdxl-base:inpaint-direct',
+    pipelineClass: 'StableDiffusionXLInpaintPipeline',
+    roles: inpaintRoleRows,
+    edges: inpaintEdgeRows,
+    bindings: [...inpaintBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-sdxlinpaint',
+  };
   const fillSpec = {
     ...makeSpec('FluxFillPipeline', 'flux-fill:direct', 'black-forest-labs/FLUX.1-Fill-dev', 'studio-spec-v1-ba8c8dd1'),
     id: 'flux-fill:inpaint:v1',
@@ -2322,11 +2333,11 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         capability(schnellSpec),
         {
           ...capability(sdxlSpec),
-          modes: ['text_to_image', 'edit_image'],
-          runnableModes: ['text_to_image', 'edit_image'],
-          executionProfiles: [profile(sdxlSpec), profile(sdxlEditSpec)],
-          studioExecutionSpecModes: ['edit_image', 'text_to_image'],
-          studioExecutionSpecs: [sdxlSpec, sdxlEditSpec],
+          modes: ['text_to_image', 'edit_image', 'inpaint'],
+          runnableModes: ['text_to_image', 'edit_image', 'inpaint'],
+          executionProfiles: [profile(sdxlSpec), profile(sdxlEditSpec), profile(sdxlInpaintSpec)],
+          studioExecutionSpecModes: ['edit_image', 'inpaint', 'text_to_image'],
+          studioExecutionSpecs: [sdxlSpec, sdxlEditSpec, sdxlInpaintSpec],
           revisionCandidates: [sdxlRevision],
         },
         capability(devSpec),
@@ -2564,6 +2575,31 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       sdxlEditForm.referenceImages,
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlEditForm), null);
+
+    const sdxlInpaintForm = {
+      ...sdxlEditForm,
+      mode: 'inpaint',
+      maskImage: '@data/images/sdxl-mask.png',
+    };
+    studioStoreModule.useStudioStore.setState({ form: sdxlInpaintForm });
+    await graphBridge.createOrUpdateStudioGraph(sdxlInpaintForm);
+    const sdxlInpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const sdxlInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const sdxlInpaintPipeline = sdxlInpaintNodes.find(
+      (item) => item.id === sdxlInpaintBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(sdxlInpaintBinding.executionSpec.id, sdxlInpaintSpec.id);
+    assert.equal(sdxlInpaintPipeline.data.params.pipeline_class.value, sdxlInpaintSpec.pipelineClass);
+    assert.equal(sdxlInpaintPipeline.data.params.revision.value, sdxlRevision);
+    assert.deepEqual(
+      sdxlInpaintNodes.find((item) => item.id === sdxlInpaintBinding.nodes.loadImage).data.params.file.value,
+      sdxlInpaintForm.referenceImages,
+    );
+    assert.equal(
+      sdxlInpaintNodes.find((item) => item.id === sdxlInpaintBinding.nodes.loadMask).data.params.file.value,
+      sdxlInpaintForm.maskImage,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlInpaintForm), null);
 
     const kleinEditForm = {
       ...kleinForm,

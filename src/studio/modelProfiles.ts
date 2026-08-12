@@ -819,7 +819,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     defaultRepo: SDXL_BASE_REPO,
     recommendedSteps: 30,
     recommendedGuidance: 5,
-    supportFlags: 33,
+    supportFlags: 35,
     lowVram: {
       dtype: 'bfloat16',
       autoOffload: true,
@@ -828,11 +828,15 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       width: 768,
       height: 768,
     },
-    modes: ['text_to_image', 'edit_image'],
+    modes: ['text_to_image', 'edit_image', 'inpaint'],
     modeRequirements: {
       edit_image: {
         requiredImages: ['referenceImages'],
         note: 'Requires one source image.',
+      },
+      inpaint: {
+        requiredImages: ['referenceImages', 'maskImage'],
+        note: 'Requires one source image and one mask image.',
       },
     },
   },
@@ -1117,7 +1121,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   StableDiffusionXLPipeline: {
     modelType: 'StableDiffusionXLPipeline',
-    supportedModes: ['text_to_image', 'edit_image'],
+    supportedModes: ['text_to_image', 'edit_image', 'inpaint'],
     autoStatus: 'manual_only',
     minimum: 'Expert-only pending a measured runtime envelope for SDXL base.',
     recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
