@@ -1452,6 +1452,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: [...inpaintBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
     contentHash: 'studio-spec-v1-fluxdevinpaint',
   };
+  const qwenImageInpaintSpec = {
+    ...devInpaintSpec,
+    id: 'qwen-image-2512:inpaint:v1',
+    modelType: 'QwenImageModularPipeline',
+    executionProfileId: 'qwen-image:inpaint-direct',
+    pipelineClass: 'QwenImageInpaintPipeline',
+    defaultRepo: qwenImageSpec.defaultRepo,
+    contentHash: 'studio-spec-v1-qwenimageinpaint',
+  };
   const fillSpec = {
     ...makeSpec('FluxFillPipeline', 'flux-fill:direct', 'black-forest-labs/FLUX.1-Fill-dev', 'studio-spec-v1-ba8c8dd1'),
     id: 'flux-fill:inpaint:v1',
@@ -2204,8 +2213,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   };
   const qwenImageCapability = {
     ...capability(qwenImageSpec),
-    modes: ['text_to_image', 'edit_image', 'control_image'],
-    runnableModes: ['text_to_image', 'edit_image', 'control_image'],
+    modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
+    runnableModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
     executionProfiles: [
       {
         ...profile(qwenImageSpec),
@@ -2216,13 +2225,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         quantizable_components: ['transformer', 'text_encoder'],
       },
       {
+        ...profile(qwenImageInpaintSpec),
+        quantizable_components: ['transformer', 'text_encoder'],
+      },
+      {
         ...profile(qwenControlSpec),
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
       },
     ],
-    studioExecutionSpecModes: ['control_image', 'edit_image', 'text_to_image'],
-    studioExecutionSpecs: [qwenImageSpec, qwenImageEditSpec, qwenControlSpec],
+    studioExecutionSpecModes: ['control_image', 'edit_image', 'inpaint', 'text_to_image'],
+    studioExecutionSpecs: [qwenImageSpec, qwenImageEditSpec, qwenImageInpaintSpec, qwenControlSpec],
     revisionCandidates: [qwenImageRevision],
   };
   const kleinCapability = {
@@ -2685,6 +2698,31 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       qwenImageEditForm.referenceImages,
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenImageEditForm), null);
+
+    const qwenImageInpaintForm = {
+      ...qwenImageEditForm,
+      mode: 'inpaint',
+      maskImage: '@data/images/qwen-image-mask.png',
+    };
+    studioStoreModule.useStudioStore.setState({ form: qwenImageInpaintForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(qwenImageInpaintForm);
+    const qwenImageInpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenImageInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const qwenImageInpaintPipeline = qwenImageInpaintNodes.find(
+      (item) => item.id === qwenImageInpaintBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(qwenImageInpaintBinding.executionSpec.id, qwenImageInpaintSpec.id);
+    assert.equal(qwenImageInpaintPipeline.data.params.pipeline_class.value, qwenImageInpaintSpec.pipelineClass);
+    assert.equal(qwenImageInpaintPipeline.data.params.revision.value, qwenImageRevision);
+    assert.deepEqual(
+      qwenImageInpaintNodes.find((item) => item.id === qwenImageInpaintBinding.nodes.loadImage).data.params.file.value,
+      qwenImageInpaintForm.referenceImages,
+    );
+    assert.equal(
+      qwenImageInpaintNodes.find((item) => item.id === qwenImageInpaintBinding.nodes.loadMask).data.params.file.value,
+      qwenImageInpaintForm.maskImage,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenImageInpaintForm), null);
 
     const devEditForm = {
       ...devForm,
