@@ -3032,6 +3032,8 @@ async function installMockRoutes(page: Page) {
             schemaVersion: 1,
             id: profileId,
             label: 'Hugging Face Transformers + PEFT',
+            platform: 'linux',
+            machine: 'x86_64',
             specDigest: digest,
             contractState:
               mockOptionalRuntimeQualified || mockOptionalRuntimeActions ? 'qualified' : 'candidate_unqualified',
@@ -3240,7 +3242,7 @@ test('top bar reports live system and accelerator resources without refreshing r
   await expect(popover).toContainText('Peak allocated');
 });
 
-test('optional runtime setup is GET-only and keeps the unqualified candidate non-actionable', async ({ page }) => {
+test('optional runtime setup is GET-only and keeps a pending target non-actionable', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   await ensureFrontend();
@@ -3285,8 +3287,9 @@ test('optional runtime setup is GET-only and keeps the unqualified candidate non
     },
   });
   const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
-  const profile = disclosure.getByText(/Hugging Face Transformers \+ PEFT:/);
+  const profile = disclosure.getByText(/Hugging Face Transformers \+ PEFT/);
   await expect(disclosure).toBeVisible();
+  await expect(profile).toContainText('Linux x86-64');
   await expect(profile).toContainText('unavailable');
   await expect(profile).toContainText('candidate_unqualified');
   await expect(disclosure.getByRole('button', { name: /install|activate/i })).toHaveCount(0);

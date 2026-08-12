@@ -28,6 +28,8 @@ export type OptionalRuntimeRequirement = {
 export type OptionalRuntimeProfileStatus = {
   id: string;
   label: string;
+  platform: 'linux' | 'macos' | 'windows';
+  machine: 'arm64' | 'x86_64';
   specDigest: string;
   contractState: string;
   cutoverReady: boolean;
@@ -315,6 +317,8 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
     invalid();
   string(item.id, runtimeId);
   string(item.label);
+  string(item.platform, /^(?:linux|macos|windows)$/);
+  string(item.machine, /^(?:arm64|x86_64)$/);
   string(item.specDigest, specDigest);
   string(item.contractState);
   string(item.status, /^(?:missing|present_unqualified|wrong_version)$/);

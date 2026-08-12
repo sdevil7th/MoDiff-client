@@ -51,6 +51,12 @@ function optionalRuntimeStatus(
   return `${state.replace(/_/g, ' ')}${state === 'unavailable' ? ` (${profile.contractState})` : ''}.`;
 }
 
+function optionalRuntimeTarget(profile: OptionalRuntimeProfileStatus) {
+  const platform = profile.platform === 'macos' ? 'macOS' : profile.platform === 'windows' ? 'Windows' : 'Linux';
+  const machine = profile.machine === 'arm64' ? 'ARM64' : 'x86-64';
+  return `${platform} ${machine}`;
+}
+
 export default function RuntimeOptimizationsCard() {
   const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
   const optionalRuntimeRequest = useNodesStore((state) => state.discoveryRequests.optionalRuntimes);
@@ -245,7 +251,8 @@ export default function RuntimeOptimizationsCard() {
             return (
               <div key={profile.id} className="grid gap-1 text-xs text-modiff-text">
                 <span>
-                  {profile.label}: {optionalRuntimeStatus(profile, optionalRuntimeCatalog.processLoadStatus)}
+                  {profile.label} ({optionalRuntimeTarget(profile)}):{' '}
+                  {optionalRuntimeStatus(profile, optionalRuntimeCatalog.processLoadStatus)}
                 </span>
                 {runtimeJob?.profileId === profile.id ? (
                   <div className="flex items-center gap-2" data-testid="optional-runtime-progress">

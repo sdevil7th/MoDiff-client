@@ -649,6 +649,11 @@ export type StudioExecutionProfile = {
   max_low_memory_steps?: number | null;
   live_proof: boolean;
   optional_runtime_delivery?: 'base' | 'optional_overlay';
+  optional_runtime_platform_deliveries?: Array<{
+    platform: 'linux' | 'macos' | 'windows';
+    machine: 'arm64' | 'x86_64';
+    delivery: 'base' | 'optional_overlay';
+  }>;
   optional_runtime_profiles?: string[];
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   expert_cuda_policy?: StudioExpertCudaPolicy;

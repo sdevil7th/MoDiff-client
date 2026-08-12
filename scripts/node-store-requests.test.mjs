@@ -139,6 +139,8 @@ function optionalRuntimeCatalog(overrides = {}) {
         schemaVersion: 1,
         id: 'huggingface-transformers-peft-5.14.1-0.20.0',
         label: 'Hugging Face Transformers + PEFT',
+        platform: 'linux',
+        machine: 'x86_64',
         specDigest: `sha256:${'1'.repeat(64)}`,
         contractState: 'candidate_unqualified',
         cutoverReady: false,
@@ -887,6 +889,8 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
   );
   for (const profile of [
     { ...optionalRuntimeCatalog().profiles[0], specDigest: 'sha256:invalid' },
+    { ...optionalRuntimeCatalog().profiles[0], platform: 'solaris' },
+    { ...optionalRuntimeCatalog().profiles[0], machine: 'riscv64' },
     { ...optionalRuntimeCatalog().profiles[0], installActionAvailable: 'yes' },
     { ...optionalRuntimeCatalog().profiles[0], activationAvailable: undefined },
   ]) {
