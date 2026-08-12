@@ -2,7 +2,7 @@ import { useFlowStore, type APIGraphExport, type CustomNodeType } from '../store
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import { captureWorkflowOperationContext, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import {
@@ -191,7 +191,7 @@ async function applyTaskTemplateSkeleton(templateId: string) {
     resourceMode: 'expert' as const,
   };
   useStudioStore.getState().updateForm(form);
-  await createOrUpdateStudioGraph(useStudioStore.getState().form);
+  await createOrUpdateStudioGraph(useStudioStore.getState().form, captureWorkflowOperationContext());
   useStudioStore.getState().saveActiveWorkflowTab(true);
 }
 

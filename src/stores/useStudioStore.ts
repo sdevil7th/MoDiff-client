@@ -2689,6 +2689,18 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           existing && state.activeWorkflowTabId === normalized.id
             ? { ...existing, snapshot: currentWorkflowSnapshot(state) }
             : existing;
+        if (existing && localDocument && sameWorkflowDocument(localDocument, normalized)) {
+          // An autosave acknowledgement for the document already on screen
+          // only advances backend metadata. Replacing the live canvas here
+          // would cancel in-flight dynamic node-definition work even though
+          // the returned graph is byte-for-byte the same document.
+          set({
+            workflowTabs: state.workflowTabs.map((tab) =>
+              tab.id === normalized.id ? { ...normalized, snapshot: localDocument.snapshot, dirty: false } : tab,
+            ),
+          });
+          return;
+        }
         const hasUnsavedLocalDocument = Boolean(
           existing &&
           localDocument &&

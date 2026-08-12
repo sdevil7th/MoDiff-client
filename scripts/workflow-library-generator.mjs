@@ -283,7 +283,7 @@ async function main() {
     let taskTemplates = [];
     let byPair = new Map();
     let missingPairs = [];
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; attempt <= 20; attempt += 1) {
       templates = await page.evaluate(() => window.__MODIFF_E2E__?.listTemplates(true) ?? []);
       taskTemplates = await page.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons() ?? []);
       byPair = new Map();
@@ -304,7 +304,7 @@ async function main() {
           .filter((pair) => !byPair.has(pair)),
       );
       if (missingPairs.length === 0) break;
-      if (attempt < 3) await page.waitForTimeout(500);
+      if (attempt < 20) await page.waitForTimeout(500);
     }
     if (missingPairs.length > 0) {
       throw new Error(`No Studio template can build: ${missingPairs.join(', ')}.`);

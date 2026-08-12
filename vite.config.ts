@@ -87,7 +87,7 @@ function compactProductionChunksPlugin(): Plugin {
         Object.values(bundle).map(async (item) => {
           if (item.type !== 'chunk') return;
           const result = await minify(item.code, {
-            compress: { passes: 5 },
+            compress: { passes: 5, pure_getters: 'strict', booleans_as_integers: true },
             ecma: 2022,
             module: true,
             mangle: true,
@@ -196,7 +196,9 @@ const baseConfig: UserConfig = {
             moduleId.endsWith('/src/studio/templates.ts') ||
             moduleId.endsWith('/src/studio/modelUsagePolicies.ts') ||
             moduleId.endsWith('/src/studio/nodeCatalog.ts') ||
-            moduleId.endsWith('/src/studio/templateBackendCapabilities.ts')
+            moduleId.endsWith('/src/studio/templateBackendCapabilities.ts') ||
+            moduleId.endsWith('/src/studio/managedControlPolicy.ts') ||
+            moduleId.endsWith('/src/studio/graphFixer.ts')
           ) {
             return 'studio-templates';
           }

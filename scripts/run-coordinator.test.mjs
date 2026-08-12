@@ -781,6 +781,10 @@ test('live backend workflow updates cannot overwrite a newer local active docume
   assert.equal(merged.backendRevision, 2);
   assert.equal(merged.snapshot.nodes[0].data.params.output.value, 'current-workflow.png');
 
+  const acknowledgementEpochs = {
+    canvas: studioStoreModule.useStudioStore.getState().workflowCanvasEpoch,
+    form: studioStoreModule.useStudioStore.getState().workflowFormEpoch,
+  };
   websocketModule.handleWebsocketMessage(
     {
       type: 'workflow_updated',
@@ -802,6 +806,13 @@ test('live backend workflow updates cannot overwrite a newer local active docume
   assert.equal(merged.dirty, false);
   assert.equal(merged.backendRevision, 3);
   assert.equal(merged.snapshot.nodes[0].data.params.output.value, 'current-workflow.png');
+  assert.deepEqual(
+    {
+      canvas: studioStoreModule.useStudioStore.getState().workflowCanvasEpoch,
+      form: studioStoreModule.useStudioStore.getState().workflowFormEpoch,
+    },
+    acknowledgementEpochs,
+  );
 });
 
 test('inactive-origin output classification uses captured graph and exact websocket identity', () => {

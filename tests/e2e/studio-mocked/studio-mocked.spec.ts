@@ -7559,10 +7559,15 @@ test('backend declarative bindings synchronize both generic Layered actions afte
         height: 512,
       });
     } catch (error) {
-      // Startup Auto-plan reconciliation may supersede this intentionally
-      // Expert-only fixture while its already-materialized graph remains the
-      // active document. The assertions below require that exact graph.
-      if (!(error instanceof Error) || !error.message.includes('workflow changed')) throw error;
+      // Startup reconciliation may supersede this intentionally Expert-only
+      // fixture, while its deliberately incomplete dynamic schema may remain
+      // pending until this test publishes the two definitions below. Both
+      // outcomes retain the exact materialized graph asserted next.
+      if (
+        !(error instanceof Error) ||
+        (!error.message.includes('workflow changed') && !error.message.includes('Graph preparation is still running'))
+      )
+        throw error;
     }
   });
   await expect

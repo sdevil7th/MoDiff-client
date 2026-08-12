@@ -18,11 +18,15 @@ const OUTPUT_KEYS = 'inputHandle,mediaKind,nodeKey,role';
 const REQUIRED_MEDIA_KEYS = 'field,kind,minimumCount';
 const MEDIA_FIELDS = {
   referenceImages: 'image',
+  lastImage: 'image',
   maskImage: 'image',
   controlImage: 'image',
   sourceVideo: 'video',
   maskVideo: 'video',
   controlVideo: 'video',
+  poseVideo: 'video',
+  faceVideo: 'video',
+  backgroundVideo: 'video',
   sourceAudio: 'audio',
   referenceAudio: 'audio',
 } as const;
@@ -75,7 +79,8 @@ function validateOutput(raw: Record<string, unknown>, spec: StudioExecutionSpec)
   const mediaKind = raw.mediaKind as keyof typeof OUTPUT_NODE_KEYS;
   if (
     raw.output.mediaKind !== mediaKind ||
-    raw.output.nodeKey !== OUTPUT_NODE_KEYS[mediaKind] ||
+    (raw.output.nodeKey !== OUTPUT_NODE_KEYS[mediaKind] &&
+      !(mediaKind === 'video' && raw.output.nodeKey === 'modules.Video.ExportWithAudio')) ||
     typeof raw.output.role !== 'string' ||
     typeof raw.output.inputHandle !== 'string' ||
     !FIELD_ID.test(raw.output.inputHandle)
@@ -84,7 +89,10 @@ function validateOutput(raw: Record<string, unknown>, spec: StudioExecutionSpec)
   const outputRole = raw.output.role as StudioGraphRole;
   const role = spec.roles.find(([candidate]) => candidate === outputRole);
   const outgoing = spec.edges.some(([sourceRole]) => sourceRole === outputRole);
-  const incoming = spec.edges.filter(([, , targetRole]) => targetRole === outputRole);
+  const expectedInputHandle = mediaKind === 'json' ? 'data' : mediaKind;
+  const incoming = spec.edges.filter(
+    ([, , targetRole, targetHandle]) => targetRole === outputRole && targetHandle === expectedInputHandle,
+  );
   const inputEdge = incoming.length === 1 ? incoming[0] : undefined;
   if (!role || role[1] !== raw.output.nodeKey || outgoing || !inputEdge || inputEdge[3] !== raw.output.inputHandle) {
     invalid();

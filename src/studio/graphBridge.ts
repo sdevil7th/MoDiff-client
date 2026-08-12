@@ -154,6 +154,9 @@ const NODE_KEYS = {
   loadVideo: 'modules.Video.Load',
   loadControlVideo: 'modules.Video.Load',
   loadMaskVideo: 'modules.Video.Load',
+  loadPoseVideo: 'modules.Video.Load',
+  loadFaceVideo: 'modules.Video.Load',
+  loadBackgroundVideo: 'modules.Video.Load',
   normalizeVideo: 'modules.VideoConditioning.Normalize',
   alignMaskVideo: 'modules.VideoConditioning.AlignMask',
   videoColor: 'modules.VideoColor.Adjust',
@@ -201,6 +204,9 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   loadVideo: { x: -520, y: 260 },
   loadControlVideo: { x: -520, y: 260 },
   loadMaskVideo: { x: -520, y: 520 },
+  loadPoseVideo: { x: -520, y: 520 },
+  loadFaceVideo: { x: -160, y: 520 },
+  loadBackgroundVideo: { x: 220, y: 520 },
   normalizeVideo: { x: -160, y: 260 },
   alignMaskVideo: { x: -160, y: 520 },
   videoColor: { x: 220, y: 520 },
@@ -1617,8 +1623,10 @@ function exactTypedEdgeSpec(
   const source = binding.nodes[sourceRole];
   const target = binding.nodes[targetRole];
   const sourceType = authoritativeTypedHandle(source, [sourceHandle], true);
-  const targetType = authoritativeTypedHandle(target, [targetHandle]);
-  if (!source || !target || !sourceType || sourceType !== targetType) return null;
+  const targetParam = getNodeParam(target, targetHandle);
+  const targetTypes = Array.isArray(targetParam?.type) ? targetParam.type : [targetParam?.type];
+  if (!source || !target || !sourceType || targetParam?.display !== 'input' || !targetTypes.includes(sourceType))
+    return null;
   return { source, sourceHandle, target, targetHandle } satisfies StudioEdgeSpec;
 }
 
@@ -3117,6 +3125,20 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     targetPeakMinus1: -1,
     maxAdjustment12: 12,
     boundaryFade001: 0.01,
+    lastImage: '',
+    poseVideo: '',
+    faceVideo: '',
+    backgroundVideo: '',
+    segmentFrameLength77: 77,
+    previousConditioningFrames1: 1,
+    motionEncodeBatchSize1: 1,
+    temporalTileSize80: 80,
+    temporalOverlap24: 24,
+    temporalOverlapConditionStrength05: 0.5,
+    adainFactor025: 0.25,
+    framepackSampling: 'inverted_anti_drifting',
+    latentWindowSize9: 9,
+    trueCfgScale1: 1,
     seed: seedValue(form),
   };
   const candidateValues: Record<string, unknown> = {
@@ -3196,8 +3218,10 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     audioJoin,
     audioExport,
   } = binding.nodes;
-
   if (modularVideoGroupObserved(binding)) {
+    const executionSpec = executionSpecForBinding(binding);
+    if (executionSpec === null) throw new Error('The Studio execution specification receipt is stale.');
+    if (executionSpec) applyExecutionSpecValues(binding, form, executionSpec);
     setParamIfPresent(prompt, ['prompt'], form.prompt);
     setParamIfPresent(prompt, ['negative_prompt'], form.negativePrompt);
     setParamIfPresent(loadImage, ['file'], form.referenceImages);
@@ -3999,6 +4023,29 @@ async function finalizeModularGraph(
   pinControlnetLoaderIdentity(binding.nodes.controlnetModel);
 }
 
+async function finalizeModularVideoGraph(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  timedOutGroups: string[],
+  token: number,
+) {
+  await applyModelType(binding, form.modelType, true);
+  assertGraphFinalizationActive(token);
+  await applyManagedInputSignal(binding.nodes.prompt, ['text_encoders'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.imageEmbeddings, ['image_encoder'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.imageEncode, ['vae'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.denoise, ['unet'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.decode, ['vae'], form.modelType);
+  assertGraphFinalizationActive(token);
+  const started = Date.now();
+  while (!modularVideoTopology(binding) && Date.now() - started < 5000) await delay(100);
+  if (!modularVideoTopology(binding)) timedOutGroups.push('video route');
+  assertGraphFinalizationActive(token);
+  syncManagedFormControlAliases(form, binding);
+  applyFormValues(binding, form);
+  connectBaseGraph(binding);
+}
+
 async function finalizeStudioGraph(
   binding: StudioGraphBinding,
   form: StudioFormState,
@@ -4006,7 +4053,7 @@ async function finalizeStudioGraph(
   skeletonMs: number,
 ): Promise<BridgeResult> {
   const startedAt = Date.now();
-  const definitionRevision = graphDefinitionRevision;
+  let definitionRevision = graphDefinitionRevision;
   const timedOutGroups: string[] = [];
   const warnings: string[] = [];
   if (binding.finalizationProofInvalid) {
@@ -4025,9 +4072,11 @@ async function finalizeStudioGraph(
     if (isAudioMode(form.mode)) {
       await finalizeAudioGraph(binding, form, timedOutGroups, token);
     } else if (modularVideoGroupObserved(binding)) {
-      syncManagedFormControlAliases(form, binding);
-      applyFormValues(binding, form);
-      connectBaseGraph(binding);
+      await finalizeModularVideoGraph(binding, form, timedOutGroups, token);
+      // Modular video signals intentionally publish newer node definitions
+      // while assembling the route. Use their settled schema as this
+      // operation's baseline; all other paths retain their starting revision.
+      definitionRevision = graphDefinitionRevision;
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
     } else if (!isVideoMode(form.mode)) {

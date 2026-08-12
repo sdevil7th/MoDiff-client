@@ -21,6 +21,8 @@ export type StudioMode =
   | 'reference_to_video'
   | 'control_to_video'
   | 'video_color_edit'
+  | 'character_animate'
+  | 'character_replace'
   | 'text_to_audio'
   | 'audio_variation'
   | 'audio_continuation'
@@ -37,7 +39,13 @@ export type StudioModelType =
   | 'WanVideoPipeline'
   | 'WanImageToVideoPipeline'
   | 'WanTI2VPipeline'
+  | 'Wan22Pipeline'
+  | 'WanAnimatePipeline'
+  | 'WanImage2VideoModularPipeline'
   | 'LTXVideoPipeline'
+  | 'LTXI2VLongMultiPromptPipeline'
+  | 'LTX2ConditionPipeline'
+  | 'HunyuanVideoFramepackPipeline'
   | 'AceStepAudioPipeline'
   | 'StableAudioPipeline'
   | 'FluxSchnellPipeline'
@@ -350,6 +358,9 @@ export type StudioGraphRole =
   | 'loadVideo'
   | 'loadControlVideo'
   | 'loadMaskVideo'
+  | 'loadPoseVideo'
+  | 'loadFaceVideo'
+  | 'loadBackgroundVideo'
   | 'normalizeVideo'
   | 'alignMaskVideo'
   | 'videoColor'
@@ -687,11 +698,15 @@ export type StudioTaskTemplateRequiredMedia = {
   kind: 'image' | 'video' | 'audio';
   field:
     | 'referenceImages'
+    | 'lastImage'
     | 'maskImage'
     | 'controlImage'
     | 'sourceVideo'
     | 'maskVideo'
     | 'controlVideo'
+    | 'poseVideo'
+    | 'faceVideo'
+    | 'backgroundVideo'
     | 'sourceAudio'
     | 'referenceAudio';
   minimumCount: 1;
@@ -818,8 +833,8 @@ export type StudioModelRequirement = {
 
 export type StudioModeRequirement = {
   modelRequirements?: StudioModelRequirement[];
-  requiredImages?: Array<'referenceImages' | 'maskImage' | 'controlImage'>;
-  requiredVideos?: Array<'sourceVideo' | 'maskVideo' | 'controlVideo'>;
+  requiredImages?: Array<'referenceImages' | 'lastImage' | 'maskImage' | 'controlImage'>;
+  requiredVideos?: Array<'sourceVideo' | 'maskVideo' | 'controlVideo' | 'poseVideo' | 'faceVideo' | 'backgroundVideo'>;
   requiredAudio?: Array<'sourceAudio' | 'referenceAudio'>;
   note?: string;
 };

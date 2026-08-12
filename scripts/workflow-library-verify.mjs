@@ -218,7 +218,61 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
     const pipelineNodes = (graph.nodes ?? []).filter(
       (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'LoadPipeline',
     );
-    if (pipelineNodes.length === 0) throw new Error(`${workflow.id} video graph has no generic Diffusers pipeline.`);
+    const modularModels = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.ModularDiffusers' && node?.data?.action === 'ModelsLoader',
+    );
+    if (pipelineNodes.length === 0) {
+      if (modularModels.length !== 1) {
+        throw new Error(`${workflow.id} video graph has no reviewed Diffusers pipeline.`);
+      }
+      const models = modularModels[0];
+      const modelType = models.data.params?.model_type?.value;
+      const repository = models.data.params?.repo_id?.value;
+      const revision = models.data.params?.revision?.value;
+      if (
+        !workflow.pipelineClasses.includes(modelType) ||
+        repository?.source !== 'hub' ||
+        !workflow.requiredArtifacts.includes(repository.value) ||
+        !/^[0-9a-f]{40}$/.test(String(revision ?? ''))
+      ) {
+        throw new Error(`${workflow.id} modular video loader is missing its exact reviewed artifact identity.`);
+      }
+      const roleNodes = new Map((graph.nodes ?? []).map((node) => [node?.data?.studioRole, node.id]));
+      const route = [
+        ['models', 'text_encoders', 'prompt', 'text_encoders'],
+        ['models', 'image_encoder', 'imageEmbeddings', 'image_encoder'],
+        ['models', 'vae_out', 'imageEncode', 'vae'],
+        ['models', 'unet_out', 'denoise', 'unet'],
+        ['models', 'scheduler', 'denoise', 'scheduler'],
+        ['models', 'vae_out', 'denoise', 'vae'],
+        ['models', 'vae_out', 'decode', 'vae'],
+        ['loadImage', 'image', 'imageEmbeddings', 'image'],
+        ['loadImage', 'image', 'imageEncode', 'image'],
+        ['loadLastImage', 'image', 'imageEmbeddings', 'last_image'],
+        ['loadLastImage', 'image', 'imageEncode', 'last_image'],
+        ['prompt', 'embeddings', 'denoise', 'embeddings'],
+        ['imageEmbeddings', 'image_embeds', 'denoise', 'image_embeds'],
+        ['imageEmbeddings', 'route_state_out', 'imageEncode', 'route_state_in'],
+        ['imageEncode', 'image_condition_latents', 'denoise', 'image_condition_latents'],
+        ['imageEncode', 'route_state_out', 'denoise', 'route_state_in'],
+        ['denoise', 'latents', 'decode', 'latents'],
+        ['denoise', 'route_state_out', 'decode', 'route_state_in'],
+        ['decode', 'videos', 'videoExport', 'video'],
+      ];
+      for (const [sourceRole, sourceHandle, targetRole, targetHandle] of route) {
+        if (
+          !(graph.edges ?? []).some(
+            (edge) =>
+              edge.source === roleNodes.get(sourceRole) &&
+              edge.sourceHandle === sourceHandle &&
+              edge.target === roleNodes.get(targetRole) &&
+              edge.targetHandle === targetHandle,
+          )
+        ) {
+          throw new Error(`${workflow.id} modular video route is missing ${sourceRole}.${sourceHandle}.`);
+        }
+      }
+    }
     for (const pipeline of pipelineNodes) {
       const recipeEdge = (graph.edges ?? []).find(
         (edge) => edge.target === pipeline.id && edge.targetHandle === 'execution_recipe',

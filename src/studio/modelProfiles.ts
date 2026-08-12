@@ -144,6 +144,12 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Wan 2.1 T2V 1.3B',
   'Wan 2.2 I2V A14B',
   'Wan 2.2 TI2V 5B',
+  'Wan 2.2 T2V A14B',
+  'Wan 2.2 Animate',
+  'Wan First/Last Frame',
+  'LTX Long I2V',
+  'LTX-2 Video + Audio',
+  'Hunyuan FramePack',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -175,6 +181,8 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   reference_to_video: 'Use reference images to guide a generated video.',
   control_to_video: 'Use a prepared control video such as grayscale, sketch, depth, or pose.',
   video_color_edit: 'Prompt-guided generative video color edit.',
+  character_animate: 'Animate one character from aligned pose and face videos.',
+  character_replace: 'Replace one character using aligned control, background, and mask videos.',
   text_to_audio: 'Generate music or audio from prompt and lyrics.',
   audio_variation: 'Create a guided variation or cover from source audio.',
   audio_continuation: 'Continue source audio with prompt-guided generation.',
@@ -196,7 +204,12 @@ export const WAN_VACE_REVISION = 'ec4d2cb062b548996b179d493fdd05340de702a1';
 export const WAN_T2V_1_3B_REPO = 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers';
 export const WAN_22_I2V_A14B_REPO = 'Wan-AI/Wan2.2-I2V-A14B-Diffusers';
 export const WAN_22_TI2V_5B_REPO = 'Wan-AI/Wan2.2-TI2V-5B-Diffusers';
+export const WAN_22_T2V_A14B_REPO = 'Wan-AI/Wan2.2-T2V-A14B-Diffusers';
+export const WAN_ANIMATE_REPO = 'Wan-AI/Wan2.2-Animate-14B-Diffusers';
+export const WAN_FLF_REPO = 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers';
 export const LTX_VIDEO_REPO = 'Lightricks/LTX-Video-0.9.8-13B-distilled';
+export const LTX2_REPO = 'Lightricks/LTX-2';
+export const FRAMEPACK_REPO = 'lllyasviel/FramePackI2V_HY';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 
 export const LTX_VIDEO_MODES: StudioMode[] = [
@@ -212,6 +225,7 @@ export const WAN_VIDEO_MODES: StudioMode[] = ['text_to_video', 'video_to_video',
 
 export const WAN_22_I2V_MODES: StudioMode[] = ['image_to_video'];
 export const WAN_22_TI2V_MODES: StudioMode[] = ['text_to_video'];
+export const WAN_ANIMATE_MODES: StudioMode[] = ['character_animate', 'character_replace'];
 
 export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'text_to_video',
@@ -222,6 +236,8 @@ export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'reference_to_video',
   'control_to_video',
   'video_color_edit',
+  'character_animate',
+  'character_replace',
 ];
 
 export const AUDIO_STUDIO_MODES: StudioMode[] = [
@@ -303,6 +319,41 @@ type StudioModelProfileSource = Omit<
   > & {
     supportFlags: number;
   };
+
+function planningVideoProfile(
+  family: 'Wan Video' | 'LTX Video',
+  defaultRepo: string,
+  modes: StudioMode[],
+  modeRequirements: StudioModelProfile['modeRequirements'] = {},
+  supportFlags = 1,
+  supportsVideoInput = false,
+): StudioModelProfileSource {
+  return {
+    family,
+    surfaceCategory: 'Video',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo,
+    defaultSize: { width: 768, height: 512, aspectRatio: 'custom' },
+    recommendedSteps: 30,
+    recommendedGuidance: 3,
+    supportFlags,
+    supportsVideoInput,
+    outputKind: 'video',
+    recommendedFrames: 81,
+    recommendedFps: 24,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 20,
+      width: 768,
+      height: 512,
+      numFrames: 49,
+    },
+    modes,
+    modeRequirements,
+  };
+}
 
 const STUDIO_MODEL_PROFILE_SOURCES = {
   ZImageModularPipeline: {
@@ -563,6 +614,45 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modes: WAN_22_TI2V_MODES,
     modeRequirements: {},
   },
+  Wan22Pipeline: planningVideoProfile('Wan Video', WAN_22_T2V_A14B_REPO, ['text_to_video'], {}, 0),
+  WanAnimatePipeline: planningVideoProfile(
+    'Wan Video',
+    WAN_ANIMATE_REPO,
+    WAN_ANIMATE_MODES,
+    {
+      character_animate: {
+        requiredImages: ['referenceImages'],
+        requiredVideos: ['poseVideo', 'faceVideo'],
+      },
+      character_replace: {
+        requiredImages: ['referenceImages'],
+        requiredVideos: ['poseVideo', 'faceVideo', 'backgroundVideo', 'maskVideo'],
+      },
+    },
+    1,
+    true,
+  ),
+  WanImage2VideoModularPipeline: planningVideoProfile('Wan Video', WAN_FLF_REPO, ['image_to_video'], {
+    image_to_video: { requiredImages: ['referenceImages', 'lastImage'] },
+  }),
+  LTXI2VLongMultiPromptPipeline: planningVideoProfile('LTX Video', LTX_VIDEO_REPO, ['image_to_video'], {
+    image_to_video: { requiredImages: ['referenceImages'] },
+  }),
+  LTX2ConditionPipeline: planningVideoProfile(
+    'LTX Video',
+    LTX2_REPO,
+    LTX_VIDEO_MODES,
+    {
+      image_to_video: { requiredImages: ['referenceImages'] },
+      reference_to_video: { requiredImages: ['referenceImages'] },
+      video_to_video: { requiredVideos: ['sourceVideo'] },
+    },
+    1,
+    true,
+  ),
+  HunyuanVideoFramepackPipeline: planningVideoProfile('Wan Video', FRAMEPACK_REPO, ['image_to_video'], {
+    image_to_video: { requiredImages: ['referenceImages'] },
+  }),
   LTXVideoPipeline: {
     displayName: 'LTX-Video Diffusers',
     family: 'LTX Video',
@@ -937,6 +1027,21 @@ export type StudioAutoModelRequirementMetadata = {
   manualOnlyReason?: string;
 };
 
+function planningVideoRequirement(modelType: StudioModelType): StudioAutoModelRequirementMetadata {
+  const profile = STUDIO_MODEL_PROFILES[modelType];
+  return {
+    modelType,
+    supportedModes: profile.modes,
+    autoStatus: 'manual_only',
+    minimum: 'Expert only.',
+    recommended: 'Qualify remotely.',
+    qualityDefaults: 'Graph defaults.',
+    artifacts: [profile.defaultRepo],
+    notes: 'No local proof.',
+    manualOnlyReason: 'Qualification pending.',
+  };
+}
+
 export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   ZImageModularPipeline: {
     modelType: 'ZImageModularPipeline',
@@ -1045,6 +1150,12 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes:
       'Uses the official dense Wan 2.2 5B high-compression model and exposes a locked per-run scheduler flow shift while preserving the quality-first Diffusers step count.',
   },
+  Wan22Pipeline: /* @__PURE__ */ planningVideoRequirement('Wan22Pipeline'),
+  WanAnimatePipeline: /* @__PURE__ */ planningVideoRequirement('WanAnimatePipeline'),
+  WanImage2VideoModularPipeline: /* @__PURE__ */ planningVideoRequirement('WanImage2VideoModularPipeline'),
+  LTXI2VLongMultiPromptPipeline: /* @__PURE__ */ planningVideoRequirement('LTXI2VLongMultiPromptPipeline'),
+  LTX2ConditionPipeline: /* @__PURE__ */ planningVideoRequirement('LTX2ConditionPipeline'),
+  HunyuanVideoFramepackPipeline: /* @__PURE__ */ planningVideoRequirement('HunyuanVideoFramepackPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,
