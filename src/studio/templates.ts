@@ -1242,7 +1242,8 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
 const WAN_VIDEO_DEFORMITY_GUARD =
   'deformity, deformed anatomy, deformed limbs, deformed wheels, deformed rigid-body geometry, identity drift';
 
-type StudioTemplateSource = Omit<StudioTemplate, 'prompt' | 'negativePrompt'>;
+type StudioTemplateSource = Omit<StudioTemplate, 'prompt' | 'negativePrompt' | 'promptGuide' | 'predictability'> &
+  Partial<Pick<StudioTemplate, 'promptGuide' | 'predictability'>>;
 
 function inferIntentGroup(template: StudioTemplateSource): StudioTemplateIntentGroup {
   if (template.difficulty === 'blocked' || template.example?.status === 'blocked') return 'planning';
@@ -1363,6 +1364,23 @@ function withTemplateRecipeDefaults(
     ? `/template-gallery/${template.id}.${index === 39 ? 'poster' : 'card-poster'}.${WEBP_CARD_POSTER_INDEXES.has(index) ? 'webp' : 'png'}`
     : undefined;
   const outputKinds = template.outputKinds ?? defaultOutputKinds(template.mode);
+  const promptGuide =
+    template.promptGuide ??
+    (outputKinds.includes('video')
+      ? VIDEO_PROMPT_GUIDE
+      : outputKinds.includes('audio')
+        ? AUDIO_PROMPT_GUIDE
+        : template.mode === 'control_image'
+          ? CONTROL_PROMPT_GUIDE
+          : template.mode === 'layer_decomposition'
+            ? LAYER_PROMPT_GUIDE
+            : ['edit_image', 'multi_image_reference_edit', 'inpaint', 'outpaint'].includes(template.mode)
+              ? EDIT_PROMPT_GUIDE
+              : BASE_PROMPT_GUIDE);
+  const seed = template.example?.lockedSeed;
+  if (!template.predictability && seed === undefined) throw new Error(`Template ${template.id} needs a locked seed.`);
+  const templatePredictability =
+    template.predictability ?? (outputKinds.includes('video') ? videoPredictability(seed!) : predictability(seed!));
   const lockedSettings = template.example?.lockedSettings;
   const loaderSettings = {
     ...DEFAULT_STUDIO_FORM,
@@ -1412,6 +1430,8 @@ function withTemplateRecipeDefaults(
         : template.example,
     prompt,
     negativePrompt,
+    promptGuide,
+    predictability: templatePredictability,
   };
 }
 
@@ -1475,8 +1495,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Fast text-to-image iteration with Z-Image Turbo.',
     presetId: 'fast',
     example: example(4201, '20-45 sec on a consumer GPU'),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(4201),
   },
   {
     id: 'z_image_product_mockup',
@@ -1491,8 +1509,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Small-model product and packaging ideation.',
     presetId: 'fast',
     example: example(4202, '20-45 sec on a consumer GPU'),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(4202),
   },
   {
     id: 'z_image_poster',
@@ -1507,8 +1523,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Fast poster layout exploration.',
     presetId: 'fast',
     example: example(4203, '20-45 sec on a consumer GPU', { width: 768, height: 1344 }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(4203),
   },
   {
     id: 'z_image_lora_style',
@@ -1546,7 +1560,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'Adapter file, weight, revision, hash, and scale are pinned; the Exact badge awaits matching live runs and review.',
       {},
     ),
-    promptGuide: BASE_PROMPT_GUIDE,
     predictability: {
       ...predictability(4210),
       exactnessNotes: [
@@ -1568,8 +1581,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Readable signs, labels, and short typography.',
     presetId: 'text_accuracy',
     example: example(5101, QWEN_IMAGE_RUNTIME_ESTIMATE),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(5101),
   },
   {
     id: 'qwen_poster_logo_text',
@@ -1584,8 +1595,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Brand-style compositions with strong text hierarchy.',
     presetId: 'text_accuracy',
     example: example(5102, QWEN_IMAGE_RUNTIME_ESTIMATE, { width: 768, height: 1344 }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(5102),
   },
   {
     id: 'qwen_product_mockup',
@@ -1600,8 +1609,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Studio product imagery and packaging concepts.',
     presetId: 'quality',
     example: example(5103, QWEN_IMAGE_RUNTIME_ESTIMATE),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(5103),
   },
   {
     id: 'qwen_low_vram_text_rendering',
@@ -1617,8 +1624,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Readable short label text using Qwen Auto on constrained local hardware.',
     presetId: 'low_vram',
     example: example(5111, QWEN_AUTO_RUNTIME_ESTIMATE, QWEN_LOW_VRAM_TEMPLATE_SETTINGS),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(5111),
   },
   {
     id: 'qwen_low_vram_product_concept',
@@ -1638,8 +1643,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       width: 1024,
       height: 768,
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(5112),
   },
   {
     id: 'qwen_low_vram_poster_layout',
@@ -1660,8 +1663,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       width: 768,
       height: 1024,
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(6219),
   },
   {
     id: 'qwen_control_image_layout',
@@ -1692,7 +1693,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       offloadMode: 'none',
       maxSequenceLength: 512,
     }),
-    promptGuide: CONTROL_PROMPT_GUIDE,
     predictability: {
       ...predictability(5201),
       requiredModels: [QWEN_CONTROLNET_REQUIREMENT],
@@ -1715,8 +1715,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'MoDiff-native 3x3 ideation grid in one runnable Z-Image prompt.',
     presetId: 'fast',
     example: example(4301, '30-70 sec on a consumer GPU', { width: 1344, height: 768 }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(4301),
   },
   {
     id: 'qwen_product_ad_composite',
@@ -1739,7 +1737,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       lora: QWEN_EDIT_2511_LIGHTNING_LORA,
     },
     example: example(6201, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
-    promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(6201),
       exactnessNotes: [
@@ -1766,8 +1763,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     workflowBlocks: ['lora'],
     workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
     example: example(6202, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(6202),
   },
   {
     id: 'qwen_packaging_dieline',
@@ -1797,7 +1792,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       offloadMode: 'none',
       maxSequenceLength: 512,
     }),
-    promptGuide: CONTROL_PROMPT_GUIDE,
     predictability: {
       ...predictability(5202),
       requiredModels: [QWEN_CONTROLNET_REQUIREMENT],
@@ -1822,8 +1816,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'One-image character turnaround inspired by MoDiff multi-angle recipes.',
     presetId: 'quality',
     example: example(6203, QWEN_EDIT_RUNTIME_AFTER_INPUT, { width: 1024, height: 1024 }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(6203),
   },
   {
     id: 'qwen_tile_extract',
@@ -1840,8 +1832,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Turn one selected contact-sheet tile into a standalone high-quality frame.',
     presetId: 'quality',
     example: example(6204, QWEN_EDIT_RUNTIME_AFTER_INPUT, { width: 1344, height: 768 }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(6204),
   },
   {
     id: 'qwen_logo_texture',
@@ -1861,8 +1851,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     workflowBlocks: ['lora'],
     workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
     example: example(6205, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(6205),
   },
   {
     id: 'qwen_layered_portrait',
@@ -1901,8 +1889,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       expectedOutput: { width: 640, height: 640 },
       galleryExpectedOutput: { width: 1536, height: 1108 },
     },
-    promptGuide: LAYER_PROMPT_GUIDE,
-    predictability: predictability(7102),
   },
   {
     id: 'qwen_outpaint_aspect_template',
@@ -1957,7 +1943,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         strength: 1,
       },
     ),
-    promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(7302),
       exactnessNotes: [
@@ -1987,8 +1972,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'Exact inpaint examples require pinned source image, mask image, backend revision, and decoded output hashes.',
       { strength: 1, steps: 8 },
     ),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(6131),
   },
   {
     id: 'character_edit',
@@ -2008,8 +1991,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     workflowBlocks: ['lora'],
     workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
     example: example(6101, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(6101),
   },
   {
     id: 'qwen_edit_strength_sweep',
@@ -2026,7 +2007,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Image-to-image edit starting point for strength sweeps.',
     presetId: 'balanced',
     example: example(6110, `${QWEN_EDIT_RUNTIME_AFTER_INPUT} per sweep candidate`),
-    promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(6110),
       exactnessNotes: [
@@ -2053,8 +2033,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     workflowBlocks: ['lora'],
     workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
     example: example(6102, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(6102),
   },
   {
     id: 'qwen_multi_reference_product',
@@ -2074,7 +2052,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     workflowBlocks: ['lora'],
     workflowBlockSettings: { lora: QWEN_EDIT_2511_LIGHTNING_LORA },
     example: example(6120, 'About 3-5 min after inputs are prepared', QWEN_EDIT_2511_LIGHTNING_EXAMPLE_SETTINGS),
-    promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(6120),
       exactnessNotes: [
@@ -2106,7 +2083,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'Exact inpaint examples require pinned source image, mask image, backend revision, and decoded output hashes.',
       { strength: 1, steps: 16 },
     ),
-    promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(6130),
       exactnessNotes: [
@@ -2160,7 +2136,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       // 2x workflow output, not the generator's 1024px intermediate.
       expectedOutput: { width: 2048, height: 2048 },
     },
-    promptGuide: BASE_PROMPT_GUIDE,
     predictability: {
       ...predictability(7201),
       exactnessNotes: [
@@ -2222,7 +2197,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         steps: 20,
       },
     ),
-    promptGuide: EDIT_PROMPT_GUIDE,
     predictability: {
       ...predictability(7301),
       exactnessNotes: [
@@ -2244,8 +2218,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Z-Image Turbo text-to-image preview using automatic CPU offload for lower-memory GPUs.',
     presetId: 'low_vram',
     example: example(4204, '30-70 sec with offload enabled'),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(4204),
   },
   {
     id: 'fast_lora',
@@ -2277,8 +2249,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Z-Image Turbo product hero using a pinned realism LoRA adapter.',
     presetId: 'fast',
     example: example(7423, '20-45 sec when LoRA assets are available'),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(7423),
   },
   {
     id: 'high_quality',
@@ -2306,8 +2276,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'Review the generated documentary bakery preview and build the same Qwen Auto recipe as a runnable graph.',
     presetId: 'quality',
     example: example(5104, QWEN_IMAGE_RUNTIME_ESTIMATE, QWEN_LOW_VRAM_TEMPLATE_SETTINGS),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(5104),
   },
   {
     id: 'wan_vace_cinematic_text_to_video',
@@ -2352,8 +2320,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         maximumNearBlackFrameRatio: 0.35,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8201),
   },
   {
     id: 'wan_vace_direct_text_to_video',
@@ -2379,8 +2345,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       notes:
         'Planning item only: full 30-step VACE text-only proofs produced sharp frames but ignored the requested conveyor and print-press motion. Use the dedicated Wan text-to-video adapter for reliable text-only motion; keep VACE for source-conditioned editing.',
     },
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8231),
   },
   {
     id: 'ltx_video_text_to_video',
@@ -2439,8 +2403,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         maximumNearBlackFrameRatio: 0.35,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8301),
   },
   {
     id: 'ltx_video_image_to_video',
@@ -2485,8 +2447,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         minimumStrongMotionWindowRatio: 0.45,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8302),
   },
   {
     id: 'ltx_video_video_to_video',
@@ -2537,8 +2497,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         durationSeconds: 5.06,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8313),
   },
   {
     id: 'ltx_video_multi_reference',
@@ -2616,8 +2574,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         durationSeconds: 5.06,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8304),
   },
   {
     id: 'wan_vace_animate_product_still',
@@ -2650,8 +2606,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       notes:
         'Planning item only: app proofs were temporally stable, but the 1.3B VACE pipeline either reframed/reconstructed source objects or applied a strong global contrast and saturation shift before motion began.',
     },
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8202),
   },
   {
     id: 'wan_vace_video_color_grade',
@@ -2694,8 +2648,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         maximumLowMotionFrameRatio: 0.3,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8203),
   },
   {
     id: 'wan_vace_masked_object_replace',
@@ -2740,8 +2692,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         maximumLowMotionFrameRatio: 0.2,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8217),
   },
   {
     id: 'wan_vace_outpaint_reframe',
@@ -2766,8 +2716,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       numFrames: 81,
       steps: 30,
     }),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8205),
   },
   {
     id: 'wan_vace_reference_motion',
@@ -2792,8 +2740,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       notes:
         'Planning item only: the Wan 1.3B reference proof rendered the rainy portrait as a giant scene billboard, kept the subject nearly static, and did not produce the requested gallery walk. The adapter needs reference-identity conditioning that cannot leak source pixels into the scene before this mode is supported.',
     },
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8206),
   },
   {
     id: 'wan_vace_grayscale_control',
@@ -2828,8 +2774,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         maximumLowMotionFrameRatio: 0.8,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8207),
   },
   {
     id: 'ace_step_text_to_audio',
@@ -2854,8 +2798,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       }),
       outputPath: MODIFF_AUDIO_75_SECOND_EXAMPLE_PATH,
     },
-    promptGuide: AUDIO_PROMPT_GUIDE,
-    predictability: predictability(8301),
   },
   {
     id: 'ace_step_audio_variation',
@@ -2872,8 +2814,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Create a guided cover or variation from source audio.',
     presetId: 'audio_variation',
     example: audioExample(8302, '2-6 min after source audio load'),
-    promptGuide: AUDIO_PROMPT_GUIDE,
-    predictability: predictability(8302),
   },
   {
     id: 'ace_step_audio_continuation',
@@ -2907,8 +2847,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       },
       90,
     ),
-    promptGuide: AUDIO_PROMPT_GUIDE,
-    predictability: predictability(8303),
   },
   {
     id: 'ace_step_audio_repaint',
@@ -2925,8 +2863,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Regenerate a selected section of source audio while preserving the rest.',
     presetId: 'audio_balanced',
     example: audioExample(8304, '2-6 min after source audio load'),
-    promptGuide: AUDIO_PROMPT_GUIDE,
-    predictability: predictability(8304),
   },
   {
     id: 'ace_step_chinese_new_year_lora',
@@ -2954,8 +2890,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       }),
       outputPath: ACE_STEP_CHINESE_NEW_YEAR_EXAMPLE_PATH,
     },
-    promptGuide: AUDIO_PROMPT_GUIDE,
-    predictability: predictability(42),
   },
   {
     id: 'ace_step_custom_lora',
@@ -2984,8 +2918,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       notes:
         'Bring-your-own adapter recipe. The generic ACE-Step LoRA path is qualified by the pinned Chinese New Year adapter, while this card deliberately waits for the user’s own compatible weights.',
     },
-    promptGuide: AUDIO_PROMPT_GUIDE,
-    predictability: predictability(8451),
   },
   {
     id: 'flux_schnell_text_to_image',
@@ -3005,8 +2937,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 0,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8427),
   },
   {
     id: 'flux_dev_expert_text_to_image',
@@ -3026,8 +2956,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8402),
   },
   {
     id: 'flux_lora_cinematic_octane_3d',
@@ -3052,8 +2980,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(9371),
   },
   {
     id: 'flux_lora_ghibli_story',
@@ -3077,8 +3003,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(9361),
   },
   {
     id: 'flux_lora_oil_painting',
@@ -3102,8 +3026,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8451),
   },
   {
     id: 'flux_lora_film_noir',
@@ -3127,8 +3049,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8452),
   },
   {
     id: 'flux_lora_retro_comic',
@@ -3153,8 +3073,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(9362),
   },
   {
     id: 'flux_lora_watercolor',
@@ -3179,8 +3097,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(9363),
   },
   {
     id: 'flux_lora_paper_cutout',
@@ -3204,8 +3120,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8455),
   },
   {
     id: 'flux_lora_photoreal_documentary',
@@ -3229,8 +3143,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 3.5,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8456),
   },
   {
     id: 'flux_kontext_edit',
@@ -3248,8 +3160,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Guarded FLUX Kontext image edit recipe through generic Diffusers image nodes.',
     presetId: 'flux_kontext',
     example: example(8443, '2-6 min after source load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8443),
   },
   {
     id: 'flux_fill_inpaint',
@@ -3272,8 +3182,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       strength: 1,
       resourceMode: 'expert',
     }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8404),
   },
   {
     id: 'flux_control_canny',
@@ -3294,8 +3202,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 30,
       resourceMode: 'expert',
     }),
-    promptGuide: CONTROL_PROMPT_GUIDE,
-    predictability: predictability(8405),
   },
   {
     id: 'flux_krea_text_to_image',
@@ -3311,8 +3217,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Natural editorial image generation with FLUX.1-Krea-dev.',
     presetId: 'flux_quality',
     example: example(8406, '2-6 min', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(8406),
   },
   {
     id: 'flux_kontext_multi_reference',
@@ -3330,8 +3234,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Preserve a primary image while transferring material cues from additional references.',
     presetId: 'flux_kontext',
     example: example(8407, '2-6 min after reference load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8407),
   },
   {
     id: 'flux_fill_outpaint',
@@ -3366,8 +3268,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       outpaintFeather: 8,
       outpaintFillColor: 'black',
     }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8408),
   },
   {
     id: 'flux_depth_control',
@@ -3385,8 +3285,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description: 'Render appearance while retaining an authoritative depth layout.',
     presetId: 'flux_control',
     example: example(8409, '2-6 min after control load', { steps: 50, guidanceScale: 30, resourceMode: 'expert' }),
-    promptGuide: CONTROL_PROMPT_GUIDE,
-    predictability: predictability(8409),
   },
   {
     id: 'flux_redux_edit',
@@ -3405,8 +3303,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'Generate a natural documentary watchmaker variation from one visual reference with the FLUX Redux adapter.',
     presetId: 'flux_kontext',
     example: example(8410, '2-6 min after source load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8410),
   },
   {
     id: 'flux_redux_multi_reference',
@@ -3435,8 +3331,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       notes:
         'User-reviewed real-weight proof generated through the generic Diffusers graph with native weighted multi-reference Redux conditioning.',
     },
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8413),
   },
   {
     id: 'flux2_klein_text_to_image',
@@ -3456,8 +3350,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 1,
       resourceMode: 'auto',
     }),
-    promptGuide: BASE_PROMPT_GUIDE,
-    predictability: predictability(173),
   },
   {
     id: 'flux2_klein_edit',
@@ -3479,8 +3371,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 1,
       resourceMode: 'auto',
     }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(174),
   },
   {
     id: 'flux2_klein_multi_reference',
@@ -3502,8 +3392,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       guidanceScale: 1,
       resourceMode: 'auto',
     }),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(175),
   },
   {
     id: 'wan_vace_video_to_video',
@@ -3529,8 +3417,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       strength: 0.7,
       guidanceScale: 5,
     }),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8412),
   },
   {
     id: 'ltx_video_long_showcase',
@@ -3639,8 +3525,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         maximumLowMotionFrameRatio: 0.4,
       },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8510),
   },
   {
     id: 'wan_video_long_showcase',
@@ -3675,8 +3559,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       { numFrames: 81, fps: 16, steps: 50 },
       { frames: 405, durationSeconds: 25.31, maximumNearBlackFrameRatio: 0.7 },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8511),
   },
   {
     id: 'wan_21_t2v_13b_seed_vault',
@@ -3763,8 +3645,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       { width: 832, height: 480, numFrames: 81, fps: 15, steps: 50, guidanceScale: 6, shift: 8 },
       { frames: 486, durationSeconds: 31.65 },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(48117),
   },
   {
     id: 'wan_22_ti2v_5b_seed_vault',
@@ -3828,8 +3708,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       { width: 1280, height: 704, numFrames: 121, fps: 24, steps: 50, guidanceScale: 5, shift: 8 },
       { frames: 121, durationSeconds: 5.04, requiresAudio: true },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(898471028164125),
   },
   {
     id: 'wan_22_i2v_seed_vault',
@@ -3870,8 +3748,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       },
       { frames: 81, durationSeconds: 5.06 },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(92021),
   },
   {
     id: 'ltx_video_animated_story',
@@ -3922,8 +3798,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       { width: 768, height: 512, numFrames: 81, fps: 16, steps: 8, guidanceScale: 1 },
       { frames: 243, durationSeconds: 15.19, maximumNearBlackFrameRatio: 0.7 },
     ),
-    promptGuide: VIDEO_PROMPT_GUIDE,
-    predictability: videoPredictability(8512),
   },
   {
     id: 'ace_step_lyric_music_video',
@@ -3993,6 +3867,8 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description:
       'Generate an original lyric song and a five-shot photoreal dusk-to-dawn moonflower story with timed lyrics and a muxed 20-30 second final video.',
     presetId: 'audio_balanced',
+    promptGuide: AUDIO_PROMPT_GUIDE,
+    predictability: predictability(8513),
     example: {
       ...audioExample(1201047366, 'About 20-45 min on the qualified host', {
         audioDuration: 30,
@@ -4013,8 +3889,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         minimumEndToEndMotionCoverage: 0.5,
       },
     },
-    promptGuide: AUDIO_PROMPT_GUIDE,
-    predictability: predictability(8513),
   },
   {
     id: 'qwen_edit_plus_single_image',
@@ -4038,8 +3912,6 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'About 19-21 min once resident; about 60-65 min including a cold native-BF16 load on the qualified ROCm host',
       { steps: 40, guidanceScale: 4, resourceMode: 'auto' },
     ),
-    promptGuide: EDIT_PROMPT_GUIDE,
-    predictability: predictability(8501),
   },
 ];
 

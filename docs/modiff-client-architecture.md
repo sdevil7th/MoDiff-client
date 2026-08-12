@@ -98,6 +98,18 @@ Registry keys use `module.action`. Node creation and Studio graph reconciliation
 
 An optional runtime requirement is discovery data, not permission to mutate the Python environment. Template browsing/opening, registry refresh, and Auto planning must remain non-installing. Installation begins only from an explicit user action against a reviewed backend runtime profile, and the client keeps Run blocked until a later backend status confirms the compatible installation.
 
+The Setup surface renders install or repair only when the exact profile is
+`qualified`, `cutoverReady`, and the backend advertises
+`installActionAvailable`. It sends the profile ID, exact spec digest, and
+literal consent by `POST`, polls only the returned bounded job ID, and exposes
+cancellation while staging is active. Activation is a second confirmed `POST`
+against the returned or cataloged environment ID and is shown only when
+`activationAvailable`; rollback likewise requires confirmation and a backend
+advertised previous environment. Browser reloads may show a cataloged
+`staged_unchecked` environment, but activation still performs the backend's
+full integrity verification. No template, discovery, or planning path invokes
+these mutations automatically.
+
 Model visibility, artifact presence, and Auto readiness are separate concepts.
 `src/studio/modelCache.ts` and `artifactRequirements.ts` describe local artifact
 state. The backend `/auto_resource/plan` response is the sole Auto compatibility

@@ -44,12 +44,18 @@ test('official Hugging Face runtimes remain backend-only and explicitly optional
   assert.match(agentPolicy, /Browsing or opening a\s+template[\s\S]*must never install it/);
 });
 
-test('optional runtime status stays generic and has no mutation transport', () => {
+test('optional runtime actions stay generic, explicit, and backend-qualified', () => {
   const contract = source('src/studio/optionalRuntimes.ts');
   const setup = source('src/components/RuntimeOptimizationsCard.tsx');
   const store = source('src/stores/useNodeStore.ts');
   assert.match(store, /\/runtime\/optional-runtimes/);
-  assert.doesNotMatch(`${contract}\n${setup}\n${store}`, /\/runtime\/optional-runtimes\/(?:install|activate|rollback)/);
+  assert.match(setup, /\/runtime\/optional-runtimes\/install/);
+  assert.match(setup, /\/runtime\/optional-runtimes\/activate/);
+  assert.match(setup, /\/runtime\/optional-runtimes\/rollback/);
+  assert.match(setup, /consent: true/);
+  assert.match(setup, /profile\.installActionAvailable/);
+  assert.match(setup, /profile\.activationAvailable/);
+  assert.match(setup, /method: 'POST'/);
   assert.doesNotMatch(setup, /\/runtime\/optimizations\/(?:install|activate|rollback|jobs)/);
   assert.doesNotMatch(`${contract}\n${setup}`, /Qwen|Flux|Wan|ZImage|AceStep/);
   assert.match(setup, /contractState/);

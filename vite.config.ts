@@ -87,7 +87,7 @@ function compactProductionChunksPlugin(): Plugin {
         Object.values(bundle).map(async (item) => {
           if (item.type !== 'chunk') return;
           const result = await minify(item.code, {
-            compress: { passes: 2 },
+            compress: { passes: 5 },
             ecma: 2022,
             module: true,
             mangle: true,

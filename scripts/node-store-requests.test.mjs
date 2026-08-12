@@ -148,7 +148,12 @@ function optionalRuntimeCatalog(overrides = {}) {
         overlayStatus: 'missing',
       },
     ],
-    overlay: { processLoadStatus: 'base' },
+    overlay: {
+      processLoadStatus: 'base',
+      state: { activeEnvironmentId: null, previousEnvironmentId: null },
+      environments: [],
+    },
+    activeInstallJob: null,
     ...overrides,
   };
 }
@@ -825,7 +830,11 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
           overlayStatus: 'active',
         },
       ],
-      overlay: { processLoadStatus: 'active' },
+      overlay: {
+        processLoadStatus: 'active',
+        state: { activeEnvironmentId: null, previousEnvironmentId: null },
+        environments: [],
+      },
     }),
   );
   assert.equal(optionalRuntimesModule.optionalRuntimeBlockState(required, activeCatalog), null);
@@ -842,7 +851,11 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
               overlayStatus: 'active',
             },
           ],
-          overlay: { processLoadStatus: 'active' },
+          overlay: {
+            processLoadStatus: 'active',
+            state: { activeEnvironmentId: null, previousEnvironmentId: null },
+            environments: [],
+          },
         }),
       ),
     ),
@@ -872,6 +885,137 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
       /runtime contract/i,
     );
   }
+
+  const actionable = optionalRuntimesModule.parseOptionalRuntimeCatalog(
+    optionalRuntimeCatalog({
+      profiles: [
+        {
+          ...optionalRuntimeCatalog().profiles[0],
+          contractState: 'qualified',
+          cutoverReady: true,
+          installActionAvailable: true,
+          activationAvailable: true,
+          overlayStatus: 'staged',
+        },
+      ],
+      overlay: {
+        processLoadStatus: 'base',
+        state: {
+          activeEnvironmentId: null,
+          previousEnvironmentId: 'runtime-1-abcdef12',
+        },
+        environments: [
+          {
+            id: 'runtime-2-12345678',
+            status: 'ready',
+            active: false,
+            specs: [
+              {
+                kind: 'optional_runtime',
+                id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+                specDigest: `sha256:${'1'.repeat(64)}`,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(
+    optionalRuntimesModule.stagedOptionalRuntimeEnvironment(actionable, actionable.profiles[0]),
+    'runtime-2-12345678',
+  );
+  assert.equal(actionable.previousEnvironmentId, 'runtime-1-abcdef12');
+  assert.equal(
+    optionalRuntimesModule.stagedOptionalRuntimeEnvironment(
+      optionalRuntimesModule.parseOptionalRuntimeCatalog(
+        optionalRuntimeCatalog({
+          profiles: actionable.profiles,
+          overlay: {
+            ...optionalRuntimeCatalog().overlay,
+            environments: [
+              {
+                id: 'runtime-2-12345678',
+                status: 'ready',
+                active: true,
+                specs: [
+                  {
+                    kind: 'optional_runtime',
+                    id: actionable.profiles[0].id,
+                    specDigest: actionable.profiles[0].specDigest,
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ),
+      actionable.profiles[0],
+    ),
+    undefined,
+  );
+  const ambiguous = optionalRuntimesModule.parseOptionalRuntimeCatalog({
+    ...optionalRuntimeCatalog(),
+    profiles: actionable.profiles,
+    overlay: {
+      ...optionalRuntimeCatalog().overlay,
+      environments: [
+        {
+          id: 'runtime-2-12345678',
+          status: 'ready',
+          active: false,
+          specs: [
+            { kind: 'optional_runtime', id: actionable.profiles[0].id, specDigest: actionable.profiles[0].specDigest },
+          ],
+        },
+        {
+          id: 'runtime-3-87654321',
+          status: 'ready',
+          active: false,
+          specs: [
+            { kind: 'optional_runtime', id: actionable.profiles[0].id, specDigest: actionable.profiles[0].specDigest },
+          ],
+        },
+      ],
+    },
+  });
+  assert.equal(optionalRuntimesModule.stagedOptionalRuntimeEnvironment(ambiguous, ambiguous.profiles[0]), undefined);
+  assert.equal(
+    optionalRuntimesModule.parseOptionalRuntimeCatalog(
+      optionalRuntimeCatalog({ activeInstallJob: { ownerKind: 'optional_runtime', ownerId: null } }),
+    ).installBusy,
+    true,
+  );
+
+  const job = optionalRuntimesModule.parseOptionalRuntimeJobResponse({
+    error: false,
+    job: {
+      id: 'optjob-AbCdEf123456',
+      profileId: actionable.profiles[0].id,
+      specDigest: actionable.profiles[0].specDigest,
+      status: 'ready',
+      progress: { phase: 'ready', message: 'Validation passed.' },
+      result: { environmentId: 'runtime-2-12345678', requiresActivation: true },
+    },
+  });
+  assert.equal(job.result.environmentId, 'runtime-2-12345678');
+  assert.throws(
+    () =>
+      optionalRuntimesModule.parseOptionalRuntimeJobResponse({
+        error: false,
+        job: { ...job, id: '../job', progress: job.progress },
+      }),
+    /runtime contract/i,
+  );
+  assert.deepEqual(
+    optionalRuntimesModule.parseOptionalRuntimeMutation({
+      error: false,
+      restartRequired: true,
+      restarting: false,
+      message: 'Restart MoDiff.',
+    }),
+    { restartRequired: true, restarting: false, message: 'Restart MoDiff.' },
+  );
 });
 
 test('optional runtime status uses latest-response ordering and clears malformed state', async () => {

@@ -39,6 +39,40 @@ export type OptionalRuntimeProfileStatus = {
 export type OptionalRuntimeCatalog = {
   profiles: OptionalRuntimeProfileStatus[];
   processLoadStatus: 'active' | 'base' | 'busy_recovery_only' | 'repair_required' | 'restart_required';
+  stagedEnvironmentIds: Record<string, string>;
+  previousEnvironmentId: string | null;
+  installBusy: boolean;
+};
+
+export type OptionalRuntimeJob = {
+  id: string;
+  profileId: string;
+  specDigest: string;
+  status: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready';
+  progress: {
+    phase:
+      | 'queued'
+      | 'copying'
+      | 'downloading'
+      | 'installing'
+      | 'validating'
+      | 'promoting'
+      | 'ready'
+      | 'cancelling'
+      | 'cancelled'
+      | 'failed';
+    message: string;
+  };
+  result?: {
+    environmentId: string;
+    requiresActivation: boolean;
+  };
+};
+
+export type OptionalRuntimeMutation = {
+  restartRequired: boolean;
+  restarting: boolean;
+  message?: string;
 };
 
 type StudioRuntimeDtype = 'float32' | 'float16' | 'bfloat16';
@@ -73,6 +107,9 @@ export type StudioExpertMpsPolicy = {
 
 const runtimeId = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const executionId = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
+const environmentId = /^runtime-[0-9]{1,16}-[0-9a-f]{8}$/;
+const jobId = /^optjob-[A-Za-z0-9_-]{12}$/;
+const specDigest = /^sha256:[0-9a-f]{64}$/;
 const delivery = /^(?:base|optional_overlay)$/;
 const requirementState =
   /^(?:active|base_satisfied|busy_recovery_only|missing|present_unqualified|repair_required|restart_required|staged|unavailable|wrong_version)$/;
@@ -275,26 +312,138 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
     invalid();
   string(item.id, runtimeId);
   string(item.label);
-  string(item.specDigest, /^sha256:[0-9a-f]{64}$/);
+  string(item.specDigest, specDigest);
   string(item.contractState);
   string(item.status, /^(?:missing|present_unqualified|wrong_version)$/);
   string(item.overlayStatus, /^(?:active|missing|repair_required|staged|staged_unchecked)$/);
   return item as unknown as OptionalRuntimeProfileStatus;
 }
 
+function nullableId(value: unknown, pattern: RegExp) {
+  return value === null ? null : string(value, pattern)!;
+}
+
 export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCatalog {
   const payload = record(value);
   const overlay = record(payload.overlay);
-  if (payload.schemaVersion !== 1 || !Array.isArray(payload.profiles) || payload.profiles.length > 32) invalid();
+  const state = record(overlay.state);
+  if (
+    payload.schemaVersion !== 1 ||
+    !Array.isArray(payload.profiles) ||
+    payload.profiles.length > 32 ||
+    !Array.isArray(overlay.environments) ||
+    overlay.environments.length > 64
+  )
+    invalid();
   const profiles = payload.profiles.map(parseProfile);
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();
+  nullableId(state.activeEnvironmentId, environmentId);
+  const stagedEnvironmentIds: Record<string, string> = {};
+  const ambiguousSpecs = new Set<string>();
+  const seenEnvironments = new Set<string>();
+  for (const rawEnvironment of overlay.environments) {
+    const environment = record(rawEnvironment);
+    const id = string(environment.id, environmentId)!;
+    const status = string(
+      environment.status,
+      /^(?:legacy_unqualified|missing|ready|repair_required|staged_unchecked)$/,
+    );
+    if (
+      seenEnvironments.has(id) ||
+      typeof environment.active !== 'boolean' ||
+      !Array.isArray(environment.specs) ||
+      environment.specs.length > 32
+    )
+      invalid();
+    seenEnvironments.add(id);
+    for (const rawSpec of environment.specs) {
+      const spec = record(rawSpec);
+      if (!['optimization', 'optional_runtime'].includes(spec.kind as string)) invalid();
+      const profileId = string(spec.id, runtimeId)!;
+      const digest = string(spec.specDigest, specDigest)!;
+      if (spec.kind === 'optional_runtime' && !environment.active && ['ready', 'staged_unchecked'].includes(status!)) {
+        const key = profileId + digest;
+        if (stagedEnvironmentIds[key]) {
+          delete stagedEnvironmentIds[key];
+          ambiguousSpecs.add(key);
+        } else if (!ambiguousSpecs.has(key)) stagedEnvironmentIds[key] = id;
+      }
+    }
+  }
+  if (payload.activeInstallJob !== null) {
+    const activeJob = record(payload.activeInstallJob);
+    if (activeJob.ownerKind !== null && !['optional_runtime', 'optimization'].includes(activeJob.ownerKind as string))
+      invalid();
+    if (activeJob.ownerId !== null) string(activeJob.ownerId, runtimeId);
+  }
   return {
     profiles,
     processLoadStatus: string(
       overlay.processLoadStatus,
       /^(?:active|base|busy_recovery_only|repair_required|restart_required)$/,
     ) as OptionalRuntimeCatalog['processLoadStatus'],
+    stagedEnvironmentIds,
+    previousEnvironmentId: nullableId(state.previousEnvironmentId, environmentId),
+    installBusy: payload.activeInstallJob !== null,
   };
+}
+
+function parseJob(value: unknown): OptionalRuntimeJob {
+  const item = record(value);
+  const progress = record(item.progress);
+  const parsed: OptionalRuntimeJob = {
+    id: string(item.id, jobId)!,
+    profileId: string(item.profileId, runtimeId)!,
+    specDigest: string(item.specDigest, specDigest)!,
+    status: string(
+      item.status,
+      /^(?:queued|running|cancelling|cancelled|failed|ready)$/,
+    ) as OptionalRuntimeJob['status'],
+    progress: {
+      phase: string(
+        progress.phase,
+        /^(?:queued|copying|downloading|installing|validating|promoting|ready|cancelling|cancelled|failed)$/,
+      ) as OptionalRuntimeJob['progress']['phase'],
+      message: string(progress.message)!,
+    },
+  };
+  if (item.result !== undefined) {
+    const result = record(item.result);
+    if (typeof result.requiresActivation !== 'boolean') invalid();
+    parsed.result = {
+      environmentId: string(result.environmentId, environmentId)!,
+      requiresActivation: result.requiresActivation,
+    };
+  }
+  return parsed;
+}
+
+export function parseOptionalRuntimeJobResponse(value: unknown) {
+  const payload = record(value);
+  if (payload.error !== false) invalid();
+  return parseJob(payload.job);
+}
+
+export function parseOptionalRuntimeMutation(value: unknown): OptionalRuntimeMutation {
+  const payload = record(value);
+  if (
+    payload.error !== false ||
+    typeof payload.restartRequired !== 'boolean' ||
+    typeof payload.restarting !== 'boolean'
+  )
+    invalid();
+  return {
+    restartRequired: payload.restartRequired,
+    restarting: payload.restarting,
+    message: string(payload.message, undefined, true),
+  };
+}
+
+export function stagedOptionalRuntimeEnvironment(
+  catalog: OptionalRuntimeCatalog,
+  profile: OptionalRuntimeProfileStatus,
+) {
+  return catalog.stagedEnvironmentIds[profile.id + profile.specDigest];
 }
 
 export function optionalRuntimeBlockState(

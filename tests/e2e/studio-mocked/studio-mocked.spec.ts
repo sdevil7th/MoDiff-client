@@ -282,6 +282,8 @@ let mockOptionalRuntimeMutationCalls = 0;
 let mockOptionalRuntimeProcessStatus = 'base';
 let mockOptionalRuntimeQualified = false;
 let mockOptionalRuntimeDelayMs = 0;
+let mockOptionalRuntimeActions = false;
+let mockOptionalRuntimeJobState: 'idle' | 'running' | 'ready' | 'cancelled' = 'idle';
 let mockAdvertiseStudioExecutionSpecs = false;
 let mockReadyProofStatus: 'declared_safe' | 'live_proven' = 'declared_safe';
 
@@ -2926,7 +2928,94 @@ async function installMockRoutes(page: Page) {
     });
   });
   await page.route('**/runtime/optional-runtimes**', async (route) => {
-    if (route.request().method() !== 'GET') {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    const profileId = 'huggingface-transformers-peft-5.14.1-0.20.0';
+    const digest = 'sha256:8e1b0b6b2baa891d4551caa3cde4d59708eced0fd74c1333b68a1aab7ff924b5';
+    const job = () => ({
+      id: 'optjob-AbCdEf123456',
+      profileId,
+      specDigest: digest,
+      status: mockOptionalRuntimeJobState === 'idle' ? 'queued' : mockOptionalRuntimeJobState,
+      progress: {
+        phase:
+          mockOptionalRuntimeJobState === 'idle'
+            ? 'queued'
+            : mockOptionalRuntimeJobState === 'running'
+              ? 'installing'
+              : mockOptionalRuntimeJobState,
+        message:
+          mockOptionalRuntimeJobState === 'ready'
+            ? 'Validation passed. Explicit activation is required.'
+            : mockOptionalRuntimeJobState === 'cancelled'
+              ? 'Installation was cancelled.'
+              : 'Installing reviewed artifacts into the isolated stage.',
+      },
+      ...(mockOptionalRuntimeJobState === 'ready'
+        ? { result: { environmentId: 'runtime-2-12345678', requiresActivation: true } }
+        : {}),
+    });
+    if (mockOptionalRuntimeActions && method === 'POST' && url.pathname.endsWith('/install')) {
+      mockOptionalRuntimeMutationCalls += 1;
+      expect(route.request().postDataJSON()).toEqual({ profileId, specDigest: digest, consent: true });
+      mockOptionalRuntimeJobState = 'running';
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, job: job() }),
+      });
+      return;
+    }
+    if (mockOptionalRuntimeActions && method === 'GET' && url.pathname.includes('/jobs/')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, job: job() }),
+      });
+      return;
+    }
+    if (mockOptionalRuntimeActions && method === 'POST' && url.pathname.endsWith('/cancel')) {
+      mockOptionalRuntimeMutationCalls += 1;
+      mockOptionalRuntimeJobState = 'cancelled';
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, job: job() }),
+      });
+      return;
+    }
+    if (mockOptionalRuntimeActions && method === 'POST' && url.pathname.endsWith('/activate')) {
+      mockOptionalRuntimeMutationCalls += 1;
+      expect(route.request().postDataJSON()).toEqual({
+        environmentId: 'runtime-2-12345678',
+        profileId,
+        specDigest: digest,
+        consent: true,
+      });
+      mockOptionalRuntimeProcessStatus = 'restart_required';
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: false,
+          restartRequired: true,
+          restarting: true,
+          message: 'MoDiff is restarting.',
+        }),
+      });
+      return;
+    }
+    if (mockOptionalRuntimeActions && method === 'POST' && url.pathname.endsWith('/rollback')) {
+      mockOptionalRuntimeMutationCalls += 1;
+      expect(route.request().postDataJSON()).toEqual({ consent: true });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, restartRequired: true, restarting: true, message: 'Rollback selected.' }),
+      });
+      return;
+    }
+    if (method !== 'GET') {
       mockOptionalRuntimeMutationCalls += 1;
       await route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":true}' });
       return;
@@ -2941,18 +3030,42 @@ async function installMockRoutes(page: Page) {
         profiles: [
           {
             schemaVersion: 1,
-            id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+            id: profileId,
             label: 'Hugging Face Transformers + PEFT',
-            specDigest: 'sha256:8e1b0b6b2baa891d4551caa3cde4d59708eced0fd74c1333b68a1aab7ff924b5',
-            contractState: mockOptionalRuntimeQualified ? 'qualified' : 'candidate_unqualified',
-            cutoverReady: mockOptionalRuntimeQualified,
-            installActionAvailable: false,
-            activationAvailable: false,
+            specDigest: digest,
+            contractState:
+              mockOptionalRuntimeQualified || mockOptionalRuntimeActions ? 'qualified' : 'candidate_unqualified',
+            cutoverReady: mockOptionalRuntimeQualified || mockOptionalRuntimeActions,
+            installActionAvailable: mockOptionalRuntimeActions,
+            activationAvailable: mockOptionalRuntimeActions,
             status: 'missing',
-            overlayStatus: mockOptionalRuntimeQualified ? 'active' : 'missing',
+            overlayStatus: mockOptionalRuntimeQualified
+              ? 'active'
+              : mockOptionalRuntimeJobState === 'ready'
+                ? 'staged'
+                : 'missing',
           },
         ],
-        overlay: { processLoadStatus: mockOptionalRuntimeProcessStatus },
+        overlay: {
+          processLoadStatus: mockOptionalRuntimeProcessStatus,
+          state: {
+            activeEnvironmentId: mockOptionalRuntimeQualified ? 'runtime-2-12345678' : null,
+            previousEnvironmentId: mockOptionalRuntimeActions ? 'runtime-1-abcdef12' : null,
+          },
+          environments:
+            mockOptionalRuntimeJobState === 'ready'
+              ? [
+                  {
+                    id: 'runtime-2-12345678',
+                    status: 'ready',
+                    active: false,
+                    specs: [{ kind: 'optional_runtime', id: profileId, specDigest: digest }],
+                  },
+                ]
+              : [],
+        },
+        activeInstallJob:
+          mockOptionalRuntimeJobState === 'running' ? { ownerKind: 'optional_runtime', ownerId: profileId } : null,
       }),
     });
   });
@@ -3099,6 +3212,8 @@ test.beforeEach(() => {
   mockOptionalRuntimeProcessStatus = 'base';
   mockOptionalRuntimeQualified = false;
   mockOptionalRuntimeDelayMs = 0;
+  mockOptionalRuntimeActions = false;
+  mockOptionalRuntimeJobState = 'idle';
   mockReadyProofStatus = 'declared_safe';
 });
 
@@ -3195,6 +3310,54 @@ test('optional runtime setup is GET-only and keeps the unqualified candidate non
   mockOptionalRuntimeDelayMs = 0;
   await expect(profile).toContainText('active');
   expect(mockOptionalRuntimeMutationCalls).toBe(0);
+});
+
+test('qualified optional runtime setup requires consent and supports progress, cancellation, activation, and rollback', async ({
+  page,
+}) => {
+  mockOptionalRuntimeActions = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
+  });
+
+  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const install = disclosure.getByRole('button', { name: 'Install', exact: true });
+  await expect(install).toBeVisible();
+  await install.click();
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
+  const installDialog = page.getByRole('dialog');
+  await expect(installDialog).toContainText('reviewed, locked artifacts');
+  await installDialog.getByRole('button', { name: 'Install', exact: true }).click();
+  await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('Installing reviewed artifacts');
+  expect(mockOptionalRuntimeMutationCalls).toBe(1);
+
+  await disclosure.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('cancelled');
+  expect(mockOptionalRuntimeMutationCalls).toBe(2);
+
+  await disclosure.getByRole('button', { name: 'Install', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Install', exact: true }).click();
+  mockOptionalRuntimeJobState = 'ready';
+  const activate = disclosure.getByRole('button', { name: 'Activate', exact: true });
+  await expect(activate).toBeVisible({ timeout: 5_000 });
+  expect(mockOptionalRuntimeMutationCalls).toBe(3);
+  await activate.click();
+  const activateDialog = page.getByRole('dialog');
+  await expect(activateDialog).toContainText('restart MoDiff');
+  await activateDialog.getByRole('button', { name: 'Activate', exact: true }).click();
+  await expect(disclosure.getByText(/restart required/)).toBeVisible();
+  expect(mockOptionalRuntimeMutationCalls).toBe(4);
+
+  await disclosure.getByRole('button', { name: 'Rollback', exact: true }).click();
+  const rollbackDialog = page.getByRole('dialog');
+  await expect(rollbackDialog).toContainText('previous validated optional environment');
+  await rollbackDialog.getByRole('button', { name: 'Rollback', exact: true }).click();
+  await expect.poll(() => mockOptionalRuntimeMutationCalls).toBe(5);
 });
 
 test('manual graphs expose Encode Image status and graph-derived full-resolution A/B comparison', async ({ page }) => {
