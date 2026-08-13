@@ -452,6 +452,36 @@ test('GLM-Image exposes its reviewed fixed 1024px recipe', () => {
   assert.equal(form.maxSequenceLength, 2048);
 });
 
+test('JoyAI Image exposes separate bounded single- and multi-image recipes', () => {
+  const edit = profilesModule.STUDIO_MODEL_PROFILES.JoyImageEditPipeline;
+  const textForm = profilesModule.getFormDefaultsForMode('text_to_image', 'JoyImageEditPipeline');
+  const editForm = profilesModule.getFormDefaultsForMode('edit_image', 'JoyImageEditPipeline');
+  assert.equal(edit.label, 'JoyAI Image Edit');
+  assert.equal(edit.defaultRepo, profilesModule.JOYIMAGE_EDIT_REPO);
+  assert.equal(edit.defaultDtype, 'bfloat16');
+  assert.deepEqual(edit.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(edit.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(edit.supportsImageInput, true);
+  assert.equal(edit.supportsMultiImage, false);
+  assert.equal(textForm.steps, 40);
+  assert.equal(editForm.guidanceScale, 4);
+  assert.equal(editForm.maxSequenceLength, 2048);
+
+  const plus = profilesModule.STUDIO_MODEL_PROFILES.JoyImageEditPlusPipeline;
+  const plusForm = profilesModule.getFormDefaultsForMode('multi_image_reference_edit', 'JoyImageEditPlusPipeline');
+  assert.equal(plus.label, 'JoyAI Image Edit Plus');
+  assert.equal(plus.defaultRepo, profilesModule.JOYIMAGE_EDIT_PLUS_REPO);
+  assert.deepEqual(plus.modes, ['edit_image', 'multi_image_reference_edit']);
+  assert.deepEqual(plus.modeRequirements.multi_image_reference_edit.requiredImages, ['referenceImages']);
+  assert.equal(plus.supportsImageInput, true);
+  assert.equal(plus.supportsMultiImage, true);
+  assert.equal(plusForm.width, 1024);
+  assert.equal(plusForm.height, 1024);
+  assert.equal(plusForm.steps, 30);
+  assert.equal(plusForm.guidanceScale, 4);
+  assert.equal(plusForm.maxSequenceLength, 2048);
+});
+
 test('DreamLite base and mobile expose distinct pinned guidance recipes', () => {
   const base = profilesModule.STUDIO_MODEL_PROFILES.DreamLitePipeline;
   const baseText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLitePipeline');
