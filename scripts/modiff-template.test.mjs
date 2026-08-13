@@ -427,6 +427,20 @@ test('OmniGen exposes text, single-image, and multi-reference profiles', () => {
   assert.equal(edit.conditioningScale, 1.6);
 });
 
+test('PRX exposes its bounded native 512px SFT recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.PRXPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'PRXPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.PRX_REPO);
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.family, 'PRX');
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 28);
+  assert.equal(form.guidanceScale, 5);
+  assert.equal(form.maxSequenceLength, 256);
+});
+
 test('AuraFlow v0.3 exposes its reviewed native fp16 recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.AuraFlowPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'AuraFlowPipeline');

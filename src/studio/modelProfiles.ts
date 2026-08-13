@@ -91,6 +91,7 @@ export const LUMINA_REPO = 'Alpha-VLLM/Lumina-Next-SFT-diffusers';
 export const LUMINA2_REPO = 'Alpha-VLLM/Lumina-Image-2.0';
 export const OMNIGEN_REPO = 'Shitao/OmniGen-v1-diffusers';
 export const OVIS_IMAGE_REPO = 'ATH-MaaS/Ovis-Image-7B';
+export const PRX_REPO = 'Photoroom/prx-512-t2i-sft';
 export const AURAFLOW_V03_REPO = 'fal/AuraFlow-v0.3';
 export const CHROMA1_HD_REPO = 'lodestones/Chroma1-HD';
 export const COGVIEW3_PLUS_REPO = 'zai-org/CogView3-Plus-3B';
@@ -264,6 +265,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Lumina Image 2.0 2.6B',
   'OmniGen v1',
   'Ovis Image 7B',
+  'PRX 512 SFT',
   'AuraFlow v0.3 1536px',
   'Chroma1-HD 1024px',
   'CogView3 Plus 3B',
@@ -1456,6 +1458,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
   },
   OvisImagePipeline: planningImageProfile('Ovis Image', OVIS_IMAGE_REPO, 50, 5, 256),
+  PRXPipeline: planningImageProfile('PRX', PRX_REPO, 28, 5, 256, 'bfloat16', 512, 512),
   AuraFlowPipeline: planningImageProfile('AuraFlow', AURAFLOW_V03_REPO, 50, 3.5, 256, 'float16', 1536, 768, 'custom'),
   ChromaPipeline: planningImageProfile('Chroma', CHROMA1_HD_REPO, 40, 3, 512),
   CogView3PlusPipeline: planningImageProfile('CogView3', COGVIEW3_PLUS_REPO, 50, 7, 224),
@@ -2119,6 +2122,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   Lumina2Pipeline: /* @__PURE__ */ pendingPlanningRequirement('Lumina2Pipeline'),
   OmniGenPipeline: /* @__PURE__ */ pendingPlanningRequirement('OmniGenPipeline'),
   OvisImagePipeline: /* @__PURE__ */ pendingPlanningRequirement('OvisImagePipeline'),
+  PRXPipeline: /* @__PURE__ */ pendingPlanningRequirement('PRXPipeline'),
   AuraFlowPipeline: /* @__PURE__ */ pendingPlanningRequirement('AuraFlowPipeline'),
   ChromaPipeline: /* @__PURE__ */ pendingPlanningRequirement('ChromaPipeline'),
   CogView3PlusPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogView3PlusPipeline'),
