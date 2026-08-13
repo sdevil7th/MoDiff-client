@@ -39,6 +39,18 @@ const FORM_INPUTS: AppModeInput[] = [
     label: 'PAG adaptive scale',
     formKey: 'pagAdaptiveScale',
   },
+  {
+    id: 'studio:processingResolution',
+    kind: 'studio-form',
+    label: 'Processing resolution',
+    formKey: 'processingResolution',
+  },
+  {
+    id: 'studio:matchInputResolution',
+    kind: 'studio-form',
+    label: 'Match input resolution',
+    formKey: 'matchInputResolution',
+  },
   { id: 'studio:strength', kind: 'studio-form', label: 'Strength', formKey: 'strength' },
   { id: 'studio:width', kind: 'studio-form', label: 'Width', formKey: 'width' },
   { id: 'studio:height', kind: 'studio-form', label: 'Height', formKey: 'height' },

@@ -76,6 +76,7 @@ export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVF
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const LCM_DREAMSHAPER_REPO = 'SimianLuo/LCM_Dreamshaper_v7';
+export const MARIGOLD_DEPTH_LCM_REPO = 'prs-eth/marigold-depth-lcm-v1-0';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
 
@@ -170,6 +171,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion 1.5',
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
+  'Marigold Depth LCM v1.0',
   'DDPM CIFAR-10 32x32',
   'DDIM CIFAR-10 32x32',
   'Consistency Model ImageNet 64x64',
@@ -177,6 +179,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   unconditional_image: 'Sample images without a text prompt from a compatible unconditional model.',
+  depth_estimation: 'Estimate a normalized relative-depth map from one source image.',
   text_to_image: 'Generate from a prompt with a compatible image model.',
   edit_image: 'Use one source image and a prompt to guide an edit.',
   multi_image_reference_edit: 'Blend multiple references into one guided edit.',
@@ -1064,6 +1067,35 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 20, width: 512, height: 512 },
     modes: ['text_to_image'],
   },
+  MarigoldDepthPipeline: {
+    family: 'Marigold',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: MARIGOLD_DEPTH_LCM_REPO,
+    artifactLabel: 'Diffusers safetensors repo',
+    defaultDtype: 'float32',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 768, height: 768, aspectRatio: '1:1' },
+    offloadSupport: {
+      modes: [...STUDIO_OFFLOAD_MODES],
+      default: 'none',
+      lowVram: 'model_cpu',
+      emergency: 'sequential_cpu',
+    },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    supportFlags: 1,
+    supportsNegativePrompt: false,
+    outputKind: 'image',
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1, width: 768, height: 768 },
+    modes: ['depth_estimation'],
+    modeRequirements: {
+      depth_estimation: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires exactly one source image and returns a normalized relative-depth map.',
+      },
+    },
+  },
   DDPMPipeline: {
     family: 'DDPM',
     surfaceCategory: 'Image',
@@ -1470,6 +1502,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'The generic text-to-image graph exposes PAG scale and adaptive scale.',
     manualOnlyReason: 'Remote quality review and Gallery qualification pending.',
   },
+  MarigoldDepthPipeline: {
+    modelType: 'MarigoldDepthPipeline',
+    supportedModes: ['depth_estimation'],
+    autoStatus: 'manual_only',
+    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot.',
+    recommended: 'Use one source image and the reviewed 768px one-step LCM profile.',
+    qualityDefaults: 'One step, 768px internal processing, output matched to the source image.',
+    artifacts: [MARIGOLD_DEPTH_LCM_REPO],
+    notes: 'The generic prediction-map graph returns relative depth and a grayscale preview.',
+    manualOnlyReason: 'The shared prediction-map contract and remote quality review are pending qualification.',
+  },
   DDPMPipeline: {
     modelType: 'DDPMPipeline',
     supportedModes: ['unconditional_image'],
@@ -1544,6 +1587,8 @@ export const DEFAULT_STUDIO_FORM: StudioFormState = {
   guidanceScale: 1,
   pagScale: 0,
   pagAdaptiveScale: 0,
+  processingResolution: 768,
+  matchInputResolution: true,
   batchSize: 1,
   eta: 0,
   classLabel: -1,
@@ -1609,6 +1654,9 @@ export function isModelCompatibleWithMode(modelType: StudioModelType, mode: Stud
 export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   if (mode === 'unconditional_image') {
     return 'DDPMPipeline';
+  }
+  if (mode === 'depth_estimation') {
+    return 'MarigoldDepthPipeline';
   }
   if (VIDEO_STUDIO_MODES.includes(mode)) {
     return 'WanVACEPipeline';

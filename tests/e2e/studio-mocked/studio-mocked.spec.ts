@@ -72,6 +72,11 @@ declare global {
             referenceAudio?: string;
             numFrames?: number;
             fps?: number;
+            steps?: number;
+            seed?: number;
+            randomSeed?: boolean;
+            processingResolution?: number;
+            matchInputResolution?: boolean;
           };
           workflowTabs: unknown[];
           activeWorkflowTabId: string | null;
@@ -232,6 +237,12 @@ declare global {
         batchSize?: number;
         eta?: number;
         classLabel?: number;
+        referenceImages?: string[];
+        prompt?: string;
+        seed?: number;
+        randomSeed?: boolean;
+        processingResolution?: number;
+        matchInputResolution?: boolean;
       }) => void;
       bindManagedGraphForTest: (form: Record<string, unknown>, nodes: Record<string, string>) => boolean;
       startManagedGraphFinalizationForTest: () => Promise<void>;
@@ -345,6 +356,7 @@ const mockExecutionProfileIds: Record<string, string> = {
   'FluxDepthPipeline:control_image': 'flux-depth:direct',
   'FluxCannyPipeline:control_image': 'flux-canny:direct',
   'FluxReduxPipeline:edit_image': 'flux-redux:direct',
+  'MarigoldDepthPipeline:depth_estimation': 'marigold-depth-lcm-v1-0:direct',
 };
 
 const mockFluxExecutionRoles = [
@@ -1119,6 +1131,83 @@ function mockPagExecutionCapability() {
   };
 }
 
+function mockMarigoldDepthExecutionCapability() {
+  const roles = [
+    ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+    ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+    ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+    ['loadImage', 'modules.Image.Load', -520, 300],
+    ['diffusersPredictMap', 'modules.DiffusersImage.PredictMap', -120, -80],
+    ['preview', 'modules.Image.Preview', 980, -80],
+  ] as const;
+  const edges = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'diffusersImagePipeline', 'execution_recipe'],
+    ['diffusersImagePipeline', 'pipeline', 'diffusersPredictMap', 'pipeline'],
+    ['loadImage', 'image', 'diffusersPredictMap', 'image'],
+    ['diffusersPredictMap', 'preview_images', 'preview', 'image'],
+  ] as const;
+  const bindings = [
+    ...mockFluxExecutionBindings.slice(0, 23),
+    ['diffusersImagePipeline', 'revision', 'defaultRevision'],
+    ['loadImage', 'file', 'referenceImages'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ['diffusersPredictMap', 'prediction_kind', 'depth'],
+    ['diffusersPredictMap', 'seed', 'seed'],
+    ['diffusersPredictMap', 'num_inference_steps', 'steps'],
+    ['diffusersPredictMap', 'processing_resolution', 'processingResolution'],
+    ['diffusersPredictMap', 'match_input_resolution', 'matchInputResolution'],
+  ] as const;
+  const spec = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'marigold-depth-lcm-v1-0:depth-estimation:v1',
+    modelType: 'MarigoldDepthPipeline',
+    mode: 'depth_estimation',
+    executionProfileId: 'marigold-depth-lcm-v1-0:direct',
+    loaderModule: 'modules.DiffusersImage',
+    loaderAction: 'LoadPipeline',
+    executionPath: 'direct-diffusers-image',
+    pipelineClass: 'MarigoldDepthPipeline',
+    defaultRepo: 'prs-eth/marigold-depth-lcm-v1-0',
+    roles,
+    edges,
+    bindings,
+    autoFields: mockFluxAutoFields,
+    actions: [],
+    contentHash: 'studio-spec-v1-6020a70f',
+  };
+  return {
+    modelType: spec.modelType,
+    modes: [spec.mode],
+    runnableModes: [spec.mode],
+    revisionCandidates: ['04a73502f7fd8fc5e59947b9df3b2266d71d6849'],
+    executionProfiles: [
+      {
+        id: spec.executionProfileId,
+        model_type: spec.modelType,
+        modes: [spec.mode],
+        loader_module: spec.loaderModule,
+        loader_action: spec.loaderAction,
+        execution_path: spec.executionPath,
+        backend_path: `${spec.loaderModule}.${spec.loaderAction}`,
+        pipeline_class: spec.pipelineClass,
+        default_repo: spec.defaultRepo,
+        quantizable_components: [],
+        default_quantized_components: [],
+        supported_offload_modes: ['none', 'model_cpu', 'sequential_cpu'],
+        retry_offload_modes: ['model_cpu', 'sequential_cpu'],
+        max_low_memory_side: 768,
+        max_low_memory_steps: 1,
+        live_proof: true,
+      },
+    ],
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecModes: [spec.mode],
+    studioExecutionSpecs: [spec],
+  };
+}
+
 function mockWanTi2vExecutionCapability() {
   const roles = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
@@ -1727,6 +1816,7 @@ function mockStudioExecutionCapabilities() {
     mockFluxExecutionCapability('FluxReduxPipeline'),
     mockFluxExecutionCapability('FluxKontextPipeline'),
     mockPagExecutionCapability(),
+    mockMarigoldDepthExecutionCapability(),
     mockFluxFillExecutionCapability(),
     mockQwenEditInpaintExecutionCapability(),
     mockQwenEditPlusExecutionCapability(),
@@ -1757,23 +1847,25 @@ function mockStudioExecutionSpecContract(modelType: string, mode: string) {
       ? mockZImageExecutionCapability()
       : modelType === 'QwenImageModularPipeline'
         ? mockQwenImageExecutionCapability()
-        : modelType === 'FluxFillPipeline'
-          ? mockFluxFillExecutionCapability()
-          : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
-            ? mockQwenEditInpaintExecutionCapability()
-            : modelType === 'WanImageToVideoPipeline'
-              ? mockWanI2vExecutionCapability()
-              : modelType === 'WanTI2VPipeline'
-                ? mockWanTi2vExecutionCapability()
-                : modelType === 'WanVideoPipeline'
-                  ? mockWanT2vExecutionCapability()
-                  : modelType === 'WanVACEPipeline'
-                    ? mockWanVaceT2vExecutionCapability()
-                    : modelType === 'LTXVideoPipeline'
-                      ? mockLtxT2vExecutionCapability()
-                      : modelType === 'AceStepAudioPipeline'
-                        ? mockAceTextToAudioExecutionCapability()
-                        : null;
+        : modelType === 'MarigoldDepthPipeline'
+          ? mockMarigoldDepthExecutionCapability()
+          : modelType === 'FluxFillPipeline'
+            ? mockFluxFillExecutionCapability()
+            : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
+              ? mockQwenEditInpaintExecutionCapability()
+              : modelType === 'WanImageToVideoPipeline'
+                ? mockWanI2vExecutionCapability()
+                : modelType === 'WanTI2VPipeline'
+                  ? mockWanTi2vExecutionCapability()
+                  : modelType === 'WanVideoPipeline'
+                    ? mockWanT2vExecutionCapability()
+                    : modelType === 'WanVACEPipeline'
+                      ? mockWanVaceT2vExecutionCapability()
+                      : modelType === 'LTXVideoPipeline'
+                        ? mockLtxT2vExecutionCapability()
+                        : modelType === 'AceStepAudioPipeline'
+                          ? mockAceTextToAudioExecutionCapability()
+                          : null;
   const spec = capability?.studioExecutionSpecs.find((item) => item.mode === mode);
   return spec
     ? {
@@ -1806,6 +1898,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
       FluxDepthPipeline: 'black-forest-labs/FLUX.1-Depth-dev',
       FluxCannyPipeline: 'black-forest-labs/FLUX.1-Canny-dev',
       FluxReduxPipeline: 'black-forest-labs/FLUX.1-Redux-dev',
+      MarigoldDepthPipeline: 'prs-eth/marigold-depth-lcm-v1-0',
     };
     const defaultRepo = defaultRepos[modelType] ?? 'Tongyi-MAI/Z-Image-Turbo';
     const installed = mockInstalledRepos.has(defaultRepo);
@@ -2303,6 +2396,19 @@ const mockRegistry = {
     output_type: { type: 'string', value: 'pil' },
     max_sequence_length: { type: 'int', value: 512 },
     images: { type: 'image', display: 'output' },
+  }),
+  'modules.DiffusersImage.PredictMap': nodeDef('modules.DiffusersImage', 'PredictMap', 'Diffusers Image', {
+    pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
+    image: { type: 'image', display: 'input' },
+    prediction_kind: { type: 'string', value: 'depth', options: ['depth'] },
+    seed: { type: 'int', display: 'random', value: { value: 42, isRandom: true } },
+    num_inference_steps: { type: 'int', value: 1 },
+    processing_resolution: { type: 'int', value: 768 },
+    match_input_resolution: { type: 'bool', value: true },
+    prediction_map: { type: 'prediction_map', display: 'output' },
+    preview_images: { type: 'image', display: 'output' },
+    width_out: { type: 'int', display: 'output' },
+    height_out: { type: 'int', display: 'output' },
   }),
   'modules.DiffusersImage.Edit': nodeDef('modules.DiffusersImage', 'Edit', 'Diffusers Image', {
     pipeline: { type: 'image_diffusion_pipeline', display: 'input' },
@@ -8053,6 +8159,112 @@ test('mocked Studio exposes and binds generic PAG controls for the exact PAG pro
     .toEqual([3, 0]);
 });
 
+test('mocked Studio builds the exact Marigold depth prediction-map workflow', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('prs-eth/marigold-depth-lcm-v1-0');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'depth_estimation',
+      modelType: 'MarigoldDepthPipeline',
+      resourceMode: 'expert',
+      referenceImages: ['@data/images/marigold-source.png'],
+      prompt: 'must not be bound',
+      seed: 17,
+      randomSeed: false,
+      steps: 1,
+      processingResolution: 512,
+      matchInputResolution: false,
+    });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+  });
+
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Advanced generation', exact: true }).click();
+  await expect(page.getByTestId('studio-perception-controls')).toBeVisible();
+  await expect(page.getByLabel('Processing resolution')).toHaveValue('512');
+  await expect(page.getByLabel('Match output to source resolution')).not.toBeChecked();
+  await expect(page.getByText('near is 0, far is 1', { exact: false })).toBeVisible();
+
+  const graph = await page.evaluate(() => {
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const node = (role: string) => state.flow.nodes.find((item) => item.id === binding.nodes?.[role]);
+    const pipeline = node('diffusersImagePipeline');
+    const source = node('loadImage');
+    const prediction = node('diffusersPredictMap');
+    const managedIds = new Set(binding.managedNodeIds);
+    return {
+      receipt: binding.executionSpec,
+      roles: Object.keys(binding.nodes ?? {}).sort(),
+      pipeline: {
+        modelId: pipeline?.params?.model_id?.value,
+        pipelineClass: pipeline?.params?.pipeline_class?.value,
+        mode: pipeline?.params?.mode?.value,
+        revision: pipeline?.params?.revision?.value,
+      },
+      source: {
+        file: source?.params?.file?.value,
+        alpha: source?.params?.alpha_channel?.value,
+      },
+      prediction: {
+        kind: prediction?.params?.prediction_kind?.value,
+        seed: prediction?.params?.seed?.value,
+        steps: prediction?.params?.num_inference_steps?.value,
+        processingResolution: prediction?.params?.processing_resolution?.value,
+        matchInputResolution: prediction?.params?.match_input_resolution?.value,
+      },
+      edges: state.flow.edges
+        .filter((edge) => managedIds.has(edge.source) && managedIds.has(edge.target))
+        .map((edge) => [edge.sourceHandle, edge.targetHandle])
+        .sort((left, right) => String(left).localeCompare(String(right))),
+    };
+  });
+  expect(graph).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'marigold-depth-lcm-v1-0:depth-estimation:v1',
+      contentHash: 'studio-spec-v1-6020a70f',
+      executionProfileId: 'marigold-depth-lcm-v1-0:direct',
+    },
+    roles: [
+      'diffusersImagePipeline',
+      'diffusersPredictMap',
+      'diffusersQuantization',
+      'diffusersRecipe',
+      'loadImage',
+      'preview',
+    ],
+    pipeline: {
+      modelId: 'prs-eth/marigold-depth-lcm-v1-0',
+      pipelineClass: 'MarigoldDepthPipeline',
+      mode: 'depth_estimation',
+      revision: '04a73502f7fd8fc5e59947b9df3b2266d71d6849',
+    },
+    source: { file: ['@data/images/marigold-source.png'], alpha: 'ignore' },
+    prediction: {
+      kind: 'depth',
+      seed: { value: 17, isRandom: false },
+      steps: 1,
+      processingResolution: 512,
+      matchInputResolution: false,
+    },
+    edges: [
+      ['execution_recipe', 'execution_recipe'],
+      ['image', 'image'],
+      ['pipeline', 'pipeline'],
+      ['preview_images', 'image'],
+      ['quantization_config', 'quantization_config'],
+    ],
+  });
+});
+
 test('mocked Studio consumes the exact execution-profile Expert MPS policy', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
@@ -8498,6 +8710,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   mockInstalledRepos.add('Wan-AI/Wan2.1-VACE-1.3B-diffusers');
   mockInstalledRepos.add('Lightricks/LTX-Video-0.9.8-13B-distilled');
   mockInstalledRepos.add('ACE-Step/acestep-v15-xl-turbo-diffusers');
+  mockInstalledRepos.add('prs-eth/marigold-depth-lcm-v1-0');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
@@ -8546,7 +8759,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(21);
+    .toHaveLength(22);
 
   const zImage = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

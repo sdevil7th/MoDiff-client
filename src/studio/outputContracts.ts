@@ -150,6 +150,8 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     guidanceScale: numberValue(form.guidanceScale, DEFAULT_STUDIO_FORM.guidanceScale),
     pagScale: numberValue(form.pagScale, DEFAULT_STUDIO_FORM.pagScale),
     pagAdaptiveScale: numberValue(form.pagAdaptiveScale, DEFAULT_STUDIO_FORM.pagAdaptiveScale),
+    processingResolution: numberValue(form.processingResolution, DEFAULT_STUDIO_FORM.processingResolution),
+    matchInputResolution: booleanValue(form.matchInputResolution, DEFAULT_STUDIO_FORM.matchInputResolution),
     batchSize: numberValue(form.batchSize, DEFAULT_STUDIO_FORM.batchSize),
     eta: numberValue(form.eta, DEFAULT_STUDIO_FORM.eta),
     classLabel: numberValue(form.classLabel, DEFAULT_STUDIO_FORM.classLabel),

@@ -189,6 +189,22 @@ test('Stable Diffusion PAG exposes generic PAG controls over the pinned 1.5 base
   assert.equal(form.pagAdaptiveScale, 0);
 });
 
+test('Marigold depth exposes a generic source-to-prediction-map profile', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.MarigoldDepthPipeline;
+  const form = profilesModule.getFormDefaultsForMode('depth_estimation', 'MarigoldDepthPipeline');
+  assert.equal(profilesModule.getDefaultModelForMode('depth_estimation'), 'MarigoldDepthPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.MARIGOLD_DEPTH_LCM_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.deepEqual(profile.modes, ['depth_estimation']);
+  assert.deepEqual(profile.modeRequirements.depth_estimation.requiredImages, ['referenceImages']);
+  assert.equal(form.steps, 1);
+  assert.equal(form.guidanceScale, 0);
+  assert.equal(form.processingResolution, 768);
+  assert.equal(form.matchInputResolution, true);
+});
+
 test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;

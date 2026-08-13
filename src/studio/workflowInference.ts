@@ -333,6 +333,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   if (modelType.startsWith('Flux') || keys.has('modules.DiffusersImage.LoadPipeline')) {
     if (roles.has('diffusersUnconditionalGenerate') || keys.has('modules.DiffusersImage.UnconditionalGenerate'))
       return 'unconditional_image';
+    if (roles.has('diffusersPredictMap') || keys.has('modules.DiffusersImage.PredictMap')) return 'depth_estimation';
     if (roles.has('diffusersImageControl') || keys.has('modules.DiffusersImage.ControlGenerate'))
       return 'control_image';
     if (roles.has('diffusersImageInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
@@ -369,14 +370,21 @@ export function inferStudioFormFromWorkflow(
         'qwenInpaint',
         'diffusersImageGenerate',
         'diffusersUnconditionalGenerate',
+        'diffusersPredictMap',
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
         'audioGenerate',
       ].includes(String(node.data?.studioRole)) ||
-      ['EncodePrompt', 'Generate', 'UnconditionalGenerate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(
-        String(node.data?.action),
-      ),
+      [
+        'EncodePrompt',
+        'Generate',
+        'UnconditionalGenerate',
+        'PredictMap',
+        'Inpaint',
+        'Edit',
+        'ControlGenerate',
+      ].includes(String(node.data?.action)),
   );
   const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
   const modelNode = findNode(
@@ -405,12 +413,15 @@ export function inferStudioFormFromWorkflow(
         'qwenInpaint',
         'diffusersImageGenerate',
         'diffusersUnconditionalGenerate',
+        'diffusersPredictMap',
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
         'audioGenerate',
       ].includes(String(node.data?.studioRole)) ||
-      ['Generate', 'UnconditionalGenerate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(String(node.data?.action)),
+      ['Generate', 'UnconditionalGenerate', 'PredictMap', 'Inpaint', 'Edit', 'ControlGenerate'].includes(
+        String(node.data?.action),
+      ),
   );
   const outpaintNode = findNode(
     nodes,
@@ -472,6 +483,8 @@ export function inferStudioFormFromWorkflow(
     ),
     pagScale: numberValue(paramValue(sizeNode, ['pag_scale']), defaults.pagScale),
     pagAdaptiveScale: numberValue(paramValue(sizeNode, ['pag_adaptive_scale']), defaults.pagAdaptiveScale),
+    processingResolution: numberValue(paramValue(sizeNode, ['processing_resolution']), defaults.processingResolution),
+    matchInputResolution: boolValue(paramValue(sizeNode, ['match_input_resolution']), defaults.matchInputResolution),
     batchSize: numberValue(paramValue(sizeNode, ['batch_size']), defaults.batchSize),
     eta: numberValue(paramValue(sizeNode, ['eta']), defaults.eta),
     classLabel: numberValue(paramValue(sizeNode, ['class_label']), defaults.classLabel),

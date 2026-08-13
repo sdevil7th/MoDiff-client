@@ -26,6 +26,8 @@ const FIELD_LABELS: Partial<Record<keyof StudioFormState, string>> = {
   numFrames: 'Frames',
   outputType: 'Output type',
   offloadMode: 'Offload mode',
+  processingResolution: 'Processing resolution',
+  matchInputResolution: 'Match input resolution',
   outpaintBottom: 'Outpaint bottom',
   outpaintFeather: 'Outpaint feather',
   outpaintFillColor: 'Outpaint fill',

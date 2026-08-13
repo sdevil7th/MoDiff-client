@@ -252,6 +252,8 @@ export default function StudioPanel() {
   const isVideoMode = VIDEO_STUDIO_MODES.includes(form.mode);
   const isAudioMode = AUDIO_STUDIO_MODES.includes(form.mode);
   const isUnconditionalMode = form.mode === 'unconditional_image';
+  const isPerceptionMode = form.mode === 'depth_estimation';
+  const usesPrompt = !isUnconditionalMode && !isPerceptionMode;
   const resourcePlan = useMemo(() => resolveStudioResourcePlan(form), [form]);
   const expertResourceMode = studioViewMode === 'expert';
   const autoPlanExecution = useMemo(
@@ -1112,7 +1114,7 @@ export default function StudioPanel() {
 
       {showFullStudioForm && (
         <>
-          {!isUnconditionalMode && (
+          {usesPrompt && (
             <div className="relative grid gap-3">
               <StudioSection
                 id="prompt"
@@ -1270,12 +1272,41 @@ export default function StudioPanel() {
           <StudioSection id="advanced-generation" title={expertResourceMode ? 'Advanced generation' : 'Generation'}>
             <section>
               <SectionHeader
-                title={isVideoMode ? 'Video frame' : isUnconditionalMode ? 'Native sample size' : 'Image size'}
+                title={
+                  isVideoMode
+                    ? 'Video frame'
+                    : isUnconditionalMode
+                      ? 'Native sample size'
+                      : isPerceptionMode
+                        ? 'Prediction map'
+                        : 'Image size'
+                }
               />
               {isUnconditionalMode ? (
                 <p className="text-xs text-modiff-subtle-text" data-testid="studio-unconditional-native-size">
                   This checkpoint produces fixed {form.width}×{form.height} samples.
                 </p>
+              ) : isPerceptionMode ? (
+                <div className="grid gap-2" data-testid="studio-perception-controls">
+                  <StudioInput
+                    label="Processing resolution"
+                    value={form.processingResolution}
+                    onChange={(value) =>
+                      updateAndSync({
+                        processingResolution: numberValue(value, form.processingResolution),
+                      })
+                    }
+                  />
+                  <StudioCheckbox
+                    checked={form.matchInputResolution}
+                    onChange={(checked) => updateAndSync({ matchInputResolution: checked })}
+                    label="Match output to source resolution"
+                  />
+                  <p className="text-xs text-modiff-subtle-text">
+                    Output is a normalized relative-depth map: near is 0, far is 1. Studio also previews it as
+                    grayscale.
+                  </p>
+                </div>
               ) : (
                 <div className="flex gap-2">
                   <StudioSelect
@@ -1410,7 +1441,7 @@ export default function StudioPanel() {
                     onChange={(value) => updateAndSync({ classLabel: numberValue(value, form.classLabel) })}
                   />
                 )}
-                {!isUnconditionalMode && (
+                {usesPrompt && (
                   <ModiffFieldShell label={`${capability.guidanceLabel}: ${form.guidanceScale}`}>
                     <StudioSlider
                       min={0}
@@ -1508,7 +1539,7 @@ export default function StudioPanel() {
                     ) : null}
                   </>
                 )}
-                {capability.supportsImageInput && !isVideoMode && (
+                {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
                   <>
                     <ModiffFieldShell label={`Strength: ${form.strength}`}>
                       <StudioSlider
@@ -1530,8 +1561,8 @@ export default function StudioPanel() {
                 )}
               </div>
             </section>
-            {!isUnconditionalMode && <StudioParameterExplainers form={form} />}
-            {!isUnconditionalMode && (
+            {usesPrompt && <StudioParameterExplainers form={form} />}
+            {usesPrompt && (
               <StudioVariationPlanner
                 form={form}
                 template={activeTemplate}
@@ -1544,7 +1575,7 @@ export default function StudioPanel() {
             )}
           </StudioSection>
 
-          {!isUnconditionalMode && (
+          {usesPrompt && (
             <StudioSection id="controlled-workflows" title="Controlled workflows">
               <StudioControlledWorkflows form={form} onChange={updateAndSync} disabled={isWorking} />
             </StudioSection>
@@ -1766,7 +1797,11 @@ export default function StudioPanel() {
           )}
 
           {(showImageTray || form.mode === 'image_to_video' || form.mode === 'reference_to_video') && (
-            <StudioSection id="reference-inputs" title="Reference inputs" defaultOpen>
+            <StudioSection
+              id="reference-inputs"
+              title={isPerceptionMode ? 'Source image' : 'Reference inputs'}
+              defaultOpen
+            >
               <StudioImageReferenceTray />
             </StudioSection>
           )}

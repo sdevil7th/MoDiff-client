@@ -7,6 +7,7 @@ import type {
 
 export type StudioMode =
   | 'unconditional_image'
+  | 'depth_estimation'
   | 'text_to_image'
   | 'edit_image'
   | 'multi_image_reference_edit'
@@ -37,6 +38,7 @@ export type StudioModelType =
   | 'StableDiffusionPipeline'
   | 'LatentConsistencyModelPipeline'
   | 'StableDiffusionPAGPipeline'
+  | 'MarigoldDepthPipeline'
   | 'ZImageModularPipeline'
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
@@ -376,6 +378,7 @@ export type StudioGraphRole =
   | 'diffusersImagePipeline'
   | 'diffusersImageGenerate'
   | 'diffusersUnconditionalGenerate'
+  | 'diffusersPredictMap'
   | 'diffusersImageEdit'
   | 'diffusersImageInpaint'
   | 'diffusersImageControl'
@@ -595,6 +598,8 @@ export type StudioFormState = {
   guidanceScale: number;
   pagScale: number;
   pagAdaptiveScale: number;
+  processingResolution: number;
+  matchInputResolution: boolean;
   batchSize: number;
   eta: number;
   classLabel: number;
@@ -770,7 +775,8 @@ export type StudioModelProfile = {
     | 'DDIM'
     | 'Consistency Models'
     | 'Stable Diffusion 1.x'
-    | 'Latent Consistency Models';
+    | 'Latent Consistency Models'
+    | 'Marigold';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
   runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';
