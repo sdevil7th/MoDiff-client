@@ -391,6 +391,25 @@ test('LongCat Image exposes the reviewed generation and single-image edit profil
   assert.equal(edit.guidanceScale, 4.5);
 });
 
+test('Lumina exposes the reviewed generation profiles', () => {
+  const luminaProfile = profilesModule.STUDIO_MODEL_PROFILES.LuminaPipeline;
+  const lumina2Profile = profilesModule.STUDIO_MODEL_PROFILES.Lumina2Pipeline;
+  const lumina = profilesModule.getFormDefaultsForMode('text_to_image', 'LuminaPipeline');
+  const lumina2 = profilesModule.getFormDefaultsForMode('text_to_image', 'Lumina2Pipeline');
+  assert.equal(luminaProfile.defaultRepo, profilesModule.LUMINA_REPO);
+  assert.equal(lumina2Profile.defaultRepo, profilesModule.LUMINA2_REPO);
+  assert.deepEqual(luminaProfile.modes, ['text_to_image']);
+  assert.deepEqual(lumina2Profile.modes, ['text_to_image']);
+  assert.equal(luminaProfile.catalogVisibility, 'workflowOnly');
+  assert.equal(lumina2Profile.catalogVisibility, 'workflowOnly');
+  assert.equal(lumina.steps, 30);
+  assert.equal(lumina.guidanceScale, 4);
+  assert.equal(lumina.maxSequenceLength, 256);
+  assert.equal(lumina2.steps, 50);
+  assert.equal(lumina2.guidanceScale, 4);
+  assert.equal(lumina2.maxSequenceLength, 256);
+});
+
 test('AuraFlow v0.3 exposes its reviewed native fp16 recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.AuraFlowPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'AuraFlowPipeline');
