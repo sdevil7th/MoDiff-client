@@ -85,6 +85,8 @@ export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
 export const PIXART_SIGMA_REPO = 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS';
 export const KANDINSKY3_REPO = 'kandinsky-community/kandinsky-3';
+export const LONGCAT_IMAGE_REPO = 'meituan-longcat/LongCat-Image';
+export const LONGCAT_IMAGE_EDIT_REPO = 'meituan-longcat/LongCat-Image-Edit';
 export const AURAFLOW_V03_REPO = 'fal/AuraFlow-v0.3';
 export const CHROMA1_HD_REPO = 'lodestones/Chroma1-HD';
 export const COGVIEW3_PLUS_REPO = 'zai-org/CogView3-Plus-3B';
@@ -252,6 +254,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion XL PAG',
   'PixArt Sigma XL 1024px',
   'Kandinsky 3',
+  'LongCat Image 6B',
+  'LongCat Image Edit 6B',
   'AuraFlow v0.3 1536px',
   'Chroma1-HD 1024px',
   'CogView3 Plus 3B',
@@ -1419,6 +1423,16 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       edit_image: { requiredImages: ['referenceImages'] },
     },
   },
+  LongCatImagePipeline: planningImageProfile('LongCat Image', LONGCAT_IMAGE_REPO, 50, 4, 512),
+  LongCatImageEditPipeline: {
+    ...planningImageProfile('LongCat Image', LONGCAT_IMAGE_EDIT_REPO, 50, 4.5, 512),
+    surfaceCategory: 'Image Edit',
+    supportFlags: 1,
+    modes: ['edit_image'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'] },
+    },
+  },
   AuraFlowPipeline: planningImageProfile('AuraFlow', AURAFLOW_V03_REPO, 50, 3.5, 256, 'float16', 1536, 768, 'custom'),
   ChromaPipeline: planningImageProfile('Chroma', CHROMA1_HD_REPO, 40, 3, 512),
   CogView3PlusPipeline: planningImageProfile('CogView3', COGVIEW3_PLUS_REPO, 50, 7, 224),
@@ -2076,6 +2090,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   PixArtSigmaPipeline: /* @__PURE__ */ pendingPlanningRequirement('PixArtSigmaPipeline'),
   Kandinsky3Pipeline: /* @__PURE__ */ pendingPlanningRequirement('Kandinsky3Pipeline'),
+  LongCatImagePipeline: /* @__PURE__ */ pendingPlanningRequirement('LongCatImagePipeline'),
+  LongCatImageEditPipeline: /* @__PURE__ */ pendingPlanningRequirement('LongCatImageEditPipeline'),
   AuraFlowPipeline: /* @__PURE__ */ pendingPlanningRequirement('AuraFlowPipeline'),
   ChromaPipeline: /* @__PURE__ */ pendingPlanningRequirement('ChromaPipeline'),
   CogView3PlusPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogView3PlusPipeline'),

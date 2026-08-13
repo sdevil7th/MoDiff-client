@@ -372,6 +372,25 @@ test('Kandinsky 3 exposes its reviewed single-stage generation and edit recipes'
   assert.equal(edit.strength, 0.75);
 });
 
+test('LongCat Image exposes the reviewed generation and single-image edit profiles', () => {
+  const textProfile = profilesModule.STUDIO_MODEL_PROFILES.LongCatImagePipeline;
+  const editProfile = profilesModule.STUDIO_MODEL_PROFILES.LongCatImageEditPipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_image', 'LongCatImagePipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'LongCatImageEditPipeline');
+  assert.equal(textProfile.defaultRepo, profilesModule.LONGCAT_IMAGE_REPO);
+  assert.equal(editProfile.defaultRepo, profilesModule.LONGCAT_IMAGE_EDIT_REPO);
+  assert.deepEqual(textProfile.modes, ['text_to_image']);
+  assert.deepEqual(editProfile.modes, ['edit_image']);
+  assert.deepEqual(editProfile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(textProfile.catalogVisibility, 'workflowOnly');
+  assert.equal(editProfile.catalogVisibility, 'workflowOnly');
+  assert.equal(text.steps, 50);
+  assert.equal(text.guidanceScale, 4);
+  assert.equal(text.maxSequenceLength, 512);
+  assert.equal(edit.steps, 50);
+  assert.equal(edit.guidanceScale, 4.5);
+});
+
 test('AuraFlow v0.3 exposes its reviewed native fp16 recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.AuraFlowPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'AuraFlowPipeline');
