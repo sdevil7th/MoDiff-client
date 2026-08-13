@@ -447,6 +447,35 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           throw new Error(`${workflow.id} Latte graph is missing its exact artifact or bounded native recipe.`);
         }
       }
+      if (pipelineClass === 'MochiPipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'genmo/mochi-1-preview' ||
+          revision !== '14be5fcea23095ed330cb214647916a451e38b6e' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 848 ||
+          generateParams.height?.value !== 480 ||
+          generateParams.num_frames?.value !== 31 ||
+          generateParams.num_inference_steps?.value !== 64 ||
+          generateParams.guidance_scale?.value !== 4.5 ||
+          generateParams.max_sequence_length?.value !== 256
+        ) {
+          throw new Error(`${workflow.id} Mochi graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
       const generateNodes = (graph.nodes ?? []).filter(
         (node) =>
           node?.data?.module === 'modules.DiffusersVideo' &&

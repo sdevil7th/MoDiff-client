@@ -215,6 +215,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'CogVideoX-2B',
   'Allegro',
   'Latte',
+  'Mochi',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -316,6 +317,7 @@ export const COGVIDEOX_2B_REVISION = '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01';
 export const ALLEGRO_REPO = 'rhymes-ai/Allegro';
 export const ALLEGRO_REVISION = 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6';
 export const LATTE_REPO = 'maxin-cn/Latte-1';
+export const MOCHI_REPO = 'genmo/mochi-1-preview';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
@@ -941,6 +943,14 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     'bfloat16',
   ),
   LattePipeline: nativeTextVideoProfile('Latte', LATTE_REPO, [512, 512, 50, 7.5, 120, 16, 8], '1:1', true),
+  MochiPipeline: nativeTextVideoProfile(
+    'Mochi',
+    MOCHI_REPO,
+    [848, 480, 64, 4.5, 256, 31, 30],
+    '16:9',
+    true,
+    'bfloat16',
+  ),
   LTXVideoPipeline: {
     displayName: 'LTX-Video Diffusers',
     family: 'LTX Video',
@@ -1860,6 +1870,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   CogVideoXPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogVideoXPipeline'),
   AllegroPipeline: /* @__PURE__ */ pendingPlanningRequirement('AllegroPipeline'),
   LattePipeline: /* @__PURE__ */ pendingPlanningRequirement('LattePipeline'),
+  MochiPipeline: /* @__PURE__ */ pendingPlanningRequirement('MochiPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,

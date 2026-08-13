@@ -547,6 +547,23 @@ test('Latte exposes its bounded native remote-only source contract', () => {
   assert.equal(form.fps, 8);
 });
 
+test('Mochi exposes its bounded native remote-only source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.MochiPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'MochiPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.MOCHI_REPO);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 256);
+  assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+  assert.equal(form.width, 848);
+  assert.equal(form.height, 480);
+  assert.equal(form.steps, 64);
+  assert.equal(form.guidanceScale, 4.5);
+  assert.equal(form.numFrames, 31);
+  assert.equal(form.fps, 30);
+});
+
 test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   const graph = JSON.parse(
     await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),
