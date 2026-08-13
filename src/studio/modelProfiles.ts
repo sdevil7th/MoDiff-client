@@ -89,6 +89,7 @@ export const CHROMA1_HD_REPO = 'lodestones/Chroma1-HD';
 export const COGVIEW3_PLUS_REPO = 'zai-org/CogView3-Plus-3B';
 export const COGVIEW4_6B_REPO = 'zai-org/CogView4-6B';
 export const ERNIE_IMAGE_TURBO_REPO = 'baidu/ERNIE-Image-Turbo';
+export const GLM_IMAGE_REPO = 'zai-org/GLM-Image';
 export const SANA_REPO = 'Efficient-Large-Model/Sana_600M_1024px_diffusers';
 export const SANA_SPRINT_REPO = 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers';
 export const DREAMLITE_BASE_REPO = 'carlofkl/DreamLite-base';
@@ -251,6 +252,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'CogView3 Plus 3B',
   'CogView4 6B',
   'ERNIE Image Turbo',
+  'GLM-Image',
   'Sana 0.6B',
   'Sana Sprint 0.6B',
   'DreamLite Base',
@@ -1398,22 +1400,17 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
     },
   },
-  PixArtSigmaPipeline: {
-    ...planningImageProfile('PixArt Sigma', PIXART_SIGMA_REPO, 20, 4.5, 300, 'float16'),
-    artifactLabel: 'OpenRAIL++ Diffusers safetensors repo',
-  },
-  AuraFlowPipeline: {
-    ...planningImageProfile('AuraFlow', AURAFLOW_V03_REPO, 50, 3.5, 256, 'float16', 1536, 768, 'custom'),
-    artifactLabel: 'Apache-2.0 fp16 Diffusers safetensors repo',
-  },
-  ChromaPipeline: {
-    ...planningImageProfile('Chroma', CHROMA1_HD_REPO, 40, 3, 512),
-    artifactLabel: 'Apache-2.0 bfloat16 Diffusers safetensors repo',
-  },
+  PixArtSigmaPipeline: planningImageProfile('PixArt Sigma', PIXART_SIGMA_REPO, 20, 4.5, 300, 'float16'),
+  AuraFlowPipeline: planningImageProfile('AuraFlow', AURAFLOW_V03_REPO, 50, 3.5, 256, 'float16', 1536, 768, 'custom'),
+  ChromaPipeline: planningImageProfile('Chroma', CHROMA1_HD_REPO, 40, 3, 512),
   CogView3PlusPipeline: planningImageProfile('CogView3', COGVIEW3_PLUS_REPO, 50, 7, 224),
   CogView4Pipeline: planningImageProfile('CogView4', COGVIEW4_6B_REPO, 50, 3.5, 1024),
   ErnieImagePipeline: {
     ...planningImageProfile('ERNIE Image', ERNIE_IMAGE_TURBO_REPO, 8, 1, 2048),
+    supportsNegativePrompt: false,
+  },
+  GlmImagePipeline: {
+    ...planningImageProfile('GLM-Image', GLM_IMAGE_REPO, 50, 1.5, 2048),
     supportsNegativePrompt: false,
   },
   SanaPipeline: planningImageProfile('Sana', SANA_REPO, 20, 4.5, 300, 'float16'),
@@ -2047,6 +2044,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   CogView3PlusPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogView3PlusPipeline'),
   CogView4Pipeline: /* @__PURE__ */ pendingPlanningRequirement('CogView4Pipeline'),
   ErnieImagePipeline: /* @__PURE__ */ pendingPlanningRequirement('ErnieImagePipeline'),
+  GlmImagePipeline: /* @__PURE__ */ pendingPlanningRequirement('GlmImagePipeline'),
   SanaPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaPipeline'),
   SanaSprintPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaSprintPipeline'),
   DreamLitePipeline: /* @__PURE__ */ pendingPlanningRequirement('DreamLitePipeline'),
