@@ -530,6 +530,23 @@ test('Allegro exposes its bounded native remote-only source contract', () => {
   assert.equal(form.fps, 15);
 });
 
+test('Latte exposes its bounded native remote-only source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.LattePipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'LattePipeline');
+  assert.equal(profile.defaultRepo, profilesModule.LATTE_REPO);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 120);
+  assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.numFrames, 16);
+  assert.equal(form.fps, 8);
+});
+
 test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   const graph = JSON.parse(
     await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),

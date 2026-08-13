@@ -418,6 +418,35 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           throw new Error(`${workflow.id} Allegro graph is missing its exact artifact or bounded native recipe.`);
         }
       }
+      if (pipelineClass === 'LattePipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'maxin-cn/Latte-1' ||
+          revision !== '0653024365272f061fc44d1078134df22842b687' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 512 ||
+          generateParams.height?.value !== 512 ||
+          generateParams.num_frames?.value !== 16 ||
+          generateParams.num_inference_steps?.value !== 50 ||
+          generateParams.guidance_scale?.value !== 7.5 ||
+          generateParams.max_sequence_length?.value !== 120
+        ) {
+          throw new Error(`${workflow.id} Latte graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
       const generateNodes = (graph.nodes ?? []).filter(
         (node) =>
           node?.data?.module === 'modules.DiffusersVideo' &&

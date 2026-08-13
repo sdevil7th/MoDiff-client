@@ -214,6 +214,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'AnimateLCM SD1.5',
   'CogVideoX-2B',
   'Allegro',
+  'Latte',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -314,6 +315,7 @@ export const COGVIDEOX_2B_REPO = 'zai-org/CogVideoX-2b';
 export const COGVIDEOX_2B_REVISION = '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01';
 export const ALLEGRO_REPO = 'rhymes-ai/Allegro';
 export const ALLEGRO_REVISION = 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6';
+export const LATTE_REPO = 'maxin-cn/Latte-1';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
@@ -498,7 +500,7 @@ function planningVideoProfile(
 function nativeTextVideoProfile(
   family: StudioModelProfile['family'],
   defaultRepo: string,
-  [width, height, steps, guidance, maxSequenceLength, frames, fps]: [
+  [width, height, steps, guidance, maxSequenceLength, frames, fps, lowSteps = steps, lowFrames = frames]: [
     number,
     number,
     number,
@@ -506,12 +508,14 @@ function nativeTextVideoProfile(
     number,
     number,
     number,
+    number?,
+    number?,
   ],
-  dtype: StudioFormState['dtype'],
-  offloadMode: StudioFormState['offloadMode'],
-  [lowSteps, lowFrames]: [number, number],
   aspectRatio: StudioModelProfile['defaultSize']['aspectRatio'] = 'custom',
+  sequential = false,
+  dtype: StudioFormState['dtype'] = 'float16',
 ): StudioModelProfileSource {
+  const offloadMode = sequential ? 'sequential_cpu' : 'model_cpu';
   return {
     family,
     surfaceCategory: 'Video',
@@ -519,10 +523,9 @@ function nativeTextVideoProfile(
     defaultRepo,
     defaultDtype: dtype,
     defaultSize: { width, height, aspectRatio },
-    offloadSupport:
-      offloadMode === 'sequential_cpu'
-        ? { ...SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT, default: 'sequential_cpu' }
-        : DIRECT_OFFLOAD_SUPPORT,
+    offloadSupport: sequential
+      ? { ...SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT, default: 'sequential_cpu' }
+      : DIRECT_OFFLOAD_SUPPORT,
     recommendedSteps: steps,
     recommendedGuidance: guidance,
     recommendedMaxSequenceLength: maxSequenceLength,
@@ -532,7 +535,6 @@ function nativeTextVideoProfile(
     recommendedFps: fps,
     lowVram: { dtype, autoOffload: true, offloadMode, steps: lowSteps, width, height, numFrames: lowFrames },
     modes: ['text_to_video'],
-    modeRequirements: {},
   };
 }
 
@@ -554,13 +556,11 @@ function planningAudioProfile(
     recommendedSteps: steps,
     recommendedGuidance: guidance,
     supportFlags: 0,
-    supportsAudioInput: false,
     outputKind: 'audio',
     recommendedDuration: duration,
     recommendedSampleRate: sampleRate,
     lowVram: { dtype, autoOffload: true, offloadMode, steps },
     modes: ['text_to_audio'],
-    modeRequirements: {},
   };
 }
 
@@ -769,7 +769,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedGuidance: 6,
     supportFlags: 32,
     supportsVideoInput: true,
-    supportsVideoMask: false,
     outputKind: 'video',
     recommendedFrames: 81,
     recommendedFps: 16,
@@ -799,8 +798,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedGuidance: 3.5,
     guidanceLabel: 'High-noise guidance',
     supportFlags: 5,
-    supportsVideoInput: false,
-    supportsVideoMask: false,
     outputKind: 'video',
     recommendedFrames: 81,
     recommendedFps: 16,
@@ -831,8 +828,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedSteps: 50,
     recommendedGuidance: 5,
     supportFlags: 32,
-    supportsVideoInput: false,
-    supportsVideoMask: false,
     outputKind: 'video',
     recommendedFrames: 121,
     recommendedFps: 24,
@@ -846,7 +841,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       numFrames: 121,
     },
     modes: WAN_22_TI2V_MODES,
-    modeRequirements: {},
   },
   Wan22Pipeline: planningVideoProfile('Wan Video', WAN_22_T2V_A14B_REPO, ['text_to_video'], {}, 0),
   WanAnimatePipeline: planningVideoProfile(
@@ -901,7 +895,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     supportFlags: 1,
     supportsPrompt: false,
     supportsNegativePrompt: false,
-    supportsVideoInput: false,
     outputKind: 'video',
     recommendedFrames: 25,
     recommendedFps: 7,
@@ -923,15 +916,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
   },
   AnimateDiffPipeline: {
-    ...nativeTextVideoProfile(
-      'AnimateDiff',
-      SD15_BASE_REPO,
-      [512, 512, 25, 7.5, 77, 16, 8],
-      'float16',
-      'model_cpu',
-      [16, 8],
-      '1:1',
-    ),
+    ...nativeTextVideoProfile('AnimateDiff', SD15_BASE_REPO, [512, 512, 25, 7.5, 77, 16, 8, 16, 8], '1:1'),
     modeRequirements: {
       text_to_video: {
         modelRequirements: [ANIMATEDIFF_MOTION_REQUIREMENT],
@@ -939,38 +924,23 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
   },
   AnimateLCMPipeline: {
-    ...nativeTextVideoProfile(
-      'AnimateDiff',
-      SD15_BASE_REPO,
-      [512, 512, 6, 1.5, 77, 16, 8],
-      'float16',
-      'model_cpu',
-      [4, 8],
-      '1:1',
-    ),
+    ...nativeTextVideoProfile('AnimateDiff', SD15_BASE_REPO, [512, 512, 6, 1.5, 77, 16, 8, 4, 8], '1:1'),
     modeRequirements: {
       text_to_video: {
         modelRequirements: [ANIMATELCM_MOTION_REQUIREMENT],
       },
     },
   },
-  CogVideoXPipeline: nativeTextVideoProfile(
-    'CogVideoX',
-    COGVIDEOX_2B_REPO,
-    [720, 480, 25, 6, 226, 25, 8],
-    'float16',
-    'model_cpu',
-    [16, 9],
-  ),
+  CogVideoXPipeline: nativeTextVideoProfile('CogVideoX', COGVIDEOX_2B_REPO, [720, 480, 25, 6, 226, 25, 8, 16, 9]),
   AllegroPipeline: nativeTextVideoProfile(
     'Allegro',
     ALLEGRO_REPO,
     [1280, 720, 100, 7.5, 512, 88, 15],
-    'bfloat16',
-    'sequential_cpu',
-    [100, 88],
     '16:9',
+    true,
+    'bfloat16',
   ),
+  LattePipeline: nativeTextVideoProfile('Latte', LATTE_REPO, [512, 512, 50, 7.5, 120, 16, 8], '1:1', true),
   LTXVideoPipeline: {
     displayName: 'LTX-Video Diffusers',
     family: 'LTX Video',
@@ -982,7 +952,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedGuidance: 1,
     supportFlags: 37,
     supportsVideoInput: true,
-    supportsVideoMask: false,
     outputKind: 'video',
     recommendedFrames: 97,
     recommendedFps: 25,
@@ -1000,7 +969,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: {
       image_to_video: {
         requiredImages: ['referenceImages'],
-        note: 'Requires one starting image.',
       },
       video_to_video: {
         requiredVideos: ['sourceVideo'],
@@ -1095,7 +1063,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       numFrames: 20,
     },
     modes: THREE_D_STUDIO_MODES,
-    modeRequirements: {},
   },
   FluxSchnellPipeline: {
     family: 'FLUX Image',
@@ -1892,6 +1859,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   AnimateLCMPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateLCMPipeline'),
   CogVideoXPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogVideoXPipeline'),
   AllegroPipeline: /* @__PURE__ */ pendingPlanningRequirement('AllegroPipeline'),
+  LattePipeline: /* @__PURE__ */ pendingPlanningRequirement('LattePipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,
