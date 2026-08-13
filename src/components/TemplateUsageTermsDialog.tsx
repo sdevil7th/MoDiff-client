@@ -6,6 +6,7 @@ function scopeLabel(policy: ResolvedModelUsagePolicy) {
   if (policy.useScope === 'personal_noncommercial') return 'Personal / non-commercial';
   if (policy.useScope === 'research_academic_only') return 'Research / academic only';
   if (policy.useScope === 'noncommercial_only') return 'Restricted model license';
+  if (policy.useScope === 'rights_undetermined') return 'No weight license declared';
   return 'Usage terms';
 }
 
@@ -22,6 +23,7 @@ export function TemplateUsageTermsDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const hasUndeterminedRights = policies.some((policy) => policy.useScope === 'rights_undetermined');
   return (
     <ModiffDialog
       open={open}
@@ -38,7 +40,8 @@ export function TemplateUsageTermsDialog({
         <>
           <ModiffButton onClick={onCancel}>Cancel</ModiffButton>
           <ModiffButton tone="primary" onClick={onConfirm} data-testid="template-usage-terms-confirm">
-            I have reviewed and agree — {action === 'install' ? 'Install' : 'Create graph'}
+            {hasUndeterminedRights ? 'I understand' : 'I have reviewed and agree'} —{' '}
+            {action === 'install' ? 'Install' : 'Create graph'}
           </ModiffButton>
         </>
       }

@@ -203,6 +203,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'LTX-2 Video + Audio',
   'Hunyuan FramePack',
   'Stable Video Diffusion XT 1.1',
+  'AnimateDiff SD1.5 v2',
+  'AnimateLCM SD1.5',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -288,6 +290,10 @@ export const LTX2_REPO = 'Lightricks/LTX-2';
 export const FRAMEPACK_REPO = 'lllyasviel/FramePackI2V_HY';
 export const STABLE_VIDEO_DIFFUSION_REPO = 'stabilityai/stable-video-diffusion-img2vid-xt-1-1';
 export const STABLE_VIDEO_DIFFUSION_REVISION = '043843887ccd51926e3efed36270444a838e7861';
+export const ANIMATEDIFF_MOTION_REPO = 'guoyww/animatediff-motion-adapter-v1-5-2';
+export const ANIMATEDIFF_MOTION_REVISION = '6167b88ffe39b4441fdf2113e77b99a6f56b7906';
+export const ANIMATELCM_MOTION_REPO = 'wangfuyun/AnimateLCM';
+export const ANIMATELCM_MOTION_REVISION = '3d4d00fc113225e1040f4d3bec504b6ec750c10c';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
@@ -307,6 +313,26 @@ export const WAN_VIDEO_MODES: StudioMode[] = ['text_to_video', 'video_to_video',
 export const WAN_22_I2V_MODES: StudioMode[] = ['image_to_video'];
 export const WAN_22_TI2V_MODES: StudioMode[] = ['text_to_video'];
 export const WAN_ANIMATE_MODES: StudioMode[] = ['character_animate', 'character_replace'];
+
+export const ANIMATEDIFF_MOTION_REQUIREMENT: StudioModelRequirement = {
+  id: 'animatediff-motion-adapter-v1-5-2',
+  label: 'AnimateDiff SD1.5 v2 MotionAdapter',
+  repo: ANIMATEDIFF_MOTION_REPO,
+  revision: ANIMATEDIFF_MOTION_REVISION,
+  kind: 'adapter',
+  requiredForModes: ['text_to_video'],
+  description: 'Pinned fp16 safetensors AnimateDiff motion module.',
+};
+
+export const ANIMATELCM_MOTION_REQUIREMENT: StudioModelRequirement = {
+  id: 'animatelcm-motion-adapter-and-lora',
+  label: 'AnimateLCM MotionAdapter and spatial LoRA',
+  repo: ANIMATELCM_MOTION_REPO,
+  revision: ANIMATELCM_MOTION_REVISION,
+  kind: 'adapter',
+  requiredForModes: ['text_to_video'],
+  description: 'Pinned fp16 safetensors AnimateLCM motion module and LoRA.',
+};
 
 export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'text_to_video',
@@ -805,6 +831,72 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       image_to_video: {
         requiredImages: ['referenceImages'],
         note: 'Requires exactly one opening reference image and prior acceptance of the gated model terms.',
+      },
+    },
+  },
+  AnimateDiffPipeline: {
+    family: 'AnimateDiff',
+    surfaceCategory: 'Video',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SD15_BASE_REPO,
+    displayName: 'AnimateDiff motion adapter v1.5.2',
+    artifactLabel: 'Pinned SD1.5 and fp16 safetensors MotionAdapter',
+    defaultDtype: 'float16',
+    defaultSize: { width: 512, height: 512, aspectRatio: '1:1' },
+    recommendedSteps: 25,
+    recommendedGuidance: 7.5,
+    supportFlags: 0,
+    supportsVideoInput: false,
+    outputKind: 'video',
+    recommendedFrames: 16,
+    recommendedFps: 8,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 16,
+      width: 512,
+      height: 512,
+      numFrames: 8,
+    },
+    modes: ['text_to_video'],
+    modeRequirements: {
+      text_to_video: {
+        modelRequirements: [ANIMATEDIFF_MOTION_REQUIREMENT],
+        note: 'Pinned SD1.5 v2 MotionAdapter and linear-beta DDIM scheduler.',
+      },
+    },
+  },
+  AnimateLCMPipeline: {
+    family: 'AnimateDiff',
+    surfaceCategory: 'Video',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SD15_BASE_REPO,
+    displayName: 'AnimateLCM',
+    artifactLabel: 'Pinned SD1.5, fp16 MotionAdapter, and safetensors LoRA',
+    defaultDtype: 'float16',
+    defaultSize: { width: 512, height: 512, aspectRatio: '1:1' },
+    recommendedSteps: 6,
+    recommendedGuidance: 1.5,
+    supportFlags: 0,
+    supportsVideoInput: false,
+    outputKind: 'video',
+    recommendedFrames: 16,
+    recommendedFps: 8,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 4,
+      width: 512,
+      height: 512,
+      numFrames: 8,
+    },
+    modes: ['text_to_video'],
+    modeRequirements: {
+      text_to_video: {
+        modelRequirements: [ANIMATELCM_MOTION_REQUIREMENT],
+        note: 'Pinned AnimateLCM adapter, linear-beta scheduler, and spatial LoRA.',
       },
     },
   },
@@ -1709,6 +1801,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   LTX2ConditionPipeline: /* @__PURE__ */ pendingPlanningRequirement('LTX2ConditionPipeline'),
   HunyuanVideoFramepackPipeline: /* @__PURE__ */ pendingPlanningRequirement('HunyuanVideoFramepackPipeline'),
   StableVideoDiffusionPipeline: /* @__PURE__ */ pendingPlanningRequirement('StableVideoDiffusionPipeline'),
+  AnimateDiffPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateDiffPipeline'),
+  AnimateLCMPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateLCMPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,

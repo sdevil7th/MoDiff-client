@@ -1,4 +1,8 @@
 import {
+  ANIMATEDIFF_MOTION_REPO,
+  ANIMATEDIFF_MOTION_REVISION,
+  ANIMATELCM_MOTION_REPO,
+  ANIMATELCM_MOTION_REVISION,
   FLUX_DEV_FP8_REPO,
   FLUX_DEV_REPO,
   FLUX_DEV_REVISION,
@@ -6,11 +10,16 @@ import {
   STABLE_VIDEO_DIFFUSION_REPO,
   STABLE_VIDEO_DIFFUSION_REVISION,
   STUDIO_MODEL_PROFILES,
+  getModelRequirementsForMode,
 } from './modelProfiles';
 import type { StudioTemplate, StudioTemplateModelArtifact } from './types';
 
 export type ModelUseScope =
-  'commercial_allowed' | 'noncommercial_only' | 'personal_noncommercial' | 'research_academic_only';
+  | 'commercial_allowed'
+  | 'noncommercial_only'
+  | 'personal_noncommercial'
+  | 'research_academic_only'
+  | 'rights_undetermined';
 export type ModelAccessPolicy = 'public' | 'huggingface_gated' | 'unknown';
 
 export type ModelUsagePolicy = {
@@ -30,6 +39,9 @@ export type ModelUsagePolicy = {
 export type ResolvedModelUsagePolicy = ModelUsagePolicy & {
   revision?: string;
 };
+
+const UNDECLARED_MOTION_RIGHTS_NOTICE =
+  'This snapshot does not declare a license for its motion weights. Independently establish authorization before use; MoDiff grants no rights.';
 
 const fluxDevPolicy = (
   repository: string,
@@ -56,6 +68,32 @@ const fluxDevPolicy = (
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
+  [ANIMATEDIFF_MOTION_REPO]: {
+    id: 'undeclared-weight-license:animatediff-v1-5-2',
+    repository: ANIMATEDIFF_MOTION_REPO,
+    useScope: 'rights_undetermined',
+    acknowledgementRequired: true,
+    shortSummary: UNDECLARED_MOTION_RIGHTS_NOTICE,
+    termsUrl: `https://huggingface.co/${ANIMATEDIFF_MOTION_REPO}/blob/${ANIMATEDIFF_MOTION_REVISION}/README.md`,
+    modelCardUrl: `https://huggingface.co/${ANIMATEDIFF_MOTION_REPO}/tree/${ANIMATEDIFF_MOTION_REVISION}`,
+    access: 'public',
+    reviewedRevision: ANIMATEDIFF_MOTION_REVISION,
+    policyVersion: '2026-08-13',
+    reviewedAt: '2026-08-13',
+  },
+  [ANIMATELCM_MOTION_REPO]: {
+    id: 'undeclared-weight-license:animatelcm',
+    repository: ANIMATELCM_MOTION_REPO,
+    useScope: 'rights_undetermined',
+    acknowledgementRequired: true,
+    shortSummary: UNDECLARED_MOTION_RIGHTS_NOTICE,
+    termsUrl: `https://huggingface.co/${ANIMATELCM_MOTION_REPO}/blob/${ANIMATELCM_MOTION_REVISION}/README.md`,
+    modelCardUrl: `https://huggingface.co/${ANIMATELCM_MOTION_REPO}/tree/${ANIMATELCM_MOTION_REVISION}`,
+    access: 'public',
+    reviewedRevision: ANIMATELCM_MOTION_REVISION,
+    policyVersion: '2026-08-13',
+    reviewedAt: '2026-08-13',
+  },
   [STABLE_VIDEO_DIFFUSION_REPO]: {
     id: 'stability-ai-community-license:stable-video-diffusion-xt-1-1',
     repository: STABLE_VIDEO_DIFFUSION_REPO,
@@ -166,6 +204,10 @@ export function templateUsagePolicies(template: StudioTemplate): ResolvedModelUs
   const profile = STUDIO_MODEL_PROFILES[template.modelType];
   const dependencies: Array<{ repository: string; revision?: string }> = [
     { repository: profile.defaultRepo },
+    ...getModelRequirementsForMode(profile, template.mode).map((requirement) => ({
+      repository: requirement.repo,
+      revision: requirement.revision,
+    })),
     ...workflowArtifacts(template).map((artifact) => ({
       repository: artifact.value,
       revision: artifact.revision,

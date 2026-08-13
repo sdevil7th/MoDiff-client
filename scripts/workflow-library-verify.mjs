@@ -339,6 +339,38 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
         throw new Error(`${workflow.id} video execution recipe must enable VAE slicing and explicitly select tiling.`);
       }
       const pipelineClass = pipeline.data.params?.pipeline_class?.value;
+      const animateMotionArtifacts = {
+        AnimateDiffPipeline: {
+          repo: 'guoyww/animatediff-motion-adapter-v1-5-2',
+          revision: '6167b88ffe39b4441fdf2113e77b99a6f56b7906',
+        },
+        AnimateLCMPipeline: {
+          repo: 'wangfuyun/AnimateLCM',
+          revision: '3d4d00fc113225e1040f4d3bec504b6ec750c10c',
+        },
+      };
+      const animateMotion = animateMotionArtifacts[pipelineClass];
+      if (animateMotion) {
+        const base = pipeline.data.params?.model_id?.value;
+        const baseRevision = pipeline.data.params?.revision?.value;
+        const motion = pipeline.data.params?.motion_adapter_id?.value;
+        const motionRevision = pipeline.data.params?.motion_adapter_revision?.value;
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'stable-diffusion-v1-5/stable-diffusion-v1-5' ||
+          baseRevision !== '451f4fe16113bff5a5d2269ed5ad43b0592e9a14' ||
+          motion?.source !== 'hub' ||
+          motion.value !== animateMotion.repo ||
+          motionRevision !== animateMotion.revision ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          !workflow.requiredArtifacts.includes(motion.value) ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_tiling?.value !== false
+        ) {
+          throw new Error(`${workflow.id} AnimateDiff graph is missing its exact base, motion, or scheduler recipe.`);
+        }
+      }
       const generateNodes = (graph.nodes ?? []).filter(
         (node) =>
           node?.data?.module === 'modules.DiffusersVideo' &&

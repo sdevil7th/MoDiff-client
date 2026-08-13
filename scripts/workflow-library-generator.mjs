@@ -238,6 +238,7 @@ function applyCatalogArtifactPins(graph, artifactPins) {
       ['model_id', 'revision'],
       ['repo_id', 'revision'],
       ['conditioning_model_id', 'conditioning_revision'],
+      ['motion_adapter_id', 'motion_adapter_revision'],
     ];
     let paired = false;
     for (const [repositoryKey, revisionKey] of paramPairs) {

@@ -350,6 +350,48 @@ test('Stable Video Diffusion exposes a gated prompt-free short-video recipe', ()
   assert.equal(modelUsagePoliciesModule.repositoryRequiresHuggingFaceGate(profile.defaultRepo), true);
 });
 
+test('AnimateDiff and AnimateLCM expose independently pinned motion recipes and undeclared-rights notices', () => {
+  const animatediff = profilesModule.STUDIO_MODEL_PROFILES.AnimateDiffPipeline;
+  const animatelcm = profilesModule.STUDIO_MODEL_PROFILES.AnimateLCMPipeline;
+  assert.equal(animatediff.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(animatelcm.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(animatediff.defaultDtype, 'float16');
+  assert.equal(animatediff.recommendedSteps, 25);
+  assert.equal(animatediff.recommendedGuidance, 7.5);
+  assert.equal(animatelcm.recommendedSteps, 6);
+  assert.equal(animatelcm.recommendedGuidance, 1.5);
+  assert.equal(animatediff.recommendedFrames, 16);
+  assert.equal(animatelcm.recommendedFrames, 16);
+  assert.deepEqual(animatediff.modeRequirements.text_to_video.modelRequirements, [
+    profilesModule.ANIMATEDIFF_MOTION_REQUIREMENT,
+  ]);
+  assert.deepEqual(animatelcm.modeRequirements.text_to_video.modelRequirements, [
+    profilesModule.ANIMATELCM_MOTION_REQUIREMENT,
+  ]);
+
+  const templates = [
+    { id: 'animatediff-source', modelType: 'AnimateDiffPipeline', mode: 'text_to_video' },
+    { id: 'animatelcm-source', modelType: 'AnimateLCMPipeline', mode: 'text_to_video' },
+  ];
+  const policies = templates.map((template) => modelUsagePoliciesModule.acknowledgementRequiredForTemplate(template));
+  assert.deepEqual(
+    policies[0].map((policy) => policy.repository),
+    [profilesModule.ANIMATEDIFF_MOTION_REPO],
+  );
+  assert.deepEqual(
+    policies[1].map((policy) => policy.repository),
+    [profilesModule.ANIMATELCM_MOTION_REPO],
+  );
+  for (const policy of policies.flat()) {
+    assert.equal(policy.useScope, 'rights_undetermined');
+    assert.equal(policy.access, 'public');
+    assert.equal(policy.acknowledgementRequired, true);
+    assert.match(policy.shortSummary, /does not declare a license/i);
+    assert.match(policy.shortSummary, /independently establish authorization/i);
+    assert.match(modelUsagePoliciesModule.usagePolicyAcknowledgementKey([policy]), /^terms-v2:[0-9a-f]{8}$/);
+  }
+});
+
 test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   const graph = JSON.parse(
     await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),
