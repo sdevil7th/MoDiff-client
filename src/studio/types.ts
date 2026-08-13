@@ -84,7 +84,9 @@ export type StudioModelType =
   | 'StableDiffusionXLAdapterPipeline'
   | 'StableDiffusionXLPAGPipeline'
   | 'SanaPipeline'
-  | 'SanaSprintPipeline';
+  | 'SanaSprintPipeline'
+  | 'DreamLitePipeline'
+  | 'DreamLiteMobilePipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -811,6 +813,7 @@ export type StudioModelProfile = {
     | 'Stable Diffusion 1.x'
     | 'Latent Consistency Models'
     | 'Sana'
+    | 'DreamLite'
     | 'Marigold'
     | 'Whisper';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';

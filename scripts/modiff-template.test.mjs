@@ -276,6 +276,30 @@ test('Sana and Sana Sprint expose their pinned mixed-precision recipes', () => {
   assert.equal(sprintEdit.strength, 0.5);
 });
 
+test('DreamLite base and mobile expose distinct pinned guidance recipes', () => {
+  const base = profilesModule.STUDIO_MODEL_PROFILES.DreamLitePipeline;
+  const baseText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLitePipeline');
+  const baseEdit = profilesModule.getFormDefaultsForMode('edit_image', 'DreamLitePipeline');
+  assert.equal(base.defaultRepo, profilesModule.DREAMLITE_BASE_REPO);
+  assert.equal(base.defaultDtype, 'bfloat16');
+  assert.deepEqual(base.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(base.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(baseText.steps, 28);
+  assert.equal(baseText.guidanceScale, 3.5);
+  assert.equal(baseText.maxSequenceLength, 200);
+  assert.equal(baseEdit.conditioningScale, 1.5);
+
+  const mobile = profilesModule.STUDIO_MODEL_PROFILES.DreamLiteMobilePipeline;
+  const mobileText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLiteMobilePipeline');
+  assert.equal(mobile.defaultRepo, profilesModule.DREAMLITE_MOBILE_REPO);
+  assert.equal(mobile.supportsNegativePrompt, false);
+  assert.deepEqual(mobile.modes, ['text_to_image', 'edit_image']);
+  assert.equal(mobileText.steps, 4);
+  assert.equal(mobileText.guidanceScale, 0);
+  assert.equal(mobileText.maxSequenceLength, 200);
+  assert.equal(mobileText.conditioningScale, 0);
+});
+
 test('LongCat AudioDiT and AudioLDM2 expose their pinned generic audio recipes', () => {
   const longcat = profilesModule.STUDIO_MODEL_PROFILES.LongCatAudioDiTPipeline;
   const longcatForm = profilesModule.getFormDefaultsForMode('text_to_audio', 'LongCatAudioDiTPipeline');

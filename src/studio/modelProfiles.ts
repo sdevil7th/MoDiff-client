@@ -91,6 +91,8 @@ export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
 export const SANA_REPO = 'Efficient-Large-Model/Sana_600M_1024px_diffusers';
 export const SANA_SPRINT_REPO = 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers';
+export const DREAMLITE_BASE_REPO = 'carlofkl/DreamLite-base';
+export const DREAMLITE_MOBILE_REPO = 'carlofkl/DreamLite-mobile';
 export const LCM_DREAMSHAPER_REPO = 'SimianLuo/LCM_Dreamshaper_v7';
 export const MARIGOLD_DEPTH_LCM_REPO = 'prs-eth/marigold-depth-lcm-v1-0';
 export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
@@ -229,6 +231,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion XL PAG',
   'Sana 0.6B',
   'Sana Sprint 0.6B',
+  'DreamLite Base',
+  'DreamLite Mobile',
   'Stable Diffusion 1.5',
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
@@ -1470,6 +1474,57 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       edit_image: { requiredImages: ['referenceImages'], note: 'Requires a source image.' },
     },
   },
+  DreamLitePipeline: {
+    family: 'DreamLite',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: DREAMLITE_BASE_REPO,
+    artifactLabel: 'Non-commercial Diffusers safetensors repo',
+    defaultDtype: 'bfloat16',
+    offloadSupport: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
+    recommendedSteps: 28,
+    recommendedGuidance: 3.5,
+    recommendedMaxSequenceLength: 200,
+    conditioningScale: 1.5,
+    supportFlags: 1,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'sequential_cpu',
+      steps: 28,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'], note: 'Requires one source image for dual-CFG editing.' },
+    },
+  },
+  DreamLiteMobilePipeline: {
+    family: 'DreamLite',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: DREAMLITE_MOBILE_REPO,
+    artifactLabel: 'Non-commercial Diffusers safetensors repo',
+    defaultDtype: 'bfloat16',
+    offloadSupport: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
+    recommendedSteps: 4,
+    recommendedGuidance: 0,
+    recommendedMaxSequenceLength: 200,
+    conditioningScale: 0,
+    supportsNegativePrompt: false,
+    supportFlags: 1,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'sequential_cpu',
+      steps: 4,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'], note: 'Requires one source image for distilled editing.' },
+    },
+  },
   StableDiffusionPipeline: {
     family: 'Stable Diffusion 1.x',
     catalogVisibility: 'workflowOnly',
@@ -2046,6 +2101,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   SanaPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaPipeline'),
   SanaSprintPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaSprintPipeline'),
+  DreamLitePipeline: /* @__PURE__ */ pendingPlanningRequirement('DreamLitePipeline'),
+  DreamLiteMobilePipeline: /* @__PURE__ */ pendingPlanningRequirement('DreamLiteMobilePipeline'),
   StableDiffusionPipeline: {
     modelType: 'StableDiffusionPipeline',
     supportedModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
