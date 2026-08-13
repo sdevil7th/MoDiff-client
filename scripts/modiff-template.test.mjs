@@ -276,6 +276,21 @@ test('Sana and Sana Sprint expose their pinned mixed-precision recipes', () => {
   assert.equal(sprintEdit.strength, 0.5);
 });
 
+test('PixArt Sigma exposes its reviewed 1024px workflow recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.PixArtSigmaPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'PixArtSigmaPipeline');
+  assert.equal(profile.label, 'PixArt Sigma XL 1024px');
+  assert.equal(profile.defaultRepo, profilesModule.PIXART_SIGMA_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 20);
+  assert.equal(form.guidanceScale, 4.5);
+  assert.equal(form.maxSequenceLength, 300);
+});
+
 test('DreamLite base and mobile expose distinct pinned guidance recipes', () => {
   const base = profilesModule.STUDIO_MODEL_PROFILES.DreamLitePipeline;
   const baseText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLitePipeline');

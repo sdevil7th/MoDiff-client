@@ -89,6 +89,7 @@ export const SDXL_T2I_ADAPTER_CANNY_REVISION = '2d7244ba45ded9129cfbf8e96a4befb7
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
+export const PIXART_SIGMA_REPO = 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS';
 export const SANA_REPO = 'Efficient-Large-Model/Sana_600M_1024px_diffusers';
 export const SANA_SPRINT_REPO = 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers';
 export const DREAMLITE_BASE_REPO = 'carlofkl/DreamLite-base';
@@ -229,6 +230,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion XL ControlNet',
   'Stable Diffusion XL T2I Adapter',
   'Stable Diffusion XL PAG',
+  'PixArt Sigma XL 1024px',
   'Sana 0.6B',
   'Sana Sprint 0.6B',
   'DreamLite Base',
@@ -1430,6 +1432,27 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  PixArtSigmaPipeline: {
+    family: 'PixArt Sigma',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: PIXART_SIGMA_REPO,
+    artifactLabel: 'OpenRAIL++ Diffusers safetensors repo',
+    defaultDtype: 'float16',
+    offloadSupport: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
+    recommendedSteps: 20,
+    recommendedGuidance: 4.5,
+    recommendedMaxSequenceLength: 300,
+    supportFlags: 0,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: 'sequential_cpu',
+      steps: 20,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['text_to_image'],
+  },
   SanaPipeline: {
     family: 'Sana',
     catalogVisibility: 'workflowOnly',
@@ -2099,6 +2122,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Text, edit, and inpaint graphs expose PAG controls without an auxiliary artifact.',
     manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
+  PixArtSigmaPipeline: /* @__PURE__ */ pendingPlanningRequirement('PixArtSigmaPipeline'),
   SanaPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaPipeline'),
   SanaSprintPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaSprintPipeline'),
   DreamLitePipeline: /* @__PURE__ */ pendingPlanningRequirement('DreamLitePipeline'),
