@@ -7870,6 +7870,7 @@ test('restored finalized exact workflow queues without replaying field actions o
   await installMockRoutes(page);
 
   const imagePipeline = mockRegistry['modules.DiffusersImage.LoadPipeline'];
+  const imageGenerate = mockRegistry['modules.DiffusersImage.Generate'];
   await page.route('**/nodes**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -7888,6 +7889,13 @@ test('restored finalized exact workflow queues without replaying field actions o
               },
             },
           },
+          'modules.DiffusersImage.Generate': {
+            ...imageGenerate,
+            params: {
+              ...imageGenerate.params,
+              image_contract: { type: 'object', value: {}, hidden: true },
+            },
+          },
         },
       }),
     });
@@ -7897,6 +7905,14 @@ test('restored finalized exact workflow queues without replaying field actions o
   let queueClicked = false;
   let queuedFieldActionRequests = 0;
   await page.route('**/fields/action', async (route) => {
+    const request = (route.request().postDataJSON() ?? {}) as {
+      fn?: string;
+      node?: string;
+      workflowTabId?: string;
+      workflowCanvasEpoch?: number;
+      workflowFormEpoch?: number;
+      values?: { pipeline_class?: string; mode?: string };
+    };
     fieldActionRequests += 1;
     if (queueClicked) queuedFieldActionRequests += 1;
     await route.fulfill({
@@ -7904,6 +7920,36 @@ test('restored finalized exact workflow queues without replaying field actions o
       contentType: 'application/json',
       body: JSON.stringify({ error: false }),
     });
+    if (request.fn !== 'refresh_pipeline_class' || !request.node) return;
+    await page.evaluate(
+      ({ node, contract, workflowTabId, workflowCanvasEpoch, workflowFormEpoch }) => {
+        window.__MODIFF_E2E__!.sendWebsocketMessage({
+          type: 'set_field_params',
+          node,
+          field: 'pipeline',
+          params: { signal: { direction: 'output', origin: 'pipeline_class', value: contract } },
+          workflow_tab_id: workflowTabId,
+          workflow_canvas_epoch: workflowCanvasEpoch,
+          workflow_form_epoch: workflowFormEpoch,
+        });
+      },
+      {
+        node: request.node,
+        contract: {
+          schemaVersion: 1,
+          library: 'diffusers',
+          mediaKind: 'image',
+          pipelineClass: request.values?.pipeline_class ?? 'FluxPipeline',
+          mode: request.values?.mode ?? 'text_to_image',
+          modes: [request.values?.mode ?? 'text_to_image'],
+          actions: { Generate: [request.values?.mode ?? 'text_to_image'] },
+          fieldParams: {},
+        },
+        workflowTabId: request.workflowTabId,
+        workflowCanvasEpoch: request.workflowCanvasEpoch,
+        workflowFormEpoch: request.workflowFormEpoch,
+      },
+    );
   });
 
   let graphSubmissions = 0;
