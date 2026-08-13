@@ -410,6 +410,23 @@ test('Lumina exposes the reviewed generation profiles', () => {
   assert.equal(lumina2.maxSequenceLength, 256);
 });
 
+test('OmniGen exposes text, single-image, and multi-reference profiles', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.OmniGenPipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_image', 'OmniGenPipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'OmniGenPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.OMNIGEN_REPO);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'multi_image_reference_edit']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(profile.supportsImageInput, true);
+  assert.equal(profile.supportsMultiImage, true);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(profile.modeRequirements.multi_image_reference_edit.requiredImages, ['referenceImages']);
+  assert.equal(text.steps, 50);
+  assert.equal(text.guidanceScale, 2.5);
+  assert.equal(edit.conditioningScale, 1.6);
+});
+
 test('AuraFlow v0.3 exposes its reviewed native fp16 recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.AuraFlowPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'AuraFlowPipeline');
