@@ -339,6 +339,22 @@ test('CogView3 Plus exposes its reviewed bfloat16 1024px recipe', () => {
   assert.equal(form.maxSequenceLength, 224);
 });
 
+test('CogView4 exposes its reviewed bounded bfloat16 1024px recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.CogView4Pipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'CogView4Pipeline');
+  assert.equal(profile.label, 'CogView4 6B');
+  assert.equal(profile.defaultRepo, profilesModule.COGVIEW4_6B_REPO);
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.aspectRatio, '1:1');
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 3.5);
+  assert.equal(form.maxSequenceLength, 1024);
+});
+
 test('DreamLite base and mobile expose distinct pinned guidance recipes', () => {
   const base = profilesModule.STUDIO_MODEL_PROFILES.DreamLitePipeline;
   const baseText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLitePipeline');
