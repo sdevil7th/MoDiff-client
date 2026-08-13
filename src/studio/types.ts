@@ -74,7 +74,9 @@ export type StudioModelType =
   | 'StableDiffusionXLInstructPix2PixPipeline'
   | 'StableDiffusionXLControlNetPipeline'
   | 'StableDiffusionXLAdapterPipeline'
-  | 'StableDiffusionXLPAGPipeline';
+  | 'StableDiffusionXLPAGPipeline'
+  | 'SanaPipeline'
+  | 'SanaSprintPipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -792,6 +794,7 @@ export type StudioModelProfile = {
     | 'Consistency Models'
     | 'Stable Diffusion 1.x'
     | 'Latent Consistency Models'
+    | 'Sana'
     | 'Marigold'
     | 'Whisper';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
@@ -809,6 +812,8 @@ export type StudioModelProfile = {
   recommendedGuidance: number;
   recommendedPagScale?: number;
   recommendedPagAdaptiveScale?: number;
+  recommendedStrength?: number;
+  recommendedMaxSequenceLength?: number;
   guidanceLabel: string;
   supportsNegativePrompt?: boolean;
   supportsImageInput: boolean;

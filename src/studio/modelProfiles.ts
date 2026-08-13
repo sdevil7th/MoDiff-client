@@ -43,6 +43,12 @@ export const DIRECT_OFFLOAD_SUPPORT = {
   lowVram: 'model_cpu' as const,
   emergency: 'group_disk' as const,
 };
+export const SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT = {
+  modes: [...STUDIO_OFFLOAD_MODES],
+  default: 'model_cpu' as const,
+  lowVram: 'sequential_cpu' as const,
+  emergency: 'group_disk' as const,
+};
 export const QWEN_MODULAR_OFFLOAD_SUPPORT = {
   modes: ['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'] as StudioFormState['offloadMode'][],
   default: 'model_cpu' as const,
@@ -83,6 +89,8 @@ export const SDXL_T2I_ADAPTER_CANNY_REVISION = '2d7244ba45ded9129cfbf8e96a4befb7
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
+export const SANA_REPO = 'Efficient-Large-Model/Sana_600M_1024px_diffusers';
+export const SANA_SPRINT_REPO = 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers';
 export const LCM_DREAMSHAPER_REPO = 'SimianLuo/LCM_Dreamshaper_v7';
 export const MARIGOLD_DEPTH_LCM_REPO = 'prs-eth/marigold-depth-lcm-v1-0';
 export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
@@ -212,6 +220,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion XL ControlNet',
   'Stable Diffusion XL T2I Adapter',
   'Stable Diffusion XL PAG',
+  'Sana 0.6B',
+  'Sana Sprint 0.6B',
   'Stable Diffusion 1.5',
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
@@ -223,32 +233,32 @@ const STUDIO_MODEL_LABEL_VALUES = [
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
-  unconditional_image: 'Sample images without a text prompt from a compatible unconditional model.',
-  depth_estimation: 'Estimate a normalized relative-depth map from one source image.',
-  speech_to_text: 'Transcribe one local audio source into text with optional timestamps.',
-  speech_translation: 'Recognize one local audio source and translate the transcript to English.',
-  text_to_image: 'Generate from a prompt with a compatible image model.',
-  edit_image: 'Use one source image and a prompt to guide an edit.',
-  multi_image_reference_edit: 'Blend multiple references into one guided edit.',
-  inpaint: 'Prepare an image and mask workflow for targeted edits.',
-  outpaint: 'Extend an image onto a larger canvas with a generated boundary mask.',
-  control_image: 'Use a control image with the Qwen ControlNet graph.',
-  layer_decomposition: 'Use a layered model for separated outputs.',
-  text_to_video: 'Generate a short video from a prompt.',
-  image_to_video: 'Animate a still image or image reference.',
-  video_to_video: 'Edit a source video with Wan VACE conditioning.',
-  video_inpaint: 'Use source and mask videos for targeted video generation.',
+  unconditional_image: 'Sample images without a prompt.',
+  depth_estimation: 'Estimate relative depth from an image.',
+  speech_to_text: 'Transcribe audio with optional timestamps.',
+  speech_translation: 'Translate recognized speech to English.',
+  text_to_image: 'Generate an image from a prompt.',
+  edit_image: 'Edit one source image with a prompt.',
+  multi_image_reference_edit: 'Blend multiple references in one edit.',
+  inpaint: 'Edit a masked image region.',
+  outpaint: 'Extend an image beyond its canvas.',
+  control_image: 'Guide generation with a control image.',
+  layer_decomposition: 'Separate an image into layers.',
+  text_to_video: 'Generate a video from a prompt.',
+  image_to_video: 'Animate a still image.',
+  video_to_video: 'Edit a source video.',
+  video_inpaint: 'Edit a masked video region.',
   video_outpaint: 'Extend or reframe a video with boundary masks.',
-  reference_to_video: 'Use reference images to guide a generated video.',
-  control_to_video: 'Use a prepared control video such as grayscale, sketch, depth, or pose.',
-  video_color_edit: 'Prompt-guided generative video color edit.',
-  character_animate: 'Animate one character from aligned pose and face videos.',
-  character_replace: 'Replace one character using aligned control, background, and mask videos.',
-  text_to_audio: 'Generate music or audio from prompt and lyrics.',
-  audio_variation: 'Create a guided variation or cover from source audio.',
-  audio_continuation: 'Continue source audio with prompt-guided generation.',
-  audio_repaint: 'Regenerate a selected audio range while preserving the rest.',
-  advanced_workflow: 'Open the empty graph and build manually.',
+  reference_to_video: 'Guide a video with reference images.',
+  control_to_video: 'Guide generation with a control video.',
+  video_color_edit: 'Edit video color from a prompt.',
+  character_animate: 'Animate a character from pose and face videos.',
+  character_replace: 'Replace a character using aligned control videos.',
+  text_to_audio: 'Generate audio from a prompt and lyrics.',
+  audio_variation: 'Vary or cover source audio.',
+  audio_continuation: 'Continue source audio from a prompt.',
+  audio_repaint: 'Regenerate a selected audio range.',
+  advanced_workflow: 'Build an empty graph manually.',
 };
 
 export const STUDIO_MODE_LABELS = Object.fromEntries(
@@ -431,7 +441,6 @@ function planningVideoProfile(
 const STUDIO_MODEL_PROFILE_SOURCES = {
   ZImageModularPipeline: {
     family: 'Z-Image',
-    surfaceCategory: 'Image',
     defaultRepo: 'Tongyi-MAI/Z-Image-Turbo',
     defaultSize: { width: 640, height: 640, aspectRatio: '1:1' },
     recommendedSteps: 8,
@@ -450,7 +459,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   QwenImageModularPipeline: {
     family: 'Qwen Image',
-    surfaceCategory: 'Image',
     defaultRepo: QWEN_IMAGE_2512_REPO,
     artifactLabel: 'bfloat16 Diffusers repo',
     defaultSize: { width: 1328, height: 1328, aspectRatio: '1:1' },
@@ -807,7 +815,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     artifactLabel: 'Diffusers audio repo',
     recommendedSteps: 100,
     recommendedGuidance: 7,
-    guidanceLabel: 'Guidance',
     supportFlags: 0,
     supportsAudioInput: false,
     outputKind: 'audio',
@@ -824,7 +831,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   FluxSchnellPipeline: {
     family: 'FLUX Image',
-    surfaceCategory: 'Image',
     catalogVisibility: 'default',
     defaultRepo: FLUX_SCHNELL_REPO,
     recommendedSteps: 4,
@@ -842,7 +848,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   FluxDevPipeline: {
     family: 'FLUX Image',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: FLUX_DEV_REPO,
     alternateArtifact: FLUX_DEV_FP8_REPO,
@@ -872,7 +877,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   FluxKreaPipeline: {
     family: 'FLUX Image',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: FLUX_KREA_REPO,
     recommendedSteps: 28,
@@ -1027,7 +1031,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   StableDiffusionXLPipeline: {
     family: 'Stable Diffusion XL',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: SDXL_BASE_REPO,
     recommendedSteps: 30,
@@ -1055,7 +1058,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   StableDiffusionXLTurboPipeline: {
     family: 'Stable Diffusion XL',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: SDXL_TURBO_REPO,
     artifactLabel: 'Diffusers safetensors repo',
@@ -1110,7 +1112,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     defaultRepo: SDXL_BASE_REPO,
     artifactLabel: 'Diffusers fp16 safetensors assembly',
     defaultDtype: 'float16',
-    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
     recommendedSteps: 50,
     recommendedGuidance: 5,
     conditioningScale: 0.5,
@@ -1139,7 +1140,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     defaultRepo: SDXL_BASE_REPO,
     artifactLabel: 'Diffusers fp16 safetensors assembly',
     defaultDtype: 'float16',
-    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
     recommendedSteps: 30,
     recommendedGuidance: 7.5,
     conditioningScale: 0.8,
@@ -1163,18 +1163,11 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   StableDiffusionXLPAGPipeline: {
     family: 'Stable Diffusion XL',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: SDXL_BASE_REPO,
     artifactLabel: 'Diffusers fp16 safetensors repo',
     defaultDtype: 'float16',
-    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
-    offloadSupport: {
-      modes: [...STUDIO_OFFLOAD_MODES],
-      default: 'model_cpu',
-      lowVram: 'sequential_cpu',
-      emergency: 'group_disk',
-    },
+    offloadSupport: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
     recommendedSteps: 50,
     recommendedGuidance: 5,
     recommendedPagScale: 3,
@@ -1200,9 +1193,52 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  SanaPipeline: {
+    family: 'Sana',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SANA_REPO,
+    defaultDtype: 'float16',
+    offloadSupport: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
+    recommendedSteps: 20,
+    recommendedGuidance: 4.5,
+    recommendedMaxSequenceLength: 300,
+    supportFlags: 0,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: 'sequential_cpu',
+      steps: 20,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['text_to_image'],
+  },
+  SanaSprintPipeline: {
+    family: 'Sana',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SANA_SPRINT_REPO,
+    offloadSupport: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
+    recommendedSteps: 2,
+    recommendedGuidance: 4.5,
+    recommendedStrength: 0.5,
+    recommendedMaxSequenceLength: 300,
+    supportsNegativePrompt: false,
+    supportFlags: 1,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'sequential_cpu',
+      steps: 2,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'], note: 'Requires a source image.' },
+    },
+  },
   StableDiffusionPipeline: {
     family: 'Stable Diffusion 1.x',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: SD15_BASE_REPO,
     artifactLabel: 'Diffusers safetensors repo',
@@ -1234,7 +1270,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   LatentConsistencyModelPipeline: {
     family: 'Latent Consistency Models',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: LCM_DREAMSHAPER_REPO,
     artifactLabel: 'Diffusers safetensors repo',
@@ -1255,7 +1290,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   StableDiffusionPAGPipeline: {
     family: 'Stable Diffusion 1.x',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: SD15_BASE_REPO,
     artifactLabel: 'Diffusers safetensors repo',
@@ -1342,7 +1376,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   DDPMPipeline: {
     family: 'DDPM',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: DDPM_CIFAR10_REPO,
     artifactLabel: 'Unconditional image repo',
@@ -1359,7 +1392,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   DDIMPipeline: {
     family: 'DDIM',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: DDPM_CIFAR10_REPO,
     artifactLabel: 'Unconditional image repo',
@@ -1376,7 +1408,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   ConsistencyModelPipeline: {
     family: 'Consistency Models',
-    surfaceCategory: 'Image',
     catalogVisibility: 'workflowOnly',
     defaultRepo: CONSISTENCY_IMAGENET64_REPO,
     artifactLabel: 'Unconditional image repo',
@@ -1408,6 +1439,7 @@ export const STUDIO_MODEL_PROFILES = Object.fromEntries(
         guidanceLabel: 'Guidance',
         defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
         offloadSupport: DIRECT_OFFLOAD_SUPPORT,
+        surfaceCategory: 'Image',
         runtimeKind: 'diffusers',
         isDiffusersBacked: true,
         supportsImageInput: Boolean(supportFlags & 1),
@@ -1438,7 +1470,11 @@ export type StudioAutoModelRequirementMetadata = {
   manualOnlyReason?: string;
 };
 
-function planningVideoRequirement(modelType: StudioModelType): StudioAutoModelRequirementMetadata {
+const EXPERT_PENDING_MINIMUM = 'Expert-only pending live qualification.';
+const ACCELERATOR_OFFLOAD_RECOMMENDATION = 'Use accelerator offload as needed.';
+const LIVE_QUALIFICATION_PENDING = 'Live output and Gallery qualification pending.';
+
+function pendingPlanningRequirement(modelType: StudioModelType): StudioAutoModelRequirementMetadata {
   const profile = STUDIO_MODEL_PROFILES[modelType];
   return {
     modelType,
@@ -1561,12 +1597,12 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes:
       'Uses the official dense Wan 2.2 5B high-compression model and exposes a locked per-run scheduler flow shift while preserving the quality-first Diffusers step count.',
   },
-  Wan22Pipeline: /* @__PURE__ */ planningVideoRequirement('Wan22Pipeline'),
-  WanAnimatePipeline: /* @__PURE__ */ planningVideoRequirement('WanAnimatePipeline'),
-  WanImage2VideoModularPipeline: /* @__PURE__ */ planningVideoRequirement('WanImage2VideoModularPipeline'),
-  LTXI2VLongMultiPromptPipeline: /* @__PURE__ */ planningVideoRequirement('LTXI2VLongMultiPromptPipeline'),
-  LTX2ConditionPipeline: /* @__PURE__ */ planningVideoRequirement('LTX2ConditionPipeline'),
-  HunyuanVideoFramepackPipeline: /* @__PURE__ */ planningVideoRequirement('HunyuanVideoFramepackPipeline'),
+  Wan22Pipeline: /* @__PURE__ */ pendingPlanningRequirement('Wan22Pipeline'),
+  WanAnimatePipeline: /* @__PURE__ */ pendingPlanningRequirement('WanAnimatePipeline'),
+  WanImage2VideoModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('WanImage2VideoModularPipeline'),
+  LTXI2VLongMultiPromptPipeline: /* @__PURE__ */ pendingPlanningRequirement('LTXI2VLongMultiPromptPipeline'),
+  LTX2ConditionPipeline: /* @__PURE__ */ pendingPlanningRequirement('LTX2ConditionPipeline'),
+  HunyuanVideoFramepackPipeline: /* @__PURE__ */ pendingPlanningRequirement('HunyuanVideoFramepackPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,
@@ -1717,57 +1753,59 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'StableDiffusionXLTurboPipeline',
     supportedModes: ['text_to_image'],
     autoStatus: 'manual_only',
-    minimum: 'Expert-only pending a measured runtime envelope for the pinned fp16 snapshot.',
-    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    minimum: EXPERT_PENDING_MINIMUM,
+    recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
     qualityDefaults: '512x512, one to four steps, guidance 0.',
     artifacts: [SDXL_TURBO_REPO],
-    notes: 'Pinned fp16 safetensors text-to-image graph; output qualification pending.',
-    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
+    notes: 'Pinned fp16 safetensors graph.',
+    manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
   StableDiffusionXLInstructPix2PixPipeline: {
     modelType: 'StableDiffusionXLInstructPix2PixPipeline',
     supportedModes: ['edit_image'],
     autoStatus: 'manual_only',
-    minimum: 'Expert-only pending a measured runtime envelope for the pinned experimental checkpoint.',
-    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    minimum: EXPERT_PENDING_MINIMUM,
+    recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
     qualityDefaults: '768x768, 30 steps, text guidance 3, image guidance 1.5.',
     artifacts: [SDXL_INSTRUCT_PIX2PIX_REPO],
-    notes: 'Pinned safetensors instruction-edit graph; output qualification pending.',
-    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
+    notes: 'Pinned safetensors instruction-edit graph.',
+    manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
   StableDiffusionXLControlNetPipeline: {
     modelType: 'StableDiffusionXLControlNetPipeline',
     supportedModes: ['control_image'],
     autoStatus: 'manual_only',
-    minimum: 'Expert-only pending a measured runtime envelope for the pinned SDXL ControlNet assembly.',
-    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    minimum: EXPERT_PENDING_MINIMUM,
+    recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
     qualityDefaults: '1024x1024, 50 steps, guidance 5, ControlNet scale 0.5.',
     artifacts: [SDXL_BASE_REPO, SDXL_CONTROLNET_CANNY_REPO],
-    notes: 'Pinned fp16 safetensors base and Canny ControlNet graph; output qualification pending.',
-    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
+    notes: 'Pinned fp16 base and Canny ControlNet graph.',
+    manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
   StableDiffusionXLAdapterPipeline: {
     modelType: 'StableDiffusionXLAdapterPipeline',
     supportedModes: ['control_image'],
     autoStatus: 'manual_only',
-    minimum: 'Expert-only pending a measured runtime envelope for the pinned SDXL T2I-Adapter assembly.',
-    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    minimum: EXPERT_PENDING_MINIMUM,
+    recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
     qualityDefaults: '1024x1024, 30 steps, guidance 7.5, adapter scale 0.8.',
     artifacts: [SDXL_BASE_REPO, SDXL_T2I_ADAPTER_CANNY_REPO],
-    notes: 'Pinned fp16 safetensors base and Canny T2I-Adapter graph; output qualification pending.',
-    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
+    notes: 'Pinned fp16 base and Canny T2I-Adapter graph.',
+    manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
   StableDiffusionXLPAGPipeline: {
     modelType: 'StableDiffusionXLPAGPipeline',
     supportedModes: ['text_to_image', 'edit_image', 'inpaint'],
     autoStatus: 'manual_only',
-    minimum: 'Expert-only pending a measured runtime envelope for the pinned SDXL PAG assembly.',
-    recommended: 'Use a CUDA or MPS accelerator with PAG scale 3 and model CPU offload when needed.',
+    minimum: EXPERT_PENDING_MINIMUM,
+    recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
     qualityDefaults: '1024x1024, 50 steps, guidance 5, strength 0.8, PAG scale 3, adaptive scale 0.',
     artifacts: [SDXL_BASE_REPO],
     notes: 'Text, edit, and inpaint graphs expose PAG controls without an auxiliary artifact.',
-    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
+    manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
+  SanaPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaPipeline'),
+  SanaSprintPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaSprintPipeline'),
   StableDiffusionPipeline: {
     modelType: 'StableDiffusionPipeline',
     supportedModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
@@ -2024,8 +2062,9 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
     guidanceScale: profile.recommendedGuidance,
     pagScale: profile.recommendedPagScale ?? DEFAULT_STUDIO_FORM.pagScale,
     pagAdaptiveScale: profile.recommendedPagAdaptiveScale ?? DEFAULT_STUDIO_FORM.pagAdaptiveScale,
+    maxSequenceLength: profile.recommendedMaxSequenceLength ?? DEFAULT_STUDIO_FORM.maxSequenceLength,
     resourceMode: DEFAULT_STUDIO_FORM.resourceMode,
-    strength: mode === 'outpaint' ? 0.85 : DEFAULT_STUDIO_FORM.strength,
+    strength: mode === 'outpaint' ? 0.85 : (profile.recommendedStrength ?? DEFAULT_STUDIO_FORM.strength),
     numFrames: profile.recommendedFrames ?? DEFAULT_STUDIO_FORM.numFrames,
     fps: profile.recommendedFps ?? DEFAULT_STUDIO_FORM.fps,
     conditioningScale: profile.conditioningScale ?? DEFAULT_STUDIO_FORM.conditioningScale,

@@ -252,6 +252,30 @@ test('SDXL PAG exposes generic perturbed-attention controls over the pinned base
   assert.equal(inpaint.strength, 0.8);
 });
 
+test('Sana and Sana Sprint expose their pinned mixed-precision recipes', () => {
+  const sana = profilesModule.STUDIO_MODEL_PROFILES.SanaPipeline;
+  const sanaForm = profilesModule.getFormDefaultsForMode('text_to_image', 'SanaPipeline');
+  assert.equal(sana.defaultRepo, profilesModule.SANA_REPO);
+  assert.equal(sana.defaultDtype, 'float16');
+  assert.deepEqual(sana.modes, ['text_to_image']);
+  assert.equal(sanaForm.steps, 20);
+  assert.equal(sanaForm.guidanceScale, 4.5);
+  assert.equal(sanaForm.maxSequenceLength, 300);
+
+  const sprint = profilesModule.STUDIO_MODEL_PROFILES.SanaSprintPipeline;
+  const sprintText = profilesModule.getFormDefaultsForMode('text_to_image', 'SanaSprintPipeline');
+  const sprintEdit = profilesModule.getFormDefaultsForMode('edit_image', 'SanaSprintPipeline');
+  assert.equal(sprint.defaultRepo, profilesModule.SANA_SPRINT_REPO);
+  assert.equal(sprint.defaultDtype, 'bfloat16');
+  assert.equal(sprint.supportsNegativePrompt, false);
+  assert.deepEqual(sprint.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(sprint.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(sprintText.steps, 2);
+  assert.equal(sprintText.guidanceScale, 4.5);
+  assert.equal(sprintText.maxSequenceLength, 300);
+  assert.equal(sprintEdit.strength, 0.5);
+});
+
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');
