@@ -88,6 +88,7 @@ export const AURAFLOW_V03_REPO = 'fal/AuraFlow-v0.3';
 export const CHROMA1_HD_REPO = 'lodestones/Chroma1-HD';
 export const COGVIEW3_PLUS_REPO = 'zai-org/CogView3-Plus-3B';
 export const COGVIEW4_6B_REPO = 'zai-org/CogView4-6B';
+export const ERNIE_IMAGE_TURBO_REPO = 'baidu/ERNIE-Image-Turbo';
 export const SANA_REPO = 'Efficient-Large-Model/Sana_600M_1024px_diffusers';
 export const SANA_SPRINT_REPO = 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers';
 export const DREAMLITE_BASE_REPO = 'carlofkl/DreamLite-base';
@@ -249,6 +250,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Chroma1-HD 1024px',
   'CogView3 Plus 3B',
   'CogView4 6B',
+  'ERNIE Image Turbo',
   'Sana 0.6B',
   'Sana Sprint 0.6B',
   'DreamLite Base',
@@ -1410,6 +1412,10 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   CogView3PlusPipeline: planningImageProfile('CogView3', COGVIEW3_PLUS_REPO, 50, 7, 224),
   CogView4Pipeline: planningImageProfile('CogView4', COGVIEW4_6B_REPO, 50, 3.5, 1024),
+  ErnieImagePipeline: {
+    ...planningImageProfile('ERNIE Image', ERNIE_IMAGE_TURBO_REPO, 8, 1, 2048),
+    supportsNegativePrompt: false,
+  },
   SanaPipeline: planningImageProfile('Sana', SANA_REPO, 20, 4.5, 300, 'float16'),
   SanaSprintPipeline: {
     family: 'Sana',
@@ -2040,6 +2046,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   ChromaPipeline: /* @__PURE__ */ pendingPlanningRequirement('ChromaPipeline'),
   CogView3PlusPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogView3PlusPipeline'),
   CogView4Pipeline: /* @__PURE__ */ pendingPlanningRequirement('CogView4Pipeline'),
+  ErnieImagePipeline: /* @__PURE__ */ pendingPlanningRequirement('ErnieImagePipeline'),
   SanaPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaPipeline'),
   SanaSprintPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaSprintPipeline'),
   DreamLitePipeline: /* @__PURE__ */ pendingPlanningRequirement('DreamLitePipeline'),
