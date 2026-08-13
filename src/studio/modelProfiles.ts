@@ -1188,7 +1188,17 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       width: 1024,
       height: 1024,
     },
-    modes: ['text_to_image'],
+    modes: ['text_to_image', 'edit_image', 'inpaint'],
+    modeRequirements: {
+      edit_image: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one source image.',
+      },
+      inpaint: {
+        requiredImages: ['referenceImages', 'maskImage'],
+        note: 'Requires source and mask images.',
+      },
+    },
   },
   StableDiffusionPipeline: {
     family: 'Stable Diffusion 1.x',
@@ -1749,13 +1759,13 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   StableDiffusionXLPAGPipeline: {
     modelType: 'StableDiffusionXLPAGPipeline',
-    supportedModes: ['text_to_image'],
+    supportedModes: ['text_to_image', 'edit_image', 'inpaint'],
     autoStatus: 'manual_only',
     minimum: 'Expert-only pending a measured runtime envelope for the pinned SDXL PAG assembly.',
     recommended: 'Use a CUDA or MPS accelerator with PAG scale 3 and model CPU offload when needed.',
-    qualityDefaults: '1024x1024, 50 steps, guidance 5, PAG scale 3, adaptive scale 0.',
+    qualityDefaults: '1024x1024, 50 steps, guidance 5, strength 0.8, PAG scale 3, adaptive scale 0.',
     artifacts: [SDXL_BASE_REPO],
-    notes: 'The generic text-to-image graph exposes PAG scale and adaptive scale without an auxiliary artifact.',
+    notes: 'Text, edit, and inpaint graphs expose PAG controls without an auxiliary artifact.',
     manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
   },
   StableDiffusionPipeline: {

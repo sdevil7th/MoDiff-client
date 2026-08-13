@@ -234,9 +234,13 @@ test('SDXL T2I Adapter exposes its pinned 1024px Canny recipe', () => {
 test('SDXL PAG exposes generic perturbed-attention controls over the pinned base', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLPAGPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionXLPAGPipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'StableDiffusionXLPAGPipeline');
+  const inpaint = profilesModule.getFormDefaultsForMode('inpaint', 'StableDiffusionXLPAGPipeline');
   assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
   assert.equal(profile.defaultDtype, 'float16');
-  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(profile.modeRequirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
   assert.equal(profile.catalogVisibility, 'workflowOnly');
   assert.equal(form.width, 1024);
   assert.equal(form.height, 1024);
@@ -244,6 +248,8 @@ test('SDXL PAG exposes generic perturbed-attention controls over the pinned base
   assert.equal(form.guidanceScale, 5);
   assert.equal(form.pagScale, 3);
   assert.equal(form.pagAdaptiveScale, 0);
+  assert.equal(edit.strength, 0.8);
+  assert.equal(inpaint.strength, 0.8);
 });
 
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {

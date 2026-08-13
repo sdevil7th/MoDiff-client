@@ -34,6 +34,7 @@ if (requestedPair && !/^[A-Za-z\d_]+\|[a-z\d_]+$/.test(requestedPair)) {
 
 function slug(value) {
   return String(value)
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-|-$/g, '')
