@@ -306,6 +306,14 @@ async function main() {
     await installEphemeralWorkflowStorage(page);
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+    // The E2E bridge can appear while the application's initial capability
+    // request is still in flight. Starting another discovery batch at that
+    // instant aborts the first request and can leave task-template skeletons
+    // empty for this page. Wait for authoritative task contracts before the
+    // explicit refresh used to synchronize model indexes.
+    await page.waitForFunction(() => (window.__MODIFF_E2E__?.listTaskTemplateSkeletons() ?? []).length > 0, null, {
+      timeout: 30_000,
+    });
     // A fresh Vite page can expose the E2E bridge before node/model discovery
     // settles. Use the same app-owned refresh path as gallery qualification so
     // graph generation never races an empty node registry.
