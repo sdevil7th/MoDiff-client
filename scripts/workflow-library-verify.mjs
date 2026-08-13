@@ -215,9 +215,13 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
     if (offloadError) throw new Error(`${workflow.id} ${offloadError}.`);
   }
   if (workflow.mediaKind === 'video') {
-    const pipelineNodes = (graph.nodes ?? []).filter(
+    const videoPipelineNodes = (graph.nodes ?? []).filter(
       (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'LoadPipeline',
     );
+    const threeDPipelineNodes = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.DiffusersThreeD' && node?.data?.action === 'LoadPipeline',
+    );
+    const pipelineNodes = [...videoPipelineNodes, ...threeDPipelineNodes];
     const modularModels = (graph.nodes ?? []).filter(
       (node) => node?.data?.module === 'modules.ModularDiffusers' && node?.data?.action === 'ModelsLoader',
     );
@@ -291,6 +295,44 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
         quantizationEdge?.sourceHandle !== 'quantization_config'
       ) {
         throw new Error(`${workflow.id} video execution recipe has no component-selective quantization flow.`);
+      }
+      if (pipeline.data.module === 'modules.DiffusersThreeD') {
+        const model = pipeline.data.params?.model_id?.value;
+        const pipelineClass = pipeline.data.params?.pipeline_class?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const generate = (graph.nodes ?? []).find(
+          (node) =>
+            node?.data?.module === 'modules.DiffusersThreeD' && node?.data?.action === 'GenerateRenderedArtifact',
+        );
+        const exportNode = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'Export',
+        );
+        const hasPipelineRoute = (graph.edges ?? []).some(
+          (edge) =>
+            edge.source === pipeline.id &&
+            edge.sourceHandle === 'pipeline' &&
+            edge.target === generate?.id &&
+            edge.targetHandle === 'pipeline',
+        );
+        const hasRenderedOrbitRoute = (graph.edges ?? []).some(
+          (edge) =>
+            edge.source === generate?.id &&
+            edge.sourceHandle === 'video' &&
+            edge.target === exportNode?.id &&
+            edge.targetHandle === 'video',
+        );
+        if (
+          !workflow.pipelineClasses.includes(pipelineClass) ||
+          model?.source !== 'hub' ||
+          !workflow.requiredArtifacts.includes(model.value) ||
+          !/^[0-9a-f]{40}$/.test(String(revision ?? '')) ||
+          pipeline.data.params?.mode?.value !== 'text_to_3d' ||
+          !hasPipelineRoute ||
+          !hasRenderedOrbitRoute
+        ) {
+          throw new Error(`${workflow.id} rendered-3D graph is missing its exact reviewed artifact or orbit route.`);
+        }
+        continue;
       }
       const recipeParams = recipe.data.params ?? {};
       if (recipeParams.vae_slicing?.value !== true || typeof recipeParams.vae_tiling?.value !== 'boolean') {

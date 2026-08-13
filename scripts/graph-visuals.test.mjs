@@ -2113,6 +2113,60 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: audioRepaintBindingRows,
     contentHash: 'studio-spec-v1-8f5c37c7',
   };
+  const threeDRoleRows = [
+    ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+    ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+    ['diffusersThreeDPipeline', 'modules.DiffusersThreeD.LoadPipeline', -520, -80],
+    ['diffusersThreeDGenerate', 'modules.DiffusersThreeD.GenerateRenderedArtifact', -120, -80],
+    ['videoExport', 'modules.Video.Export', 420, -80],
+  ];
+  const threeDEdgeRows = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'diffusersThreeDPipeline', 'execution_recipe'],
+    ['diffusersThreeDPipeline', 'pipeline', 'diffusersThreeDGenerate', 'pipeline'],
+    ['diffusersThreeDGenerate', 'video', 'videoExport', 'video'],
+  ];
+  const threeDBindingRows = [
+    ['diffusersQuantization', 'backend', 'quantizationMode'],
+    ['diffusersQuantization', 'components', 'empty'],
+    ['diffusersQuantization', 'dtype', 'dtype'],
+    ['diffusersRecipe', 'device_map', 'deviceMapNone'],
+    ['diffusersRecipe', 'offload_mode', 'offloadMode'],
+    ['diffusersRecipe', 'device', 'device'],
+    ['diffusersRecipe', 'attention_backend', 'attentionBackend'],
+    ['diffusersRecipe', 'attention_components', 'empty'],
+    ['diffusersRecipe', 'vae_slicing', 'false'],
+    ['diffusersRecipe', 'vae_tiling', 'false'],
+    ['diffusersRecipe', 'regional_compile', 'false'],
+    ['diffusersRecipe', 'denoiser_cache', 'false'],
+    ['diffusersRecipe', 'layerwise_casting', 'false'],
+    ['diffusersRecipe', 'channels_last', 'false'],
+    ['diffusersThreeDPipeline', 'model_id', 'artifact'],
+    ['diffusersThreeDPipeline', 'pipeline_class', 'pipelineClass'],
+    ['diffusersThreeDPipeline', 'mode', 'mode'],
+    ['diffusersThreeDPipeline', 'revision', 'defaultRevision'],
+    ['diffusersThreeDPipeline', 'dtype', 'dtype'],
+    ['diffusersThreeDPipeline', 'device', 'device'],
+    ['diffusersThreeDPipeline', 'auto_offload', 'autoOffload'],
+    ['diffusersThreeDPipeline', 'offload_mode', 'offloadMode'],
+    ['diffusersThreeDGenerate', 'prompt', 'prompt'],
+    ['diffusersThreeDGenerate', 'seed', 'seed'],
+    ['diffusersThreeDGenerate', 'num_inference_steps', 'steps'],
+    ['diffusersThreeDGenerate', 'guidance_scale', 'guidanceScale'],
+    ['diffusersThreeDGenerate', 'frame_size', 'width'],
+    ['videoExport', 'fps', 'fps'],
+  ];
+  const threeDSpec = {
+    ...makeSpec('ShapEPipeline', 'shap-e:direct', 'openai/shap-e', 'studio-spec-v1-7aad1a8e'),
+    id: 'shap-e:text-to-3d:v1',
+    mode: 'text_to_3d',
+    loaderModule: 'modules.DiffusersThreeD',
+    executionPath: 'direct-diffusers-three-d',
+    pipelineClass: 'ShapEPipeline',
+    roles: threeDRoleRows,
+    edges: threeDEdgeRows,
+    bindings: threeDBindingRows,
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -2322,6 +2376,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['loadAudio', 'modules.Audio.Load', -900, 300],
     ['audioLoudnessMatch', 'modules.Audio.MatchLoudness', 300, -80],
     ['audioJoin', 'modules.Audio.Join', 680, -80],
+    ['diffusersThreeDPipeline', 'modules.DiffusersThreeD.LoadPipeline', -520, -80],
+    ['diffusersThreeDGenerate', 'modules.DiffusersThreeD.GenerateRenderedArtifact', -120, -80],
   ];
   const paramsByRole = Object.fromEntries(registryRoleRows.map(([role]) => [role, {}]));
   for (const [role, param] of [
@@ -2340,6 +2396,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
+    ...threeDBindingRows,
     ...sdxlSpec.bindings,
   ])
     paramsByRole[role][param] = scalar();
@@ -2357,11 +2414,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...qwenControlEdgeRows,
     ...audioEdgeRows,
     ...audioContinuationEdgeRows,
+    ...threeDEdgeRows,
   ]) {
     const type = sourceHandle;
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
     paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
   }
+  paramsByRole.wanGenerate.video_out = { type: 'video', display: 'output' };
+  paramsByRole.diffusersThreeDGenerate.video = { type: 'video', display: 'output' };
+  paramsByRole.videoExport.video = { type: 'video', display: 'input' };
   paramsByRole.controlnet.route_state_in = { type: 'route_state_out', display: 'input' };
   paramsByRole.qwenOutpaintCanvas.image = { type: 'image', display: 'input' };
   paramsByRole.qwenOutpaintCanvas.canvas = { type: 'image', display: 'output' };
@@ -2537,6 +2598,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
           studioExecutionSpecs: [ltxSpec, ltxImageSpec, ltxVideoSpec, ltxReferenceSpec],
         },
         aceCapability,
+        {
+          ...capability(threeDSpec),
+          revisionCandidates: ['7bd337afdea1c17842e1c3cc45c4e268356dba40'],
+        },
       ],
       studioModelCapabilitiesAuthoritative: true,
       studioExecutionSpecInvalid: false,
@@ -3812,6 +3877,39 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(repaintGenerate.repainting_start.value, 2);
     assert.equal(repaintGenerate.repainting_end.value, 8);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceRepaintForm), null);
+
+    const threeDForm = {
+      ...baseForm,
+      mode: 'text_to_3d',
+      modelType: 'ShapEPipeline',
+      prompt: 'A small wooden toy sailboat',
+      width: 256,
+      height: 256,
+      steps: 64,
+      guidanceScale: 15,
+      fps: 12,
+      dtype: 'float16',
+      offloadMode: 'sequential_cpu',
+    };
+    studioStoreModule.useStudioStore.setState({ form: threeDForm });
+    await graphBridge.createOrUpdateStudioGraph(threeDForm);
+    const threeDBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    const threeDNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const threeDPipeline = threeDNodes.find((item) => item.id === threeDBinding.nodes.diffusersThreeDPipeline).data
+      .params;
+    const threeDGenerate = threeDNodes.find((item) => item.id === threeDBinding.nodes.diffusersThreeDGenerate).data
+      .params;
+    assert.equal(threeDBinding.executionSpec.id, threeDSpec.id);
+    assert.equal(threeDBinding.executionSpec.contentHash, threeDSpec.contentHash);
+    assert.deepEqual(topology(threeDBinding), threeDEdgeRows.map((row) => [...row]).sort());
+    assert.equal(threeDPipeline.model_id.value.value, 'openai/shap-e');
+    assert.equal(threeDPipeline.revision.value, '7bd337afdea1c17842e1c3cc45c4e268356dba40');
+    assert.equal(threeDGenerate.prompt.value, threeDForm.prompt);
+    assert.equal(threeDGenerate.frame_size.value, 256);
+    assert.equal(threeDGenerate.num_inference_steps.value, 64);
+    assert.equal(threeDGenerate.guidance_scale.value, 15);
+    assert.equal(threeDNodes.find((item) => item.id === threeDBinding.nodes.videoExport).data.params.fps.value, 12);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(threeDForm), null);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [

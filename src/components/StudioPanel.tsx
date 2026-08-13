@@ -54,6 +54,7 @@ import {
   STUDIO_OFFLOAD_LABELS,
   AUDIO_STUDIO_MODES,
   SPEECH_STUDIO_MODES,
+  THREE_D_STUDIO_MODES,
   VIDEO_STUDIO_MODES,
   getStudioModelArtifactNote,
   getStudioModelDisplayName,
@@ -255,6 +256,7 @@ export default function StudioPanel() {
   const isUnconditionalMode = form.mode === 'unconditional_image';
   const isPerceptionMode = form.mode === 'depth_estimation';
   const isSpeechMode = SPEECH_STUDIO_MODES.includes(form.mode);
+  const isThreeDMode = THREE_D_STUDIO_MODES.includes(form.mode);
   const usesPrompt = !isUnconditionalMode && !isPerceptionMode && !isSpeechMode;
   const resourcePlan = useMemo(() => resolveStudioResourcePlan(form), [form]);
   const expertResourceMode = studioViewMode === 'expert';
@@ -1277,13 +1279,15 @@ export default function StudioPanel() {
                 title={
                   isVideoMode
                     ? 'Video frame'
-                    : isUnconditionalMode
-                      ? 'Native sample size'
-                      : isPerceptionMode
-                        ? 'Prediction map'
-                        : isSpeechMode
-                          ? 'Speech recognition'
-                          : 'Image size'
+                    : isThreeDMode
+                      ? 'Rendered orbit frame'
+                      : isUnconditionalMode
+                        ? 'Native sample size'
+                        : isPerceptionMode
+                          ? 'Prediction map'
+                          : isSpeechMode
+                            ? 'Speech recognition'
+                            : 'Image size'
                 }
               />
               {isUnconditionalMode ? (

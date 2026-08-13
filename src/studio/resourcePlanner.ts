@@ -31,6 +31,7 @@ export const AUTO_RESOURCE_LOADER_TARGETS = [
   'modules.DiffusersAudio.LoadPipeline.direct-diffusers-audio',
   'modules.DiffusersVideo.LoadPipeline.direct-diffusers-video',
   'modules.DiffusersVideo.LoadPipeline.direct-wan-vace',
+  'modules.DiffusersThreeD.LoadPipeline.direct-diffusers-three-d',
 ] as const;
 export function autoProofIsReady(proof: { status?: string } | null | undefined) {
   return ['passed', 'declared_safe', 'live_proven'].includes(proof?.status as string);
@@ -87,6 +88,7 @@ export function getStudioResourceExecutionPathLabel(plan: Pick<StudioResourcePla
   if (plan.executionPath === 'direct-wan-vace') return 'Auto: Direct pipeline';
   if (plan.executionPath === 'direct-diffusers-audio') return 'Auto: Diffusers audio';
   if (plan.executionPath === 'direct-diffusers-image') return 'Auto: Diffusers image';
+  if (plan.executionPath === 'direct-diffusers-three-d') return 'Auto: Diffusers 3D';
   if (plan.executionPath === 'modular-diffusers') return 'Auto: Modular graph';
   return 'Auto';
 }

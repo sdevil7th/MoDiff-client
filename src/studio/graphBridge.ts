@@ -179,6 +179,8 @@ const NODE_KEYS = {
   audioLoudnessMatch: 'modules.Audio.MatchLoudness',
   audioJoin: 'modules.Audio.Join',
   audioExport: 'modules.Audio.Export',
+  diffusersThreeDPipeline: 'modules.DiffusersThreeD.LoadPipeline',
+  diffusersThreeDGenerate: 'modules.DiffusersThreeD.GenerateRenderedArtifact',
   speechModel: 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel',
   transcribeAudio: 'modules.HuggingFaceSpeech.TranscribeAudio',
   transcriptPreview: 'modules.Primitive.DataViewer',
@@ -235,6 +237,8 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   audioLoudnessMatch: { x: 300, y: -80 },
   audioJoin: { x: 680, y: -80 },
   audioExport: { x: 1060, y: -80 },
+  diffusersThreeDPipeline: { x: -520, y: -80 },
+  diffusersThreeDGenerate: { x: -120, y: -80 },
   speechModel: { x: -720, y: -80 },
   transcribeAudio: { x: -240, y: -80 },
   transcriptPreview: { x: 240, y: -80 },
@@ -326,6 +330,11 @@ function isAudioMode(mode: StudioMode) {
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
   return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-image';
+}
+
+function usesDiffusersThreeDFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
+  if ('nodes' in form && form.nodes.diffusersThreeDPipeline) return true;
+  return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-three-d';
 }
 
 function usesExpertProfileQuantization(form: StudioFormState) {
@@ -2608,7 +2617,12 @@ async function waitForValue<T>(read: () => T | undefined, timeout: number, inter
 }
 
 function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGraphBinding | null) {
-  if (binding && executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech') return false;
+  if (
+    binding &&
+    (executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech' ||
+      usesDiffusersThreeDFacade(binding))
+  )
+    return false;
   return (
     modularVideoGroupObserved(binding) ||
     (!isVideoMode(form.mode) && !isAudioMode(form.mode) && !usesDiffusersImageFacade(form))
@@ -2862,6 +2876,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
       'wanPipeline',
       'diffusersImagePipeline',
       'audioPipeline',
+      'diffusersThreeDPipeline',
     ].includes(role)
   ) {
     return 'Diffusers.LoadPipeline';
@@ -2870,6 +2885,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
     return 'Diffusers.Generate';
   }
   if (role === 'audioGenerate') return 'Diffusers.GenerateAudio';
+  if (role === 'diffusersThreeDGenerate') return 'Diffusers.Generate3D';
   if (role === 'diffusersImageEdit') return 'Diffusers.Edit';
   if (role === 'diffusersImageInpaint' || role === 'qwenInpaint') return 'Diffusers.Inpaint';
   if (role === 'diffusersImageControl') return 'Diffusers.Control';
@@ -4107,7 +4123,10 @@ async function finalizeStudioGraph(
       definitionRevision = graphDefinitionRevision;
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
-    } else if (executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech') {
+    } else if (
+      executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech' ||
+      usesDiffusersThreeDFacade(binding)
+    ) {
       await finalizeStaticExecutionSpecGraph(binding, form, token);
     } else if (!isVideoMode(form.mode)) {
       await finalizeModularGraph(binding, form, timedOutGroups, token);

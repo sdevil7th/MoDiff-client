@@ -302,6 +302,13 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
 function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
+  if (
+    modelType === 'ShapEPipeline' ||
+    roles.has('diffusersThreeDGenerate') ||
+    keys.has('modules.DiffusersThreeD.GenerateRenderedArtifact')
+  ) {
+    return 'text_to_3d';
+  }
   const hasWan = keys.has('modules.DiffusersVideo.LoadPipeline') || keys.has('modules.DiffusersVideo.Generate');
   if (hasWan || modelType === 'WanVACEPipeline') {
     if (roles.has('loadMaskVideo') || roles.has('alignMaskVideo')) return 'video_inpaint';

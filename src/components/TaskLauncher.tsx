@@ -32,6 +32,7 @@ const launcherModes: { mode: StudioMode; icon: ReactNode }[] = [
   { mode: 'text_to_video', icon: <Clapperboard size={18} /> },
   { mode: 'video_to_video', icon: <Video size={18} /> },
   { mode: 'video_color_edit', icon: <SlidersHorizontal size={18} /> },
+  { mode: 'text_to_3d', icon: <Layers size={18} /> },
   { mode: 'advanced_workflow', icon: <Network size={18} /> },
 ];
 

@@ -98,7 +98,10 @@ function applyPortableContracts(graph, mode) {
       node.data.params = node.data.params ?? {};
       node.data.params.mode = { ...(node.data.params.mode ?? {}), value: mode };
     }
-    if (node?.data?.module === 'modules.DiffusersAudio' && node?.data?.action === 'LoadPipeline') {
+    if (
+      ['modules.DiffusersAudio', 'modules.DiffusersThreeD'].includes(node?.data?.module) &&
+      node?.data?.action === 'LoadPipeline'
+    ) {
       node.data.params = node.data.params ?? {};
       node.data.params.mode = { ...(node.data.params.mode ?? {}), value: mode };
     }

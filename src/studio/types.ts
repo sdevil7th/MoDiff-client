@@ -31,6 +31,7 @@ export type StudioMode =
   | 'audio_variation'
   | 'audio_continuation'
   | 'audio_repaint'
+  | 'text_to_3d'
   | 'advanced_workflow';
 
 export type StudioModelType =
@@ -62,6 +63,7 @@ export type StudioModelType =
   | 'StableAudioPipeline'
   | 'LongCatAudioDiTPipeline'
   | 'AudioLDM2Pipeline'
+  | 'ShapEPipeline'
   | 'FluxSchnellPipeline'
   | 'FluxDevPipeline'
   | 'FluxKreaPipeline'
@@ -403,6 +405,8 @@ export type StudioGraphRole =
   | 'audioLoudnessMatch'
   | 'audioJoin'
   | 'audioExport'
+  | 'diffusersThreeDPipeline'
+  | 'diffusersThreeDGenerate'
   | 'speechModel'
   | 'transcribeAudio'
   | 'transcriptPreview';
@@ -791,6 +795,7 @@ export type StudioModelProfile = {
     | 'Stable Audio'
     | 'LongCat AudioDiT'
     | 'AudioLDM2'
+    | 'Shap-E'
     | 'FLUX Image'
     | 'Stable Diffusion XL'
     | 'DDPM'

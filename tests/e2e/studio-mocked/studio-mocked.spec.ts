@@ -2740,14 +2740,21 @@ const mockRegistry = {
   }),
   'modules.DiffusersAudio.LoadPipeline': nodeDef('modules.DiffusersAudio', 'LoadPipeline', 'Diffusers Audio', {
     model_id: { type: 'string', value: 'ACE-Step/acestep-v15-xl-turbo-diffusers' },
-    pipeline_class: { type: 'string', value: 'AceStepPipeline' },
-    mode: { type: 'string', value: 'text_to_audio' },
+    pipeline_class: { type: 'string', value: 'AceStepPipeline', onChange: 'update_audio_contract' },
+    mode: { type: 'string', value: 'text_to_audio', onChange: 'update_audio_contract' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
     auto_offload: { type: 'bool', value: true },
     offload_mode: { type: 'string', value: 'model_cpu' },
     execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
-    pipeline: { type: 'diffusers_audio_pipeline', display: 'output' },
+    pipeline: {
+      type: 'diffusers_audio_pipeline',
+      display: 'output',
+      signal: {
+        direction: 'output',
+        value: { pipelineClass: 'AceStepPipeline', mode: 'text_to_audio', taskType: 'text2music', fieldParams: {} },
+      },
+    },
   }),
   'modules.DiffusersAudio.LoadAdapter': nodeDef('modules.DiffusersAudio', 'LoadAdapter', 'Diffusers Audio', {
     pipeline: { type: 'diffusers_audio_pipeline', display: 'input' },
@@ -2761,7 +2768,19 @@ const mockRegistry = {
     output: { type: 'diffusers_audio_pipeline', display: 'output' },
   }),
   'modules.DiffusersAudio.Generate': nodeDef('modules.DiffusersAudio', 'Generate', 'Diffusers Audio', {
-    pipeline: { type: 'diffusers_audio_pipeline', display: 'input' },
+    pipeline: {
+      type: 'diffusers_audio_pipeline',
+      display: 'input',
+      onSignal: [
+        { action: 'value', target: 'audio_contract' },
+        { action: 'exec', data: 'update_audio_contract' },
+      ],
+    },
+    audio_contract: {
+      type: 'object',
+      value: { pipelineClass: 'AceStepPipeline', mode: 'text_to_audio', taskType: 'text2music', fieldParams: {} },
+      hidden: true,
+    },
     source_audio: { type: 'audio', display: 'input' },
     reference_audio: { type: 'audio', display: 'input' },
     task_type: { type: 'string', value: 'text2music' },
@@ -3099,6 +3118,55 @@ async function installMockRoutes(page: Page) {
       headers: { 'content-disposition': 'inline; filename="imported-reference.png"' },
       body: png,
     });
+  });
+  await page.route('**/fields/action', async (route) => {
+    const request = (route.request().postDataJSON() ?? {}) as {
+      fn?: string;
+      node?: string;
+      action?: string;
+      values?: {
+        pipeline_class?: string;
+        mode?: string;
+        audio_contract?: { pipelineClass?: string; mode?: string; taskType?: string; fieldParams?: object };
+      };
+    };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+    if (request.fn !== 'update_audio_contract' || !request.node) return;
+    const mode = request.values?.mode ?? request.values?.audio_contract?.mode ?? 'text_to_audio';
+    const taskType =
+      mode === 'audio_variation'
+        ? 'cover'
+        : mode === 'audio_continuation'
+          ? 'continuation'
+          : mode === 'audio_repaint'
+            ? 'repaint'
+            : 'text2music';
+    const contract = {
+      pipelineClass:
+        request.values?.pipeline_class ?? request.values?.audio_contract?.pipelineClass ?? 'AceStepPipeline',
+      mode,
+      taskType,
+      fieldParams: request.values?.audio_contract?.fieldParams ?? {},
+    };
+    await page.evaluate(
+      ({ contract, node, loaderAction }) => {
+        if (loaderAction) {
+          window.__MODIFF_E2E__!.sendWebsocketMessage({
+            type: 'set_field_params',
+            node,
+            field: 'pipeline',
+            params: { signal: { direction: 'output', origin: 'pipeline_class', value: contract } },
+          });
+          return;
+        }
+        window.__MODIFF_E2E__!.sendWebsocketMessage({
+          type: 'set_field_value',
+          node,
+          fields: { task_type: contract.taskType },
+        });
+      },
+      { contract, node: request.node, loaderAction: request.action === 'LoadPipeline' },
+    );
   });
   await page.route('**/nodes**', async (route) => {
     const nodes = Object.fromEntries(

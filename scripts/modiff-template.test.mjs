@@ -296,6 +296,45 @@ test('LongCat AudioDiT and AudioLDM2 expose their pinned generic audio recipes',
   assert.equal(audioldm2Form.guidanceScale, 3.5);
 });
 
+test('Shap-E exposes the pinned safe rendered-orbit recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.ShapEPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_3d', 'ShapEPipeline');
+  assert.equal(profilesModule.getDefaultModelForMode('text_to_3d'), 'ShapEPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SHAP_E_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedFrames, 20);
+  assert.equal(form.width, 256);
+  assert.equal(form.height, 256);
+  assert.equal(form.steps, 64);
+  assert.equal(form.guidanceScale, 15);
+  assert.equal(form.fps, 12);
+  assert.ok(
+    resourcePlannerModule.AUTO_RESOURCE_LOADER_TARGETS.includes(
+      'modules.DiffusersThreeD.LoadPipeline.direct-diffusers-three-d',
+    ),
+  );
+  assert.equal(
+    resourcePlannerModule.getStudioResourceExecutionPathLabel({
+      resourceMode: 'auto',
+      executionPath: 'direct-diffusers-three-d',
+    }),
+    'Auto: Diffusers 3D',
+  );
+});
+
+test('canonical Shap-E graphs infer the rendered 3D form', async () => {
+  const graph = JSON.parse(
+    await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),
+  );
+  const form = workflowInferenceModule.inferStudioFormFromWorkflow(graph.nodes);
+  assert.equal(form.modelType, 'ShapEPipeline');
+  assert.equal(form.mode, 'text_to_3d');
+  assert.equal(form.width, 256);
+  assert.equal(form.height, 256);
+  assert.equal(form.fps, 12);
+});
+
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');

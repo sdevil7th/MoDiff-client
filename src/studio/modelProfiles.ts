@@ -207,6 +207,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Audio Open 1.0',
   'LongCat AudioDiT 1B',
   'AudioLDM2 Base',
+  'Shap-E Rendered 3D',
   'FLUX.1-schnell',
   'FLUX.1-dev',
   'FLUX.1-Krea-dev',
@@ -260,6 +261,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   audio_variation: 'Vary or cover source audio.',
   audio_continuation: 'Continue source audio from a prompt.',
   audio_repaint: 'Regenerate a selected audio range.',
+  text_to_3d: 'Generate a bounded rendered orbit of a 3D object from a prompt.',
   advanced_workflow: 'Build an empty graph manually.',
 };
 
@@ -286,6 +288,7 @@ export const FRAMEPACK_REPO = 'lllyasviel/FramePackI2V_HY';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
+export const SHAP_E_REPO = 'openai/shap-e';
 
 export const LTX_VIDEO_MODES: StudioMode[] = [
   'text_to_video',
@@ -323,6 +326,7 @@ export const AUDIO_STUDIO_MODES: StudioMode[] = [
 ];
 
 export const SPEECH_STUDIO_MODES: StudioMode[] = ['speech_to_text', 'speech_translation'];
+export const THREE_D_STUDIO_MODES: StudioMode[] = ['text_to_3d'];
 
 export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = ['FluxSchnellPipeline', 'FluxDevPipeline'];
 
@@ -862,6 +866,35 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     displayName: 'audioldm2',
     artifactLabel: 'Diffusers safetensors repo',
     defaultDtype: 'float16',
+  },
+  ShapEPipeline: {
+    family: 'Shap-E',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SHAP_E_REPO,
+    displayName: 'shap-e',
+    artifactLabel: 'Explicit safe-component Diffusers assembly',
+    defaultDtype: 'float16',
+    defaultSize: { width: 256, height: 256, aspectRatio: '1:1' },
+    recommendedSteps: 64,
+    recommendedGuidance: 15,
+    supportFlags: 0,
+    supportsNegativePrompt: false,
+    outputKind: 'video',
+    recommendedFrames: 20,
+    recommendedFps: 12,
+    offloadSupport: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 64,
+      width: 256,
+      height: 256,
+      numFrames: 20,
+    },
+    modes: THREE_D_STUDIO_MODES,
+    modeRequirements: {},
   },
   FluxSchnellPipeline: {
     family: 'FLUX Image',
@@ -1674,6 +1707,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   LongCatAudioDiTPipeline: /* @__PURE__ */ pendingPlanningRequirement('LongCatAudioDiTPipeline'),
   AudioLDM2Pipeline: /* @__PURE__ */ pendingPlanningRequirement('AudioLDM2Pipeline'),
+  ShapEPipeline: /* @__PURE__ */ pendingPlanningRequirement('ShapEPipeline'),
   FluxSchnellPipeline: {
     modelType: 'FluxSchnellPipeline',
     supportedModes: ['text_to_image'],
@@ -2048,6 +2082,9 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   }
   if (SPEECH_STUDIO_MODES.includes(mode)) {
     return 'HuggingFaceSpeechRecognitionModel';
+  }
+  if (THREE_D_STUDIO_MODES.includes(mode)) {
+    return 'ShapEPipeline';
   }
   if (VIDEO_STUDIO_MODES.includes(mode)) {
     return 'WanVACEPipeline';
