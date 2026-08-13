@@ -687,6 +687,19 @@ function mockQwenImageExecutionCapability() {
     modelType: spec.modelType,
     modes: ['text_to_image', 'control_image'],
     runnableModes: ['text_to_image', 'control_image'],
+    modeRequirements: {
+      control_image: {
+        modelRequirements: [
+          {
+            id: 'qwen-controlnet-union',
+            kind: 'controlnet',
+            repo: 'InstantX/Qwen-Image-ControlNet-Union',
+            revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+          },
+        ],
+        requiredImages: ['controlImage'],
+      },
+    },
     executionProfiles: [
       {
         ...base.executionProfiles[0],

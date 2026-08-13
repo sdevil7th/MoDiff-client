@@ -75,6 +75,8 @@ export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
+export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
+export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
 export const LCM_DREAMSHAPER_REPO = 'SimianLuo/LCM_Dreamshaper_v7';
 export const MARIGOLD_DEPTH_LCM_REPO = 'prs-eth/marigold-depth-lcm-v1-0';
 export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
@@ -88,6 +90,16 @@ export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   revision: QWEN_CONTROLNET_REVISION,
   kind: 'controlnet',
   description: 'Qwen ControlNet model.',
+};
+
+export const SD15_CONTROLNET_CANNY_REQUIREMENT: StudioModelRequirement = {
+  id: 'sd15-controlnet-canny',
+  label: 'Stable Diffusion 1.5 Canny ControlNet',
+  repo: SD15_CONTROLNET_CANNY_REPO,
+  revision: SD15_CONTROLNET_CANNY_REVISION,
+  kind: 'controlnet',
+  requiredForModes: ['control_image'],
+  description: 'Pinned safetensors ControlNet component for the generic SD1.5 control workflow.',
 };
 
 export const QWEN_IMAGE_EDIT_INPAINT_CONTRACT: StudioInpaintContractStatus = {
@@ -1026,14 +1038,19 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     recommendedSteps: 30,
     recommendedGuidance: 7.5,
-    supportFlags: 35,
+    supportFlags: 43,
     lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 20, width: 512, height: 512 },
-    modes: ['text_to_image', 'edit_image', 'inpaint'],
+    modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
     modeRequirements: {
       edit_image: { requiredImages: ['referenceImages'], note: 'Requires one source image.' },
       inpaint: {
         requiredImages: ['referenceImages', 'maskImage'],
         note: 'Requires one source image and one mask image.',
+      },
+      control_image: {
+        modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['controlImage'],
+        note: 'Requires one control image and the pinned Canny ControlNet component.',
       },
     },
   },
@@ -1520,13 +1537,13 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   StableDiffusionPipeline: {
     modelType: 'StableDiffusionPipeline',
-    supportedModes: ['text_to_image', 'edit_image', 'inpaint'],
+    supportedModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
     autoStatus: 'manual_only',
     minimum: 'CPU or accelerator execution with the pinned safetensors snapshot.',
     recommended: 'Use the reviewed 512px profile.',
     qualityDefaults: '512x512, 30 steps, guidance 7.5.',
-    artifacts: [SD15_BASE_REPO],
-    notes: 'Generic text-to-image, img2img, and inpaint graphs are available.',
+    artifacts: [SD15_BASE_REPO, SD15_CONTROLNET_CANNY_REPO],
+    notes: 'Generic text-to-image, img2img, inpaint, and pinned Canny ControlNet graphs are available.',
     manualOnlyReason: 'Remote quality review and Gallery qualification pending.',
   },
   LatentConsistencyModelPipeline: {

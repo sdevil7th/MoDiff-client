@@ -35,6 +35,7 @@ import {
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
   WAN_VACE_REVISION,
+  getModelRequirementsForMode,
 } from './modelProfiles';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
@@ -140,6 +141,7 @@ const NODE_KEYS = {
   decode: 'modules.ModularDiffusers.DecodeLatents',
   preview: 'modules.Image.Preview',
   loadImage: 'modules.Image.Load',
+  controlPreprocessor: 'modules.ImageFilters.Canny',
   loadControlImage: 'modules.Image.Load',
   loadMask: 'modules.Image.Load',
   applyMask: 'modules.Image.ApplyMask',
@@ -195,6 +197,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   decode: { x: 600, y: -80 },
   preview: { x: 980, y: -80 },
   loadImage: { x: -520, y: 300 },
+  controlPreprocessor: { x: -520, y: 300 },
   loadControlImage: { x: -520, y: 430 },
   loadMask: { x: -520, y: 560 },
   applyMask: { x: -160, y: 430 },
@@ -3099,6 +3102,15 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   if (bindsDefaultRevision && defaultRevision.length !== 1) {
     throw new Error('The Studio execution specification requires one reviewed default model revision.');
   }
+  const bindsAuxiliaryModel = spec.bindings.some(([, , source]) => ['kind', 'repo', 'revision'].includes(source));
+  const auxiliaryRequirements = capability ? getModelRequirementsForMode(capability, form.mode) : [];
+  if (bindsAuxiliaryModel && auxiliaryRequirements.length !== 1) {
+    throw new Error('The Studio execution specification requires one reviewed auxiliary model.');
+  }
+  const auxiliaryRequirement = auxiliaryRequirements[0];
+  if (bindsAuxiliaryModel && !auxiliaryRequirement?.revision) {
+    throw new Error('The reviewed auxiliary model requires an immutable revision.');
+  }
   const values: Record<string, unknown> = {
     ...form,
     quantizationMode,
@@ -3119,9 +3131,12 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     artifact: audioTemplateBaseModel ?? spec.defaultRepo,
     defaultRevision: defaultRevision[0],
     pipelineClass: spec.pipelineClass,
-    ...QWEN_CONTROLNET_REQUIREMENT,
-    repo: { source: 'hub', value: QWEN_CONTROLNET_REQUIREMENT.repo },
+    kind: auxiliaryRequirement?.kind,
+    repo: auxiliaryRequirement ? { source: 'hub', value: auxiliaryRequirement.repo } : undefined,
+    revision: auxiliaryRequirement?.revision,
     wanVaceRevision: WAN_VACE_REVISION,
+    cannyLowThreshold: 0.1,
+    cannyHighThreshold: 0.2,
     maskThreshold127: 127,
     inpaintMaskGrow96: 96,
     outpaintMaskGrow0: 0,

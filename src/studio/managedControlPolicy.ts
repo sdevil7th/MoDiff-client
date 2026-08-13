@@ -150,6 +150,9 @@ const PIPELINE_POLICY = {
   mode: internal(),
   pipeline_class: internal(),
   revision: internal(),
+  conditioning_kind: internal(),
+  conditioning_model_id: internal(),
+  conditioning_revision: internal(),
   subfolder: internal(),
   variant: internal(),
   resolved_artifact: internal(),
@@ -396,6 +399,13 @@ export const MANAGED_CONTROL_POLICIES = {
   decode: OUTPUT_PREVIEW_POLICY,
   preview: OUTPUT_PREVIEW_POLICY,
   loadImage: IMAGE_SOURCE_POLICY,
+  controlPreprocessor: {
+    image: internal(),
+    low_threshold: internal(),
+    high_threshold: internal(),
+    device: internal(),
+    output: internal(),
+  },
   loadControlImage: IMAGE_SOURCE_POLICY,
   loadMask: MASK_SOURCE_POLICY,
   applyMask: {

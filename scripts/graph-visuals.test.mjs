@@ -2237,6 +2237,20 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: ['control_image', 'edit_image', 'inpaint', 'text_to_image'],
     studioExecutionSpecs: [qwenImageSpec, qwenImageEditSpec, qwenImageInpaintSpec, qwenControlSpec],
     revisionCandidates: [qwenImageRevision],
+    modeRequirements: {
+      control_image: {
+        modelRequirements: [
+          {
+            id: 'qwen-controlnet-union',
+            label: 'Qwen ControlNet Union',
+            repo: 'InstantX/Qwen-Image-ControlNet-Union',
+            revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+            kind: 'controlnet',
+          },
+        ],
+        requiredImages: ['controlImage'],
+      },
+    },
   };
   const kleinCapability = {
     ...capability(kleinSpec),

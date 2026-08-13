@@ -223,6 +223,28 @@ function hubRepositoriesForNode(node) {
 
 function applyCatalogArtifactPins(graph, artifactPins) {
   for (const node of graph?.nodes ?? []) {
+    const paramPairs = [
+      ['model_id', 'revision'],
+      ['repo_id', 'revision'],
+      ['conditioning_model_id', 'conditioning_revision'],
+    ];
+    let paired = false;
+    for (const [repositoryKey, revisionKey] of paramPairs) {
+      const selection = node?.data?.params?.[repositoryKey]?.value;
+      if (
+        !selection ||
+        typeof selection !== 'object' ||
+        selection.source !== 'hub' ||
+        typeof selection.value !== 'string' ||
+        !node?.data?.params?.[revisionKey]
+      )
+        continue;
+      const pin = artifactPins.get(selection.value.toLowerCase());
+      if (!pin) continue;
+      node.data.params[revisionKey] = { ...node.data.params[revisionKey], value: pin.revision };
+      paired = true;
+    }
+    if (paired) continue;
     const repositories = hubRepositoriesForNode(node);
     if (repositories.length !== 1 || !node?.data?.params?.revision) continue;
     const pin = artifactPins.get(repositories[0].toLowerCase());

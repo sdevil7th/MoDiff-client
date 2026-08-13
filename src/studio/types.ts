@@ -356,6 +356,7 @@ export type StudioGraphRole =
   | 'decode'
   | 'preview'
   | 'loadImage'
+  | 'controlPreprocessor'
   | 'loadControlImage'
   | 'loadMask'
   | 'applyMask'
