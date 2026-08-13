@@ -213,6 +213,32 @@ test('SDXL ControlNet exposes its pinned 1024px Canny recipe', () => {
   assert.equal(form.conditioningScale, 0.5);
 });
 
+test('Hunyuan-DiT exposes its exact standalone distilled recipe and immutable terms acknowledgement', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanDiTPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'HunyuanDiTPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.HUNYUAN_DIT_DISTILLED_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 25);
+  assert.equal(form.guidanceScale, 5);
+  assert.equal(form.maxSequenceLength, 256);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForTemplate({
+    id: 'hunyuan-dit-distilled-source',
+    modelType: 'HunyuanDiTPipeline',
+    mode: 'text_to_image',
+  });
+  assert.deepEqual(
+    policies.map((policy) => policy.repository),
+    [profilesModule.HUNYUAN_DIT_DISTILLED_REPO],
+  );
+  assert.equal(policies[0].acknowledgementRequired, true);
+  assert.match(policies[0].termsUrl, /b47a590cac7a3e1a973036700e45b3fe457e2239\/LICENSE\.txt$/);
+});
+
 test('Hunyuan-DiT ControlNet exposes its exact Canny recipe and immutable terms acknowledgement', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanDiTControlNetPipeline;
   const form = profilesModule.getFormDefaultsForMode('control_image', 'HunyuanDiTControlNetPipeline');

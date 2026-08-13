@@ -243,6 +243,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion XL Turbo',
   'Stable Diffusion XL InstructPix2Pix',
   'Stable Diffusion XL ControlNet',
+  'Hunyuan-DiT v1.2 Distilled',
   'Hunyuan-DiT Canny',
   'Stable Diffusion XL T2I Adapter',
   'Stable Diffusion XL PAG',
@@ -1357,6 +1358,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     5,
     0.5,
   ),
+  HunyuanDiTPipeline: planningImageProfile('Hunyuan-DiT', HUNYUAN_DIT_DISTILLED_REPO, 25, 5, 256, 'float16'),
   HunyuanDiTControlNetPipeline: controlImageProfile(
     'Hunyuan-DiT',
     HUNYUAN_DIT_DISTILLED_REPO,
@@ -1440,7 +1442,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   DreamLitePipeline: {
     ...planningImageProfile('DreamLite', DREAMLITE_BASE_REPO, 28, 3.5, 200),
-    artifactLabel: 'Non-commercial Diffusers safetensors repo',
     conditioningScale: 1.5,
     supportFlags: 1,
     modes: ['text_to_image', 'edit_image'],
@@ -1450,7 +1451,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   DreamLiteMobilePipeline: {
     ...planningImageProfile('DreamLite', DREAMLITE_MOBILE_REPO, 4, 0, 200),
-    artifactLabel: 'Non-commercial Diffusers safetensors repo',
     conditioningScale: 0,
     supportsNegativePrompt: false,
     supportFlags: 1,
@@ -2005,6 +2005,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Pinned fp16 base and Canny ControlNet graph.',
     manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
+  HunyuanDiTPipeline: /* @__PURE__ */ pendingPlanningRequirement('HunyuanDiTPipeline'),
   HunyuanDiTControlNetPipeline: {
     modelType: 'HunyuanDiTControlNetPipeline',
     supportedModes: ['control_image'],

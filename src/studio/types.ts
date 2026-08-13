@@ -86,6 +86,7 @@ export type StudioModelType =
   | 'StableDiffusionXLTurboPipeline'
   | 'StableDiffusionXLInstructPix2PixPipeline'
   | 'StableDiffusionXLControlNetPipeline'
+  | 'HunyuanDiTPipeline'
   | 'HunyuanDiTControlNetPipeline'
   | 'StableDiffusionXLAdapterPipeline'
   | 'StableDiffusionXLPAGPipeline'
