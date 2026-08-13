@@ -354,6 +354,24 @@ test('PixArt Sigma exposes its reviewed 1024px workflow recipe', () => {
   assert.equal(form.maxSequenceLength, 300);
 });
 
+test('Kandinsky 3 exposes its reviewed single-stage generation and edit recipes', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.Kandinsky3Pipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_image', 'Kandinsky3Pipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'Kandinsky3Pipeline');
+  assert.equal(profile.label, 'Kandinsky 3');
+  assert.equal(profile.defaultRepo, profilesModule.KANDINSKY3_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(text.width, 1024);
+  assert.equal(text.height, 1024);
+  assert.equal(text.steps, 25);
+  assert.equal(text.guidanceScale, 3);
+  assert.equal(text.maxSequenceLength, 128);
+  assert.equal(edit.strength, 0.75);
+});
+
 test('AuraFlow v0.3 exposes its reviewed native fp16 recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.AuraFlowPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'AuraFlowPipeline');
