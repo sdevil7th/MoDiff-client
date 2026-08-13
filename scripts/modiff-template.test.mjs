@@ -213,6 +213,24 @@ test('SDXL ControlNet exposes its pinned 1024px Canny recipe', () => {
   assert.equal(form.conditioningScale, 0.5);
 });
 
+test('SDXL T2I Adapter exposes its pinned 1024px Canny recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLAdapterPipeline;
+  const form = profilesModule.getFormDefaultsForMode('control_image', 'StableDiffusionXLAdapterPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['control_image']);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.SDXL_T2I_ADAPTER_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.conditioningScale, 0.8);
+});
+
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');

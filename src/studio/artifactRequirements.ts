@@ -58,7 +58,7 @@ type GraphWorkflowArtifactRequirementOptions = {
 
 function roleForRequirement(requirement: StudioModelRequirement): WorkflowArtifactRequirementRole {
   if (requirement.kind === 'controlnet') return 'Control';
-  if (requirement.kind === 'adapter') return 'Adapter';
+  if (requirement.kind === 'adapter' || requirement.kind === 't2i_adapter') return 'Adapter';
   return roleForArtifact(requirement.repo, requirement.label);
 }
 

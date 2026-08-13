@@ -72,7 +72,8 @@ export type StudioModelType =
   | 'StableDiffusionXLPipeline'
   | 'StableDiffusionXLTurboPipeline'
   | 'StableDiffusionXLInstructPix2PixPipeline'
-  | 'StableDiffusionXLControlNetPipeline';
+  | 'StableDiffusionXLControlNetPipeline'
+  | 'StableDiffusionXLAdapterPipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -867,7 +868,7 @@ export type StudioModelRequirement = {
   label: string;
   repo: string;
   revision?: string;
-  kind: 'base' | 'controlnet' | 'adapter';
+  kind: 'base' | 'controlnet' | 't2i_adapter' | 'adapter';
   requiredForModes?: StudioMode[];
   description?: string;
 };
