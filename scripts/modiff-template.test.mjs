@@ -231,6 +231,21 @@ test('SDXL T2I Adapter exposes its pinned 1024px Canny recipe', () => {
   assert.equal(form.conditioningScale, 0.8);
 });
 
+test('SDXL PAG exposes generic perturbed-attention controls over the pinned base', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLPAGPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionXLPAGPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 5);
+  assert.equal(form.pagScale, 3);
+  assert.equal(form.pagAdaptiveScale, 0);
+});
+
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');
