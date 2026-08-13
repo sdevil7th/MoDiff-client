@@ -291,6 +291,22 @@ test('PixArt Sigma exposes its reviewed 1024px workflow recipe', () => {
   assert.equal(form.maxSequenceLength, 300);
 });
 
+test('AuraFlow v0.3 exposes its reviewed native fp16 recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.AuraFlowPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'AuraFlowPipeline');
+  assert.equal(profile.label, 'AuraFlow v0.3 1536px');
+  assert.equal(profile.defaultRepo, profilesModule.AURAFLOW_V03_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1536);
+  assert.equal(form.height, 768);
+  assert.equal(form.aspectRatio, 'custom');
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 3.5);
+  assert.equal(form.maxSequenceLength, 256);
+});
+
 test('DreamLite base and mobile expose distinct pinned guidance recipes', () => {
   const base = profilesModule.STUDIO_MODEL_PROFILES.DreamLitePipeline;
   const baseText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLitePipeline');
