@@ -14498,6 +14498,7 @@ test('Expert renders backend-registered contract-only Modular image video and mu
     AnimaModularPipeline: 'Anima (Contract only)',
     Krea2ModularPipeline: 'Krea 2 (Contract only)',
     Krea2TurboModularPipeline: 'Krea 2 Turbo (Contract only)',
+    MiniMaxH3ModularPipeline: 'MiniMax H3 (Contract only)',
     HeliosModularPipeline: 'Helios (Contract only)',
     Cosmos3OmniModularPipeline: 'Cosmos 3 Omni (Contract only)',
   };
