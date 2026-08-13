@@ -282,13 +282,6 @@ export type StudioGraphBindingDivergence = {
   details?: string;
 } | null;
 
-type FieldGroupWait = {
-  label: string;
-  nodeId: string | undefined;
-  groups: string[][];
-  timeout?: number;
-};
-
 let graphUpdatePromise: Promise<BridgeResult> | null = null;
 let graphFinalizationPromise: Promise<SettledGraphFinalization<BridgeResult>> | null = null;
 let graphFinalizationContext: WorkflowOperationContext | null = null;
@@ -2392,12 +2385,7 @@ function reconcileManagedGraphBinding(
 }
 
 async function waitForManagedEdges(binding: StudioGraphBinding, timeout = 1500) {
-  const started = Date.now();
-  while (Date.now() - started < timeout) {
-    const specs = desiredEdgeSpecs(binding);
-    if (exactDesiredEdgeIds(binding, specs)) return;
-    await delay(50);
-  }
+  await waitForValue(() => exactDesiredEdgeIds(binding, desiredEdgeSpecs(binding)) || undefined, timeout);
 }
 
 function refreshManagedEdgeBinding(binding: StudioGraphBinding) {
@@ -2610,6 +2598,15 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForValue<T>(read: () => T | undefined, timeout: number, interval = 50) {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const value = read();
+    if (value !== undefined) return value;
+    await delay(interval);
+  }
+}
+
 function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGraphBinding | null) {
   if (binding && executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech') return false;
   return (
@@ -2621,18 +2618,19 @@ function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGrap
 async function waitForDynamicGraphChannel(timeout = 20_000) {
   if (typeof WebSocket === 'undefined') return true;
 
-  let websocket = useWebsocketStore.getState();
+  const websocket = useWebsocketStore.getState();
   if (websocket.isConnected && websocket.sid) return true;
   if (!websocket.isConnecting) {
     websocket.connect();
   }
 
-  const started = Date.now();
-  while (Date.now() - started < timeout) {
-    websocket = useWebsocketStore.getState();
-    if (websocket.isConnected && websocket.sid) return true;
-    await delay(50);
-  }
+  if (
+    await waitForValue(() => {
+      const current = useWebsocketStore.getState();
+      return current.isConnected && current.sid ? true : undefined;
+    }, timeout)
+  )
+    return true;
 
   const message = 'The Studio graph could not initialize because the MoDiff connection is not ready.';
   useStudioStore.getState().setLastError(message);
@@ -2641,20 +2639,24 @@ async function waitForDynamicGraphChannel(timeout = 20_000) {
 
 async function waitForFieldGroups(nodeId: string | undefined, groups: string[][], timeout = 4500) {
   if (!nodeId || groups.length === 0) return true;
-  const started = Date.now();
-  while (Date.now() - started < timeout) {
-    const ready = groups.every((group) => Boolean(findParamKey(nodeId, group)));
-    if (ready) return true;
-    await delay(100);
-  }
-  return groups.every((group) => Boolean(findParamKey(nodeId, group)));
+  return Boolean(
+    await waitForValue(
+      () => (groups.every((group) => Boolean(findParamKey(nodeId, group))) ? true : undefined),
+      timeout,
+      100,
+    ),
+  );
 }
 
-async function waitForFieldGroupsTracked(wait: FieldGroupWait, timedOutGroups: string[]) {
-  const ready = await waitForFieldGroups(wait.nodeId, wait.groups, wait.timeout ?? 4500);
-  if (!ready) {
-    timedOutGroups.push(wait.label);
-  }
+async function waitForFieldGroupsTracked(
+  nodeId: string | undefined,
+  groups: string[][],
+  timedOutGroups: string[],
+  label: string,
+  timeout = 4500,
+) {
+  const ready = await waitForFieldGroups(nodeId, groups, timeout);
+  if (!ready) timedOutGroups.push(label);
   return ready;
 }
 
@@ -2935,6 +2937,40 @@ async function applyManagedInputSignal(nodeId: string | undefined, candidates: s
   await fieldAction(props, value, 'onSignal');
 }
 
+async function applyAudioPipelineContract(binding: StudioGraphBinding) {
+  const pipelineNode = binding.nodes.audioPipeline;
+  const generateNode = binding.nodes.audioGenerate;
+  const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
+  if (!pipelineNode || !generateNode || !pipelineClassKey) return;
+
+  const pipelineClass = useFlowStore.getState().getParam(pipelineNode, pipelineClassKey, 'value');
+  const props = buildFieldProps(pipelineNode, pipelineClassKey);
+  if (!props?.onChange) throw new Error('Audio loader contract action missing.');
+  await fieldAction(props, pipelineClass);
+
+  const expectedPipelineClass = String(pipelineClass ?? '');
+  const exactContract = (value: unknown) =>
+    value && typeof value === 'object' && (value as { pipelineClass?: unknown }).pipelineClass === expectedPipelineClass
+      ? value
+      : undefined;
+  const value = await waitForValue(() => {
+    const signal = useFlowStore.getState().getParam(pipelineNode, 'pipeline', 'signal');
+    return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
+  }, 5000);
+  if (!value) throw new Error('Audio task contract timed out.');
+  await applyManagedInputSignal(generateNode, ['pipeline'], value);
+
+  const expectedTask = String((value as { taskType?: unknown }).taskType ?? '');
+  const accepted = await waitForValue(
+    () =>
+      useFlowStore.getState().getParam(generateNode, 'task_type', 'value') === expectedTask
+        ? exactContract(useFlowStore.getState().getParam(generateNode, 'audio_contract', 'value'))
+        : undefined,
+    5000,
+  );
+  if (!accepted) throw new Error('Audio task contract timed out.');
+}
+
 async function applyAutoModelLoaderType(nodeId: string | undefined, loaderType: string) {
   const modelTypeKey = findParamKey(nodeId, ['model_type']);
   if (!nodeId || !modelTypeKey) return;
@@ -3148,8 +3184,11 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     transcribe: 'transcribe',
     translate: 'translate',
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
+    sampleRate16000: 16000,
+    sampleRate24000: 24000,
     sampleRate48000: 48000,
     numWaveforms1: 1,
+    numWaveforms3: 3,
     referenceWindow15: 15,
     targetPeakMinus1: -1,
     maxAdjustment12: 12,
@@ -3816,43 +3855,35 @@ async function finalizeDiffusersImageGraph(
     binding.nodes.diffusersImageGenerate;
   await Promise.all([
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers image pipeline',
-        nodeId: binding.nodes.diffusersImagePipeline,
-        groups: [['pipeline'], ['model_id']],
-        timeout: 5000,
-      },
+      binding.nodes.diffusersImagePipeline,
+      [['pipeline'], ['model_id']],
       timedOutGroups,
+      'diffusers image pipeline',
+      5000,
     ),
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers image generate',
-        nodeId: targetNode,
-        groups: [['pipeline'], ['prompt'], ['images']],
-        timeout: 5000,
-      },
+      targetNode,
+      [['pipeline'], ['prompt'], ['images']],
       timedOutGroups,
+      'diffusers image generate',
+      5000,
     ),
     binding.nodes.loadImage
       ? waitForFieldGroupsTracked(
-          {
-            label: 'source image loader',
-            nodeId: binding.nodes.loadImage,
-            groups: [IMAGE_HANDLE, ['file']],
-            timeout: 3000,
-          },
+          binding.nodes.loadImage,
+          [IMAGE_HANDLE, ['file']],
           timedOutGroups,
+          'source image loader',
+          3000,
         )
       : Promise.resolve(true),
     binding.nodes.loadMask
       ? waitForFieldGroupsTracked(
-          {
-            label: 'mask image loader',
-            nodeId: binding.nodes.loadMask,
-            groups: [IMAGE_HANDLE, ['file']],
-            timeout: 3000,
-          },
+          binding.nodes.loadMask,
+          [IMAGE_HANDLE, ['file']],
           timedOutGroups,
+          'mask image loader',
+          3000,
         )
       : Promise.resolve(true),
   ]);
@@ -3875,68 +3906,52 @@ async function finalizeAudioGraph(
 ) {
   await Promise.all([
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers audio pipeline',
-        nodeId: binding.nodes.audioPipeline,
-        groups: [['pipeline'], ['model_id']],
-        timeout: 5000,
-      },
+      binding.nodes.audioPipeline,
+      [['pipeline'], ['model_id']],
       timedOutGroups,
+      'diffusers audio pipeline',
+      5000,
     ),
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers audio generate',
-        nodeId: binding.nodes.audioGenerate,
-        groups: [['pipeline'], ['audio']],
-        timeout: 5000,
-      },
+      binding.nodes.audioGenerate,
+      [['pipeline'], ['audio']],
       timedOutGroups,
+      'diffusers audio generate',
+      5000,
     ),
-    waitForFieldGroupsTracked(
-      {
-        label: 'audio export',
-        nodeId: binding.nodes.audioExport,
-        groups: [['audio'], ['file']],
-        timeout: 5000,
-      },
-      timedOutGroups,
-    ),
+    waitForFieldGroupsTracked(binding.nodes.audioExport, [['audio'], ['file']], timedOutGroups, 'audio export', 5000),
     binding.nodes.audioLoudnessMatch
       ? waitForFieldGroupsTracked(
-          {
-            label: 'audio loudness match',
-            nodeId: binding.nodes.audioLoudnessMatch,
-            groups: [['audio'], ['reference'], ['output']],
-            timeout: 5000,
-          },
+          binding.nodes.audioLoudnessMatch,
+          [['audio'], ['reference'], ['output']],
           timedOutGroups,
+          'audio loudness match',
+          5000,
         )
       : Promise.resolve(true),
     binding.nodes.audioJoin
       ? waitForFieldGroupsTracked(
-          {
-            label: 'audio join',
-            nodeId: binding.nodes.audioJoin,
-            groups: [['source'], ['continuation'], ['output']],
-            timeout: 5000,
-          },
+          binding.nodes.audioJoin,
+          [['source'], ['continuation'], ['output']],
           timedOutGroups,
+          'audio join',
+          5000,
         )
       : Promise.resolve(true),
     binding.nodes.loadAudio
       ? waitForFieldGroupsTracked(
-          {
-            label: 'source audio loader',
-            nodeId: binding.nodes.loadAudio,
-            groups: [['audio'], ['file']],
-            timeout: 3000,
-          },
+          binding.nodes.loadAudio,
+          [['audio'], ['file']],
           timedOutGroups,
+          'source audio loader',
+          3000,
         )
       : Promise.resolve(true),
   ]);
   assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
+  await applyAudioPipelineContract(binding);
+  assertGraphFinalizationActive(token);
   connectBaseGraph(binding);
 }
 
@@ -3972,62 +3987,38 @@ async function finalizeModularGraph(
   await Promise.all([
     binding.nodes.qwenQuantization
       ? waitForFieldGroupsTracked(
-          {
-            label: 'qwen quantization config',
-            nodeId: binding.nodes.qwenQuantization,
-            groups: [['model_id'], ['quantization_config']],
-            timeout: 5000,
-          },
+          binding.nodes.qwenQuantization,
+          [['model_id'], ['quantization_config']],
           timedOutGroups,
+          'qwen quantization config',
+          5000,
         )
       : Promise.resolve(true),
     waitForFieldGroupsTracked(
-      {
-        label: 'prompt embeddings',
-        nodeId: binding.nodes.prompt,
-        groups: [['prompt'], ['embeddings']],
-        timeout: 5000,
-      },
+      binding.nodes.prompt,
+      [['prompt'], ['embeddings']],
       timedOutGroups,
+      'prompt embeddings',
+      5000,
     ),
-    waitForFieldGroupsTracked(
-      {
-        label: 'denoise inputs',
-        nodeId: binding.nodes.denoise,
-        groups: denoiseGroups,
-        timeout: 5000,
-      },
-      timedOutGroups,
-    ),
-    waitForFieldGroupsTracked(
-      {
-        label: 'decode inputs',
-        nodeId: binding.nodes.decode,
-        groups: [['latents'], ['images']],
-        timeout: 5000,
-      },
-      timedOutGroups,
-    ),
+    waitForFieldGroupsTracked(binding.nodes.denoise, denoiseGroups, timedOutGroups, 'denoise inputs', 5000),
+    waitForFieldGroupsTracked(binding.nodes.decode, [['latents'], ['images']], timedOutGroups, 'decode inputs', 5000),
     binding.nodes.imageEncode
       ? waitForFieldGroupsTracked(
-          {
-            label: 'image encoder inputs',
-            nodeId: binding.nodes.imageEncode,
-            groups: [IMAGE_HANDLE, IMAGE_LATENTS_OUT],
-            timeout: 5000,
-          },
+          binding.nodes.imageEncode,
+          [IMAGE_HANDLE, IMAGE_LATENTS_OUT],
           timedOutGroups,
+          'image encoder inputs',
+          5000,
         )
       : Promise.resolve(true),
     binding.nodes.controlnet
       ? waitForFieldGroupsTracked(
-          {
-            label: 'controlnet inputs',
-            nodeId: binding.nodes.controlnet,
-            groups: [['control_image'], ['controlnet'], ['vae'], ['controlnet_bundle']],
-            timeout: 5000,
-          },
+          binding.nodes.controlnet,
+          [['control_image'], ['controlnet'], ['vae'], ['controlnet_bundle']],
           timedOutGroups,
+          'controlnet inputs',
+          5000,
         )
       : Promise.resolve(true),
   ]);

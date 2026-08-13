@@ -60,6 +60,8 @@ export type StudioModelType =
   | 'HunyuanVideoFramepackPipeline'
   | 'AceStepAudioPipeline'
   | 'StableAudioPipeline'
+  | 'LongCatAudioDiTPipeline'
+  | 'AudioLDM2Pipeline'
   | 'FluxSchnellPipeline'
   | 'FluxDevPipeline'
   | 'FluxKreaPipeline'
@@ -787,6 +789,8 @@ export type StudioModelProfile = {
     | 'LTX Video'
     | 'ACE Audio'
     | 'Stable Audio'
+    | 'LongCat AudioDiT'
+    | 'AudioLDM2'
     | 'FLUX Image'
     | 'Stable Diffusion XL'
     | 'DDPM'
@@ -973,7 +977,7 @@ export type StudioTemplateWorkflowBlockSettings = {
   };
   soundtrack?: {
     model: StudioTemplateModelArtifact;
-    pipelineClass: 'AceStepPipeline' | 'StableAudioPipeline';
+    pipelineClass: 'AceStepPipeline' | 'StableAudioPipeline' | 'LongCatAudioDiTPipeline' | 'AudioLDM2Pipeline';
     prompt: string;
     negativePrompt?: string;
     durationSeconds: number;

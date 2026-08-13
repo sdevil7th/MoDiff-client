@@ -205,6 +205,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
+  'LongCat AudioDiT 1B',
+  'AudioLDM2 Base',
   'FLUX.1-schnell',
   'FLUX.1-dev',
   'FLUX.1-Krea-dev',
@@ -282,6 +284,8 @@ export const LTX_VIDEO_REPO = 'Lightricks/LTX-Video-0.9.8-13B-distilled';
 export const LTX2_REPO = 'Lightricks/LTX-2';
 export const FRAMEPACK_REPO = 'lllyasviel/FramePackI2V_HY';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
+export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
+export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
 
 export const LTX_VIDEO_MODES: StudioMode[] = [
   'text_to_video',
@@ -435,6 +439,34 @@ function planningVideoProfile(
     },
     modes,
     modeRequirements,
+  };
+}
+
+function planningAudioProfile(
+  family: StudioModelProfile['family'],
+  defaultRepo: string,
+  steps: number,
+  guidance: number,
+  duration: number,
+  sampleRate: number,
+  dtype: StudioFormState['dtype'],
+  offloadMode: StudioFormState['offloadMode'] = SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT.lowVram,
+): StudioModelProfileSource {
+  return {
+    family,
+    surfaceCategory: 'Audio',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo,
+    recommendedSteps: steps,
+    recommendedGuidance: guidance,
+    supportFlags: 0,
+    supportsAudioInput: false,
+    outputKind: 'audio',
+    recommendedDuration: duration,
+    recommendedSampleRate: sampleRate,
+    lowVram: { dtype, autoOffload: true, offloadMode, steps },
+    modes: ['text_to_audio'],
+    modeRequirements: {},
   };
 }
 
@@ -807,27 +839,29 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
   },
   StableAudioPipeline: {
+    ...planningAudioProfile(
+      'Stable Audio',
+      STABLE_AUDIO_REPO,
+      100,
+      7,
+      30,
+      48000,
+      'bfloat16',
+      DIRECT_OFFLOAD_SUPPORT.lowVram,
+    ),
     displayName: 'stable-audio-open-1.0',
-    family: 'Stable Audio',
-    surfaceCategory: 'Audio',
-    catalogVisibility: 'workflowOnly',
-    defaultRepo: STABLE_AUDIO_REPO,
     artifactLabel: 'Diffusers audio repo',
-    recommendedSteps: 100,
-    recommendedGuidance: 7,
-    supportFlags: 0,
-    supportsAudioInput: false,
-    outputKind: 'audio',
-    recommendedDuration: 30,
-    recommendedSampleRate: 48000,
-    lowVram: {
-      dtype: 'bfloat16',
-      autoOffload: true,
-      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 100,
-    },
-    modes: ['text_to_audio'],
-    modeRequirements: {},
+  },
+  LongCatAudioDiTPipeline: {
+    ...planningAudioProfile('LongCat AudioDiT', LONGCAT_AUDIO_DIT_REPO, 16, 4, 5, 24000, 'bfloat16'),
+    displayName: 'LongCat-AudioDiT-1B-Diffusers',
+    artifactLabel: 'Reviewed Diffusers-format safetensors conversion',
+  },
+  AudioLDM2Pipeline: {
+    ...planningAudioProfile('AudioLDM2', AUDIO_LDM2_REPO, 200, 3.5, 10, 16000, 'float16'),
+    displayName: 'audioldm2',
+    artifactLabel: 'Diffusers safetensors repo',
+    defaultDtype: 'float16',
   },
   FluxSchnellPipeline: {
     family: 'FLUX Image',
@@ -1638,6 +1672,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Uses the generic Diffusers audio loader and generation nodes with a pinned model revision.',
     manualOnlyReason: 'Live resource and Gallery qualification pending.',
   },
+  LongCatAudioDiTPipeline: /* @__PURE__ */ pendingPlanningRequirement('LongCatAudioDiTPipeline'),
+  AudioLDM2Pipeline: /* @__PURE__ */ pendingPlanningRequirement('AudioLDM2Pipeline'),
   FluxSchnellPipeline: {
     modelType: 'FluxSchnellPipeline',
     supportedModes: ['text_to_image'],

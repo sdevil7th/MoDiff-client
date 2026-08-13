@@ -276,6 +276,26 @@ test('Sana and Sana Sprint expose their pinned mixed-precision recipes', () => {
   assert.equal(sprintEdit.strength, 0.5);
 });
 
+test('LongCat AudioDiT and AudioLDM2 expose their pinned generic audio recipes', () => {
+  const longcat = profilesModule.STUDIO_MODEL_PROFILES.LongCatAudioDiTPipeline;
+  const longcatForm = profilesModule.getFormDefaultsForMode('text_to_audio', 'LongCatAudioDiTPipeline');
+  assert.equal(longcat.defaultRepo, profilesModule.LONGCAT_AUDIO_DIT_REPO);
+  assert.equal(longcat.defaultDtype, 'bfloat16');
+  assert.equal(longcat.recommendedSampleRate, 24000);
+  assert.equal(longcatForm.audioDuration, 5);
+  assert.equal(longcatForm.steps, 16);
+  assert.equal(longcatForm.guidanceScale, 4);
+
+  const audioldm2 = profilesModule.STUDIO_MODEL_PROFILES.AudioLDM2Pipeline;
+  const audioldm2Form = profilesModule.getFormDefaultsForMode('text_to_audio', 'AudioLDM2Pipeline');
+  assert.equal(audioldm2.defaultRepo, profilesModule.AUDIO_LDM2_REPO);
+  assert.equal(audioldm2.defaultDtype, 'float16');
+  assert.equal(audioldm2.recommendedSampleRate, 16000);
+  assert.equal(audioldm2Form.audioDuration, 10);
+  assert.equal(audioldm2Form.steps, 200);
+  assert.equal(audioldm2Form.guidanceScale, 3.5);
+});
+
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');

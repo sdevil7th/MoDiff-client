@@ -2384,6 +2384,9 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   paramsByRole.audioJoin.continuation = { type: 'audio', display: 'input' };
   paramsByRole.audioJoin.output = { type: 'audio', display: 'output' };
   paramsByRole.audioExport.audio = { type: 'audio', display: 'input' };
+  paramsByRole.audioPipeline.pipeline_class.onChange = 'update_audio_contract';
+  paramsByRole.audioGenerate.pipeline.onSignal = 'update_audio_contract';
+  paramsByRole.audioGenerate.audio_contract = scalar();
   paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
   const registry = Object.fromEntries(
     registryRoleRows.map(([role, nodeKey]) => {
@@ -2416,11 +2419,36 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   const nativeWebSocket = globalThis.WebSocket;
   const nativeFetch = globalThis.fetch;
   globalThis.WebSocket = undefined;
-  globalThis.fetch = async () =>
-    new Response(JSON.stringify({ error: false, nodes: [] }), {
+  globalThis.fetch = async (_input, init) => {
+    const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    if (payload?.fn === 'update_audio_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === payload.node);
+        const pipelineClass = node?.data.params.pipeline_class.value;
+        const mode = node?.data.params.mode.value;
+        const taskType =
+          mode === 'audio_variation'
+            ? 'cover'
+            : mode === 'audio_continuation'
+              ? 'continuation'
+              : mode === 'audio_repaint'
+                ? 'repaint'
+                : 'text2music';
+        flowStoreModule.useFlowStore
+          .getState()
+          .setParam(payload.node, 'pipeline', { direction: 'output', value: { pipelineClass, taskType } }, 'signal');
+      } else if (payload.action === 'Generate') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        const contract = signal?.value;
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'task_type', contract?.taskType);
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'audio_contract', contract);
+      }
+    }
+    return new Response(JSON.stringify({ error: false, nodes: [] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+  };
   try {
     nodesStoreModule.useNodesStore.setState({
       nodesRegistry: registry,
