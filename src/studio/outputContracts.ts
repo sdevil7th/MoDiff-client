@@ -56,6 +56,7 @@ const STUDIO_QUANTIZATION_MODES: readonly StudioFormState['quantizationMode'][] 
   'torchao_float8',
 ];
 const STUDIO_ALPHA_MODES: readonly StudioFormState['alphaMode'][] = ['ignore', 'add alpha', 'remove alpha'];
+const STUDIO_SPEECH_TIMESTAMP_MODES: readonly StudioFormState['speechTimestamps'][] = ['none', 'segment', 'word'];
 const STUDIO_OUTPUT_TYPES: readonly StudioFormState['outputType'][] = ['pil', 'np', 'pt'];
 const STUDIO_TEMPLATE_IDS: readonly StudioTemplateId[] = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].map(
   (template) => template.id,
@@ -186,6 +187,14 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     controlVideo: stringValue(form.controlVideo, DEFAULT_STUDIO_FORM.controlVideo),
     sourceAudio: stringValue(form.sourceAudio, DEFAULT_STUDIO_FORM.sourceAudio),
     referenceAudio: stringValue(form.referenceAudio, DEFAULT_STUDIO_FORM.referenceAudio),
+    speechLanguage: stringValue(form.speechLanguage, DEFAULT_STUDIO_FORM.speechLanguage),
+    speechTimestamps: stringUnionValue(
+      form.speechTimestamps,
+      STUDIO_SPEECH_TIMESTAMP_MODES,
+      DEFAULT_STUDIO_FORM.speechTimestamps,
+    ),
+    speechChunkSeconds: numberValue(form.speechChunkSeconds, DEFAULT_STUDIO_FORM.speechChunkSeconds),
+    speechStrideSeconds: numberValue(form.speechStrideSeconds, DEFAULT_STUDIO_FORM.speechStrideSeconds),
     lyrics: stringValue(form.lyrics, DEFAULT_STUDIO_FORM.lyrics),
     audioDuration: numberValue(form.audioDuration, DEFAULT_STUDIO_FORM.audioDuration),
     extensionDuration: numberValue(form.extensionDuration, DEFAULT_STUDIO_FORM.extensionDuration),

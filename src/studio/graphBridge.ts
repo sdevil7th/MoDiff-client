@@ -177,6 +177,9 @@ const NODE_KEYS = {
   audioLoudnessMatch: 'modules.Audio.MatchLoudness',
   audioJoin: 'modules.Audio.Join',
   audioExport: 'modules.Audio.Export',
+  speechModel: 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel',
+  transcribeAudio: 'modules.HuggingFaceSpeech.TranscribeAudio',
+  transcriptPreview: 'modules.Primitive.DataViewer',
 } satisfies Record<StudioGraphRole, string>;
 
 const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
@@ -229,6 +232,9 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   audioLoudnessMatch: { x: 300, y: -80 },
   audioJoin: { x: 680, y: -80 },
   audioExport: { x: 1060, y: -80 },
+  speechModel: { x: -720, y: -80 },
+  transcribeAudio: { x: -240, y: -80 },
+  transcriptPreview: { x: 240, y: -80 },
 };
 
 const REQUIRED_BASE_ROLES: StudioGraphRole[] = ['models', 'prompt', 'denoise', 'decode', 'preview'];
@@ -2602,6 +2608,7 @@ function delay(ms: number) {
 }
 
 function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGraphBinding | null) {
+  if (binding && executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech') return false;
   return (
     modularVideoGroupObserved(binding) ||
     (!isVideoMode(form.mode) && !isAudioMode(form.mode) && !usesDiffusersImageFacade(form))
@@ -3123,6 +3130,8 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     cover: 'cover',
     continuation: 'continuation',
     repaint: 'repaint',
+    transcribe: 'transcribe',
+    translate: 'translate',
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
     sampleRate48000: 48000,
     numWaveforms1: 1,
@@ -3837,6 +3846,12 @@ async function finalizeDiffusersImageGraph(
   connectBaseGraph(binding);
 }
 
+async function finalizeStaticExecutionSpecGraph(binding: StudioGraphBinding, form: StudioFormState, token: number) {
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  connectBaseGraph(binding);
+}
+
 async function finalizeAudioGraph(
   binding: StudioGraphBinding,
   form: StudioFormState,
@@ -4086,6 +4101,8 @@ async function finalizeStudioGraph(
       definitionRevision = graphDefinitionRevision;
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
+    } else if (executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech') {
+      await finalizeStaticExecutionSpecGraph(binding, form, token);
     } else if (!isVideoMode(form.mode)) {
       await finalizeModularGraph(binding, form, timedOutGroups, token);
     } else {

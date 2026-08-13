@@ -8,6 +8,8 @@ import type {
 export type StudioMode =
   | 'unconditional_image'
   | 'depth_estimation'
+  | 'speech_to_text'
+  | 'speech_translation'
   | 'text_to_image'
   | 'edit_image'
   | 'multi_image_reference_edit'
@@ -39,6 +41,7 @@ export type StudioModelType =
   | 'LatentConsistencyModelPipeline'
   | 'StableDiffusionPAGPipeline'
   | 'MarigoldDepthPipeline'
+  | 'HuggingFaceSpeechRecognitionModel'
   | 'ZImageModularPipeline'
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
@@ -389,7 +392,10 @@ export type StudioGraphRole =
   | 'audioGenerate'
   | 'audioLoudnessMatch'
   | 'audioJoin'
-  | 'audioExport';
+  | 'audioExport'
+  | 'speechModel'
+  | 'transcribeAudio'
+  | 'transcriptPreview';
 
 export type StudioGraphBinding = {
   mode: StudioMode;
@@ -630,6 +636,10 @@ export type StudioFormState = {
   controlVideo: string;
   sourceAudio: string;
   referenceAudio: string;
+  speechLanguage: string;
+  speechTimestamps: 'none' | 'segment' | 'word';
+  speechChunkSeconds: number;
+  speechStrideSeconds: number;
   lyrics: string;
   audioDuration: number;
   extensionDuration: number;
@@ -776,10 +786,11 @@ export type StudioModelProfile = {
     | 'Consistency Models'
     | 'Stable Diffusion 1.x'
     | 'Latent Consistency Models'
-    | 'Marigold';
+    | 'Marigold'
+    | 'Whisper';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
-  runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';
+  runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'transformers' | 'unsupported';
   isDiffusersBacked?: boolean;
   acceleratorStrategy?: string;
   specializedReason?: string;

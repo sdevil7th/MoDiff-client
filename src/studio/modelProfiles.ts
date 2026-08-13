@@ -77,6 +77,7 @@ export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const LCM_DREAMSHAPER_REPO = 'SimianLuo/LCM_Dreamshaper_v7';
 export const MARIGOLD_DEPTH_LCM_REPO = 'prs-eth/marigold-depth-lcm-v1-0';
+export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
 
@@ -172,6 +173,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
   'Marigold Depth LCM v1.0',
+  'Whisper Tiny',
   'DDPM CIFAR-10 32x32',
   'DDIM CIFAR-10 32x32',
   'Consistency Model ImageNet 64x64',
@@ -180,6 +182,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   unconditional_image: 'Sample images without a text prompt from a compatible unconditional model.',
   depth_estimation: 'Estimate a normalized relative-depth map from one source image.',
+  speech_to_text: 'Transcribe one local audio source into text with optional timestamps.',
+  speech_translation: 'Recognize one local audio source and translate the transcript to English.',
   text_to_image: 'Generate from a prompt with a compatible image model.',
   edit_image: 'Use one source image and a prompt to guide an edit.',
   multi_image_reference_edit: 'Blend multiple references into one guided edit.',
@@ -261,6 +265,8 @@ export const AUDIO_STUDIO_MODES: StudioMode[] = [
   'audio_repaint',
 ];
 
+export const SPEECH_STUDIO_MODES: StudioMode[] = ['speech_to_text', 'speech_translation'];
+
 export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = ['FluxSchnellPipeline', 'FluxDevPipeline'];
 
 export function normalizeStudioOffloadMode(value: unknown): StudioFormState['offloadMode'] {
@@ -331,7 +337,14 @@ type StudioModelProfileSource = Omit<
   Partial<
     Pick<
       StudioModelProfile,
-      'displayName' | 'artifactLabel' | 'defaultDtype' | 'guidanceLabel' | 'defaultSize' | 'offloadSupport'
+      | 'displayName'
+      | 'artifactLabel'
+      | 'defaultDtype'
+      | 'guidanceLabel'
+      | 'defaultSize'
+      | 'offloadSupport'
+      | 'runtimeKind'
+      | 'isDiffusersBacked'
     >
   > & {
     supportFlags: number;
@@ -1096,6 +1109,42 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  HuggingFaceSpeechRecognitionModel: {
+    family: 'Whisper',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'transformers',
+    isDiffusersBacked: false,
+    defaultRepo: WHISPER_TINY_REPO,
+    artifactLabel: 'Transformers safetensors repo',
+    defaultDtype: 'float32',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 1, height: 1, aspectRatio: '1:1' },
+    offloadSupport: {
+      modes: ['none'],
+      default: 'none',
+      lowVram: 'none',
+      emergency: 'none',
+    },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    supportFlags: 0,
+    supportsNegativePrompt: false,
+    supportsAudioInput: true,
+    outputKind: 'json',
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1 },
+    modes: SPEECH_STUDIO_MODES,
+    modeRequirements: {
+      speech_to_text: {
+        requiredAudio: ['sourceAudio'],
+        note: 'Requires one local audio source and returns a normalized transcript.',
+      },
+      speech_translation: {
+        requiredAudio: ['sourceAudio'],
+        note: 'Requires one local audio source and translates recognized speech to English.',
+      },
+    },
+  },
   DDPMPipeline: {
     family: 'DDPM',
     surfaceCategory: 'Image',
@@ -1513,6 +1562,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'The generic prediction-map graph returns relative depth and a grayscale preview.',
     manualOnlyReason: 'The shared prediction-map contract and remote quality review are pending qualification.',
   },
+  HuggingFaceSpeechRecognitionModel: {
+    modelType: 'HuggingFaceSpeechRecognitionModel',
+    supportedModes: SPEECH_STUDIO_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    recommended: 'Use the reviewed Whisper Tiny float32 profile and bounded local audio.',
+    qualityDefaults: '30-second chunks, 5-second stride, segment timestamps.',
+    artifacts: [WHISPER_TINY_REPO],
+    notes: 'The generic speech graph supports transcription and translation to English.',
+    manualOnlyReason: 'Remote fixture review and Gallery qualification pending.',
+  },
   DDPMPipeline: {
     modelType: 'DDPMPipeline',
     supportedModes: ['unconditional_image'],
@@ -1617,6 +1677,10 @@ export const DEFAULT_STUDIO_FORM: StudioFormState = {
   controlVideo: '',
   sourceAudio: '',
   referenceAudio: '',
+  speechLanguage: '',
+  speechTimestamps: 'segment',
+  speechChunkSeconds: 30,
+  speechStrideSeconds: 5,
   lyrics: '',
   audioDuration: 30,
   extensionDuration: 15,
@@ -1657,6 +1721,9 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   }
   if (mode === 'depth_estimation') {
     return 'MarigoldDepthPipeline';
+  }
+  if (SPEECH_STUDIO_MODES.includes(mode)) {
+    return 'HuggingFaceSpeechRecognitionModel';
   }
   if (VIDEO_STUDIO_MODES.includes(mode)) {
     return 'WanVACEPipeline';

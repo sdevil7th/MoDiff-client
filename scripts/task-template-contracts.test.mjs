@@ -76,6 +76,22 @@ const fixtures = [
     outputHandle: 'audio',
     requiredMedia: [{ kind: 'audio', field: 'sourceAudio', minimumCount: 1 }],
   },
+  {
+    modelType: 'HuggingFaceSpeechRecognitionModel',
+    mode: 'speech_to_text',
+    mediaKind: 'json',
+    profileId: 'fixture-speech:direct',
+    specId: 'fixture-speech:speech-to-text:v1',
+    loaderModule: 'modules.HuggingFaceSpeech',
+    loaderAction: 'LoadSpeechRecognitionModel',
+    loaderRole: 'speechModel',
+    pipelineClass: 'AutoModelForSpeechSeq2Seq',
+    repo: 'owner/speech-model',
+    outputRole: 'transcriptPreview',
+    outputNode: 'modules.Primitive.DataViewer',
+    outputHandle: 'value',
+    requiredMedia: [{ kind: 'audio', field: 'sourceAudio', minimumCount: 1 }],
+  },
 ];
 
 function buildFixture() {
@@ -150,7 +166,7 @@ function buildFixture() {
   return { capabilities, contracts };
 }
 
-test('generic image video and audio task contracts build stable skeletons and preserve required media', () => {
+test('generic image video audio and JSON task contracts build stable skeletons and preserve required media', () => {
   const fixture = buildFixture();
   const parsed = contractsModule.parseTaskTemplateContracts(fixture.contracts, 1, fixture.capabilities);
   const first = parsed.map(contractsModule.buildTaskTemplateSkeleton);
@@ -167,9 +183,10 @@ test('generic image video and audio task contracts build stable skeletons and pr
       ['image', []],
       ['video', [['video', 'sourceVideo', 1]]],
       ['audio', [['audio', 'sourceAudio', 1]]],
+      ['json', [['audio', 'sourceAudio', 1]]],
     ],
   );
-  assert.equal(new Set(first.map(({ id }) => id)).size, 3);
+  assert.equal(new Set(first.map(({ id }) => id)).size, 4);
 });
 
 test('qualification-pending task skeletons remain hidden from Gallery', () => {

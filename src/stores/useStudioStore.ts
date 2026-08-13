@@ -836,6 +836,26 @@ function studioFormInputs(): AppModeInput[] {
     { id: 'studio:sourceVideo', kind: 'studio-form', label: 'Source video', formKey: 'sourceVideo' },
     { id: 'studio:maskVideo', kind: 'studio-form', label: 'Mask video', formKey: 'maskVideo' },
     { id: 'studio:controlVideo', kind: 'studio-form', label: 'Control video', formKey: 'controlVideo' },
+    { id: 'studio:sourceAudio', kind: 'studio-form', label: 'Source audio', formKey: 'sourceAudio' },
+    { id: 'studio:speechLanguage', kind: 'studio-form', label: 'Speech language', formKey: 'speechLanguage' },
+    {
+      id: 'studio:speechTimestamps',
+      kind: 'studio-form',
+      label: 'Speech timestamps',
+      formKey: 'speechTimestamps',
+    },
+    {
+      id: 'studio:speechChunkSeconds',
+      kind: 'studio-form',
+      label: 'Speech chunk length',
+      formKey: 'speechChunkSeconds',
+    },
+    {
+      id: 'studio:speechStrideSeconds',
+      kind: 'studio-form',
+      label: 'Speech chunk stride',
+      formKey: 'speechStrideSeconds',
+    },
   ];
 }
 

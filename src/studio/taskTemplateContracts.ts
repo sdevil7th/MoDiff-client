@@ -89,7 +89,7 @@ function validateOutput(raw: Record<string, unknown>, spec: StudioExecutionSpec)
   const outputRole = raw.output.role as StudioGraphRole;
   const role = spec.roles.find(([candidate]) => candidate === outputRole);
   const outgoing = spec.edges.some(([sourceRole]) => sourceRole === outputRole);
-  const expectedInputHandle = mediaKind === 'json' ? 'data' : mediaKind;
+  const expectedInputHandle = mediaKind === 'json' ? 'value' : mediaKind;
   const incoming = spec.edges.filter(
     ([, , targetRole, targetHandle]) => targetRole === outputRole && targetHandle === expectedInputHandle,
   );

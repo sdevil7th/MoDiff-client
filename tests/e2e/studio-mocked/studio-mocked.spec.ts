@@ -77,6 +77,10 @@ declare global {
             randomSeed?: boolean;
             processingResolution?: number;
             matchInputResolution?: boolean;
+            speechLanguage?: string;
+            speechTimestamps?: string;
+            speechChunkSeconds?: number;
+            speechStrideSeconds?: number;
           };
           workflowTabs: unknown[];
           activeWorkflowTabId: string | null;
@@ -231,6 +235,8 @@ declare global {
         mode?: string;
         modelType?: string;
         resourceMode?: string;
+        dtype?: string;
+        device?: string;
         width?: number;
         height?: number;
         steps?: number;
@@ -243,6 +249,11 @@ declare global {
         randomSeed?: boolean;
         processingResolution?: number;
         matchInputResolution?: boolean;
+        sourceAudio?: string;
+        speechLanguage?: string;
+        speechTimestamps?: string;
+        speechChunkSeconds?: number;
+        speechStrideSeconds?: number;
       }) => void;
       bindManagedGraphForTest: (form: Record<string, unknown>, nodes: Record<string, string>) => boolean;
       startManagedGraphFinalizationForTest: () => Promise<void>;
@@ -357,6 +368,8 @@ const mockExecutionProfileIds: Record<string, string> = {
   'FluxCannyPipeline:control_image': 'flux-canny:direct',
   'FluxReduxPipeline:edit_image': 'flux-redux:direct',
   'MarigoldDepthPipeline:depth_estimation': 'marigold-depth-lcm-v1-0:direct',
+  'HuggingFaceSpeechRecognitionModel:speech_to_text': 'whisper-tiny:direct',
+  'HuggingFaceSpeechRecognitionModel:speech_translation': 'whisper-tiny:direct',
 };
 
 const mockFluxExecutionRoles = [
@@ -1208,6 +1221,84 @@ function mockMarigoldDepthExecutionCapability() {
   };
 }
 
+function mockWhisperSpeechExecutionCapability() {
+  const roles = [
+    ['speechModel', 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel', -720, -80],
+    ['loadAudio', 'modules.Audio.Load', -720, 280],
+    ['transcribeAudio', 'modules.HuggingFaceSpeech.TranscribeAudio', -240, -80],
+    ['transcriptPreview', 'modules.Primitive.DataViewer', 240, -80],
+  ] as const;
+  const edges = [
+    ['speechModel', 'model', 'transcribeAudio', 'model'],
+    ['loadAudio', 'audio', 'transcribeAudio', 'audio'],
+    ['transcribeAudio', 'transcript', 'transcriptPreview', 'value'],
+  ] as const;
+  const baseBindings = [
+    ['speechModel', 'model_id', 'artifact'],
+    ['speechModel', 'revision', 'defaultRevision'],
+    ['speechModel', 'dtype', 'dtype'],
+    ['speechModel', 'device', 'device'],
+    ['loadAudio', 'file', 'sourceAudio'],
+    ['transcribeAudio', 'language', 'speechLanguage'],
+    ['transcribeAudio', 'timestamps', 'speechTimestamps'],
+    ['transcribeAudio', 'chunk_length_seconds', 'speechChunkSeconds'],
+    ['transcribeAudio', 'stride_length_seconds', 'speechStrideSeconds'],
+  ] as const;
+  const specification = (mode: 'speech_to_text' | 'speech_translation') => ({
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: mode === 'speech_to_text' ? 'whisper-tiny:speech-to-text:v1' : 'whisper-tiny:speech-translation:v1',
+    modelType: 'HuggingFaceSpeechRecognitionModel',
+    mode,
+    executionProfileId: 'whisper-tiny:direct',
+    loaderModule: 'modules.HuggingFaceSpeech',
+    loaderAction: 'LoadSpeechRecognitionModel',
+    executionPath: 'direct-huggingface-speech',
+    pipelineClass: 'AutoModelForSpeechSeq2Seq',
+    defaultRepo: 'openai/whisper-tiny',
+    roles,
+    edges,
+    bindings: [
+      ...baseBindings.slice(0, 5),
+      ['transcribeAudio', 'task', mode === 'speech_to_text' ? 'transcribe' : 'translate'],
+      ...baseBindings.slice(5),
+    ],
+    autoFields: mockFluxAutoFields,
+    actions: [],
+    contentHash: mode === 'speech_to_text' ? 'studio-spec-v1-ef22a23c' : 'studio-spec-v1-3f84f99b',
+  });
+  const specs = [specification('speech_to_text'), specification('speech_translation')];
+  return {
+    modelType: 'HuggingFaceSpeechRecognitionModel',
+    modes: ['speech_to_text', 'speech_translation'],
+    runnableModes: ['speech_to_text', 'speech_translation'],
+    revisionCandidates: ['169d4a4341b33bc18d8881c4b69c2e104e1cc0af'],
+    executionProfiles: [
+      {
+        id: 'whisper-tiny:direct',
+        model_type: 'HuggingFaceSpeechRecognitionModel',
+        modes: ['speech_to_text', 'speech_translation'],
+        loader_module: 'modules.HuggingFaceSpeech',
+        loader_action: 'LoadSpeechRecognitionModel',
+        execution_path: 'direct-huggingface-speech',
+        backend_path: 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel',
+        pipeline_class: 'AutoModelForSpeechSeq2Seq',
+        default_repo: 'openai/whisper-tiny',
+        quantizable_components: [],
+        default_quantized_components: [],
+        supported_offload_modes: ['none'],
+        retry_offload_modes: [],
+        max_low_memory_side: null,
+        max_low_memory_steps: null,
+        live_proof: true,
+      },
+    ],
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecModes: ['speech_to_text', 'speech_translation'],
+    studioExecutionSpecs: specs,
+  };
+}
+
 function mockWanTi2vExecutionCapability() {
   const roles = [
     ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
@@ -1817,6 +1908,7 @@ function mockStudioExecutionCapabilities() {
     mockFluxExecutionCapability('FluxKontextPipeline'),
     mockPagExecutionCapability(),
     mockMarigoldDepthExecutionCapability(),
+    mockWhisperSpeechExecutionCapability(),
     mockFluxFillExecutionCapability(),
     mockQwenEditInpaintExecutionCapability(),
     mockQwenEditPlusExecutionCapability(),
@@ -1849,23 +1941,25 @@ function mockStudioExecutionSpecContract(modelType: string, mode: string) {
         ? mockQwenImageExecutionCapability()
         : modelType === 'MarigoldDepthPipeline'
           ? mockMarigoldDepthExecutionCapability()
-          : modelType === 'FluxFillPipeline'
-            ? mockFluxFillExecutionCapability()
-            : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
-              ? mockQwenEditInpaintExecutionCapability()
-              : modelType === 'WanImageToVideoPipeline'
-                ? mockWanI2vExecutionCapability()
-                : modelType === 'WanTI2VPipeline'
-                  ? mockWanTi2vExecutionCapability()
-                  : modelType === 'WanVideoPipeline'
-                    ? mockWanT2vExecutionCapability()
-                    : modelType === 'WanVACEPipeline'
-                      ? mockWanVaceT2vExecutionCapability()
-                      : modelType === 'LTXVideoPipeline'
-                        ? mockLtxT2vExecutionCapability()
-                        : modelType === 'AceStepAudioPipeline'
-                          ? mockAceTextToAudioExecutionCapability()
-                          : null;
+          : modelType === 'HuggingFaceSpeechRecognitionModel'
+            ? mockWhisperSpeechExecutionCapability()
+            : modelType === 'FluxFillPipeline'
+              ? mockFluxFillExecutionCapability()
+              : modelType === 'QwenImageEditModularPipeline' && (mode === 'inpaint' || mode === 'outpaint')
+                ? mockQwenEditInpaintExecutionCapability()
+                : modelType === 'WanImageToVideoPipeline'
+                  ? mockWanI2vExecutionCapability()
+                  : modelType === 'WanTI2VPipeline'
+                    ? mockWanTi2vExecutionCapability()
+                    : modelType === 'WanVideoPipeline'
+                      ? mockWanT2vExecutionCapability()
+                      : modelType === 'WanVACEPipeline'
+                        ? mockWanVaceT2vExecutionCapability()
+                        : modelType === 'LTXVideoPipeline'
+                          ? mockLtxT2vExecutionCapability()
+                          : modelType === 'AceStepAudioPipeline'
+                            ? mockAceTextToAudioExecutionCapability()
+                            : null;
   const spec = capability?.studioExecutionSpecs.find((item) => item.mode === mode);
   return spec
     ? {
@@ -1899,6 +1993,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
       FluxCannyPipeline: 'black-forest-labs/FLUX.1-Canny-dev',
       FluxReduxPipeline: 'black-forest-labs/FLUX.1-Redux-dev',
       MarigoldDepthPipeline: 'prs-eth/marigold-depth-lcm-v1-0',
+      HuggingFaceSpeechRecognitionModel: 'openai/whisper-tiny',
     };
     const defaultRepo = defaultRepos[modelType] ?? 'Tongyi-MAI/Z-Image-Turbo';
     const installed = mockInstalledRepos.has(defaultRepo);
@@ -2680,6 +2775,42 @@ const mockRegistry = {
   'modules.Audio.Load': nodeDef('modules.Audio', 'Load', 'audio', {
     file: { type: 'string', value: '' },
     audio: { type: 'audio', display: 'output' },
+  }),
+  'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel': nodeDef(
+    'modules.HuggingFaceSpeech',
+    'LoadSpeechRecognitionModel',
+    'Hugging Face Speech',
+    {
+      model_id: { type: 'string', value: { source: 'hub', value: 'openai/whisper-tiny' } },
+      revision: { type: 'string', value: '' },
+      dtype: { type: 'string', value: 'float32' },
+      device: { type: 'string', value: 'cpu' },
+      model: { type: 'speech_recognition_model', display: 'output' },
+      resolved_artifact: { type: 'string', display: 'output' },
+    },
+  ),
+  'modules.HuggingFaceSpeech.TranscribeAudio': nodeDef(
+    'modules.HuggingFaceSpeech',
+    'TranscribeAudio',
+    'Hugging Face Speech',
+    {
+      model: { type: 'speech_recognition_model', display: 'input' },
+      audio: { type: 'audio', display: 'input' },
+      task: { type: 'string', value: 'transcribe' },
+      language: { type: 'string', value: '' },
+      timestamps: { type: 'string', value: 'segment' },
+      chunk_length_seconds: { type: 'float', value: 30 },
+      stride_length_seconds: { type: 'float', value: 5 },
+      transcript: { type: 'any', display: 'output' },
+      text: { type: 'string', display: 'output' },
+      segments: { type: 'collection', display: 'output' },
+      duration_seconds: { type: 'float', display: 'output' },
+    },
+  ),
+  'modules.Primitive.DataViewer': nodeDef('modules.Primitive', 'DataViewer', 'primitive', {
+    value: { type: 'any', display: 'input' },
+    preview: { type: 'string', display: 'ui_text' },
+    output: { type: 'string', display: 'output' },
   }),
   'modules.Audio.Export': nodeDef('modules.Audio', 'Export', 'audio', {
     audio: { type: 'audio', display: 'input' },
@@ -8265,6 +8396,97 @@ test('mocked Studio builds the exact Marigold depth prediction-map workflow', as
   });
 });
 
+test('mocked Studio builds the exact prompt-free Whisper translation workflow', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('openai/whisper-tiny');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.setStudioFormForTest({
+      mode: 'speech_translation',
+      modelType: 'HuggingFaceSpeechRecognitionModel',
+      resourceMode: 'expert',
+      dtype: 'float32',
+      device: 'cpu',
+      sourceAudio: '@data/audio/rights-approved-speech.wav',
+      speechLanguage: 'French',
+      speechTimestamps: 'word',
+      speechChunkSeconds: 20,
+      speechStrideSeconds: 3,
+    });
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
+    await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
+  });
+
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Advanced generation', exact: true }).click();
+  await expect(page.getByTestId('studio-speech-summary')).toBeVisible();
+  await expect(page.getByTestId('studio-speech-controls')).toBeVisible();
+  await expect(page.getByLabel('Source audio path')).toHaveValue('@data/audio/rights-approved-speech.wav');
+  await expect(page.getByLabel('Language hint (optional)')).toHaveValue('French');
+  await expect(page.getByLabel('Speech timestamps')).toHaveText('Word timestamps');
+  await expect(page.getByLabel('Chunk length (seconds)')).toHaveValue('20');
+  await expect(page.getByText('Translation output is normalized to English.')).toBeVisible();
+
+  const graph = await page.evaluate(() => {
+    const state = window.__MODIFF_E2E__!.getState();
+    const binding = state.studio.graphBinding!;
+    const node = (role: string) => state.flow.nodes.find((item) => item.id === binding.nodes?.[role]);
+    const model = node('speechModel');
+    const source = node('loadAudio');
+    const transcription = node('transcribeAudio');
+    const managedIds = new Set(binding.managedNodeIds);
+    return {
+      receipt: binding.executionSpec,
+      roles: Object.keys(binding.nodes ?? {}).sort(),
+      model: {
+        modelId: model?.params?.model_id?.value,
+        revision: model?.params?.revision?.value,
+        dtype: model?.params?.dtype?.value,
+        device: model?.params?.device?.value,
+      },
+      sourceAudio: source?.params?.file?.value,
+      transcription: {
+        task: transcription?.params?.task?.value,
+        language: transcription?.params?.language?.value,
+        timestamps: transcription?.params?.timestamps?.value,
+        chunk: transcription?.params?.chunk_length_seconds?.value,
+        stride: transcription?.params?.stride_length_seconds?.value,
+      },
+      edges: state.flow.edges
+        .filter((edge) => managedIds.has(edge.source) && managedIds.has(edge.target))
+        .map((edge) => [edge.sourceHandle, edge.targetHandle])
+        .sort((left, right) => String(left).localeCompare(String(right))),
+    };
+  });
+  expect(graph).toEqual({
+    receipt: {
+      schemaVersion: 1,
+      id: 'whisper-tiny:speech-translation:v1',
+      contentHash: 'studio-spec-v1-3f84f99b',
+      executionProfileId: 'whisper-tiny:direct',
+    },
+    roles: ['loadAudio', 'speechModel', 'transcribeAudio', 'transcriptPreview'],
+    model: {
+      modelId: { source: 'hub', value: 'openai/whisper-tiny' },
+      revision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af',
+      dtype: 'float32',
+      device: 'cpu',
+    },
+    sourceAudio: '@data/audio/rights-approved-speech.wav',
+    transcription: { task: 'translate', language: 'French', timestamps: 'word', chunk: 20, stride: 3 },
+    edges: [
+      ['audio', 'audio'],
+      ['model', 'model'],
+      ['transcript', 'value'],
+    ],
+  });
+});
+
 test('mocked Studio consumes the exact execution-profile Expert MPS policy', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
@@ -8759,7 +8981,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
-    .toHaveLength(22);
+    .toHaveLength(23);
 
   const zImage = await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setStudioFormForTest({

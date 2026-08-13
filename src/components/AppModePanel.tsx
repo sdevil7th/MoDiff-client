@@ -57,6 +57,26 @@ const FORM_INPUTS: AppModeInput[] = [
   { id: 'studio:referenceImages', kind: 'studio-form', label: 'Reference images', formKey: 'referenceImages' },
   { id: 'studio:controlImage', kind: 'studio-form', label: 'Control image', formKey: 'controlImage' },
   { id: 'studio:maskImage', kind: 'studio-form', label: 'Mask image', formKey: 'maskImage' },
+  { id: 'studio:sourceAudio', kind: 'studio-form', label: 'Source audio', formKey: 'sourceAudio' },
+  { id: 'studio:speechLanguage', kind: 'studio-form', label: 'Speech language', formKey: 'speechLanguage' },
+  {
+    id: 'studio:speechTimestamps',
+    kind: 'studio-form',
+    label: 'Speech timestamps',
+    formKey: 'speechTimestamps',
+  },
+  {
+    id: 'studio:speechChunkSeconds',
+    kind: 'studio-form',
+    label: 'Speech chunk length',
+    formKey: 'speechChunkSeconds',
+  },
+  {
+    id: 'studio:speechStrideSeconds',
+    kind: 'studio-form',
+    label: 'Speech chunk stride',
+    formKey: 'speechStrideSeconds',
+  },
 ];
 
 function isNode(value: unknown): value is {

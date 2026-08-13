@@ -53,6 +53,7 @@ import {
   STUDIO_MODE_LABELS,
   STUDIO_OFFLOAD_LABELS,
   AUDIO_STUDIO_MODES,
+  SPEECH_STUDIO_MODES,
   VIDEO_STUDIO_MODES,
   getStudioModelArtifactNote,
   getStudioModelDisplayName,
@@ -253,7 +254,8 @@ export default function StudioPanel() {
   const isAudioMode = AUDIO_STUDIO_MODES.includes(form.mode);
   const isUnconditionalMode = form.mode === 'unconditional_image';
   const isPerceptionMode = form.mode === 'depth_estimation';
-  const usesPrompt = !isUnconditionalMode && !isPerceptionMode;
+  const isSpeechMode = SPEECH_STUDIO_MODES.includes(form.mode);
+  const usesPrompt = !isUnconditionalMode && !isPerceptionMode && !isSpeechMode;
   const resourcePlan = useMemo(() => resolveStudioResourcePlan(form), [form]);
   const expertResourceMode = studioViewMode === 'expert';
   const autoPlanExecution = useMemo(
@@ -1279,7 +1281,9 @@ export default function StudioPanel() {
                       ? 'Native sample size'
                       : isPerceptionMode
                         ? 'Prediction map'
-                        : 'Image size'
+                        : isSpeechMode
+                          ? 'Speech recognition'
+                          : 'Image size'
                 }
               />
               {isUnconditionalMode ? (
@@ -1307,6 +1311,10 @@ export default function StudioPanel() {
                     grayscale.
                   </p>
                 </div>
+              ) : isSpeechMode ? (
+                <p className="text-xs text-modiff-subtle-text" data-testid="studio-speech-summary">
+                  Transcribe local audio into a normalized transcript with bounded chunking and timestamps.
+                </p>
               ) : (
                 <div className="flex gap-2">
                   <StudioSelect
@@ -1392,175 +1400,177 @@ export default function StudioPanel() {
                 </div>
               </section>
             )}
-            <section>
-              <SectionHeader title="Generation" />
-              <div className="grid gap-2">
-                <div data-testid="studio-seed-input">
-                  <StudioInput
-                    label="Seed"
-                    value={form.seed}
-                    onChange={(value) => updateAndSync({ seed: numberValue(value, form.seed) })}
-                    disabled={form.randomSeed}
+            {!isSpeechMode && (
+              <section>
+                <SectionHeader title="Generation" />
+                <div className="grid gap-2">
+                  <div data-testid="studio-seed-input">
+                    <StudioInput
+                      label="Seed"
+                      value={form.seed}
+                      onChange={(value) => updateAndSync({ seed: numberValue(value, form.seed) })}
+                      disabled={form.randomSeed}
+                    />
+                  </div>
+                  <StudioCheckbox
+                    checked={form.randomSeed}
+                    onChange={(checked) => updateAndSync({ randomSeed: checked })}
+                    label="Randomize seed on export"
                   />
-                </div>
-                <StudioCheckbox
-                  checked={form.randomSeed}
-                  onChange={(checked) => updateAndSync({ randomSeed: checked })}
-                  label="Randomize seed on export"
-                />
-                <ModiffFieldShell label={`Steps: ${form.steps}`}>
-                  <StudioSlider
-                    min={1}
-                    max={isUnconditionalMode ? 1000 : 80}
-                    value={form.steps}
-                    onChange={(value) => updateAndSync({ steps: value })}
-                  />
-                </ModiffFieldShell>
-                {isUnconditionalMode && (
-                  <StudioInput
-                    label="Batch size"
-                    value={form.batchSize}
-                    onChange={(value) => updateAndSync({ batchSize: numberValue(value, form.batchSize) })}
-                  />
-                )}
-                {form.modelType === 'DDIMPipeline' && (
-                  <ModiffFieldShell label={`Eta: ${form.eta}`}>
+                  <ModiffFieldShell label={`Steps: ${form.steps}`}>
                     <StudioSlider
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={form.eta}
-                      onChange={(value) => updateAndSync({ eta: value })}
+                      min={1}
+                      max={isUnconditionalMode ? 1000 : 80}
+                      value={form.steps}
+                      onChange={(value) => updateAndSync({ steps: value })}
                     />
                   </ModiffFieldShell>
-                )}
-                {form.modelType === 'ConsistencyModelPipeline' && (
-                  <StudioInput
-                    label="Class label (-1 is unconditional)"
-                    value={form.classLabel}
-                    onChange={(value) => updateAndSync({ classLabel: numberValue(value, form.classLabel) })}
-                  />
-                )}
-                {usesPrompt && (
-                  <ModiffFieldShell label={`${capability.guidanceLabel}: ${form.guidanceScale}`}>
-                    <StudioSlider
-                      min={0}
-                      max={10}
-                      step={0.1}
-                      value={form.guidanceScale}
-                      onChange={(value) => updateAndSync({ guidanceScale: value })}
+                  {isUnconditionalMode && (
+                    <StudioInput
+                      label="Batch size"
+                      value={form.batchSize}
+                      onChange={(value) => updateAndSync({ batchSize: numberValue(value, form.batchSize) })}
                     />
-                  </ModiffFieldShell>
-                )}
-                {capability.recommendedPagScale !== undefined && (
-                  <>
-                    <ModiffFieldShell label={`PAG scale: ${form.pagScale}`}>
-                      <StudioSlider
-                        min={0}
-                        max={10}
-                        step={0.1}
-                        value={form.pagScale}
-                        onChange={(value) => updateAndSync({ pagScale: value })}
-                      />
-                    </ModiffFieldShell>
-                    <ModiffFieldShell label={`PAG adaptive scale: ${form.pagAdaptiveScale}`}>
-                      <StudioSlider
-                        min={0}
-                        max={10}
-                        step={0.1}
-                        value={form.pagAdaptiveScale}
-                        onChange={(value) => updateAndSync({ pagAdaptiveScale: value })}
-                      />
-                    </ModiffFieldShell>
-                  </>
-                )}
-                {isVideoMode && (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <StudioInput
-                        label="Frames"
-                        value={form.numFrames}
-                        onChange={(value) => updateAndSync({ numFrames: numberValue(value, form.numFrames) })}
-                      />
-                      <StudioInput
-                        label="FPS"
-                        value={form.fps}
-                        onChange={(value) => updateAndSync({ fps: numberValue(value, form.fps) })}
-                      />
-                    </div>
-                    <ModiffFieldShell label={`Conditioning: ${form.conditioningScale}`}>
-                      <StudioSlider
-                        min={0}
-                        max={2}
-                        step={0.05}
-                        value={form.conditioningScale}
-                        onChange={(value) => updateAndSync({ conditioningScale: value })}
-                      />
-                    </ModiffFieldShell>
-                    {expertResourceMode ? (
-                      <>
-                        <ModiffFieldShell label={`Guidance 2: ${form.guidanceScale2}`}>
-                          <StudioSlider
-                            min={0}
-                            max={20}
-                            step={0.1}
-                            value={form.guidanceScale2}
-                            onChange={(value) => updateAndSync({ guidanceScale2: value })}
-                          />
-                        </ModiffFieldShell>
-                        <div className="grid grid-cols-2 gap-2">
-                          <StudioSelect
-                            aria-label="Output type"
-                            value={form.outputType}
-                            onValueChange={(value) =>
-                              updateAndSync({ outputType: value as StudioFormState['outputType'] })
-                            }
-                            options={[
-                              { value: 'pil', label: 'Output: PIL' },
-                              { value: 'np', label: 'Output: NumPy' },
-                              { value: 'pt', label: 'Output: Torch' },
-                            ]}
-                          />
-                          <StudioInput
-                            label="Max tokens"
-                            value={form.maxSequenceLength}
-                            onChange={(value) =>
-                              updateAndSync({ maxSequenceLength: numberValue(value, form.maxSequenceLength) })
-                            }
-                          />
-                        </div>
-                        <StudioInput
-                          label="Attention kwargs JSON"
-                          value={form.attentionKwargsJson}
-                          multiline
-                          onChange={(value) => updateAndSync({ attentionKwargsJson: value })}
-                        />
-                      </>
-                    ) : null}
-                  </>
-                )}
-                {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
-                  <>
-                    <ModiffFieldShell label={`Strength: ${form.strength}`}>
+                  )}
+                  {form.modelType === 'DDIMPipeline' && (
+                    <ModiffFieldShell label={`Eta: ${form.eta}`}>
                       <StudioSlider
                         min={0}
                         max={1}
-                        step={0.05}
-                        value={form.strength}
-                        onChange={(value) => updateAndSync({ strength: value })}
+                        step={0.01}
+                        value={form.eta}
+                        onChange={(value) => updateAndSync({ eta: value })}
                       />
                     </ModiffFieldShell>
-                  </>
-                )}
-                {capability.supportsLayers && (
-                  <StudioInput
-                    label="Layers"
-                    value={form.layers}
-                    onChange={(value) => updateAndSync({ layers: numberValue(value, form.layers) })}
-                  />
-                )}
-              </div>
-            </section>
+                  )}
+                  {form.modelType === 'ConsistencyModelPipeline' && (
+                    <StudioInput
+                      label="Class label (-1 is unconditional)"
+                      value={form.classLabel}
+                      onChange={(value) => updateAndSync({ classLabel: numberValue(value, form.classLabel) })}
+                    />
+                  )}
+                  {usesPrompt && (
+                    <ModiffFieldShell label={`${capability.guidanceLabel}: ${form.guidanceScale}`}>
+                      <StudioSlider
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        value={form.guidanceScale}
+                        onChange={(value) => updateAndSync({ guidanceScale: value })}
+                      />
+                    </ModiffFieldShell>
+                  )}
+                  {capability.recommendedPagScale !== undefined && (
+                    <>
+                      <ModiffFieldShell label={`PAG scale: ${form.pagScale}`}>
+                        <StudioSlider
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={form.pagScale}
+                          onChange={(value) => updateAndSync({ pagScale: value })}
+                        />
+                      </ModiffFieldShell>
+                      <ModiffFieldShell label={`PAG adaptive scale: ${form.pagAdaptiveScale}`}>
+                        <StudioSlider
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={form.pagAdaptiveScale}
+                          onChange={(value) => updateAndSync({ pagAdaptiveScale: value })}
+                        />
+                      </ModiffFieldShell>
+                    </>
+                  )}
+                  {isVideoMode && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <StudioInput
+                          label="Frames"
+                          value={form.numFrames}
+                          onChange={(value) => updateAndSync({ numFrames: numberValue(value, form.numFrames) })}
+                        />
+                        <StudioInput
+                          label="FPS"
+                          value={form.fps}
+                          onChange={(value) => updateAndSync({ fps: numberValue(value, form.fps) })}
+                        />
+                      </div>
+                      <ModiffFieldShell label={`Conditioning: ${form.conditioningScale}`}>
+                        <StudioSlider
+                          min={0}
+                          max={2}
+                          step={0.05}
+                          value={form.conditioningScale}
+                          onChange={(value) => updateAndSync({ conditioningScale: value })}
+                        />
+                      </ModiffFieldShell>
+                      {expertResourceMode ? (
+                        <>
+                          <ModiffFieldShell label={`Guidance 2: ${form.guidanceScale2}`}>
+                            <StudioSlider
+                              min={0}
+                              max={20}
+                              step={0.1}
+                              value={form.guidanceScale2}
+                              onChange={(value) => updateAndSync({ guidanceScale2: value })}
+                            />
+                          </ModiffFieldShell>
+                          <div className="grid grid-cols-2 gap-2">
+                            <StudioSelect
+                              aria-label="Output type"
+                              value={form.outputType}
+                              onValueChange={(value) =>
+                                updateAndSync({ outputType: value as StudioFormState['outputType'] })
+                              }
+                              options={[
+                                { value: 'pil', label: 'Output: PIL' },
+                                { value: 'np', label: 'Output: NumPy' },
+                                { value: 'pt', label: 'Output: Torch' },
+                              ]}
+                            />
+                            <StudioInput
+                              label="Max tokens"
+                              value={form.maxSequenceLength}
+                              onChange={(value) =>
+                                updateAndSync({ maxSequenceLength: numberValue(value, form.maxSequenceLength) })
+                              }
+                            />
+                          </div>
+                          <StudioInput
+                            label="Attention kwargs JSON"
+                            value={form.attentionKwargsJson}
+                            multiline
+                            onChange={(value) => updateAndSync({ attentionKwargsJson: value })}
+                          />
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                  {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
+                    <>
+                      <ModiffFieldShell label={`Strength: ${form.strength}`}>
+                        <StudioSlider
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={form.strength}
+                          onChange={(value) => updateAndSync({ strength: value })}
+                        />
+                      </ModiffFieldShell>
+                    </>
+                  )}
+                  {capability.supportsLayers && (
+                    <StudioInput
+                      label="Layers"
+                      value={form.layers}
+                      onChange={(value) => updateAndSync({ layers: numberValue(value, form.layers) })}
+                    />
+                  )}
+                </div>
+              </section>
+            )}
             {usesPrompt && <StudioParameterExplainers form={form} />}
             {usesPrompt && (
               <StudioVariationPlanner
@@ -1723,6 +1733,54 @@ export default function StudioPanel() {
                     aria-label="Audio time signature"
                   />
                 </div>
+              </div>
+            </StudioSection>
+          )}
+
+          {isSpeechMode && (
+            <StudioSection id="speech-inputs" title="Speech recognition" defaultOpen>
+              <div className="grid gap-2" data-testid="studio-speech-controls">
+                <StudioInput
+                  label="Source audio path"
+                  value={form.sourceAudio}
+                  onChange={(value) => updateAndSync({ sourceAudio: value })}
+                />
+                <StudioInput
+                  label="Language hint (optional)"
+                  value={form.speechLanguage}
+                  onChange={(value) => updateAndSync({ speechLanguage: value })}
+                />
+                <StudioSelect
+                  aria-label="Speech timestamps"
+                  value={form.speechTimestamps}
+                  onValueChange={(value) =>
+                    updateAndSync({ speechTimestamps: value as StudioFormState['speechTimestamps'] })
+                  }
+                  options={[
+                    { value: 'none', label: 'No timestamps' },
+                    { value: 'segment', label: 'Segment timestamps' },
+                    { value: 'word', label: 'Word timestamps' },
+                  ]}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <StudioInput
+                    label="Chunk length (seconds)"
+                    value={form.speechChunkSeconds}
+                    onChange={(value) =>
+                      updateAndSync({ speechChunkSeconds: numberValue(value, form.speechChunkSeconds) })
+                    }
+                  />
+                  <StudioInput
+                    label="Chunk stride (seconds)"
+                    value={form.speechStrideSeconds}
+                    onChange={(value) =>
+                      updateAndSync({ speechStrideSeconds: numberValue(value, form.speechStrideSeconds) })
+                    }
+                  />
+                </div>
+                {form.mode === 'speech_translation' && (
+                  <p className="text-xs text-modiff-subtle-text">Translation output is normalized to English.</p>
+                )}
               </div>
             </StudioSection>
           )}

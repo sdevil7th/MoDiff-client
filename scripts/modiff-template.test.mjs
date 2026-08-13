@@ -205,6 +205,45 @@ test('Marigold depth exposes a generic source-to-prediction-map profile', () => 
   assert.equal(form.matchInputResolution, true);
 });
 
+test('Whisper Tiny exposes generic transcription and translation contracts', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HuggingFaceSpeechRecognitionModel;
+  const transcription = profilesModule.getFormDefaultsForMode('speech_to_text', 'HuggingFaceSpeechRecognitionModel');
+  const translation = profilesModule.getFormDefaultsForMode('speech_translation', 'HuggingFaceSpeechRecognitionModel');
+  assert.equal(profilesModule.getDefaultModelForMode('speech_to_text'), 'HuggingFaceSpeechRecognitionModel');
+  assert.equal(profile.defaultRepo, profilesModule.WHISPER_TINY_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.equal(profile.runtimeKind, 'transformers');
+  assert.equal(profile.isDiffusersBacked, false);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.outputKind, 'json');
+  assert.deepEqual(profile.modes, ['speech_to_text', 'speech_translation']);
+  assert.deepEqual(profile.modeRequirements.speech_to_text.requiredAudio, ['sourceAudio']);
+  assert.equal(transcription.speechTimestamps, 'segment');
+  assert.equal(transcription.speechChunkSeconds, 30);
+  assert.equal(transcription.speechStrideSeconds, 5);
+  assert.equal(translation.mode, 'speech_translation');
+});
+
+test('canonical Whisper graphs infer their speech form without model-specific graph rewrites', async () => {
+  for (const [file, mode] of [
+    ['speech-to-text.json', 'speech_to_text'],
+    ['speech-translation.json', 'speech_translation'],
+  ]) {
+    const graph = JSON.parse(
+      await readFile(
+        path.resolve(ROOT, '../MoDiff/data/graphs/studio/hugging-face-speech-recognition-model', file),
+        'utf8',
+      ),
+    );
+    const form = workflowInferenceModule.inferStudioFormFromWorkflow(graph.nodes);
+    assert.equal(form.modelType, 'HuggingFaceSpeechRecognitionModel');
+    assert.equal(form.mode, mode);
+    assert.equal(form.speechTimestamps, 'segment');
+    assert.equal(form.speechChunkSeconds, 30);
+    assert.equal(form.speechStrideSeconds, 5);
+  }
+});
+
 test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
@@ -3412,6 +3451,20 @@ test('Studio form migration normalizes legacy offload and leaves quantization to
   });
   assert.equal(zImage.quantizationMode, 'bnb_4bit');
   assert.equal(zImage.offloadMode, 'group_disk');
+
+  const speech = outputContractsModule.coerceStudioFormState({
+    ...profilesModule.DEFAULT_STUDIO_FORM,
+    mode: 'speech_to_text',
+    modelType: 'HuggingFaceSpeechRecognitionModel',
+    speechLanguage: 'French',
+    speechTimestamps: 'sentence',
+    speechChunkSeconds: 20,
+    speechStrideSeconds: 3,
+  });
+  assert.equal(speech.speechLanguage, 'French');
+  assert.equal(speech.speechTimestamps, 'segment');
+  assert.equal(speech.speechChunkSeconds, 20);
+  assert.equal(speech.speechStrideSeconds, 3);
 });
 
 test('every registered Studio model survives persisted form and binding validation', () => {

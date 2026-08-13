@@ -312,6 +312,19 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   }
 
   if (
+    modelType === 'HuggingFaceSpeechRecognitionModel' ||
+    roles.has('transcribeAudio') ||
+    keys.has('modules.HuggingFaceSpeech.TranscribeAudio')
+  ) {
+    const actionNode = findNode(
+      nodes,
+      (node) =>
+        node.data?.studioRole === 'transcribeAudio' || nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeAudio',
+    );
+    return stringValue(paramValue(actionNode, ['task'])) === 'translate' ? 'speech_translation' : 'speech_to_text';
+  }
+
+  if (
     modelType === 'AceStepAudioPipeline' ||
     modelType === 'StableAudioPipeline' ||
     roles.has('audioGenerate') ||
@@ -375,6 +388,7 @@ export function inferStudioFormFromWorkflow(
         'diffusersImageInpaint',
         'diffusersImageControl',
         'audioGenerate',
+        'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
       [
         'EncodePrompt',
@@ -384,6 +398,7 @@ export function inferStudioFormFromWorkflow(
         'Inpaint',
         'Edit',
         'ControlGenerate',
+        'TranscribeAudio',
       ].includes(String(node.data?.action)),
   );
   const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
@@ -397,8 +412,11 @@ export function inferStudioFormFromWorkflow(
         'qwenInpaintPipeline',
         'diffusersImagePipeline',
         'audioPipeline',
+        'speechModel',
       ].includes(String(node.data?.studioRole)) ||
-      ['ModelsLoader', 'LoadPipeline', 'LoadInpaintPipeline'].includes(String(node.data?.action)),
+      ['ModelsLoader', 'LoadPipeline', 'LoadInpaintPipeline', 'LoadSpeechRecognitionModel'].includes(
+        String(node.data?.action),
+      ),
   );
   const quantizationNode = findNode(
     nodes,
@@ -418,10 +436,17 @@ export function inferStudioFormFromWorkflow(
         'diffusersImageInpaint',
         'diffusersImageControl',
         'audioGenerate',
+        'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
-      ['Generate', 'UnconditionalGenerate', 'PredictMap', 'Inpaint', 'Edit', 'ControlGenerate'].includes(
-        String(node.data?.action),
-      ),
+      [
+        'Generate',
+        'UnconditionalGenerate',
+        'PredictMap',
+        'Inpaint',
+        'Edit',
+        'ControlGenerate',
+        'TranscribeAudio',
+      ].includes(String(node.data?.action)),
   );
   const outpaintNode = findNode(
     nodes,
@@ -511,6 +536,12 @@ export function inferStudioFormFromWorkflow(
     controlVideo: stringValue(paramValue(controlVideoNode, ['file'])),
     sourceAudio: stringValue(paramValue(loadAudioNode, ['file'])),
     referenceAudio: stringValue(paramValue(loadReferenceAudioNode, ['file'])),
+    speechLanguage: stringValue(paramValue(generateNode, ['language'])) || defaults.speechLanguage,
+    speechTimestamps:
+      (stringValue(paramValue(generateNode, ['timestamps'])) as StudioFormState['speechTimestamps']) ||
+      defaults.speechTimestamps,
+    speechChunkSeconds: numberValue(paramValue(generateNode, ['chunk_length_seconds']), defaults.speechChunkSeconds),
+    speechStrideSeconds: numberValue(paramValue(generateNode, ['stride_length_seconds']), defaults.speechStrideSeconds),
     lyrics: stringValue(paramValue(generateNode, ['lyrics'])) || defaults.lyrics,
     audioDuration: numberValue(paramValue(generateNode, ['audio_duration']), defaults.audioDuration),
     extensionDuration: numberValue(paramValue(generateNode, ['extension_duration']), defaults.extensionDuration),
