@@ -7,6 +7,9 @@ import {
   FLUX_DEV_REPO,
   FLUX_DEV_REVISION,
   FLUX_KONTEXT_NVFP4_REPO,
+  HUNYUAN_DIT_CONTROLNET_CANNY_REPO,
+  HUNYUAN_DIT_DISTILLED_REPO,
+  HUNYUAN_DIT_DISTILLED_REVISION,
   STABLE_VIDEO_DIFFUSION_REPO,
   STABLE_VIDEO_DIFFUSION_REVISION,
   STUDIO_MODEL_PROFILES,
@@ -22,19 +25,23 @@ export type ModelUseScope =
   | 'rights_undetermined';
 export type ModelAccessPolicy = 'public' | 'huggingface_gated' | 'unknown';
 
-export type ModelUsagePolicy = {
+type ModelUsagePolicyBase = {
   id: string;
   repository: string;
   useScope: ModelUseScope;
   acknowledgementRequired: boolean;
   shortSummary: string;
   termsUrl: string;
-  modelCardUrl: string;
-  access: ModelAccessPolicy;
   reviewedRevision: string;
   policyVersion: string;
   reviewedAt: string;
 };
+
+export type ModelUsagePolicy = ModelUsagePolicyBase &
+  (
+    | { access: 'huggingface_gated'; modelCardUrl: string }
+    | { access: Exclude<ModelAccessPolicy, 'huggingface_gated'>; modelCardUrl?: never }
+  );
 
 export type ResolvedModelUsagePolicy = ModelUsagePolicy & {
   revision?: string;
@@ -62,12 +69,29 @@ const fluxDevPolicy = (
   reviewedAt: '2026-08-04',
 });
 
+const HUNYUAN_DIT_POLICY: ModelUsagePolicy = {
+  id: 'hunyuan-license',
+  repository: HUNYUAN_DIT_DISTILLED_REPO,
+  useScope: 'commercial_allowed',
+  acknowledgementRequired: true,
+  shortSummary:
+    'Tencent terms allow commercial use below the 100M-MAU threshold; AUP, notice, public machine-generation disclosure, and other restrictions apply.',
+  termsUrl:
+    'https://huggingface.co/Tencent-Hunyuan/HunyuanDiT/blob/b47a590cac7a3e1a973036700e45b3fe457e2239/LICENSE.txt',
+  access: 'public',
+  reviewedRevision: HUNYUAN_DIT_DISTILLED_REVISION,
+  policyVersion: '2026-08-13',
+  reviewedAt: '2026-08-13',
+};
+
 /**
  * Reviewed usage policies for dependencies that need an explicit user notice.
  * Components render this data generically; they must not infer rights from a
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
+  [HUNYUAN_DIT_DISTILLED_REPO]: HUNYUAN_DIT_POLICY,
+  [HUNYUAN_DIT_CONTROLNET_CANNY_REPO]: HUNYUAN_DIT_POLICY,
   [ANIMATEDIFF_MOTION_REPO]: {
     id: 'undeclared-weight-license:animatediff-v1-5-2',
     repository: ANIMATEDIFF_MOTION_REPO,
@@ -75,7 +99,6 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     acknowledgementRequired: true,
     shortSummary: UNDECLARED_MOTION_RIGHTS_NOTICE,
     termsUrl: `https://huggingface.co/${ANIMATEDIFF_MOTION_REPO}/blob/${ANIMATEDIFF_MOTION_REVISION}/README.md`,
-    modelCardUrl: `https://huggingface.co/${ANIMATEDIFF_MOTION_REPO}/tree/${ANIMATEDIFF_MOTION_REVISION}`,
     access: 'public',
     reviewedRevision: ANIMATEDIFF_MOTION_REVISION,
     policyVersion: '2026-08-13',
@@ -88,7 +111,6 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     acknowledgementRequired: true,
     shortSummary: UNDECLARED_MOTION_RIGHTS_NOTICE,
     termsUrl: `https://huggingface.co/${ANIMATELCM_MOTION_REPO}/blob/${ANIMATELCM_MOTION_REVISION}/README.md`,
-    modelCardUrl: `https://huggingface.co/${ANIMATELCM_MOTION_REPO}/tree/${ANIMATELCM_MOTION_REVISION}`,
     access: 'public',
     reviewedRevision: ANIMATELCM_MOTION_REVISION,
     policyVersion: '2026-08-13',
@@ -147,8 +169,6 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     shortSummary: 'Personal, non-commercial use only under the adapter’s published terms.',
     termsUrl:
       'https://huggingface.co/alvarobartt/ghibli-characters-flux-lora/blob/ed846114c71efc525e7f5a51e274dc976bb970a8/README.md',
-    modelCardUrl:
-      'https://huggingface.co/alvarobartt/ghibli-characters-flux-lora/tree/ed846114c71efc525e7f5a51e274dc976bb970a8',
     access: 'public',
     reviewedRevision: 'ed846114c71efc525e7f5a51e274dc976bb970a8',
     policyVersion: '2026-08-04',
@@ -162,8 +182,6 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     shortSummary: 'Research and academic exchange only; the model card prohibits commercial use.',
     termsUrl:
       'https://huggingface.co/ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA/blob/cb829a12775740c830a6d49795f16913065dc492/README.md',
-    modelCardUrl:
-      'https://huggingface.co/ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA/tree/cb829a12775740c830a6d49795f16913065dc492',
     access: 'public',
     reviewedRevision: 'cb829a12775740c830a6d49795f16913065dc492',
     policyVersion: '2026-08-05',
@@ -217,7 +235,7 @@ export function templateUsagePolicies(template: StudioTemplate): ResolvedModelUs
     const policy = usagePolicyForRepository(dependency.repository);
     return policy ? [{ ...policy, revision: dependency.revision ?? policy.reviewedRevision }] : [];
   });
-  return Array.from(new Map(policies.map((policy) => [`${policy.id}:${policy.revision ?? ''}`, policy])).values());
+  return policies.filter((policy, index) => policies.findIndex((candidate) => candidate.id === policy.id) === index);
 }
 
 export function acknowledgementRequiredForTemplate(template: StudioTemplate) {

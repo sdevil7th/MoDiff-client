@@ -213,6 +213,43 @@ test('SDXL ControlNet exposes its pinned 1024px Canny recipe', () => {
   assert.equal(form.conditioningScale, 0.5);
 });
 
+test('Hunyuan-DiT ControlNet exposes its exact Canny recipe and immutable terms acknowledgement', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanDiTControlNetPipeline;
+  const form = profilesModule.getFormDefaultsForMode('control_image', 'HunyuanDiTControlNetPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.HUNYUAN_DIT_DISTILLED_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['control_image']);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.HUNYUAN_DIT_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 6);
+  assert.equal(form.conditioningScale, 1);
+  assert.equal(form.maxSequenceLength, 256);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForTemplate({
+    id: 'hunyuan-dit-controlnet-source',
+    modelType: 'HunyuanDiTControlNetPipeline',
+    mode: 'control_image',
+  });
+  assert.deepEqual(
+    policies.map((policy) => policy.repository),
+    [profilesModule.HUNYUAN_DIT_DISTILLED_REPO],
+  );
+  for (const policy of policies) {
+    assert.equal(policy.useScope, 'commercial_allowed');
+    assert.equal(policy.access, 'public');
+    assert.equal(policy.acknowledgementRequired, true);
+    assert.match(policy.shortSummary, /100M-MAU threshold/i);
+    assert.match(policy.shortSummary, /machine-generation disclosure/i);
+    assert.match(policy.termsUrl, /b47a590cac7a3e1a973036700e45b3fe457e2239\/LICENSE\.txt$/);
+  }
+});
+
 test('SDXL T2I Adapter exposes its pinned 1024px Canny recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLAdapterPipeline;
   const form = profilesModule.getFormDefaultsForMode('control_image', 'StableDiffusionXLAdapterPipeline');

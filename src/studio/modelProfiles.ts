@@ -74,6 +74,10 @@ export const SDXL_TURBO_REPO = 'stabilityai/sdxl-turbo';
 export const SDXL_INSTRUCT_PIX2PIX_REPO = 'diffusers/sdxl-instructpix2pix-768';
 export const SDXL_CONTROLNET_CANNY_REPO = 'diffusers/controlnet-canny-sdxl-1.0';
 export const SDXL_CONTROLNET_CANNY_REVISION = 'eb115a19a10d14909256db740ed109532ab1483c';
+export const HUNYUAN_DIT_DISTILLED_REPO = 'Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled';
+export const HUNYUAN_DIT_DISTILLED_REVISION = 'ba991d1546d8c50936c4c16398ed0a87b9b99fb1';
+export const HUNYUAN_DIT_CONTROLNET_CANNY_REPO = 'Tencent-Hunyuan/HunyuanDiT-v1.2-ControlNet-Diffusers-Canny';
+export const HUNYUAN_DIT_CONTROLNET_CANNY_REVISION = 'b2d21391ebcf78939344cfec84891932f9d53aa0';
 export const SDXL_T2I_ADAPTER_CANNY_REPO = 'TencentARC/t2i-adapter-canny-sdxl-1.0';
 export const SDXL_T2I_ADAPTER_CANNY_REVISION = '2d7244ba45ded9129cfbf8e96a4befb7f6094210';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
@@ -121,6 +125,16 @@ export const SDXL_CONTROLNET_CANNY_REQUIREMENT: StudioModelRequirement = {
   kind: 'controlnet',
   requiredForModes: ['control_image'],
   description: 'Pinned fp16 safetensors ControlNet component for the generic SDXL control workflow.',
+};
+
+export const HUNYUAN_DIT_CONTROLNET_CANNY_REQUIREMENT: StudioModelRequirement = {
+  id: 'hunyuan-dit-v1-2-controlnet-canny',
+  label: 'Hunyuan-DiT v1.2 Canny ControlNet',
+  repo: HUNYUAN_DIT_CONTROLNET_CANNY_REPO,
+  revision: HUNYUAN_DIT_CONTROLNET_CANNY_REVISION,
+  kind: 'controlnet',
+  requiredForModes: ['control_image'],
+  description: 'Pinned Canny component.',
 };
 
 export const SDXL_T2I_ADAPTER_CANNY_REQUIREMENT: StudioModelRequirement = {
@@ -227,6 +241,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion XL Turbo',
   'Stable Diffusion XL InstructPix2Pix',
   'Stable Diffusion XL ControlNet',
+  'Hunyuan-DiT Canny',
   'Stable Diffusion XL T2I Adapter',
   'Stable Diffusion XL PAG',
   'PixArt Sigma XL 1024px',
@@ -586,6 +601,44 @@ function planningImageProfile(
   };
 }
 
+function controlImageProfile(
+  family: StudioModelProfile['family'],
+  defaultRepo: string,
+  requirement: StudioModelRequirement,
+  steps: number,
+  guidance: number,
+  conditioningScale: number,
+  recommendedMaxSequenceLength?: number,
+): StudioModelProfileSource {
+  return {
+    family,
+    surfaceCategory: 'Control',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo,
+    defaultDtype: 'float16',
+    recommendedSteps: steps,
+    recommendedGuidance: guidance,
+    recommendedMaxSequenceLength,
+    conditioningScale,
+    supportFlags: 8,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['control_image'],
+    modeRequirements: {
+      control_image: {
+        modelRequirements: [requirement],
+        requiredImages: ['controlImage'],
+      },
+    },
+  };
+}
+
 const STUDIO_MODEL_PROFILE_SOURCES = {
   ZImageModularPipeline: {
     family: 'Z-Image',
@@ -627,7 +680,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       control_image: {
         modelRequirements: [QWEN_CONTROLNET_REQUIREMENT],
         requiredImages: ['controlImage'],
-        note: 'Requires Qwen ControlNet Union and a control image.',
       },
     },
   },
@@ -654,7 +706,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
       outpaint: {
         requiredImages: ['referenceImages'],
-        note: 'Requires one source image; Studio builds the expanded canvas and boundary mask.',
       },
     },
   },
@@ -679,7 +730,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: {
       inpaint: {
         requiredImages: ['referenceImages', 'maskImage'],
-        note: QWEN_IMAGE_EDIT_PLUS_INPAINT_CONTRACT.reason,
       },
     },
   },
@@ -730,15 +780,12 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: {
       video_inpaint: {
         requiredVideos: ['sourceVideo', 'maskVideo'],
-        note: 'Requires source and mask videos with matching frame counts.',
       },
       video_outpaint: {
         requiredVideos: ['sourceVideo', 'maskVideo'],
-        note: 'Requires source video plus a boundary/generation mask video.',
       },
       control_to_video: {
         requiredVideos: ['controlVideo'],
-        note: 'Requires a prepared control video.',
       },
     },
   },
@@ -797,7 +844,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: {
       image_to_video: {
         requiredImages: ['referenceImages'],
-        note: 'Upload one opening keyframe per planned shot, in story order.',
       },
     },
   },
@@ -894,7 +940,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: {
       image_to_video: {
         requiredImages: ['referenceImages'],
-        note: 'Requires exactly one opening reference image and prior acceptance of the gated model terms.',
       },
     },
   },
@@ -980,7 +1025,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       video_to_video: { requiredVideos: ['sourceVideo'] },
       reference_to_video: {
         requiredImages: ['referenceImages'],
-        note: 'Requires one or more frame references.',
       },
     },
   },
@@ -1005,7 +1049,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       audio_continuation: { requiredAudio: ['sourceAudio'] },
       audio_repaint: {
         requiredAudio: ['sourceAudio'],
-        note: 'Requires one source audio file plus a repaint range.',
       },
     },
   },
@@ -1153,7 +1196,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
       outpaint: {
         requiredImages: ['referenceImages'],
-        note: 'Requires one source image; Studio can prepare a larger canvas.',
       },
     },
   },
@@ -1209,7 +1251,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       edit_image: { requiredImages: ['referenceImages'] },
       multi_image_reference_edit: {
         requiredImages: ['referenceImages'],
-        note: 'Uses Diffusers Redux weighted multi-reference conditioning; compatible visual references work best.',
       },
     },
   },
@@ -1234,7 +1275,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       edit_image: { requiredImages: ['referenceImages'] },
       multi_image_reference_edit: {
         requiredImages: ['referenceImages'],
-        note: 'Requires two or more reference images.',
       },
     },
   },
@@ -1305,62 +1345,31 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       edit_image: { requiredImages: ['referenceImages'] },
     },
   },
-  StableDiffusionXLControlNetPipeline: {
-    family: 'Stable Diffusion XL',
-    surfaceCategory: 'Control',
-    catalogVisibility: 'workflowOnly',
-    defaultRepo: SDXL_BASE_REPO,
-    artifactLabel: 'Diffusers fp16 safetensors assembly',
-    defaultDtype: 'float16',
-    recommendedSteps: 50,
-    recommendedGuidance: 5,
-    conditioningScale: 0.5,
-    supportFlags: 8,
-    lowVram: {
-      dtype: 'float16',
-      autoOffload: true,
-      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 50,
-      width: 1024,
-      height: 1024,
-    },
-    modes: ['control_image'],
-    modeRequirements: {
-      control_image: {
-        modelRequirements: [SDXL_CONTROLNET_CANNY_REQUIREMENT],
-        requiredImages: ['controlImage'],
-        note: 'Requires one control image and the pinned SDXL Canny ControlNet component.',
-      },
-    },
-  },
-  StableDiffusionXLAdapterPipeline: {
-    family: 'Stable Diffusion XL',
-    surfaceCategory: 'Control',
-    catalogVisibility: 'workflowOnly',
-    defaultRepo: SDXL_BASE_REPO,
-    artifactLabel: 'Diffusers fp16 safetensors assembly',
-    defaultDtype: 'float16',
-    recommendedSteps: 30,
-    recommendedGuidance: 7.5,
-    conditioningScale: 0.8,
-    supportFlags: 8,
-    lowVram: {
-      dtype: 'float16',
-      autoOffload: true,
-      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 30,
-      width: 1024,
-      height: 1024,
-    },
-    modes: ['control_image'],
-    modeRequirements: {
-      control_image: {
-        modelRequirements: [SDXL_T2I_ADAPTER_CANNY_REQUIREMENT],
-        requiredImages: ['controlImage'],
-        note: 'Requires one control image and the pinned SDXL Canny T2I-Adapter component.',
-      },
-    },
-  },
+  StableDiffusionXLControlNetPipeline: controlImageProfile(
+    'Stable Diffusion XL',
+    SDXL_BASE_REPO,
+    SDXL_CONTROLNET_CANNY_REQUIREMENT,
+    50,
+    5,
+    0.5,
+  ),
+  HunyuanDiTControlNetPipeline: controlImageProfile(
+    'Hunyuan-DiT',
+    HUNYUAN_DIT_DISTILLED_REPO,
+    HUNYUAN_DIT_CONTROLNET_CANNY_REQUIREMENT,
+    50,
+    6,
+    1,
+    256,
+  ),
+  StableDiffusionXLAdapterPipeline: controlImageProfile(
+    'Stable Diffusion XL',
+    SDXL_BASE_REPO,
+    SDXL_T2I_ADAPTER_CANNY_REQUIREMENT,
+    30,
+    7.5,
+    0.8,
+  ),
   StableDiffusionXLPAGPipeline: {
     family: 'Stable Diffusion XL',
     catalogVisibility: 'workflowOnly',
@@ -1471,7 +1480,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       control_image: {
         modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
         requiredImages: ['controlImage'],
-        note: 'Requires one control image and the pinned Canny ControlNet component.',
       },
     },
   },
@@ -1541,7 +1549,6 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: {
       depth_estimation: {
         requiredImages: ['referenceImages'],
-        note: 'Requires exactly one source image and returns a normalized relative-depth map.',
       },
     },
   },
@@ -1993,6 +2000,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     qualityDefaults: '1024x1024, 50 steps, guidance 5, ControlNet scale 0.5.',
     artifacts: [SDXL_BASE_REPO, SDXL_CONTROLNET_CANNY_REPO],
     notes: 'Pinned fp16 base and Canny ControlNet graph.',
+    manualOnlyReason: LIVE_QUALIFICATION_PENDING,
+  },
+  HunyuanDiTControlNetPipeline: {
+    modelType: 'HunyuanDiTControlNetPipeline',
+    supportedModes: ['control_image'],
+    autoStatus: 'manual_only',
+    minimum: EXPERT_PENDING_MINIMUM,
+    recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
+    qualityDefaults: '1024px, 50 steps, guidance 6, control 1.',
+    artifacts: [HUNYUAN_DIT_DISTILLED_REPO, HUNYUAN_DIT_CONTROLNET_CANNY_REPO],
+    notes: 'Pinned base and Canny graph; terms acknowledgement required.',
     manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
   StableDiffusionXLAdapterPipeline: {

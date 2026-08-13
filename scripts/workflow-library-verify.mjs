@@ -558,6 +558,45 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           `${workflow.id} generic Diffusers pipeline is missing its runtime recipe or quantization flow.`,
         );
       }
+      if (
+        workflow.mediaKind === 'image' &&
+        pipeline.data.params?.pipeline_class?.value === 'HunyuanDiTControlNetPipeline'
+      ) {
+        const pipelineParams = pipeline.data.params ?? {};
+        const recipeParams = recipe.data.params ?? {};
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersImage' && node?.data?.action === 'ControlGenerate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        const preprocessor = (graph.nodes ?? []).find((node) => node?.data?.studioRole === 'controlPreprocessor');
+        const preprocessorParams = preprocessor?.data?.params ?? {};
+        const base = pipelineParams.model_id?.value;
+        const control = pipelineParams.conditioning_model_id?.value;
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled' ||
+          pipelineParams.revision?.value !== 'ba991d1546d8c50936c4c16398ed0a87b9b99fb1' ||
+          control?.source !== 'hub' ||
+          control.value !== 'Tencent-Hunyuan/HunyuanDiT-v1.2-ControlNet-Diffusers-Canny' ||
+          pipelineParams.conditioning_revision?.value !== 'b2d21391ebcf78939344cfec84891932f9d53aa0' ||
+          pipelineParams.dtype?.value !== 'float16' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          !workflow.requiredArtifacts.includes(control.value) ||
+          JSON.stringify(quantizationParams.components?.value) !== '["transformer"]' ||
+          recipeParams.offload_mode?.value !== 'model_cpu' ||
+          generateParams.width?.value !== 1024 ||
+          generateParams.height?.value !== 1024 ||
+          generateParams.num_inference_steps?.value !== 50 ||
+          generateParams.guidance_scale?.value !== 6 ||
+          generateParams.conditioning_scale?.value !== 1 ||
+          generateParams.max_sequence_length?.value !== 256 ||
+          preprocessorParams.low_threshold?.value !== 0.1 ||
+          preprocessorParams.high_threshold?.value !== 0.2
+        ) {
+          throw new Error(`${workflow.id} Hunyuan-DiT ControlNet graph is missing its exact safe assembly or recipe.`);
+        }
+      }
     }
   }
   if (workflow.mediaKind !== 'video') {
