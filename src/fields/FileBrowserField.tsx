@@ -15,6 +15,7 @@ import { GraphControlInput, GraphIconButton } from '../ui/GraphControls';
 import { bundledPublicAssetUrl } from '../studio/outputUtils';
 import { inferImportedMediaKind, mediaAcceptString } from '../studio/mediaImport';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { MEDIA_PLACEHOLDER_DATA_URL } from '../utils/mediaViewer';
 import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
@@ -269,8 +270,7 @@ export default function FileBrowserField(props: FieldProps) {
                   alt={file}
                   onLoad={handleMediaLoad}
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src =
-                      "data:image/svg+xml;utf8,<svg width='512' height='512' xmlns='http://www.w3.org/2000/svg'><defs><pattern id='checker' width='32' height='32' patternUnits='userSpaceOnUse'><rect width='32' height='32' fill='%23ffffff11'/><rect x='0' y='0' width='16' height='16' fill='%23ffffff33'/><rect x='16' y='16' width='16' height='16' fill='%23ffffff33'/></pattern></defs><rect width='512' height='512' fill='url(%23checker)'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='24' fill='%23FAFAFA' font-family='IBM Plex Mono, monospace'>Image not found</text></svg>";
+                    (e.currentTarget as HTMLImageElement).src = MEDIA_PLACEHOLDER_DATA_URL;
                   }}
                 />
               ) : isVideo(file) ? (
@@ -287,8 +287,7 @@ export default function FileBrowserField(props: FieldProps) {
                     handleMediaLoad();
                   }}
                   onError={(e) => {
-                    (e.currentTarget as HTMLVideoElement).poster =
-                      "data:image/svg+xml;utf8,<svg width='512' height='512' xmlns='http://www.w3.org/2000/svg'><defs><pattern id='checker' width='32' height='32' patternUnits='userSpaceOnUse'><rect width='32' height='32' fill='%23ffffff11'/><rect x='0' y='0' width='16' height='16' fill='%23ffffff33'/><rect x='16' y='16' width='16' height='16' fill='%23ffffff33'/></pattern></defs><rect width='512' height='512' fill='url(%23checker)'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='24' fill='%23FAFAFA' font-family='IBM Plex Mono, monospace'>Video not found</text></svg>";
+                    (e.currentTarget as HTMLVideoElement).poster = MEDIA_PLACEHOLDER_DATA_URL;
                   }}
                 />
               ) : isAudio(file) ? (

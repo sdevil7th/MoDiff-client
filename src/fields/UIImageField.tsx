@@ -15,6 +15,7 @@ import { enqueueSnackbar } from '../ui/snackbar';
 import { GraphControlButton, GraphIconButton } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
 import { normalizeImageArtifacts, sanitizeImageArtifactUrl } from '../utils/imageArtifacts';
+import { MEDIA_PLACEHOLDER_DATA_URL } from '../utils/mediaViewer';
 import { PreviewHistoryStrip } from './PreviewHistoryStrip';
 import { userBlockPreviewSource } from '../studio/userBlocks';
 import { useCurrentStudioPreview } from '../studio/previewState';
@@ -141,8 +142,7 @@ export default function UIImageField(props: FieldProps) {
   };
 
   const handleOnError = (event: SyntheticEvent<HTMLImageElement, Event>) => {
-    event.currentTarget.src =
-      "data:image/svg+xml;utf8,<svg width='512' height='512' xmlns='http://www.w3.org/2000/svg'><defs><pattern id='checker' width='32' height='32' patternUnits='userSpaceOnUse'><rect width='32' height='32' fill='%23ffffff11'/><rect x='0' y='0' width='16' height='16' fill='%23ffffff33'/><rect x='16' y='16' width='16' height='16' fill='%23ffffff33'/></pattern></defs><rect width='512' height='512' fill='url(%23checker)'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='24' fill='%23FAFAFA' font-family='IBM Plex Mono, monospace'>Image not ready</text></svg>";
+    event.currentTarget.src = MEDIA_PLACEHOLDER_DATA_URL;
   };
 
   const handleCopyUrl = async (url: string) => {

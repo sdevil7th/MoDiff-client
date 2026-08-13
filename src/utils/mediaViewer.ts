@@ -1,5 +1,8 @@
 import type { MediaViewerItem } from '../stores/useSettingsStore';
 
+export const MEDIA_PLACEHOLDER_DATA_URL =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'%3E%3Cpath fill='%2320252d' d='M0 0h2v2H0z'/%3E%3Cpath fill='%23343b47' d='M0 0h1v1H0zm1 1h1v1H1z'/%3E%3C/svg%3E";
+
 const MEDIA_VIEWER_KINDS = new Set<MediaViewerItem['kind']>(['image', 'video', 'audio', 'text']);
 const NAVIGATION_CONTROL_SELECTOR = [
   'audio',
