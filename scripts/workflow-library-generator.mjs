@@ -390,7 +390,7 @@ async function main() {
             ({ templateId, taskContract }) =>
               taskContract
                 ? window.__MODIFF_E2E__?.applyTaskTemplateSkeleton(templateId)
-                : window.__MODIFF_E2E__?.applyTemplate(templateId),
+                : window.__MODIFF_E2E__?.applyTemplate(templateId, { resourceMode: 'expert' }),
             { templateId: template.id, taskContract: template.taskContract === true },
           );
           buildError = null;

@@ -3039,6 +3039,55 @@ async function applyVideoPipelineContract(binding: StudioGraphBinding, mode: Stu
   if (!accepted) throw new Error('Video generator contract timed out.');
 }
 
+async function applyImagePipelineContract(binding: StudioGraphBinding, mode: StudioMode) {
+  const pipelineNode = binding.nodes.diffusersImagePipeline;
+  const actionNode =
+    binding.nodes.diffusersImageInpaint ??
+    binding.nodes.diffusersImageControl ??
+    binding.nodes.diffusersImageEdit ??
+    binding.nodes.diffusersImageGenerate;
+  const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
+  if (!pipelineNode || !actionNode || !pipelineClassKey) return;
+
+  const pipelineClass = useFlowStore.getState().getParam(pipelineNode, pipelineClassKey, 'value');
+  const props = buildFieldProps(pipelineNode, pipelineClassKey);
+  // Older backends and intentionally minimal mocked registries do not expose
+  // the declarative contract refresh action. Preserve their existing schema;
+  // current backends publish onChange and take the exact path below.
+  if (!props?.onChange) return;
+  await fieldAction(props, pipelineClass);
+
+  const exactContract = (value: unknown) =>
+    value &&
+    typeof value === 'object' &&
+    (value as { pipelineClass?: unknown }).pipelineClass === pipelineClass &&
+    (value as { mode?: unknown }).mode === mode
+      ? value
+      : undefined;
+  const value = await waitForValue(() => {
+    const signal = useFlowStore.getState().getParam(pipelineNode, 'pipeline', 'signal');
+    return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
+  }, 5000);
+  if (!value) throw new Error('Image task contract timed out.');
+  setParamIfPresent(actionNode, ['image_contract'], value);
+  await applyManagedInputSignal(actionNode, ['pipeline'], value);
+  // The backend action replaces the dynamic field schema and may restore the
+  // hidden contract field's class default while doing so. Re-stage the exact
+  // loader signal after that schema mutation settles.
+  setParamIfPresent(actionNode, ['image_contract'], value);
+
+  const accepted = await waitForValue(
+    () => exactContract(useFlowStore.getState().getParam(actionNode, 'image_contract', 'value')),
+    5000,
+  );
+  if (!accepted) {
+    const observed = useFlowStore.getState().getParam(actionNode, 'image_contract', 'value');
+    throw new Error(
+      `Image generator contract timed out for ${String(pipelineClass)}|${mode}; received ${JSON.stringify(observed)}.`,
+    );
+  }
+}
+
 async function applyAutoModelLoaderType(nodeId: string | undefined, loaderType: string) {
   const modelTypeKey = findParamKey(nodeId, ['model_type']);
   if (!nodeId || !modelTypeKey) return;
@@ -3277,6 +3326,11 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     trueCfgScale1: 1,
     seed: seedValue(form),
   };
+  if (binding.nodes.diffusersImagePipeline && !bindsAuxiliaryModel) {
+    setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_kind'], 'none');
+    setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_model_id'], '');
+    setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_revision'], '');
+  }
   const candidateValues: Record<string, unknown> = {
     ...candidate,
     ...formPatchForAutoCandidate(candidate),
@@ -3955,6 +4009,9 @@ async function finalizeDiffusersImageGraph(
         )
       : Promise.resolve(true),
   ]);
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  await applyImagePipelineContract(binding, form.mode);
   assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);

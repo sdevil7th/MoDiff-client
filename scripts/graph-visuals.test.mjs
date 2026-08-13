@@ -2453,6 +2453,22 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   paramsByRole.wanGenerate.mode.onChange = 'update_video_contract';
   paramsByRole.wanGenerate.video_contract = scalar();
   paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
+  paramsByRole.diffusersImagePipeline.pipeline_class.onChange = 'update_pipeline_contract';
+  paramsByRole.diffusersImagePipeline.conditioning_kind = { ...scalar(), value: 'none' };
+  paramsByRole.diffusersImagePipeline.conditioning_model_id = {
+    ...scalar(),
+    value: { source: 'hub', value: 'lllyasviel/control_v11p_sd15_canny' },
+  };
+  paramsByRole.diffusersImagePipeline.conditioning_revision = { ...scalar(), value: 'stale-auxiliary-pin' };
+  for (const role of [
+    'diffusersImageGenerate',
+    'diffusersImageEdit',
+    'diffusersImageInpaint',
+    'diffusersImageControl',
+  ]) {
+    paramsByRole[role].pipeline.onSignal = 'update_image_contract';
+    paramsByRole[role].image_contract = scalar();
+  }
   const registry = Object.fromEntries(
     registryRoleRows.map(([role, nodeKey]) => {
       const [module, action] = nodeKey.split(/\.(?=[^.]+$)/);
@@ -2486,6 +2502,14 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   globalThis.WebSocket = undefined;
   globalThis.fetch = async (_input, init) => {
     const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    if (payload?.fn === 'update_pipeline_contract' && payload.action === 'LoadPipeline') {
+      const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === payload.node);
+      const pipelineClass = node?.data.params.pipeline_class.value;
+      const mode = node?.data.params.mode.value;
+      flowStoreModule.useFlowStore
+        .getState()
+        .setParam(payload.node, 'pipeline', { direction: 'output', value: { pipelineClass, mode } }, 'signal');
+    }
     if (payload?.fn === 'update_audio_contract') {
       if (payload.action === 'LoadPipeline') {
         const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === payload.node);
@@ -2689,6 +2713,14 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(sdxlPipeline.data.params.model_id.value.value, sdxlSpec.defaultRepo);
     assert.equal(sdxlPipeline.data.params.pipeline_class.value, sdxlSpec.pipelineClass);
     assert.equal(sdxlPipeline.data.params.revision.value, sdxlRevision);
+    assert.equal(sdxlPipeline.data.params.conditioning_kind.value, 'none');
+    assert.equal(sdxlPipeline.data.params.conditioning_model_id.value, '');
+    assert.equal(sdxlPipeline.data.params.conditioning_revision.value, '');
+    const sdxlGenerate = flowStoreModule.useFlowStore
+      .getState()
+      .nodes.find((item) => item.id === sdxlBinding.nodes.diffusersImageGenerate);
+    assert.equal(sdxlGenerate.data.params.image_contract.value.pipelineClass, sdxlSpec.pipelineClass);
+    assert.equal(sdxlGenerate.data.params.image_contract.value.mode, sdxlSpec.mode);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), null);
     flowStoreModule.useFlowStore
       .getState()
@@ -7334,6 +7366,7 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(generator, /this === localStorage && generatedGraphKeys\.has\(String\(key\)\)/);
   assert.match(generator, /listTaskTemplateSkeletons/);
   assert.match(generator, /applyTaskTemplateSkeleton/);
+  assert.match(generator, /applyTemplate\(templateId, \{ resourceMode: 'expert' \}\)/);
   assert.match(generator, /if \(!byPair\.has\(pair\)\)/);
   assert.ok(ephemeralStorageIndex >= 0 && ephemeralStorageIndex < navigationIndex);
   assert.ok(prepareIndex >= 0);
