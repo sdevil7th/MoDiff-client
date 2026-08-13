@@ -795,6 +795,7 @@ export async function addQualityVideoSequenceWorkflowBlock(
     setParamIfPresent(loop.id, ['max_iterations'], 6);
     setParamIfPresent(loop.id, ['carry'], false);
     setParamIfPresent(loop.id, ['collect'], true);
+    setParamIfPresent(loop.id, ['durable'], true);
     setParamIfPresent(loop.id, ['max_retries'], 1);
     return join;
   });

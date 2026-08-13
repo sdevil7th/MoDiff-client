@@ -296,6 +296,7 @@ export function buildApiGraphExport({
         iterationMode,
         carry: paramBoolean(loopNode, 'carry', true),
         collect: paramBoolean(loopNode, 'collect', true),
+        durable: paramBoolean(loopNode, 'durable', false),
         maxRetries: Math.max(0, Math.min(10, paramNumber(loopNode, 'max_retries', 1))),
         ...(loopNode.parentId ? { parentLoopId: loopNode.parentId } : {}),
       };

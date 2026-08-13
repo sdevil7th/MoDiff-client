@@ -1059,7 +1059,7 @@ function controlledGraphHash(binding: StudioGraphBinding, contractIds: readonly 
       node.parentId ?? null,
       node.data.uiState?.disabled === true,
       node.data.studioRole === 'qualityVideoLoop'
-        ? ['iteration_mode', 'iterations', 'max_iterations', 'carry', 'collect', 'max_retries'].map(
+        ? ['iteration_mode', 'iterations', 'max_iterations', 'carry', 'collect', 'durable', 'max_retries'].map(
             (key) => node.data.params[key]?.value,
           )
         : null,
@@ -1178,6 +1178,7 @@ function controlledGraphSemanticsAreValid(binding: StudioGraphBinding, form: Stu
       qualityLoop.data.params.max_iterations?.value !== 6 ||
       qualityLoop.data.params.carry?.value !== false ||
       qualityLoop.data.params.collect?.value !== true ||
+      qualityLoop.data.params.durable?.value !== true ||
       qualityLoop.data.params.max_retries?.value !== 1
     ) {
       return false;

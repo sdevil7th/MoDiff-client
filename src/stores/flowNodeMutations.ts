@@ -360,6 +360,7 @@ export function loopFlowNodes(ids: string[], set: FlowStoreSet) {
           max_iterations: { type: 'int', label: 'Maximum', value: 100, default: 100, min: 1, max: 10000 },
           carry: { type: 'bool', label: 'Carry result', value: true, default: true },
           collect: { type: 'bool', label: 'Collect results', value: true, default: true },
+          durable: { type: 'bool', label: 'Resume retained media', value: false, default: false },
           max_retries: { type: 'int', label: 'Retries', value: 1, default: 1, min: 0, max: 10 },
         },
         resizable: true,

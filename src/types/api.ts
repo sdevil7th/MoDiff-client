@@ -33,6 +33,7 @@ export type ApiGraphLoopExport = {
   iterationMode: 'count' | 'collection';
   carry: boolean;
   collect: boolean;
+  durable: boolean;
   maxRetries: number;
   parentLoopId?: string;
 };

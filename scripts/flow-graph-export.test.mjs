@@ -203,6 +203,7 @@ test('visual loop containers export bounded executor metadata and direct child n
         max_iterations: { value: 20 },
         carry: { value: true },
         collect: { value: true },
+        durable: { value: true },
         max_retries: { value: 2 },
       },
     },
@@ -263,6 +264,7 @@ test('visual loop containers export bounded executor metadata and direct child n
       iterationMode: 'count',
       carry: true,
       collect: true,
+      durable: true,
       maxRetries: 2,
     },
   ]);
