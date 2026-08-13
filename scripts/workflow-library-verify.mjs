@@ -476,6 +476,44 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           throw new Error(`${workflow.id} Mochi graph is missing its exact artifact or bounded native recipe.`);
         }
       }
+      if (['SanaVideoPipeline', 'SanaImageToVideoPipeline'].includes(pipelineClass)) {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        const imageConditioned = pipelineClass === 'SanaImageToVideoPipeline';
+        const loadImage = (graph.nodes ?? []).find((node) => node?.data?.studioRole === 'loadImage');
+        const imageEdge = (graph.edges ?? []).some(
+          (edge) =>
+            edge?.source === loadImage?.id &&
+            edge?.target === generate?.id &&
+            edge?.targetHandle === 'reference_images',
+        );
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'Efficient-Large-Model/SANA-Video_2B_480p_diffusers' ||
+          revision !== 'db5f398b13ca086d09a50ce156c20527773841b1' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 832 ||
+          generateParams.height?.value !== 480 ||
+          generateParams.num_frames?.value !== 81 ||
+          generateParams.num_inference_steps?.value !== 50 ||
+          generateParams.guidance_scale?.value !== 6 ||
+          generateParams.max_sequence_length?.value !== 300 ||
+          Boolean(loadImage && imageEdge) !== imageConditioned
+        ) {
+          throw new Error(`${workflow.id} SANA-Video graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
       const generateNodes = (graph.nodes ?? []).filter(
         (node) =>
           node?.data?.module === 'modules.DiffusersVideo' &&

@@ -49,18 +49,8 @@ export const SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT = {
   lowVram: 'sequential_cpu' as const,
   emergency: 'group_disk' as const,
 };
-export const QWEN_MODULAR_OFFLOAD_SUPPORT = {
-  modes: ['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'] as StudioFormState['offloadMode'][],
-  default: 'model_cpu' as const,
-  lowVram: QWEN_LOW_VRAM_OFFLOAD_MODE as StudioFormState['offloadMode'],
-  emergency: 'group_disk' as const,
-};
-export const QWEN_DIRECT_OFFLOAD_SUPPORT = {
-  modes: [...STUDIO_OFFLOAD_MODES],
-  default: 'model_cpu' as const,
-  lowVram: QWEN_LOW_VRAM_OFFLOAD_MODE as StudioFormState['offloadMode'],
-  emergency: 'group_disk' as const,
-};
+export const QWEN_MODULAR_OFFLOAD_SUPPORT = DIRECT_OFFLOAD_SUPPORT;
+export const QWEN_DIRECT_OFFLOAD_SUPPORT = DIRECT_OFFLOAD_SUPPORT;
 export const QWEN_T2I_PIPELINE_NODE_KEY = 'modules.DiffusersImage.LoadPipeline';
 export const QWEN_T2I_GENERATE_NODE_KEY = 'modules.DiffusersImage.Generate';
 export const QWEN_INPAINT_PIPELINE_NODE_KEY = 'modules.DiffusersImage.LoadPipeline';
@@ -216,6 +206,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Allegro',
   'Latte',
   'Mochi',
+  'SANA-Video 2B 480p',
+  'SANA-Video 2B 480p I2V',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -318,6 +310,7 @@ export const ALLEGRO_REPO = 'rhymes-ai/Allegro';
 export const ALLEGRO_REVISION = 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6';
 export const LATTE_REPO = 'maxin-cn/Latte-1';
 export const MOCHI_REPO = 'genmo/mochi-1-preview';
+export const SANA_VIDEO_REPO = 'Efficient-Large-Model/SANA-Video_2B_480p_diffusers';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
@@ -606,10 +599,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: MODULAR_OFFLOAD_SUPPORT.lowVram, steps: 8 },
     modes: ['text_to_image', 'edit_image'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source image.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
     },
   },
   QwenImageModularPipeline: {
@@ -632,14 +622,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source image.',
-      },
-      inpaint: {
-        requiredImages: ['referenceImages', 'maskImage'],
-        note: 'Requires one source image and one mask image.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
       control_image: {
         modelRequirements: [QWEN_CONTROLNET_REQUIREMENT],
         requiredImages: ['controlImage'],
@@ -667,10 +651,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['edit_image', 'inpaint', 'outpaint'],
     modeRequirements: {
-      inpaint: {
-        requiredImages: ['referenceImages', 'maskImage'],
-        note: 'Requires one source image and one mask image.',
-      },
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
       outpaint: {
         requiredImages: ['referenceImages'],
         note: 'Requires one source image; Studio builds the expanded canvas and boundary mask.',
@@ -785,8 +766,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: WAN_VIDEO_MODES,
     modeRequirements: {
-      video_to_video: { requiredVideos: ['sourceVideo'], note: 'Requires one source video.' },
-      video_color_edit: { requiredVideos: ['sourceVideo'], note: 'Requires one source video.' },
+      video_to_video: { requiredVideos: ['sourceVideo'] },
+      video_color_edit: { requiredVideos: ['sourceVideo'] },
     },
   },
   WanImageToVideoPipeline: {
@@ -951,6 +932,22 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     true,
     'bfloat16',
   ),
+  SanaVideoPipeline: nativeTextVideoProfile(
+    'SANA Video',
+    SANA_VIDEO_REPO,
+    [832, 480, 50, 6, 300, 81, 16],
+    '16:9',
+    true,
+    'bfloat16',
+  ),
+  SanaImageToVideoPipeline: {
+    ...nativeTextVideoProfile('SANA Video', SANA_VIDEO_REPO, [832, 480, 50, 6, 300, 81, 16], '16:9', true, 'bfloat16'),
+    supportFlags: 1,
+    modes: ['image_to_video'],
+    modeRequirements: {
+      image_to_video: { requiredImages: ['referenceImages'] },
+    },
+  },
   LTXVideoPipeline: {
     displayName: 'LTX-Video Diffusers',
     family: 'LTX Video',
@@ -980,10 +977,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       image_to_video: {
         requiredImages: ['referenceImages'],
       },
-      video_to_video: {
-        requiredVideos: ['sourceVideo'],
-        note: 'Requires one source video.',
-      },
+      video_to_video: { requiredVideos: ['sourceVideo'] },
       reference_to_video: {
         requiredImages: ['referenceImages'],
         note: 'Requires one or more frame references.',
@@ -1007,14 +1001,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram, steps: 8 },
     modes: AUDIO_STUDIO_MODES,
     modeRequirements: {
-      audio_variation: {
-        requiredAudio: ['sourceAudio'],
-        note: 'Requires one source audio file for cover or variation guidance.',
-      },
-      audio_continuation: {
-        requiredAudio: ['sourceAudio'],
-        note: 'Requires one source audio file to continue.',
-      },
+      audio_variation: { requiredAudio: ['sourceAudio'] },
+      audio_continuation: { requiredAudio: ['sourceAudio'] },
       audio_repaint: {
         requiredAudio: ['sourceAudio'],
         note: 'Requires one source audio file plus a repaint range.',
@@ -1110,14 +1098,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['text_to_image', 'edit_image', 'inpaint'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source image.',
-      },
-      inpaint: {
-        requiredImages: ['referenceImages', 'maskImage'],
-        note: 'Requires one source image and one mask image.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
     },
   },
   FluxKreaPipeline: {
@@ -1148,10 +1130,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['edit_image', 'multi_image_reference_edit'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source image for Kontext editing.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
     },
   },
   FluxFillPipeline: {
@@ -1171,10 +1150,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['inpaint', 'outpaint'],
     modeRequirements: {
-      inpaint: {
-        requiredImages: ['referenceImages', 'maskImage'],
-        note: 'Requires one source image and one mask image.',
-      },
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
       outpaint: {
         requiredImages: ['referenceImages'],
         note: 'Requires one source image; Studio can prepare a larger canvas.',
@@ -1192,10 +1168,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.emergency, steps: 24 },
     modes: ['control_image'],
     modeRequirements: {
-      control_image: {
-        requiredImages: ['controlImage'],
-        note: 'Requires a depth control image.',
-      },
+      control_image: { requiredImages: ['controlImage'] },
     },
   },
   FluxCannyPipeline: {
@@ -1209,10 +1182,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.emergency, steps: 24 },
     modes: ['control_image'],
     modeRequirements: {
-      control_image: {
-        requiredImages: ['controlImage'],
-        note: 'Requires a canny/control image.',
-      },
+      control_image: { requiredImages: ['controlImage'] },
     },
   },
   FluxReduxPipeline: {
@@ -1236,10 +1206,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.emergency, steps: 24 },
     modes: ['edit_image', 'multi_image_reference_edit'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source/reference image.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
       multi_image_reference_edit: {
         requiredImages: ['referenceImages'],
         note: 'Uses Diffusers Redux weighted multi-reference conditioning; compatible visual references work best.',
@@ -1264,10 +1231,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source/reference image.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
       multi_image_reference_edit: {
         requiredImages: ['referenceImages'],
         note: 'Requires two or more reference images.',
@@ -1291,14 +1255,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['text_to_image', 'edit_image', 'inpaint'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source image.',
-      },
-      inpaint: {
-        requiredImages: ['referenceImages', 'maskImage'],
-        note: 'Requires one source image and one mask image.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
     },
   },
   StableDiffusionXLTurboPipeline: {
@@ -1344,10 +1302,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['edit_image'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source image and a text edit instruction.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
     },
   },
   StableDiffusionXLControlNetPipeline: {
@@ -1428,14 +1383,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['text_to_image', 'edit_image', 'inpaint'],
     modeRequirements: {
-      edit_image: {
-        requiredImages: ['referenceImages'],
-        note: 'Requires one source image.',
-      },
-      inpaint: {
-        requiredImages: ['referenceImages', 'maskImage'],
-        note: 'Requires source and mask images.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
     },
   },
   PixArtSigmaPipeline: {
@@ -1474,7 +1423,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['text_to_image', 'edit_image'],
     modeRequirements: {
-      edit_image: { requiredImages: ['referenceImages'], note: 'Requires a source image.' },
+      edit_image: { requiredImages: ['referenceImages'] },
     },
   },
   DreamLitePipeline: {
@@ -1484,7 +1433,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     supportFlags: 1,
     modes: ['text_to_image', 'edit_image'],
     modeRequirements: {
-      edit_image: { requiredImages: ['referenceImages'], note: 'Requires one source image for dual-CFG editing.' },
+      edit_image: { requiredImages: ['referenceImages'] },
     },
   },
   DreamLiteMobilePipeline: {
@@ -1495,7 +1444,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     supportFlags: 1,
     modes: ['text_to_image', 'edit_image'],
     modeRequirements: {
-      edit_image: { requiredImages: ['referenceImages'], note: 'Requires one source image for distilled editing.' },
+      edit_image: { requiredImages: ['referenceImages'] },
     },
   },
   StableDiffusionPipeline: {
@@ -1517,11 +1466,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 20, width: 512, height: 512 },
     modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
     modeRequirements: {
-      edit_image: { requiredImages: ['referenceImages'], note: 'Requires one source image.' },
-      inpaint: {
-        requiredImages: ['referenceImages', 'maskImage'],
-        note: 'Requires one source image and one mask image.',
-      },
+      edit_image: { requiredImages: ['referenceImages'] },
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
       control_image: {
         modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
         requiredImages: ['controlImage'],
@@ -1625,14 +1571,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1 },
     modes: SPEECH_STUDIO_MODES,
     modeRequirements: {
-      speech_to_text: {
-        requiredAudio: ['sourceAudio'],
-        note: 'Requires one local audio source and returns a normalized transcript.',
-      },
-      speech_translation: {
-        requiredAudio: ['sourceAudio'],
-        note: 'Requires one local audio source and translates recognized speech to English.',
-      },
+      speech_to_text: { requiredAudio: ['sourceAudio'] },
+      speech_translation: { requiredAudio: ['sourceAudio'] },
     },
   },
   DDPMPipeline: {
@@ -1871,6 +1811,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   AllegroPipeline: /* @__PURE__ */ pendingPlanningRequirement('AllegroPipeline'),
   LattePipeline: /* @__PURE__ */ pendingPlanningRequirement('LattePipeline'),
   MochiPipeline: /* @__PURE__ */ pendingPlanningRequirement('MochiPipeline'),
+  SanaVideoPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaVideoPipeline'),
+  SanaImageToVideoPipeline: /* @__PURE__ */ pendingPlanningRequirement('SanaImageToVideoPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,

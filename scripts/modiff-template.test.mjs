@@ -564,6 +564,29 @@ test('Mochi exposes its bounded native remote-only source contract', () => {
   assert.equal(form.fps, 30);
 });
 
+test('SANA-Video exposes bounded native text and image remote-only contracts', () => {
+  for (const [modelType, mode, imageConditioned] of [
+    ['SanaVideoPipeline', 'text_to_video', false],
+    ['SanaImageToVideoPipeline', 'image_to_video', true],
+  ]) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    const form = profilesModule.getFormDefaultsForMode(mode, modelType);
+    assert.equal(profile.defaultRepo, profilesModule.SANA_VIDEO_REPO);
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profile.defaultDtype, 'bfloat16');
+    assert.equal(profile.outputKind, 'video');
+    assert.equal(profile.recommendedMaxSequenceLength, 300);
+    assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+    assert.equal(profile.supportsImageInput, imageConditioned);
+    assert.equal(form.width, 832);
+    assert.equal(form.height, 480);
+    assert.equal(form.steps, 50);
+    assert.equal(form.guidanceScale, 6);
+    assert.equal(form.numFrames, 81);
+    assert.equal(form.fps, 16);
+  }
+});
+
 test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   const graph = JSON.parse(
     await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),
