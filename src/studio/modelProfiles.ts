@@ -74,6 +74,7 @@ export const FLUX2_KLEIN_REPO = 'black-forest-labs/FLUX.2-klein-4B';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
+export const SDXL_TURBO_REPO = 'stabilityai/sdxl-turbo';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
@@ -181,6 +182,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'FLUX.1-Redux-dev',
   'FLUX.2-klein-4B',
   'Stable Diffusion XL 1.0',
+  'Stable Diffusion XL Turbo',
   'Stable Diffusion 1.5',
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
@@ -1022,6 +1024,28 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  StableDiffusionXLTurboPipeline: {
+    family: 'Stable Diffusion XL',
+    surfaceCategory: 'Image',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SDXL_TURBO_REPO,
+    artifactLabel: 'Diffusers safetensors repo',
+    defaultDtype: 'float16',
+    defaultSize: { width: 512, height: 512, aspectRatio: '1:1' },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    supportFlags: 1,
+    supportsNegativePrompt: false,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 1,
+      width: 512,
+      height: 512,
+    },
+    modes: ['text_to_image'],
+  },
   StableDiffusionPipeline: {
     family: 'Stable Diffusion 1.x',
     surfaceCategory: 'Image',
@@ -1534,6 +1558,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     artifacts: [SDXL_BASE_REPO],
     notes: 'Pinned graphs ready; output qualification pending.',
     manualOnlyReason: 'Live resource and Gallery qualification pending.',
+  },
+  StableDiffusionXLTurboPipeline: {
+    modelType: 'StableDiffusionXLTurboPipeline',
+    supportedModes: ['text_to_image'],
+    autoStatus: 'manual_only',
+    minimum: 'Expert-only pending a measured runtime envelope for the pinned fp16 snapshot.',
+    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    qualityDefaults: '512x512, one to four steps, guidance 0.',
+    artifacts: [SDXL_TURBO_REPO],
+    notes: 'Pinned fp16 safetensors text-to-image graph; output qualification pending.',
+    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
   },
   StableDiffusionPipeline: {
     modelType: 'StableDiffusionPipeline',

@@ -166,6 +166,20 @@ test('Stable Diffusion 1.5 exposes four exact generic 512px modes', () => {
   }
 });
 
+test('SDXL Turbo exposes its pinned one-step guidance-zero recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLTurboPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionXLTurboPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_TURBO_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 1);
+  assert.equal(form.guidanceScale, 0);
+});
+
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');
