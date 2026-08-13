@@ -512,6 +512,24 @@ test('CogVideoX-2B exposes the bounded native short-video source contract', () =
   assert.equal(form.fps, 8);
 });
 
+test('Allegro exposes its bounded native remote-only source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.AllegroPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'AllegroPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.ALLEGRO_REPO);
+  assert.equal(profilesModule.ALLEGRO_REVISION, 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6');
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 512);
+  assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+  assert.equal(form.width, 1280);
+  assert.equal(form.height, 720);
+  assert.equal(form.steps, 100);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.numFrames, 88);
+  assert.equal(form.fps, 15);
+});
+
 test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   const graph = JSON.parse(
     await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),

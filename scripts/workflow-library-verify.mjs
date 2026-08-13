@@ -389,6 +389,35 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           throw new Error(`${workflow.id} CogVideoX graph is missing its exact artifact or safe execution recipe.`);
         }
       }
+      if (pipelineClass === 'AllegroPipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'rhymes-ai/Allegro' ||
+          revision !== 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 1280 ||
+          generateParams.height?.value !== 720 ||
+          generateParams.num_frames?.value !== 88 ||
+          generateParams.num_inference_steps?.value !== 100 ||
+          generateParams.guidance_scale?.value !== 7.5 ||
+          generateParams.max_sequence_length?.value !== 512
+        ) {
+          throw new Error(`${workflow.id} Allegro graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
       const generateNodes = (graph.nodes ?? []).filter(
         (node) =>
           node?.data?.module === 'modules.DiffusersVideo' &&

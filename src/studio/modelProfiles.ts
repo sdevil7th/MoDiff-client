@@ -213,6 +213,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'AnimateDiff SD1.5 v2',
   'AnimateLCM SD1.5',
   'CogVideoX-2B',
+  'Allegro',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -311,6 +312,8 @@ export const ANIMATELCM_MOTION_REPO = 'wangfuyun/AnimateLCM';
 export const ANIMATELCM_MOTION_REVISION = '3d4d00fc113225e1040f4d3bec504b6ec750c10c';
 export const COGVIDEOX_2B_REPO = 'zai-org/CogVideoX-2b';
 export const COGVIDEOX_2B_REVISION = '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01';
+export const ALLEGRO_REPO = 'rhymes-ai/Allegro';
+export const ALLEGRO_REVISION = 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
@@ -458,7 +461,7 @@ type StudioModelProfileSource = Omit<
   };
 
 function planningVideoProfile(
-  family: 'Wan Video' | 'LTX Video',
+  family: StudioModelProfile['family'],
   defaultRepo: string,
   modes: StudioMode[],
   modeRequirements: StudioModelProfile['modeRequirements'] = {},
@@ -489,6 +492,47 @@ function planningVideoProfile(
     },
     modes,
     modeRequirements,
+  };
+}
+
+function nativeTextVideoProfile(
+  family: StudioModelProfile['family'],
+  defaultRepo: string,
+  [width, height, steps, guidance, maxSequenceLength, frames, fps]: [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ],
+  dtype: StudioFormState['dtype'],
+  offloadMode: StudioFormState['offloadMode'],
+  [lowSteps, lowFrames]: [number, number],
+  aspectRatio: StudioModelProfile['defaultSize']['aspectRatio'] = 'custom',
+): StudioModelProfileSource {
+  return {
+    family,
+    surfaceCategory: 'Video',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo,
+    defaultDtype: dtype,
+    defaultSize: { width, height, aspectRatio },
+    offloadSupport:
+      offloadMode === 'sequential_cpu'
+        ? { ...SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT, default: 'sequential_cpu' }
+        : DIRECT_OFFLOAD_SUPPORT,
+    recommendedSteps: steps,
+    recommendedGuidance: guidance,
+    recommendedMaxSequenceLength: maxSequenceLength,
+    supportFlags: 0,
+    outputKind: 'video',
+    recommendedFrames: frames,
+    recommendedFps: fps,
+    lowVram: { dtype, autoOffload: true, offloadMode, steps: lowSteps, width, height, numFrames: lowFrames },
+    modes: ['text_to_video'],
+    modeRequirements: {},
   };
 }
 
@@ -879,104 +923,54 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
   },
   AnimateDiffPipeline: {
-    family: 'AnimateDiff',
-    surfaceCategory: 'Video',
-    catalogVisibility: 'workflowOnly',
-    defaultRepo: SD15_BASE_REPO,
-    displayName: 'AnimateDiff motion adapter v1.5.2',
-    artifactLabel: 'Pinned SD1.5 and fp16 safetensors MotionAdapter',
-    defaultDtype: 'float16',
-    defaultSize: { width: 512, height: 512, aspectRatio: '1:1' },
-    recommendedSteps: 25,
-    recommendedGuidance: 7.5,
-    supportFlags: 0,
-    supportsVideoInput: false,
-    outputKind: 'video',
-    recommendedFrames: 16,
-    recommendedFps: 8,
-    lowVram: {
-      dtype: 'float16',
-      autoOffload: true,
-      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 16,
-      width: 512,
-      height: 512,
-      numFrames: 8,
-    },
-    modes: ['text_to_video'],
+    ...nativeTextVideoProfile(
+      'AnimateDiff',
+      SD15_BASE_REPO,
+      [512, 512, 25, 7.5, 77, 16, 8],
+      'float16',
+      'model_cpu',
+      [16, 8],
+      '1:1',
+    ),
     modeRequirements: {
       text_to_video: {
         modelRequirements: [ANIMATEDIFF_MOTION_REQUIREMENT],
-        note: 'Pinned SD1.5 v2 MotionAdapter and linear-beta DDIM scheduler.',
       },
     },
   },
   AnimateLCMPipeline: {
-    family: 'AnimateDiff',
-    surfaceCategory: 'Video',
-    catalogVisibility: 'workflowOnly',
-    defaultRepo: SD15_BASE_REPO,
-    displayName: 'AnimateLCM',
-    artifactLabel: 'Pinned SD1.5, fp16 MotionAdapter, and safetensors LoRA',
-    defaultDtype: 'float16',
-    defaultSize: { width: 512, height: 512, aspectRatio: '1:1' },
-    recommendedSteps: 6,
-    recommendedGuidance: 1.5,
-    supportFlags: 0,
-    supportsVideoInput: false,
-    outputKind: 'video',
-    recommendedFrames: 16,
-    recommendedFps: 8,
-    lowVram: {
-      dtype: 'float16',
-      autoOffload: true,
-      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 4,
-      width: 512,
-      height: 512,
-      numFrames: 8,
-    },
-    modes: ['text_to_video'],
+    ...nativeTextVideoProfile(
+      'AnimateDiff',
+      SD15_BASE_REPO,
+      [512, 512, 6, 1.5, 77, 16, 8],
+      'float16',
+      'model_cpu',
+      [4, 8],
+      '1:1',
+    ),
     modeRequirements: {
       text_to_video: {
         modelRequirements: [ANIMATELCM_MOTION_REQUIREMENT],
-        note: 'Pinned AnimateLCM adapter, linear-beta scheduler, and spatial LoRA.',
       },
     },
   },
-  CogVideoXPipeline: {
-    family: 'CogVideoX',
-    surfaceCategory: 'Video',
-    catalogVisibility: 'workflowOnly',
-    defaultRepo: COGVIDEOX_2B_REPO,
-    displayName: 'CogVideoX-2B',
-    artifactLabel: 'Official Apache-2.0 safetensors Diffusers repo',
-    defaultDtype: 'float16',
-    defaultSize: { width: 720, height: 480, aspectRatio: 'custom' },
-    recommendedSteps: 25,
-    recommendedGuidance: 6,
-    recommendedMaxSequenceLength: 226,
-    supportFlags: 0,
-    supportsVideoInput: false,
-    outputKind: 'video',
-    recommendedFrames: 25,
-    recommendedFps: 8,
-    lowVram: {
-      dtype: 'float16',
-      autoOffload: true,
-      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 16,
-      width: 720,
-      height: 480,
-      numFrames: 9,
-    },
-    modes: ['text_to_video'],
-    modeRequirements: {
-      text_to_video: {
-        note: 'Pinned safetensors-only CogVideoX-2B with native 720x480 output and VAE tiling.',
-      },
-    },
-  },
+  CogVideoXPipeline: nativeTextVideoProfile(
+    'CogVideoX',
+    COGVIDEOX_2B_REPO,
+    [720, 480, 25, 6, 226, 25, 8],
+    'float16',
+    'model_cpu',
+    [16, 9],
+  ),
+  AllegroPipeline: nativeTextVideoProfile(
+    'Allegro',
+    ALLEGRO_REPO,
+    [1280, 720, 100, 7.5, 512, 88, 15],
+    'bfloat16',
+    'sequential_cpu',
+    [100, 88],
+    '16:9',
+  ),
   LTXVideoPipeline: {
     displayName: 'LTX-Video Diffusers',
     family: 'LTX Video',
@@ -1897,6 +1891,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   AnimateDiffPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateDiffPipeline'),
   AnimateLCMPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateLCMPipeline'),
   CogVideoXPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogVideoXPipeline'),
+  AllegroPipeline: /* @__PURE__ */ pendingPlanningRequirement('AllegroPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,
