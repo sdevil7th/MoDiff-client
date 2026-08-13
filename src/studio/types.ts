@@ -59,6 +59,7 @@ export type StudioModelType =
   | 'LTXI2VLongMultiPromptPipeline'
   | 'LTX2ConditionPipeline'
   | 'HunyuanVideoFramepackPipeline'
+  | 'StableVideoDiffusionPipeline'
   | 'AceStepAudioPipeline'
   | 'StableAudioPipeline'
   | 'LongCatAudioDiTPipeline'
@@ -791,6 +792,7 @@ export type StudioModelProfile = {
     | 'Qwen Image'
     | 'Wan Video'
     | 'LTX Video'
+    | 'Stable Video Diffusion'
     | 'ACE Audio'
     | 'Stable Audio'
     | 'LongCat AudioDiT'
@@ -825,6 +827,7 @@ export type StudioModelProfile = {
   recommendedMaxSequenceLength?: number;
   guidanceLabel: string;
   supportsNegativePrompt?: boolean;
+  supportsPrompt?: boolean;
   supportsImageInput: boolean;
   supportsMask: boolean;
   supportsMultiImage: boolean;

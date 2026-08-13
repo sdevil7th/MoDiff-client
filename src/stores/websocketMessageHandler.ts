@@ -193,6 +193,7 @@ function shouldApplyWorkflowCanvasMutation(
   const clientRunId = 'client_run_id' in message ? message.client_run_id : undefined;
   const workflowTabId = 'workflow_tab_id' in message ? message.workflow_tab_id : undefined;
   const canvasEpoch = 'workflow_canvas_epoch' in message ? message.workflow_canvas_epoch : undefined;
+  const formEpoch = 'workflow_form_epoch' in message ? message.workflow_form_epoch : undefined;
   const runContext = findStudioRunContext(taskId, clientRunId);
   if (runContext) {
     return studio.shouldApplyRunUpdateToActiveWorkflow(taskId, clientRunId, workflowTabId);
@@ -203,6 +204,7 @@ function shouldApplyWorkflowCanvasMutation(
   // rebound to the new canvas epoch. Uncorrelated messages retain the raw
   // epoch guard so an old document can never mutate its replacement.
   if (typeof canvasEpoch === 'number' && canvasEpoch !== studio.workflowCanvasEpoch) return false;
+  if (typeof formEpoch === 'number' && formEpoch !== studio.workflowFormEpoch) return false;
   if (workflowTabId) {
     return studio.shouldApplyRunUpdateToActiveWorkflow(taskId, clientRunId, workflowTabId);
   }

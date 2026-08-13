@@ -2448,6 +2448,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   paramsByRole.audioPipeline.pipeline_class.onChange = 'update_audio_contract';
   paramsByRole.audioGenerate.pipeline.onSignal = 'update_audio_contract';
   paramsByRole.audioGenerate.audio_contract = scalar();
+  paramsByRole.wanPipeline.pipeline_class.onChange = 'update_video_contract';
+  paramsByRole.wanGenerate.pipeline.onSignal = 'update_video_contract';
+  paramsByRole.wanGenerate.mode.onChange = 'update_video_contract';
+  paramsByRole.wanGenerate.video_contract = scalar();
   paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
   const registry = Object.fromEntries(
     registryRoleRows.map(([role, nodeKey]) => {
@@ -2497,12 +2501,54 @@ test('backend execution specs materialize exact image, video, and audio recipes 
                 : 'text2music';
         flowStoreModule.useFlowStore
           .getState()
-          .setParam(payload.node, 'pipeline', { direction: 'output', value: { pipelineClass, taskType } }, 'signal');
+          .setParam(
+            payload.node,
+            'pipeline',
+            { direction: 'output', value: { pipelineClass, mode, taskType } },
+            'signal',
+          );
       } else if (payload.action === 'Generate') {
         const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
         const contract = signal?.value;
         flowStoreModule.useFlowStore.getState().setParam(payload.node, 'task_type', contract?.taskType);
         flowStoreModule.useFlowStore.getState().setParam(payload.node, 'audio_contract', contract);
+      }
+    }
+    if (payload?.fn === 'update_video_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === payload.node);
+        const pipelineClass = node?.data.params.pipeline_class.value;
+        flowStoreModule.useFlowStore.getState().setParam(
+          payload.node,
+          'pipeline',
+          {
+            direction: 'output',
+            value: {
+              pipelineClass,
+              modes: [
+                'text_to_video',
+                'image_to_video',
+                'video_to_video',
+                'reference_to_video',
+                'video_color_edit',
+                'video_inpaint',
+                'video_outpaint',
+                'control_to_video',
+                'character_animate',
+                'character_replace',
+              ],
+            },
+          },
+          'signal',
+        );
+      } else if (payload.action === 'Generate') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        const contract = signal?.value;
+        const currentMode = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'mode', 'value');
+        flowStoreModule.useFlowStore
+          .getState()
+          .setParam(payload.node, 'mode', contract?.modes?.includes(currentMode) ? currentMode : contract?.modes?.[0]);
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'video_contract', contract);
       }
     }
     return new Response(JSON.stringify({ error: false, nodes: [] }), {
@@ -3407,6 +3453,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     });
     assert.deepEqual(i2vImage.file.value, ['opening.png']);
     assert.equal(i2vImage.alpha_channel.value, 'remove alpha');
+    assert.equal(i2vGenerate.mode.value, 'image_to_video');
     assert.equal(i2vGenerate.guidance_scale_2.value, 3.5);
     assert.equal(i2vGenerate.use_guidance_scale_2.value, true);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(i2vForm), null);
@@ -3856,6 +3903,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(aceContinuationBinding.executionSpec.contentHash, aceContinuationSpec.contentHash);
     assert.deepEqual(topology(aceContinuationBinding), audioContinuationEdgeRows.map((row) => [...row]).sort());
     assert.equal(continuationGenerate.task_type.value, 'continuation');
+    assert.equal(continuationGenerate.audio_contract.value.mode, 'audio_continuation');
     assert.equal(continuationGenerate.return_continuation_tail.value, true);
     assert.equal(continuationMatch.reference_window_seconds.value, 15);
     assert.equal(continuationMatch.target_peak_dbfs.value, -1);

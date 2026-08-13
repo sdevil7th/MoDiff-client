@@ -106,6 +106,13 @@ function applyPortableContracts(graph, mode) {
       node.data.params.mode = { ...(node.data.params.mode ?? {}), value: mode };
     }
     if (
+      node?.data?.module === 'modules.DiffusersVideo' &&
+      ['Generate', 'GenerateVideoAudio'].includes(node?.data?.action)
+    ) {
+      node.data.params = node.data.params ?? {};
+      node.data.params.mode = { ...(node.data.params.mode ?? {}), value: mode };
+    }
+    if (
       node?.data?.module === 'modules.DiffusersRuntime' &&
       node?.data?.action === 'DiffusersExecutionRecipe' &&
       node?.data?.params?.device_map?.value === 'cuda'

@@ -2583,24 +2583,50 @@ const mockRegistry = {
     images: { type: 'image', display: 'output' },
   }),
   'modules.DiffusersVideo.LoadPipeline': nodeDef('modules.DiffusersVideo', 'LoadPipeline', 'Diffusers Video', {
-    model_id: { type: 'string', value: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers' },
-    pipeline_class: { type: 'string', value: 'WanImageToVideoPipeline' },
+    model_id: {
+      type: 'string',
+      value: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers',
+      onChange: 'select_adapter',
+    },
+    pipeline_class: { type: 'string', value: 'WanImageToVideoPipeline', onChange: 'select_adapter' },
     revision: { type: 'string', value: '' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
     auto_offload: { type: 'bool', value: false },
     offload_mode: { type: 'string', value: 'none' },
     execution_recipe: { type: 'diffusers_execution_recipe', display: 'input' },
-    pipeline: { type: 'video_diffusion_pipeline', display: 'output' },
+    pipeline: {
+      type: 'video_diffusion_pipeline',
+      display: 'output',
+      signal: {
+        direction: 'output',
+        origin: 'pipeline_class',
+        value: {
+          schemaVersion: 1,
+          library: 'diffusers',
+          mediaKind: 'video',
+          pipelineClass: 'WanImageToVideoPipeline',
+          modes: ['image_to_video'],
+        },
+      },
+    },
   }),
   'modules.DiffusersVideo.Generate': nodeDef('modules.DiffusersVideo', 'Generate', 'Diffusers Video', {
-    pipeline: { type: 'video_diffusion_pipeline', display: 'input' },
+    pipeline: {
+      type: 'video_diffusion_pipeline',
+      display: 'input',
+      onSignal: [
+        { action: 'value', target: 'video_contract' },
+        { action: 'exec', data: 'update_adapter_modes' },
+      ],
+    },
+    video_contract: { type: 'object', hidden: true },
     prompt: { type: 'text', display: 'textarea', value: '' },
     negative_prompt: { type: 'text', display: 'textarea', value: '' },
     reference_images: { type: 'image', display: 'input' },
     video: { type: 'video', display: 'input' },
     mask: { type: 'video', display: 'input' },
-    mode: { type: 'string', value: 'image_to_video' },
+    mode: { type: 'string', value: 'image_to_video', onChange: 'update_adapter_modes' },
     width: { type: 'int', value: 768 },
     height: { type: 'int', value: 512 },
     num_frames: { type: 'int', value: 81 },
@@ -3124,14 +3150,96 @@ async function installMockRoutes(page: Page) {
       fn?: string;
       node?: string;
       action?: string;
+      workflowTabId?: string;
+      workflowCanvasEpoch?: number;
+      workflowFormEpoch?: number;
       values?: {
         pipeline_class?: string;
         mode?: string;
         audio_contract?: { pipelineClass?: string; mode?: string; taskType?: string; fieldParams?: object };
+        video_contract?: { pipelineClass?: string; modes?: string[] };
       };
     };
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
-    if (request.fn !== 'update_audio_contract' || !request.node) return;
+    if (!request.node) return;
+    if (request.fn === 'select_adapter') {
+      const pipelineClass = request.values?.pipeline_class ?? 'WanImageToVideoPipeline';
+      const modesByPipelineClass: Record<string, string[]> = {
+        WanVACEPipeline: [
+          'text_to_video',
+          'video_to_video',
+          'video_inpaint',
+          'video_outpaint',
+          'reference_to_video',
+          'control_to_video',
+          'video_color_edit',
+        ],
+        WanVideoToVideoPipeline: ['video_to_video', 'video_color_edit'],
+        WanAnimatePipeline: ['character_animate', 'character_replace'],
+        LTXConditionPipeline: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+        LTX2ConditionPipeline: ['text_to_video', 'image_to_video', 'video_to_video', 'reference_to_video'],
+      };
+      const modes =
+        modesByPipelineClass[pipelineClass] ??
+        ([
+          'WanImageToVideoPipeline',
+          'LTXI2VLongMultiPromptPipeline',
+          'HunyuanVideoFramepackPipeline',
+          'StableVideoDiffusionPipeline',
+        ].includes(pipelineClass)
+          ? ['image_to_video']
+          : ['text_to_video']);
+      await page.evaluate(
+        ({ node, contract, workflowTabId, workflowCanvasEpoch, workflowFormEpoch }) => {
+          window.__MODIFF_E2E__!.sendWebsocketMessage({
+            type: 'set_field_params',
+            node,
+            field: 'pipeline',
+            params: { signal: { direction: 'output', origin: 'pipeline_class', value: contract } },
+            workflow_tab_id: workflowTabId,
+            workflow_canvas_epoch: workflowCanvasEpoch,
+            workflow_form_epoch: workflowFormEpoch,
+          });
+        },
+        {
+          node: request.node,
+          contract: { schemaVersion: 1, library: 'diffusers', mediaKind: 'video', pipelineClass, modes },
+          workflowTabId: request.workflowTabId,
+          workflowCanvasEpoch: request.workflowCanvasEpoch,
+          workflowFormEpoch: request.workflowFormEpoch,
+        },
+      );
+      return;
+    }
+    if (request.fn === 'update_adapter_modes' && request.values?.video_contract) {
+      const contract = request.values.video_contract;
+      const mode = contract.modes?.includes(request.values.mode ?? '')
+        ? request.values.mode
+        : (contract.modes?.[0] ?? 'text_to_video');
+      await page.evaluate(
+        ({ node, modes, mode, workflowTabId, workflowCanvasEpoch, workflowFormEpoch }) => {
+          window.__MODIFF_E2E__!.sendWebsocketMessage({
+            type: 'set_field_params',
+            node,
+            field: 'mode',
+            params: { options: modes, default: modes[0], value: mode },
+            workflow_tab_id: workflowTabId,
+            workflow_canvas_epoch: workflowCanvasEpoch,
+            workflow_form_epoch: workflowFormEpoch,
+          });
+        },
+        {
+          node: request.node,
+          modes: contract.modes ?? [],
+          mode,
+          workflowTabId: request.workflowTabId,
+          workflowCanvasEpoch: request.workflowCanvasEpoch,
+          workflowFormEpoch: request.workflowFormEpoch,
+        },
+      );
+      return;
+    }
+    if (request.fn !== 'update_audio_contract') return;
     const mode = request.values?.mode ?? request.values?.audio_contract?.mode ?? 'text_to_audio';
     const taskType =
       mode === 'audio_variation'
@@ -3149,13 +3257,16 @@ async function installMockRoutes(page: Page) {
       fieldParams: request.values?.audio_contract?.fieldParams ?? {},
     };
     await page.evaluate(
-      ({ contract, node, loaderAction }) => {
+      ({ contract, node, loaderAction, workflowTabId, workflowCanvasEpoch, workflowFormEpoch }) => {
         if (loaderAction) {
           window.__MODIFF_E2E__!.sendWebsocketMessage({
             type: 'set_field_params',
             node,
             field: 'pipeline',
             params: { signal: { direction: 'output', origin: 'pipeline_class', value: contract } },
+            workflow_tab_id: workflowTabId,
+            workflow_canvas_epoch: workflowCanvasEpoch,
+            workflow_form_epoch: workflowFormEpoch,
           });
           return;
         }
@@ -3163,9 +3274,19 @@ async function installMockRoutes(page: Page) {
           type: 'set_field_value',
           node,
           fields: { task_type: contract.taskType },
+          workflow_tab_id: workflowTabId,
+          workflow_canvas_epoch: workflowCanvasEpoch,
+          workflow_form_epoch: workflowFormEpoch,
         });
       },
-      { contract, node: request.node, loaderAction: request.action === 'LoadPipeline' },
+      {
+        contract,
+        node: request.node,
+        loaderAction: request.action === 'LoadPipeline',
+        workflowTabId: request.workflowTabId,
+        workflowCanvasEpoch: request.workflowCanvasEpoch,
+        workflowFormEpoch: request.workflowFormEpoch,
+      },
     );
   });
   await page.route('**/nodes**', async (route) => {

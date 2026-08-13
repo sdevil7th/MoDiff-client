@@ -323,6 +323,33 @@ test('Shap-E exposes the pinned safe rendered-orbit recipe', () => {
   );
 });
 
+test('Stable Video Diffusion exposes a gated prompt-free short-video recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableVideoDiffusionPipeline;
+  const form = profilesModule.getFormDefaultsForMode('image_to_video', 'StableVideoDiffusionPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.STABLE_VIDEO_DIFFUSION_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.supportsPrompt, false);
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedFrames, 25);
+  assert.equal(profile.recommendedFps, 7);
+  assert.deepEqual(profile.modeRequirements.image_to_video.requiredImages, ['referenceImages']);
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 576);
+  assert.equal(form.steps, 25);
+  assert.equal(form.guidanceScale, 3);
+  assert.equal(form.numFrames, 25);
+  assert.equal(form.fps, 7);
+
+  const policy = modelUsagePoliciesModule.usagePolicyForRepository(profile.defaultRepo);
+  assert.equal(policy.access, 'huggingface_gated');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.reviewedRevision, profilesModule.STABLE_VIDEO_DIFFUSION_REVISION);
+  assert.match(policy.shortSummary, /limited commercial use/i);
+  assert.match(policy.shortSummary, /registration, revenue, attribution, AUP/i);
+  assert.equal(modelUsagePoliciesModule.repositoryRequiresHuggingFaceGate(profile.defaultRepo), true);
+});
+
 test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   const graph = JSON.parse(
     await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),

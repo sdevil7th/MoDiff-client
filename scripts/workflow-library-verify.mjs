@@ -339,6 +339,16 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
         throw new Error(`${workflow.id} video execution recipe must enable VAE slicing and explicitly select tiling.`);
       }
       const pipelineClass = pipeline.data.params?.pipeline_class?.value;
+      const generateNodes = (graph.nodes ?? []).filter(
+        (node) =>
+          node?.data?.module === 'modules.DiffusersVideo' &&
+          ['Generate', 'GenerateVideoAudio'].includes(node?.data?.action),
+      );
+      for (const generate of generateNodes) {
+        if (generate.data.params?.mode?.value !== workflow.mode) {
+          throw new Error(`${workflow.id} video generator ${generate.id} does not preserve mode ${workflow.mode}.`);
+        }
+      }
       if (['WanPipeline', 'Wan22Pipeline', 'WanTI2VPipeline'].includes(pipelineClass)) {
         if (
           recipeParams.attention_backend?.value !== '_native_flash' ||

@@ -255,6 +255,7 @@ export type FieldWebsocketMessage = BaseWebsocketMessage<
   run_input_hash?: string;
   workflow_tab_id?: string;
   workflow_canvas_epoch?: number;
+  workflow_form_epoch?: number;
   attempt_index?: number;
 };
 

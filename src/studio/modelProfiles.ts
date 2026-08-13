@@ -202,6 +202,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'LTX Long I2V',
   'LTX-2 Video + Audio',
   'Hunyuan FramePack',
+  'Stable Video Diffusion XT 1.1',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -285,6 +286,8 @@ export const WAN_FLF_REPO = 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers';
 export const LTX_VIDEO_REPO = 'Lightricks/LTX-Video-0.9.8-13B-distilled';
 export const LTX2_REPO = 'Lightricks/LTX-2';
 export const FRAMEPACK_REPO = 'lllyasviel/FramePackI2V_HY';
+export const STABLE_VIDEO_DIFFUSION_REPO = 'stabilityai/stable-video-diffusion-img2vid-xt-1-1';
+export const STABLE_VIDEO_DIFFUSION_REVISION = '043843887ccd51926e3efed36270444a838e7861';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
@@ -770,6 +773,41 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   HunyuanVideoFramepackPipeline: planningVideoProfile('Wan Video', FRAMEPACK_REPO, ['image_to_video'], {
     image_to_video: { requiredImages: ['referenceImages'] },
   }),
+  StableVideoDiffusionPipeline: {
+    family: 'Stable Video Diffusion',
+    surfaceCategory: 'Video',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: STABLE_VIDEO_DIFFUSION_REPO,
+    displayName: 'stable-video-diffusion-img2vid-xt-1-1',
+    artifactLabel: 'Gated safetensors Diffusers repo',
+    defaultDtype: 'float16',
+    defaultSize: { width: 1024, height: 576, aspectRatio: '16:9' },
+    recommendedSteps: 25,
+    recommendedGuidance: 3,
+    supportFlags: 1,
+    supportsPrompt: false,
+    supportsNegativePrompt: false,
+    supportsVideoInput: false,
+    outputKind: 'video',
+    recommendedFrames: 25,
+    recommendedFps: 7,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 25,
+      width: 1024,
+      height: 576,
+      numFrames: 8,
+    },
+    modes: ['image_to_video'],
+    modeRequirements: {
+      image_to_video: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires exactly one opening reference image and prior acceptance of the gated model terms.',
+      },
+    },
+  },
   LTXVideoPipeline: {
     displayName: 'LTX-Video Diffusers',
     family: 'LTX Video',
@@ -1670,6 +1708,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   LTXI2VLongMultiPromptPipeline: /* @__PURE__ */ pendingPlanningRequirement('LTXI2VLongMultiPromptPipeline'),
   LTX2ConditionPipeline: /* @__PURE__ */ pendingPlanningRequirement('LTX2ConditionPipeline'),
   HunyuanVideoFramepackPipeline: /* @__PURE__ */ pendingPlanningRequirement('HunyuanVideoFramepackPipeline'),
+  StableVideoDiffusionPipeline: /* @__PURE__ */ pendingPlanningRequirement('StableVideoDiffusionPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,

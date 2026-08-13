@@ -87,7 +87,14 @@ function compactProductionChunksPlugin(): Plugin {
         Object.values(bundle).map(async (item) => {
           if (item.type !== 'chunk') return;
           const result = await minify(item.code, {
-            compress: { passes: 5, pure_getters: 'strict', booleans_as_integers: true },
+            compress: {
+              passes: 5,
+              pure_getters: 'strict',
+              booleans_as_integers: true,
+              // Keep errors, but omit development-only connection, progress,
+              // and stale-event diagnostics from production bundles.
+              drop_console: ['debug', 'info', 'warn'],
+            },
             ecma: 2022,
             module: true,
             mangle: true,

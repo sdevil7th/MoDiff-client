@@ -3,6 +3,8 @@ import {
   FLUX_DEV_REPO,
   FLUX_DEV_REVISION,
   FLUX_KONTEXT_NVFP4_REPO,
+  STABLE_VIDEO_DIFFUSION_REPO,
+  STABLE_VIDEO_DIFFUSION_REVISION,
   STUDIO_MODEL_PROFILES,
 } from './modelProfiles';
 import type { StudioTemplate, StudioTemplateModelArtifact } from './types';
@@ -54,6 +56,20 @@ const fluxDevPolicy = (
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
+  [STABLE_VIDEO_DIFFUSION_REPO]: {
+    id: 'stability-ai-community-license:stable-video-diffusion-xt-1-1',
+    repository: STABLE_VIDEO_DIFFUSION_REPO,
+    useScope: 'commercial_allowed',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The Stability AI Community License permits research, non-commercial, and limited commercial use subject to its registration, revenue, attribution, AUP, and other conditions.',
+    termsUrl: `https://huggingface.co/${STABLE_VIDEO_DIFFUSION_REPO}/blob/${STABLE_VIDEO_DIFFUSION_REVISION}/LICENSE.md`,
+    modelCardUrl: `https://huggingface.co/${STABLE_VIDEO_DIFFUSION_REPO}/tree/${STABLE_VIDEO_DIFFUSION_REVISION}`,
+    access: 'huggingface_gated',
+    reviewedRevision: STABLE_VIDEO_DIFFUSION_REVISION,
+    policyVersion: '2026-08-13',
+    reviewedAt: '2026-08-13',
+  },
   [FLUX_DEV_REPO]: fluxDevPolicy(FLUX_DEV_REPO, FLUX_DEV_REVISION),
   'black-forest-labs/FLUX.1-Krea-dev': fluxDevPolicy(
     'black-forest-labs/FLUX.1-Krea-dev',

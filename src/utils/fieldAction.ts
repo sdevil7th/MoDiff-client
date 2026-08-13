@@ -307,6 +307,7 @@ async function execAction(
         queue,
         workflowTabId: workflowContext.workflowTabId,
         workflowCanvasEpoch: workflowContext.canvasEpoch,
+        workflowFormEpoch: workflowContext.formEpoch,
       }),
       parse: (value) => {
         if (!isRecord(value)) throw new Error('The node action returned an invalid response.');

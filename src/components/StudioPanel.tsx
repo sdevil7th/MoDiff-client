@@ -257,7 +257,11 @@ export default function StudioPanel() {
   const isPerceptionMode = form.mode === 'depth_estimation';
   const isSpeechMode = SPEECH_STUDIO_MODES.includes(form.mode);
   const isThreeDMode = THREE_D_STUDIO_MODES.includes(form.mode);
-  const usesPrompt = !isUnconditionalMode && !isPerceptionMode && !isSpeechMode;
+  const usesPrompt =
+    !isUnconditionalMode &&
+    !isPerceptionMode &&
+    !isSpeechMode &&
+    STUDIO_MODEL_PROFILES[form.modelType].supportsPrompt !== false;
   const resourcePlan = useMemo(() => resolveStudioResourcePlan(form), [form]);
   const expertResourceMode = studioViewMode === 'expert';
   const autoPlanExecution = useMemo(

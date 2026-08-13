@@ -2965,8 +2965,12 @@ async function applyAudioPipelineContract(binding: StudioGraphBinding) {
   await fieldAction(props, pipelineClass);
 
   const expectedPipelineClass = String(pipelineClass ?? '');
+  const expectedMode = String(useFlowStore.getState().getParam(pipelineNode, 'mode', 'value') ?? '');
   const exactContract = (value: unknown) =>
-    value && typeof value === 'object' && (value as { pipelineClass?: unknown }).pipelineClass === expectedPipelineClass
+    value &&
+    typeof value === 'object' &&
+    (value as { pipelineClass?: unknown }).pipelineClass === expectedPipelineClass &&
+    (value as { mode?: unknown }).mode === expectedMode
       ? value
       : undefined;
   const value = await waitForValue(() => {
@@ -2974,6 +2978,10 @@ async function applyAudioPipelineContract(binding: StudioGraphBinding) {
     return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
   }, 5000);
   if (!value) throw new Error('Audio task contract timed out.');
+  // Stage the exact reviewed contract before invoking the input's declarative
+  // value/exec actions. This prevents an older contract from being sampled by
+  // the backend action while a workflow switches between audio modes.
+  setParamIfPresent(generateNode, ['audio_contract'], value);
   await applyManagedInputSignal(generateNode, ['pipeline'], value);
 
   const expectedTask = String((value as { taskType?: unknown }).taskType ?? '');
@@ -2985,6 +2993,50 @@ async function applyAudioPipelineContract(binding: StudioGraphBinding) {
     5000,
   );
   if (!accepted) throw new Error('Audio task contract timed out.');
+}
+
+async function applyVideoPipelineContract(binding: StudioGraphBinding, mode: StudioMode) {
+  const pipelineNode = binding.nodes.wanPipeline;
+  const generateNode = binding.nodes.wanGenerate;
+  const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
+  if (!pipelineNode || !generateNode || !pipelineClassKey) return;
+
+  const pipelineClass = useFlowStore.getState().getParam(pipelineNode, pipelineClassKey, 'value');
+  const props = buildFieldProps(pipelineNode, pipelineClassKey);
+  if (!props?.onChange) throw new Error('Video loader contract action missing.');
+  await fieldAction(props, pipelineClass);
+
+  const expectedPipelineClass = String(pipelineClass ?? '');
+  const exactContract = (value: unknown) =>
+    value &&
+    typeof value === 'object' &&
+    (value as { pipelineClass?: unknown }).pipelineClass === expectedPipelineClass &&
+    Array.isArray((value as { modes?: unknown }).modes) &&
+    (value as { modes: unknown[] }).modes.includes(mode)
+      ? value
+      : undefined;
+  const value = await waitForValue(() => {
+    const signal = useFlowStore.getState().getParam(pipelineNode, 'pipeline', 'signal');
+    return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
+  }, 5000);
+  if (!value) throw new Error('Video loader contract timed out.');
+  setParamIfPresent(generateNode, ['video_contract'], value);
+  await applyManagedInputSignal(generateNode, ['pipeline'], value);
+
+  const modeKey = findParamKey(generateNode, ['mode']);
+  const modeProps = modeKey ? buildFieldProps(generateNode, modeKey) : undefined;
+  if (!modeKey || !modeProps?.onChange) throw new Error('Video mode contract action missing.');
+  useFlowStore.getState().setParam(generateNode, modeKey, mode);
+  await fieldAction(modeProps, mode);
+
+  const accepted = await waitForValue(
+    () =>
+      useFlowStore.getState().getParam(generateNode, 'mode', 'value') === mode
+        ? exactContract(useFlowStore.getState().getParam(generateNode, 'video_contract', 'value'))
+        : undefined,
+    5000,
+  );
+  if (!accepted) throw new Error('Video generator contract timed out.');
 }
 
 async function applyAutoModelLoaderType(nodeId: string | undefined, loaderType: string) {
@@ -3971,6 +4023,72 @@ async function finalizeAudioGraph(
   connectBaseGraph(binding);
 }
 
+async function finalizeVideoGraph(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  timedOutGroups: string[],
+  token: number,
+) {
+  await Promise.all([
+    waitForFieldGroupsTracked(
+      binding.nodes.wanPipeline,
+      [['pipeline'], ['model_id'], ['pipeline_class']],
+      timedOutGroups,
+      'diffusers video pipeline',
+      5000,
+    ),
+    waitForFieldGroupsTracked(
+      binding.nodes.wanGenerate,
+      [['pipeline'], ['video_out'], ['mode']],
+      timedOutGroups,
+      'diffusers video generate',
+      5000,
+    ),
+    binding.nodes.loadImage
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadImage,
+          [IMAGE_HANDLE, ['file']],
+          timedOutGroups,
+          'source image loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadVideo
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadVideo,
+          [['video'], ['file']],
+          timedOutGroups,
+          'source video loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadControlVideo
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadControlVideo,
+          [['video'], ['file']],
+          timedOutGroups,
+          'control video loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadMaskVideo
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadMaskVideo,
+          [['video'], ['file']],
+          timedOutGroups,
+          'mask video loader',
+          3000,
+        )
+      : Promise.resolve(true),
+  ]);
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  await applyVideoPipelineContract(binding, form.mode);
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  connectBaseGraph(binding);
+}
+
 async function finalizeModularGraph(
   binding: StudioGraphBinding,
   form: StudioFormState,
@@ -4131,9 +4249,7 @@ async function finalizeStudioGraph(
     } else if (!isVideoMode(form.mode)) {
       await finalizeModularGraph(binding, form, timedOutGroups, token);
     } else {
-      assertGraphFinalizationActive(token);
-      applyFormValues(binding, form);
-      connectBaseGraph(binding);
+      await finalizeVideoGraph(binding, form, timedOutGroups, token);
     }
 
     assertGraphFinalizationActive(token);
