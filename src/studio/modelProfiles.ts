@@ -75,6 +75,7 @@ export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
 export const SDXL_TURBO_REPO = 'stabilityai/sdxl-turbo';
+export const SDXL_INSTRUCT_PIX2PIX_REPO = 'diffusers/sdxl-instructpix2pix-768';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
@@ -183,6 +184,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'FLUX.2-klein-4B',
   'Stable Diffusion XL 1.0',
   'Stable Diffusion XL Turbo',
+  'Stable Diffusion XL InstructPix2Pix',
   'Stable Diffusion 1.5',
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
@@ -1046,6 +1048,34 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: ['text_to_image'],
   },
+  StableDiffusionXLInstructPix2PixPipeline: {
+    family: 'Stable Diffusion XL',
+    surfaceCategory: 'Image Edit',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SDXL_INSTRUCT_PIX2PIX_REPO,
+    artifactLabel: 'Diffusers safetensors repo',
+    defaultDtype: 'float16',
+    defaultSize: { width: 768, height: 768, aspectRatio: '1:1' },
+    recommendedSteps: 30,
+    recommendedGuidance: 3,
+    conditioningScale: 1.5,
+    supportFlags: 1,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 30,
+      width: 768,
+      height: 768,
+    },
+    modes: ['edit_image'],
+    modeRequirements: {
+      edit_image: {
+        requiredImages: ['referenceImages'],
+        note: 'Requires one source image and a text edit instruction.',
+      },
+    },
+  },
   StableDiffusionPipeline: {
     family: 'Stable Diffusion 1.x',
     surfaceCategory: 'Image',
@@ -1568,6 +1598,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     qualityDefaults: '512x512, one to four steps, guidance 0.',
     artifacts: [SDXL_TURBO_REPO],
     notes: 'Pinned fp16 safetensors text-to-image graph; output qualification pending.',
+    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
+  },
+  StableDiffusionXLInstructPix2PixPipeline: {
+    modelType: 'StableDiffusionXLInstructPix2PixPipeline',
+    supportedModes: ['edit_image'],
+    autoStatus: 'manual_only',
+    minimum: 'Expert-only pending a measured runtime envelope for the pinned experimental checkpoint.',
+    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    qualityDefaults: '768x768, 30 steps, text guidance 3, image guidance 1.5.',
+    artifacts: [SDXL_INSTRUCT_PIX2PIX_REPO],
+    notes: 'Pinned safetensors instruction-edit graph; output qualification pending.',
     manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
   },
   StableDiffusionPipeline: {

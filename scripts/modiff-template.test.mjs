@@ -180,6 +180,21 @@ test('SDXL Turbo exposes its pinned one-step guidance-zero recipe', () => {
   assert.equal(form.guidanceScale, 0);
 });
 
+test('SDXL InstructPix2Pix exposes its pinned 768px instruction-edit recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLInstructPix2PixPipeline;
+  const form = profilesModule.getFormDefaultsForMode('edit_image', 'StableDiffusionXLInstructPix2PixPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_INSTRUCT_PIX2PIX_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['edit_image']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 768);
+  assert.equal(form.height, 768);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 3);
+  assert.equal(form.conditioningScale, 1.5);
+});
+
 test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');

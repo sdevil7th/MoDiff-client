@@ -73,6 +73,7 @@ const IMAGE_GENERATION_POLICY = {
   guidance_scale: essential('guidanceScale'),
   guidance: essential('guidanceScale'),
   true_cfg_scale: essential('guidanceScale'),
+  image_guidance_scale: essential('conditioningScale'),
   pag_scale: essential('pagScale'),
   pag_adaptive_scale: advanced('pagAdaptiveScale'),
   processing_resolution: essential('processingResolution'),
