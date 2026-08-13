@@ -392,6 +392,23 @@ test('AnimateDiff and AnimateLCM expose independently pinned motion recipes and 
   }
 });
 
+test('CogVideoX-2B exposes the bounded native short-video source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.CogVideoXPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'CogVideoXPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.COGVIDEOX_2B_REPO);
+  assert.equal(profilesModule.COGVIDEOX_2B_REVISION, '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01');
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 226);
+  assert.equal(form.width, 720);
+  assert.equal(form.height, 480);
+  assert.equal(form.steps, 25);
+  assert.equal(form.guidanceScale, 6);
+  assert.equal(form.numFrames, 25);
+  assert.equal(form.fps, 8);
+});
+
 test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   const graph = JSON.parse(
     await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),

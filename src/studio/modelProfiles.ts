@@ -205,6 +205,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Video Diffusion XT 1.1',
   'AnimateDiff SD1.5 v2',
   'AnimateLCM SD1.5',
+  'CogVideoX-2B',
   'LTX-Video',
   'ACE-Step Audio',
   'Stable Audio Open 1.0',
@@ -294,6 +295,8 @@ export const ANIMATEDIFF_MOTION_REPO = 'guoyww/animatediff-motion-adapter-v1-5-2
 export const ANIMATEDIFF_MOTION_REVISION = '6167b88ffe39b4441fdf2113e77b99a6f56b7906';
 export const ANIMATELCM_MOTION_REPO = 'wangfuyun/AnimateLCM';
 export const ANIMATELCM_MOTION_REVISION = '3d4d00fc113225e1040f4d3bec504b6ec750c10c';
+export const COGVIDEOX_2B_REPO = 'zai-org/CogVideoX-2b';
+export const COGVIDEOX_2B_REVISION = '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01';
 export const STABLE_AUDIO_REPO = 'stabilityai/stable-audio-open-1.0';
 export const LONGCAT_AUDIO_DIT_REPO = 'ruixiangma/LongCat-AudioDiT-1B-Diffusers';
 export const AUDIO_LDM2_REPO = 'cvssp/audioldm2';
@@ -897,6 +900,39 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       text_to_video: {
         modelRequirements: [ANIMATELCM_MOTION_REQUIREMENT],
         note: 'Pinned AnimateLCM adapter, linear-beta scheduler, and spatial LoRA.',
+      },
+    },
+  },
+  CogVideoXPipeline: {
+    family: 'CogVideoX',
+    surfaceCategory: 'Video',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: COGVIDEOX_2B_REPO,
+    displayName: 'CogVideoX-2B',
+    artifactLabel: 'Official Apache-2.0 safetensors Diffusers repo',
+    defaultDtype: 'float16',
+    defaultSize: { width: 720, height: 480, aspectRatio: 'custom' },
+    recommendedSteps: 25,
+    recommendedGuidance: 6,
+    recommendedMaxSequenceLength: 226,
+    supportFlags: 0,
+    supportsVideoInput: false,
+    outputKind: 'video',
+    recommendedFrames: 25,
+    recommendedFps: 8,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 16,
+      width: 720,
+      height: 480,
+      numFrames: 9,
+    },
+    modes: ['text_to_video'],
+    modeRequirements: {
+      text_to_video: {
+        note: 'Pinned safetensors-only CogVideoX-2B with native 720x480 output and VAE tiling.',
       },
     },
   },
@@ -1803,6 +1839,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   StableVideoDiffusionPipeline: /* @__PURE__ */ pendingPlanningRequirement('StableVideoDiffusionPipeline'),
   AnimateDiffPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateDiffPipeline'),
   AnimateLCMPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateLCMPipeline'),
+  CogVideoXPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogVideoXPipeline'),
   LTXVideoPipeline: {
     modelType: 'LTXVideoPipeline',
     supportedModes: LTX_VIDEO_MODES,

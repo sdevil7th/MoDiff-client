@@ -371,6 +371,24 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           throw new Error(`${workflow.id} AnimateDiff graph is missing its exact base, motion, or scheduler recipe.`);
         }
       }
+      if (pipelineClass === 'CogVideoXPipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'zai-org/CogVideoX-2b' ||
+          revision !== '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false
+        ) {
+          throw new Error(`${workflow.id} CogVideoX graph is missing its exact artifact or safe execution recipe.`);
+        }
+      }
       const generateNodes = (graph.nodes ?? []).filter(
         (node) =>
           node?.data?.module === 'modules.DiffusersVideo' &&
