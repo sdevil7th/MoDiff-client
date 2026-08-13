@@ -76,6 +76,8 @@ export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVF
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
 export const SDXL_TURBO_REPO = 'stabilityai/sdxl-turbo';
 export const SDXL_INSTRUCT_PIX2PIX_REPO = 'diffusers/sdxl-instructpix2pix-768';
+export const SDXL_CONTROLNET_CANNY_REPO = 'diffusers/controlnet-canny-sdxl-1.0';
+export const SDXL_CONTROLNET_CANNY_REVISION = 'eb115a19a10d14909256db740ed109532ab1483c';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
 export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
@@ -102,6 +104,16 @@ export const SD15_CONTROLNET_CANNY_REQUIREMENT: StudioModelRequirement = {
   kind: 'controlnet',
   requiredForModes: ['control_image'],
   description: 'Pinned safetensors ControlNet component for the generic SD1.5 control workflow.',
+};
+
+export const SDXL_CONTROLNET_CANNY_REQUIREMENT: StudioModelRequirement = {
+  id: 'sdxl-controlnet-canny',
+  label: 'Stable Diffusion XL Canny ControlNet',
+  repo: SDXL_CONTROLNET_CANNY_REPO,
+  revision: SDXL_CONTROLNET_CANNY_REVISION,
+  kind: 'controlnet',
+  requiredForModes: ['control_image'],
+  description: 'Pinned fp16 safetensors ControlNet component for the generic SDXL control workflow.',
 };
 
 export const QWEN_IMAGE_EDIT_INPAINT_CONTRACT: StudioInpaintContractStatus = {
@@ -185,6 +197,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Stable Diffusion XL 1.0',
   'Stable Diffusion XL Turbo',
   'Stable Diffusion XL InstructPix2Pix',
+  'Stable Diffusion XL ControlNet',
   'Stable Diffusion 1.5',
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
@@ -1076,6 +1089,35 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  StableDiffusionXLControlNetPipeline: {
+    family: 'Stable Diffusion XL',
+    surfaceCategory: 'Control',
+    catalogVisibility: 'workflowOnly',
+    defaultRepo: SDXL_BASE_REPO,
+    artifactLabel: 'Diffusers fp16 safetensors assembly',
+    defaultDtype: 'float16',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps: 50,
+    recommendedGuidance: 5,
+    conditioningScale: 0.5,
+    supportFlags: 8,
+    lowVram: {
+      dtype: 'float16',
+      autoOffload: true,
+      offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
+      steps: 50,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['control_image'],
+    modeRequirements: {
+      control_image: {
+        modelRequirements: [SDXL_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['controlImage'],
+        note: 'Requires one control image and the pinned SDXL Canny ControlNet component.',
+      },
+    },
+  },
   StableDiffusionPipeline: {
     family: 'Stable Diffusion 1.x',
     surfaceCategory: 'Image',
@@ -1609,6 +1651,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     qualityDefaults: '768x768, 30 steps, text guidance 3, image guidance 1.5.',
     artifacts: [SDXL_INSTRUCT_PIX2PIX_REPO],
     notes: 'Pinned safetensors instruction-edit graph; output qualification pending.',
+    manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
+  },
+  StableDiffusionXLControlNetPipeline: {
+    modelType: 'StableDiffusionXLControlNetPipeline',
+    supportedModes: ['control_image'],
+    autoStatus: 'manual_only',
+    minimum: 'Expert-only pending a measured runtime envelope for the pinned SDXL ControlNet assembly.',
+    recommended: 'Use a CUDA or MPS accelerator with model CPU offload when full residency is unavailable.',
+    qualityDefaults: '1024x1024, 50 steps, guidance 5, ControlNet scale 0.5.',
+    artifacts: [SDXL_BASE_REPO, SDXL_CONTROLNET_CANNY_REPO],
+    notes: 'Pinned fp16 safetensors base and Canny ControlNet graph; output qualification pending.',
     manualOnlyReason: 'Live resource, macOS, and Gallery qualification pending.',
   },
   StableDiffusionPipeline: {
