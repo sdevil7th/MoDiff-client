@@ -17,8 +17,11 @@ export const RUNNER_INFRASTRUCTURE_EXIT_CODE = 70;
 function parseArgs(argv) {
   const args = {
     dryRun: false,
+    checkAppReadiness: false,
     maxTemplates: Number.POSITIVE_INFINITY,
     port: Number(process.env.MODIFF_QUALIFICATION_FRONTEND_PORT || 5194),
+    server: process.env.MODIFF_GALLERY_SERVER || 'http://127.0.0.1:8088',
+    cacheTimeoutMs: 30_000,
     timeoutMs: 8 * 60 * 60 * 1000,
     queueWaitTimeoutMs: 3 * 60 * 60 * 1000,
     templates: [],
@@ -32,12 +35,22 @@ function parseArgs(argv) {
       args.dryRun = true;
       continue;
     }
+    if (entry === '--check-app-readiness') {
+      args.checkAppReadiness = true;
+      continue;
+    }
     const value = argv[index + 1];
     if (entry === '--max-templates') {
       args.maxTemplates = Math.max(0, Number(value));
       index += 1;
     } else if (entry === '--port') {
       args.port = Number(value);
+      index += 1;
+    } else if (entry === '--server') {
+      args.server = String(value ?? '').trim();
+      index += 1;
+    } else if (entry === '--cache-timeout-ms') {
+      args.cacheTimeoutMs = Number(value);
       index += 1;
     } else if (entry === '--timeout-ms') {
       args.timeoutMs = Number(value);
@@ -145,6 +158,7 @@ export function selectedJobs(contract, args) {
       modelType: template.modelType,
       modelFamily: modelFamilyForTemplate(template),
       mediaKinds: templateMediaKinds(template),
+      requiredArtifacts: Array.isArray(template.requiredArtifacts) ? template.requiredArtifacts : [],
       status: USER_OWNED_TEMPLATE_IDS.has(template.id) ? 'user_owned_excluded' : 'deferred_media',
       missing: template.qualificationReceiptMissingFields,
     }));
@@ -156,6 +170,7 @@ export function selectedJobs(contract, args) {
       modelType: template.modelType,
       modelFamily: modelFamilyForTemplate(template),
       mediaKinds: templateMediaKinds(template),
+      requiredArtifacts: Array.isArray(template.requiredArtifacts) ? template.requiredArtifacts : [],
       status: 'pending',
       missing: template.qualificationReceiptMissingFields,
     }))
@@ -175,6 +190,170 @@ export function selectedJobs(contract, args) {
         left.templateId.localeCompare(right.templateId),
     ),
   };
+}
+
+const IMMUTABLE_REVISION = /^[0-9a-f]{40}$/;
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+export function appCacheUrl(server) {
+  let parsed;
+  try {
+    parsed = new URL(server);
+  } catch {
+    throw new Error('Qualification app readiness requires a valid loopback HTTP(S) server URL.');
+  }
+  if (
+    !['http:', 'https:'].includes(parsed.protocol) ||
+    !LOOPBACK_HOSTNAMES.has(parsed.hostname) ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error('Qualification app readiness accepts only an uncredentialed loopback HTTP(S) server URL.');
+  }
+  return new URL('/hf_cache', parsed.origin).toString();
+}
+
+function artifactKey(artifact) {
+  assertArtifactReceipt(artifact);
+  return `${artifact.repo}@${artifact.revision}#${artifact.role}`;
+}
+
+function assertArtifactReceipt(artifact) {
+  if (
+    !artifact ||
+    typeof artifact.repo !== 'string' ||
+    !artifact.repo ||
+    typeof artifact.revision !== 'string' ||
+    !IMMUTABLE_REVISION.test(artifact.revision) ||
+    typeof artifact.role !== 'string' ||
+    !artifact.role
+  ) {
+    throw new Error('Qualification jobs require exact repo, immutable revision, and role artifact receipts.');
+  }
+}
+
+function cacheArtifactStatus(cache, artifact) {
+  assertArtifactReceipt(artifact);
+  const repoEntries = cache.filter((entry) => entry.id === artifact.repo);
+  if (repoEntries.length === 0) return { ...artifact, ready: false, reason: 'repository_missing' };
+  const revisionEntries = repoEntries.filter(
+    (entry) =>
+      Array.isArray(entry.revisions) && entry.revisions.some((revision) => revision?.hash === artifact.revision),
+  );
+  if (revisionEntries.length === 0) return { ...artifact, ready: false, reason: 'revision_missing' };
+  if (
+    revisionEntries.some(
+      (entry) => entry.installed === true && entry.complete === true && entry.repair_required === false,
+    )
+  ) {
+    return { ...artifact, ready: true, reason: null };
+  }
+  if (revisionEntries.some((entry) => entry.repair_required === true)) {
+    return { ...artifact, ready: false, reason: 'repair_required' };
+  }
+  if (revisionEntries.every((entry) => entry.installed !== true)) {
+    return { ...artifact, ready: false, reason: 'not_installed' };
+  }
+  return { ...artifact, ready: false, reason: 'incomplete' };
+}
+
+export function appReadinessForJobs(jobs, cache) {
+  if (
+    !Array.isArray(jobs) ||
+    jobs.length > 10_000 ||
+    jobs.some(
+      (job) =>
+        !job ||
+        typeof job !== 'object' ||
+        typeof job.templateId !== 'string' ||
+        job.templateId.length < 1 ||
+        job.templateId.length > 256 ||
+        !Array.isArray(job.requiredArtifacts) ||
+        job.requiredArtifacts.length > 128,
+    ) ||
+    !Array.isArray(cache) ||
+    cache.length > 10_000 ||
+    cache.some(
+      (entry) =>
+        !entry ||
+        typeof entry !== 'object' ||
+        Array.isArray(entry) ||
+        typeof entry.id !== 'string' ||
+        entry.id.length < 3 ||
+        entry.id.length > 256 ||
+        !Array.isArray(entry.revisions) ||
+        entry.revisions.length > 128 ||
+        entry.revisions.some(
+          (revision) =>
+            !revision || typeof revision !== 'object' || !IMMUTABLE_REVISION.test(String(revision.hash ?? '')),
+        ),
+    )
+  ) {
+    throw new Error('The qualification job or app cache inventory is malformed or exceeds its bound.');
+  }
+  const artifactStatuses = new Map();
+  const assessedJobs = jobs.map((job) => {
+    const requiredArtifacts = Array.isArray(job.requiredArtifacts) ? job.requiredArtifacts : [];
+    if (requiredArtifacts.length === 0) {
+      return {
+        templateId: job.templateId,
+        ready: false,
+        blockedArtifacts: [{ ready: false, reason: 'artifact_receipt_missing' }],
+      };
+    }
+    const statuses = requiredArtifacts.map((artifact) => {
+      const key = artifactKey(artifact);
+      if (!artifactStatuses.has(key)) artifactStatuses.set(key, cacheArtifactStatus(cache, artifact));
+      return artifactStatuses.get(key);
+    });
+    return {
+      templateId: job.templateId,
+      ready: statuses.every((artifact) => artifact.ready),
+      blockedArtifacts: statuses.filter((artifact) => !artifact.ready),
+    };
+  });
+  const artifacts = [...artifactStatuses.values()].sort(
+    (left, right) =>
+      left.repo.localeCompare(right.repo) ||
+      left.revision.localeCompare(right.revision) ||
+      left.role.localeCompare(right.role),
+  );
+  const blockedJobs = assessedJobs.filter((job) => !job.ready);
+  return {
+    status: blockedJobs.length === 0 ? 'ready' : 'blocked',
+    jobCount: assessedJobs.length,
+    readyJobCount: assessedJobs.length - blockedJobs.length,
+    blockedJobCount: blockedJobs.length,
+    artifactCount: artifacts.length,
+    readyArtifactCount: artifacts.filter((artifact) => artifact.ready).length,
+    blockedArtifactCount: artifacts.filter((artifact) => !artifact.ready).length,
+    blockedJobs,
+    blockedArtifacts: artifacts.filter((artifact) => !artifact.ready),
+  };
+}
+
+async function fetchAppCache(server, timeoutMs) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
+    throw new Error('Qualification cache timeout must be between 1 and 120000 milliseconds.');
+  }
+  const response = await fetch(appCacheUrl(server), {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) throw new Error(`The app cache readiness request failed with HTTP ${response.status}.`);
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > 8 * 1024 * 1024) {
+    throw new Error('The app cache readiness response exceeds the 8 MiB bound.');
+  }
+  const body = await response.text();
+  if (Buffer.byteLength(body, 'utf8') > 8 * 1024 * 1024) {
+    throw new Error('The app cache readiness response exceeds the 8 MiB bound.');
+  }
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error('The app cache readiness response is not valid JSON.');
+  }
 }
 
 function writeState(state) {
@@ -223,6 +402,8 @@ export function galleryArgsForGroup(args, templateIds) {
     '--resource-mode',
     'auto',
     '--no-backend-start',
+    '--server',
+    args.server,
     ...(args.batchByModelFamily ? ['--reuse-runtime-within-model'] : []),
     ...(args.reuseExistingRuntimeKey ? ['--reuse-existing-runtime-key', args.reuseExistingRuntimeKey] : []),
     '--port',
@@ -234,7 +415,7 @@ export function galleryArgsForGroup(args, templateIds) {
   ];
 }
 
-export function runCampaign(argv = process.argv) {
+export async function runCampaign(argv = process.argv) {
   const args = parseArgs(argv);
   // A previous or interrupted gallery run can write a valid receipt before
   // this campaign state is finalized. Always rebuild the contract before
@@ -243,6 +424,9 @@ export function runCampaign(argv = process.argv) {
   refreshReports({ inherit: !args.dryRun });
   const selection = selectedJobs(readJson(CONTRACT_PATH), args);
   const groups = jobGroups(selection.jobs, args.batchByModelFamily);
+  const appReadiness = args.checkAppReadiness
+    ? appReadinessForJobs(selection.jobs, await fetchAppCache(args.server, args.cacheTimeoutMs))
+    : null;
   if (args.reuseExistingRuntimeKey && groups.length > 1) {
     throw new Error('--reuse-existing-runtime-key is only safe for a campaign containing one model-family group.');
   }
@@ -258,6 +442,7 @@ export function runCampaign(argv = process.argv) {
           batchByModelFamily: args.batchByModelFamily,
           reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
           excludedMedia: [...new Set(args.excludedMedia)],
+          appReadiness,
           groups: groups.map((group) => ({
             modelFamily: group.modelFamily,
             templateIds: group.jobs.map((job) => job.templateId),
@@ -269,7 +454,12 @@ export function runCampaign(argv = process.argv) {
         2,
       ),
     );
-    return 0;
+    return appReadiness?.status === 'blocked' ? 1 : 0;
+  }
+
+  if (appReadiness?.status === 'blocked') {
+    console.error(JSON.stringify(appReadiness, null, 2));
+    return 1;
   }
 
   const state = {
@@ -277,7 +467,7 @@ export function runCampaign(argv = process.argv) {
     format: 'modiff.template-qualification-campaign.v1',
     startedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    backendUrl: process.env.MODIFF_GALLERY_SERVER || 'http://127.0.0.1:8088',
+    backendUrl: args.server,
     batchByModelFamily: args.batchByModelFamily,
     reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
     excludedMedia: [...new Set(args.excludedMedia)],
@@ -352,5 +542,5 @@ export function runCampaign(argv = process.argv) {
 
 const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMainModule) {
-  process.exitCode = runCampaign();
+  process.exitCode = await runCampaign();
 }

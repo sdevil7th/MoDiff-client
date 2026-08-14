@@ -48,6 +48,25 @@ requirements file named by that manifest. The backend intentionally declares
 environment, so there is no repository `uv.lock` and the client release contract
 must not require or synthesize one.
 
+Before starting the long-running template qualification campaign on a clean
+host, refresh its plan and verify every selected template's exact immutable
+model and LoRA receipt against the running app's cache:
+
+```bash
+npm run release:qualification:run -- \
+  --dry-run \
+  --check-app-readiness \
+  --batch-by-model-family \
+  --server http://127.0.0.1:8088
+```
+
+The readiness check is read-only, accepts only an uncredentialed loopback app
+origin, and fails if a required repository or revision is absent, incomplete,
+not installed, or marked for repair. A successful result proves cache
+readiness only; it does not run a graph, qualify output, approve rights, or
+publish Gallery media. Remove `--dry-run` only on the approved qualification
+host when the campaign's long-running model execution is intentional.
+
 ## Inspect The Build
 
 For a static client-only inspection:

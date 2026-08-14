@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  appCacheUrl,
+  appReadinessForJobs,
   campaignStatusForRunner,
   galleryArgsForGroup,
   jobGroups,
@@ -93,6 +95,7 @@ test('qualification executes locked non-exact templates without conflating execu
       port: 5194,
       timeoutMs: 10_000,
       queueWaitTimeoutMs: 5_000,
+      server: 'http://127.0.0.1:8088',
       reuseExistingRuntimeKey: 'ZImagePipeline:auto-planned',
     },
     ['z_image_lora_style'],
@@ -105,6 +108,10 @@ test('qualification executes locked non-exact templates without conflating execu
     'auto',
   ]);
   assert.equal(args.includes('--reuse-runtime-within-model'), true);
+  assert.deepEqual(args.slice(args.indexOf('--server'), args.indexOf('--server') + 2), [
+    '--server',
+    'http://127.0.0.1:8088',
+  ]);
   assert.deepEqual(
     args.slice(args.indexOf('--reuse-existing-runtime-key'), args.indexOf('--reuse-existing-runtime-key') + 2),
     ['--reuse-existing-runtime-key', 'ZImagePipeline:auto-planned'],
@@ -115,4 +122,92 @@ test('qualification campaign stops distinctly on runner infrastructure loss', ()
   assert.equal(campaignStatusForRunner({ status: 0, error: null }), 'qualified');
   assert.equal(campaignStatusForRunner({ status: 1, error: null }), 'failed');
   assert.equal(campaignStatusForRunner({ status: 70, error: null }), 'infrastructure_failed');
+});
+
+test('qualification app readiness requires every exact app-installed artifact revision', () => {
+  const jobs = [
+    {
+      templateId: 'ready-template',
+      requiredArtifacts: [
+        { repo: 'owner/model', revision: 'a'.repeat(40), role: 'model' },
+        { repo: 'owner/lora', revision: 'b'.repeat(40), role: 'lora' },
+      ],
+    },
+  ];
+  const readiness = appReadinessForJobs(jobs, [
+    {
+      id: 'owner/model',
+      installed: true,
+      complete: true,
+      repair_required: false,
+      revisions: [{ hash: 'a'.repeat(40) }],
+    },
+    {
+      id: 'owner/lora',
+      installed: true,
+      complete: true,
+      repair_required: false,
+      revisions: [{ hash: 'b'.repeat(40) }],
+    },
+  ]);
+  assert.equal(readiness.status, 'ready');
+  assert.equal(readiness.readyJobCount, 1);
+  assert.equal(readiness.readyArtifactCount, 2);
+  assert.deepEqual(readiness.blockedJobs, []);
+});
+
+test('qualification app readiness fails closed for absent, incomplete, repair, and receipt gaps', () => {
+  const revision = 'c'.repeat(40);
+  const readiness = appReadinessForJobs(
+    [
+      {
+        templateId: 'repair-template',
+        requiredArtifacts: [{ repo: 'owner/repair', revision, role: 'model' }],
+      },
+      {
+        templateId: 'missing-template',
+        requiredArtifacts: [{ repo: 'owner/missing', revision, role: 'model' }],
+      },
+      { templateId: 'receiptless-template', requiredArtifacts: [] },
+    ],
+    [
+      {
+        id: 'owner/repair',
+        installed: true,
+        complete: false,
+        repair_required: true,
+        revisions: [{ hash: revision }],
+      },
+    ],
+  );
+  assert.equal(readiness.status, 'blocked');
+  assert.equal(readiness.blockedJobCount, 3);
+  assert.deepEqual(
+    readiness.blockedJobs.map((job) => job.blockedArtifacts[0].reason),
+    ['repair_required', 'repository_missing', 'artifact_receipt_missing'],
+  );
+});
+
+test('qualification app readiness permits only uncredentialed loopback HTTP origins', () => {
+  assert.equal(appCacheUrl('http://127.0.0.1:8088/path'), 'http://127.0.0.1:8088/hf_cache');
+  assert.equal(appCacheUrl('https://localhost:8443'), 'https://localhost:8443/hf_cache');
+  assert.equal(appCacheUrl('http://[::1]:8088'), 'http://[::1]:8088/hf_cache');
+  for (const server of ['https://example.com', 'file:///tmp/app', 'http://user:secret@127.0.0.1:8088', 'not a URL']) {
+    assert.throws(() => appCacheUrl(server), /loopback/);
+  }
+});
+
+test('qualification app readiness rejects malformed app inventory and artifact receipts', () => {
+  assert.throws(
+    () => appReadinessForJobs([], [{ id: 'owner/model', revisions: [{ hash: 'main' }] }]),
+    /malformed|bound/,
+  );
+  assert.throws(
+    () =>
+      appReadinessForJobs(
+        [{ templateId: 'moving', requiredArtifacts: [{ repo: 'owner/model', revision: 'main', role: 'model' }] }],
+        [],
+      ),
+    /immutable revision/,
+  );
 });
