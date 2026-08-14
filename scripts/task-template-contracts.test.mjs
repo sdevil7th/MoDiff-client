@@ -337,6 +337,164 @@ test('Smol Transformers profiles and exact generic execution roles stay workflow
   }
 });
 
+test('Janus any-to-any specs preserve mode-specific text and image task contracts', () => {
+  const modelType = 'HuggingFaceAnyToAnyModel';
+  const profile = {
+    id: 'janus-pro-1b:direct',
+    modes: ['text_generation', 'image_to_text', 'text_to_image'],
+    loader_module: 'modules.HuggingFaceTransformers',
+    loader_action: 'LoadAnyToAnyModel',
+    execution_path: 'direct-huggingface-transformers-any-to-any',
+    pipeline_class: 'JanusForConditionalGeneration',
+    default_repo: modelProfilesModule.JANUS_PRO_1B_REPO,
+  };
+  const cases = [
+    {
+      mode: 'text_generation',
+      outputKind: 'json',
+      generationSource: 'anyToAnyText',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['transformersAnyToAnyGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+      requiredMedia: [],
+      output: ['transformersTextPreview', 'modules.Primitive.DataViewer', 'value'],
+    },
+    {
+      mode: 'image_to_text',
+      outputKind: 'json',
+      generationSource: 'anyToAnyText',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['loadImage', 'modules.Image.Load', -720, 280],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['loadImage', 'image', 'transformersAnyToAnyGenerate', 'images'],
+        ['transformersAnyToAnyGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+      requiredMedia: [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
+      output: ['transformersTextPreview', 'modules.Primitive.DataViewer', 'value'],
+    },
+    {
+      mode: 'text_to_image',
+      outputKind: 'image',
+      generationSource: 'anyToAnyImage',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['preview', 'modules.Image.Preview', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['transformersAnyToAnyGenerate', 'image', 'preview', 'image'],
+      ],
+      requiredMedia: [],
+      output: ['preview', 'modules.Image.Preview', 'image'],
+    },
+  ];
+  const specs = cases.map((item) => {
+    const bindings = [
+      ['transformersAnyToAnyModel', 'model_id', 'artifact'],
+      ['transformersAnyToAnyModel', 'revision', 'defaultRevision'],
+      ['transformersAnyToAnyModel', 'dtype', 'dtype'],
+      ['transformersAnyToAnyModel', 'device', 'device'],
+      ...(item.mode === 'image_to_text'
+        ? [
+            ['loadImage', 'file', 'referenceImages'],
+            ['loadImage', 'alpha_channel', 'alphaMode'],
+          ]
+        : []),
+      ['transformersAnyToAnyGenerate', 'prompt', 'prompt'],
+      ['transformersAnyToAnyGenerate', 'generation_mode', item.generationSource],
+    ];
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `janus-pro-1b:${item.mode.replaceAll('_', '-')}:v1`,
+      modelType,
+      mode: item.mode,
+      executionProfileId: profile.id,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: profile.default_repo,
+      roles: item.roles,
+      edges: item.edges,
+      bindings,
+      autoFields: [],
+      actions: [],
+    };
+    return {
+      ...semantic,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+  });
+  assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs(specs, modelType, profile.modes, [profile]), specs);
+
+  const capability = { modelType, executionProfiles: [profile], studioExecutionSpecs: specs };
+  const contracts = cases.map((item, index) => {
+    const spec = specs[index];
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${spec.id}`,
+      modelType,
+      mode: item.mode,
+      mediaKind: item.outputKind,
+      executionProfileId: profile.id,
+      executionSpecId: spec.id,
+      executionSpecContentHash: spec.contentHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole: 'transformersAnyToAnyModel',
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: profile.default_repo,
+      loaderRepositories: [profile.default_repo],
+      requiredMedia: item.requiredMedia,
+      output: {
+        mediaKind: item.outputKind,
+        role: item.output[0],
+        nodeKey: item.output[1],
+        inputHandle: item.output[2],
+      },
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    return {
+      ...semantic,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+  });
+  const parsed = contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]);
+  assert.deepEqual(
+    parsed.map(({ mode, mediaKind, requiredMedia }) => ({ mode, mediaKind, requiredMedia })),
+    cases.map(({ mode, outputKind: mediaKind, requiredMedia }) => ({ mode, mediaKind, requiredMedia })),
+  );
+  assert.deepEqual(contractsModule.galleryTaskTemplateSkeletons(parsed), []);
+
+  const staticProfile = modelProfilesModule.STUDIO_MODEL_PROFILES[modelType];
+  assert.equal(staticProfile.catalogVisibility, 'workflowOnly');
+  assert.equal(staticProfile.executionStatus, 'expert_only');
+  assert.deepEqual(staticProfile.modeOutputKinds, {
+    text_generation: 'json',
+    image_to_text: 'json',
+    text_to_image: 'image',
+  });
+  assert.equal(staticProfile.autoEligible, false);
+  assert.equal(staticProfile.galleryEligible, false);
+  assert.equal(staticProfile.license, 'DeepSeek Model License Agreement v1.0');
+  assert.equal(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].autoStatus, 'manual_only');
+});
+
 test('static Studio profiles bridge the six newly admitted generic Diffusers pairs', () => {
   const pagTextProfiles = [
     [

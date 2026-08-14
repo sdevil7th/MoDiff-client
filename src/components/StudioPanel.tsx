@@ -45,6 +45,7 @@ import { StudioPromptComposer } from './StudioPromptComposer';
 import { StudioPromptDiffPanel } from './StudioPromptDiffPanel';
 import { StudioPromptEnhancer } from './StudioPromptEnhancer';
 import { StudioVariationPlanner, type StudioVariationOption } from './StudioVariationPlanner';
+import { TemplateUsageTermsDialog } from './TemplateUsageTermsDialog';
 import NodeContent from './NodeContent';
 import {
   DEFAULT_STUDIO_FORM,
@@ -69,6 +70,8 @@ import {
 } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
+import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies';
+import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import {
   autoPlanIsReady,
   controlledArtifactProofNotice,
@@ -140,6 +143,7 @@ function copyText(value: string, label: string) {
 
 export default function StudioPanel() {
   const [isWorking, setIsWorking] = useState(false);
+  const modelUsageTerms = useModelUsageTermsGate();
   const [autoPlanChecking, setAutoPlanChecking] = useState(false);
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
@@ -410,6 +414,14 @@ export default function StudioPanel() {
     installHfModel,
     setIsWorking,
   });
+
+  const requestModelRun = (
+    run: () => void | Promise<void>,
+    runForm: Pick<StudioFormState, 'modelType' | 'mode'> = form,
+  ) => {
+    const policies = acknowledgementRequiredForModelRun(runForm);
+    modelUsageTerms.request('run', policies, run);
+  };
 
   useEffect(() => {
     // Template creation publishes its managed graph only after dynamic fields,
@@ -936,7 +948,7 @@ export default function StudioPanel() {
           hasGalleryItems={activeWorkflowOutputs.length > 0}
           hasComparePair={activeWorkflowOutputs.length > 1}
           onRun={() => {
-            void handleRun();
+            requestModelRun(handleRun);
           }}
           onInterrupt={() => {
             void handleInterrupt();
@@ -951,7 +963,7 @@ export default function StudioPanel() {
           onOpenSetup={openSetup}
           onRestoreLatest={restoreLatestOutput}
           onRerunLatest={() => {
-            void rerunLatestOutput();
+            requestModelRun(rerunLatestOutput, activeWorkflowOutputs[0]?.formSnapshot);
           }}
           onCompareLatest={compareLatestOutputs}
         />
@@ -1599,7 +1611,7 @@ export default function StudioPanel() {
                 template={activeTemplate}
                 onChange={updateAndSync}
                 onRunSweep={(variations) => {
-                  void handleRunSweep(variations);
+                  requestModelRun(() => handleRunSweep(variations));
                 }}
                 disabled={isWorking || Boolean(runBlockedReason)}
               />
@@ -1957,6 +1969,13 @@ export default function StudioPanel() {
           ) : null}
         </>
       )}
+      <TemplateUsageTermsDialog
+        open={Boolean(modelUsageTerms.pending)}
+        policies={modelUsageTerms.pending?.policies ?? []}
+        action="run"
+        onCancel={modelUsageTerms.cancel}
+        onConfirm={modelUsageTerms.confirm}
+      />
     </div>
   );
 }

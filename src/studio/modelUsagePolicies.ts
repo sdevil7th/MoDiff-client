@@ -10,18 +10,21 @@ import {
   HUNYUAN_DIT_CONTROLNET_CANNY_REPO,
   HUNYUAN_DIT_DISTILLED_REPO,
   HUNYUAN_DIT_DISTILLED_REVISION,
+  JANUS_PRO_1B_REPO,
+  JANUS_PRO_1B_REVISION,
   STABLE_VIDEO_DIFFUSION_REPO,
   STABLE_VIDEO_DIFFUSION_REVISION,
   STUDIO_MODEL_PROFILES,
   getModelRequirementsForMode,
 } from './modelProfiles';
-import type { StudioTemplate, StudioTemplateModelArtifact } from './types';
+import type { StudioFormState, StudioTemplate, StudioTemplateModelArtifact } from './types';
 
 export type ModelUseScope =
   | 'commercial_allowed'
   | 'noncommercial_only'
   | 'personal_noncommercial'
   | 'research_academic_only'
+  | 'license_review_required'
   | 'rights_undetermined';
 export type ModelAccessPolicy = 'public' | 'huggingface_gated' | 'unknown';
 
@@ -130,6 +133,19 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     policyVersion: '2026-08-13',
     reviewedAt: '2026-08-13',
   },
+  [JANUS_PRO_1B_REPO]: {
+    id: 'deepseek-model-license-v1:janus-pro-1b',
+    repository: JANUS_PRO_1B_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'DeepSeek Model License Agreement v1.0 has use restrictions and distribution or hosted-use duties. Acknowledgement is review, not product legal approval.',
+    termsUrl: `https://huggingface.co/${JANUS_PRO_1B_REPO}/blob/${JANUS_PRO_1B_REVISION}/LICENSE-MODEL`,
+    access: 'public',
+    reviewedRevision: JANUS_PRO_1B_REVISION,
+    policyVersion: '2026-08-15',
+    reviewedAt: '2026-08-15',
+  },
   [FLUX_DEV_REPO]: fluxDevPolicy(FLUX_DEV_REPO, FLUX_DEV_REVISION),
   'black-forest-labs/FLUX.1-Krea-dev': fluxDevPolicy(
     'black-forest-labs/FLUX.1-Krea-dev',
@@ -231,11 +247,29 @@ export function templateUsagePolicies(template: StudioTemplate): ResolvedModelUs
       revision: artifact.revision,
     })),
   ];
+  return resolvedUsagePolicies(dependencies);
+}
+
+function resolvedUsagePolicies(dependencies: Array<{ repository: string; revision?: string }>) {
   const policies = dependencies.flatMap((dependency) => {
     const policy = usagePolicyForRepository(dependency.repository);
     return policy ? [{ ...policy, revision: dependency.revision ?? policy.reviewedRevision }] : [];
   });
   return policies.filter((policy, index) => policies.findIndex((candidate) => candidate.id === policy.id) === index);
+}
+
+export function acknowledgementRequiredForModelRun(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+): ResolvedModelUsagePolicy[] {
+  const profile = STUDIO_MODEL_PROFILES[form.modelType];
+  const revision = profile.revisionCandidates?.length === 1 ? profile.revisionCandidates[0] : undefined;
+  return resolvedUsagePolicies([
+    { repository: profile.defaultRepo, revision },
+    ...getModelRequirementsForMode(profile, form.mode).map((requirement) => ({
+      repository: requirement.repo,
+      revision: requirement.revision,
+    })),
+  ]).filter((policy) => policy.acknowledgementRequired && policy.useScope === 'license_review_required');
 }
 
 export function acknowledgementRequiredForTemplate(template: StudioTemplate) {

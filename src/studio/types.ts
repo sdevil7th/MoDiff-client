@@ -48,6 +48,7 @@ export type StudioModelType =
   | 'MarigoldDepthPipeline'
   | 'HuggingFaceTextGenerationModel'
   | 'HuggingFaceImageTextToTextModel'
+  | 'HuggingFaceAnyToAnyModel'
   | 'HuggingFaceSpeechRecognitionModel'
   | 'ZImageModularPipeline'
   | 'QwenImageModularPipeline'
@@ -456,6 +457,8 @@ export type StudioGraphRole =
   | 'transformersTextGenerate'
   | 'transformersImageTextModel'
   | 'transformersImageTextGenerate'
+  | 'transformersAnyToAnyModel'
+  | 'transformersAnyToAnyGenerate'
   | 'transformersTextPreview';
 
 export type StudioGraphBinding = {
@@ -878,6 +881,7 @@ export type StudioModelProfile = {
     | 'Marigold'
     | 'SmolLM'
     | 'SmolVLM'
+    | 'Janus'
     | 'Whisper';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
@@ -909,6 +913,7 @@ export type StudioModelProfile = {
   supportsVideoMask?: boolean;
   supportsAudioInput?: boolean;
   outputKind?: 'image' | 'video' | 'audio' | 'json';
+  modeOutputKinds?: Partial<Record<StudioMode, 'image' | 'video' | 'audio' | 'json'>>;
   recommendedFrames?: number;
   recommendedFps?: number;
   recommendedDuration?: number;
@@ -947,6 +952,23 @@ export type StudioModelProfile = {
   taskTemplateContractSchemaVersion?: 1;
   taskTemplateContractModes?: StudioMode[];
   runnableModes?: StudioMode[];
+  executionStatus?: 'expert_only' | 'supported_with_model';
+  qualificationStatus?: string;
+  qualifiedModes?: StudioMode[];
+  autoEligible?: boolean;
+  templateEligible?: boolean;
+  galleryEligible?: boolean;
+  license?: string;
+  licenseCompliance?: {
+    state: 'product_and_user_review_required';
+    codeLicense: string;
+    weightsLicense: string;
+    noticePath: string;
+    useRestrictionsPresent: boolean;
+    distributionAndHostedUseCarryDuties: boolean;
+    sourceExecutable: boolean;
+    liveExecutionQualified: boolean;
+  };
   downloadFiles?: string[];
   inputContracts?: Partial<Record<StudioMode, StudioModeRequirement>>;
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;

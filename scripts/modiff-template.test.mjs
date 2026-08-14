@@ -990,6 +990,80 @@ test('Whisper Tiny exposes generic transcription and translation contracts', () 
   assert.equal(translation.mode, 'speech_translation');
 });
 
+test('Janus stays Expert-only with a pinned run acknowledgement and generic mode inference', () => {
+  const modelType = 'HuggingFaceAnyToAnyModel';
+  const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+  assert.equal(profile.defaultRepo, profilesModule.JANUS_PRO_1B_REPO);
+  assert.deepEqual(profile.revisionCandidates, [profilesModule.JANUS_PRO_1B_REVISION]);
+  assert.equal(profile.runtimeKind, 'transformers');
+  assert.equal(profile.isDiffusersBacked, false);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.executionStatus, 'expert_only');
+  assert.equal(profile.autoEligible, false);
+  assert.equal(profile.galleryEligible, false);
+  assert.deepEqual(profile.modeOutputKinds, {
+    text_generation: 'json',
+    image_to_text: 'json',
+    text_to_image: 'image',
+  });
+  assert.deepEqual(profile.modeRequirements.image_to_text.requiredImages, ['referenceImages']);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+    modelType,
+    mode: 'text_to_image',
+  });
+  assert.equal(policies.length, 1);
+  assert.equal(policies[0].repository, profilesModule.JANUS_PRO_1B_REPO);
+  assert.equal(policies[0].revision, profilesModule.JANUS_PRO_1B_REVISION);
+  assert.equal(policies[0].reviewedRevision, profilesModule.JANUS_PRO_1B_REVISION);
+  assert.equal(policies[0].useScope, 'license_review_required');
+  assert.match(policies[0].shortSummary, /not product legal approval/i);
+  assert.match(policies[0].termsUrl, /LICENSE-MODEL$/);
+  assert.match(modelUsagePoliciesModule.usagePolicyAcknowledgementKey(policies), /^terms-v2:[0-9a-f]{8}$/);
+  assert.deepEqual(
+    modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+      modelType: 'HuggingFaceTextGenerationModel',
+      mode: 'text_generation',
+    }),
+    [],
+  );
+
+  const node = (id, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: action === 'Load' ? 'modules.Image' : 'modules.HuggingFaceTransformers',
+      action,
+      studioRole,
+      studioOwned: true,
+      params,
+    },
+  });
+  for (const [mode, generationMode, imagePath] of [
+    ['text_generation', 'text', null],
+    ['image_to_text', 'text', 'source.png'],
+    ['text_to_image', 'image', null],
+  ]) {
+    const nodes = [
+      node('model', 'LoadAnyToAnyModel', 'transformersAnyToAnyModel', {
+        model_id: { value: profilesModule.JANUS_PRO_1B_REPO },
+      }),
+      ...(imagePath ? [node('source', 'Load', 'loadImage', { file: { value: imagePath } })] : []),
+      node('generate', 'GenerateAnyToAny', 'transformersAnyToAnyGenerate', {
+        prompt: { value: 'A small red fox' },
+        generation_mode: { value: generationMode },
+      }),
+    ];
+    const form = workflowInferenceModule.inferStudioFormFromWorkflow(nodes);
+    assert.equal(form.modelType, modelType);
+    assert.equal(form.mode, mode);
+    assert.equal(form.prompt, 'A small red fox');
+    assert.deepEqual(form.referenceImages, imagePath ? [imagePath] : []);
+  }
+});
+
 test('canonical Whisper graphs infer their speech form without model-specific graph rewrites', async () => {
   for (const [file, mode] of [
     ['speech-to-text.json', 'speech_to_text'],

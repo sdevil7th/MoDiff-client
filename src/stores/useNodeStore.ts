@@ -579,6 +579,41 @@ function invalidModelCapabilities(): never {
   throw new Error('Invalid model-capabilities response.');
 }
 
+function parseModeOutputKinds(value: unknown, modes: readonly string[]) {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) invalidModelCapabilities();
+  const entries = Object.entries(value);
+  if (
+    entries.length > modes.length ||
+    entries.some(
+      ([mode, outputKind]) =>
+        !modes.includes(mode) || !['image', 'video', 'audio', 'json'].includes(String(outputKind)),
+    )
+  )
+    invalidModelCapabilities();
+  return { ...value } as StudioModelProfile['modeOutputKinds'];
+}
+
+function parseLicenseCompliance(value: unknown) {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 8 ||
+    value.state !== 'product_and_user_review_required' ||
+    !['codeLicense', 'weightsLicense', 'noticePath'].every(
+      (key) => typeof value[key] === 'string' && Boolean(value[key].trim()),
+    ) ||
+    ![
+      'useRestrictionsPresent',
+      'distributionAndHostedUseCarryDuties',
+      'sourceExecutable',
+      'liveExecutionQualified',
+    ].every((key) => typeof value[key] === 'boolean')
+  )
+    invalidModelCapabilities();
+  return { ...value } as StudioModelProfile['licenseCompliance'];
+}
+
 function parseStudioModelCapabilities(value: unknown) {
   const payload = payloadRecord(value, 'Invalid model-capabilities response.');
   if (!Array.isArray(payload.capabilities) || payload.capabilities.length > 128) invalidModelCapabilities();
@@ -602,6 +637,16 @@ function parseStudioModelCapabilities(value: unknown) {
     const modes = parseRuntimeModes(item.modes, isStudioMode);
     const runnableModes =
       item.runnableModes === undefined ? undefined : parseRuntimeModes(item.runnableModes, isStudioMode);
+    const qualifiedModes =
+      item.qualifiedModes === undefined ? undefined : parseRuntimeModes(item.qualifiedModes, isStudioMode);
+    const modeOutputKinds = parseModeOutputKinds(item.modeOutputKinds, modes);
+    const licenseCompliance = parseLicenseCompliance(item.licenseCompliance);
+    if (
+      qualifiedModes?.some((mode) => !modes.includes(mode)) ||
+      (item.executionStatus !== undefined &&
+        !['expert_only', 'supported_with_model'].includes(String(item.executionStatus)))
+    )
+      invalidModelCapabilities();
     const revisionCandidates = item.revisionCandidates;
     if (
       revisionCandidates !== undefined &&
@@ -656,6 +701,9 @@ function parseStudioModelCapabilities(value: unknown) {
     item.modes = modes;
     if (revisionCandidates) item.revisionCandidates = [...revisionCandidates];
     if (runnableModes) item.runnableModes = runnableModes;
+    if (qualifiedModes) item.qualifiedModes = qualifiedModes;
+    if (modeOutputKinds) item.modeOutputKinds = modeOutputKinds;
+    if (licenseCompliance) item.licenseCompliance = licenseCompliance;
     if (executionProfiles) item.executionProfiles = executionProfiles;
     if (studioExecutionSpecs) item.studioExecutionSpecs = studioExecutionSpecs;
     if (studioExecutionSpecModes) item.studioExecutionSpecModes = studioExecutionSpecModes;

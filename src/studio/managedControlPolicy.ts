@@ -587,6 +587,8 @@ export const MANAGED_CONTROL_POLICIES = {
   transformersTextGenerate: TRANSFORMERS_GENERATION_POLICY,
   transformersImageTextModel: PIPELINE_POLICY,
   transformersImageTextGenerate: TRANSFORMERS_GENERATION_POLICY,
+  transformersAnyToAnyModel: PIPELINE_POLICY,
+  transformersAnyToAnyGenerate: TRANSFORMERS_GENERATION_POLICY,
   transformersTextPreview: {
     value: internal(),
     preview: internal(),

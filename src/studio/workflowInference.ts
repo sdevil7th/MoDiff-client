@@ -318,6 +318,15 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     return 'text_to_video';
   }
 
+  if (keys.has('modules.HuggingFaceTransformers.GenerateAnyToAny')) {
+    const generateNode = findNode(
+      nodes,
+      (node) => nodeKey(node) === 'modules.HuggingFaceTransformers.GenerateAnyToAny',
+    );
+    if (stringValue(paramValue(generateNode, ['generation_mode'])) === 'image') return 'text_to_image';
+    return keys.has('modules.Image.Load') ? 'image_to_text' : 'text_generation';
+  }
+
   if (
     modelType === 'HuggingFaceImageTextToTextModel' ||
     roles.has('transformersImageTextGenerate') ||
@@ -430,6 +439,7 @@ export function inferStudioFormFromWorkflow(
         'ControlEdit',
         'ControlInpaint',
         'TranscribeAudio',
+        'GenerateAnyToAny',
       ].includes(String(node.data?.action)),
   );
   const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
@@ -445,9 +455,13 @@ export function inferStudioFormFromWorkflow(
         'audioPipeline',
         'speechModel',
       ].includes(String(node.data?.studioRole)) ||
-      ['ModelsLoader', 'LoadPipeline', 'LoadInpaintPipeline', 'LoadSpeechRecognitionModel'].includes(
-        String(node.data?.action),
-      ),
+      [
+        'ModelsLoader',
+        'LoadPipeline',
+        'LoadInpaintPipeline',
+        'LoadSpeechRecognitionModel',
+        'LoadAnyToAnyModel',
+      ].includes(String(node.data?.action)),
   );
   const quantizationNode = findNode(
     nodes,
@@ -481,6 +495,7 @@ export function inferStudioFormFromWorkflow(
         'ControlEdit',
         'ControlInpaint',
         'TranscribeAudio',
+        'GenerateAnyToAny',
       ].includes(String(node.data?.action)),
   );
   const outpaintNode = findNode(

@@ -109,6 +109,8 @@ export const LCM_DREAMSHAPER_REPO = 'SimianLuo/LCM_Dreamshaper_v7';
 export const MARIGOLD_DEPTH_LCM_REPO = 'prs-eth/marigold-depth-lcm-v1-0';
 export const SMOLLM2_135M_INSTRUCT_REPO = 'HuggingFaceTB/SmolLM2-135M-Instruct';
 export const SMOLVLM_256M_INSTRUCT_REPO = 'HuggingFaceTB/SmolVLM-256M-Instruct';
+export const JANUS_PRO_1B_REPO = 'deepseek-community/Janus-Pro-1B';
+export const JANUS_PRO_1B_REVISION = '1655280bb75959cc1cb85529a2a8b26e7016072e';
 export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
@@ -291,6 +293,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Marigold Depth LCM v1.0',
   'SmolLM2 135M Instruct',
   'SmolVLM 256M Instruct',
+  'Janus Pro 1B',
   'Whisper Tiny',
   'DDPM CIFAR-10 32x32',
   'DDIM CIFAR-10 32x32',
@@ -451,6 +454,7 @@ export const AUDIO_STUDIO_MODES: StudioMode[] = [
 export const SPEECH_STUDIO_MODES: StudioMode[] = ['speech_to_text', 'speech_translation'];
 export const TRANSFORMERS_TEXT_STUDIO_MODES: StudioMode[] = ['text_generation'];
 export const TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES: StudioMode[] = ['image_to_text'];
+export const TRANSFORMERS_ANY_TO_ANY_STUDIO_MODES: StudioMode[] = ['text_generation', 'image_to_text', 'text_to_image'];
 export const THREE_D_STUDIO_MODES: StudioMode[] = ['text_to_3d'];
 
 export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = ['FluxSchnellPipeline', 'FluxDevPipeline'];
@@ -1814,6 +1818,41 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       image_to_text: { requiredImages: ['referenceImages'] },
     },
   },
+  HuggingFaceAnyToAnyModel: {
+    family: 'Janus',
+    displayName: 'Janus-Pro-1B',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'transformers',
+    isDiffusersBacked: false,
+    defaultRepo: JANUS_PRO_1B_REPO,
+    artifactLabel: 'Transformers safetensors repo (DeepSeek Model License)',
+    defaultDtype: 'bfloat16',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 384, height: 384, aspectRatio: '1:1' },
+    offloadSupport: {
+      modes: ['none'],
+      default: 'none',
+      lowVram: 'none',
+      emergency: 'none',
+    },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    supportFlags: 1,
+    supportsNegativePrompt: false,
+    outputKind: 'image',
+    modeOutputKinds: { text_generation: 'json', image_to_text: 'json', text_to_image: 'image' },
+    lowVram: { dtype: 'bfloat16', autoOffload: false, offloadMode: 'none', steps: 1, width: 384, height: 384 },
+    modes: TRANSFORMERS_ANY_TO_ANY_STUDIO_MODES,
+    modeRequirements: {
+      image_to_text: { requiredImages: ['referenceImages'] },
+    },
+    revisionCandidates: [JANUS_PRO_1B_REVISION],
+    executionStatus: 'expert_only',
+    autoEligible: false,
+    galleryEligible: false,
+    license: 'DeepSeek Model License Agreement v1.0',
+  },
   HuggingFaceSpeechRecognitionModel: {
     family: 'Whisper',
     surfaceCategory: 'Utility',
@@ -2397,6 +2436,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     artifacts: [SMOLVLM_256M_INSTRUCT_REPO],
     notes: 'The generic image-to-text graph returns bounded text and a versioned JSON receipt.',
     manualOnlyReason: 'App-only model installation, live output review, and Gallery qualification pending.',
+  },
+  HuggingFaceAnyToAnyModel: {
+    modelType: 'HuggingFaceAnyToAnyModel',
+    supportedModes: TRANSFORMERS_ANY_TO_ANY_STUDIO_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'Expert-only execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    recommended: 'Use the reviewed Janus Pro 1B bfloat16 profile after acknowledging the pinned model terms.',
+    qualityDefaults: 'Bounded text generation or native 384x384 image generation.',
+    artifacts: [JANUS_PRO_1B_REPO],
+    notes: 'The generic any-to-any graph returns mode-specific versioned text or image output.',
+    manualOnlyReason: 'License review, live output review, Auto, and Gallery qualification remain pending.',
   },
   HuggingFaceSpeechRecognitionModel: {
     modelType: 'HuggingFaceSpeechRecognitionModel',

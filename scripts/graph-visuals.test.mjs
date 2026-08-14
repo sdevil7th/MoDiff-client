@@ -4074,6 +4074,216 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   }
 });
 
+test('Janus any-to-any execution specs materialize exact text, vision, and image graphs', async () => {
+  const modelType = 'HuggingFaceAnyToAnyModel';
+  const repo = 'deepseek-community/Janus-Pro-1B';
+  const revision = '1655280bb75959cc1cb85529a2a8b26e7016072e';
+  const modes = ['text_generation', 'image_to_text', 'text_to_image'];
+  const profile = {
+    id: 'janus-pro-1b:direct',
+    model_type: modelType,
+    modes,
+    loader_module: 'modules.HuggingFaceTransformers',
+    loader_action: 'LoadAnyToAnyModel',
+    execution_path: 'direct-huggingface-transformers-any-to-any',
+    pipeline_class: 'JanusForConditionalGeneration',
+    default_repo: repo,
+    supported_offload_modes: ['none'],
+    retry_offload_modes: [],
+  };
+  const cases = {
+    text_generation: {
+      generationSource: 'anyToAnyText',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['transformersAnyToAnyGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+    },
+    image_to_text: {
+      generationSource: 'anyToAnyText',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['loadImage', 'modules.Image.Load', -720, 280],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['loadImage', 'image', 'transformersAnyToAnyGenerate', 'images'],
+        ['transformersAnyToAnyGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+    },
+    text_to_image: {
+      generationSource: 'anyToAnyImage',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['preview', 'modules.Image.Preview', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['transformersAnyToAnyGenerate', 'image', 'preview', 'image'],
+      ],
+    },
+  };
+  const specs = modes.map((mode, index) => {
+    const item = cases[mode];
+    return {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `janus-pro-1b:${mode.replaceAll('_', '-')}:v1`,
+      modelType,
+      mode,
+      executionProfileId: profile.id,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      roles: item.roles,
+      edges: item.edges,
+      bindings: [
+        ['transformersAnyToAnyModel', 'model_id', 'artifact'],
+        ['transformersAnyToAnyModel', 'revision', 'defaultRevision'],
+        ['transformersAnyToAnyModel', 'dtype', 'dtype'],
+        ['transformersAnyToAnyModel', 'device', 'device'],
+        ...(mode === 'image_to_text'
+          ? [
+              ['loadImage', 'file', 'referenceImages'],
+              ['loadImage', 'alpha_channel', 'alphaMode'],
+            ]
+          : []),
+        ['transformersAnyToAnyGenerate', 'prompt', 'prompt'],
+        ['transformersAnyToAnyGenerate', 'generation_mode', item.generationSource],
+      ],
+      autoFields: [],
+      actions: [],
+      contentHash: `studio-spec-v1-janus00${index}`,
+    };
+  });
+  const scalar = (value = null) => ({ type: 'string', display: 'text', value });
+  const registry = {
+    'modules.HuggingFaceTransformers.LoadAnyToAnyModel': {
+      type: 'custom',
+      module: 'modules.HuggingFaceTransformers',
+      action: 'LoadAnyToAnyModel',
+      label: 'Load Any-to-Any Model',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        dtype: scalar(),
+        device: scalar(),
+        model: { type: 'model', display: 'output' },
+      },
+    },
+    'modules.HuggingFaceTransformers.GenerateAnyToAny': {
+      type: 'custom',
+      module: 'modules.HuggingFaceTransformers',
+      action: 'GenerateAnyToAny',
+      label: 'Generate Any-to-Any',
+      category: 'Test',
+      params: {
+        model: { type: 'model', display: 'input' },
+        images: { type: 'image', display: 'input' },
+        prompt: scalar(),
+        generation_mode: scalar(),
+        result: { type: 'data', display: 'output' },
+        image: { type: 'image', display: 'output' },
+      },
+    },
+    'modules.Image.Load': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Load',
+      label: 'Load Image',
+      category: 'Test',
+      params: {
+        file: scalar(),
+        alpha_channel: scalar(),
+        image: { type: 'image', display: 'output' },
+      },
+    },
+    'modules.Primitive.DataViewer': {
+      type: 'custom',
+      module: 'modules.Primitive',
+      action: 'DataViewer',
+      label: 'Data Viewer',
+      category: 'Test',
+      params: { value: { type: 'data', display: 'input' } },
+    },
+    'modules.Image.Preview': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      category: 'Test',
+      params: { image: { type: 'image', display: 'input' } },
+    },
+  };
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: registry,
+      studioModelCapabilities: [
+        {
+          modelType,
+          modes,
+          runnableModes: modes,
+          executionProfiles: [profile],
+          studioExecutionSpecSchemaVersion: 1,
+          studioExecutionSpecModes: modes,
+          studioExecutionSpecs: specs,
+          revisionCandidates: [revision],
+        },
+      ],
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    for (const mode of modes) {
+      const form = {
+        ...previousForm,
+        modelType,
+        mode,
+        resourceMode: 'expert',
+        dtype: 'bfloat16',
+        prompt: 'A small red fox',
+        referenceImages: mode === 'image_to_text' ? ['source.png'] : [],
+      };
+      studioStoreModule.useStudioStore.setState({ form, autoResourcePlan: null });
+      await graphBridge.createOrUpdateStudioGraph(form);
+      const binding = studioStoreModule.useStudioStore.getState().graphBinding;
+      const nodes = flowStoreModule.useFlowStore.getState().nodes;
+      const loader = nodes.find((item) => item.id === binding.nodes.transformersAnyToAnyModel);
+      const generate = nodes.find((item) => item.id === binding.nodes.transformersAnyToAnyGenerate);
+      assert.equal(binding.executionSpec.id, `janus-pro-1b:${mode.replaceAll('_', '-')}:v1`);
+      assert.equal(loader.data.params.model_id.value.value, repo);
+      assert.equal(loader.data.params.revision.value, revision);
+      assert.equal(generate.data.params.prompt.value, form.prompt);
+      assert.equal(generate.data.params.generation_mode.value, mode === 'text_to_image' ? 'image' : 'text');
+      if (mode === 'image_to_text') {
+        const loadImage = nodes.find((item) => item.id === binding.nodes.loadImage);
+        assert.deepEqual(loadImage.data.params.file.value, form.referenceImages);
+      }
+      assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+    }
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: previousNodesState.nodesRegistry,
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm, autoResourcePlan: null });
+  }
+});
+
 test('managed video extensions re-seal only after their exact route is complete', () => {
   const input = (type) => ({ type, display: 'input' });
   const output = (type) => ({ type, display: 'output' });

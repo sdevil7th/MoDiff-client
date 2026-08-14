@@ -336,6 +336,55 @@ test('model capabilities keep schema-v2 runnable modes exact and ignore experime
   );
 });
 
+test('Janus capability parsing preserves mode outputs and fail-closed license compliance', async () => {
+  const compliance = {
+    state: 'product_and_user_review_required',
+    codeLicense: 'MIT',
+    weightsLicense: 'DeepSeek Model License Agreement v1.0',
+    noticePath: 'licenses/DeepSeek-Model-License-1.0.txt',
+    useRestrictionsPresent: true,
+    distributionAndHostedUseCarryDuties: true,
+    sourceExecutable: true,
+    liveExecutionQualified: false,
+  };
+  const capability = {
+    modelType: 'HuggingFaceAnyToAnyModel',
+    modes: ['text_generation', 'image_to_text', 'text_to_image'],
+    runnableModes: ['text_generation', 'image_to_text', 'text_to_image'],
+    modeOutputKinds: { text_generation: 'json', image_to_text: 'json', text_to_image: 'image' },
+    executionStatus: 'expert_only',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    license: 'DeepSeek Model License Agreement v1.0',
+    licenseCompliance: compliance,
+  };
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].modeOutputKinds, capability.modeOutputKinds);
+  assert.deepEqual(state.studioModelCapabilities[0].licenseCompliance, compliance);
+  assert.equal(state.studioModelCapabilities[0].autoEligible, false);
+  assert.equal(state.studioModelCapabilities[0].galleryEligible, false);
+
+  for (const malformed of [
+    { ...capability, modeOutputKinds: { text_to_image: 'text' } },
+    { ...capability, qualifiedModes: ['speech_to_text'] },
+    { ...capability, licenseCompliance: { ...compliance, liveExecutionQualified: 'false' } },
+    { ...capability, licenseCompliance: { ...compliance, weightsLicense: '' } },
+  ]) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [malformed] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.equal(state.studioModelCapabilities[0].modelType, capability.modelType);
+    assert.deepEqual(state.studioModelCapabilities[0].licenseCompliance, compliance);
+  }
+});
+
 test('Studio execution specifications require an exact versioned capability contract', async () => {
   const spec = fluxExecutionSpec();
   const reviewedRevision = '462165984030d82259a11f4367a4eed129e94a7b';

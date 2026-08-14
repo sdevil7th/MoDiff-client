@@ -190,6 +190,8 @@ const NODE_KEYS = {
   transformersTextGenerate: 'modules.HuggingFaceTransformers.GenerateText',
   transformersImageTextModel: 'modules.HuggingFaceTransformers.LoadImageTextToTextModel',
   transformersImageTextGenerate: 'modules.HuggingFaceTransformers.GenerateImageVideoText',
+  transformersAnyToAnyModel: 'modules.HuggingFaceTransformers.LoadAnyToAnyModel',
+  transformersAnyToAnyGenerate: 'modules.HuggingFaceTransformers.GenerateAnyToAny',
   transformersTextPreview: 'modules.Primitive.DataViewer',
 } satisfies Record<StudioGraphRole, string>;
 
@@ -255,6 +257,8 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   transformersTextGenerate: { x: -240, y: -80 },
   transformersImageTextModel: { x: -720, y: -80 },
   transformersImageTextGenerate: { x: -240, y: -80 },
+  transformersAnyToAnyModel: { x: -720, y: -80 },
+  transformersAnyToAnyGenerate: { x: -240, y: -80 },
   transformersTextPreview: { x: 240, y: -80 },
 };
 
@@ -3343,6 +3347,8 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     repaint: 'repaint',
     transcribe: 'transcribe',
     translate: 'translate',
+    anyToAnyText: 'text',
+    anyToAnyImage: 'image',
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
     sampleRate16000: 16000,
     sampleRate24000: 24000,

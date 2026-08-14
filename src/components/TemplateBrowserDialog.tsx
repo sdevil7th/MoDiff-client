@@ -60,8 +60,9 @@ import { getTemplateReadiness, type TemplateReadinessResult } from '../studio/te
 import { resolveTemplateInputs } from '../studio/templateInputs';
 import { createWorkflowFromTemplate } from '../studio/templateWorkflow';
 import { getPreset, STUDIO_TEMPLATES } from '../studio/templates';
-import { acknowledgementRequiredForTemplate, usagePolicyAcknowledgementKey } from '../studio/modelUsagePolicies';
+import { acknowledgementRequiredForTemplate } from '../studio/modelUsagePolicies';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
+import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import {
   createStartupRequestCache,
   shouldRetryStartupRequest,
@@ -104,10 +105,6 @@ const templateModeOptions = Array.from(new Set(STUDIO_TEMPLATES.map((template) =
 );
 const TEMPLATE_BATCH_SIZE = 12;
 const STARTUP_INDEX_RETRY_MS = 1_500;
-
-type PendingTemplateTermsAction =
-  | { kind: 'create'; template: StudioTemplate }
-  | { kind: 'install'; template: StudioTemplate; repoId: string; repair: boolean };
 
 function templateAutoForm(template: StudioTemplate) {
   const lockedValues = getTemplateLockedSettings(template);
@@ -309,8 +306,7 @@ export default function TemplateBrowserDialog() {
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
   const setGalleryLibraryOpen = useSettingsStore((state) => state.setGalleryLibraryOpen);
-  const modelTermsAcknowledgements = useSettingsStore((state) => state.modelTermsAcknowledgements);
-  const acknowledgeModelTerms = useSettingsStore((state) => state.acknowledgeModelTerms);
+  const modelUsageTerms = useModelUsageTermsGate();
   const form = useStudioStore((state) => state.form);
   const activeTemplateId = useStudioStore((state) => state.activeTemplateId);
   const autoResourcePlans = useStudioStore((state) => state.autoResourcePlans);
@@ -340,7 +336,6 @@ export default function TemplateBrowserDialog() {
   const [isApplying, setIsApplying] = useState(false);
   const [installingRepo, setInstallingRepo] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [pendingTermsAction, setPendingTermsAction] = useState<PendingTemplateTermsAction | null>(null);
   const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_BATCH_SIZE);
   const categoryButtonRefs = useRef(new Map<TemplateBrowserCategoryId, HTMLButtonElement>());
   const manifestStartupRetryAttempted = useRef(false);
@@ -683,24 +678,14 @@ export default function TemplateBrowserDialog() {
     }
   };
 
-  const templateNeedsTermsReview = useCallback(
-    (template: StudioTemplate) => {
-      const key = usagePolicyAcknowledgementKey(acknowledgementRequiredForTemplate(template));
-      return Boolean(key && !modelTermsAcknowledgements[key]);
-    },
-    [modelTermsAcknowledgements],
-  );
+  const templateNeedsTermsReview = (template: StudioTemplate) =>
+    modelUsageTerms.needsReview(acknowledgementRequiredForTemplate(template));
 
   const requestCreateFromTemplate = (template: StudioTemplate) => {
-    if (templateNeedsTermsReview(template)) {
-      setPendingTermsAction({ kind: 'create', template });
-      return;
-    }
-    void createFromTemplate(template);
+    modelUsageTerms.request('create', acknowledgementRequiredForTemplate(template), () => createFromTemplate(template));
   };
 
-  const pendingTermsTemplate = pendingTermsAction?.template ?? null;
-  const pendingTermsPolicies = pendingTermsTemplate ? acknowledgementRequiredForTemplate(pendingTermsTemplate) : [];
+  const pendingTermsPolicies = modelUsageTerms.pending?.policies ?? [];
 
   const installRepo = async (repoId: string, repair = false) => {
     setInstallingRepo(repoId);
@@ -715,24 +700,7 @@ export default function TemplateBrowserDialog() {
   };
 
   const requestInstallRepo = (template: StudioTemplate, repoId: string, repair = false) => {
-    if (templateNeedsTermsReview(template)) {
-      setPendingTermsAction({ kind: 'install', template, repoId, repair });
-      return;
-    }
-    void installRepo(repoId, repair);
-  };
-
-  const confirmUsageTerms = () => {
-    if (!pendingTermsAction) return;
-    const action = pendingTermsAction;
-    const key = usagePolicyAcknowledgementKey(pendingTermsPolicies);
-    if (key) acknowledgeModelTerms(key);
-    setPendingTermsAction(null);
-    if (action.kind === 'install') {
-      void installRepo(action.repoId, action.repair);
-      return;
-    }
-    void createFromTemplate(action.template);
+    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () => installRepo(repoId, repair));
   };
 
   const openSetup = () => {
@@ -985,11 +953,11 @@ export default function TemplateBrowserDialog() {
         </div>
       </ModiffDialog>
       <TemplateUsageTermsDialog
-        open={Boolean(pendingTermsAction)}
+        open={Boolean(modelUsageTerms.pending)}
         policies={pendingTermsPolicies}
-        action={pendingTermsAction?.kind === 'install' ? 'install' : 'create'}
-        onCancel={() => setPendingTermsAction(null)}
-        onConfirm={confirmUsageTerms}
+        action={modelUsageTerms.pending?.action ?? 'create'}
+        onCancel={modelUsageTerms.cancel}
+        onConfirm={modelUsageTerms.confirm}
       />
     </>
   );
