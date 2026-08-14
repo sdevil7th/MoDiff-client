@@ -564,7 +564,7 @@ function Workflow() {
         colorMode={'dark'}
         deleteKeyCode={['Backspace', 'Delete']}
         proOptions={{ hideAttribution: true }}
-        onlyRenderVisibleElements
+        onlyRenderVisibleElements={!canvasSuspended}
         zoomOnDoubleClick={false}
         isValidConnection={handleIsValidConnection as IsValidConnection}
         onDoubleClick={handleDoubleClick}

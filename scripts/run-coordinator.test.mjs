@@ -1333,6 +1333,73 @@ test('live node definitions preserve an intentional backend AutoModelLoader repo
   nodesStoreModule.useNodesStore.setState({ nodesRegistry: previousRegistry });
 });
 
+test('equivalent live field actions retain object identity across node definitions', () => {
+  const nodeKey = 'modules.ModularDiffusers.Controlnet';
+  const onChange = { action: 'exec', data: 'refresh_controlnet' };
+  const onSignal = [
+    { action: 'value', target: 'model_type' },
+    { action: 'exec', data: 'update_node' },
+  ];
+  const controlnet = {
+    id: 'dynamic-controlnet',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.ModularDiffusers',
+      action: 'Controlnet',
+      label: 'ControlNet',
+      category: 'Test',
+      params: {
+        controlnet_bundle: {
+          type: 'custom_controlnet',
+          display: 'output',
+          onChange,
+          onSignal,
+          signal: { direction: 'output', value: 'QwenImageModularPipeline' },
+        },
+      },
+    },
+  };
+  const previousRegistry = nodesStoreModule.useNodesStore.getState().nodesRegistry;
+  nodesStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      ...previousRegistry,
+      [nodeKey]: controlnet.data,
+    },
+  });
+  flowStoreModule.useFlowStore.setState({ nodes: [controlnet], edges: [] });
+
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'node_definition',
+      node: controlnet.id,
+      params: {
+        controlnet_bundle: {
+          type: 'custom_controlnet',
+          display: 'output',
+          onChange: structuredClone(onChange),
+          onSignal: structuredClone(onSignal),
+        },
+        control_image: { type: 'image', display: 'input' },
+      },
+    },
+    {
+      sid: 'session-1',
+      ws: {},
+      getSid: () => 'session-1',
+      setSid: () => undefined,
+      setLoopTimer: () => undefined,
+    },
+  );
+
+  const refreshed = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
+  assert.strictEqual(refreshed.controlnet_bundle.onChange, onChange);
+  assert.strictEqual(refreshed.controlnet_bundle.onSignal, onSignal);
+  assert.equal(refreshed.control_image.display, 'input');
+  nodesStoreModule.useNodesStore.setState({ nodesRegistry: previousRegistry });
+});
+
 test('captured run canvas epoch rejects an old-backend dynamic message after document replacement', () => {
   const identity = { clientRunId: 'client-old-backend', runInputHash: 'hash-old-backend' };
   studioStoreModule.useStudioStore.setState({ workflowCanvasEpoch: 20 });

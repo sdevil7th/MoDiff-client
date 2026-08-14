@@ -1,4 +1,5 @@
 import { enqueueSnackbar } from '../ui/snackbar';
+import { deepEqual } from '../utils/deepEqual';
 import { markStudioGraphDefinitionPending, syncStudioGraphDefinition } from '../studio/graphBridge';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
@@ -335,6 +336,17 @@ function preserveCurrentParamValue(current: NodeParams | undefined, incoming: No
   }
   if (current.isConnected !== undefined) {
     preserved.isConnected = current.isConnected;
+  }
+  // Dynamic definitions are allowed to republish their declarative actions.
+  // Keep the existing object identity when the action itself did not change:
+  // HandleField effects intentionally react to action identity, and replacing
+  // an equivalent onSignal descriptor would execute the action again and let
+  // a definition response feed back into another identical request.
+  if (current.onChange !== undefined && deepEqual(current.onChange, incoming.onChange)) {
+    preserved.onChange = current.onChange;
+  }
+  if (current.onSignal !== undefined && deepEqual(current.onSignal, incoming.onSignal)) {
+    preserved.onSignal = current.onSignal;
   }
   return preserved;
 }

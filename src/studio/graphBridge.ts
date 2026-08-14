@@ -4307,9 +4307,9 @@ async function finalizeStudioGraph(
       await finalizeAudioGraph(binding, form, timedOutGroups, token);
     } else if (modularVideoGroupObserved(binding)) {
       await finalizeModularVideoGraph(binding, form, timedOutGroups, token);
-      // Modular video signals intentionally publish newer node definitions
-      // while assembling the route. Use their settled schema as this
-      // operation's baseline; all other paths retain their starting revision.
+      // Modular signals intentionally publish newer node definitions while
+      // assembling the route. Use their settled schema as this operation's
+      // baseline; static paths retain their starting revision.
       definitionRevision = graphDefinitionRevision;
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
@@ -4317,6 +4317,7 @@ async function finalizeStudioGraph(
       await finalizeStaticExecutionSpecGraph(binding, form, token);
     } else if (!isVideoMode(form.mode)) {
       await finalizeModularGraph(binding, form, timedOutGroups, token);
+      definitionRevision = graphDefinitionRevision;
     } else {
       await finalizeVideoGraph(binding, form, timedOutGroups, token);
     }

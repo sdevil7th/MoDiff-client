@@ -4890,6 +4890,7 @@ test('Auto canvas renders the exact workflow graph instead of a projected facade
   assert.doesNotMatch(workflowSource, /buildManagedWorkflowPresentation|managedAutoCanvas|ManagedWorkflowStageNode/);
   assert.match(workflowSource, /nodes=\{exactVisibleNodes\}/);
   assert.match(workflowSource, /edges=\{exactVisibleEdges\}/);
+  assert.match(workflowSource, /onlyRenderVisibleElements=\{!canvasSuspended\}/);
   assert.match(workflowSource, /nodesDraggable[\s\S]*nodesConnectable[\s\S]*elementsSelectable/);
   assert.ok(runPreparation);
   assert.doesNotMatch(runPreparation, /createOrUpdateStudioGraph/);
@@ -7122,6 +7123,18 @@ test('managed Qwen ControlNet sync pins AutoModelLoader to the controlnet compon
   });
   assert.equal(params.model.signal.direction, 'output');
   assert.equal(params.model.signal.value, 'controlnet');
+});
+
+test('modular image finalization adopts the definitions published by its own field actions', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+  const branch = source.match(
+    /else if \(!isVideoMode\(form\.mode\)\) \{[\s\S]*?\n    \} else \{\n      await finalizeVideoGraph/,
+  )?.[0];
+  assert.ok(branch);
+  assert.match(
+    branch,
+    /await finalizeModularGraph\(binding, form, timedOutGroups, token\);\s*definitionRevision = graphDefinitionRevision;/,
+  );
 });
 
 test('managed graph reconciliation preserves pinned Auto sample-rate overrides', () => {
