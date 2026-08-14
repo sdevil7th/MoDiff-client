@@ -69,12 +69,16 @@ not installed, or marked for repair. The input readiness check reads only the
 selected templates' local defaults and rejects absent files, links, size or
 SHA-256 mismatches, unpinned bindings, and inconsistent asset-manifest records.
 A source-release checkout without the installer-managed Gallery payload is
-expected to fail the input check; complete the normal app installation rather
-than bypassing it or substituting unverified media. A successful result proves
-cache and source-input readiness only; it does not run a graph, qualify output,
-approve rights, or publish Gallery media. Remove `--dry-run` only on the
-approved qualification host when the campaign's long-running model execution
-is intentional.
+expected to fail the input check. On an already running source-release app,
+open **Setup → Template Gallery assets** and use its app-owned plan/install
+action rather than bypassing the app or substituting unverified media. The app
+rechecks exact space immediately before downloading, accounts for active model
+reservations, and does not delete cached models. Restart after active downloads
+finish so the local static route is registered, then rerun the input check. A
+successful result proves cache and source-input readiness only; it does not run
+a graph, qualify output, approve rights, or publish Gallery media. Remove
+`--dry-run` only on the approved qualification host when the campaign's
+long-running model execution is intentional.
 
 ## Inspect The Build
 

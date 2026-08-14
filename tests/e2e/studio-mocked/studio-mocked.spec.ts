@@ -306,6 +306,8 @@ const FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`;
 const managedProcesses: ChildProcessWithoutNullStreams[] = [];
 const mockInstalledRepos = new Set<string>();
 let mockDownloadCalls = 0;
+let mockTemplateGalleryInstallCalls = 0;
+let mockTemplateGalleryInstalled = false;
 let mockIncludeQuantizationNode = true;
 let mockIncludeOutpaintNode = true;
 let mockDynamicModularFields = false;
@@ -3630,6 +3632,98 @@ async function installMockRoutes(page: Page) {
       body: JSON.stringify({ error: false, result: true, task_id: 'mock-install-1', repo_id: repoId }),
     });
   });
+  await page.route('**/template_gallery/**', async (route) => {
+    const url = new URL(route.request().url());
+    const plan = {
+      error: false,
+      schemaVersion: 1,
+      repoId: 'unit/template-gallery',
+      repoType: 'dataset',
+      revision: 'a'.repeat(40),
+      assetSetId: `sha256:canonical-json:${'b'.repeat(64)}`,
+      assetCount: 356,
+      totalBytes: 480_430_370,
+      downloadBytes: mockTemplateGalleryInstalled ? 0 : 488_818_978,
+      stagingBytes: mockTemplateGalleryInstalled ? 0 : 480_430_370,
+      reservationBytes: mockTemplateGalleryInstalled ? 0 : 969_249_348,
+      queuedReservationBytes: 2_000_000_000,
+      reserveBytes: 64 * 1024 ** 3,
+      cacheFreeBytes: 500_000_000_000,
+      destinationFreeBytes: 500_000_000_000,
+      sameFilesystem: true,
+      sizeKnown: true,
+      fitsWithQueue: true,
+      installed: mockTemplateGalleryInstalled,
+      repairRequired: false,
+      repairReason: mockTemplateGalleryInstalled ? null : 'template_gallery_not_installed',
+      installing: false,
+    };
+    if (url.pathname.endsWith('/status')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          mockTemplateGalleryInstalled
+            ? {
+                error: false,
+                schemaVersion: 1,
+                status: 'ready',
+                installed: true,
+                complete: true,
+                repairRequired: false,
+                installing: false,
+                repoId: plan.repoId,
+                revision: plan.revision,
+                assetSetId: plan.assetSetId,
+                assetCount: plan.assetCount,
+                totalBytes: plan.totalBytes,
+              }
+            : {
+                error: false,
+                schemaVersion: 1,
+                status: 'missing',
+                installed: false,
+                complete: false,
+                repairRequired: false,
+                installing: false,
+                repoId: plan.repoId,
+                revision: plan.revision,
+                assetSetId: plan.assetSetId,
+              },
+        ),
+      });
+      return;
+    }
+    if (url.pathname.endsWith('/plan')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(plan) });
+      return;
+    }
+    mockTemplateGalleryInstallCalls += 1;
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().postDataJSON()).toEqual({});
+    mockTemplateGalleryInstalled = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        complete: true,
+        alreadyInstalled: false,
+        plan: { ...plan, installing: true },
+        result: {
+          installed: true,
+          complete: true,
+          repairRequired: false,
+          assetCount: plan.assetCount,
+          totalBytes: plan.totalBytes,
+          assetSetId: plan.assetSetId,
+          repoId: plan.repoId,
+          revision: plan.revision,
+          restartRequired: true,
+        },
+      }),
+    });
+  });
 }
 
 async function setStudioViewMode(page: Page, mode: 'auto' | 'expert') {
@@ -3711,6 +3805,8 @@ test.beforeEach(() => {
   mockOptionalRuntimeDelayMs = 0;
   mockOptionalRuntimeActions = false;
   mockOptionalRuntimeJobState = 'idle';
+  mockTemplateGalleryInstallCalls = 0;
+  mockTemplateGalleryInstalled = false;
   mockReadyProofStatus = 'declared_safe';
 });
 
@@ -3735,6 +3831,29 @@ test('top bar reports live system and accelerator resources without refreshing r
   await expect(popover).toContainText('Mock CUDA 16GB');
   await expect(popover).toContainText('42% (mock)');
   await expect(popover).toContainText('Peak allocated');
+});
+
+test('Template Gallery setup plans and installs only after explicit consent', async ({ page }) => {
+  mockDownloadCalls = 0;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+
+  const card = page.getByTestId('template-gallery-setup-card');
+  await expect(card).toContainText('Not installed');
+  await page.getByTestId('template-gallery-install').click();
+  expect(mockTemplateGalleryInstallCalls).toBe(0);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('immutable revision');
+  await expect(dialog).toContainText('cached models will not be removed');
+  await dialog.getByRole('button', { name: 'Install', exact: true }).click();
+
+  await expect(card).toContainText('Ready');
+  await expect(card).toContainText('356 files');
+  expect(mockTemplateGalleryInstallCalls).toBe(1);
+  expect(mockDownloadCalls).toBe(0);
 });
 
 test('optional runtime setup is GET-only and keeps a pending target non-actionable', async ({ page }) => {

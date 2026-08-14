@@ -54,6 +54,7 @@ import { cx } from '../utils/classNames';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import { RuntimeEnvironmentCard } from './RuntimeEnvironmentCard';
 import RuntimeOptimizationsCard from './RuntimeOptimizationsCard';
+import { TemplateGallerySetupCard } from './TemplateGallerySetupCard';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
 
 function formatBytes(bytes?: number) {
@@ -450,6 +451,7 @@ export default function ModelSetupPanel() {
 
       <RuntimeEnvironmentCard error={runtimeError} status={runtimeStatus} />
       <RuntimeOptimizationsCard />
+      <TemplateGallerySetupCard />
 
       {currentIssueGroups.length > 0 && (
         <section

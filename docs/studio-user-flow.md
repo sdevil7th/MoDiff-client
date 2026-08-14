@@ -87,6 +87,11 @@ clearing site data or switching browser profiles.
 - **Setup → Runtime optimizations** shows supported optimization packages, isolated environments, qualification
   receipts, activation, and rollback. Install or activate only entries supported by the current backend profile, and
   do not treat an unqualified probe as production evidence.
+- **Setup → Template Gallery assets** verifies the installed byte-pinned
+  payload and offers an explicit app-owned install or repair. It plans the
+  complete download and staging reservation alongside active model downloads,
+  preserves a 64 GiB safety margin, and never removes cached models. Restart
+  MoDiff after the action completes and active downloads have finished.
 - **Run as app** appears in Expert for graphs with a recognized input/output surface.
 
 ## Build And Edit A Guided Workflow

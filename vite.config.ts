@@ -143,6 +143,7 @@ const backendProxyPaths = [
   '/workflows',
   '/hf_hub',
   '/hf_download',
+  '/template_gallery',
   '/custom_modules',
   '/cache',
   '/preview',

@@ -228,6 +228,16 @@ mode, it verifies the existing 360 files before building. If it is in
 Hugging Face mode, it downloads anonymously first. Installation fails closed
 on a missing file or hash mismatch.
 
+An already running remote-mode app can materialize or repair the same reviewed
+payload from **Setup → Template Gallery assets**. That path remains entirely
+app-owned: it validates the immutable manifest, checks the full download and
+staging reservation against active model reservations and the 64 GiB safety
+margin, downloads the exact Dataset snapshot, verifies every file, and
+atomically promotes the local tree without deleting model-cache entries.
+Restart MoDiff after active downloads finish so `/template-gallery/*` is
+registered. The maintainer commands below are for offline recovery and Dataset
+lifecycle work, not the normal in-app action.
+
 The commands below are the manual recovery equivalent.
 
 An offline installation can materialize the exact pinned snapshot. The command
