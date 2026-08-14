@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { canonicalJsonHash as hash, stableJsonValue as stable } from './canonical-json.mjs';
+import { installEphemeralWorkflowStorage } from './workflow-library-ephemeral-storage.mjs';
 import { normalizePortableWorkflowNodeOffload } from './workflow-library-contract.mjs';
 
 const ROOT = process.cwd();
@@ -171,22 +172,6 @@ function addLayoutMetadata(graph) {
   return graph;
 }
 
-export async function installEphemeralWorkflowStorage(page) {
-  await page.addInitScript(() => {
-    const generatedGraphKeys = new Set(['modiff.studio', 'modiff.flow']);
-    const originalSetItem = Storage.prototype.setItem;
-
-    Storage.prototype.setItem = function setEphemeralWorkflowItem(key, value) {
-      if (this === localStorage && generatedGraphKeys.has(String(key))) return;
-      return originalSetItem.call(this, key, value);
-    };
-
-    for (const key of generatedGraphKeys) {
-      localStorage.removeItem(key);
-    }
-  });
-}
-
 async function loadCapabilities() {
   const response = await fetch(`${BACKEND_URL}/model_capabilities`);
   if (!response.ok) throw new Error(`Capability request failed: HTTP ${response.status}`);
@@ -299,10 +284,10 @@ async function main() {
   const page = await browser.newPage();
   try {
     // Canonical generation intentionally exercises the real application graph
-    // assembly path, but it is not a user editing session. Suppress only the
-    // two large persisted graph documents before Zustand hydrates so building
-    // one template cannot consume browser quota while the next is assembled.
-    // Production browser sessions retain their normal persistence behavior.
+    // assembly path, but it is not a user editing session. Keep its browser
+    // and backend workflow documents ephemeral so one template cannot hydrate
+    // or autosave state that interferes with another. Production browser
+    // sessions retain their normal persistence behavior.
     await installEphemeralWorkflowStorage(page);
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
@@ -315,9 +300,7 @@ async function main() {
     // authoritative store after every attempt.
     let taskSkeletonCount = 0;
     for (let attempt = 1; attempt <= 8; attempt += 1) {
-      taskSkeletonCount = await page.evaluate(
-        () => window.__MODIFF_E2E__?.listTaskTemplateSkeletons().length ?? 0,
-      );
+      taskSkeletonCount = await page.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons().length ?? 0);
       if (taskSkeletonCount > 0) break;
       taskSkeletonCount = await page.evaluate(
         async () => (await window.__MODIFF_E2E__?.refreshTaskTemplateContracts()) ?? 0,

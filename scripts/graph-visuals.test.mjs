@@ -7,6 +7,10 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Position, ReactFlowProvider } from '@xyflow/react';
 import { createServer } from 'vite';
+import {
+  createEphemeralWorkflowRouteHandler,
+  installEphemeralWorkflowStorage,
+} from './workflow-library-ephemeral-storage.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -7375,8 +7379,7 @@ test('canonical workflow generation persists the final layout and library open d
   const preCanonicalArrangeIndex = generator.indexOf('const arrangedBeforeCanonicalIds = await arrangeSnapshot(graph)');
   const canonicalizeIndex = generator.indexOf('canonicalizeGraphIds(arrangedBeforeCanonicalIds)');
   const metadataIndex = generator.indexOf('addLayoutMetadata(repeated)');
-  assert.match(generator, /new Set\(\['modiff\.studio', 'modiff\.flow'\]\)/);
-  assert.match(generator, /this === localStorage && generatedGraphKeys\.has\(String\(key\)\)/);
+  assert.match(generator, /installEphemeralWorkflowStorage/);
   assert.match(generator, /listTaskTemplateSkeletons/);
   assert.match(generator, /refreshTaskTemplateContracts/);
   assert.match(generator, /applyTaskTemplateSkeleton/);
@@ -7391,4 +7394,52 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(verifier, /does not equal a deterministic re-layout/);
   assert.match(verifier, /LAYOUT_HORIZONTAL_GAP = 140/);
   assert.match(verifier, /LAYOUT_VERTICAL_GAP = 72/);
+});
+
+test('canonical generation isolates browser and backend workflow persistence', async () => {
+  const initScripts = [];
+  const routes = [];
+  await installEphemeralWorkflowStorage({
+    addInitScript: async (script) => initScripts.push(script),
+    route: async (pattern, handler) => routes.push({ pattern, handler }),
+  });
+
+  assert.equal(initScripts.length, 1);
+  assert.deepEqual(
+    routes.map(({ pattern }) => pattern),
+    ['**/workflows**'],
+  );
+
+  const handler = createEphemeralWorkflowRouteHandler();
+  const request = async (method, url, payload) => {
+    let response;
+    await handler({
+      request: () => ({
+        method: () => method,
+        postDataJSON: () => payload,
+        url: () => url,
+      }),
+      fulfill: async (result) => {
+        response = { ...result, json: JSON.parse(result.body) };
+      },
+    });
+    return response;
+  };
+
+  const baseUrl = 'http://127.0.0.1:8088/workflows';
+  assert.deepEqual((await request('GET', baseUrl)).json, { workflows: [] });
+  const first = await request('PUT', `${baseUrl}/generated%20workflow`, {
+    title: 'Generated workflow',
+    snapshot: { nodes: [], edges: [] },
+    source: 'template',
+    createdAt: 42,
+  });
+  assert.equal(first.status, 200);
+  assert.equal(first.json.id, 'generated workflow');
+  assert.equal(first.json.createdAt, 42);
+  assert.equal(first.json.revision, 1);
+  assert.deepEqual((await request('GET', baseUrl)).json.workflows, [first.json]);
+  assert.deepEqual((await request('GET', `${baseUrl}/generated%20workflow`)).json, first.json);
+  assert.equal((await request('DELETE', `${baseUrl}/generated%20workflow`)).status, 200);
+  assert.deepEqual((await request('GET', baseUrl)).json, { workflows: [] });
 });
