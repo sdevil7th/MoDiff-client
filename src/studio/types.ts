@@ -28,6 +28,7 @@ export type StudioMode =
   | 'video_outpaint'
   | 'reference_to_video'
   | 'control_to_video'
+  | 'control_video_to_video'
   | 'video_color_edit'
   | 'character_animate'
   | 'character_replace'
@@ -55,6 +56,8 @@ export type StudioModelType =
   | 'QwenImageEditModularPipeline'
   | 'QwenImageEditPlusModularPipeline'
   | 'QwenImageLayeredModularPipeline'
+  | 'QwenImageControlNetPipeline'
+  | 'QwenImageLayeredPipeline'
   | 'WanVACEPipeline'
   | 'WanVideoPipeline'
   | 'WanImageToVideoPipeline'
@@ -68,8 +71,13 @@ export type StudioModelType =
   | 'HunyuanVideoFramepackPipeline'
   | 'StableVideoDiffusionPipeline'
   | 'AnimateDiffPipeline'
+  | 'AnimateDiffPAGPipeline'
+  | 'AnimateDiffVideoToVideoPipeline'
+  | 'AnimateDiffControlNetPipeline'
+  | 'AnimateDiffVideoToVideoControlNetPipeline'
   | 'AnimateLCMPipeline'
   | 'CogVideoXPipeline'
+  | 'CogVideoXVideoToVideoPipeline'
   | 'AllegroPipeline'
   | 'LattePipeline'
   | 'MochiPipeline'
@@ -427,6 +435,7 @@ export type StudioGraphRole =
   | 'loadFaceVideo'
   | 'loadBackgroundVideo'
   | 'normalizeVideo'
+  | 'normalizeControlVideo'
   | 'alignMaskVideo'
   | 'videoColor'
   | 'wanGenerate'
@@ -440,6 +449,7 @@ export type StudioGraphRole =
   | 'diffusersImageControl'
   | 'diffusersImageControlEdit'
   | 'diffusersImageControlInpaint'
+  | 'diffusersImageLayerDecompose'
   | 'loadAdapter'
   | 'loadAudio'
   | 'loadReferenceAudio'
@@ -919,6 +929,8 @@ export type StudioModelProfile = {
   recommendedDuration?: number;
   recommendedSampleRate?: number;
   conditioningScale?: number;
+  layerCount?: { default: number; min: number; max: number };
+  layerResolutions?: number[];
   inpaintContract?: StudioInpaintContractStatus;
   offloadSupport: {
     modes: StudioOffloadMode[];
@@ -958,6 +970,7 @@ export type StudioModelProfile = {
   autoEligible?: boolean;
   templateEligible?: boolean;
   galleryEligible?: boolean;
+  liveProof?: boolean;
   license?: string;
   licenseCompliance?: {
     state: 'product_and_user_review_required';

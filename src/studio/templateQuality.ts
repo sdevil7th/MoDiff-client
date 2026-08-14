@@ -89,6 +89,7 @@ const VIDEO_MODES = new Set<StudioMode>([
   'video_outpaint',
   'reference_to_video',
   'control_to_video',
+  'control_video_to_video',
   'video_color_edit',
 ]);
 

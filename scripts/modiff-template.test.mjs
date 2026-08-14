@@ -768,6 +768,153 @@ test('CogVideoX-2B exposes the bounded native short-video source contract', () =
   assert.equal(form.fps, 8);
 });
 
+test('direct Qwen and extended video profiles stay Expert-only with generic media contracts', () => {
+  const qwenControl = profilesModule.STUDIO_MODEL_PROFILES.QwenImageControlNetPipeline;
+  const qwenLayered = profilesModule.STUDIO_MODEL_PROFILES.QwenImageLayeredPipeline;
+  assert.deepEqual(qwenControl.modes, ['control_image']);
+  assert.deepEqual(qwenControl.revisionCandidates, [profilesModule.QWEN_IMAGE_2512_REVISION]);
+  assert.deepEqual(qwenControl.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.deepEqual(qwenControl.modeRequirements.control_image.modelRequirements, [
+    profilesModule.QWEN_CONTROLNET_REQUIREMENT,
+  ]);
+  assert.deepEqual(qwenLayered.modes, ['layer_decomposition']);
+  assert.deepEqual(qwenLayered.revisionCandidates, [profilesModule.QWEN_IMAGE_LAYERED_REVISION]);
+  assert.deepEqual(qwenLayered.modeRequirements.layer_decomposition.requiredImages, ['referenceImages']);
+  assert.deepEqual(qwenLayered.layerCount, { default: 4, min: 1, max: 10 });
+  assert.deepEqual(qwenLayered.layerResolutions, [640, 1024]);
+  const layeredForm = profilesModule.getFormDefaultsForMode('layer_decomposition', 'QwenImageLayeredPipeline');
+  assert.equal(layeredForm.layers, 4);
+  assert.equal(layeredForm.width, 1024);
+  assert.equal(layeredForm.height, 1024);
+
+  const videoCases = [
+    ['AnimateDiffPAGPipeline', 'text_to_video', []],
+    ['AnimateDiffVideoToVideoPipeline', 'video_to_video', ['sourceVideo']],
+    ['AnimateDiffControlNetPipeline', 'control_to_video', ['controlVideo']],
+    ['AnimateDiffVideoToVideoControlNetPipeline', 'control_video_to_video', ['sourceVideo', 'controlVideo']],
+    ['CogVideoXVideoToVideoPipeline', 'video_to_video', ['sourceVideo']],
+  ];
+  for (const [modelType, mode, requiredVideos] of videoCases) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    assert.deepEqual(profile.modes, [mode]);
+    assert.deepEqual(profile.modeRequirements[mode].requiredVideos ?? [], requiredVideos);
+    assert.equal(profile.outputKind, 'video');
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profile.executionStatus, 'expert_only');
+    assert.equal(profile.qualificationStatus, 'graph-qualified-execution-pending');
+    assert.deepEqual(profile.qualifiedModes, []);
+    assert.equal(profile.autoEligible, false);
+    assert.equal(profile.galleryEligible, false);
+    assert.equal(profile.liveProof, false);
+    assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].autoStatus, 'manual_only');
+  }
+  assert.deepEqual(
+    profilesModule.STUDIO_MODEL_PROFILES.AnimateDiffControlNetPipeline.modeRequirements.control_to_video.modelRequirements.map(
+      ({ kind }) => kind,
+    ),
+    ['adapter', 'controlnet'],
+  );
+  assert.equal(
+    profilesModule.getDefaultModelForMode('control_video_to_video'),
+    'AnimateDiffVideoToVideoControlNetPipeline',
+  );
+});
+
+test('direct layers and dual-video workflows infer generic fields and block incomplete inputs', () => {
+  const node = (id, module, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module, action, studioRole, studioOwned: true, params },
+  });
+  const combinedNodes = [
+    node('pipeline', 'modules.DiffusersVideo', 'LoadPipeline', 'wanPipeline', {
+      pipeline_class: { value: 'AnimateDiffVideoToVideoControlNetPipeline' },
+    }),
+    node('source', 'modules.Video', 'Load', 'loadVideo', { file: { value: 'source.mp4' } }),
+    node('control', 'modules.Video', 'Load', 'loadControlVideo', { file: { value: 'control.mp4' } }),
+    node('generate', 'modules.DiffusersVideo', 'Generate', 'wanGenerate', {
+      prompt: { value: 'Follow the edge motion' },
+      conditioning_scale: { value: 0.75 },
+    }),
+  ];
+  const combined = workflowInferenceModule.inferStudioFormFromWorkflow(combinedNodes);
+  assert.equal(combined.modelType, 'AnimateDiffVideoToVideoControlNetPipeline');
+  assert.equal(combined.mode, 'control_video_to_video');
+  assert.equal(combined.sourceVideo, 'source.mp4');
+  assert.equal(combined.controlVideo, 'control.mp4');
+  assert.equal(combined.conditioningScale, 0.75);
+
+  const layered = workflowInferenceModule.inferStudioFormFromWorkflow([
+    node('pipeline', 'modules.DiffusersImage', 'LoadPipeline', 'diffusersImagePipeline', {
+      pipeline_class: { value: 'QwenImageLayeredPipeline' },
+    }),
+    node('image', 'modules.Image', 'Load', 'loadImage', { file: { value: ['portrait.png'] } }),
+    node('layers', 'modules.DiffusersImage', 'LayerDecompose', 'diffusersImageLayerDecompose', {
+      resolution: { value: 640 },
+      layers: { value: 6 },
+    }),
+  ]);
+  assert.equal(layered.modelType, 'QwenImageLayeredPipeline');
+  assert.equal(layered.mode, 'layer_decomposition');
+  assert.deepEqual(layered.referenceImages, ['portrait.png']);
+  assert.equal(layered.width, 640);
+  assert.equal(layered.height, 640);
+  assert.equal(layered.layers, 6);
+
+  const previousStudio = studioStoreModule.useStudioStore.getState();
+  const previousNodes = nodesStoreModule.useNodesStore.getState();
+  const previousFlow = flowStoreModule.useFlowStore.getState();
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    studioStoreModule.useStudioStore.setState({
+      form: { ...combined, sourceVideo: '', controlVideo: '' },
+      graphBinding: null,
+      graphFinalization: null,
+    });
+    const videoMessages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .filter(({ message }) => /source video|control video/i.test(message))
+      .map(({ message }) => message);
+    assert.equal(
+      videoMessages.some((message) => /source video/i.test(message)),
+      true,
+    );
+    assert.equal(
+      videoMessages.some((message) => /control video/i.test(message)),
+      true,
+    );
+
+    studioStoreModule.useStudioStore.setState({ form: { ...layered, width: 768, height: 768, layers: 11 } });
+    const layerMessages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.equal(
+      layerMessages.some((message) => /layer resolution/i.test(message)),
+      true,
+    );
+    assert.equal(
+      layerMessages.some((message) => /layer count/i.test(message)),
+      true,
+    );
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousNodes.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodes.studioModelCapabilitiesAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: previousStudio.form,
+      graphBinding: previousStudio.graphBinding,
+      graphFinalization: previousStudio.graphFinalization,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: previousFlow.nodes, edges: previousFlow.edges });
+  }
+});
+
 test('Allegro exposes its bounded native remote-only source contract', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.AllegroPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_video', 'AllegroPipeline');

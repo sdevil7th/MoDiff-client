@@ -4284,6 +4284,558 @@ test('Janus any-to-any execution specs materialize exact text, vision, and image
   }
 });
 
+test('direct Qwen and extended video specs materialize their exact generic routes', async () => {
+  const scalar = (value = null, type = 'string') => ({ type, display: 'text', value });
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const registry = {
+    'modules.DiffusersImage.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'LoadPipeline',
+      label: 'Load Image Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        pipeline_class: scalar(),
+        conditioning_kind: scalar(),
+        conditioning_model_id: scalar(),
+        conditioning_revision: scalar(),
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersImage.ControlGenerate': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'ControlGenerate',
+      label: 'Control Generate',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        control_image: input('image'),
+        prompt: scalar(),
+        conditioning_scale: scalar(1, 'number'),
+        control_guidance_start: scalar(0, 'number'),
+        control_guidance_end: scalar(1, 'number'),
+        images: output('image'),
+      },
+    },
+    'modules.DiffusersImage.LayerDecompose': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'LayerDecompose',
+      label: 'Layer Decompose',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        image: input('image'),
+        prompt: scalar(),
+        layers: scalar(4, 'number'),
+        resolution: scalar(1024, 'number'),
+        cfg_normalize: scalar(false, 'boolean'),
+        use_en_prompt: scalar(false, 'boolean'),
+        images: output('image'),
+      },
+    },
+    'modules.Image.Load': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Load',
+      label: 'Load Image',
+      category: 'Test',
+      params: { file: scalar(), alpha_channel: scalar(), image: output('image') },
+    },
+    'modules.Image.Preview': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      category: 'Test',
+      params: { image: input('image') },
+    },
+    'modules.DiffusersVideo.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'LoadPipeline',
+      label: 'Load Video Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        pipeline_class: { ...scalar(), onChange: 'update_video_contract' },
+        motion_adapter_id: scalar(),
+        motion_adapter_revision: scalar(),
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersVideo.Generate': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'Generate',
+      label: 'Generate Video',
+      category: 'Test',
+      params: {
+        pipeline: { ...input('pipeline'), onSignal: 'update_video_contract' },
+        video: input('video'),
+        control_video: input('video'),
+        prompt: scalar(),
+        mode: { ...scalar(), onChange: 'update_video_contract' },
+        video_contract: scalar(),
+        conditioning_scale: scalar(1, 'number'),
+        pag_scale: scalar(0, 'number'),
+        pag_adaptive_scale: scalar(0, 'number'),
+        video_out: output('video'),
+      },
+    },
+    'modules.Video.Load': {
+      type: 'custom',
+      module: 'modules.Video',
+      action: 'Load',
+      label: 'Load Video',
+      category: 'Test',
+      params: { file: scalar(), video: output('video') },
+    },
+    'modules.VideoConditioning.Normalize': {
+      type: 'custom',
+      module: 'modules.VideoConditioning',
+      action: 'Normalize',
+      label: 'Normalize Video',
+      category: 'Test',
+      params: {
+        video: input('video'),
+        width: scalar(512, 'number'),
+        height: scalar(512, 'number'),
+        num_frames: scalar(16, 'number'),
+        output: output('video'),
+      },
+    },
+    'modules.VideoConditioning.EdgePreprocessor': {
+      type: 'custom',
+      module: 'modules.VideoConditioning',
+      action: 'EdgePreprocessor',
+      label: 'Video Edge Preprocessor',
+      category: 'Test',
+      params: {
+        video: input('video'),
+        low_threshold: scalar(100, 'number'),
+        high_threshold: scalar(200, 'number'),
+        output: output('video'),
+      },
+    },
+    'modules.Video.Export': {
+      type: 'custom',
+      module: 'modules.Video',
+      action: 'Export',
+      label: 'Export Video',
+      category: 'Test',
+      params: { video: input('video'), fps: scalar(8, 'number') },
+    },
+  };
+  const cases = [
+    {
+      modelType: 'QwenImageControlNetPipeline',
+      mode: 'control_image',
+      id: 'qwen-image-controlnet-direct:control-image:v1',
+      hash: 'studio-spec-v1-40e18b12',
+      profileId: 'qwen-image-controlnet:direct',
+      repo: 'Qwen/Qwen-Image-2512',
+      revision: '25468b98e3276ca6700de15c6628e51b7de54a26',
+      imageKind: 'control',
+    },
+    {
+      modelType: 'QwenImageLayeredPipeline',
+      mode: 'layer_decomposition',
+      id: 'qwen-image-layered-direct:layer-decomposition:v1',
+      hash: 'studio-spec-v1-2d3b60ff',
+      profileId: 'qwen-image-layered:direct',
+      repo: 'Qwen/Qwen-Image-Layered',
+      revision: '8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf',
+      imageKind: 'layers',
+    },
+    {
+      modelType: 'AnimateDiffPAGPipeline',
+      mode: 'text_to_video',
+      id: 'animatediff-pag:text-to-video:v1',
+      hash: 'studio-spec-v1-a3238501',
+      profileId: 'animatediff-sd15-v2-pag:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      pag: true,
+    },
+    {
+      modelType: 'AnimateDiffVideoToVideoPipeline',
+      mode: 'video_to_video',
+      id: 'animatediff-video-to-video:video-to-video:v1',
+      hash: 'studio-spec-v1-b1ae3ddd',
+      profileId: 'animatediff-sd15-v2-video-to-video:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      sourceVideo: true,
+    },
+    {
+      modelType: 'AnimateDiffControlNetPipeline',
+      mode: 'control_to_video',
+      id: 'animatediff-controlnet:control-to-video:v1',
+      hash: 'studio-spec-v1-cf67f340',
+      profileId: 'animatediff-sd15-v2-controlnet:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      controlVideo: true,
+    },
+    {
+      modelType: 'AnimateDiffVideoToVideoControlNetPipeline',
+      mode: 'control_video_to_video',
+      id: 'animatediff-controlnet-video-to-video:control-video-to-video:v1',
+      hash: 'studio-spec-v1-4bec5f54',
+      profileId: 'animatediff-sd15-v2-controlnet-video-to-video:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      sourceVideo: true,
+      controlVideo: true,
+    },
+    {
+      modelType: 'CogVideoXVideoToVideoPipeline',
+      mode: 'video_to_video',
+      id: 'cogvideox-2b-video-to-video:video-to-video:v1',
+      hash: 'studio-spec-v1-de592d47',
+      profileId: 'cogvideox-2b-video-to-video:direct',
+      repo: 'zai-org/CogVideoX-2b',
+      revision: '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01',
+      sourceVideo: true,
+      cog: true,
+    },
+  ];
+  const motionAdapter = {
+    id: 'animatediff-motion-adapter-v1-5-2',
+    label: 'AnimateDiff SD1.5 v2 MotionAdapter',
+    repo: 'guoyww/animatediff-motion-adapter-v1-5-2',
+    revision: '6167b88ffe39b4441fdf2113e77b99a6f56b7906',
+    kind: 'adapter',
+  };
+  const controlnet = {
+    id: 'sd15-controlnet-canny',
+    label: 'Stable Diffusion 1.5 Canny ControlNet',
+    repo: 'lllyasviel/control_v11p_sd15_canny',
+    revision: '115a470d547982438f70198e353a921996e2e819',
+    kind: 'controlnet',
+  };
+  const qwenControlnet = {
+    id: 'qwen-controlnet-union',
+    label: 'Qwen ControlNet Union',
+    repo: 'InstantX/Qwen-Image-ControlNet-Union',
+    revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+    kind: 'controlnet',
+  };
+  const capabilities = cases.map((item) => {
+    const qwen = Boolean(item.imageKind);
+    const layered = item.imageKind === 'layers';
+    const loaderRole = qwen ? 'diffusersImagePipeline' : 'wanPipeline';
+    const actionRole = layered ? 'diffusersImageLayerDecompose' : qwen ? 'diffusersImageControl' : 'wanGenerate';
+    const roles = qwen
+      ? [
+          [loaderRole, 'modules.DiffusersImage.LoadPipeline', -520, -80],
+          ['loadImage', 'modules.Image.Load', -520, 300],
+          [
+            actionRole,
+            layered ? 'modules.DiffusersImage.LayerDecompose' : 'modules.DiffusersImage.ControlGenerate',
+            -120,
+            -80,
+          ],
+          ['preview', 'modules.Image.Preview', 980, -80],
+        ]
+      : [
+          [loaderRole, 'modules.DiffusersVideo.LoadPipeline', -520, -80],
+          [actionRole, 'modules.DiffusersVideo.Generate', 220, -80],
+          ['videoExport', 'modules.Video.Export', 640, -80],
+          ...(item.sourceVideo
+            ? [
+                ['loadVideo', 'modules.Video.Load', -520, 260],
+                ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
+              ]
+            : []),
+          ...(item.controlVideo
+            ? [
+                ['loadControlVideo', 'modules.Video.Load', -520, item.sourceVideo ? 520 : 260],
+                ['normalizeControlVideo', 'modules.VideoConditioning.Normalize', -160, item.sourceVideo ? 520 : 260],
+                [
+                  'controlPreprocessor',
+                  'modules.VideoConditioning.EdgePreprocessor',
+                  220,
+                  item.sourceVideo ? 520 : 260,
+                ],
+              ]
+            : []),
+        ];
+    const edges = qwen
+      ? [
+          [loaderRole, 'pipeline', actionRole, 'pipeline'],
+          ['loadImage', 'image', actionRole, layered ? 'image' : 'control_image'],
+          [actionRole, 'images', 'preview', 'image'],
+        ]
+      : [
+          [loaderRole, 'pipeline', actionRole, 'pipeline'],
+          [actionRole, 'video_out', 'videoExport', 'video'],
+          ...(item.sourceVideo
+            ? [
+                ['loadVideo', 'video', 'normalizeVideo', 'video'],
+                ['normalizeVideo', 'output', actionRole, 'video'],
+              ]
+            : []),
+          ...(item.controlVideo
+            ? [
+                ['loadControlVideo', 'video', 'normalizeControlVideo', 'video'],
+                ['normalizeControlVideo', 'output', 'controlPreprocessor', 'video'],
+                ['controlPreprocessor', 'output', actionRole, 'control_video'],
+              ]
+            : []),
+        ];
+    const bindings = [
+      [loaderRole, 'model_id', 'artifact'],
+      [loaderRole, 'revision', 'defaultRevision'],
+      [loaderRole, 'pipeline_class', 'pipelineClass'],
+      ...(qwen
+        ? [
+            ['loadImage', 'file', layered ? 'referenceImages' : 'controlImage'],
+            ...(layered
+              ? [
+                  [actionRole, 'layers', 'layers'],
+                  [actionRole, 'resolution', 'resolution'],
+                  [actionRole, 'cfg_normalize', 'cfgNormalize'],
+                  [actionRole, 'use_en_prompt', 'useEnglishPrompt'],
+                ]
+              : [
+                  [loaderRole, 'conditioning_kind', 'kind'],
+                  [loaderRole, 'conditioning_model_id', 'repo'],
+                  [loaderRole, 'conditioning_revision', 'revision'],
+                  [actionRole, 'conditioning_scale', 'conditioningScale'],
+                  [actionRole, 'control_guidance_start', 'controlGuidanceStart'],
+                  [actionRole, 'control_guidance_end', 'controlGuidanceEnd'],
+                ]),
+          ]
+        : [
+            ...(item.cog
+              ? []
+              : [
+                  [loaderRole, 'motion_adapter_id', 'motionAdapterRepo'],
+                  [loaderRole, 'motion_adapter_revision', 'motionAdapterRevision'],
+                ]),
+            ...(item.sourceVideo
+              ? [
+                  ['loadVideo', 'file', 'sourceVideo'],
+                  ['normalizeVideo', 'width', 'width'],
+                  ['normalizeVideo', 'height', 'height'],
+                  ['normalizeVideo', 'num_frames', 'numFrames'],
+                ]
+              : []),
+            ...(item.controlVideo
+              ? [
+                  ['loadControlVideo', 'file', 'controlVideo'],
+                  ['normalizeControlVideo', 'width', 'width'],
+                  ['normalizeControlVideo', 'height', 'height'],
+                  ['normalizeControlVideo', 'num_frames', 'numFrames'],
+                  ['controlPreprocessor', 'low_threshold', 'videoCannyLowThreshold100'],
+                  ['controlPreprocessor', 'high_threshold', 'videoCannyHighThreshold200'],
+                  [actionRole, 'conditioning_scale', 'conditioningScale'],
+                ]
+              : []),
+            ...(item.pag
+              ? [
+                  [actionRole, 'pag_scale', 'pagScale'],
+                  [actionRole, 'pag_adaptive_scale', 'pagAdaptiveScale'],
+                ]
+              : []),
+          ]),
+    ];
+    const profile = {
+      id: item.profileId,
+      model_type: item.modelType,
+      modes: [item.mode],
+      loader_module: qwen ? 'modules.DiffusersImage' : 'modules.DiffusersVideo',
+      loader_action: 'LoadPipeline',
+      execution_path: qwen ? 'direct-diffusers-image' : 'direct-diffusers-video',
+      pipeline_class: item.modelType,
+      default_repo: item.repo,
+      supported_offload_modes: ['none', 'model_cpu', 'sequential_cpu'],
+      retry_offload_modes: ['model_cpu', 'sequential_cpu'],
+    };
+    const requirements = item.imageKind === 'control' ? [qwenControlnet] : item.cog || layered ? [] : [motionAdapter];
+    if (item.controlVideo) requirements.push(controlnet);
+    const spec = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.id,
+      modelType: item.modelType,
+      mode: item.mode,
+      executionProfileId: item.profileId,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: item.modelType,
+      defaultRepo: item.repo,
+      roles,
+      edges,
+      bindings,
+      autoFields: [],
+      actions: [],
+      contentHash: item.hash,
+    };
+    return {
+      modelType: item.modelType,
+      modes: [item.mode],
+      runnableModes: [item.mode],
+      modeRequirements: {
+        [item.mode]: {
+          modelRequirements: requirements,
+          requiredImages: item.imageKind ? [item.imageKind === 'layers' ? 'referenceImages' : 'controlImage'] : [],
+          requiredVideos: [
+            ...(item.sourceVideo ? ['sourceVideo'] : []),
+            ...(item.controlVideo ? ['controlVideo'] : []),
+          ],
+        },
+      },
+      revisionCandidates: [item.revision],
+      executionProfiles: [profile],
+      studioExecutionSpecSchemaVersion: 1,
+      studioExecutionSpecModes: [item.mode],
+      studioExecutionSpecs: [spec],
+    };
+  });
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const nativeWebSocket = globalThis.WebSocket;
+  const nativeFetch = globalThis.fetch;
+  globalThis.WebSocket = undefined;
+  globalThis.fetch = async (_input, init) => {
+    const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    if (payload?.fn === 'update_video_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const pipelineNode = flowStoreModule.useFlowStore
+          .getState()
+          .nodes.find((nodeItem) => nodeItem.id === payload.node);
+        flowStoreModule.useFlowStore.getState().setParam(
+          payload.node,
+          'pipeline',
+          {
+            direction: 'output',
+            value: {
+              pipelineClass: pipelineNode?.data.params.pipeline_class.value,
+              modes: ['text_to_video', 'video_to_video', 'control_to_video', 'control_video_to_video'],
+            },
+          },
+          'signal',
+        );
+      } else if (payload.action === 'Generate') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        const contract = signal?.value;
+        const selectedMode = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'mode', 'value');
+        flowStoreModule.useFlowStore
+          .getState()
+          .setParam(
+            payload.node,
+            'mode',
+            contract?.modes?.includes(selectedMode) ? selectedMode : contract?.modes?.[0],
+          );
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'video_contract', contract);
+      }
+    }
+    return new Response(JSON.stringify({ error: false, nodes: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: registry,
+      studioModelCapabilities: capabilities,
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    for (const item of cases) {
+      flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+      const form = {
+        ...previousForm,
+        modelType: item.modelType,
+        mode: item.mode,
+        resourceMode: 'expert',
+        quantizationMode: 'none',
+        prompt: 'Preserve the exact reviewed contract',
+        width: item.imageKind === 'layers' ? 640 : 512,
+        height: item.imageKind === 'layers' ? 640 : 512,
+        layers: 6,
+        sourceVideo: item.sourceVideo ? 'source.mp4' : '',
+        controlVideo: item.controlVideo ? 'control.mp4' : '',
+        controlImage: item.imageKind === 'control' ? 'edges.png' : '',
+        referenceImages: item.imageKind === 'layers' ? ['portrait.png'] : [],
+        conditioningScale: 0.75,
+        pagScale: 3,
+        pagAdaptiveScale: 0,
+      };
+      studioStoreModule.useStudioStore.setState({ form, graphBinding: null, autoResourcePlan: null });
+      await graphBridge.createOrUpdateStudioGraph(form);
+      const binding = studioStoreModule.useStudioStore.getState().graphBinding;
+      const nodes = flowStoreModule.useFlowStore.getState().nodes;
+      const byRole = (role) => nodes.find((nodeItem) => nodeItem.id === binding.nodes[role]);
+      const capability = capabilities.find(({ modelType }) => modelType === item.modelType);
+      const spec = capability.studioExecutionSpecs[0];
+      const actualTopology = flowStoreModule.useFlowStore
+        .getState()
+        .edges.map((itemEdge) => [
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.source)?.[0],
+          itemEdge.sourceHandle,
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.target)?.[0],
+          itemEdge.targetHandle,
+        ])
+        .sort();
+      assert.equal(binding.executionSpec.id, item.id);
+      assert.equal(binding.executionSpec.contentHash, item.hash);
+      assert.deepEqual(actualTopology, spec.edges.map((edgeRow) => [...edgeRow]).sort());
+      assert.equal(
+        byRole(item.imageKind ? 'diffusersImagePipeline' : 'wanPipeline').data.params.revision.value,
+        item.revision,
+      );
+      if (item.imageKind === 'control') {
+        assert.equal(byRole('loadImage').data.params.file.value, 'edges.png');
+        assert.equal(
+          byRole('diffusersImagePipeline').data.params.conditioning_model_id.value.value,
+          qwenControlnet.repo,
+        );
+        assert.equal(byRole('diffusersImageControl').data.params.control_guidance_start.value, 0);
+        assert.equal(byRole('diffusersImageControl').data.params.control_guidance_end.value, 1);
+      } else if (item.imageKind === 'layers') {
+        assert.deepEqual(byRole('loadImage').data.params.file.value, ['portrait.png']);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.layers.value, 6);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.resolution.value, 640);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.cfg_normalize.value, false);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.use_en_prompt.value, false);
+      } else {
+        if (!item.cog) {
+          assert.equal(byRole('wanPipeline').data.params.motion_adapter_id.value.value, motionAdapter.repo);
+          assert.equal(byRole('wanPipeline').data.params.motion_adapter_revision.value, motionAdapter.revision);
+        }
+        if (item.sourceVideo) assert.equal(byRole('loadVideo').data.params.file.value, 'source.mp4');
+        if (item.controlVideo) {
+          assert.equal(byRole('loadControlVideo').data.params.file.value, 'control.mp4');
+          assert.equal(byRole('controlPreprocessor').data.params.low_threshold.value, 100);
+          assert.equal(byRole('controlPreprocessor').data.params.high_threshold.value, 200);
+        }
+        if (item.pag) assert.equal(byRole('wanGenerate').data.params.pag_scale.value, 3);
+      }
+      assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+    }
+  } finally {
+    globalThis.WebSocket = nativeWebSocket;
+    globalThis.fetch = nativeFetch;
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: previousNodesState.nodesRegistry,
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm, graphBinding: null, autoResourcePlan: null });
+  }
+});
+
 test('managed video extensions re-seal only after their exact route is complete', () => {
   const input = (type) => ({ type, display: 'input' });
   const output = (type) => ({ type, display: 'output' });

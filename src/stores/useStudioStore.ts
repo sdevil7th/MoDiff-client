@@ -1214,6 +1214,7 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
     currentMode === 'video_inpaint' ||
     currentMode === 'video_outpaint' ||
     currentMode === 'control_to_video' ||
+    currentMode === 'control_video_to_video' ||
     currentMode === 'video_color_edit'
   ) {
     return currentMode;
@@ -1222,6 +1223,10 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
 }
 
 function applyImportedVideoToForm(form: StudioFormState, video: string): StudioFormState {
+  if (form.mode === 'control_video_to_video') {
+    if (!form.sourceVideo.trim()) return { ...form, sourceVideo: video };
+    return form.controlVideo.trim() ? { ...form, sourceVideo: video } : { ...form, controlVideo: video };
+  }
   if (form.mode === 'control_to_video') {
     return form.controlVideo.trim() ? { ...form, sourceVideo: video } : { ...form, controlVideo: video };
   }

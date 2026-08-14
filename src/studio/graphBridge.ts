@@ -160,6 +160,7 @@ const NODE_KEYS = {
   loadFaceVideo: 'modules.Video.Load',
   loadBackgroundVideo: 'modules.Video.Load',
   normalizeVideo: 'modules.VideoConditioning.Normalize',
+  normalizeControlVideo: 'modules.VideoConditioning.Normalize',
   alignMaskVideo: 'modules.VideoConditioning.AlignMask',
   videoColor: 'modules.VideoColor.Adjust',
   wanGenerate: 'modules.DiffusersVideo.Generate',
@@ -173,6 +174,7 @@ const NODE_KEYS = {
   diffusersImageControl: 'modules.DiffusersImage.ControlGenerate',
   diffusersImageControlEdit: 'modules.DiffusersImage.ControlEdit',
   diffusersImageControlInpaint: 'modules.DiffusersImage.ControlInpaint',
+  diffusersImageLayerDecompose: 'modules.DiffusersImage.LayerDecompose',
   loadAdapter: 'modules.DiffusersImage.LoadAdapter',
   loadAudio: 'modules.Audio.Load',
   loadReferenceAudio: 'modules.Audio.Load',
@@ -227,6 +229,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   loadFaceVideo: { x: -160, y: 520 },
   loadBackgroundVideo: { x: 220, y: 520 },
   normalizeVideo: { x: -160, y: 260 },
+  normalizeControlVideo: { x: -160, y: 520 },
   alignMaskVideo: { x: -160, y: 520 },
   videoColor: { x: 220, y: 520 },
   wanGenerate: { x: 220, y: -80 },
@@ -240,6 +243,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   diffusersImageControl: { x: -120, y: -80 },
   diffusersImageControlEdit: { x: -120, y: -80 },
   diffusersImageControlInpaint: { x: -120, y: -80 },
+  diffusersImageLayerDecompose: { x: -120, y: -80 },
   loadAdapter: { x: -520, y: 560 },
   loadAudio: { x: -520, y: 300 },
   loadReferenceAudio: { x: -520, y: 560 },
@@ -358,6 +362,7 @@ function diffusersImageActionNode(binding: StudioGraphBinding) {
     binding.nodes.diffusersImageInpaint ??
     binding.nodes.diffusersImageControlEdit ??
     binding.nodes.diffusersImageControl ??
+    binding.nodes.diffusersImageLayerDecompose ??
     binding.nodes.diffusersImageEdit ??
     binding.nodes.diffusersImageGenerate
   );
@@ -415,11 +420,23 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
 
   if (isVideoMode(form.mode)) {
     const roles: StudioGraphRole[] = ['diffusersQuantization', ...VIDEO_BASE_ROLES];
-    if (['video_to_video', 'video_inpaint', 'video_outpaint', 'video_color_edit'].includes(form.mode)) {
+    if (
+      ['video_to_video', 'video_inpaint', 'video_outpaint', 'video_color_edit', 'control_video_to_video'].includes(
+        form.mode,
+      )
+    ) {
       roles.push('loadVideo', 'normalizeVideo');
     }
-    if (form.mode === 'control_to_video') {
-      roles.push('loadControlVideo', 'normalizeVideo');
+    if (form.mode === 'control_to_video' || form.mode === 'control_video_to_video') {
+      const preprocessedControl = getModelRequirementsForMode(STUDIO_MODEL_PROFILES[form.modelType], form.mode).some(
+        (requirement) => requirement.kind === 'controlnet',
+      );
+      roles.push(
+        'loadControlVideo',
+        ...(preprocessedControl
+          ? (['normalizeControlVideo', 'controlPreprocessor'] as StudioGraphRole[])
+          : (['normalizeVideo'] as StudioGraphRole[])),
+      );
     }
     if (form.mode === 'video_inpaint' || form.mode === 'video_outpaint') {
       roles.push('loadMaskVideo', 'alignMaskVideo');
@@ -461,6 +478,9 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
         'diffusersImageControlInpaint',
         'preview',
       ];
+    }
+    if (form.mode === 'layer_decomposition') {
+      return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'diffusersImageLayerDecompose', 'preview'];
     }
     return [...runtimeRoles, 'diffusersImagePipeline', 'diffusersImageGenerate', 'preview'];
   }
@@ -1868,6 +1888,8 @@ function desiredVideoEdgeSpecs(binding: StudioGraphBinding, includeControlled = 
     loadControlVideo,
     loadMaskVideo,
     normalizeVideo,
+    normalizeControlVideo,
+    controlPreprocessor,
     alignMaskVideo,
     loadImage,
     wanGenerate,
@@ -1908,14 +1930,26 @@ function desiredVideoEdgeSpecs(binding: StudioGraphBinding, includeControlled = 
     specs.push(makeConnectionSpec(loadImage, IMAGE_HANDLE, wanGenerate, ['reference_images']));
   }
 
-  if (binding.mode === 'control_to_video') {
+  if (binding.mode === 'control_to_video' || binding.mode === 'control_video_to_video') {
     specs.push(
-      makeConnectionSpec(loadControlVideo, ['video'], normalizeVideo, ['video']),
-      makeConnectionSpec(normalizeVideo, ['output'], wanGenerate, ['video']),
+      ...(normalizeControlVideo && controlPreprocessor
+        ? [
+            makeConnectionSpec(loadControlVideo, ['video'], normalizeControlVideo, ['video']),
+            makeConnectionSpec(normalizeControlVideo, ['output'], controlPreprocessor, ['video']),
+            makeConnectionSpec(controlPreprocessor, ['output'], wanGenerate, ['control_video']),
+          ]
+        : [
+            makeConnectionSpec(loadControlVideo, ['video'], normalizeVideo, ['video']),
+            makeConnectionSpec(normalizeVideo, ['output'], wanGenerate, ['video']),
+          ]),
     );
   }
 
-  if (binding.mode === 'video_to_video' || binding.mode === 'video_color_edit') {
+  if (
+    binding.mode === 'video_to_video' ||
+    binding.mode === 'video_color_edit' ||
+    binding.mode === 'control_video_to_video'
+  ) {
     specs.push(
       makeConnectionSpec(loadVideo, ['video'], normalizeVideo, ['video']),
       makeConnectionSpec(normalizeVideo, ['output'], wanGenerate, ['video']),
@@ -3311,6 +3345,17 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   if (bindsAuxiliaryModel && !auxiliaryRequirement?.revision) {
     throw new Error('The reviewed auxiliary model requires an immutable revision.');
   }
+  const bindsMotionAdapter = spec.bindings.some(([, , source]) =>
+    ['motionAdapterRepo', 'motionAdapterRevision'].includes(source),
+  );
+  const motionAdapters = auxiliaryRequirements.filter((requirement) => requirement.kind === 'adapter');
+  if (bindsMotionAdapter && motionAdapters.length !== 1) {
+    throw new Error('The Studio execution specification requires one reviewed motion adapter.');
+  }
+  const motionAdapter = motionAdapters[0];
+  if (bindsMotionAdapter && !motionAdapter?.revision) {
+    throw new Error('The reviewed motion adapter requires an immutable revision.');
+  }
   const values: Record<string, unknown> = {
     ...form,
     quantizationMode,
@@ -3334,9 +3379,18 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     kind: auxiliaryRequirement?.kind,
     repo: auxiliaryRequirement ? { source: 'hub', value: auxiliaryRequirement.repo } : undefined,
     revision: auxiliaryRequirement?.revision,
+    motionAdapterRepo: motionAdapter ? { source: 'hub', value: motionAdapter.repo } : undefined,
+    motionAdapterRevision: motionAdapter?.revision,
     wanVaceRevision: WAN_VACE_REVISION,
     cannyLowThreshold: 0.1,
     cannyHighThreshold: 0.2,
+    videoCannyLowThreshold100: 100,
+    videoCannyHighThreshold200: 200,
+    controlGuidanceStart: 0,
+    controlGuidanceEnd: 1,
+    resolution: form.width,
+    cfgNormalize: false,
+    useEnglishPrompt: false,
     maskThreshold127: 127,
     inpaintMaskGrow96: 96,
     outpaintMaskGrow0: 0,
@@ -3441,6 +3495,8 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     loadControlVideo,
     loadMaskVideo,
     normalizeVideo,
+    normalizeControlVideo,
+    controlPreprocessor,
     alignMaskVideo,
     wanGenerate,
     videoExport,
@@ -3620,6 +3676,13 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       setParamIfPresent(normalizeVideo, ['height'], form.height);
       setParamIfPresent(normalizeVideo, ['num_frames'], form.numFrames);
     }
+    if (normalizeControlVideo) {
+      setParamIfPresent(normalizeControlVideo, ['width'], form.width);
+      setParamIfPresent(normalizeControlVideo, ['height'], form.height);
+      setParamIfPresent(normalizeControlVideo, ['num_frames'], form.numFrames);
+    }
+    setParamIfPresent(controlPreprocessor, ['low_threshold'], 100);
+    setParamIfPresent(controlPreprocessor, ['high_threshold'], 200);
     if (alignMaskVideo) {
       setParamIfPresent(alignMaskVideo, ['threshold'], 127);
       setParamIfPresent(alignMaskVideo, ['grow_pixels'], form.mode === 'video_inpaint' ? 96 : 0);

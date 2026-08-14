@@ -385,6 +385,67 @@ test('Janus capability parsing preserves mode outputs and fail-closed license co
   }
 });
 
+test('layer and dual-video capability metadata parses exactly and fails closed', async () => {
+  const layered = {
+    modelType: 'QwenImageLayeredPipeline',
+    modes: ['layer_decomposition'],
+    runnableModes: ['layer_decomposition'],
+    modeRequirements: { layer_decomposition: { requiredImages: ['referenceImages'] } },
+    layerCount: { default: 4, min: 1, max: 10 },
+    layerResolutions: [640, 1024],
+    executionStatus: 'expert_only',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  };
+  const combined = {
+    modelType: 'AnimateDiffVideoToVideoControlNetPipeline',
+    modes: ['control_video_to_video'],
+    runnableModes: ['control_video_to_video'],
+    modeRequirements: {
+      control_video_to_video: { requiredVideos: ['sourceVideo', 'controlVideo'] },
+    },
+    executionStatus: 'expert_only',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  };
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [layered, combined] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].layerCount, layered.layerCount);
+  assert.deepEqual(state.studioModelCapabilities[0].layerResolutions, layered.layerResolutions);
+  assert.deepEqual(state.studioModelCapabilities[1].modeRequirements.control_video_to_video.requiredVideos, [
+    'sourceVideo',
+    'controlVideo',
+  ]);
+  assert.equal(state.studioModelCapabilities[1].liveProof, false);
+
+  for (const malformed of [
+    { ...layered, layerCount: { default: 4, min: 0, max: 10 } },
+    { ...layered, layerCount: { default: 4, min: 1, max: 17 } },
+    { ...layered, layerCount: { default: 4, min: 1, max: 10, extra: 1 } },
+    { ...layered, layerResolutions: [640, 640] },
+    { ...layered, layerResolutions: [641, 1024] },
+    { ...layered, modes: ['text_to_image'] },
+    { ...layered, layerResolutions: undefined },
+    { ...layered, liveProof: 'false' },
+  ]) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [malformed] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.deepEqual(state.studioModelCapabilities[0].layerCount, layered.layerCount);
+  }
+});
+
 test('Studio execution specifications require an exact versioned capability contract', async () => {
   const spec = fluxExecutionSpec();
   const reviewedRevision = '462165984030d82259a11f4367a4eed129e94a7b';

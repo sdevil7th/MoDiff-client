@@ -395,6 +395,9 @@ export default function StudioPanel() {
     backendCapabilities: studioModelCapabilities,
     backendCapabilitiesAuthoritative: studioModelCapabilitiesAuthoritative,
   });
+  const requiredVideos = capability.modeRequirements?.[form.mode]?.requiredVideos ?? [];
+  const requiresSourceVideo = requiredVideos.includes('sourceVideo');
+  const requiresControlVideo = requiredVideos.includes('controlVideo');
   const runBlockedReason = runReadiness.blockingIssues[0]?.message ?? '';
   const runControlsBlocked = !runReadiness.canRun;
   const showFullStudioForm = !customGraphMode && !emptyWorkflow;
@@ -1337,6 +1340,20 @@ export default function StudioPanel() {
                 <p className="text-xs text-modiff-subtle-text" data-testid="studio-speech-summary">
                   Transcribe local audio into a normalized transcript with bounded chunking and timestamps.
                 </p>
+              ) : capability.layerResolutions?.length ? (
+                <StudioSelect
+                  aria-label="Layer resolution"
+                  data-testid="studio-layer-resolution-select"
+                  value={String(form.width)}
+                  onValueChange={(value) => {
+                    const resolution = numberValue(value, form.width);
+                    updateAndSync({ width: resolution, height: resolution, aspectRatio: '1:1' });
+                  }}
+                  options={capability.layerResolutions.map((resolution) => ({
+                    value: String(resolution),
+                    label: `${resolution} × ${resolution}`,
+                  }))}
+                />
               ) : (
                 <div className="flex gap-2">
                   <StudioSelect
@@ -1583,7 +1600,7 @@ export default function StudioPanel() {
                       </ModiffFieldShell>
                     </>
                   )}
-                  {requiresControlImage && !isVideoMode && (
+                  {(requiresControlImage || requiresControlVideo) && (
                     <ModiffFieldShell label={`Control conditioning: ${form.conditioningScale}`}>
                       <StudioSlider
                         min={0}
@@ -1596,9 +1613,20 @@ export default function StudioPanel() {
                   )}
                   {capability.supportsLayers && (
                     <StudioInput
-                      label="Layers"
+                      label={
+                        capability.layerCount
+                          ? `Layers (${capability.layerCount.min}–${capability.layerCount.max})`
+                          : 'Layers'
+                      }
                       value={form.layers}
-                      onChange={(value) => updateAndSync({ layers: numberValue(value, form.layers) })}
+                      onChange={(value) => {
+                        const layers = numberValue(value, form.layers);
+                        updateAndSync({
+                          layers: capability.layerCount
+                            ? Math.min(capability.layerCount.max, Math.max(capability.layerCount.min, layers))
+                            : layers,
+                        });
+                      }}
                     />
                   )}
                 </div>
@@ -1627,7 +1655,7 @@ export default function StudioPanel() {
           {isVideoMode && (
             <StudioSection id="video-inputs" title="Video inputs" defaultOpen>
               <div className="grid gap-2">
-                {['video_to_video', 'video_inpaint', 'video_outpaint', 'video_color_edit'].includes(form.mode) && (
+                {requiresSourceVideo && (
                   <StudioInput
                     label="Source video path"
                     value={form.sourceVideo}
@@ -1641,7 +1669,7 @@ export default function StudioPanel() {
                     onChange={(value) => updateAndSync({ maskVideo: value })}
                   />
                 )}
-                {form.mode === 'control_to_video' && (
+                {requiresControlVideo && (
                   <StudioInput
                     label="Control video path"
                     value={form.controlVideo}

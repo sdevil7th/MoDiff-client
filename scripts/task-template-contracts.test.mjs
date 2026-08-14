@@ -793,6 +793,298 @@ test('the 12 reviewed control pairs expose exact generic media and execution con
   assert.equal(modelProfilesModule.getDefaultModelForMode('control_inpaint'), 'StableDiffusionPipeline');
 });
 
+test('the seven direct Qwen and video pairs preserve exact Expert task contracts', () => {
+  const cases = [
+    {
+      modelType: 'QwenImageControlNetPipeline',
+      mode: 'control_image',
+      specId: 'qwen-image-controlnet-direct:control-image:v1',
+      profileId: 'qwen-image-controlnet:direct',
+      pipelineClass: 'QwenImageControlNetPipeline',
+      repo: modelProfilesModule.QWEN_IMAGE_2512_REPO,
+      kind: 'qwen-control',
+      requiredMedia: [{ kind: 'image', field: 'controlImage', minimumCount: 1 }],
+      backendHash: 'studio-spec-v1-40e18b12',
+    },
+    {
+      modelType: 'QwenImageLayeredPipeline',
+      mode: 'layer_decomposition',
+      specId: 'qwen-image-layered-direct:layer-decomposition:v1',
+      profileId: 'qwen-image-layered:direct',
+      pipelineClass: 'QwenImageLayeredPipeline',
+      repo: modelProfilesModule.QWEN_IMAGE_LAYERED_REPO,
+      kind: 'qwen-layers',
+      requiredMedia: [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
+      backendHash: 'studio-spec-v1-2d3b60ff',
+    },
+    {
+      modelType: 'AnimateDiffPAGPipeline',
+      mode: 'text_to_video',
+      specId: 'animatediff-pag:text-to-video:v1',
+      profileId: 'animatediff-sd15-v2-pag:direct',
+      pipelineClass: 'AnimateDiffPAGPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+      kind: 'video',
+      requiredMedia: [],
+      backendHash: 'studio-spec-v1-a3238501',
+    },
+    {
+      modelType: 'AnimateDiffVideoToVideoPipeline',
+      mode: 'video_to_video',
+      specId: 'animatediff-video-to-video:video-to-video:v1',
+      profileId: 'animatediff-sd15-v2-video-to-video:direct',
+      pipelineClass: 'AnimateDiffVideoToVideoPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+      kind: 'video-source',
+      requiredMedia: [{ kind: 'video', field: 'sourceVideo', minimumCount: 1 }],
+      backendHash: 'studio-spec-v1-b1ae3ddd',
+    },
+    {
+      modelType: 'AnimateDiffControlNetPipeline',
+      mode: 'control_to_video',
+      specId: 'animatediff-controlnet:control-to-video:v1',
+      profileId: 'animatediff-sd15-v2-controlnet:direct',
+      pipelineClass: 'AnimateDiffControlNetPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+      kind: 'video-control',
+      requiredMedia: [{ kind: 'video', field: 'controlVideo', minimumCount: 1 }],
+      backendHash: 'studio-spec-v1-cf67f340',
+    },
+    {
+      modelType: 'AnimateDiffVideoToVideoControlNetPipeline',
+      mode: 'control_video_to_video',
+      specId: 'animatediff-controlnet-video-to-video:control-video-to-video:v1',
+      profileId: 'animatediff-sd15-v2-controlnet-video-to-video:direct',
+      pipelineClass: 'AnimateDiffVideoToVideoControlNetPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+      kind: 'video-source-control',
+      requiredMedia: [
+        { kind: 'video', field: 'sourceVideo', minimumCount: 1 },
+        { kind: 'video', field: 'controlVideo', minimumCount: 1 },
+      ],
+      backendHash: 'studio-spec-v1-4bec5f54',
+    },
+    {
+      modelType: 'CogVideoXVideoToVideoPipeline',
+      mode: 'video_to_video',
+      specId: 'cogvideox-2b-video-to-video:video-to-video:v1',
+      profileId: 'cogvideox-2b-video-to-video:direct',
+      pipelineClass: 'CogVideoXVideoToVideoPipeline',
+      repo: modelProfilesModule.COGVIDEOX_2B_REPO,
+      kind: 'video-source',
+      requiredMedia: [{ kind: 'video', field: 'sourceVideo', minimumCount: 1 }],
+      backendHash: 'studio-spec-v1-de592d47',
+    },
+  ];
+  const capabilities = [];
+  const contracts = [];
+
+  for (const item of cases) {
+    const qwen = item.kind.startsWith('qwen');
+    const layered = item.kind === 'qwen-layers';
+    const sourceVideo = item.kind.includes('source');
+    const controlVideo = item.kind.includes('control') && !qwen;
+    const loaderRole = qwen ? 'diffusersImagePipeline' : 'wanPipeline';
+    const actionRole = layered ? 'diffusersImageLayerDecompose' : qwen ? 'diffusersImageControl' : 'wanGenerate';
+    const outputRole = qwen ? 'preview' : 'videoExport';
+    const outputNode = qwen ? 'modules.Image.Preview' : 'modules.Video.Export';
+    const outputHandle = qwen ? 'image' : 'video';
+    const roles = qwen
+      ? [
+          [loaderRole, 'modules.DiffusersImage.LoadPipeline', -520, -80],
+          ['loadImage', 'modules.Image.Load', -520, 300],
+          [
+            actionRole,
+            layered ? 'modules.DiffusersImage.LayerDecompose' : 'modules.DiffusersImage.ControlGenerate',
+            -120,
+            -80,
+          ],
+          [outputRole, outputNode, 980, -80],
+        ]
+      : [
+          [loaderRole, 'modules.DiffusersVideo.LoadPipeline', -520, -80],
+          [actionRole, 'modules.DiffusersVideo.Generate', 220, -80],
+          [outputRole, outputNode, 640, -80],
+          ...(sourceVideo
+            ? [
+                ['loadVideo', 'modules.Video.Load', -520, 260],
+                ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
+              ]
+            : []),
+          ...(controlVideo
+            ? [
+                ['loadControlVideo', 'modules.Video.Load', -520, sourceVideo ? 520 : 260],
+                ['normalizeControlVideo', 'modules.VideoConditioning.Normalize', -160, sourceVideo ? 520 : 260],
+                ['controlPreprocessor', 'modules.VideoConditioning.EdgePreprocessor', 220, sourceVideo ? 520 : 260],
+              ]
+            : []),
+        ];
+    const edges = qwen
+      ? [
+          [loaderRole, 'pipeline', actionRole, 'pipeline'],
+          ['loadImage', 'image', actionRole, layered ? 'image' : 'control_image'],
+          [actionRole, 'images', outputRole, outputHandle],
+        ]
+      : [
+          [loaderRole, 'pipeline', actionRole, 'pipeline'],
+          [actionRole, 'video_out', outputRole, outputHandle],
+          ...(sourceVideo
+            ? [
+                ['loadVideo', 'video', 'normalizeVideo', 'video'],
+                ['normalizeVideo', 'output', actionRole, 'video'],
+              ]
+            : []),
+          ...(controlVideo
+            ? [
+                ['loadControlVideo', 'video', 'normalizeControlVideo', 'video'],
+                ['normalizeControlVideo', 'output', 'controlPreprocessor', 'video'],
+                ['controlPreprocessor', 'output', actionRole, 'control_video'],
+              ]
+            : []),
+        ];
+    const bindings = [
+      [loaderRole, 'model_id', 'artifact'],
+      [loaderRole, 'revision', 'defaultRevision'],
+      ...(qwen
+        ? [
+            ['loadImage', 'file', layered ? 'referenceImages' : 'controlImage'],
+            ...(layered
+              ? [
+                  [actionRole, 'layers', 'layers'],
+                  [actionRole, 'resolution', 'resolution'],
+                  [actionRole, 'cfg_normalize', 'cfgNormalize'],
+                  [actionRole, 'use_en_prompt', 'useEnglishPrompt'],
+                ]
+              : [
+                  [loaderRole, 'conditioning_kind', 'kind'],
+                  [loaderRole, 'conditioning_model_id', 'repo'],
+                  [loaderRole, 'conditioning_revision', 'revision'],
+                  [actionRole, 'control_guidance_start', 'controlGuidanceStart'],
+                  [actionRole, 'control_guidance_end', 'controlGuidanceEnd'],
+                ]),
+          ]
+        : [
+            ...(item.modelType.startsWith('AnimateDiff')
+              ? [
+                  [loaderRole, 'motion_adapter_id', 'motionAdapterRepo'],
+                  [loaderRole, 'motion_adapter_revision', 'motionAdapterRevision'],
+                ]
+              : []),
+            ...(sourceVideo
+              ? [
+                  ['loadVideo', 'file', 'sourceVideo'],
+                  ['normalizeVideo', 'num_frames', 'numFrames'],
+                ]
+              : []),
+            ...(controlVideo
+              ? [
+                  ['loadControlVideo', 'file', 'controlVideo'],
+                  ['normalizeControlVideo', 'num_frames', 'numFrames'],
+                  ['controlPreprocessor', 'low_threshold', 'videoCannyLowThreshold100'],
+                  ['controlPreprocessor', 'high_threshold', 'videoCannyHighThreshold200'],
+                ]
+              : []),
+            ...(item.modelType === 'AnimateDiffPAGPipeline'
+              ? [
+                  [actionRole, 'pag_scale', 'pagScale'],
+                  [actionRole, 'pag_adaptive_scale', 'pagAdaptiveScale'],
+                ]
+              : []),
+          ]),
+    ];
+    const profile = {
+      id: item.profileId,
+      modes: [item.mode],
+      loader_module: qwen ? 'modules.DiffusersImage' : 'modules.DiffusersVideo',
+      loader_action: 'LoadPipeline',
+      execution_path: qwen ? 'direct-diffusers-image' : 'direct-diffusers-video',
+      pipeline_class: item.pipelineClass,
+      default_repo: item.repo,
+    };
+    const semanticSpec = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.specId,
+      modelType: item.modelType,
+      mode: item.mode,
+      executionProfileId: item.profileId,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: item.pipelineClass,
+      defaultRepo: item.repo,
+      roles,
+      edges,
+      bindings,
+      autoFields: [],
+      actions: [],
+    };
+    const spec = {
+      ...semanticSpec,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semanticSpec))}`,
+    };
+    assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], item.modelType, [item.mode], [profile]), [
+      spec,
+    ]);
+    assert.match(item.backendHash, /^studio-spec-v1-[0-9a-f]{8}$/);
+
+    const staticProfile = modelProfilesModule.STUDIO_MODEL_PROFILES[item.modelType];
+    assert.deepEqual(staticProfile.modes, [item.mode]);
+    assert.equal(staticProfile.catalogVisibility, 'workflowOnly');
+    assert.equal(staticProfile.executionStatus, 'expert_only');
+    assert.equal(staticProfile.autoEligible, false);
+    assert.equal(staticProfile.galleryEligible, false);
+    assert.equal(staticProfile.liveProof, false);
+    capabilities.push({
+      modelType: item.modelType,
+      studioExecutionSpecs: [spec],
+      executionProfiles: [profile],
+    });
+
+    const mediaKind = qwen ? 'image' : 'video';
+    const semanticContract = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${item.specId}`,
+      modelType: item.modelType,
+      mode: item.mode,
+      mediaKind,
+      executionProfileId: item.profileId,
+      executionSpecId: item.specId,
+      executionSpecContentHash: spec.contentHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole,
+      pipelineClass: item.pipelineClass,
+      defaultRepo: item.repo,
+      loaderRepositories: [item.repo],
+      requiredMedia: item.requiredMedia,
+      output: { mediaKind, role: outputRole, nodeKey: outputNode, inputHandle: outputHandle },
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    contracts.push({
+      ...semanticContract,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semanticContract))}`,
+    });
+  }
+
+  const parsed = contractsModule.parseTaskTemplateContracts(contracts, 1, capabilities);
+  assert.equal(parsed.length, 7);
+  assert.deepEqual(
+    parsed.map(({ id, requiredMedia, galleryEligible }) => [
+      id,
+      requiredMedia.map(({ field }) => field),
+      galleryEligible,
+    ]),
+    cases.map(({ specId, requiredMedia }) => [
+      `task-template:${specId}`,
+      requiredMedia.map(({ field }) => field),
+      false,
+    ]),
+  );
+});
+
 test('contracts for backend model types unknown to this client are ignored', () => {
   const fixture = buildFixture();
   const parsed = contractsModule.parseTaskTemplateContracts(

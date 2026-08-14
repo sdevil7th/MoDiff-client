@@ -10,6 +10,9 @@ import type {
 export const QWEN_CONTROLNET_REPO = 'InstantX/Qwen-Image-ControlNet-Union';
 export const QWEN_CONTROLNET_REVISION = 'b13036f066d6dee7c20513e263d3d673055e9de8';
 export const QWEN_IMAGE_2512_REPO = 'Qwen/Qwen-Image-2512';
+export const QWEN_IMAGE_2512_REVISION = '25468b98e3276ca6700de15c6628e51b7de54a26';
+export const QWEN_IMAGE_LAYERED_REPO = 'Qwen/Qwen-Image-Layered';
+export const QWEN_IMAGE_LAYERED_REVISION = '8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf';
 export const QWEN_IMAGE_2512_PREQUANTIZED_REPO = 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit';
 export const QWEN_IMAGE_EDIT_PREQUANTIZED_REPO = 'ovedrive/qwen-image-edit-4bit';
 export const QWEN_LOW_VRAM_QUANTIZATION_MODE = 'bnb_4bit';
@@ -81,6 +84,7 @@ export const HUNYUAN_DIT_CONTROLNET_CANNY_REVISION = 'b2d21391ebcf78939344cfec84
 export const SDXL_T2I_ADAPTER_CANNY_REPO = 'TencentARC/t2i-adapter-canny-sdxl-1.0';
 export const SDXL_T2I_ADAPTER_CANNY_REVISION = '2d7244ba45ded9129cfbf8e96a4befb7f6094210';
 export const SD15_BASE_REPO = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
+export const SD15_BASE_REVISION = '451f4fe16113bff5a5d2269ed5ad43b0592e9a14';
 export const SD15_CONTROLNET_CANNY_REPO = 'lllyasviel/control_v11p_sd15_canny';
 export const SD15_CONTROLNET_CANNY_REVISION = '115a470d547982438f70198e353a921996e2e819';
 export const PIXART_SIGMA_REPO = 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS';
@@ -220,6 +224,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Qwen-Image-Edit',
   'Qwen-Image-Edit-2511',
   'Qwen-Image-Layered',
+  'Qwen Image ControlNet (Standard Diffusers)',
+  'Qwen Image Layered (Standard Diffusers)',
   'Wan VACE 1.3B',
   'Wan 2.1 T2V 1.3B',
   'Wan 2.2 I2V A14B',
@@ -232,8 +238,13 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Hunyuan FramePack',
   'Stable Video Diffusion XT 1.1',
   'AnimateDiff SD1.5 v2',
+  'AnimateDiff SD1.5 v2 + PAG',
+  'AnimateDiff SD1.5 v2 Video-to-Video',
+  'AnimateDiff SD1.5 v2 + ControlNet',
+  'AnimateDiff SD1.5 v2 Video-to-Video + ControlNet',
   'AnimateLCM SD1.5',
   'CogVideoX-2B',
+  'CogVideoX-2B Video-to-Video',
   'Allegro',
   'Latte',
   'Mochi',
@@ -323,6 +334,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   video_outpaint: 'Extend or reframe a video with boundary masks.',
   reference_to_video: 'Guide a video with reference images.',
   control_to_video: 'Guide generation with a control video.',
+  control_video_to_video: 'Edit a source video while following a separate control video.',
   video_color_edit: 'Edit video color from a prompt.',
   character_animate: 'Animate a character from pose and face videos.',
   character_replace: 'Replace a character using aligned control videos.',
@@ -439,6 +451,7 @@ export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'video_outpaint',
   'reference_to_video',
   'control_to_video',
+  'control_video_to_video',
   'video_color_edit',
   'character_animate',
   'character_replace',
@@ -613,6 +626,32 @@ function nativeTextVideoProfile(
     recommendedFps: fps,
     lowVram: { dtype, autoOffload: true, offloadMode, steps: lowSteps, width, height, numFrames: lowFrames },
     modes: ['text_to_video'],
+  };
+}
+
+const EXPERT_WORKFLOW_PENDING = {
+  catalogVisibility: 'workflowOnly',
+  executionStatus: 'expert_only',
+  qualificationStatus: 'graph-qualified-execution-pending',
+  qualifiedModes: [] as StudioMode[],
+  autoEligible: false,
+  templateEligible: true,
+  galleryEligible: false,
+  liveProof: false,
+} satisfies Partial<StudioModelProfileSource>;
+
+function expertVideoProfile(
+  source: StudioModelProfileSource,
+  modes: StudioMode[],
+  modeRequirements: StudioModelProfile['modeRequirements'],
+  supportsVideoInput = false,
+): StudioModelProfileSource {
+  return {
+    ...source,
+    ...EXPERT_WORKFLOW_PENDING,
+    modes,
+    modeRequirements,
+    supportsVideoInput,
   };
 }
 
@@ -804,7 +843,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   QwenImageLayeredModularPipeline: {
     family: 'Qwen Image',
     surfaceCategory: 'Utility',
-    defaultRepo: 'Qwen/Qwen-Image-Layered',
+    defaultRepo: QWEN_IMAGE_LAYERED_REPO,
     artifactLabel: 'bfloat16 Diffusers repo',
     defaultSize: { width: 640, height: 640, aspectRatio: '1:1' },
     recommendedSteps: 50,
@@ -819,6 +858,60 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       steps: 30,
     },
     modes: ['layer_decomposition'],
+  },
+  QwenImageControlNetPipeline: {
+    ...EXPERT_WORKFLOW_PENDING,
+    family: 'Qwen Image',
+    surfaceCategory: 'Control',
+    defaultRepo: QWEN_IMAGE_2512_REPO,
+    displayName: 'Qwen-Image-2512 + ControlNet Union',
+    artifactLabel: 'bfloat16 safetensors base plus pinned ControlNet component',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps: 50,
+    recommendedGuidance: 4.5,
+    supportFlags: 41,
+    offloadSupport: { ...DIRECT_OFFLOAD_SUPPORT, lowVram: 'sequential_cpu' },
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'sequential_cpu',
+      steps: 28,
+      width: 768,
+      height: 768,
+    },
+    modes: ['control_image'],
+    modeRequirements: {
+      control_image: {
+        modelRequirements: [QWEN_CONTROLNET_REQUIREMENT],
+        requiredImages: ['controlImage'],
+      },
+    },
+    revisionCandidates: [QWEN_IMAGE_2512_REVISION],
+  },
+  QwenImageLayeredPipeline: {
+    ...EXPERT_WORKFLOW_PENDING,
+    family: 'Qwen Image',
+    surfaceCategory: 'Utility',
+    defaultRepo: QWEN_IMAGE_LAYERED_REPO,
+    artifactLabel: 'bfloat16 safetensors Diffusers repo',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps: 50,
+    recommendedGuidance: 4,
+    supportFlags: 49,
+    offloadSupport: { ...DIRECT_OFFLOAD_SUPPORT, lowVram: 'sequential_cpu' },
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'sequential_cpu',
+      steps: 30,
+      width: 640,
+      height: 640,
+    },
+    modes: ['layer_decomposition'],
+    modeRequirements: { layer_decomposition: { requiredImages: ['referenceImages'] } },
+    revisionCandidates: [QWEN_IMAGE_LAYERED_REVISION],
+    layerCount: { default: 4, min: 1, max: 10 },
+    layerResolutions: [640, 1024],
   },
   WanVACEPipeline: {
     displayName: 'Wan2.1-VACE-1.3B-diffusers',
@@ -1023,6 +1116,62 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  AnimateDiffPAGPipeline: {
+    ...expertVideoProfile(
+      nativeTextVideoProfile('AnimateDiff', SD15_BASE_REPO, [512, 512, 25, 7.5, 77, 16, 8, 16, 8], '1:1'),
+      ['text_to_video'],
+      { text_to_video: { modelRequirements: [ANIMATEDIFF_MOTION_REQUIREMENT] } },
+    ),
+    recommendedPagScale: 3,
+    recommendedPagAdaptiveScale: 0,
+    revisionCandidates: [SD15_BASE_REVISION],
+  },
+  AnimateDiffVideoToVideoPipeline: {
+    ...expertVideoProfile(
+      nativeTextVideoProfile('AnimateDiff', SD15_BASE_REPO, [512, 512, 25, 7.5, 77, 16, 8, 16, 8], '1:1'),
+      ['video_to_video'],
+      {
+        video_to_video: {
+          modelRequirements: [ANIMATEDIFF_MOTION_REQUIREMENT],
+          requiredVideos: ['sourceVideo'],
+        },
+      },
+      true,
+    ),
+    recommendedStrength: 0.8,
+    revisionCandidates: [SD15_BASE_REVISION],
+  },
+  AnimateDiffControlNetPipeline: {
+    ...expertVideoProfile(
+      nativeTextVideoProfile('AnimateDiff', SD15_BASE_REPO, [512, 512, 25, 7.5, 77, 16, 8, 16, 8], '1:1'),
+      ['control_to_video'],
+      {
+        control_to_video: {
+          modelRequirements: [ANIMATEDIFF_MOTION_REQUIREMENT, SD15_CONTROLNET_CANNY_REQUIREMENT],
+          requiredVideos: ['controlVideo'],
+        },
+      },
+      true,
+    ),
+    conditioningScale: 1,
+    revisionCandidates: [SD15_BASE_REVISION],
+  },
+  AnimateDiffVideoToVideoControlNetPipeline: {
+    ...expertVideoProfile(
+      nativeTextVideoProfile('AnimateDiff', SD15_BASE_REPO, [512, 512, 25, 7.5, 77, 16, 8, 16, 8], '1:1'),
+      ['control_video_to_video'],
+      {
+        control_video_to_video: {
+          modelRequirements: [ANIMATEDIFF_MOTION_REQUIREMENT, SD15_CONTROLNET_CANNY_REQUIREMENT],
+          requiredVideos: ['sourceVideo', 'controlVideo'],
+        },
+      },
+      true,
+    ),
+    recommendedStrength: 0.8,
+    conditioningScale: 1,
+    revisionCandidates: [SD15_BASE_REVISION],
+  },
   AnimateLCMPipeline: {
     ...nativeTextVideoProfile('AnimateDiff', SD15_BASE_REPO, [512, 512, 6, 1.5, 77, 16, 8, 4, 8], '1:1'),
     modeRequirements: {
@@ -1032,6 +1181,16 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
   },
   CogVideoXPipeline: nativeTextVideoProfile('CogVideoX', COGVIDEOX_2B_REPO, [720, 480, 25, 6, 226, 25, 8, 16, 9]),
+  CogVideoXVideoToVideoPipeline: {
+    ...expertVideoProfile(
+      nativeTextVideoProfile('CogVideoX', COGVIDEOX_2B_REPO, [720, 480, 25, 6, 226, 25, 8, 16, 9]),
+      ['video_to_video'],
+      { video_to_video: { requiredVideos: ['sourceVideo'] } },
+      true,
+    ),
+    recommendedStrength: 0.8,
+    revisionCandidates: [COGVIDEOX_2B_REVISION],
+  },
   AllegroPipeline: nativeTextVideoProfile(
     'Allegro',
     ALLEGRO_REPO,
@@ -2061,6 +2220,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes:
       'The high-memory ROCm modular Auto path and three-output layered contract are physically qualified. Other platform and constrained-memory recipes remain unqualified until backed by matching real-hardware receipts.',
   },
+  QwenImageControlNetPipeline: /* @__PURE__ */ pendingPlanningRequirement('QwenImageControlNetPipeline'),
+  QwenImageLayeredPipeline: /* @__PURE__ */ pendingPlanningRequirement('QwenImageLayeredPipeline'),
   WanVACEPipeline: {
     modelType: 'WanVACEPipeline',
     supportedModes: WAN_VACE_MODES,
@@ -2114,8 +2275,15 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   HunyuanVideoFramepackPipeline: /* @__PURE__ */ pendingPlanningRequirement('HunyuanVideoFramepackPipeline'),
   StableVideoDiffusionPipeline: /* @__PURE__ */ pendingPlanningRequirement('StableVideoDiffusionPipeline'),
   AnimateDiffPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateDiffPipeline'),
+  AnimateDiffPAGPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateDiffPAGPipeline'),
+  AnimateDiffVideoToVideoPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateDiffVideoToVideoPipeline'),
+  AnimateDiffControlNetPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateDiffControlNetPipeline'),
+  AnimateDiffVideoToVideoControlNetPipeline: /* @__PURE__ */ pendingPlanningRequirement(
+    'AnimateDiffVideoToVideoControlNetPipeline',
+  ),
   AnimateLCMPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimateLCMPipeline'),
   CogVideoXPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogVideoXPipeline'),
+  CogVideoXVideoToVideoPipeline: /* @__PURE__ */ pendingPlanningRequirement('CogVideoXVideoToVideoPipeline'),
   AllegroPipeline: /* @__PURE__ */ pendingPlanningRequirement('AllegroPipeline'),
   LattePipeline: /* @__PURE__ */ pendingPlanningRequirement('LattePipeline'),
   MochiPipeline: /* @__PURE__ */ pendingPlanningRequirement('MochiPipeline'),
@@ -2620,6 +2788,9 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   if (THREE_D_STUDIO_MODES.includes(mode)) {
     return 'ShapEPipeline';
   }
+  if (mode === 'control_video_to_video') {
+    return 'AnimateDiffVideoToVideoControlNetPipeline';
+  }
   if (VIDEO_STUDIO_MODES.includes(mode)) {
     return 'WanVACEPipeline';
   }
@@ -2679,6 +2850,7 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
     numFrames: profile.recommendedFrames ?? DEFAULT_STUDIO_FORM.numFrames,
     fps: profile.recommendedFps ?? DEFAULT_STUDIO_FORM.fps,
     conditioningScale: profile.conditioningScale ?? DEFAULT_STUDIO_FORM.conditioningScale,
+    layers: profile.layerCount?.default ?? DEFAULT_STUDIO_FORM.layers,
     audioDuration: profile.recommendedDuration ?? DEFAULT_STUDIO_FORM.audioDuration,
     autoOffload: profile.lowVram.autoOffload,
     offloadMode: profile.offloadSupport.default,

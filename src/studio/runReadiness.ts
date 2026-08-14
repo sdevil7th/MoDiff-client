@@ -1201,6 +1201,26 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
       }),
     );
   }
+  if (profile.layerResolutions && (form.width !== form.height || !profile.layerResolutions.includes(form.width))) {
+    issues.push(
+      issue({
+        category: 'user_input',
+        severity: 'error',
+        blocking: true,
+        message: `Layer resolution must be one of ${profile.layerResolutions.join(', ')} pixels square.`,
+      }),
+    );
+  }
+  if (profile.layerCount && (form.layers < profile.layerCount.min || form.layers > profile.layerCount.max)) {
+    issues.push(
+      issue({
+        category: 'user_input',
+        severity: 'error',
+        blocking: true,
+        message: `Layer count must be between ${profile.layerCount.min} and ${profile.layerCount.max}.`,
+      }),
+    );
+  }
 
   const videoRequirements = profile.modeRequirements?.[form.mode]?.requiredVideos ?? [];
   if (videoRequirements.includes('sourceVideo') && !form.sourceVideo.trim()) {

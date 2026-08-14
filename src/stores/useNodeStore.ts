@@ -614,6 +614,32 @@ function parseLicenseCompliance(value: unknown) {
   return { ...value } as StudioModelProfile['licenseCompliance'];
 }
 
+function parseLayerCount(value: unknown) {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    Object.keys(value).sort().join() !== 'default,max,min' ||
+    ![value.default, value.min, value.max].every(Number.isInteger) ||
+    !((value.min as number) >= 1 && (value.min as number) <= (value.default as number)) ||
+    !((value.default as number) <= (value.max as number) && (value.max as number) <= 16)
+  )
+    invalidModelCapabilities();
+  return { ...value } as NonNullable<StudioModelProfile['layerCount']>;
+}
+
+function parseLayerResolutions(value: unknown) {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > 8 ||
+    value.some((item) => !Number.isInteger(item) || item < 64 || item > 2048 || item % 16 !== 0) ||
+    new Set(value).size !== value.length
+  )
+    invalidModelCapabilities();
+  return [...value] as number[];
+}
+
 function parseStudioModelCapabilities(value: unknown) {
   const payload = payloadRecord(value, 'Invalid model-capabilities response.');
   if (!Array.isArray(payload.capabilities) || payload.capabilities.length > 128) invalidModelCapabilities();
@@ -641,8 +667,15 @@ function parseStudioModelCapabilities(value: unknown) {
       item.qualifiedModes === undefined ? undefined : parseRuntimeModes(item.qualifiedModes, isStudioMode);
     const modeOutputKinds = parseModeOutputKinds(item.modeOutputKinds, modes);
     const licenseCompliance = parseLicenseCompliance(item.licenseCompliance);
+    const layerCount = parseLayerCount(item.layerCount);
+    const layerResolutions = parseLayerResolutions(item.layerResolutions);
     if (
       qualifiedModes?.some((mode) => !modes.includes(mode)) ||
+      [item.autoEligible, item.templateEligible, item.galleryEligible, item.liveProof].some(
+        (flag) => flag !== undefined && typeof flag !== 'boolean',
+      ) ||
+      ((layerCount || layerResolutions) && !modes.includes('layer_decomposition')) ||
+      Boolean(layerCount) !== Boolean(layerResolutions) ||
       (item.executionStatus !== undefined &&
         !['expert_only', 'supported_with_model'].includes(String(item.executionStatus)))
     )
@@ -704,6 +737,8 @@ function parseStudioModelCapabilities(value: unknown) {
     if (qualifiedModes) item.qualifiedModes = qualifiedModes;
     if (modeOutputKinds) item.modeOutputKinds = modeOutputKinds;
     if (licenseCompliance) item.licenseCompliance = licenseCompliance;
+    if (layerCount) item.layerCount = layerCount;
+    if (layerResolutions) item.layerResolutions = layerResolutions;
     if (executionProfiles) item.executionProfiles = executionProfiles;
     if (studioExecutionSpecs) item.studioExecutionSpecs = studioExecutionSpecs;
     if (studioExecutionSpecModes) item.studioExecutionSpecModes = studioExecutionSpecModes;

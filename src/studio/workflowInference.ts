@@ -293,6 +293,8 @@ export function adoptManagedWorkflowGraph(
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
   const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
   if (explicit) return explicit;
+  const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
+  if (pipelineClass) return pipelineClass;
 
   const repoText = nodes.map((node) => stringValue(paramValue(node, ['repo_id', 'model_id', 'repo']))).join(' ');
   const matchedProfile = Object.values(STUDIO_MODEL_PROFILES).find((profile) => repoText.includes(profile.defaultRepo));
@@ -312,6 +314,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   const hasWan = keys.has('modules.DiffusersVideo.LoadPipeline') || keys.has('modules.DiffusersVideo.Generate');
   if (hasWan || modelType === 'WanVACEPipeline') {
     if (roles.has('loadMaskVideo') || roles.has('alignMaskVideo')) return 'video_inpaint';
+    if (roles.has('loadVideo') && roles.has('loadControlVideo')) return 'control_video_to_video';
     if (roles.has('loadControlVideo')) return 'control_to_video';
     if (roles.has('loadVideo')) return 'video_to_video';
     if (roles.has('loadImage')) return 'image_to_video';
@@ -379,6 +382,8 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     if (roles.has('diffusersUnconditionalGenerate') || keys.has('modules.DiffusersImage.UnconditionalGenerate'))
       return 'unconditional_image';
     if (roles.has('diffusersPredictMap') || keys.has('modules.DiffusersImage.PredictMap')) return 'depth_estimation';
+    if (roles.has('diffusersImageLayerDecompose') || keys.has('modules.DiffusersImage.LayerDecompose'))
+      return 'layer_decomposition';
     if (roles.has('diffusersImageControlInpaint') || keys.has('modules.DiffusersImage.ControlInpaint'))
       return 'control_inpaint';
     if (roles.has('diffusersImageControlEdit') || keys.has('modules.DiffusersImage.ControlEdit'))
@@ -425,6 +430,7 @@ export function inferStudioFormFromWorkflow(
         'diffusersImageControl',
         'diffusersImageControlEdit',
         'diffusersImageControlInpaint',
+        'diffusersImageLayerDecompose',
         'audioGenerate',
         'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
@@ -438,6 +444,7 @@ export function inferStudioFormFromWorkflow(
         'ControlGenerate',
         'ControlEdit',
         'ControlInpaint',
+        'LayerDecompose',
         'TranscribeAudio',
         'GenerateAnyToAny',
       ].includes(String(node.data?.action)),
@@ -482,6 +489,7 @@ export function inferStudioFormFromWorkflow(
         'diffusersImageControl',
         'diffusersImageControlEdit',
         'diffusersImageControlInpaint',
+        'diffusersImageLayerDecompose',
         'audioGenerate',
         'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
@@ -494,6 +502,7 @@ export function inferStudioFormFromWorkflow(
         'ControlGenerate',
         'ControlEdit',
         'ControlInpaint',
+        'LayerDecompose',
         'TranscribeAudio',
         'GenerateAnyToAny',
       ].includes(String(node.data?.action)),
@@ -515,7 +524,8 @@ export function inferStudioFormFromWorkflow(
     (node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Audio.'),
   );
   const sourceVideoNode =
-    loadVideos.find((node) => ['loadVideo'].includes(String(node.data?.studioRole))) ?? loadVideos[0];
+    loadVideos.find((node) => node.data?.studioRole === 'loadVideo') ??
+    loadVideos.find((node) => !['loadControlVideo', 'loadMaskVideo'].includes(String(node.data?.studioRole)));
   const maskVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadMaskVideo');
   const controlVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadControlVideo');
   const loadImageNode = loadImages.find((node) => node.data?.studioRole === 'loadImage') ?? loadImages[0];
@@ -524,6 +534,7 @@ export function inferStudioFormFromWorkflow(
   const loadAudioNode = loadAudios.find((node) => node.data?.studioRole === 'loadAudio') ?? loadAudios[0];
   const loadReferenceAudioNode = loadAudios.find((node) => node.data?.studioRole === 'loadReferenceAudio');
   const sizeNode = generateNode ?? denoiseNode;
+  const squareResolution = numberValue(paramValue(sizeNode, ['resolution']), defaults.width);
   const seed = paramValue(sizeNode, ['seed']);
   const seedObject = seed && typeof seed === 'object' ? (seed as { value?: unknown; isRandom?: unknown }) : null;
   const modelQuantizationMode = stringValue(paramValue(modelNode, ['quantization_mode']));
@@ -548,8 +559,8 @@ export function inferStudioFormFromWorkflow(
     modelType,
     prompt: stringValue(paramValue(promptNode, ['prompt'])) || fallback.prompt,
     negativePrompt: stringValue(paramValue(promptNode, ['negative_prompt'])) || fallback.negativePrompt,
-    width: numberValue(paramValue(sizeNode, ['width']), defaults.width),
-    height: numberValue(paramValue(sizeNode, ['height']), defaults.height),
+    width: numberValue(paramValue(sizeNode, ['width']), squareResolution),
+    height: numberValue(paramValue(sizeNode, ['height']), squareResolution),
     seed: numberValue(seedObject?.value ?? seed, fallback.seed),
     randomSeed: boolValue(seedObject?.isRandom, fallback.randomSeed),
     steps: numberValue(paramValue(sizeNode, ['num_inference_steps', 'steps']), defaults.steps),
