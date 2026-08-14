@@ -102,6 +102,7 @@ beforeEach(() => {
     fetchState: { status: 'idle', error: null, requestId: null },
     focusedTaskId: null,
   });
+  nodesStoreModule.useNodesStore.setState({ hfDownloadProgress: {} });
   websocketStoreModule.useWebsocketStore.setState({ sid: 'session-1' });
 });
 
@@ -1992,6 +1993,68 @@ test('backend instance restart clears orphaned execution animation and replaces 
   assert.equal(node.data.progressMessage, undefined);
   assert.equal(taskStoreModule.useTaskStore.getState().currentTask, undefined);
   assert.equal(taskStoreModule.useTaskStore.getState().taskCount, 0);
+});
+
+test('welcome rehydrates active app downloads and removes stale active sessions', () => {
+  globalThis.fetch = async () => jsonResponse({ error: false, outputs: [] });
+  nodesStoreModule.useNodesStore.setState({
+    hfDownloadProgress: {
+      'unit/stale': {
+        repo_id: 'unit/stale',
+        task_id: 'stale-task',
+        status: 'downloading',
+        progress: 0.4,
+      },
+      'unit/complete': {
+        repo_id: 'unit/complete',
+        task_id: 'complete-task',
+        status: 'complete',
+        progress: 1,
+      },
+    },
+  });
+  const message = {
+    type: 'welcome',
+    sid: 'session-1',
+    instance: nodesStoreModule.useNodesStore.getState().instance,
+    cachedNodes: [],
+    current: null,
+    queued: {},
+    recent: [],
+    downloads: [
+      {
+        type: 'hf_download_progress',
+        repo_id: 'unit/current',
+        task_id: 'current-task',
+        download_id: 'current-task',
+        status: 'downloading',
+        phase: 'downloading',
+        progress: 0.6,
+        remaining_bytes: 40,
+        revision: 'a'.repeat(40),
+      },
+    ],
+  };
+
+  const parsed = websocketModule.parseWebsocketMessage(JSON.stringify(message));
+  assert.ok(parsed);
+  websocketModule.handleWebsocketMessage(parsed, {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  });
+
+  const downloads = nodesStoreModule.useNodesStore.getState().hfDownloadProgress;
+  assert.equal(downloads['unit/current'].progress, 0.6);
+  assert.equal(downloads['unit/current'].revision, 'a'.repeat(40));
+  assert.equal(downloads['unit/stale'], undefined);
+  assert.equal(downloads['unit/complete'].status, 'complete');
+  assert.equal(
+    websocketModule.parseWebsocketMessage({ type: 'welcome', downloads: [{ status: 'downloading' }] }),
+    null,
+  );
 });
 
 test('saved workflow normalization migrates stale running node metadata out of backend records', () => {

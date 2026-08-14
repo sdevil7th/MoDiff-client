@@ -384,6 +384,9 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       } else {
         void useTaskStore.getState().fetchTasks();
       }
+      if (message.downloads !== undefined) {
+        useNodesStore.getState().rehydrateHfDownloadProgress(message.downloads);
+      }
       // Output records and their current-preview pointers are backend-owned.
       // Rehydrate them on every reconnect so work completed while this socket
       // was unavailable is reflected without relying on a canvas snapshot.

@@ -4677,6 +4677,41 @@ test('model downloads show topbar activity, session progress, and completion not
 
   await page.evaluate(() => {
     window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'welcome',
+      sid: 'mock-sid',
+      instance: 'mock',
+      cachedNodes: [],
+      current: null,
+      queued: {},
+      recent: [],
+      downloads: [
+        {
+          type: 'hf_download_progress',
+          repo_id: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
+          task_id: 'download-e2e-1',
+          download_id: 'download-e2e-1',
+          status: 'downloading',
+          phase: 'downloading',
+          progress: 0.5,
+          downloaded_bytes: Math.round(9.2 * 1024 ** 3),
+          total_bytes: Math.round(18.4 * 1024 ** 3),
+          remaining_bytes: Math.round(9.2 * 1024 ** 3),
+          completed_file_count: 8,
+          total_file_count: 23,
+          started_at: Date.now() / 1000 - 480,
+          updated_at: Date.now() / 1000,
+        },
+      ],
+    });
+  });
+
+  await expect(page.getByTestId('topbar-download-activity')).toContainText('50%');
+  await expect(page.getByTestId('session-download-unsloth/Qwen-Image-2512-unsloth-bnb-4bit')).toContainText(
+    '8/23 files',
+  );
+
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
       type: 'hf_download_progress',
       repo_id: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
       task_id: 'download-e2e-1',

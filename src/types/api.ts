@@ -138,6 +138,7 @@ export type WelcomeWebsocketMessage = BaseWebsocketMessage<'welcome'> & {
   current?: TaskSnapshot | null;
   queued?: Record<string, TaskSnapshot>;
   recent?: TaskSnapshot[];
+  downloads?: HfDownloadProgress[];
 };
 
 export type NodeWebsocketMessage = BaseWebsocketMessage<
@@ -454,6 +455,22 @@ function isTaskRecordMap(value: unknown) {
   return isRecord(value) && Object.values(value).every(isTaskRecord);
 }
 
+function isHfDownloadProgressArray(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.length <= 256 &&
+    value.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item.repo_id === 'string' &&
+        item.repo_id.length > 0 &&
+        item.repo_id.length <= 256 &&
+        optionalField(item, 'status', (field) => typeof field === 'string') &&
+        optionalField(item, 'progress', isFiniteNumber, true),
+    )
+  );
+}
+
 function isNumericRecord(value: unknown) {
   return isRecord(value) && Object.values(value).every(isFiniteNumber);
 }
@@ -572,7 +589,10 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
 
   switch (type) {
     case 'welcome':
-      return optionalField(value, 'instance', (field) => typeof field === 'string');
+      return (
+        optionalField(value, 'instance', (field) => typeof field === 'string') &&
+        optionalField(value, 'downloads', isHfDownloadProgressArray)
+      );
     case 'executed':
     case 'node_error':
     case 'progress':

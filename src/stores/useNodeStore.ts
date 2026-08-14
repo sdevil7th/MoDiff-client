@@ -197,6 +197,10 @@ export type HfDownloadProgress = {
   completed_at?: number | null;
   size_known?: boolean;
   plan_error?: string;
+  revision?: string | null;
+  repair?: boolean;
+  requested_file_count?: number;
+  reserved_bytes?: number;
   error?: string | null;
   error_code?: string | null;
   last_error?: string;
@@ -358,6 +362,7 @@ type NodesStore = {
   customModuleError: string | null;
   discoveryRequests: Record<DiscoveryRequestKey, DiscoveryRequestState>;
   setHfDownloadProgress: (progress: HfDownloadProgress) => void;
+  rehydrateHfDownloadProgress: (downloads: HfDownloadProgress[]) => void;
   clearHfDownloadProgress: (repoId: string) => void;
   refreshModelIndexes: (refresh?: boolean, options?: { invalidateAutoPlans?: boolean }) => Promise<void>;
   installHfModel: (
@@ -790,6 +795,18 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       },
     }));
     notifyHfDownloadTransition(previous, nextProgress);
+  },
+  rehydrateHfDownloadProgress: (downloads) => {
+    set((state) => {
+      const next = Object.fromEntries(
+        Object.entries(state.hfDownloadProgress).filter(([, progress]) => !isHfDownloadActive(progress)),
+      );
+      downloads.forEach((progress) => {
+        if (!progress.repo_id) return;
+        next[progress.repo_id] = progress;
+      });
+      return { hfDownloadProgress: next };
+    });
   },
   clearHfDownloadProgress: (repoId) => {
     set((state) => {
