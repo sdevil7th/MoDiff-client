@@ -14667,6 +14667,8 @@ test('Expert renders backend-registered contract-only Modular image video and mu
     LTX2ModularPipeline: 'LTX-2 (Contract only)',
     LTX25ModularPipeline: 'LTX-2.5 (Contract only)',
     HeliosModularPipeline: 'Helios (Contract only)',
+    WanAnimate2ModularPipeline: 'Wan Animate 2 (Contract only)',
+    WanAnimate2DistilledModularPipeline: 'Wan Animate 2 Distilled (Contract only)',
     Cosmos3OmniModularPipeline: 'Cosmos 3 Omni (Contract only)',
   };
   const nodeKey = 'modules.Contract.ContractOnlyModelsLoader';
