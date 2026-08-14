@@ -4,6 +4,7 @@ import { after, before, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { findCanonicalWorkflowRecord } from './release-contract-core.mjs';
 import { normalizePortableWorkflowNodeOffload, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -102,6 +103,21 @@ test('schema-v2 capability modes are exact while legacy mode metadata can fall b
     modelCapabilitiesModule.exactStudioCapabilitySupport([legacy], false, 'FluxDepthPipeline', 'control_image').status,
     'unknown',
   );
+});
+
+test('every public Studio template resolves an exact canonical workflow contract', async () => {
+  const manifest = JSON.parse(
+    await readFile(path.join(ROOT, '..', 'MoDiff', 'data', 'workflow-library-manifest.json'), 'utf8'),
+  );
+  const workflowRecords = [...manifest.workflows, ...manifest.experimentalWorkflows].map((record) => ({
+    manifest: record,
+  }));
+  for (const template of templatesModule.STUDIO_TEMPLATES) {
+    const workflow = findCanonicalWorkflowRecord(workflowRecords, template);
+    assert.ok(workflow, `${template.id} must resolve an exact canonical workflow`);
+    assert.match(workflow.manifest.graphHash, /^[0-9a-f]{64}$/);
+    assert.match(workflow.manifest.graphPath, /\.json$/);
+  }
 });
 
 test('the managed Qwen ControlNet requirement carries its reviewed immutable commit', () => {
