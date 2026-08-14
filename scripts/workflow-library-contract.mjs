@@ -2,6 +2,18 @@ function paramValue(node, key) {
   return node?.data?.params?.[key]?.value;
 }
 
+const FORBIDDEN_ATTENTION_BACKENDS = new Set(['aiter', 'aiter_fa2_hub']);
+
+export function workflowNodeAttentionBackendError(node) {
+  const attention = node?.data?.params?.attention_backend;
+  if (!attention || typeof attention !== 'object') return null;
+  const savedOptions = Array.isArray(attention.options)
+    ? attention.options.map((option) => (typeof option === 'string' ? option : option?.value))
+    : Object.keys(attention.options ?? {});
+  const stale = [attention.value, ...savedOptions].filter((value) => FORBIDDEN_ATTENTION_BACKENDS.has(value));
+  return stale.length > 0 ? `persists unsupported attention backends: ${[...new Set(stale)].join(', ')}` : null;
+}
+
 export function workflowNodeDeviceOffloadError(node) {
   const device = String(paramValue(node, 'device') ?? '');
   if (!device) return null;

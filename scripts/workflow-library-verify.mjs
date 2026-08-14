@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
-import { workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import {
+  workflowNodeAttentionBackendError,
+  workflowNodeDeviceOffloadError,
+} from './workflow-library-contract.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -207,6 +210,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
       const params = node.data.params ?? {};
       const attentionBackend = params.attention_backend?.value;
       const device = params.device?.value;
+      const attentionError = workflowNodeAttentionBackendError(node);
+      if (attentionError) throw new Error(`${workflow.id} ${attentionError}.`);
       if (String(attentionBackend ?? '').startsWith('_native_') && String(device ?? '').startsWith('cpu')) {
         throw new Error(`${workflow.id} selects accelerator attention ${attentionBackend} on ${device}.`);
       }

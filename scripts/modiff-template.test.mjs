@@ -5,7 +5,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { findCanonicalWorkflowRecord } from './release-contract-core.mjs';
-import { normalizePortableWorkflowNodeOffload, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import {
+  normalizePortableWorkflowNodeOffload,
+  workflowNodeAttentionBackendError,
+  workflowNodeDeviceOffloadError,
+} from './workflow-library-contract.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -5160,6 +5164,17 @@ test('canonical workflow generation normalizes unsupported devices and preserves
   assert.equal(cudaNode.data.params.auto_offload.value, true);
   assert.equal(cudaNode.data.params.offload_mode.value, 'model_cpu');
   assert.equal(workflowNodeDeviceOffloadError(cudaNode), null);
+});
+
+test('canonical workflows reject retired or mutable Hub attention backends', () => {
+  const node = (value, options) => ({ data: { params: { attention_backend: { value, options } } } });
+  assert.match(workflowNodeAttentionBackendError(node('auto', ['auto', { value: 'aiter' }])), /aiter/);
+  assert.match(
+    workflowNodeAttentionBackendError(node('aiter_fa2_hub', { auto: 'Auto', aiter_fa2_hub: 'Hub AITER' })),
+    /aiter_fa2_hub/,
+  );
+  assert.equal(workflowNodeAttentionBackendError(node('_native_flash', ['auto', '_native_flash'])), null);
+  assert.equal(workflowNodeAttentionBackendError({ data: { params: {} } }), null);
 });
 
 test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-owned CUDA budget', () => {
