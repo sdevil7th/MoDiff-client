@@ -641,6 +641,14 @@ export function blockedReadinessKinds({ appReadiness, downloadReadiness, inputRe
     .map(([kind]) => kind);
 }
 
+export function requiredReadinessChecks(args) {
+  return {
+    appCache: !args.dryRun || args.checkAppReadiness,
+    downloads: !args.dryRun || args.checkDownloadIdle,
+    defaultInputs: !args.dryRun || args.checkInputReadiness,
+  };
+}
+
 export function galleryArgsForGroup(args, templateIds) {
   return [
     join(CLIENT_ROOT, 'scripts', 'template-gallery-runner.mjs'),
@@ -687,16 +695,16 @@ export async function runCampaign(argv = process.argv) {
   refreshReports({ inherit: !args.dryRun });
   const selection = selectedJobs(readJson(CONTRACT_PATH), args);
   const groups = jobGroups(selection.jobs, args.batchByModelFamily);
-  const inputBindings = args.checkInputReadiness ? readJson(INPUT_BINDINGS_PATH) : null;
-  const assetManifest = args.checkInputReadiness ? readJson(ASSET_MANIFEST_PATH) : null;
-  const appReadiness = args.checkAppReadiness
+  const readinessChecks = requiredReadinessChecks(args);
+  const inputBindings = readinessChecks.defaultInputs ? readJson(INPUT_BINDINGS_PATH) : null;
+  const assetManifest = readinessChecks.defaultInputs ? readJson(ASSET_MANIFEST_PATH) : null;
+  const appReadiness = readinessChecks.appCache
     ? appReadinessForJobs(selection.jobs, await fetchAppCache(args.server, args.cacheTimeoutMs))
     : null;
-  const downloadReadiness =
-    !args.dryRun || args.checkDownloadIdle
-      ? downloadReadinessForStatus(await fetchAppDownloadStatus(args.server, args.cacheTimeoutMs))
-      : null;
-  const inputReadiness = args.checkInputReadiness
+  const downloadReadiness = readinessChecks.downloads
+    ? downloadReadinessForStatus(await fetchAppDownloadStatus(args.server, args.cacheTimeoutMs))
+    : null;
+  const inputReadiness = readinessChecks.defaultInputs
     ? inputReadinessForJobs(selection.jobs, inputBindings, assetManifest)
     : null;
   if (args.reuseExistingRuntimeKey && groups.length > 1) {
@@ -712,6 +720,7 @@ export async function runCampaign(argv = process.argv) {
           count: selection.jobs.length,
           deferredCount: selection.deferred.length,
           batchByModelFamily: args.batchByModelFamily,
+          readinessChecks,
           reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
           excludedMedia: [...new Set(args.excludedMedia)],
           appReadiness,
@@ -745,6 +754,7 @@ export async function runCampaign(argv = process.argv) {
     updatedAt: new Date().toISOString(),
     backendUrl: args.server,
     batchByModelFamily: args.batchByModelFamily,
+    readinessChecks,
     reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
     excludedMedia: [...new Set(args.excludedMedia)],
     appReadiness,
@@ -761,13 +771,13 @@ export async function runCampaign(argv = process.argv) {
     // artifacts and byte-pinned inputs at each model-family boundary so a
     // cache repair, external mutation, or missing installed asset cannot turn
     // startup readiness into stale authorization for later inference.
-    const currentAppReadiness = args.checkAppReadiness
+    const currentAppReadiness = readinessChecks.appCache
       ? appReadinessForJobs(group.jobs, await fetchAppCache(args.server, args.cacheTimeoutMs))
       : null;
     const currentDownloadReadiness = downloadReadinessForStatus(
       await fetchAppDownloadStatus(args.server, args.cacheTimeoutMs),
     );
-    const currentInputReadiness = args.checkInputReadiness
+    const currentInputReadiness = readinessChecks.defaultInputs
       ? inputReadinessForJobs(group.jobs, inputBindings, assetManifest)
       : null;
     const checkedAt = new Date().toISOString();

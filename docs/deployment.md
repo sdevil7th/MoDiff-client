@@ -68,12 +68,12 @@ The app readiness check is read-only, accepts only an uncredentialed loopback
 origin, and fails if a required repository or revision is absent, incomplete,
 not installed, or marked for repair. The download-idle check uses the app's
 bounded status receipt and blocks while any model transfer or Template Gallery
-installation is active or reserved. A real campaign performs that check even
-without the dry-run flag, repeats it before every model-family group, and the
-Gallery runner repeats it immediately before every selected template. When the
-model-cache and input checks are requested, the real campaign also repeats both
-for the exact jobs in every model-family group before submitting its first
-graph. The input readiness check reads only the selected templates' local
+installation is active or reserved. The three readiness flags opt a dry run
+into their respective checks. A real campaign requires all three checks even
+when the flags are omitted, repeats exact model-cache, download-idle, and input
+readiness for every model-family group before submitting its first graph, and
+the Gallery runner repeats download-idle immediately before every selected
+template. The input readiness check reads only the selected templates' local
 defaults and rejects absent files, links, size or SHA-256 mismatches, unpinned
 bindings, and inconsistent asset-manifest records.
 A source-release checkout without the installer-managed Gallery payload is

@@ -15,6 +15,7 @@ import {
   inputReadinessForJobs,
   jobGroups,
   modelFamilyForTemplate,
+  requiredReadinessChecks,
   selectedJobs,
 } from './release-qualification-campaign.mjs';
 
@@ -277,6 +278,27 @@ test('qualification campaign identifies every blocked group readiness boundary',
       inputReadiness: null,
     }),
     [],
+  );
+});
+
+test('real qualification always requires every readiness check while dry runs remain explicit', () => {
+  assert.deepEqual(
+    requiredReadinessChecks({
+      dryRun: false,
+      checkAppReadiness: false,
+      checkDownloadIdle: false,
+      checkInputReadiness: false,
+    }),
+    { appCache: true, downloads: true, defaultInputs: true },
+  );
+  assert.deepEqual(
+    requiredReadinessChecks({
+      dryRun: true,
+      checkAppReadiness: true,
+      checkDownloadIdle: false,
+      checkInputReadiness: true,
+    }),
+    { appCache: true, downloads: false, defaultInputs: true },
   );
 });
 
