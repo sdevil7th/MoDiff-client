@@ -63,6 +63,8 @@ export function useStudioReadiness({
   );
   const modeImageRequirements = capability.modeRequirements?.[form.mode]?.requiredImages ?? [];
   const requiresReferenceImage = modeImageRequirements.includes('referenceImages');
+  const requiresMaskImage = modeImageRequirements.includes('maskImage');
+  const requiresControlImage = modeImageRequirements.includes('controlImage');
   const showImageTray =
     requiresReferenceImage ||
     form.mode === 'control_image' ||
@@ -88,6 +90,8 @@ export function useStudioReadiness({
     compatibleModels,
     compatibleModes,
     showImageTray,
+    requiresMaskImage,
+    requiresControlImage,
     supportsMask,
     inpaintContract,
     missingInstallTarget,

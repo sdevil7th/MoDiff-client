@@ -1194,14 +1194,15 @@ function applyImportedImageToForm(form: StudioFormState, image: string): StudioF
   const trimmed = image.trim();
   if (!trimmed) return form;
 
-  if (form.mode === 'control_image') {
-    return form.controlImage.trim() ? withReferenceImage(form, trimmed) : { ...form, controlImage: trimmed };
-  }
-
-  if (form.mode === 'inpaint' || form.mode === 'outpaint') {
-    if (!form.referenceImages[0]?.trim()) return withReferenceImage(form, trimmed);
-    if (!form.maskImage.trim()) return { ...form, maskImage: trimmed };
+  const requiredImages = STUDIO_MODEL_PROFILES[form.modelType].modeRequirements?.[form.mode]?.requiredImages ?? [];
+  if (requiredImages.includes('referenceImages') && !form.referenceImages[0]?.trim()) {
     return withReferenceImage(form, trimmed);
+  }
+  if (requiredImages.includes('maskImage') && !form.maskImage.trim()) {
+    return { ...form, maskImage: trimmed };
+  }
+  if (requiredImages.includes('controlImage') && !form.controlImage.trim()) {
+    return { ...form, controlImage: trimmed };
   }
 
   return withReferenceImage(form, trimmed);

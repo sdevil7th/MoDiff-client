@@ -377,6 +377,8 @@ export default function StudioPanel() {
     compatibleModels,
     compatibleModes,
     showImageTray,
+    requiresMaskImage,
+    requiresControlImage,
     supportsMask,
     inpaintContract,
     missingInstallTarget,
@@ -1569,6 +1571,17 @@ export default function StudioPanel() {
                       </ModiffFieldShell>
                     </>
                   )}
+                  {requiresControlImage && !isVideoMode && (
+                    <ModiffFieldShell label={`Control conditioning: ${form.conditioningScale}`}>
+                      <StudioSlider
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        value={form.conditioningScale}
+                        onChange={(value) => updateAndSync({ conditioningScale: value })}
+                      />
+                    </ModiffFieldShell>
+                  )}
                   {capability.supportsLayers && (
                     <StudioInput
                       label="Layers"
@@ -1872,34 +1885,31 @@ export default function StudioPanel() {
             </StudioSection>
           )}
 
-          {(form.mode === 'inpaint' || form.mode === 'control_image') && (
+          {(requiresMaskImage || requiresControlImage) && (
             <StudioSection
               id="mask-control"
-              title={form.mode === 'inpaint' ? 'Mask draft' : 'Control image'}
+              title={
+                requiresMaskImage && requiresControlImage
+                  ? 'Mask and control inputs'
+                  : requiresMaskImage
+                    ? 'Mask draft'
+                    : 'Control image'
+              }
               defaultOpen
             >
-              <StudioInput
-                label={form.mode === 'inpaint' ? 'Mask image path' : 'Control image path'}
-                value={form.mode === 'inpaint' ? form.maskImage : form.controlImage}
-                onChange={(value) =>
-                  updateAndSync(form.mode === 'inpaint' ? { maskImage: value } : { controlImage: value })
-                }
-              />
-              <p
-                className={cx(
-                  'text-xs',
-                  form.mode === 'control_image' || supportsMask ? 'text-modiff-subtle-text' : 'text-hf-orange',
-                )}
-              >
-                {form.mode === 'control_image'
-                  ? 'Control image is wired to Qwen Image plus Qwen ControlNet Union. Install both models and add one control image before running.'
-                  : supportsMask
-                    ? 'Mask execution is supported by this model metadata.'
-                    : (inpaintContract?.reason ??
-                      'Brush, erase, invert, feather, clear, and fill are frontend draft controls until backend/template support is confirmed.')}
-              </p>
-              {form.mode === 'inpaint' && (
+              {requiresMaskImage && (
                 <>
+                  <StudioInput
+                    label="Mask image path"
+                    value={form.maskImage}
+                    onChange={(value) => updateAndSync({ maskImage: value })}
+                  />
+                  <p className={cx('text-xs', supportsMask ? 'text-modiff-subtle-text' : 'text-hf-orange')}>
+                    {supportsMask
+                      ? 'The mask limits which source-image region can change.'
+                      : (inpaintContract?.reason ??
+                        'Brush, erase, invert, feather, clear, and fill are frontend draft controls until backend support is confirmed.')}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <StudioButton tone="ghost" onClick={() => setMaskEditorOpen(true)}>
                       Open mask editor
@@ -1921,6 +1931,18 @@ export default function StudioPanel() {
                       onCancel={() => setMaskEditorOpen(false)}
                     />
                   )}
+                </>
+              )}
+              {requiresControlImage && (
+                <>
+                  <StudioInput
+                    label="Control image path"
+                    value={form.controlImage}
+                    onChange={(value) => updateAndSync({ controlImage: value })}
+                  />
+                  <p className="text-xs text-modiff-subtle-text">
+                    The control image is a separate structural guide declared by the selected task contract.
+                  </p>
                 </>
               )}
             </StudioSection>

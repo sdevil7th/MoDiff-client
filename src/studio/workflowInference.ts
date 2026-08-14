@@ -370,6 +370,10 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     if (roles.has('diffusersUnconditionalGenerate') || keys.has('modules.DiffusersImage.UnconditionalGenerate'))
       return 'unconditional_image';
     if (roles.has('diffusersPredictMap') || keys.has('modules.DiffusersImage.PredictMap')) return 'depth_estimation';
+    if (roles.has('diffusersImageControlInpaint') || keys.has('modules.DiffusersImage.ControlInpaint'))
+      return 'control_inpaint';
+    if (roles.has('diffusersImageControlEdit') || keys.has('modules.DiffusersImage.ControlEdit'))
+      return 'control_edit_image';
     if (roles.has('diffusersImageControl') || keys.has('modules.DiffusersImage.ControlGenerate'))
       return 'control_image';
     if (roles.has('diffusersImageInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
@@ -410,6 +414,8 @@ export function inferStudioFormFromWorkflow(
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
+        'diffusersImageControlEdit',
+        'diffusersImageControlInpaint',
         'audioGenerate',
         'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
@@ -421,6 +427,8 @@ export function inferStudioFormFromWorkflow(
         'Inpaint',
         'Edit',
         'ControlGenerate',
+        'ControlEdit',
+        'ControlInpaint',
         'TranscribeAudio',
       ].includes(String(node.data?.action)),
   );
@@ -458,6 +466,8 @@ export function inferStudioFormFromWorkflow(
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
+        'diffusersImageControlEdit',
+        'diffusersImageControlInpaint',
         'audioGenerate',
         'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
@@ -468,6 +478,8 @@ export function inferStudioFormFromWorkflow(
         'Inpaint',
         'Edit',
         'ControlGenerate',
+        'ControlEdit',
+        'ControlInpaint',
         'TranscribeAudio',
       ].includes(String(node.data?.action)),
   );
@@ -492,6 +504,7 @@ export function inferStudioFormFromWorkflow(
   const maskVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadMaskVideo');
   const controlVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadControlVideo');
   const loadImageNode = loadImages.find((node) => node.data?.studioRole === 'loadImage') ?? loadImages[0];
+  const loadControlImageNode = loadImages.find((node) => node.data?.studioRole === 'loadControlImage');
   const loadMaskNode = loadImages.find((node) => node.data?.studioRole === 'loadMask');
   const loadAudioNode = loadAudios.find((node) => node.data?.studioRole === 'loadAudio') ?? loadAudios[0];
   const loadReferenceAudioNode = loadAudios.find((node) => node.data?.studioRole === 'loadReferenceAudio');
@@ -553,7 +566,9 @@ export function inferStudioFormFromWorkflow(
     outpaintFillColor: stringValue(paramValue(outpaintNode, ['fill_color'])) || defaults.outpaintFillColor,
     referenceImages: arrayStringValue(paramValue(loadImageNode, ['file'])),
     maskImage: stringValue(paramValue(loadMaskNode, ['file'])),
-    controlImage: mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : '',
+    controlImage:
+      stringValue(paramValue(loadControlImageNode, ['file'])) ||
+      (mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : ''),
     sourceVideo: stringValue(paramValue(sourceVideoNode, ['file'])),
     maskVideo: stringValue(paramValue(maskVideoNode, ['file'])),
     controlVideo: stringValue(paramValue(controlVideoNode, ['file'])),

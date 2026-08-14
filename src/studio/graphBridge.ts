@@ -171,6 +171,8 @@ const NODE_KEYS = {
   diffusersImageEdit: 'modules.DiffusersImage.Edit',
   diffusersImageInpaint: 'modules.DiffusersImage.Inpaint',
   diffusersImageControl: 'modules.DiffusersImage.ControlGenerate',
+  diffusersImageControlEdit: 'modules.DiffusersImage.ControlEdit',
+  diffusersImageControlInpaint: 'modules.DiffusersImage.ControlInpaint',
   loadAdapter: 'modules.DiffusersImage.LoadAdapter',
   loadAudio: 'modules.Audio.Load',
   loadReferenceAudio: 'modules.Audio.Load',
@@ -234,6 +236,8 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   diffusersImageEdit: { x: -120, y: -80 },
   diffusersImageInpaint: { x: -120, y: -80 },
   diffusersImageControl: { x: -120, y: -80 },
+  diffusersImageControlEdit: { x: -120, y: -80 },
+  diffusersImageControlInpaint: { x: -120, y: -80 },
   loadAdapter: { x: -520, y: 560 },
   loadAudio: { x: -520, y: 300 },
   loadReferenceAudio: { x: -520, y: 560 },
@@ -282,6 +286,8 @@ const IMAGE_MODES: StudioMode[] = [
   'multi_image_reference_edit',
   'inpaint',
   'outpaint',
+  'control_edit_image',
+  'control_inpaint',
   'layer_decomposition',
 ];
 
@@ -340,6 +346,17 @@ function isAudioMode(mode: StudioMode) {
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
   return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-image';
+}
+
+function diffusersImageActionNode(binding: StudioGraphBinding) {
+  return (
+    binding.nodes.diffusersImageControlInpaint ??
+    binding.nodes.diffusersImageInpaint ??
+    binding.nodes.diffusersImageControlEdit ??
+    binding.nodes.diffusersImageControl ??
+    binding.nodes.diffusersImageEdit ??
+    binding.nodes.diffusersImageGenerate
+  );
 }
 
 function usesDiffusersThreeDFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
@@ -419,6 +436,27 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
     }
     if (form.mode === 'control_image') {
       return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'diffusersImageControl', 'preview'];
+    }
+    if (form.mode === 'control_edit_image') {
+      return [
+        ...runtimeRoles,
+        'diffusersImagePipeline',
+        'loadImage',
+        'loadControlImage',
+        'diffusersImageControlEdit',
+        'preview',
+      ];
+    }
+    if (form.mode === 'control_inpaint') {
+      return [
+        ...runtimeRoles,
+        'diffusersImagePipeline',
+        'loadImage',
+        'loadMask',
+        'loadControlImage',
+        'diffusersImageControlInpaint',
+        'preview',
+      ];
     }
     return [...runtimeRoles, 'diffusersImagePipeline', 'diffusersImageGenerate', 'preview'];
   }
@@ -915,12 +953,7 @@ function expectedControlledEdgeSpecs(
     const pipeline =
       loraId === 'lora.diffusers-image.v1' ? binding.nodes.diffusersImagePipeline : binding.nodes.audioPipeline;
     const generate =
-      loraId === 'lora.diffusers-image.v1'
-        ? (binding.nodes.diffusersImageInpaint ??
-          binding.nodes.diffusersImageControl ??
-          binding.nodes.diffusersImageEdit ??
-          binding.nodes.diffusersImageGenerate)
-        : binding.nodes.audioGenerate;
+      loraId === 'lora.diffusers-image.v1' ? diffusersImageActionNode(binding) : binding.nodes.audioGenerate;
     remove((spec) => spec.source === pipeline && spec.target === generate);
     add(makeConnectionSpec(pipeline, ['pipeline'], loraNodes[0]?.id, ['pipeline']));
     for (let index = 1; index < loraNodes.length; index += 1) {
@@ -941,12 +974,7 @@ function expectedControlledEdgeSpecs(
   }
 
   if (contracts.has('upscale.image.v1')) {
-    const source = usesDiffusersImageFacade(binding)
-      ? (binding.nodes.diffusersImageInpaint ??
-        binding.nodes.diffusersImageControl ??
-        binding.nodes.diffusersImageEdit ??
-        binding.nodes.diffusersImageGenerate)
-      : binding.nodes.decode;
+    const source = usesDiffusersImageFacade(binding) ? diffusersImageActionNode(binding) : binding.nodes.decode;
     add(
       makeConnectionSpec(source, ['images', 'image', 'output'], upscaler, IMAGE_HANDLE),
       makeConnectionSpec(upscaler, ['output', 'image'], id('upscalePreview'), IMAGE_HANDLE),
@@ -1908,16 +1936,18 @@ function desiredDiffusersImageEdgeSpecs(binding: StudioGraphBinding) {
     diffusersQuantization,
     diffusersRecipe,
     diffusersImagePipeline,
-    diffusersImageGenerate,
     diffusersImageEdit,
     diffusersImageInpaint,
     diffusersImageControl,
+    diffusersImageControlEdit,
+    diffusersImageControlInpaint,
     loadImage,
+    loadControlImage,
     loadMask,
     qwenOutpaintCanvas,
     preview,
   } = binding.nodes;
-  const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
+  const targetNode = diffusersImageActionNode(binding);
   return [
     makeConnectionSpec(diffusersQuantization, ['quantization_config'], diffusersRecipe, ['quantization_config']),
     makeConnectionSpec(diffusersRecipe, ['execution_recipe'], diffusersImagePipeline, ['execution_recipe']),
@@ -1929,6 +1959,11 @@ function desiredDiffusersImageEdgeSpecs(binding: StudioGraphBinding) {
     makeConnectionSpec(qwenOutpaintCanvas ? undefined : loadImage, IMAGE_HANDLE, diffusersImageInpaint, IMAGE_HANDLE),
     makeConnectionSpec(loadMask, IMAGE_HANDLE, diffusersImageInpaint, MASK_IMAGE_HANDLE),
     makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControl, ['control_image', 'image']),
+    makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControlEdit, IMAGE_HANDLE),
+    makeConnectionSpec(loadControlImage, IMAGE_HANDLE, diffusersImageControlEdit, ['control_image']),
+    makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControlInpaint, IMAGE_HANDLE),
+    makeConnectionSpec(loadMask, IMAGE_HANDLE, diffusersImageControlInpaint, MASK_IMAGE_HANDLE),
+    makeConnectionSpec(loadControlImage, IMAGE_HANDLE, diffusersImageControlInpaint, ['control_image']),
     makeConnectionSpec(targetNode, ['images', 'image', 'output'], preview, IMAGE_HANDLE),
   ].filter((spec): spec is StudioEdgeSpec => Boolean(spec));
 }
@@ -1940,12 +1975,7 @@ function desiredStillUpscaleEdgeSpecs(binding: StudioGraphBinding) {
     .nodes.find((node) => node.data?.studioRole === 'upscalePreview')?.id;
   if (!controlledUpscaler || !controlledPreview) return [];
 
-  const source = usesDiffusersImageFacade(binding)
-    ? (binding.nodes.diffusersImageInpaint ??
-      binding.nodes.diffusersImageControl ??
-      binding.nodes.diffusersImageEdit ??
-      binding.nodes.diffusersImageGenerate)
-    : binding.nodes.decode;
+  const source = usesDiffusersImageFacade(binding) ? diffusersImageActionNode(binding) : binding.nodes.decode;
 
   return [
     makeConnectionSpec(source, ['images', 'image', 'output'], controlledUpscaler, IMAGE_HANDLE),
@@ -2904,6 +2934,8 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
   if (role === 'diffusersImageEdit') return 'Diffusers.Edit';
   if (role === 'diffusersImageInpaint' || role === 'qwenInpaint') return 'Diffusers.Inpaint';
   if (role === 'diffusersImageControl') return 'Diffusers.Control';
+  if (role === 'diffusersImageControlEdit') return 'Diffusers.ControlEdit';
+  if (role === 'diffusersImageControlInpaint') return 'Diffusers.ControlInpaint';
   if (role === 'loadAdapter') return 'Diffusers.LoadAdapter';
   return null;
 }
@@ -3056,11 +3088,7 @@ async function applyVideoPipelineContract(binding: StudioGraphBinding, mode: Stu
 
 async function applyImagePipelineContract(binding: StudioGraphBinding, mode: StudioMode) {
   const pipelineNode = binding.nodes.diffusersImagePipeline;
-  const actionNode =
-    binding.nodes.diffusersImageInpaint ??
-    binding.nodes.diffusersImageControl ??
-    binding.nodes.diffusersImageEdit ??
-    binding.nodes.diffusersImageGenerate;
+  const actionNode = diffusersImageActionNode(binding);
   const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
   if (!pipelineNode || !actionNode || !pipelineClassKey) return;
 
@@ -3411,10 +3439,6 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     wanGenerate,
     videoExport,
     diffusersImagePipeline,
-    diffusersImageGenerate,
-    diffusersImageEdit,
-    diffusersImageInpaint,
-    diffusersImageControl,
     audioPipeline,
     loadAudio,
     loadReferenceAudio,
@@ -3625,7 +3649,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       autoCandidate?.modelRepo;
     const autoOffloadMode = autoPatch.offloadMode ?? form.offloadMode;
     const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
-    const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
+    const targetNode = diffusersImageActionNode(binding);
     const pipelineClass = autoCandidate?.pipelineClass ?? executionProfile?.pipeline_class;
     const imageDtype = autoPatch.dtype ?? form.dtype;
 
@@ -3670,6 +3694,10 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       setParamIfPresent(loadMask, ['file'], form.maskImage);
       setParamIfPresent(loadMask, ['alpha_channel'], 'remove alpha');
     }
+    if (loadControlImage) {
+      setParamIfPresent(loadControlImage, ['file'], form.controlImage);
+      setParamIfPresent(loadControlImage, ['alpha_channel'], form.alphaMode);
+    }
     if (qwenOutpaintCanvas) {
       setParamIfPresent(qwenOutpaintCanvas, ['width'], form.width);
       setParamIfPresent(qwenOutpaintCanvas, ['height'], form.height);
@@ -3697,6 +3725,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(targetNode, ['pag_adaptive_scale'], form.pagAdaptiveScale);
     setParamIfPresent(targetNode, ['strength'], form.strength);
     setParamIfPresent(targetNode, ['reference_strength'], form.conditioningScale);
+    setParamIfPresent(targetNode, ['conditioning_scale'], form.conditioningScale);
     setParamIfPresent(targetNode, ['output_type'], form.outputType);
     setParamIfPresent(targetNode, ['max_sequence_length'], form.maxSequenceLength);
     return;
@@ -3985,11 +4014,7 @@ async function finalizeDiffusersImageGraph(
   timedOutGroups: string[],
   token: number,
 ) {
-  const targetNode =
-    binding.nodes.diffusersImageInpaint ??
-    binding.nodes.diffusersImageControl ??
-    binding.nodes.diffusersImageEdit ??
-    binding.nodes.diffusersImageGenerate;
+  const targetNode = diffusersImageActionNode(binding);
   await Promise.all([
     waitForFieldGroupsTracked(
       binding.nodes.diffusersImagePipeline,
@@ -4020,6 +4045,15 @@ async function finalizeDiffusersImageGraph(
           [IMAGE_HANDLE, ['file']],
           timedOutGroups,
           'mask image loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadControlImage
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadControlImage,
+          [IMAGE_HANDLE, ['file']],
+          timedOutGroups,
+          'control image loader',
           3000,
         )
       : Promise.resolve(true),

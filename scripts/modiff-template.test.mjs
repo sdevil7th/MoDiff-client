@@ -167,11 +167,18 @@ test('unconditional image profiles expose prompt-free native sampling defaults',
   }
 });
 
-test('Stable Diffusion 1.5 exposes four exact generic 512px modes', () => {
+test('Stable Diffusion 1.5 exposes generic 512px generation, edit, inpaint, and ControlNet modes', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPipeline;
   assert.equal(profile.defaultRepo, profilesModule.SD15_BASE_REPO);
   assert.equal(profile.defaultDtype, 'float32');
-  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint', 'control_image']);
+  assert.deepEqual(profile.modes, [
+    'text_to_image',
+    'edit_image',
+    'inpaint',
+    'control_image',
+    'control_edit_image',
+    'control_inpaint',
+  ]);
   assert.equal(profile.supportsControlImage, true);
   assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
     profilesModule.SD15_CONTROLNET_CANNY_REQUIREMENT,
@@ -220,7 +227,7 @@ test('SDXL ControlNet exposes its pinned 1024px Canny recipe', () => {
   const form = profilesModule.getFormDefaultsForMode('control_image', 'StableDiffusionXLControlNetPipeline');
   assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
   assert.equal(profile.defaultDtype, 'float16');
-  assert.deepEqual(profile.modes, ['control_image']);
+  assert.deepEqual(profile.modes, ['control_image', 'control_edit_image', 'control_inpaint']);
   assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
     profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
   ]);
@@ -321,7 +328,7 @@ test('SDXL PAG exposes generic perturbed-attention controls over the pinned base
   const inpaint = profilesModule.getFormDefaultsForMode('inpaint', 'StableDiffusionXLPAGPipeline');
   assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
   assert.equal(profile.defaultDtype, 'float16');
-  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint']);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_edit_image']);
   assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
   assert.deepEqual(profile.modeRequirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
   assert.equal(profile.catalogVisibility, 'workflowOnly');
@@ -865,7 +872,7 @@ test('LCM DreamShaper exposes exact generic text and image-edit recipes', () => 
   assert.equal(editForm.strength, 0.8);
 });
 
-test('Stable Diffusion PAG exposes generic text, edit, and inpaint controls over the pinned 1.5 base', () => {
+test('Stable Diffusion PAG exposes generic base and ControlNet controls over the pinned 1.5 base', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPAGPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionPAGPipeline');
   const editForm = profilesModule.getFormDefaultsForMode('edit_image', 'StableDiffusionPAGPipeline');
@@ -874,7 +881,7 @@ test('Stable Diffusion PAG exposes generic text, edit, and inpaint controls over
   assert.equal(profile.defaultDtype, 'float32');
   assert.equal(profile.supportsImageInput, true);
   assert.equal(profile.supportsMask, true);
-  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint']);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_inpaint']);
   assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
   assert.deepEqual(profile.modeRequirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
   assert.equal(form.width, 512);
@@ -885,6 +892,67 @@ test('Stable Diffusion PAG exposes generic text, edit, and inpaint controls over
   assert.equal(form.pagAdaptiveScale, 0);
   assert.equal(editForm.strength, 0.8);
   assert.equal(inpaintForm.strength, 0.8);
+});
+
+test('generic control workflows infer source, mask, and control images by role', () => {
+  const node = (id, module, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module,
+      action,
+      studioRole,
+      studioOwned: true,
+      params,
+    },
+  });
+  const image = (id, studioRole, file) => node(id, 'modules.Image', 'Load', studioRole, { file: { value: file } });
+
+  for (const testCase of [
+    {
+      modelType: 'FluxCannyPipeline',
+      mode: 'control_edit_image',
+      action: 'ControlEdit',
+      actionRole: 'diffusersImageControlEdit',
+      images: [image('source', 'loadImage', 'source-edit.png'), image('control', 'loadControlImage', 'canny.png')],
+      expectedMask: '',
+    },
+    {
+      modelType: 'StableDiffusionPAGPipeline',
+      mode: 'control_inpaint',
+      action: 'ControlInpaint',
+      actionRole: 'diffusersImageControlInpaint',
+      images: [
+        image('source', 'loadImage', 'source-inpaint.png'),
+        image('mask', 'loadMask', 'mask.png'),
+        image('control', 'loadControlImage', 'edges.png'),
+      ],
+      expectedMask: 'mask.png',
+    },
+  ]) {
+    const nodes = [
+      node('pipeline', 'modules.DiffusersImage', 'LoadPipeline', 'diffusersImagePipeline', {
+        model_type: { value: testCase.modelType },
+      }),
+      ...testCase.images,
+      node('action', 'modules.DiffusersImage', testCase.action, testCase.actionRole, {
+        prompt: { value: 'Preserve the subject' },
+        strength: { value: 0.65 },
+        conditioning_scale: { value: 0.9 },
+      }),
+    ];
+
+    const form = workflowInferenceModule.inferStudioFormFromWorkflow(nodes);
+    assert.equal(form.modelType, testCase.modelType);
+    assert.equal(form.mode, testCase.mode);
+    assert.deepEqual(form.referenceImages, [testCase.images[0].data.params.file.value]);
+    assert.equal(form.maskImage, testCase.expectedMask);
+    assert.equal(form.controlImage, testCase.images.at(-1).data.params.file.value);
+    assert.equal(form.strength, 0.65);
+    assert.equal(form.conditioningScale, 0.9);
+  }
 });
 
 test('Marigold depth exposes a generic source-to-prediction-map profile', () => {

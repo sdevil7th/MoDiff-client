@@ -128,7 +128,7 @@ export const SD15_CONTROLNET_CANNY_REQUIREMENT: StudioModelRequirement = {
   repo: SD15_CONTROLNET_CANNY_REPO,
   revision: SD15_CONTROLNET_CANNY_REVISION,
   kind: 'controlnet',
-  requiredForModes: ['control_image'],
+  requiredForModes: ['control_image', 'control_edit_image', 'control_inpaint'],
   description: 'Pinned safetensors ControlNet component for the generic SD1.5 control workflow.',
 };
 
@@ -138,7 +138,7 @@ export const SDXL_CONTROLNET_CANNY_REQUIREMENT: StudioModelRequirement = {
   repo: SDXL_CONTROLNET_CANNY_REPO,
   revision: SDXL_CONTROLNET_CANNY_REVISION,
   kind: 'controlnet',
-  requiredForModes: ['control_image'],
+  requiredForModes: ['control_image', 'control_edit_image', 'control_inpaint'],
   description: 'Pinned fp16 safetensors ControlNet component for the generic SDXL control workflow.',
 };
 
@@ -310,6 +310,8 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   inpaint: 'Edit a masked image region.',
   outpaint: 'Extend an image beyond its canvas.',
   control_image: 'Guide generation with a control image.',
+  control_edit_image: 'Edit a source image while following a separate control image.',
+  control_inpaint: 'Edit a masked source region while following a separate control image.',
   layer_decomposition: 'Separate an image into layers.',
   text_to_video: 'Generate a video from a prompt.',
   image_to_video: 'Animate a still image.',
@@ -1272,11 +1274,13 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     defaultRepo: FLUX_DEPTH_REPO,
     recommendedSteps: 50,
     recommendedGuidance: 30,
-    supportFlags: 41,
+    supportFlags: 43,
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.emergency, steps: 24 },
-    modes: ['control_image'],
+    modes: ['control_image', 'control_edit_image', 'control_inpaint'],
     modeRequirements: {
       control_image: { requiredImages: ['controlImage'] },
+      control_edit_image: { requiredImages: ['referenceImages', 'controlImage'] },
+      control_inpaint: { requiredImages: ['referenceImages', 'maskImage', 'controlImage'] },
     },
   },
   FluxCannyPipeline: {
@@ -1286,11 +1290,13 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     defaultRepo: FLUX_CANNY_REPO,
     recommendedSteps: 50,
     recommendedGuidance: 30,
-    supportFlags: 41,
+    supportFlags: 43,
     lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: DIRECT_OFFLOAD_SUPPORT.emergency, steps: 24 },
-    modes: ['control_image'],
+    modes: ['control_image', 'control_edit_image', 'control_inpaint'],
     modeRequirements: {
       control_image: { requiredImages: ['controlImage'] },
+      control_edit_image: { requiredImages: ['referenceImages', 'controlImage'] },
+      control_inpaint: { requiredImages: ['referenceImages', 'maskImage', 'controlImage'] },
     },
   },
   FluxReduxPipeline: {
@@ -1411,14 +1417,25 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       edit_image: { requiredImages: ['referenceImages'] },
     },
   },
-  StableDiffusionXLControlNetPipeline: controlImageProfile(
-    'Stable Diffusion XL',
-    SDXL_BASE_REPO,
-    SDXL_CONTROLNET_CANNY_REQUIREMENT,
-    50,
-    5,
-    0.5,
-  ),
+  StableDiffusionXLControlNetPipeline: {
+    ...controlImageProfile('Stable Diffusion XL', SDXL_BASE_REPO, SDXL_CONTROLNET_CANNY_REQUIREMENT, 50, 5, 0.5),
+    supportFlags: 11,
+    modes: ['control_image', 'control_edit_image', 'control_inpaint'],
+    modeRequirements: {
+      control_image: {
+        modelRequirements: [SDXL_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['controlImage'],
+      },
+      control_edit_image: {
+        modelRequirements: [SDXL_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['referenceImages', 'controlImage'],
+      },
+      control_inpaint: {
+        modelRequirements: [SDXL_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['referenceImages', 'maskImage', 'controlImage'],
+      },
+    },
+  },
   HunyuanDiTPipeline: planningImageProfile('Hunyuan-DiT', HUNYUAN_DIT_DISTILLED_REPO, 25, 5, 256, 'float16'),
   HunyuanDiTPAGPipeline: {
     family: 'Hunyuan-DiT',
@@ -1470,7 +1487,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedGuidance: 5,
     recommendedPagScale: 3,
     recommendedPagAdaptiveScale: 0,
-    supportFlags: 32,
+    supportFlags: 43,
     lowVram: {
       dtype: 'float16',
       autoOffload: true,
@@ -1479,10 +1496,18 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       width: 1024,
       height: 1024,
     },
-    modes: ['text_to_image', 'edit_image', 'inpaint'],
+    modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_edit_image'],
     modeRequirements: {
       edit_image: { requiredImages: ['referenceImages'] },
       inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+      control_image: {
+        modelRequirements: [SDXL_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['controlImage'],
+      },
+      control_edit_image: {
+        modelRequirements: [SDXL_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['referenceImages', 'controlImage'],
+      },
     },
   },
   PixArtSigmaPipeline: planningImageProfile('PixArt Sigma', PIXART_SIGMA_REPO, 20, 4.5, 300, 'float16'),
@@ -1634,13 +1659,21 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedGuidance: 7.5,
     supportFlags: 43,
     lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 20, width: 512, height: 512 },
-    modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
+    modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_edit_image', 'control_inpaint'],
     modeRequirements: {
       edit_image: { requiredImages: ['referenceImages'] },
       inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
       control_image: {
         modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
         requiredImages: ['controlImage'],
+      },
+      control_edit_image: {
+        modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['referenceImages', 'controlImage'],
+      },
+      control_inpaint: {
+        modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['referenceImages', 'maskImage', 'controlImage'],
       },
     },
   },
@@ -1684,12 +1717,20 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     recommendedGuidance: 7.5,
     recommendedPagScale: 3,
     recommendedPagAdaptiveScale: 0,
-    supportFlags: 35,
+    supportFlags: 43,
     lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 20, width: 512, height: 512 },
-    modes: ['text_to_image', 'edit_image', 'inpaint'],
+    modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_inpaint'],
     modeRequirements: {
       edit_image: { requiredImages: ['referenceImages'] },
       inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+      control_image: {
+        modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['controlImage'],
+      },
+      control_inpaint: {
+        modelRequirements: [SD15_CONTROLNET_CANNY_REQUIREMENT],
+        requiredImages: ['referenceImages', 'maskImage', 'controlImage'],
+      },
     },
   },
   MarigoldDepthPipeline: {
@@ -2136,24 +2177,24 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   FluxDepthPipeline: {
     modelType: 'FluxDepthPipeline',
-    supportedModes: ['control_image'],
+    supportedModes: ['control_image', 'control_edit_image', 'control_inpaint'],
     autoStatus: 'manual_only',
     minimum: 'Expert only until control-image support is validated.',
     recommended: '24 GB or more VRAM or a proven quantized artifact.',
     qualityDefaults: '1024x1024, 50 steps, embedded guidance 30 with a user-supplied depth map.',
     artifacts: [FLUX_DEPTH_REPO],
-    notes: 'Requires a prepared depth control image.',
+    notes: 'Supports generation, source-image editing, and masked editing with a prepared depth control image.',
     manualOnlyReason: 'FLUX Depth control input mapping needs local proof.',
   },
   FluxCannyPipeline: {
     modelType: 'FluxCannyPipeline',
-    supportedModes: ['control_image'],
+    supportedModes: ['control_image', 'control_edit_image', 'control_inpaint'],
     autoStatus: 'manual_only',
     minimum: 'Expert only until control-image support is validated.',
     recommended: '24 GB or more VRAM or a proven quantized artifact.',
     qualityDefaults: '1024x1024, 50 steps, embedded guidance 30 with a user-supplied Canny map.',
     artifacts: [FLUX_CANNY_REPO],
-    notes: 'Requires a prepared canny/control image.',
+    notes: 'Supports generation, source-image editing, and masked editing with a prepared Canny control image.',
     manualOnlyReason: 'FLUX Canny control input mapping needs local proof.',
   },
   FluxReduxPipeline: {
@@ -2214,13 +2255,13 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   StableDiffusionXLControlNetPipeline: {
     modelType: 'StableDiffusionXLControlNetPipeline',
-    supportedModes: ['control_image'],
+    supportedModes: ['control_image', 'control_edit_image', 'control_inpaint'],
     autoStatus: 'manual_only',
     minimum: EXPERT_PENDING_MINIMUM,
     recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
     qualityDefaults: '1024x1024, 50 steps, guidance 5, ControlNet scale 0.5.',
     artifacts: [SDXL_BASE_REPO, SDXL_CONTROLNET_CANNY_REPO],
-    notes: 'Pinned fp16 base and Canny ControlNet graph.',
+    notes: 'Pinned fp16 base and Canny ControlNet generation, source-edit, and masked-edit graphs.',
     manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
   HunyuanDiTPipeline: /* @__PURE__ */ pendingPlanningRequirement('HunyuanDiTPipeline'),
@@ -2249,13 +2290,13 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   StableDiffusionXLPAGPipeline: {
     modelType: 'StableDiffusionXLPAGPipeline',
-    supportedModes: ['text_to_image', 'edit_image', 'inpaint'],
+    supportedModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_edit_image'],
     autoStatus: 'manual_only',
     minimum: EXPERT_PENDING_MINIMUM,
     recommended: ACCELERATOR_OFFLOAD_RECOMMENDATION,
     qualityDefaults: '1024x1024, 50 steps, guidance 5, strength 0.8, PAG scale 3, adaptive scale 0.',
-    artifacts: [SDXL_BASE_REPO],
-    notes: 'Text, edit, and inpaint graphs expose PAG controls without an auxiliary artifact.',
+    artifacts: [SDXL_BASE_REPO, SDXL_CONTROLNET_CANNY_REPO],
+    notes: 'Text, edit, inpaint, ControlNet generation, and ControlNet source-edit graphs expose PAG controls.',
     manualOnlyReason: LIVE_QUALIFICATION_PENDING,
   },
   PixArtSigmaPipeline: /* @__PURE__ */ pendingPlanningRequirement('PixArtSigmaPipeline'),
@@ -2284,13 +2325,21 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   DreamLiteMobilePipeline: /* @__PURE__ */ pendingPlanningRequirement('DreamLiteMobilePipeline'),
   StableDiffusionPipeline: {
     modelType: 'StableDiffusionPipeline',
-    supportedModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
+    supportedModes: [
+      'text_to_image',
+      'edit_image',
+      'inpaint',
+      'control_image',
+      'control_edit_image',
+      'control_inpaint',
+    ],
     autoStatus: 'manual_only',
     minimum: 'CPU or accelerator execution with the pinned safetensors snapshot.',
     recommended: 'Use the reviewed 512px profile.',
     qualityDefaults: '512x512, 30 steps, guidance 7.5.',
     artifacts: [SD15_BASE_REPO, SD15_CONTROLNET_CANNY_REPO],
-    notes: 'Generic text-to-image, img2img, inpaint, and pinned Canny ControlNet graphs are available.',
+    notes:
+      'Generic text, image edit, inpaint, and pinned Canny ControlNet generation/edit/inpaint graphs are available.',
     manualOnlyReason: 'Remote quality review and Gallery qualification pending.',
   },
   LatentConsistencyModelPipeline: {
@@ -2306,13 +2355,14 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   StableDiffusionPAGPipeline: {
     modelType: 'StableDiffusionPAGPipeline',
-    supportedModes: ['text_to_image', 'edit_image', 'inpaint'],
+    supportedModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_inpaint'],
     autoStatus: 'manual_only',
     minimum: 'CPU or accelerator execution with the pinned safetensors snapshot.',
     recommended: 'Use the reviewed 512px profile with PAG scale 3.',
     qualityDefaults: '512x512, 30 steps, guidance 7.5, image strength 0.8, PAG scale 3.',
-    artifacts: [SD15_BASE_REPO],
-    notes: 'The generic text, image-to-image, and inpaint graphs expose PAG scale and adaptive scale.',
+    artifacts: [SD15_BASE_REPO, SD15_CONTROLNET_CANNY_REPO],
+    notes:
+      'The generic text, image edit, inpaint, ControlNet generation, and ControlNet inpaint graphs expose PAG controls.',
     manualOnlyReason: 'Remote quality review and Gallery qualification pending.',
   },
   MarigoldDepthPipeline: {
@@ -2538,6 +2588,10 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
 
   if (mode === 'control_image') {
     return 'QwenImageModularPipeline';
+  }
+
+  if (mode === 'control_edit_image' || mode === 'control_inpaint') {
+    return 'StableDiffusionPipeline';
   }
 
   if (mode === 'layer_decomposition') {

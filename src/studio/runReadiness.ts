@@ -1190,7 +1190,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
       }),
     );
   }
-  if (requirements.includes('controlImage') && !(form.controlImage.trim() || form.referenceImages[0]?.trim())) {
+  if (requirements.includes('controlImage') && !form.controlImage.trim()) {
     issues.push(
       issue({
         category: 'asset',
@@ -1262,7 +1262,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   }
 
   const modeNote = profile.modeRequirements?.[form.mode]?.note;
-  if (form.mode === 'inpaint' && !profile.supportsMask) {
+  if (requirements.includes('maskImage') && !profile.supportsMask) {
     const contractDetails = describeInpaintContract(profile);
     issues.push(
       issue({
@@ -1270,7 +1270,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         severity: 'error',
         blocking: true,
         action: 'open_setup',
-        message: 'Inpaint is blocked because the backend has no native mask execution contract.',
+        message: 'This task is blocked because the backend has no native mask execution contract.',
         details: contractDetails ?? modeNote,
       }),
     );

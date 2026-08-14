@@ -374,7 +374,7 @@ test('static Studio profiles bridge the six newly admitted generic Diffusers pai
   ]);
 
   const sd15Pag = modelProfilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPAGPipeline;
-  assert.deepEqual(sd15Pag.modes, ['text_to_image', 'edit_image', 'inpaint']);
+  assert.deepEqual(sd15Pag.modes, ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_inpaint']);
   assert.equal(sd15Pag.supportsImageInput, true);
   assert.equal(sd15Pag.supportsMask, true);
   assert.deepEqual(sd15Pag.modeRequirements.edit_image.requiredImages, ['referenceImages']);
@@ -383,7 +383,256 @@ test('static Studio profiles bridge the six newly admitted generic Diffusers pai
     'text_to_image',
     'edit_image',
     'inpaint',
+    'control_image',
+    'control_inpaint',
   ]);
+});
+
+test('the 12 reviewed control pairs expose exact generic media and execution contracts', () => {
+  const cases = [
+    {
+      modelType: 'StableDiffusionPAGPipeline',
+      mode: 'control_image',
+      specId: 'sd15-pag-controlnet-canny:control-image:v1',
+      profileId: 'sd15-pag-controlnet-canny:direct',
+      pipelineClass: 'StableDiffusionControlNetPAGPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+    },
+    {
+      modelType: 'StableDiffusionPAGPipeline',
+      mode: 'control_inpaint',
+      specId: 'sd15-pag-controlnet-canny:control-inpaint:v1',
+      profileId: 'sd15-pag-controlnet-canny:inpaint-direct',
+      pipelineClass: 'StableDiffusionControlNetPAGInpaintPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+    },
+    {
+      modelType: 'StableDiffusionXLPAGPipeline',
+      mode: 'control_image',
+      specId: 'sdxl-pag-controlnet-canny:control-image:v1',
+      profileId: 'sdxl-pag-controlnet-canny:direct',
+      pipelineClass: 'StableDiffusionXLControlNetPAGPipeline',
+      repo: modelProfilesModule.SDXL_BASE_REPO,
+    },
+    {
+      modelType: 'StableDiffusionXLPAGPipeline',
+      mode: 'control_edit_image',
+      specId: 'sdxl-pag-controlnet-canny:control-edit-image:v1',
+      profileId: 'sdxl-pag-controlnet-canny:img2img-direct',
+      pipelineClass: 'StableDiffusionXLControlNetPAGImg2ImgPipeline',
+      repo: modelProfilesModule.SDXL_BASE_REPO,
+    },
+    {
+      modelType: 'StableDiffusionPipeline',
+      mode: 'control_edit_image',
+      specId: 'sd15-controlnet-canny:control-edit-image:v1',
+      profileId: 'sd15-controlnet-canny:img2img-direct',
+      pipelineClass: 'StableDiffusionControlNetImg2ImgPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+    },
+    {
+      modelType: 'StableDiffusionPipeline',
+      mode: 'control_inpaint',
+      specId: 'sd15-controlnet-canny:control-inpaint:v1',
+      profileId: 'sd15-controlnet-canny:inpaint-direct',
+      pipelineClass: 'StableDiffusionControlNetInpaintPipeline',
+      repo: modelProfilesModule.SD15_BASE_REPO,
+    },
+    {
+      modelType: 'StableDiffusionXLControlNetPipeline',
+      mode: 'control_edit_image',
+      specId: 'sdxl-controlnet-canny:control-edit-image:v1',
+      profileId: 'sdxl-controlnet-canny:img2img-direct',
+      pipelineClass: 'StableDiffusionXLControlNetImg2ImgPipeline',
+      repo: modelProfilesModule.SDXL_BASE_REPO,
+    },
+    {
+      modelType: 'StableDiffusionXLControlNetPipeline',
+      mode: 'control_inpaint',
+      specId: 'sdxl-controlnet-canny:control-inpaint:v1',
+      profileId: 'sdxl-controlnet-canny:inpaint-direct',
+      pipelineClass: 'StableDiffusionXLControlNetInpaintPipeline',
+      repo: modelProfilesModule.SDXL_BASE_REPO,
+    },
+    {
+      modelType: 'FluxDepthPipeline',
+      mode: 'control_edit_image',
+      specId: 'flux-depth:control-edit-image:v1',
+      profileId: 'flux-depth:img2img-direct',
+      pipelineClass: 'FluxControlImg2ImgPipeline',
+      repo: modelProfilesModule.FLUX_DEPTH_REPO,
+    },
+    {
+      modelType: 'FluxDepthPipeline',
+      mode: 'control_inpaint',
+      specId: 'flux-depth:control-inpaint:v1',
+      profileId: 'flux-depth:inpaint-direct',
+      pipelineClass: 'FluxControlInpaintPipeline',
+      repo: modelProfilesModule.FLUX_DEPTH_REPO,
+    },
+    {
+      modelType: 'FluxCannyPipeline',
+      mode: 'control_edit_image',
+      specId: 'flux-canny:control-edit-image:v1',
+      profileId: 'flux-canny:img2img-direct',
+      pipelineClass: 'FluxControlImg2ImgPipeline',
+      repo: modelProfilesModule.FLUX_CANNY_REPO,
+    },
+    {
+      modelType: 'FluxCannyPipeline',
+      mode: 'control_inpaint',
+      specId: 'flux-canny:control-inpaint:v1',
+      profileId: 'flux-canny:inpaint-direct',
+      pipelineClass: 'FluxControlInpaintPipeline',
+      repo: modelProfilesModule.FLUX_CANNY_REPO,
+    },
+  ];
+  const requiredImages = (mode) =>
+    mode === 'control_image'
+      ? ['controlImage']
+      : mode === 'control_edit_image'
+        ? ['referenceImages', 'controlImage']
+        : ['referenceImages', 'maskImage', 'controlImage'];
+  const requiredMedia = (mode) => requiredImages(mode).map((field) => ({ kind: 'image', field, minimumCount: 1 }));
+  const capabilities = new Map();
+  const contracts = [];
+
+  for (const item of cases) {
+    const actionRole =
+      item.mode === 'control_image'
+        ? 'diffusersImageControl'
+        : item.mode === 'control_edit_image'
+          ? 'diffusersImageControlEdit'
+          : 'diffusersImageControlInpaint';
+    const action =
+      item.mode === 'control_image'
+        ? 'ControlGenerate'
+        : item.mode === 'control_edit_image'
+          ? 'ControlEdit'
+          : 'ControlInpaint';
+    const roles = [
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+      ['loadImage', 'modules.Image.Load', -520, 300],
+      ...(item.mode === 'control_inpaint' ? [['loadMask', 'modules.Image.Load', -520, 560]] : []),
+      ...(item.mode === 'control_image' ? [] : [['loadControlImage', 'modules.Image.Load', -520, 430]]),
+      [actionRole, `modules.DiffusersImage.${action}`, -120, -80],
+      ['preview', 'modules.Image.Preview', 320, -80],
+    ];
+    const sourceRole = item.mode === 'control_image' ? 'loadImage' : 'loadControlImage';
+    const edges = [
+      ['diffusersImagePipeline', 'pipeline', actionRole, 'pipeline'],
+      ...(item.mode === 'control_image' ? [] : [['loadImage', 'image', actionRole, 'image']]),
+      ...(item.mode === 'control_inpaint' ? [['loadMask', 'image', actionRole, 'mask_image']] : []),
+      [sourceRole, 'image', actionRole, 'control_image'],
+      [actionRole, 'images', 'preview', 'image'],
+    ];
+    const bindings = [
+      ['diffusersImagePipeline', 'model_id', 'artifact'],
+      ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+      ['diffusersImagePipeline', 'mode', 'mode'],
+      ...(item.mode === 'control_image'
+        ? [['loadImage', 'file', 'controlImage']]
+        : [
+            ['loadImage', 'file', 'referenceImages'],
+            ['loadControlImage', 'file', 'controlImage'],
+          ]),
+      ...(item.mode === 'control_inpaint' ? [['loadMask', 'file', 'maskImage']] : []),
+      [actionRole, 'prompt', 'prompt'],
+      [actionRole, 'conditioning_scale', 'conditioningScale'],
+    ];
+    const profile = {
+      id: item.profileId,
+      modes: [item.mode],
+      loader_module: 'modules.DiffusersImage',
+      loader_action: 'LoadPipeline',
+      execution_path: 'direct-diffusers-image',
+      pipeline_class: item.pipelineClass,
+      default_repo: item.repo,
+    };
+    const semanticSpec = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.specId,
+      modelType: item.modelType,
+      mode: item.mode,
+      executionProfileId: item.profileId,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: item.pipelineClass,
+      defaultRepo: item.repo,
+      roles,
+      edges,
+      bindings,
+      autoFields: [],
+      actions: [],
+    };
+    const spec = {
+      ...semanticSpec,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semanticSpec))}`,
+    };
+    assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], item.modelType, [item.mode], [profile]), [
+      spec,
+    ]);
+
+    const staticProfile = modelProfilesModule.STUDIO_MODEL_PROFILES[item.modelType];
+    assert.ok(staticProfile.modes.includes(item.mode), `${item.modelType}/${item.mode} is missing from static modes`);
+    assert.deepEqual(staticProfile.modeRequirements[item.mode].requiredImages, requiredImages(item.mode));
+    assert.equal(staticProfile.supportsControlImage, true);
+    assert.equal(staticProfile.supportsImageInput, true);
+    if (item.mode === 'control_inpaint') assert.equal(staticProfile.supportsMask, true);
+    assert.ok(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[item.modelType].supportedModes.includes(item.mode));
+
+    const capability = capabilities.get(item.modelType) ?? {
+      modelType: item.modelType,
+      studioExecutionSpecs: [],
+      executionProfiles: [],
+    };
+    capability.studioExecutionSpecs.push(spec);
+    capability.executionProfiles.push(profile);
+    capabilities.set(item.modelType, capability);
+
+    const semanticContract = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${item.specId}`,
+      modelType: item.modelType,
+      mode: item.mode,
+      mediaKind: 'image',
+      executionProfileId: item.profileId,
+      executionSpecId: item.specId,
+      executionSpecContentHash: spec.contentHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole: 'diffusersImagePipeline',
+      pipelineClass: item.pipelineClass,
+      defaultRepo: item.repo,
+      loaderRepositories: [item.repo],
+      requiredMedia: requiredMedia(item.mode),
+      output: {
+        mediaKind: 'image',
+        role: 'preview',
+        nodeKey: 'modules.Image.Preview',
+        inputHandle: 'image',
+      },
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    contracts.push({
+      ...semanticContract,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semanticContract))}`,
+    });
+  }
+
+  const parsed = contractsModule.parseTaskTemplateContracts(contracts, 1, [...capabilities.values()]);
+  assert.equal(parsed.length, 12);
+  assert.ok(parsed.every((contract) => contract.mediaKind === 'image' && contract.output.role === 'preview'));
+  assert.equal(modelProfilesModule.STUDIO_MODE_LABELS.control_edit_image, 'Control edit image');
+  assert.equal(modelProfilesModule.STUDIO_MODE_LABELS.control_inpaint, 'Control inpaint');
+  assert.match(modelProfilesModule.STUDIO_MODE_DESCRIPTIONS.control_edit_image, /source image.*control image/i);
+  assert.match(modelProfilesModule.STUDIO_MODE_DESCRIPTIONS.control_inpaint, /masked source.*control image/i);
+  assert.equal(modelProfilesModule.getDefaultModelForMode('control_edit_image'), 'StableDiffusionPipeline');
+  assert.equal(modelProfilesModule.getDefaultModelForMode('control_inpaint'), 'StableDiffusionPipeline');
 });
 
 test('contracts for backend model types unknown to this client are ignored', () => {

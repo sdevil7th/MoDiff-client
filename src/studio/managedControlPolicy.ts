@@ -521,6 +521,8 @@ export const MANAGED_CONTROL_POLICIES = {
   diffusersImageEdit: IMAGE_GENERATION_POLICY,
   diffusersImageInpaint: IMAGE_GENERATION_POLICY,
   diffusersImageControl: IMAGE_GENERATION_POLICY,
+  diffusersImageControlEdit: IMAGE_GENERATION_POLICY,
+  diffusersImageControlInpaint: IMAGE_GENERATION_POLICY,
   loadAdapter: LORA_POLICY,
   loadAudio: AUDIO_SOURCE_POLICY,
   loadReferenceAudio: REFERENCE_AUDIO_SOURCE_POLICY,
