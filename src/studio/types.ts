@@ -55,9 +55,12 @@ export type StudioModelType =
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
   | 'QwenImageEditPlusModularPipeline'
+  | 'QwenImageEditPipeline'
+  | 'QwenImageEditPlusPipeline'
   | 'QwenImageLayeredModularPipeline'
   | 'QwenImageControlNetPipeline'
   | 'QwenImageLayeredPipeline'
+  | 'ZImageInpaintPipeline'
   | 'WanVACEPipeline'
   | 'WanVideoPipeline'
   | 'WanImageToVideoPipeline'
@@ -68,6 +71,7 @@ export type StudioModelType =
   | 'LTXVideoPipeline'
   | 'LTXI2VLongMultiPromptPipeline'
   | 'LTX2ConditionPipeline'
+  | 'LTX2Pipeline'
   | 'HunyuanVideoFramepackPipeline'
   | 'StableVideoDiffusionPipeline'
   | 'AnimateDiffPipeline'
@@ -92,11 +96,13 @@ export type StudioModelType =
   | 'FluxDevPipeline'
   | 'FluxKreaPipeline'
   | 'FluxKontextPipeline'
+  | 'FluxKontextInpaintPipeline'
   | 'FluxFillPipeline'
   | 'FluxDepthPipeline'
   | 'FluxCannyPipeline'
   | 'FluxReduxPipeline'
   | 'Flux2KleinPipeline'
+  | 'Flux2KleinInpaintPipeline'
   | 'StableDiffusionXLPipeline'
   | 'StableDiffusionXLTurboPipeline'
   | 'StableDiffusionXLInstructPix2PixPipeline'
@@ -119,6 +125,8 @@ export type StudioModelType =
   | 'NucleusMoEImagePipeline'
   | 'AuraFlowPipeline'
   | 'ChromaPipeline'
+  | 'ChromaImg2ImgPipeline'
+  | 'ChromaInpaintPipeline'
   | 'CogView3PlusPipeline'
   | 'CogView4Pipeline'
   | 'ErnieImagePipeline'
@@ -410,6 +418,7 @@ export type StudioGraphRole =
   | 'qwenGenerate'
   | 'qwenInpaintPipeline'
   | 'qwenOutpaintCanvas'
+  | 'outpaintCanvas'
   | 'qwenInpaint'
   | 'prompt'
   | 'denoise'
@@ -923,6 +932,7 @@ export type StudioModelProfile = {
   supportsVideoMask?: boolean;
   supportsAudioInput?: boolean;
   outputKind?: 'image' | 'video' | 'audio' | 'json';
+  outputMedia?: Array<'image' | 'video' | 'audio' | 'json'>;
   modeOutputKinds?: Partial<Record<StudioMode, 'image' | 'video' | 'audio' | 'json'>>;
   recommendedFrames?: number;
   recommendedFps?: number;

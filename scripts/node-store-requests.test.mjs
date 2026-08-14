@@ -385,6 +385,36 @@ test('Janus capability parsing preserves mode outputs and fail-closed license co
   }
 });
 
+test('synchronized output media parses generically and fails closed', async () => {
+  const capability = {
+    modelType: 'LTX2Pipeline',
+    modes: ['text_to_video'],
+    runnableModes: ['text_to_video'],
+    outputKind: 'video',
+    outputMedia: ['video', 'audio'],
+    executionStatus: 'expert_only',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  };
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].outputMedia, ['video', 'audio']);
+
+  for (const outputMedia of [[], ['audio'], ['video', 'video'], ['video', 'waveform']]) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [{ ...capability, outputMedia }] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.deepEqual(state.studioModelCapabilities[0].outputMedia, ['video', 'audio']);
+  }
+});
+
 test('layer and dual-video capability metadata parses exactly and fails closed', async () => {
   const layered = {
     modelType: 'QwenImageLayeredPipeline',

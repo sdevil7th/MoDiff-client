@@ -390,6 +390,8 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
       return 'control_edit_image';
     if (roles.has('diffusersImageControl') || keys.has('modules.DiffusersImage.ControlGenerate'))
       return 'control_image';
+    if (roles.has('outpaintCanvas') || roles.has('qwenOutpaintCanvas') || keys.has(QWEN_OUTPAINT_CANVAS_NODE_KEY))
+      return 'outpaint';
     if (roles.has('diffusersImageInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
     if (roles.has('diffusersImageEdit') || keys.has('modules.DiffusersImage.Edit')) return 'edit_image';
     return 'text_to_image';
@@ -509,7 +511,10 @@ export function inferStudioFormFromWorkflow(
   );
   const outpaintNode = findNode(
     nodes,
-    (node) => node.data?.studioRole === 'qwenOutpaintCanvas' || nodeKey(node) === QWEN_OUTPAINT_CANVAS_NODE_KEY,
+    (node) =>
+      node.data?.studioRole === 'outpaintCanvas' ||
+      node.data?.studioRole === 'qwenOutpaintCanvas' ||
+      nodeKey(node) === QWEN_OUTPAINT_CANVAS_NODE_KEY,
   );
   const loadImages = findNodes(
     nodes,

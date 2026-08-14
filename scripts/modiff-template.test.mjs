@@ -820,6 +820,126 @@ test('direct Qwen and extended video profiles stay Expert-only with generic medi
   );
 });
 
+test('final direct image and LTX2 routes stay additive, Expert-only, and media truthful', () => {
+  const imageCases = [
+    ['QwenImageEditPipeline', ['edit_image'], profilesModule.QWEN_IMAGE_EDIT_REVISION],
+    [
+      'QwenImageEditPlusPipeline',
+      ['edit_image', 'multi_image_reference_edit'],
+      profilesModule.QWEN_IMAGE_EDIT_PLUS_REVISION,
+    ],
+    ['ZImageInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.Z_IMAGE_REVISION],
+    ['FluxKontextInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.FLUX_KONTEXT_REVISION],
+    ['Flux2KleinInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.FLUX2_KLEIN_REVISION],
+    ['ChromaImg2ImgPipeline', ['edit_image'], profilesModule.CHROMA1_HD_REVISION],
+    ['ChromaInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.CHROMA1_HD_REVISION],
+  ];
+  for (const [modelType, modes, revision] of imageCases) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    assert.deepEqual(profile.modes, modes);
+    assert.deepEqual(profile.revisionCandidates, [revision]);
+    assert.equal(profile.outputKind, 'image');
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profile.executionStatus, 'expert_only');
+    assert.equal(profile.qualificationStatus, 'graph-qualified-execution-pending');
+    assert.deepEqual(profile.qualifiedModes, []);
+    assert.equal(profile.autoEligible, false);
+    assert.equal(profile.templateEligible, true);
+    assert.equal(profile.galleryEligible, false);
+    assert.equal(profile.liveProof, false);
+    assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].autoStatus, 'manual_only');
+  }
+  for (const modelType of [
+    'ZImageInpaintPipeline',
+    'FluxKontextInpaintPipeline',
+    'Flux2KleinInpaintPipeline',
+    'ChromaInpaintPipeline',
+  ]) {
+    const requirements = profilesModule.STUDIO_MODEL_PROFILES[modelType].modeRequirements;
+    assert.deepEqual(requirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
+    assert.deepEqual(requirements.outpaint.requiredImages, ['referenceImages']);
+  }
+
+  const ltx2 = profilesModule.STUDIO_MODEL_PROFILES.LTX2Pipeline;
+  assert.deepEqual(ltx2.modes, ['text_to_video']);
+  assert.deepEqual(ltx2.outputMedia, ['video', 'audio']);
+  assert.equal(ltx2.outputKind, 'video');
+  assert.equal(ltx2.recommendedFrames, 121);
+  assert.equal(ltx2.recommendedFps, 24);
+  assert.equal(ltx2.recommendedSteps, 40);
+  assert.equal(ltx2.recommendedGuidance, 4);
+  assert.deepEqual(ltx2.revisionCandidates, [profilesModule.LTX2_REVISION]);
+  assert.equal(ltx2.catalogVisibility, 'workflowOnly');
+  assert.equal(ltx2.autoEligible, false);
+  assert.equal(ltx2.galleryEligible, false);
+
+  assert.deepEqual(profilesModule.STUDIO_MODEL_PROFILES.QwenImageEditModularPipeline.modes, [
+    'edit_image',
+    'inpaint',
+    'outpaint',
+  ]);
+  assert.deepEqual(profilesModule.STUDIO_MODEL_PROFILES.QwenImageEditPlusModularPipeline.modes, [
+    'edit_image',
+    'multi_image_reference_edit',
+  ]);
+  assert.deepEqual(profilesModule.STUDIO_MODEL_PROFILES.LTX2ConditionPipeline.modes, [
+    'text_to_video',
+    'image_to_video',
+    'video_to_video',
+    'reference_to_video',
+  ]);
+});
+
+test('generic direct outpaint and synchronized LTX2 workflows infer exact modes and fields', () => {
+  const node = (id, module, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module, action, studioRole, studioOwned: true, params },
+  });
+  const outpaint = workflowInferenceModule.inferStudioFormFromWorkflow([
+    node('pipeline', 'modules.DiffusersImage', 'LoadPipeline', 'diffusersImagePipeline', {
+      pipeline_class: { value: 'ChromaInpaintPipeline' },
+    }),
+    node('image', 'modules.Image', 'Load', 'loadImage', { file: { value: ['source.png'] } }),
+    node('canvas', 'modules.DiffusersImage', 'OutpaintCanvas', 'outpaintCanvas', {
+      left: { value: 320 },
+      right: { value: 128 },
+      top: { value: 16 },
+      bottom: { value: 32 },
+      overlap: { value: 20 },
+      feather: { value: 6 },
+      fill_color: { value: 'black' },
+    }),
+    node('inpaint', 'modules.DiffusersImage', 'Inpaint', 'diffusersImageInpaint', {
+      prompt: { value: 'Extend the stone terrace' },
+    }),
+  ]);
+  assert.equal(outpaint.modelType, 'ChromaInpaintPipeline');
+  assert.equal(outpaint.mode, 'outpaint');
+  assert.deepEqual(outpaint.referenceImages, ['source.png']);
+  assert.equal(outpaint.outpaintLeft, 320);
+  assert.equal(outpaint.outpaintRight, 128);
+  assert.equal(outpaint.outpaintOverlap, 20);
+  assert.equal(outpaint.prompt, 'Extend the stone terrace');
+
+  const ltx2 = workflowInferenceModule.inferStudioFormFromWorkflow([
+    node('pipeline', 'modules.DiffusersVideo', 'LoadPipeline', 'wanPipeline', {
+      pipeline_class: { value: 'LTX2Pipeline' },
+    }),
+    node('generate', 'modules.DiffusersVideo', 'GenerateVideoAudio', 'wanGenerate', {
+      prompt: { value: 'A synchronized musical clockwork scene' },
+      num_frames: { value: 121 },
+      frame_rate: { value: 24 },
+    }),
+    node('export', 'modules.Video', 'ExportWithAudio', 'videoExport'),
+  ]);
+  assert.equal(ltx2.modelType, 'LTX2Pipeline');
+  assert.equal(ltx2.mode, 'text_to_video');
+  assert.equal(ltx2.numFrames, 121);
+  assert.equal(ltx2.fps, 24);
+});
+
 test('direct layers and dual-video workflows infer generic fields and block incomplete inputs', () => {
   const node = (id, module, action, studioRole, params = {}) => ({
     id,

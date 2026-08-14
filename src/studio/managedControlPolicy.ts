@@ -367,6 +367,7 @@ const VIDEO_EXPORT_POLICY = {
   quality: advanced(),
   codec: advanced(),
   video: internal(),
+  audio: internal(),
   output: internal(),
 } satisfies RolePolicy;
 
@@ -408,6 +409,7 @@ export const MANAGED_CONTROL_POLICIES = {
   qwenGenerate: IMAGE_GENERATION_POLICY,
   qwenInpaintPipeline: PIPELINE_POLICY,
   qwenOutpaintCanvas: OUTPAINT_POLICY,
+  outpaintCanvas: OUTPAINT_POLICY,
   qwenInpaint: IMAGE_GENERATION_POLICY,
   prompt: {
     prompt: essential('prompt'),

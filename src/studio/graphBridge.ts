@@ -135,6 +135,7 @@ const NODE_KEYS = {
   qwenGenerate: QWEN_T2I_GENERATE_NODE_KEY,
   qwenInpaintPipeline: QWEN_INPAINT_PIPELINE_NODE_KEY,
   qwenOutpaintCanvas: QWEN_OUTPAINT_CANVAS_NODE_KEY,
+  outpaintCanvas: QWEN_OUTPAINT_CANVAS_NODE_KEY,
   qwenInpaint: QWEN_INPAINT_GENERATE_NODE_KEY,
   prompt: 'modules.ModularDiffusers.EncodePrompt',
   denoise: 'modules.ModularDiffusers.Denoise',
@@ -204,6 +205,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   qwenGenerate: { x: -120, y: -80 },
   qwenInpaintPipeline: { x: -520, y: -80 },
   qwenOutpaintCanvas: { x: -520, y: 300 },
+  outpaintCanvas: { x: -520, y: 300 },
   qwenInpaint: { x: -120, y: -80 },
   prompt: { x: -160, y: -160 },
   denoise: { x: 220, y: -80 },
@@ -1983,18 +1985,20 @@ function desiredDiffusersImageEdgeSpecs(binding: StudioGraphBinding) {
     loadControlImage,
     loadMask,
     qwenOutpaintCanvas,
+    outpaintCanvas,
     preview,
   } = binding.nodes;
+  const canvasNode = outpaintCanvas ?? qwenOutpaintCanvas;
   const targetNode = diffusersImageActionNode(binding);
   return [
     makeConnectionSpec(diffusersQuantization, ['quantization_config'], diffusersRecipe, ['quantization_config']),
     makeConnectionSpec(diffusersRecipe, ['execution_recipe'], diffusersImagePipeline, ['execution_recipe']),
     makeConnectionSpec(diffusersImagePipeline, ['pipeline'], targetNode, ['pipeline']),
     makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageEdit, IMAGE_HANDLE),
-    makeConnectionSpec(loadImage, IMAGE_HANDLE, qwenOutpaintCanvas, IMAGE_HANDLE),
-    makeConnectionSpec(qwenOutpaintCanvas, ['canvas'], diffusersImageInpaint, IMAGE_HANDLE),
-    makeConnectionSpec(qwenOutpaintCanvas, MASK_IMAGE_HANDLE, diffusersImageInpaint, MASK_IMAGE_HANDLE),
-    makeConnectionSpec(qwenOutpaintCanvas ? undefined : loadImage, IMAGE_HANDLE, diffusersImageInpaint, IMAGE_HANDLE),
+    makeConnectionSpec(loadImage, IMAGE_HANDLE, canvasNode, IMAGE_HANDLE),
+    makeConnectionSpec(canvasNode, ['canvas'], diffusersImageInpaint, IMAGE_HANDLE),
+    makeConnectionSpec(canvasNode, MASK_IMAGE_HANDLE, diffusersImageInpaint, MASK_IMAGE_HANDLE),
+    makeConnectionSpec(canvasNode ? undefined : loadImage, IMAGE_HANDLE, diffusersImageInpaint, IMAGE_HANDLE),
     makeConnectionSpec(loadMask, IMAGE_HANDLE, diffusersImageInpaint, MASK_IMAGE_HANDLE),
     makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControl, ['control_image', 'image']),
     makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControlEdit, IMAGE_HANDLE),
@@ -3488,6 +3492,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     controlnetModel,
     controlnet,
     qwenOutpaintCanvas,
+    outpaintCanvas,
     diffusersQuantization,
     diffusersRecipe,
     wanPipeline,
@@ -3767,16 +3772,17 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       setParamIfPresent(loadControlImage, ['file'], form.controlImage);
       setParamIfPresent(loadControlImage, ['alpha_channel'], form.alphaMode);
     }
-    if (qwenOutpaintCanvas) {
-      setParamIfPresent(qwenOutpaintCanvas, ['width'], form.width);
-      setParamIfPresent(qwenOutpaintCanvas, ['height'], form.height);
-      setParamIfPresent(qwenOutpaintCanvas, ['left'], form.outpaintLeft);
-      setParamIfPresent(qwenOutpaintCanvas, ['right'], form.outpaintRight);
-      setParamIfPresent(qwenOutpaintCanvas, ['top'], form.outpaintTop);
-      setParamIfPresent(qwenOutpaintCanvas, ['bottom'], form.outpaintBottom);
-      setParamIfPresent(qwenOutpaintCanvas, ['overlap'], form.outpaintOverlap);
-      setParamIfPresent(qwenOutpaintCanvas, ['feather'], form.outpaintFeather);
-      setParamIfPresent(qwenOutpaintCanvas, ['fill_color'], form.outpaintFillColor);
+    const canvasNode = outpaintCanvas ?? qwenOutpaintCanvas;
+    if (canvasNode) {
+      setParamIfPresent(canvasNode, ['width'], form.width);
+      setParamIfPresent(canvasNode, ['height'], form.height);
+      setParamIfPresent(canvasNode, ['left'], form.outpaintLeft);
+      setParamIfPresent(canvasNode, ['right'], form.outpaintRight);
+      setParamIfPresent(canvasNode, ['top'], form.outpaintTop);
+      setParamIfPresent(canvasNode, ['bottom'], form.outpaintBottom);
+      setParamIfPresent(canvasNode, ['overlap'], form.outpaintOverlap);
+      setParamIfPresent(canvasNode, ['feather'], form.outpaintFeather);
+      setParamIfPresent(canvasNode, ['fill_color'], form.outpaintFillColor);
     }
 
     setParamIfPresent(targetNode, ['prompt'], form.prompt);

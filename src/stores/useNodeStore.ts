@@ -594,6 +594,21 @@ function parseModeOutputKinds(value: unknown, modes: readonly string[]) {
   return { ...value } as StudioModelProfile['modeOutputKinds'];
 }
 
+function parseOutputMedia(value: unknown, outputKind: unknown) {
+  if (value === undefined) return undefined;
+  const mediaKinds = ['image', 'video', 'audio', 'json'];
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > mediaKinds.length ||
+    value.some((item) => !mediaKinds.includes(String(item))) ||
+    new Set(value).size !== value.length ||
+    (typeof outputKind === 'string' && !value.includes(outputKind))
+  )
+    invalidModelCapabilities();
+  return [...value] as NonNullable<StudioModelProfile['outputMedia']>;
+}
+
 function parseLicenseCompliance(value: unknown) {
   if (value === undefined) return undefined;
   if (
@@ -666,6 +681,7 @@ function parseStudioModelCapabilities(value: unknown) {
     const qualifiedModes =
       item.qualifiedModes === undefined ? undefined : parseRuntimeModes(item.qualifiedModes, isStudioMode);
     const modeOutputKinds = parseModeOutputKinds(item.modeOutputKinds, modes);
+    const outputMedia = parseOutputMedia(item.outputMedia, item.outputKind);
     const licenseCompliance = parseLicenseCompliance(item.licenseCompliance);
     const layerCount = parseLayerCount(item.layerCount);
     const layerResolutions = parseLayerResolutions(item.layerResolutions);
@@ -736,6 +752,7 @@ function parseStudioModelCapabilities(value: unknown) {
     if (runnableModes) item.runnableModes = runnableModes;
     if (qualifiedModes) item.qualifiedModes = qualifiedModes;
     if (modeOutputKinds) item.modeOutputKinds = modeOutputKinds;
+    if (outputMedia) item.outputMedia = outputMedia;
     if (licenseCompliance) item.licenseCompliance = licenseCompliance;
     if (layerCount) item.layerCount = layerCount;
     if (layerResolutions) item.layerResolutions = layerResolutions;

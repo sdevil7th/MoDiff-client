@@ -4836,6 +4836,392 @@ test('direct Qwen and extended video specs materialize their exact generic route
   }
 });
 
+test('final direct routes materialize generic edit, outpaint, and synchronized video-audio graphs', async () => {
+  const scalar = (value = null, type = 'string') => ({ type, display: 'text', value });
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const registry = {
+    'modules.DiffusersImage.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'LoadPipeline',
+      label: 'Load Image Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        pipeline_class: scalar(),
+        mode: scalar(),
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersImage.Edit': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'Edit',
+      label: 'Edit Image',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        image: input('image'),
+        prompt: scalar(),
+        strength: scalar(0.75, 'number'),
+        images: output('image'),
+      },
+    },
+    'modules.DiffusersImage.Inpaint': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'Inpaint',
+      label: 'Inpaint Image',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        image: input('image'),
+        mask_image: input('image'),
+        prompt: scalar(),
+        strength: scalar(0.75, 'number'),
+        images: output('image'),
+      },
+    },
+    'modules.DiffusersImage.OutpaintCanvas': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'OutpaintCanvas',
+      label: 'Outpaint Canvas',
+      category: 'Test',
+      params: {
+        image: input('image'),
+        width: scalar(1024, 'number'),
+        height: scalar(1024, 'number'),
+        left: scalar(0, 'number'),
+        right: scalar(0, 'number'),
+        top: scalar(0, 'number'),
+        bottom: scalar(0, 'number'),
+        overlap: scalar(32, 'number'),
+        feather: scalar(8, 'number'),
+        fill_color: scalar('black'),
+        canvas: output('image'),
+        mask_image: output('image'),
+      },
+    },
+    'modules.Image.Load': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Load',
+      label: 'Load Image',
+      category: 'Test',
+      params: { file: scalar(), alpha_channel: scalar(), image: output('image') },
+    },
+    'modules.Image.Preview': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      category: 'Test',
+      params: { image: input('image') },
+    },
+    'modules.DiffusersVideo.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'LoadPipeline',
+      label: 'Load Video Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        pipeline_class: { ...scalar(), onChange: 'update_video_contract' },
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersVideo.GenerateVideoAudio': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'GenerateVideoAudio',
+      label: 'Generate Video + Audio',
+      category: 'Test',
+      params: {
+        pipeline: { ...input('pipeline'), onSignal: 'update_video_contract' },
+        prompt: scalar(),
+        mode: { ...scalar(), onChange: 'update_video_contract' },
+        video_contract: scalar(),
+        num_frames: scalar(121, 'number'),
+        frame_rate: scalar(24, 'number'),
+        video_out: output('video'),
+        audio: output('audio'),
+      },
+    },
+    'modules.Video.ExportWithAudio': {
+      type: 'custom',
+      module: 'modules.Video',
+      action: 'ExportWithAudio',
+      label: 'Export Video + Audio',
+      category: 'Test',
+      params: { video: input('video'), audio: input('audio'), fps: scalar(24, 'number') },
+    },
+  };
+  const cases = [
+    {
+      modelType: 'QwenImageEditPipeline',
+      mode: 'edit_image',
+      id: 'qwen-image-edit-direct:edit-image:v1',
+      hash: 'studio-spec-v1-e2d95865',
+      profileId: 'qwen-image-edit:direct',
+      repo: 'Qwen/Qwen-Image-Edit',
+      revision: 'ac7f9318f633fc4b5778c59367c8128225f1e3de',
+      roles: [
+        ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+        ['loadImage', 'modules.Image.Load', -520, 300],
+        ['diffusersImageEdit', 'modules.DiffusersImage.Edit', -120, -80],
+        ['preview', 'modules.Image.Preview', 980, -80],
+      ],
+      edges: [
+        ['diffusersImagePipeline', 'pipeline', 'diffusersImageEdit', 'pipeline'],
+        ['loadImage', 'image', 'diffusersImageEdit', 'image'],
+        ['diffusersImageEdit', 'images', 'preview', 'image'],
+      ],
+      bindings: [
+        ['diffusersImagePipeline', 'model_id', 'artifact'],
+        ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+        ['diffusersImagePipeline', 'revision', 'defaultRevision'],
+        ['loadImage', 'file', 'referenceImages'],
+        ['diffusersImageEdit', 'prompt', 'prompt'],
+        ['diffusersImageEdit', 'strength', 'strength'],
+      ],
+    },
+    {
+      modelType: 'ChromaInpaintPipeline',
+      mode: 'outpaint',
+      id: 'chroma1-hd-inpaint:outpaint:v1',
+      hash: 'studio-spec-v1-048def62',
+      profileId: 'chroma1-hd-inpaint:direct',
+      repo: 'lodestones/Chroma1-HD',
+      revision: '0e0c60ece1e82b17cb7f77342d765ba5024c40c0',
+      roles: [
+        ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+        ['loadImage', 'modules.Image.Load', -520, 300],
+        ['outpaintCanvas', 'modules.DiffusersImage.OutpaintCanvas', -520, 300],
+        ['diffusersImageInpaint', 'modules.DiffusersImage.Inpaint', -120, -80],
+        ['preview', 'modules.Image.Preview', 980, -80],
+      ],
+      edges: [
+        ['diffusersImagePipeline', 'pipeline', 'diffusersImageInpaint', 'pipeline'],
+        ['loadImage', 'image', 'outpaintCanvas', 'image'],
+        ['outpaintCanvas', 'canvas', 'diffusersImageInpaint', 'image'],
+        ['outpaintCanvas', 'mask_image', 'diffusersImageInpaint', 'mask_image'],
+        ['diffusersImageInpaint', 'images', 'preview', 'image'],
+      ],
+      bindings: [
+        ['diffusersImagePipeline', 'model_id', 'artifact'],
+        ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+        ['diffusersImagePipeline', 'revision', 'defaultRevision'],
+        ['loadImage', 'file', 'referenceImages'],
+        ['outpaintCanvas', 'width', 'width'],
+        ['outpaintCanvas', 'height', 'height'],
+        ['outpaintCanvas', 'left', 'outpaintLeft'],
+        ['outpaintCanvas', 'right', 'outpaintRight'],
+        ['outpaintCanvas', 'top', 'outpaintTop'],
+        ['outpaintCanvas', 'bottom', 'outpaintBottom'],
+        ['outpaintCanvas', 'overlap', 'outpaintOverlap'],
+        ['outpaintCanvas', 'feather', 'outpaintFeather'],
+        ['outpaintCanvas', 'fill_color', 'outpaintFillColor'],
+        ['diffusersImageInpaint', 'prompt', 'prompt'],
+        ['diffusersImageInpaint', 'strength', 'strength'],
+      ],
+    },
+    {
+      modelType: 'LTX2Pipeline',
+      mode: 'text_to_video',
+      id: 'ltx2-standard:text-to-video:v1',
+      hash: 'studio-spec-v1-b3b8990c',
+      profileId: 'ltx2-standard:direct',
+      repo: 'Lightricks/LTX-2',
+      revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a',
+      roles: [
+        ['wanPipeline', 'modules.DiffusersVideo.LoadPipeline', -520, -80],
+        ['wanGenerate', 'modules.DiffusersVideo.GenerateVideoAudio', 220, -80],
+        ['videoExport', 'modules.Video.ExportWithAudio', 640, -80],
+      ],
+      edges: [
+        ['wanPipeline', 'pipeline', 'wanGenerate', 'pipeline'],
+        ['wanGenerate', 'video_out', 'videoExport', 'video'],
+        ['wanGenerate', 'audio', 'videoExport', 'audio'],
+      ],
+      bindings: [
+        ['wanPipeline', 'model_id', 'artifact'],
+        ['wanPipeline', 'pipeline_class', 'pipelineClass'],
+        ['wanPipeline', 'revision', 'defaultRevision'],
+        ['wanGenerate', 'prompt', 'prompt'],
+        ['wanGenerate', 'mode', 'mode'],
+        ['wanGenerate', 'num_frames', 'numFrames'],
+        ['wanGenerate', 'frame_rate', 'fps'],
+        ['videoExport', 'fps', 'fps'],
+      ],
+    },
+  ];
+  const capabilities = cases.map((item) => {
+    const video = item.modelType === 'LTX2Pipeline';
+    const profile = {
+      id: item.profileId,
+      model_type: item.modelType,
+      modes: [item.mode],
+      loader_module: video ? 'modules.DiffusersVideo' : 'modules.DiffusersImage',
+      loader_action: 'LoadPipeline',
+      execution_path: video ? 'direct-diffusers-video' : 'direct-diffusers-image',
+      pipeline_class: item.modelType,
+      default_repo: item.repo,
+      supported_offload_modes: ['none', 'model_cpu', 'sequential_cpu'],
+      retry_offload_modes: ['model_cpu', 'sequential_cpu'],
+    };
+    return {
+      modelType: item.modelType,
+      modes: [item.mode],
+      runnableModes: [item.mode],
+      modeRequirements: {
+        [item.mode]: {
+          requiredImages: video ? [] : ['referenceImages'],
+        },
+      },
+      revisionCandidates: [item.revision],
+      executionProfiles: [profile],
+      studioExecutionSpecSchemaVersion: 1,
+      studioExecutionSpecModes: [item.mode],
+      studioExecutionSpecs: [
+        {
+          schemaVersion: 1,
+          canonicalizationVersion: 1,
+          id: item.id,
+          modelType: item.modelType,
+          mode: item.mode,
+          executionProfileId: item.profileId,
+          loaderModule: profile.loader_module,
+          loaderAction: profile.loader_action,
+          executionPath: profile.execution_path,
+          pipelineClass: item.modelType,
+          defaultRepo: item.repo,
+          roles: item.roles,
+          edges: item.edges,
+          bindings: item.bindings,
+          autoFields: [],
+          actions: [],
+          contentHash: item.hash,
+        },
+      ],
+    };
+  });
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const nativeWebSocket = globalThis.WebSocket;
+  const nativeFetch = globalThis.fetch;
+  globalThis.WebSocket = undefined;
+  globalThis.fetch = async (_input, init) => {
+    const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    if (payload?.fn === 'update_video_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const pipelineNode = flowStoreModule.useFlowStore
+          .getState()
+          .nodes.find((nodeItem) => nodeItem.id === payload.node);
+        flowStoreModule.useFlowStore.getState().setParam(
+          payload.node,
+          'pipeline',
+          {
+            direction: 'output',
+            value: {
+              pipelineClass: pipelineNode?.data.params.pipeline_class.value,
+              modes: ['text_to_video'],
+            },
+          },
+          'signal',
+        );
+      } else if (payload.action === 'GenerateVideoAudio') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'mode', signal?.value?.modes?.[0]);
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'video_contract', signal?.value);
+      }
+    }
+    return new Response(JSON.stringify({ error: false, nodes: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: registry,
+      studioModelCapabilities: capabilities,
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    for (const item of cases) {
+      flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+      const video = item.modelType === 'LTX2Pipeline';
+      const outpaint = item.mode === 'outpaint';
+      const form = {
+        ...previousForm,
+        modelType: item.modelType,
+        mode: item.mode,
+        resourceMode: 'expert',
+        quantizationMode: 'none',
+        prompt: 'Preserve the sealed generic route',
+        referenceImages: video ? [] : ['source.png'],
+        width: video ? 768 : 1024,
+        height: video ? 512 : 1024,
+        numFrames: 121,
+        fps: 24,
+        outpaintLeft: 128,
+        outpaintRight: 256,
+        outpaintTop: 32,
+        outpaintBottom: 64,
+        outpaintOverlap: 24,
+        outpaintFeather: 8,
+        outpaintFillColor: 'black',
+      };
+      studioStoreModule.useStudioStore.setState({ form, graphBinding: null, autoResourcePlan: null });
+      await graphBridge.createOrUpdateStudioGraph(form);
+      const binding = studioStoreModule.useStudioStore.getState().graphBinding;
+      const nodes = flowStoreModule.useFlowStore.getState().nodes;
+      const byRole = (role) => nodes.find((nodeItem) => nodeItem.id === binding.nodes[role]);
+      const actualTopology = flowStoreModule.useFlowStore
+        .getState()
+        .edges.map((itemEdge) => [
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.source)?.[0],
+          itemEdge.sourceHandle,
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.target)?.[0],
+          itemEdge.targetHandle,
+        ])
+        .sort();
+      assert.equal(binding.executionSpec.id, item.id);
+      assert.equal(binding.executionSpec.contentHash, item.hash);
+      assert.deepEqual(actualTopology, item.edges.map((edgeRow) => [...edgeRow]).sort());
+      assert.equal(byRole(video ? 'wanPipeline' : 'diffusersImagePipeline').data.params.revision.value, item.revision);
+      if (outpaint) {
+        assert.equal(byRole('outpaintCanvas').data.params.left.value, 128);
+        assert.equal(byRole('outpaintCanvas').data.params.right.value, 256);
+        assert.equal(byRole('outpaintCanvas').data.params.feather.value, 8);
+      }
+      if (video) {
+        assert.equal(byRole('wanGenerate').data.action, 'GenerateVideoAudio');
+        assert.equal(byRole('videoExport').data.action, 'ExportWithAudio');
+        assert.ok(
+          item.edges.some(
+            ([source, handle, target]) => source === 'wanGenerate' && handle === 'audio' && target === 'videoExport',
+          ),
+        );
+      }
+      assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+    }
+  } finally {
+    globalThis.WebSocket = nativeWebSocket;
+    globalThis.fetch = nativeFetch;
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: previousNodesState.nodesRegistry,
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm, graphBinding: null, autoResourcePlan: null });
+  }
+});
+
 test('managed video extensions re-seal only after their exact route is complete', () => {
   const input = (type) => ({ type, display: 'input' });
   const output = (type) => ({ type, display: 'output' });

@@ -13,6 +13,9 @@ export const QWEN_IMAGE_2512_REPO = 'Qwen/Qwen-Image-2512';
 export const QWEN_IMAGE_2512_REVISION = '25468b98e3276ca6700de15c6628e51b7de54a26';
 export const QWEN_IMAGE_LAYERED_REPO = 'Qwen/Qwen-Image-Layered';
 export const QWEN_IMAGE_LAYERED_REVISION = '8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf';
+export const QWEN_IMAGE_EDIT_REVISION = 'ac7f9318f633fc4b5778c59367c8128225f1e3de';
+export const QWEN_IMAGE_EDIT_PLUS_REVISION = '6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9';
+export const Z_IMAGE_REVISION = 'f332072aa78be7aecdf3ee76d5c247082da564a6';
 export const QWEN_IMAGE_2512_PREQUANTIZED_REPO = 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit';
 export const QWEN_IMAGE_EDIT_PREQUANTIZED_REPO = 'ovedrive/qwen-image-edit-4bit';
 export const QWEN_LOW_VRAM_QUANTIZATION_MODE = 'bnb_4bit';
@@ -65,11 +68,13 @@ export const FLUX_DEV_REPO = 'black-forest-labs/FLUX.1-dev';
 export const FLUX_DEV_REVISION = '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21';
 export const FLUX_KREA_REPO = 'black-forest-labs/FLUX.1-Krea-dev';
 export const FLUX_KONTEXT_REPO = 'black-forest-labs/FLUX.1-Kontext-dev';
+export const FLUX_KONTEXT_REVISION = '24e9dedc4ef646698dc8eb4e18ae2cec3c9fea0d';
 export const FLUX_FILL_REPO = 'black-forest-labs/FLUX.1-Fill-dev';
 export const FLUX_DEPTH_REPO = 'black-forest-labs/FLUX.1-Depth-dev';
 export const FLUX_CANNY_REPO = 'black-forest-labs/FLUX.1-Canny-dev';
 export const FLUX_REDUX_REPO = 'black-forest-labs/FLUX.1-Redux-dev';
 export const FLUX2_KLEIN_REPO = 'black-forest-labs/FLUX.2-klein-4B';
+export const FLUX2_KLEIN_REVISION = 'e7b7dc27f91deacad38e78976d1f2b499d76a294';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
@@ -99,6 +104,7 @@ export const PRX_REPO = 'Photoroom/prx-512-t2i-sft';
 export const NUCLEUS_IMAGE_REPO = 'NucleusAI/Nucleus-Image';
 export const AURAFLOW_V03_REPO = 'fal/AuraFlow-v0.3';
 export const CHROMA1_HD_REPO = 'lodestones/Chroma1-HD';
+export const CHROMA1_HD_REVISION = '0e0c60ece1e82b17cb7f77342d765ba5024c40c0';
 export const COGVIEW3_PLUS_REPO = 'zai-org/CogView3-Plus-3B';
 export const COGVIEW4_6B_REPO = 'zai-org/CogView4-6B';
 export const ERNIE_IMAGE_TURBO_REPO = 'baidu/ERNIE-Image-Turbo';
@@ -309,6 +315,14 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'DDPM CIFAR-10 32x32',
   'DDIM CIFAR-10 32x32',
   'Consistency Model ImageNet 64x64',
+  'Qwen Image Edit (Standard Diffusers)',
+  'Qwen Image Edit Plus (Standard Diffusers)',
+  'Z-Image Inpaint (Standard Diffusers)',
+  'FLUX.1 Kontext Inpaint (Standard Diffusers)',
+  'FLUX.2 Klein Inpaint (Standard Diffusers)',
+  'Chroma Image-to-Image (Standard Diffusers)',
+  'Chroma1-HD Inpaint (Standard Diffusers)',
+  'LTX-2 Standard Video + Audio',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -365,6 +379,7 @@ export const WAN_ANIMATE_REPO = 'Wan-AI/Wan2.2-Animate-14B-Diffusers';
 export const WAN_FLF_REPO = 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers';
 export const LTX_VIDEO_REPO = 'Lightricks/LTX-Video-0.9.8-13B-distilled';
 export const LTX2_REPO = 'Lightricks/LTX-2';
+export const LTX2_REVISION = '47da56e2ad66ce4125a9922b4a8826bf407f9d0a';
 export const FRAMEPACK_REPO = 'lllyasviel/FramePackI2V_HY';
 export const FRAMEPACK_BASE_REPO = 'hunyuanvideo-community/HunyuanVideo';
 export const FRAMEPACK_BASE_REVISION = 'e8c2aaa66fe3742a32c11a6766aecbf07c56e773';
@@ -652,6 +667,68 @@ function expertVideoProfile(
     modes,
     modeRequirements,
     supportsVideoInput,
+  };
+}
+
+function expertImageRouteProfile({
+  family,
+  defaultRepo,
+  revision,
+  modes,
+  modeRequirements,
+  recommendedSteps,
+  recommendedGuidance,
+  recommendedMaxSequenceLength,
+  supportFlags,
+  lowVramSide,
+  lowVramSteps = recommendedSteps,
+  lowVramOffload,
+  offloadSupport = SEQUENTIAL_DIRECT_OFFLOAD_SUPPORT,
+  supportsNegativePrompt = true,
+  alternateArtifact,
+}: {
+  family: StudioModelProfile['family'];
+  defaultRepo: string;
+  revision: string;
+  modes: StudioMode[];
+  modeRequirements: StudioModelProfile['modeRequirements'];
+  recommendedSteps: number;
+  recommendedGuidance: number;
+  recommendedMaxSequenceLength?: number;
+  supportFlags: number;
+  lowVramSide: number;
+  lowVramSteps?: number;
+  lowVramOffload: StudioFormState['offloadMode'];
+  offloadSupport?: StudioModelProfile['offloadSupport'];
+  supportsNegativePrompt?: boolean;
+  alternateArtifact?: string;
+}): StudioModelProfileSource {
+  return {
+    ...EXPERT_WORKFLOW_PENDING,
+    family,
+    surfaceCategory: 'Image Edit',
+    defaultRepo,
+    artifactLabel: 'Immutable safetensors Diffusers repo',
+    ...(alternateArtifact ? { alternateArtifact } : {}),
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps,
+    recommendedGuidance,
+    ...(recommendedMaxSequenceLength ? { recommendedMaxSequenceLength } : {}),
+    supportFlags,
+    supportsNegativePrompt,
+    outputKind: 'image',
+    offloadSupport,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: lowVramOffload,
+      steps: lowVramSteps,
+      width: lowVramSide,
+      height: lowVramSide,
+    },
+    modes,
+    modeRequirements,
+    revisionCandidates: [revision],
   };
 }
 
@@ -2090,6 +2167,143 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1, width: 64, height: 64 },
     modes: ['unconditional_image'],
   },
+  QwenImageEditPipeline: expertImageRouteProfile({
+    family: 'Qwen Image',
+    defaultRepo: 'Qwen/Qwen-Image-Edit',
+    revision: QWEN_IMAGE_EDIT_REVISION,
+    modes: ['edit_image'],
+    modeRequirements: { edit_image: { requiredImages: ['referenceImages'] } },
+    recommendedSteps: 40,
+    recommendedGuidance: 4,
+    supportFlags: 33,
+    lowVramSide: 768,
+    lowVramSteps: 24,
+    lowVramOffload: 'sequential_cpu',
+  }),
+  QwenImageEditPlusPipeline: expertImageRouteProfile({
+    family: 'Qwen Image',
+    defaultRepo: 'Qwen/Qwen-Image-Edit-2511',
+    revision: QWEN_IMAGE_EDIT_PLUS_REVISION,
+    modes: ['edit_image', 'multi_image_reference_edit'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'] },
+      multi_image_reference_edit: { requiredImages: ['referenceImages'] },
+    },
+    recommendedSteps: 40,
+    recommendedGuidance: 4,
+    supportFlags: 37,
+    lowVramSide: 768,
+    lowVramSteps: 24,
+    lowVramOffload: 'sequential_cpu',
+  }),
+  ZImageInpaintPipeline: expertImageRouteProfile({
+    family: 'Z-Image',
+    defaultRepo: 'Tongyi-MAI/Z-Image-Turbo',
+    revision: Z_IMAGE_REVISION,
+    modes: ['inpaint', 'outpaint'],
+    modeRequirements: {
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+      outpaint: { requiredImages: ['referenceImages'] },
+    },
+    recommendedSteps: 8,
+    recommendedGuidance: 1,
+    supportFlags: 35,
+    lowVramSide: 1024,
+    lowVramOffload: 'model_cpu',
+    offloadSupport: {
+      modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
+      default: 'model_cpu',
+      lowVram: 'model_cpu',
+      emergency: 'group_disk',
+    },
+  }),
+  FluxKontextInpaintPipeline: expertImageRouteProfile({
+    family: 'FLUX Image',
+    defaultRepo: FLUX_KONTEXT_REPO,
+    revision: FLUX_KONTEXT_REVISION,
+    modes: ['inpaint', 'outpaint'],
+    modeRequirements: {
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+      outpaint: { requiredImages: ['referenceImages'] },
+    },
+    recommendedSteps: 24,
+    recommendedGuidance: 3.5,
+    supportFlags: 35,
+    lowVramSide: 768,
+    lowVramOffload: 'sequential_cpu',
+    alternateArtifact: FLUX_KONTEXT_NVFP4_REPO,
+    offloadSupport: {
+      modes: ['model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'],
+      default: 'model_cpu',
+      lowVram: 'sequential_cpu',
+      emergency: 'group_disk',
+    },
+  }),
+  Flux2KleinInpaintPipeline: expertImageRouteProfile({
+    family: 'FLUX Image',
+    defaultRepo: FLUX2_KLEIN_REPO,
+    revision: FLUX2_KLEIN_REVISION,
+    modes: ['inpaint', 'outpaint'],
+    modeRequirements: {
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+      outpaint: { requiredImages: ['referenceImages'] },
+    },
+    recommendedSteps: 4,
+    recommendedGuidance: 1,
+    supportFlags: 35,
+    supportsNegativePrompt: false,
+    lowVramSide: 768,
+    lowVramOffload: 'model_cpu',
+    offloadSupport: {
+      modes: ['model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'],
+      default: 'model_cpu',
+      lowVram: 'model_cpu',
+      emergency: 'group_disk',
+    },
+  }),
+  ChromaImg2ImgPipeline: expertImageRouteProfile({
+    family: 'Chroma',
+    defaultRepo: CHROMA1_HD_REPO,
+    revision: CHROMA1_HD_REVISION,
+    modes: ['edit_image'],
+    modeRequirements: { edit_image: { requiredImages: ['referenceImages'] } },
+    recommendedSteps: 35,
+    recommendedGuidance: 5,
+    recommendedMaxSequenceLength: 512,
+    supportFlags: 1,
+    lowVramSide: 1024,
+    lowVramOffload: 'sequential_cpu',
+  }),
+  ChromaInpaintPipeline: expertImageRouteProfile({
+    family: 'Chroma',
+    defaultRepo: CHROMA1_HD_REPO,
+    revision: CHROMA1_HD_REVISION,
+    modes: ['inpaint', 'outpaint'],
+    modeRequirements: {
+      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+      outpaint: { requiredImages: ['referenceImages'] },
+    },
+    recommendedSteps: 28,
+    recommendedGuidance: 7,
+    recommendedMaxSequenceLength: 512,
+    supportFlags: 3,
+    lowVramSide: 1024,
+    lowVramOffload: 'sequential_cpu',
+  }),
+  LTX2Pipeline: {
+    ...expertVideoProfile(
+      planningVideoProfile('LTX Video', LTX2_REPO, ['text_to_video'], {}, 0),
+      ['text_to_video'],
+      {},
+    ),
+    displayName: 'LTX-2 synchronized video + audio',
+    artifactLabel: 'Immutable Diffusers video-and-audio repo',
+    recommendedSteps: 40,
+    recommendedGuidance: 4,
+    recommendedFrames: 121,
+    outputMedia: ['video', 'audio'],
+    revisionCandidates: [LTX2_REVISION],
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 export const STUDIO_MODEL_PROFILES = Object.fromEntries(
@@ -2660,6 +2874,14 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Bounded local execution passed.',
     manualOnlyReason: 'Remote output and Gallery qualification pending.',
   },
+  QwenImageEditPipeline: /* @__PURE__ */ pendingPlanningRequirement('QwenImageEditPipeline'),
+  QwenImageEditPlusPipeline: /* @__PURE__ */ pendingPlanningRequirement('QwenImageEditPlusPipeline'),
+  ZImageInpaintPipeline: /* @__PURE__ */ pendingPlanningRequirement('ZImageInpaintPipeline'),
+  FluxKontextInpaintPipeline: /* @__PURE__ */ pendingPlanningRequirement('FluxKontextInpaintPipeline'),
+  Flux2KleinInpaintPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux2KleinInpaintPipeline'),
+  ChromaImg2ImgPipeline: /* @__PURE__ */ pendingPlanningRequirement('ChromaImg2ImgPipeline'),
+  ChromaInpaintPipeline: /* @__PURE__ */ pendingPlanningRequirement('ChromaInpaintPipeline'),
+  LTX2Pipeline: /* @__PURE__ */ pendingPlanningRequirement('LTX2Pipeline'),
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {

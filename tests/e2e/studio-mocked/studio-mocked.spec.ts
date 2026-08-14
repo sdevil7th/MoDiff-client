@@ -6069,6 +6069,25 @@ test('mocked Expert Model Manager exposes diagnostics and hidden profiles', asyn
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const finalDirectProfiles = [
+    ['QwenImageEditPipeline', 'Qwen Image Edit (Standard Diffusers)'],
+    ['QwenImageEditPlusPipeline', 'Qwen Image Edit Plus (Standard Diffusers)'],
+    ['ZImageInpaintPipeline', 'Z-Image Inpaint (Standard Diffusers)'],
+    ['FluxKontextInpaintPipeline', 'FLUX.1 Kontext Inpaint (Standard Diffusers)'],
+    ['Flux2KleinInpaintPipeline', 'FLUX.2 Klein Inpaint (Standard Diffusers)'],
+    ['ChromaImg2ImgPipeline', 'Chroma Image-to-Image (Standard Diffusers)'],
+    ['ChromaInpaintPipeline', 'Chroma1-HD Inpaint (Standard Diffusers)'],
+    ['LTX2Pipeline', 'LTX-2 Standard Video + Audio'],
+  ] as const;
+
+  await setStudioViewMode(page, 'auto');
+  await page.getByTestId('topbar-models').click();
+  const autoDialog = page.getByTestId('model-manager-dialog');
+  await expect(autoDialog).toBeVisible();
+  for (const [modelType] of finalDirectProfiles) {
+    await expect(autoDialog.getByTestId(`model-manager-supported-${modelType}`)).toHaveCount(0);
+  }
+  await autoDialog.getByTestId('model-manager-close').click();
   await setStudioViewMode(page, 'expert');
 
   await page.getByTestId('topbar-models').click();
@@ -6076,6 +6095,11 @@ test('mocked Expert Model Manager exposes diagnostics and hidden profiles', asyn
   await expect(expertDialog).toBeVisible();
   await expect(expertDialog.getByTestId('model-manager-diagnostics')).toBeVisible();
   await expect(expertDialog.getByTestId('model-manager-supported-FluxDevPipeline')).toBeVisible();
+  for (const [modelType, label] of finalDirectProfiles) {
+    const row = expertDialog.getByTestId(`model-manager-supported-${modelType}`);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(label);
+  }
 });
 
 test('mocked workflow artifact requirements are contextual and role grouped', async ({ page }) => {

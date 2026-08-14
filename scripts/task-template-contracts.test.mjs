@@ -1085,6 +1085,404 @@ test('the seven direct Qwen and video pairs preserve exact Expert task contracts
   );
 });
 
+test('the final 13 direct image and synchronized LTX2 pairs preserve sealed contracts', () => {
+  const autoFields = [
+    'resolvedArtifact',
+    'artifact',
+    'installTarget.repo',
+    'modelRepo',
+    'pipelineClass',
+    'dtype',
+    'offloadMode',
+    'quantizedComponents',
+    'attentionBackend',
+    'regionalCompile',
+    'denoiserCache',
+    'layerwiseCasting',
+    'channelsLast',
+  ];
+  const runtimeRoles = [
+    ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+    ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+  ];
+  const runtimeEdges = [['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config']];
+  const runtimeBindings = (video = false) => [
+    ['diffusersQuantization', 'backend', 'quantizationMode'],
+    ['diffusersQuantization', 'components', 'quantizedComponents'],
+    ['diffusersQuantization', 'dtype', 'dtype'],
+    ['diffusersRecipe', 'device_map', 'deviceMapNone'],
+    ['diffusersRecipe', 'offload_mode', 'offloadMode'],
+    ['diffusersRecipe', 'device', 'device'],
+    ['diffusersRecipe', 'attention_backend', video ? 'nativeMath' : 'attentionBackend'],
+    ['diffusersRecipe', 'attention_components', 'empty'],
+    ['diffusersRecipe', 'vae_slicing', 'true'],
+    ['diffusersRecipe', 'vae_tiling', video ? 'videoVaeTiling' : 'true'],
+    ['diffusersRecipe', 'regional_compile', 'regionalCompile'],
+    ['diffusersRecipe', 'denoiser_cache', 'denoiserCache'],
+    ['diffusersRecipe', 'layerwise_casting', 'layerwiseCasting'],
+    ['diffusersRecipe', 'channels_last', 'channelsLast'],
+  ];
+  const cases = [
+    {
+      modelType: 'QwenImageEditPipeline',
+      mode: 'edit_image',
+      specId: 'qwen-image-edit-direct:edit-image:v1',
+      profileId: 'qwen-image-edit:direct',
+      repo: 'Qwen/Qwen-Image-Edit',
+      route: 'edit',
+      specHash: 'studio-spec-v1-e2d95865',
+      taskHash: 'task-template-v1-3d386eac',
+    },
+    {
+      modelType: 'QwenImageEditPlusPipeline',
+      mode: 'edit_image',
+      specId: 'qwen-image-edit-plus-direct:edit-image:v1',
+      profileId: 'qwen-image-edit-plus:direct',
+      repo: 'Qwen/Qwen-Image-Edit-2511',
+      route: 'edit',
+      specHash: 'studio-spec-v1-44dd285f',
+      taskHash: 'task-template-v1-7da630a4',
+    },
+    {
+      modelType: 'QwenImageEditPlusPipeline',
+      mode: 'multi_image_reference_edit',
+      specId: 'qwen-image-edit-plus-direct:multi-image-reference-edit:v1',
+      profileId: 'qwen-image-edit-plus:direct',
+      repo: 'Qwen/Qwen-Image-Edit-2511',
+      route: 'edit',
+      specHash: 'studio-spec-v1-40dfc18f',
+      taskHash: 'task-template-v1-68ba150d',
+    },
+    {
+      modelType: 'ZImageInpaintPipeline',
+      mode: 'inpaint',
+      specId: 'z-image-inpaint-direct:inpaint:v1',
+      profileId: 'z-image-inpaint:direct',
+      repo: 'Tongyi-MAI/Z-Image-Turbo',
+      route: 'inpaint',
+      specHash: 'studio-spec-v1-fe4170f8',
+      taskHash: 'task-template-v1-e5d4e75c',
+    },
+    {
+      modelType: 'ZImageInpaintPipeline',
+      mode: 'outpaint',
+      specId: 'z-image-inpaint-direct:outpaint:v1',
+      profileId: 'z-image-inpaint:direct',
+      repo: 'Tongyi-MAI/Z-Image-Turbo',
+      route: 'outpaint',
+      specHash: 'studio-spec-v1-bae7a397',
+      taskHash: 'task-template-v1-b45595b5',
+    },
+    {
+      modelType: 'FluxKontextInpaintPipeline',
+      mode: 'inpaint',
+      specId: 'flux-kontext-inpaint-direct:inpaint:v1',
+      profileId: 'flux-kontext-inpaint:direct',
+      repo: 'black-forest-labs/FLUX.1-Kontext-dev',
+      fallbackRepo: 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4',
+      route: 'inpaint',
+      specHash: 'studio-spec-v1-934bf941',
+      taskHash: 'task-template-v1-24349148',
+    },
+    {
+      modelType: 'FluxKontextInpaintPipeline',
+      mode: 'outpaint',
+      specId: 'flux-kontext-inpaint-direct:outpaint:v1',
+      profileId: 'flux-kontext-inpaint:direct',
+      repo: 'black-forest-labs/FLUX.1-Kontext-dev',
+      fallbackRepo: 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4',
+      route: 'outpaint',
+      specHash: 'studio-spec-v1-c334b4d4',
+      taskHash: 'task-template-v1-d0839fa4',
+    },
+    {
+      modelType: 'Flux2KleinInpaintPipeline',
+      mode: 'inpaint',
+      specId: 'flux2-klein-inpaint-direct:inpaint:v1',
+      profileId: 'flux2-klein-inpaint:direct',
+      repo: 'black-forest-labs/FLUX.2-klein-4B',
+      route: 'inpaint',
+      negativePrompt: false,
+      specHash: 'studio-spec-v1-1cdb8201',
+      taskHash: 'task-template-v1-f1beda5b',
+    },
+    {
+      modelType: 'Flux2KleinInpaintPipeline',
+      mode: 'outpaint',
+      specId: 'flux2-klein-inpaint-direct:outpaint:v1',
+      profileId: 'flux2-klein-inpaint:direct',
+      repo: 'black-forest-labs/FLUX.2-klein-4B',
+      route: 'outpaint',
+      negativePrompt: false,
+      specHash: 'studio-spec-v1-1ec36902',
+      taskHash: 'task-template-v1-1bac8598',
+    },
+    {
+      modelType: 'ChromaImg2ImgPipeline',
+      mode: 'edit_image',
+      specId: 'chroma1-hd-img2img:edit-image:v1',
+      profileId: 'chroma1-hd-img2img:direct',
+      repo: 'lodestones/Chroma1-HD',
+      route: 'edit',
+      strength: true,
+      specHash: 'studio-spec-v1-93d6037a',
+      taskHash: 'task-template-v1-b893fd70',
+    },
+    {
+      modelType: 'ChromaInpaintPipeline',
+      mode: 'inpaint',
+      specId: 'chroma1-hd-inpaint:inpaint:v1',
+      profileId: 'chroma1-hd-inpaint:direct',
+      repo: 'lodestones/Chroma1-HD',
+      route: 'inpaint',
+      specHash: 'studio-spec-v1-a2b13067',
+      taskHash: 'task-template-v1-47e4e6d9',
+    },
+    {
+      modelType: 'ChromaInpaintPipeline',
+      mode: 'outpaint',
+      specId: 'chroma1-hd-inpaint:outpaint:v1',
+      profileId: 'chroma1-hd-inpaint:direct',
+      repo: 'lodestones/Chroma1-HD',
+      route: 'outpaint',
+      specHash: 'studio-spec-v1-048def62',
+      taskHash: 'task-template-v1-e06d3841',
+    },
+    {
+      modelType: 'LTX2Pipeline',
+      mode: 'text_to_video',
+      specId: 'ltx2-standard:text-to-video:v1',
+      profileId: 'ltx2-standard:direct',
+      repo: 'Lightricks/LTX-2',
+      route: 'video-audio',
+      specHash: 'studio-spec-v1-b3b8990c',
+      taskHash: 'task-template-v1-5527e480',
+    },
+  ];
+  const imagePipelineBindings = [
+    ['diffusersImagePipeline', 'model_id', 'artifact'],
+    ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+    ['diffusersImagePipeline', 'mode', 'mode'],
+    ['diffusersImagePipeline', 'dtype', 'dtype'],
+    ['diffusersImagePipeline', 'device', 'device'],
+    ['diffusersImagePipeline', 'quantization_mode', 'quantizationMode'],
+    ['diffusersImagePipeline', 'quantized_components', 'pipelineQuantizedComponents'],
+    ['diffusersImagePipeline', 'auto_offload', 'autoOffload'],
+    ['diffusersImagePipeline', 'offload_mode', 'offloadMode'],
+  ];
+  const actionBindings = (role, item) => [
+    [role, 'prompt', 'prompt'],
+    ...(item.negativePrompt === false ? [] : [[role, 'negative_prompt', 'negativePrompt']]),
+    [role, 'width', 'width'],
+    [role, 'height', 'height'],
+    [role, 'seed', 'seed'],
+    [role, 'num_inference_steps', 'steps'],
+    [role, 'guidance_scale', 'guidanceScale'],
+    ...(item.route !== 'edit' || item.strength ? [[role, 'strength', 'strength']] : []),
+    [role, 'output_type', 'outputType'],
+    [role, 'max_sequence_length', 'maxSequenceLength'],
+  ];
+  const outpaintBindings = [
+    ['outpaintCanvas', 'width', 'width'],
+    ['outpaintCanvas', 'height', 'height'],
+    ['outpaintCanvas', 'left', 'outpaintLeft'],
+    ['outpaintCanvas', 'right', 'outpaintRight'],
+    ['outpaintCanvas', 'top', 'outpaintTop'],
+    ['outpaintCanvas', 'bottom', 'outpaintBottom'],
+    ['outpaintCanvas', 'overlap', 'outpaintOverlap'],
+    ['outpaintCanvas', 'feather', 'outpaintFeather'],
+    ['outpaintCanvas', 'fill_color', 'outpaintFillColor'],
+  ];
+  const imageShape = (item) => {
+    const edit = item.route === 'edit';
+    const outpaint = item.route === 'outpaint';
+    const actionRole = edit ? 'diffusersImageEdit' : 'diffusersImageInpaint';
+    const roles = [
+      ...runtimeRoles,
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+      ['loadImage', 'modules.Image.Load', -520, 300],
+      ...(item.route === 'inpaint' ? [['loadMask', 'modules.Image.Load', -520, 560]] : []),
+      ...(outpaint ? [['outpaintCanvas', 'modules.DiffusersImage.OutpaintCanvas', -520, 300]] : []),
+      [actionRole, edit ? 'modules.DiffusersImage.Edit' : 'modules.DiffusersImage.Inpaint', -120, -80],
+      ['preview', 'modules.Image.Preview', 980, -80],
+    ];
+    const edges = [
+      ...runtimeEdges,
+      ['diffusersRecipe', 'execution_recipe', 'diffusersImagePipeline', 'execution_recipe'],
+      ['diffusersImagePipeline', 'pipeline', actionRole, 'pipeline'],
+      ['loadImage', 'image', outpaint ? 'outpaintCanvas' : actionRole, 'image'],
+      ...(item.route === 'inpaint' ? [['loadMask', 'image', actionRole, 'mask_image']] : []),
+      ...(outpaint
+        ? [
+            ['outpaintCanvas', 'canvas', actionRole, 'image'],
+            ['outpaintCanvas', 'mask_image', actionRole, 'mask_image'],
+          ]
+        : []),
+      [actionRole, 'images', 'preview', 'image'],
+    ];
+    const bindings = [
+      ...runtimeBindings(),
+      ...imagePipelineBindings,
+      ['loadImage', 'file', 'referenceImages'],
+      ['loadImage', 'alpha_channel', 'alphaMode'],
+      ...(item.route === 'inpaint'
+        ? [
+            ['loadMask', 'file', 'maskImage'],
+            ['loadMask', 'alpha_channel', 'removeAlpha'],
+          ]
+        : []),
+      ...actionBindings(actionRole, item),
+      ...(outpaint ? outpaintBindings : []),
+      ['diffusersImagePipeline', 'revision', 'defaultRevision'],
+    ];
+    return { roles, edges, bindings, loaderRole: 'diffusersImagePipeline', actionRole };
+  };
+  const ltx2Shape = {
+    roles: [
+      ...runtimeRoles,
+      ['wanPipeline', 'modules.DiffusersVideo.LoadPipeline', -520, -80],
+      ['wanGenerate', 'modules.DiffusersVideo.GenerateVideoAudio', 220, -80],
+      ['videoExport', 'modules.Video.ExportWithAudio', 640, -80],
+    ],
+    edges: [
+      ...runtimeEdges,
+      ['diffusersRecipe', 'execution_recipe', 'wanPipeline', 'execution_recipe'],
+      ['wanPipeline', 'pipeline', 'wanGenerate', 'pipeline'],
+      ['wanGenerate', 'video_out', 'videoExport', 'video'],
+      ['wanGenerate', 'audio', 'videoExport', 'audio'],
+    ],
+    bindings: [
+      ...runtimeBindings(true),
+      ['wanPipeline', 'model_id', 'artifact'],
+      ['wanPipeline', 'pipeline_class', 'pipelineClass'],
+      ['wanPipeline', 'revision', 'defaultRevision'],
+      ['wanPipeline', 'dtype', 'dtype'],
+      ['wanPipeline', 'device', 'device'],
+      ['wanPipeline', 'auto_offload', 'autoOffload'],
+      ['wanPipeline', 'offload_mode', 'offloadMode'],
+      ['wanGenerate', 'prompt', 'prompt'],
+      ['wanGenerate', 'mode', 'mode'],
+      ['wanGenerate', 'negative_prompt', 'negativePrompt'],
+      ['wanGenerate', 'width', 'width'],
+      ['wanGenerate', 'height', 'height'],
+      ['wanGenerate', 'seed', 'seed'],
+      ['wanGenerate', 'num_frames', 'numFrames'],
+      ['wanGenerate', 'num_inference_steps', 'steps'],
+      ['wanGenerate', 'guidance_scale', 'guidanceScale'],
+      ['wanGenerate', 'conditioning_scale', 'conditioningScale'],
+      ['wanGenerate', 'strength', 'strength'],
+      ['wanGenerate', 'denoise_strength', 'strength'],
+      ['wanGenerate', 'frame_rate', 'fps'],
+      ['wanGenerate', 'guidance_scale_2', 'guidanceScale2'],
+      ['wanGenerate', 'use_guidance_scale_2', 'useGuidanceScale2'],
+      ['wanGenerate', 'output_type', 'outputType'],
+      ['wanGenerate', 'max_sequence_length', 'maxSequenceLength'],
+      ['wanGenerate', 'attention_kwargs_json', 'attentionKwargsJson'],
+      ['videoExport', 'fps', 'fps'],
+    ],
+    loaderRole: 'wanPipeline',
+  };
+  const grouped = new Map();
+  const contracts = [];
+  for (const item of cases) {
+    const video = item.route === 'video-audio';
+    const shape = video ? ltx2Shape : imageShape(item);
+    const profile = {
+      id: item.profileId,
+      modes: cases.filter(({ profileId }) => profileId === item.profileId).map(({ mode }) => mode),
+      loader_module: video ? 'modules.DiffusersVideo' : 'modules.DiffusersImage',
+      loader_action: 'LoadPipeline',
+      execution_path: video ? 'direct-diffusers-video' : 'direct-diffusers-image',
+      pipeline_class: item.modelType,
+      default_repo: item.repo,
+      ...(item.fallbackRepo ? { fallback_repo: item.fallbackRepo } : {}),
+    };
+    const semanticSpec = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.specId,
+      modelType: item.modelType,
+      mode: item.mode,
+      executionProfileId: item.profileId,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: item.modelType,
+      defaultRepo: item.repo,
+      roles: shape.roles,
+      edges: shape.edges,
+      bindings: shape.bindings,
+      autoFields,
+      actions: [],
+    };
+    const spec = {
+      ...semanticSpec,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semanticSpec))}`,
+    };
+    assert.equal(spec.contentHash, item.specHash, `${item.specId} drifted from the sealed backend hash`);
+    assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], item.modelType, profile.modes, [profile]), [
+      spec,
+    ]);
+
+    const existing = grouped.get(item.modelType) ?? {
+      modelType: item.modelType,
+      studioExecutionSpecs: [],
+      executionProfiles: [profile],
+    };
+    existing.studioExecutionSpecs.push(spec);
+    grouped.set(item.modelType, existing);
+    const requiredMedia = video
+      ? []
+      : item.route === 'inpaint'
+        ? [
+            { kind: 'image', field: 'referenceImages', minimumCount: 1 },
+            { kind: 'image', field: 'maskImage', minimumCount: 1 },
+          ]
+        : [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }];
+    const mediaKind = video ? 'video' : 'image';
+    const outputRole = video ? 'videoExport' : 'preview';
+    const outputNode = video ? 'modules.Video.ExportWithAudio' : 'modules.Image.Preview';
+    const semanticContract = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${item.specId}`,
+      modelType: item.modelType,
+      mode: item.mode,
+      mediaKind,
+      executionProfileId: item.profileId,
+      executionSpecId: item.specId,
+      executionSpecContentHash: item.specHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole: shape.loaderRole,
+      pipelineClass: item.modelType,
+      defaultRepo: item.repo,
+      loaderRepositories: [item.repo, ...(item.fallbackRepo ? [item.fallbackRepo] : [])],
+      requiredMedia,
+      output: { mediaKind, role: outputRole, nodeKey: outputNode, inputHandle: mediaKind },
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    const contract = {
+      ...semanticContract,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semanticContract))}`,
+    };
+    assert.equal(contract.contentHash, item.taskHash, `${item.specId} task contract drifted from the sealed backend`);
+    contracts.push(contract);
+  }
+  const parsed = contractsModule.parseTaskTemplateContracts(contracts, 1, [...grouped.values()]);
+  assert.equal(parsed.length, 13);
+  assert.equal(
+    parsed.find(({ modelType }) => modelType === 'LTX2Pipeline').output.nodeKey,
+    'modules.Video.ExportWithAudio',
+  );
+  assert.ok(
+    parsed.every(
+      ({ galleryEligible, qualificationStatus }) => !galleryEligible && qualificationStatus.endsWith('pending'),
+    ),
+  );
+});
+
 test('contracts for backend model types unknown to this client are ignored', () => {
   const fixture = buildFixture();
   const parsed = contractsModule.parseTaskTemplateContracts(
