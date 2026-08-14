@@ -340,6 +340,10 @@ export const WAN_FLF_REPO = 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers';
 export const LTX_VIDEO_REPO = 'Lightricks/LTX-Video-0.9.8-13B-distilled';
 export const LTX2_REPO = 'Lightricks/LTX-2';
 export const FRAMEPACK_REPO = 'lllyasviel/FramePackI2V_HY';
+export const FRAMEPACK_BASE_REPO = 'hunyuanvideo-community/HunyuanVideo';
+export const FRAMEPACK_BASE_REVISION = 'e8c2aaa66fe3742a32c11a6766aecbf07c56e773';
+export const FRAMEPACK_VISION_REPO = 'lllyasviel/flux_redux_bfl';
+export const FRAMEPACK_VISION_REVISION = '45b801affc54ff2af4e5daf1b282e0921901db87';
 export const STABLE_VIDEO_DIFFUSION_REPO = 'stabilityai/stable-video-diffusion-img2vid-xt-1-1';
 export const STABLE_VIDEO_DIFFUSION_REVISION = '043843887ccd51926e3efed36270444a838e7861';
 export const ANIMATEDIFF_MOTION_REPO = 'guoyww/animatediff-motion-adapter-v1-5-2';
@@ -391,6 +395,26 @@ export const ANIMATELCM_MOTION_REQUIREMENT: StudioModelRequirement = {
   kind: 'adapter',
   requiredForModes: ['text_to_video'],
   description: 'Pinned fp16 safetensors AnimateLCM motion module and LoRA.',
+};
+
+export const FRAMEPACK_BASE_REQUIREMENT: StudioModelRequirement = {
+  id: 'framepack-hunyuan-base-components',
+  label: 'FramePack HunyuanVideo base components',
+  repo: FRAMEPACK_BASE_REPO,
+  revision: FRAMEPACK_BASE_REVISION,
+  kind: 'base',
+  requiredForModes: ['image_to_video'],
+  description: 'Exact scheduler, encoders, tokenizers, and VAE composed with the FramePack transformer.',
+};
+
+export const FRAMEPACK_VISION_REQUIREMENT: StudioModelRequirement = {
+  id: 'framepack-siglip-vision-components',
+  label: 'FramePack SigLIP vision components',
+  repo: FRAMEPACK_VISION_REPO,
+  revision: FRAMEPACK_VISION_REVISION,
+  kind: 'adapter',
+  requiredForModes: ['image_to_video'],
+  description: 'Exact SigLIP image processor and vision encoder used by FramePack conditioning.',
 };
 
 export const VIDEO_STUDIO_MODES: StudioMode[] = [
@@ -935,7 +959,11 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     true,
   ),
   HunyuanVideoFramepackPipeline: planningVideoProfile('Wan Video', FRAMEPACK_REPO, ['image_to_video'], {
-    image_to_video: { requiredImages: ['referenceImages'] },
+    image_to_video: {
+      modelRequirements: [FRAMEPACK_BASE_REQUIREMENT, FRAMEPACK_VISION_REQUIREMENT],
+      requiredImages: ['referenceImages'],
+      note: 'Requires the exact HunyuanVideo base and SigLIP vision component selections.',
+    },
   }),
   StableVideoDiffusionPipeline: {
     family: 'Stable Video Diffusion',
