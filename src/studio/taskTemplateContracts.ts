@@ -12,6 +12,10 @@ const CONTRACT_ID = /^task-template:[a-z\d][a-z\d._:-]{0,160}$/;
 const CONTENT_HASH = /^task-template-v1-[0-9a-f]{8}$/;
 const NODE_KEY = /^modules\.[A-Za-z\d_]+\.[A-Za-z\d_]+$/;
 const FIELD_ID = /^[A-Za-z_][A-Za-z\d_]{0,63}$/;
+// Capability discovery accepts at most 128 model types and each model type
+// accepts at most 16 Studio execution specifications. Keep the aggregate
+// contract envelope consistent with those already-bounded inputs.
+export const MAX_TASK_TEMPLATE_CONTRACTS = 128 * 16;
 const CONTRACT_KEYS =
   'canonicalizationVersion,contentHash,defaultRepo,executionProfileId,executionSpecContentHash,executionSpecId,galleryEligible,id,loaderAction,loaderModule,loaderRepositories,loaderRole,mediaKind,mode,modelType,output,pipelineClass,qualificationStatus,requiredMedia,schemaVersion';
 const OUTPUT_KEYS = 'inputHandle,mediaKind,nodeKey,role';
@@ -104,7 +108,7 @@ export function parseTaskTemplateContracts(
   schemaVersion: unknown,
   capabilities: readonly StudioModelProfile[],
 ): StudioTaskTemplateContract[] {
-  if (schemaVersion !== 1 || !Array.isArray(value) || value.length > 128) invalid();
+  if (schemaVersion !== 1 || !Array.isArray(value) || value.length > MAX_TASK_TEMPLATE_CONTRACTS) invalid();
   const ids = new Set<string>();
   const pairs = new Set<string>();
   const contracts = value.flatMap((item) => {

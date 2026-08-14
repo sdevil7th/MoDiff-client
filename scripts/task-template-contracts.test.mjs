@@ -396,6 +396,28 @@ test('contracts for backend model types unknown to this client are ignored', () 
   assert.equal(parsed.length, fixture.contracts.length);
 });
 
+test('the bounded contract envelope admits catalogs larger than the legacy 128-entry limit', () => {
+  const fixture = buildFixture();
+  const unknownContract = (index) => ({ modelType: `FuturePipeline${index}` });
+  const currentCatalog = [
+    ...fixture.contracts,
+    ...Array.from({ length: 130 - fixture.contracts.length }, (_, index) => unknownContract(index)),
+  ];
+
+  const parsed = contractsModule.parseTaskTemplateContracts(currentCatalog, 1, fixture.capabilities);
+  assert.equal(parsed.length, fixture.contracts.length);
+  assert.equal(contractsModule.MAX_TASK_TEMPLATE_CONTRACTS, 128 * 16);
+  assert.throws(
+    () =>
+      contractsModule.parseTaskTemplateContracts(
+        Array.from({ length: contractsModule.MAX_TASK_TEMPLATE_CONTRACTS + 1 }, (_, index) => unknownContract(index)),
+        1,
+        fixture.capabilities,
+      ),
+    /Invalid Studio task-template contract/,
+  );
+});
+
 test('task contracts reject a loader or output identity that diverges from its execution spec', () => {
   const fixture = buildFixture();
   const loaderTamper = structuredClone(fixture.contracts);
