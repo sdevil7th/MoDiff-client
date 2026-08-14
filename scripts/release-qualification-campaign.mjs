@@ -631,6 +631,16 @@ export function jobGroups(jobs, batchByModelFamily) {
   return [...groups].map(([modelFamily, groupedJobs]) => ({ modelFamily, jobs: groupedJobs }));
 }
 
+export function blockedReadinessKinds({ appReadiness, downloadReadiness, inputReadiness }) {
+  return [
+    ['model cache', appReadiness],
+    ['app downloads', downloadReadiness],
+    ['default inputs', inputReadiness],
+  ]
+    .filter(([, readiness]) => readiness?.status === 'blocked')
+    .map(([kind]) => kind);
+}
+
 export function galleryArgsForGroup(args, templateIds) {
   return [
     join(CLIENT_ROOT, 'scripts', 'template-gallery-runner.mjs'),
@@ -677,6 +687,8 @@ export async function runCampaign(argv = process.argv) {
   refreshReports({ inherit: !args.dryRun });
   const selection = selectedJobs(readJson(CONTRACT_PATH), args);
   const groups = jobGroups(selection.jobs, args.batchByModelFamily);
+  const inputBindings = args.checkInputReadiness ? readJson(INPUT_BINDINGS_PATH) : null;
+  const assetManifest = args.checkInputReadiness ? readJson(ASSET_MANIFEST_PATH) : null;
   const appReadiness = args.checkAppReadiness
     ? appReadinessForJobs(selection.jobs, await fetchAppCache(args.server, args.cacheTimeoutMs))
     : null;
@@ -685,7 +697,7 @@ export async function runCampaign(argv = process.argv) {
       ? downloadReadinessForStatus(await fetchAppDownloadStatus(args.server, args.cacheTimeoutMs))
       : null;
   const inputReadiness = args.checkInputReadiness
-    ? inputReadinessForJobs(selection.jobs, readJson(INPUT_BINDINGS_PATH), readJson(ASSET_MANIFEST_PATH))
+    ? inputReadinessForJobs(selection.jobs, inputBindings, assetManifest)
     : null;
   if (args.reuseExistingRuntimeKey && groups.length > 1) {
     throw new Error('--reuse-existing-runtime-key is only safe for a campaign containing one model-family group.');
@@ -721,7 +733,7 @@ export async function runCampaign(argv = process.argv) {
       : 0;
   }
 
-  if ([appReadiness, downloadReadiness, inputReadiness].some((readiness) => readiness?.status === 'blocked')) {
+  if (blockedReadinessKinds({ appReadiness, downloadReadiness, inputReadiness }).length > 0) {
     console.error(JSON.stringify({ appReadiness, downloadReadiness, inputReadiness }, null, 2));
     return 1;
   }
@@ -740,22 +752,44 @@ export async function runCampaign(argv = process.argv) {
     inputReadiness,
     jobs: selection.jobs,
     deferred: selection.deferred,
+    groupReadiness: [],
   };
   writeState(state);
 
   for (const group of groups) {
+    // A 76-template campaign can run for many hours. Revalidate the exact
+    // artifacts and byte-pinned inputs at each model-family boundary so a
+    // cache repair, external mutation, or missing installed asset cannot turn
+    // startup readiness into stale authorization for later inference.
+    const currentAppReadiness = args.checkAppReadiness
+      ? appReadinessForJobs(group.jobs, await fetchAppCache(args.server, args.cacheTimeoutMs))
+      : null;
     const currentDownloadReadiness = downloadReadinessForStatus(
       await fetchAppDownloadStatus(args.server, args.cacheTimeoutMs),
     );
+    const currentInputReadiness = args.checkInputReadiness
+      ? inputReadinessForJobs(group.jobs, inputBindings, assetManifest)
+      : null;
+    const checkedAt = new Date().toISOString();
+    const readiness = {
+      modelFamily: group.modelFamily,
+      templateIds: group.jobs.map((job) => job.templateId),
+      checkedAt,
+      appReadiness: currentAppReadiness,
+      downloadReadiness: currentDownloadReadiness,
+      inputReadiness: currentInputReadiness,
+    };
+    state.groupReadiness.push(readiness);
     state.downloadReadiness = currentDownloadReadiness;
-    if (currentDownloadReadiness.status === 'blocked') {
+    const blockedKinds = blockedReadinessKinds(readiness);
+    if (blockedKinds.length > 0) {
       state.status = 'blocked';
       state.stoppedReason =
-        `App downloads became active before the ${group.modelFamily} qualification group; ` +
+        `${blockedKinds.join(', ')} readiness became blocked before the ${group.modelFamily} qualification group; ` +
         'no graph in that group was submitted.';
-      state.updatedAt = new Date().toISOString();
+      state.updatedAt = checkedAt;
       writeState(state);
-      console.error(JSON.stringify({ downloadReadiness: currentDownloadReadiness }, null, 2));
+      console.error(JSON.stringify(readiness, null, 2));
       return 1;
     }
     const startedAt = new Date().toISOString();

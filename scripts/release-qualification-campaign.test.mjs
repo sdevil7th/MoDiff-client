@@ -8,6 +8,7 @@ import {
   appCacheUrl,
   appDownloadStatusUrl,
   appReadinessForJobs,
+  blockedReadinessKinds,
   campaignStatusForRunner,
   downloadReadinessForStatus,
   galleryArgsForGroup,
@@ -258,6 +259,25 @@ test('qualification campaign requires an idle app download and Gallery reservati
     /malformed|bound/,
   );
   assert.throws(() => appDownloadStatusUrl('https://example.com'), /loopback/);
+});
+
+test('qualification campaign identifies every blocked group readiness boundary', () => {
+  assert.deepEqual(
+    blockedReadinessKinds({
+      appReadiness: { status: 'blocked' },
+      downloadReadiness: { status: 'ready' },
+      inputReadiness: { status: 'blocked' },
+    }),
+    ['model cache', 'default inputs'],
+  );
+  assert.deepEqual(
+    blockedReadinessKinds({
+      appReadiness: null,
+      downloadReadiness: { status: 'ready' },
+      inputReadiness: null,
+    }),
+    [],
+  );
 });
 
 test('qualification app readiness rejects malformed app inventory and artifact receipts', () => {

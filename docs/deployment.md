@@ -70,9 +70,12 @@ not installed, or marked for repair. The download-idle check uses the app's
 bounded status receipt and blocks while any model transfer or Template Gallery
 installation is active or reserved. A real campaign performs that check even
 without the dry-run flag, repeats it before every model-family group, and the
-Gallery runner repeats it immediately before every selected template. The input readiness check reads only the
-selected templates' local defaults and rejects absent files, links, size or
-SHA-256 mismatches, unpinned bindings, and inconsistent asset-manifest records.
+Gallery runner repeats it immediately before every selected template. When the
+model-cache and input checks are requested, the real campaign also repeats both
+for the exact jobs in every model-family group before submitting its first
+graph. The input readiness check reads only the selected templates' local
+defaults and rejects absent files, links, size or SHA-256 mismatches, unpinned
+bindings, and inconsistent asset-manifest records.
 A source-release checkout without the installer-managed Gallery payload is
 expected to fail the input check. On an already running source-release app,
 open **Setup → Template Gallery assets** and use its app-owned plan/install
