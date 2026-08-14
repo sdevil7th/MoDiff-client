@@ -974,7 +974,7 @@ export type StudioModelProfile = {
   taskTemplateContractSchemaVersion?: 1;
   taskTemplateContractModes?: StudioMode[];
   runnableModes?: StudioMode[];
-  executionStatus?: 'expert_only' | 'supported_with_model';
+  executionStatus?: 'expert_only' | 'supported' | 'supported_with_model';
   qualificationStatus?: string;
   qualifiedModes?: StudioMode[];
   autoEligible?: boolean;

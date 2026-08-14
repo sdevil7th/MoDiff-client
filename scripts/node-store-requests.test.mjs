@@ -693,6 +693,60 @@ test('optional runtime contracts normalize exact nested profile metadata', async
   }
 });
 
+test('active optional-runtime capabilities preserve the supported execution state', async () => {
+  const requirement = runtimeRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    profileIds: ['huggingface-transformers-main-96fe6dce-peft-0.20.0'],
+    executionProfileIds: ['z-image:auto', 'z-image:img2img-direct'],
+    state: 'active',
+    reason: 'optional_runtime_active',
+  });
+  const capability = {
+    modelType: 'ZImageModularPipeline',
+    modes: ['text_to_image', 'edit_image'],
+    runnableModes: ['text_to_image', 'edit_image'],
+    executionStatus: 'supported',
+    optionalRuntimeRequirement: requirement,
+    executionProfiles: [
+      {
+        id: 'z-image:auto',
+        modes: ['text_to_image'],
+        optional_runtime_delivery: 'optional_overlay',
+        optionalRuntimeRequirement: {
+          ...requirement,
+          executionProfileIds: ['z-image:auto'],
+        },
+      },
+      {
+        id: 'z-image:img2img-direct',
+        modes: ['edit_image'],
+        optional_runtime_delivery: 'optional_overlay',
+        optionalRuntimeRequirement: {
+          ...requirement,
+          executionProfileIds: ['z-image:img2img-direct'],
+        },
+      },
+    ],
+  };
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.equal(state.studioModelCapabilitiesAuthoritative, true);
+  assert.equal(state.studioModelCapabilities[0].executionStatus, 'supported');
+  assert.deepEqual(state.studioModelCapabilities[0].optionalRuntimeRequirement, requirement);
+
+  globalThis.fetch = async () =>
+    jsonResponse({ schemaVersion: 2, capabilities: [{ ...capability, executionStatus: 'fully_supported' }] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'error');
+  assert.equal(state.studioModelCapabilities[0].executionStatus, 'supported');
+});
+
 test('malformed optional runtime capability metadata fails the authoritative response closed', async () => {
   const invalidRequirements = [
     runtimeRequirement({ unexpected: true }),

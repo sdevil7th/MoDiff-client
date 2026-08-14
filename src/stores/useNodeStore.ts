@@ -693,7 +693,7 @@ function parseStudioModelCapabilities(value: unknown) {
       ((layerCount || layerResolutions) && !modes.includes('layer_decomposition')) ||
       Boolean(layerCount) !== Boolean(layerResolutions) ||
       (item.executionStatus !== undefined &&
-        !['expert_only', 'supported_with_model'].includes(String(item.executionStatus)))
+        !['expert_only', 'supported', 'supported_with_model'].includes(String(item.executionStatus)))
     )
       invalidModelCapabilities();
     const revisionCandidates = item.revisionCandidates;
