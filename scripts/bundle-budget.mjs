@@ -9,11 +9,11 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // The capability-driven media contract and graph workspace share one stable
 // production bundle. Keep a narrow margin over the measured largest chunk.
 const MAX_ENTRY_GZIP_BYTES = 438 * 1024;
-// Media contracts, task-template validation, and queue/workflow-ownership
-// guards and the app-owned Template Gallery installer are intentionally
-// fail-closed. The reviewed production surface is currently about 520.5 KiB;
-// retain a sub-KiB ceiling so unrelated growth still fails this gate.
-const MAX_TOTAL_GZIP_BYTES = 521 * 1024;
+// Media contracts, task-template validation, queue/workflow ownership, eight
+// newly reviewed workflow profiles, and managed-graph lifecycle guards are
+// intentionally fail-closed. The audited production surface is 534,375 bytes;
+// 523 KiB retains a 1,177-byte margin so unrelated growth still fails this gate.
+const MAX_TOTAL_GZIP_BYTES = 523 * 1024;
 
 function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`;
