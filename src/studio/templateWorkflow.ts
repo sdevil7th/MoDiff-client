@@ -41,7 +41,7 @@ async function applyWorkflowBlock(
   block: StudioTemplateWorkflowBlock,
   form: StudioFormState,
   template: StudioTemplate,
-  options: { notify?: boolean; workflowContext?: WorkflowOperationContext } = {},
+  options: { graphPrepared?: boolean; notify?: boolean; workflowContext?: WorkflowOperationContext } = {},
 ) {
   if (block === 'lora') {
     await addLoraWorkflowBlock(form, template.workflowBlockSettings?.lora, options);
@@ -163,7 +163,7 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     warnings = result.warnings;
     for (const block of template.workflowBlocks ?? []) {
       try {
-        await applyWorkflowBlock(block, after, template, { workflowContext: context });
+        await applyWorkflowBlock(block, after, template, { graphPrepared: true, workflowContext: context });
         assertWorkflowOperationContext(context);
       } catch (error) {
         if (isWorkflowOperationCancelled(error)) throw error;

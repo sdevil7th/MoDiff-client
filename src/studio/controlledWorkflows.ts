@@ -15,6 +15,7 @@ import {
   beginControlledGraphTransaction,
   commitControlledGraphTransaction,
   createOrUpdateStudioGraph,
+  waitForStudioGraphDefinitionStability,
 } from './graphBridge';
 import {
   CONTROLLED_WORKFLOW_NODE_KEYS,
@@ -43,6 +44,7 @@ const VIDEO_DELIVERY_UPSCALER = {
 };
 
 type ControlledWorkflowOptions = {
+  graphPrepared?: boolean;
   notify?: boolean;
   workflowContext?: WorkflowOperationContext;
 };
@@ -250,7 +252,11 @@ export async function addLoraWorkflowBlock(
 ) {
   const context = options.workflowContext ?? captureWorkflowOperationContext();
   assertWorkflowOperationContext(context);
-  await createOrUpdateStudioGraph(form, context);
+  if (!options.graphPrepared) await createOrUpdateStudioGraph(form, context);
+  assertWorkflowOperationContext(context);
+  if (!(await waitForStudioGraphDefinitionStability(750, 5000, context))) {
+    throw new Error('The Studio graph schema did not settle before adding the LoRA adapter block.');
+  }
   assertWorkflowOperationContext(context);
   const binding = useStudioStore.getState().graphBinding;
   const usesDirectDiffusersImage = Boolean(binding?.nodes.diffusersImagePipeline);

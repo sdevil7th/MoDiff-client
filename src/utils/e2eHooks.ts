@@ -233,7 +233,9 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
     }
     for (const block of template.workflowBlocks ?? []) {
       if (block === 'lora') {
-        await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora);
+        await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora, {
+          graphPrepared: true,
+        });
       } else if (block === 'upscaler') {
         await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler);
       } else if (block === 'video_sequence') {

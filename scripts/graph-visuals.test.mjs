@@ -7141,6 +7141,27 @@ test('modular image finalization adopts the definitions published by its own fie
   );
 });
 
+test('LoRA template construction reuses the core graph that its caller just finalized', () => {
+  const controlled = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'controlledWorkflows.ts'), 'utf8');
+  const templates = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'templateWorkflow.ts'), 'utf8');
+  const e2e = fs.readFileSync(path.join(ROOT, 'src', 'utils', 'e2eHooks.ts'), 'utf8');
+  const addLora = controlled.match(
+    /export async function addLoraWorkflowBlock[\s\S]*?export async function addUpscaleWorkflowBlock/,
+  )?.[0];
+
+  assert.ok(addLora);
+  assert.match(addLora, /if \(!options\.graphPrepared\) await createOrUpdateStudioGraph\(form, context\)/);
+  assert.match(addLora, /await waitForStudioGraphDefinitionStability\(750, 5000, context\)/);
+  assert.match(
+    templates,
+    /applyWorkflowBlock\(block, after, template, \{ graphPrepared: true, workflowContext: context \}\)/,
+  );
+  assert.match(
+    e2e,
+    /addLoraWorkflowBlock\(useStudioStore\.getState\(\)\.form, template\.workflowBlockSettings\?\.lora, \{\s*graphPrepared: true,/,
+  );
+});
+
 test('managed graph reconciliation preserves pinned Auto sample-rate overrides', () => {
   const audioGenerate = managedNode('audio-generate', 'audioGenerate', {
     params: {

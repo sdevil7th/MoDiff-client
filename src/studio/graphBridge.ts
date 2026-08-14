@@ -4630,6 +4630,43 @@ export async function waitForStudioGraphFinalization(
   return waitForStudioGraphFinalization(remainingTimeout, context);
 }
 
+export async function waitForStudioGraphDefinitionStability(
+  quietPeriod = 750,
+  timeout = 5000,
+  context: WorkflowOperationContext = captureWorkflowOperationContext(),
+) {
+  const startedAt = Date.now();
+  let observedRevision = graphDefinitionRevision;
+  let stableSince = startedAt;
+
+  while (Date.now() - startedAt <= timeout) {
+    assertWorkflowOperationContext(context);
+    const studio = useStudioStore.getState();
+    const binding = studio.graphBinding;
+    if (!binding) return false;
+    const form = resolveGraphResourceForm(studio.form);
+    if (!requiresDynamicGraphChannel(form, binding)) return true;
+
+    const revisionChanged = observedRevision !== graphDefinitionRevision;
+    const finalized =
+      studio.graphFinalization?.status === 'complete' &&
+      bindingFinalizationProofMatches(binding, form) &&
+      !inspectStudioGraphBindingDivergence(binding);
+    if (revisionChanged || !finalized) {
+      observedRevision = graphDefinitionRevision;
+      stableSince = Date.now();
+      if (!binding.controlled && bindingMatchesForm(binding, form) && !inspectStudioGraphBindingDivergence(binding)) {
+        syncStudioGraphDefinition(form);
+      }
+    } else if (Date.now() - stableSince >= quietPeriod) {
+      return true;
+    }
+
+    await delay(Math.min(80, Math.max(1, timeout - (Date.now() - startedAt))));
+  }
+  return false;
+}
+
 export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStudioStore.getState().form) {
   const plannedForm = resolveGraphResourceForm(form);
   const binding = useStudioStore.getState().graphBinding;
