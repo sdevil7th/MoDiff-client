@@ -337,6 +337,55 @@ test('Smol Transformers profiles and exact generic execution roles stay workflow
   }
 });
 
+test('static Studio profiles bridge the six newly admitted generic Diffusers pairs', () => {
+  const pagTextProfiles = [
+    [
+      'HunyuanDiTPAGPipeline',
+      'Hunyuan-DiT v1.2 Distilled PAG',
+      'Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled',
+      25,
+      5,
+      undefined,
+    ],
+    ['PixArtSigmaPAGPipeline', 'PixArt Sigma XL 1024px PAG', 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS', 20, 4.5, 300],
+    ['SanaPAGPipeline', 'Sana 0.6B PAG', 'Efficient-Large-Model/Sana_600M_1024px_diffusers', 20, 4.5, 300],
+  ];
+  for (const [modelType, label, repo, steps, guidance, maxSequenceLength] of pagTextProfiles) {
+    const profile = modelProfilesModule.STUDIO_MODEL_PROFILES[modelType];
+    assert.equal(profile.label, label);
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profile.defaultRepo, repo);
+    assert.equal(profile.recommendedSteps, steps);
+    assert.equal(profile.recommendedGuidance, guidance);
+    assert.equal(profile.recommendedMaxSequenceLength, maxSequenceLength);
+    assert.equal(profile.recommendedPagScale, 3);
+    assert.equal(profile.recommendedPagAdaptiveScale, 0);
+    assert.deepEqual(profile.modes, ['text_to_image']);
+    assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].supportedModes, ['text_to_image']);
+  }
+
+  const lcm = modelProfilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
+  assert.deepEqual(lcm.modes, ['text_to_image', 'edit_image']);
+  assert.equal(lcm.supportsImageInput, true);
+  assert.deepEqual(lcm.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.LatentConsistencyModelPipeline.supportedModes, [
+    'text_to_image',
+    'edit_image',
+  ]);
+
+  const sd15Pag = modelProfilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPAGPipeline;
+  assert.deepEqual(sd15Pag.modes, ['text_to_image', 'edit_image', 'inpaint']);
+  assert.equal(sd15Pag.supportsImageInput, true);
+  assert.equal(sd15Pag.supportsMask, true);
+  assert.deepEqual(sd15Pag.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(sd15Pag.modeRequirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
+  assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.StableDiffusionPAGPipeline.supportedModes, [
+    'text_to_image',
+    'edit_image',
+    'inpaint',
+  ]);
+});
+
 test('contracts for backend model types unknown to this client are ignored', () => {
   const fixture = buildFixture();
   const parsed = contractsModule.parseTaskTemplateContracts(
