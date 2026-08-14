@@ -8658,6 +8658,8 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(generator, /if \(isWorkflowBrowserSessionError\(error\)\) throw error/);
   assert.match(generator, /completedWorkflowsInSession \+= 1/);
   assert.match(generator, /browserSession\?\.guard\.assertHealthy\('publishing the canonical workflow manifest'\)/);
+  assert.match(generator, /capability\.modeOutputKinds\?\.\[mode\] \?\? capability\.mediaKind/);
+  assert.match(generator, /capability\.modeOutputKinds\?\.\[template\.mode\] \?\? capability\.mediaKind/);
   assert.equal((generator.match(/buildTemplateGraphWithRecovery\(/g) ?? []).length, 2);
   assert.ok(ephemeralStorageIndex >= 0 && ephemeralStorageIndex < navigationIndex);
   assert.ok(prepareIndex >= 0);
