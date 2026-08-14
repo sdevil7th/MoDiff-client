@@ -368,7 +368,7 @@ function inputAssetIdentity(asset) {
   return { runtimePath, runtimeSha256 };
 }
 
-function inputAssetStatus(asset, manifestByPath, publicRoot) {
+function inputAssetStatus(asset, manifestByPath, publicRoots) {
   const { runtimePath, runtimeSha256 } = inputAssetIdentity(asset);
   const manifestPath = runtimePath.replace(/^\/+/, '');
   const manifestAsset = manifestByPath.get(manifestPath);
@@ -390,17 +390,26 @@ function inputAssetStatus(asset, manifestByPath, publicRoot) {
     ready: false,
     reason: 'local_file_missing',
   };
-  const localPath = resolve(publicRoot, manifestPath);
-  if (!existsSync(localPath)) return status;
-  const file = lstatSync(localPath);
-  if (!file.isFile() || file.isSymbolicLink()) return { ...status, reason: 'unsafe_local_file' };
-  if (file.size !== manifestAsset.size) return { ...status, reason: 'byte_size_mismatch' };
-  const digest = `sha256:bytes:${createHash('sha256').update(readFileSync(localPath)).digest('hex')}`;
-  if (digest !== runtimeSha256) return { ...status, reason: 'sha256_mismatch' };
-  return { ...status, ready: true, reason: null };
+  for (const publicRoot of publicRoots) {
+    const localPath = resolve(publicRoot, manifestPath);
+    if (!existsSync(localPath)) continue;
+    const file = lstatSync(localPath);
+    if (!file.isFile() || file.isSymbolicLink()) return { ...status, reason: 'unsafe_local_file' };
+    if (file.size !== manifestAsset.size) return { ...status, reason: 'byte_size_mismatch' };
+    const digest = `sha256:bytes:${createHash('sha256').update(readFileSync(localPath)).digest('hex')}`;
+    if (digest !== runtimeSha256) return { ...status, reason: 'sha256_mismatch' };
+    return { ...status, ready: true, reason: null };
+  }
+  return status;
 }
 
-export function inputReadinessForJobs(jobs, bindings, assetManifest, publicRoot = join(CLIENT_ROOT, 'public')) {
+export function inputReadinessForJobs(
+  jobs,
+  bindings,
+  assetManifest,
+  publicRoots = [join(CLIENT_ROOT, 'public'), join(BACKEND_ROOT, 'web')],
+) {
+  const rootValues = Array.isArray(publicRoots) ? publicRoots : [publicRoots];
   if (
     !Array.isArray(jobs) ||
     jobs.length > 10_000 ||
@@ -417,10 +426,14 @@ export function inputReadinessForJobs(jobs, bindings, assetManifest, publicRoot 
     Array.isArray(bindings) ||
     !assetManifest ||
     !Array.isArray(assetManifest.assets) ||
-    assetManifest.assets.length > 100_000
+    assetManifest.assets.length > 100_000 ||
+    rootValues.length < 1 ||
+    rootValues.length > 8 ||
+    rootValues.some((root) => typeof root !== 'string' || root.length < 1 || root.length > 4096)
   ) {
     throw new Error('The qualification job, input binding, or asset inventory is malformed or exceeds its bound.');
   }
+  const roots = rootValues.map((root) => resolve(root));
   const manifestByPath = new Map();
   for (const asset of assetManifest.assets) {
     if (!asset || typeof asset.path !== 'string' || manifestByPath.has(asset.path)) {
@@ -448,7 +461,7 @@ export function inputReadinessForJobs(jobs, bindings, assetManifest, publicRoot 
       for (const asset of binding.defaultAssets) {
         const { runtimePath, runtimeSha256 } = inputAssetIdentity(asset);
         if (!assetStatuses.has(runtimePath)) {
-          assetStatuses.set(runtimePath, inputAssetStatus(asset, manifestByPath, publicRoot));
+          assetStatuses.set(runtimePath, inputAssetStatus(asset, manifestByPath, roots));
         } else if (assetStatuses.get(runtimePath).runtimeSha256 !== runtimeSha256) {
           throw new Error(`Qualification default input bindings disagree for ${runtimePath}.`);
         }

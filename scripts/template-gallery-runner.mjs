@@ -48,6 +48,7 @@ const DEFAULT_INPUT_BINDINGS_PATH = join(
   'runtime-inputs',
   'default-input-bindings.json',
 );
+const DEFAULT_INPUT_RUNTIME_PATH = /^\/template-gallery\/runtime-inputs\/assets\/[a-f0-9]{64}\.[a-z0-9]+$/;
 const GENERATED_EXTENSION_BY_MIME = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
@@ -908,7 +909,17 @@ export function argsForTemplateInputs(args, template) {
     const assets = (binding?.defaultAssets ?? [])
       .map((asset) => String(asset?.runtimePath ?? '').trim())
       .filter(Boolean)
-      .map((runtimePath) => resolve(ROOT, 'public', runtimePath.replace(/^\/+/, '')));
+      .map((runtimePath) => {
+        if (!DEFAULT_INPUT_RUNTIME_PATH.test(runtimePath)) {
+          throw new Error(`Template ${template.id} has an invalid default runtime input path.`);
+        }
+        const relativePath = runtimePath.replace(/^\/+/, '');
+        const candidates = [
+          resolve(ROOT, 'public', relativePath),
+          resolve(args.backendDir || DEFAULT_BACKEND_DIR, 'web', relativePath),
+        ];
+        return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+      });
     if (assets.length === 0) continue;
     if (field === 'referenceImages' && (resolved.referenceImages?.length ?? 0) === 0) {
       resolved = { ...resolved, referenceImages: assets };

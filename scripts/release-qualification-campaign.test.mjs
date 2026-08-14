@@ -245,7 +245,7 @@ test('qualification input readiness verifies exact local default-input bytes', (
           },
         ],
       },
-      root,
+      [join(root, 'lightweight-client-public'), root],
     );
     assert.equal(readiness.status, 'ready');
     assert.equal(readiness.jobCount, 2);

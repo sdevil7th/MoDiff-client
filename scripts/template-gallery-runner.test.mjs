@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +56,26 @@ test('gallery runner reuses the same byte-pinned default inputs as the product',
   assert.match(audio.sourceAudio, /runtime-inputs[\\/]assets[\\/][0-9a-f]{64}\.wav$/);
   assert.match(outpaint.sourceVideo, /runtime-inputs[\\/]assets[\\/][0-9a-f]{64}\.mp4$/);
   assert.match(outpaint.maskVideo, /runtime-inputs[\\/]assets[\\/][0-9a-f]{64}\.mp4$/);
+});
+
+test('gallery runner resolves installer-managed default inputs from backend web', () => {
+  const backendDir = mkdtempSync(resolve(tmpdir(), 'modiff-runner-backend-'));
+  try {
+    const bindings = JSON.parse(
+      readFileSync(resolve(ROOT, 'public/template-gallery/runtime-inputs/default-input-bindings.json'), 'utf8'),
+    );
+    const runtimePath = bindings.ace_step_audio_variation[0].defaultAssets[0].runtimePath;
+    const installedPath = resolve(backendDir, 'web', runtimePath.replace(/^\/+/, ''));
+    mkdirSync(dirname(installedPath), { recursive: true });
+    writeFileSync(installedPath, 'installed fixture');
+    const resolvedArgs = argsForTemplateInputs(
+      { backendDir, referenceImages: [], templateInputMap: {} },
+      { id: 'ace_step_audio_variation' },
+    );
+    assert.equal(resolvedArgs.sourceAudio, installedPath);
+  } finally {
+    rmSync(backendDir, { recursive: true, force: true });
+  }
 });
 
 test('gallery provenance recovers measurements from a queue-restored completion receipt', () => {
