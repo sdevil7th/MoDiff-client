@@ -9,10 +9,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // The capability-driven media contract and graph workspace share one stable
 // production bundle. Keep a narrow margin over the measured largest chunk.
 const MAX_ENTRY_GZIP_BYTES = 438 * 1024;
-// Janus any-to-any contracts and the pinned model-use acknowledgement add
-// 1,494 bytes to the prior 534,926-byte baseline. The audited production
-// surface is 536,420 bytes; 525 KiB retains a 1,180-byte regression margin.
-const MAX_TOTAL_GZIP_BYTES = 525 * 1024;
+// Two direct Qwen and five extended video contracts add 1,890 bytes to the
+// prior 536,420-byte baseline. The audited production surface is 538,310
+// bytes; 527 KiB retains a 1,338-byte regression margin.
+const MAX_TOTAL_GZIP_BYTES = 527 * 1024;
 
 function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`;
