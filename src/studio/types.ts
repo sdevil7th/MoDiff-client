@@ -8,6 +8,8 @@ import type {
 export type StudioMode =
   | 'unconditional_image'
   | 'depth_estimation'
+  | 'text_generation'
+  | 'image_to_text'
   | 'speech_to_text'
   | 'speech_translation'
   | 'text_to_image'
@@ -42,6 +44,8 @@ export type StudioModelType =
   | 'LatentConsistencyModelPipeline'
   | 'StableDiffusionPAGPipeline'
   | 'MarigoldDepthPipeline'
+  | 'HuggingFaceTextGenerationModel'
+  | 'HuggingFaceImageTextToTextModel'
   | 'HuggingFaceSpeechRecognitionModel'
   | 'ZImageModularPipeline'
   | 'QwenImageModularPipeline'
@@ -440,7 +444,12 @@ export type StudioGraphRole =
   | 'diffusersThreeDGenerate'
   | 'speechModel'
   | 'transcribeAudio'
-  | 'transcriptPreview';
+  | 'transcriptPreview'
+  | 'transformersTextModel'
+  | 'transformersTextGenerate'
+  | 'transformersImageTextModel'
+  | 'transformersImageTextGenerate'
+  | 'transformersTextPreview';
 
 export type StudioGraphBinding = {
   mode: StudioMode;
@@ -860,6 +869,8 @@ export type StudioModelProfile = {
     | 'Sana'
     | 'DreamLite'
     | 'Marigold'
+    | 'SmolLM'
+    | 'SmolVLM'
     | 'Whisper';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';

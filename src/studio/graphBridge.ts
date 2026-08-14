@@ -184,6 +184,11 @@ const NODE_KEYS = {
   speechModel: 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel',
   transcribeAudio: 'modules.HuggingFaceSpeech.TranscribeAudio',
   transcriptPreview: 'modules.Primitive.DataViewer',
+  transformersTextModel: 'modules.HuggingFaceTransformers.LoadTextGenerationModel',
+  transformersTextGenerate: 'modules.HuggingFaceTransformers.GenerateText',
+  transformersImageTextModel: 'modules.HuggingFaceTransformers.LoadImageTextToTextModel',
+  transformersImageTextGenerate: 'modules.HuggingFaceTransformers.GenerateImageVideoText',
+  transformersTextPreview: 'modules.Primitive.DataViewer',
 } satisfies Record<StudioGraphRole, string>;
 
 const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
@@ -242,6 +247,11 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   speechModel: { x: -720, y: -80 },
   transcribeAudio: { x: -240, y: -80 },
   transcriptPreview: { x: 240, y: -80 },
+  transformersTextModel: { x: -720, y: -80 },
+  transformersTextGenerate: { x: -240, y: -80 },
+  transformersImageTextModel: { x: -720, y: -80 },
+  transformersImageTextGenerate: { x: -240, y: -80 },
+  transformersTextPreview: { x: 240, y: -80 },
 };
 
 const REQUIRED_BASE_ROLES: StudioGraphRole[] = ['models', 'prompt', 'denoise', 'decode', 'preview'];
@@ -335,6 +345,14 @@ function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBindin
 function usesDiffusersThreeDFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersThreeDPipeline) return true;
   return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-three-d';
+}
+
+function usesStaticHuggingFaceExecutionSpec(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+  binding?: StudioGraphBinding | null,
+) {
+  const executionSpec = binding ? executionSpecForBinding(binding) : executionSpecForForm(form);
+  return executionSpec?.executionPath.startsWith('direct-huggingface-') ?? false;
 }
 
 function usesExpertProfileQuantization(form: StudioFormState) {
@@ -2618,11 +2636,7 @@ async function waitForValue<T>(read: () => T | undefined, timeout: number, inter
 }
 
 function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGraphBinding | null) {
-  if (
-    binding &&
-    (executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech' ||
-      usesDiffusersThreeDFacade(binding))
-  )
+  if (usesStaticHuggingFaceExecutionSpec(form, binding) || (binding && usesDiffusersThreeDFacade(binding)))
     return false;
   return (
     modularVideoGroupObserved(binding) ||
@@ -4299,10 +4313,7 @@ async function finalizeStudioGraph(
       definitionRevision = graphDefinitionRevision;
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
-    } else if (
-      executionSpecForBinding(binding)?.executionPath === 'direct-huggingface-speech' ||
-      usesDiffusersThreeDFacade(binding)
-    ) {
+    } else if (usesStaticHuggingFaceExecutionSpec(form, binding) || usesDiffusersThreeDFacade(binding)) {
       await finalizeStaticExecutionSpecGraph(binding, form, token);
     } else if (!isVideoMode(form.mode)) {
       await finalizeModularGraph(binding, form, timedOutGroups, token);

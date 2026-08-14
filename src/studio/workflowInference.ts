@@ -319,6 +319,22 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   }
 
   if (
+    modelType === 'HuggingFaceImageTextToTextModel' ||
+    roles.has('transformersImageTextGenerate') ||
+    keys.has('modules.HuggingFaceTransformers.GenerateImageVideoText')
+  ) {
+    return 'image_to_text';
+  }
+
+  if (
+    modelType === 'HuggingFaceTextGenerationModel' ||
+    roles.has('transformersTextGenerate') ||
+    keys.has('modules.HuggingFaceTransformers.GenerateText')
+  ) {
+    return 'text_generation';
+  }
+
+  if (
     modelType === 'HuggingFaceSpeechRecognitionModel' ||
     roles.has('transcribeAudio') ||
     keys.has('modules.HuggingFaceSpeech.TranscribeAudio')

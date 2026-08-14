@@ -107,6 +107,8 @@ export const DREAMLITE_BASE_REPO = 'carlofkl/DreamLite-base';
 export const DREAMLITE_MOBILE_REPO = 'carlofkl/DreamLite-mobile';
 export const LCM_DREAMSHAPER_REPO = 'SimianLuo/LCM_Dreamshaper_v7';
 export const MARIGOLD_DEPTH_LCM_REPO = 'prs-eth/marigold-depth-lcm-v1-0';
+export const SMOLLM2_135M_INSTRUCT_REPO = 'HuggingFaceTB/SmolLM2-135M-Instruct';
+export const SMOLVLM_256M_INSTRUCT_REPO = 'HuggingFaceTB/SmolVLM-256M-Instruct';
 export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
@@ -284,6 +286,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'LCM DreamShaper v7',
   'Stable Diffusion 1.5 PAG',
   'Marigold Depth LCM v1.0',
+  'SmolLM2 135M Instruct',
+  'SmolVLM 256M Instruct',
   'Whisper Tiny',
   'DDPM CIFAR-10 32x32',
   'DDIM CIFAR-10 32x32',
@@ -293,6 +297,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   unconditional_image: 'Sample images without a prompt.',
   depth_estimation: 'Estimate relative depth from an image.',
+  text_generation: 'Generate bounded text from a prompt.',
+  image_to_text: 'Describe or answer questions about one image.',
   speech_to_text: 'Transcribe audio with optional timestamps.',
   speech_translation: 'Translate recognized speech to English.',
   text_to_image: 'Generate an image from a prompt.',
@@ -438,6 +444,8 @@ export const AUDIO_STUDIO_MODES: StudioMode[] = [
 ];
 
 export const SPEECH_STUDIO_MODES: StudioMode[] = ['speech_to_text', 'speech_translation'];
+export const TRANSFORMERS_TEXT_STUDIO_MODES: StudioMode[] = ['text_generation'];
+export const TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES: StudioMode[] = ['image_to_text'];
 export const THREE_D_STUDIO_MODES: StudioMode[] = ['text_to_3d'];
 
 export const FLUX_STUDIO_MODEL_TYPES: StudioModelType[] = ['FluxSchnellPipeline', 'FluxDevPipeline'];
@@ -1670,6 +1678,59 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       },
     },
   },
+  HuggingFaceTextGenerationModel: {
+    family: 'SmolLM',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'transformers',
+    isDiffusersBacked: false,
+    defaultRepo: SMOLLM2_135M_INSTRUCT_REPO,
+    artifactLabel: 'Transformers safetensors repo',
+    defaultDtype: 'float32',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 1, height: 1, aspectRatio: '1:1' },
+    offloadSupport: {
+      modes: ['none'],
+      default: 'none',
+      lowVram: 'none',
+      emergency: 'none',
+    },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    supportFlags: 0,
+    supportsNegativePrompt: false,
+    outputKind: 'json',
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1 },
+    modes: TRANSFORMERS_TEXT_STUDIO_MODES,
+  },
+  HuggingFaceImageTextToTextModel: {
+    family: 'SmolVLM',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'transformers',
+    isDiffusersBacked: false,
+    defaultRepo: SMOLVLM_256M_INSTRUCT_REPO,
+    artifactLabel: 'Transformers safetensors repo',
+    defaultDtype: 'float32',
+    guidanceLabel: 'Not used',
+    defaultSize: { width: 512, height: 512, aspectRatio: '1:1' },
+    offloadSupport: {
+      modes: ['none'],
+      default: 'none',
+      lowVram: 'none',
+      emergency: 'none',
+    },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    supportFlags: 1,
+    supportsNegativePrompt: false,
+    outputKind: 'json',
+    lowVram: { dtype: 'float32', autoOffload: false, offloadMode: 'none', steps: 1, width: 512, height: 512 },
+    modes: TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES,
+    modeRequirements: {
+      image_to_text: { requiredImages: ['referenceImages'] },
+    },
+  },
   HuggingFaceSpeechRecognitionModel: {
     family: 'Whisper',
     surfaceCategory: 'Utility',
@@ -2220,6 +2281,28 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'The generic prediction-map graph returns relative depth and a grayscale preview.',
     manualOnlyReason: 'The shared prediction-map contract and remote quality review are pending qualification.',
   },
+  HuggingFaceTextGenerationModel: {
+    modelType: 'HuggingFaceTextGenerationModel',
+    supportedModes: TRANSFORMERS_TEXT_STUDIO_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    recommended: 'Use the reviewed SmolLM2 135M Instruct float32 profile with bounded token controls.',
+    qualityDefaults: 'Deterministic generation, at most 256 new tokens.',
+    artifacts: [SMOLLM2_135M_INSTRUCT_REPO],
+    notes: 'The generic causal-LM graph returns bounded text and a versioned JSON receipt.',
+    manualOnlyReason: 'App-only model installation, live output review, and Gallery qualification pending.',
+  },
+  HuggingFaceImageTextToTextModel: {
+    modelType: 'HuggingFaceImageTextToTextModel',
+    supportedModes: TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    recommended: 'Use the reviewed SmolVLM 256M Instruct float32 profile with one bounded local image.',
+    qualityDefaults: 'One image, deterministic generation, at most 256 new tokens.',
+    artifacts: [SMOLVLM_256M_INSTRUCT_REPO],
+    notes: 'The generic image-to-text graph returns bounded text and a versioned JSON receipt.',
+    manualOnlyReason: 'App-only model installation, live output review, and Gallery qualification pending.',
+  },
   HuggingFaceSpeechRecognitionModel: {
     modelType: 'HuggingFaceSpeechRecognitionModel',
     supportedModes: SPEECH_STUDIO_MODES,
@@ -2379,6 +2462,12 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   }
   if (mode === 'depth_estimation') {
     return 'MarigoldDepthPipeline';
+  }
+  if (TRANSFORMERS_TEXT_STUDIO_MODES.includes(mode)) {
+    return 'HuggingFaceTextGenerationModel';
+  }
+  if (TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES.includes(mode)) {
+    return 'HuggingFaceImageTextToTextModel';
   }
   if (SPEECH_STUDIO_MODES.includes(mode)) {
     return 'HuggingFaceSpeechRecognitionModel';

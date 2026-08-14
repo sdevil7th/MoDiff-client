@@ -159,6 +159,24 @@ const PIPELINE_POLICY = {
   resolved_artifact: internal(),
 } satisfies RolePolicy;
 
+const TRANSFORMERS_GENERATION_POLICY = {
+  model: internal(),
+  prompt: essential('prompt'),
+  images: internal(),
+  video: internal(),
+  use_chat_template: advanced(),
+  max_new_tokens: advanced(),
+  min_new_tokens: advanced(),
+  do_sample: advanced(),
+  temperature: advanced(),
+  top_p: advanced(),
+  top_k: advanced(),
+  num_beams: advanced(),
+  repetition_penalty: advanced(),
+  text: internal(),
+  result: internal(),
+} satisfies RolePolicy;
+
 const QUANTIZATION_POLICY = {
   backend: advanced('quantizationMode'),
   quantization_mode: advanced('quantizationMode'),
@@ -559,6 +577,15 @@ export const MANAGED_CONTROL_POLICIES = {
     duration_seconds: internal(),
   },
   transcriptPreview: {
+    value: internal(),
+    preview: internal(),
+    output: internal(),
+  },
+  transformersTextModel: PIPELINE_POLICY,
+  transformersTextGenerate: TRANSFORMERS_GENERATION_POLICY,
+  transformersImageTextModel: PIPELINE_POLICY,
+  transformersImageTextGenerate: TRANSFORMERS_GENERATION_POLICY,
+  transformersTextPreview: {
     value: internal(),
     preview: internal(),
     output: internal(),

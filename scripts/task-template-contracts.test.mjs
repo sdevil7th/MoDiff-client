@@ -7,7 +7,9 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let contractsModule;
+let executionSpecsModule;
 let hashModule;
+let modelProfilesModule;
 let server;
 
 before(async () => {
@@ -20,7 +22,9 @@ before(async () => {
     appType: 'custom',
   });
   contractsModule = await server.ssrLoadModule('/src/studio/taskTemplateContracts.ts');
+  executionSpecsModule = await server.ssrLoadModule('/src/studio/executionSpecs.ts');
   hashModule = await server.ssrLoadModule('/src/studio/stableHash.ts');
+  modelProfilesModule = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
 });
 
 after(async () => {
@@ -91,6 +95,38 @@ const fixtures = [
     outputNode: 'modules.Primitive.DataViewer',
     outputHandle: 'value',
     requiredMedia: [{ kind: 'audio', field: 'sourceAudio', minimumCount: 1 }],
+  },
+  {
+    modelType: 'HuggingFaceTextGenerationModel',
+    mode: 'text_generation',
+    mediaKind: 'json',
+    profileId: 'fixture-transformers-text:direct',
+    specId: 'fixture-transformers-text:text-generation:v1',
+    loaderModule: 'modules.HuggingFaceTransformers',
+    loaderAction: 'LoadTextGenerationModel',
+    loaderRole: 'transformersTextModel',
+    pipelineClass: 'AutoModelForCausalLM',
+    repo: 'owner/text-model',
+    outputRole: 'transformersTextPreview',
+    outputNode: 'modules.Primitive.DataViewer',
+    outputHandle: 'value',
+    requiredMedia: [],
+  },
+  {
+    modelType: 'HuggingFaceImageTextToTextModel',
+    mode: 'image_to_text',
+    mediaKind: 'json',
+    profileId: 'fixture-transformers-image-text:direct',
+    specId: 'fixture-transformers-image-text:image-to-text:v1',
+    loaderModule: 'modules.HuggingFaceTransformers',
+    loaderAction: 'LoadImageTextToTextModel',
+    loaderRole: 'transformersImageTextModel',
+    pipelineClass: 'AutoModelForImageTextToText',
+    repo: 'owner/image-text-model',
+    outputRole: 'transformersTextPreview',
+    outputNode: 'modules.Primitive.DataViewer',
+    outputHandle: 'value',
+    requiredMedia: [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
   },
 ];
 
@@ -184,9 +220,11 @@ test('generic image video audio and JSON task contracts build stable skeletons a
       ['video', [['video', 'sourceVideo', 1]]],
       ['audio', [['audio', 'sourceAudio', 1]]],
       ['json', [['audio', 'sourceAudio', 1]]],
+      ['json', []],
+      ['json', [['image', 'referenceImages', 1]]],
     ],
   );
-  assert.equal(new Set(first.map(({ id }) => id)).size, 4);
+  assert.equal(new Set(first.map(({ id }) => id)).size, 6);
 });
 
 test('qualification-pending task skeletons remain hidden from Gallery', () => {
@@ -194,6 +232,109 @@ test('qualification-pending task skeletons remain hidden from Gallery', () => {
   const parsed = contractsModule.parseTaskTemplateContracts(fixture.contracts, 1, fixture.capabilities);
   assert.deepEqual(contractsModule.galleryTaskTemplateSkeletons(parsed), []);
   assert.ok(parsed.every((contract) => contract.galleryEligible === false));
+});
+
+test('Smol Transformers profiles and exact generic execution roles stay workflow-only', () => {
+  const cases = [
+    {
+      modelType: 'HuggingFaceTextGenerationModel',
+      mode: 'text_generation',
+      profileId: 'smollm2-135m-instruct:direct',
+      loaderAction: 'LoadTextGenerationModel',
+      executionPath: 'direct-huggingface-transformers-text',
+      pipelineClass: 'AutoModelForCausalLM',
+      repo: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+      roles: [
+        ['transformersTextModel', 'modules.HuggingFaceTransformers.LoadTextGenerationModel', -720, -80],
+        ['transformersTextGenerate', 'modules.HuggingFaceTransformers.GenerateText', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersTextModel', 'model', 'transformersTextGenerate', 'model'],
+        ['transformersTextGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+      bindings: [
+        ['transformersTextModel', 'model_id', 'artifact'],
+        ['transformersTextModel', 'revision', 'defaultRevision'],
+        ['transformersTextModel', 'dtype', 'dtype'],
+        ['transformersTextModel', 'device', 'device'],
+        ['transformersTextGenerate', 'prompt', 'prompt'],
+      ],
+    },
+    {
+      modelType: 'HuggingFaceImageTextToTextModel',
+      mode: 'image_to_text',
+      profileId: 'smolvlm-256m-instruct:direct',
+      loaderAction: 'LoadImageTextToTextModel',
+      executionPath: 'direct-huggingface-transformers-image-text',
+      pipelineClass: 'AutoModelForImageTextToText',
+      repo: 'HuggingFaceTB/SmolVLM-256M-Instruct',
+      roles: [
+        ['transformersImageTextModel', 'modules.HuggingFaceTransformers.LoadImageTextToTextModel', -720, -80],
+        ['loadImage', 'modules.Image.Load', -720, 280],
+        ['transformersImageTextGenerate', 'modules.HuggingFaceTransformers.GenerateImageVideoText', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersImageTextModel', 'model', 'transformersImageTextGenerate', 'model'],
+        ['loadImage', 'image', 'transformersImageTextGenerate', 'images'],
+        ['transformersImageTextGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+      bindings: [
+        ['transformersImageTextModel', 'model_id', 'artifact'],
+        ['transformersImageTextModel', 'revision', 'defaultRevision'],
+        ['transformersImageTextModel', 'dtype', 'dtype'],
+        ['transformersImageTextModel', 'device', 'device'],
+        ['loadImage', 'file', 'referenceImages'],
+        ['loadImage', 'alpha_channel', 'alphaMode'],
+        ['transformersImageTextGenerate', 'prompt', 'prompt'],
+      ],
+    },
+  ];
+
+  for (const item of cases) {
+    const profile = {
+      id: item.profileId,
+      modes: [item.mode],
+      loader_module: 'modules.HuggingFaceTransformers',
+      loader_action: item.loaderAction,
+      execution_path: item.executionPath,
+      pipeline_class: item.pipelineClass,
+      default_repo: item.repo,
+    };
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `${item.profileId.split(':')[0]}:${item.mode.replaceAll('_', '-')}:v1`,
+      modelType: item.modelType,
+      mode: item.mode,
+      executionProfileId: item.profileId,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: profile.default_repo,
+      roles: item.roles,
+      edges: item.edges,
+      bindings: item.bindings,
+      autoFields: [],
+      actions: [],
+    };
+    const spec = {
+      ...semantic,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+    assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], item.modelType, [item.mode], [profile]), [
+      spec,
+    ]);
+    const staticProfile = modelProfilesModule.STUDIO_MODEL_PROFILES[item.modelType];
+    assert.equal(staticProfile.catalogVisibility, 'workflowOnly');
+    assert.equal(staticProfile.runtimeKind, 'transformers');
+    assert.equal(staticProfile.isDiffusersBacked, false);
+    assert.equal(staticProfile.defaultRepo, item.repo);
+    assert.deepEqual(staticProfile.offloadSupport.modes, ['none']);
+    assert.equal(modelProfilesModule.getDefaultModelForMode(item.mode), item.modelType);
+  }
 });
 
 test('contracts for backend model types unknown to this client are ignored', () => {
