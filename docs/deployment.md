@@ -76,6 +76,11 @@ the Gallery runner repeats download-idle immediately before every selected
 template. The input readiness check reads only the selected templates' local
 defaults and rejects absent files, links, size or SHA-256 mismatches, unpinned
 bindings, and inconsistent asset-manifest records.
+A real campaign also acquires one process-owned lock before refreshing or
+writing evidence. A concurrent campaign fails before it can replace the first
+campaign's state, stale locks are recovered after their owning process exits,
+and every state update is atomically replaced on disk. Dry runs do not claim
+the lock or write campaign state.
 A source-release checkout without the installer-managed Gallery payload is
 expected to fail the input check. On an already running source-release app,
 open **Setup → Template Gallery assets** and use its app-owned plan/install

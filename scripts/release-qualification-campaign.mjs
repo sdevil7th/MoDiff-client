@@ -1,6 +1,18 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -20,6 +32,7 @@ const STATE_PATH = resolve(
   process.env.MODIFF_QUALIFICATION_CAMPAIGN_STATE ||
     join(CLIENT_ROOT, 'artifacts', 'template-qualification', 'campaign-state.v1.json'),
 );
+const CAMPAIGN_LOCK_PATH = `${STATE_PATH}.lock`;
 const USER_OWNED_TEMPLATE_IDS = new Set();
 export const RUNNER_INFRASTRUCTURE_EXIT_CODE = 70;
 
@@ -609,9 +622,80 @@ async function fetchAppDownloadStatus(server, timeoutMs) {
   }
 }
 
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function acquireCampaignLock(lockPath = CAMPAIGN_LOCK_PATH, pid = process.pid) {
+  mkdirSync(dirname(lockPath), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const descriptor = openSync(lockPath, 'wx');
+      let written = false;
+      try {
+        writeFileSync(descriptor, `${JSON.stringify({ pid, startedAt: new Date().toISOString() })}\n`, 'utf8');
+        written = true;
+      } finally {
+        closeSync(descriptor);
+        if (!written) rmSync(lockPath, { force: true });
+      }
+      return () => {
+        try {
+          const owner = JSON.parse(readFileSync(lockPath, 'utf8'));
+          if (owner?.pid === pid) unlinkSync(lockPath);
+        } catch {
+          // A replaced or already-cleaned lock belongs to another process.
+        }
+      };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      let owner = null;
+      try {
+        owner = JSON.parse(readFileSync(lockPath, 'utf8'));
+      } catch {
+        // Invalid lock files are stale and safe to replace.
+      }
+      if (processIsAlive(Number(owner?.pid))) {
+        throw new Error(
+          `Another release qualification campaign is active (PID ${owner.pid}). Wait for it to finish instead of sharing one state file and app execution session.`,
+        );
+      }
+      try {
+        unlinkSync(lockPath);
+      } catch (unlinkError) {
+        if (unlinkError?.code !== 'ENOENT') throw unlinkError;
+      }
+    }
+  }
+  throw new Error('Could not acquire the release qualification campaign lock.');
+}
+
+export function writeCampaignStateAtomic(path, state) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    const descriptor = openSync(temporaryPath, 'wx');
+    try {
+      writeFileSync(descriptor, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+    renameSync(temporaryPath, path);
+  } catch (error) {
+    rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
 function writeState(state) {
-  mkdirSync(dirname(STATE_PATH), { recursive: true });
-  writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
+  writeCampaignStateAtomic(STATE_PATH, state);
 }
 
 export function campaignStatusForRunner(result) {
@@ -686,8 +770,7 @@ export function galleryArgsForGroup(args, templateIds) {
   ];
 }
 
-export async function runCampaign(argv = process.argv) {
-  const args = parseArgs(argv);
+async function executeCampaign(args) {
   // A previous or interrupted gallery run can write a valid receipt before
   // this campaign state is finalized. Always rebuild the contract before
   // selecting work so resume never repeats a template that is already
@@ -863,6 +946,17 @@ export async function runCampaign(argv = process.argv) {
   writeState(state);
   console.log(JSON.stringify(state.coverage, null, 2));
   return state.coverage.failed > 0 || state.coverage.infrastructureFailed > 0 || state.coverage.pending > 0 ? 1 : 0;
+}
+
+export async function runCampaign(argv = process.argv) {
+  const args = parseArgs(argv);
+  if (args.dryRun) return executeCampaign(args);
+  const releaseCampaignLock = acquireCampaignLock();
+  try {
+    return await executeCampaign(args);
+  } finally {
+    releaseCampaignLock();
+  }
 }
 
 const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;

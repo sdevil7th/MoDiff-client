@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -8,6 +8,7 @@ import {
   appCacheUrl,
   appDownloadStatusUrl,
   appReadinessForJobs,
+  acquireCampaignLock,
   blockedReadinessKinds,
   campaignStatusForRunner,
   downloadReadinessForStatus,
@@ -17,6 +18,7 @@ import {
   modelFamilyForTemplate,
   requiredReadinessChecks,
   selectedJobs,
+  writeCampaignStateAtomic,
 } from './release-qualification-campaign.mjs';
 
 const contract = {
@@ -300,6 +302,32 @@ test('real qualification always requires every readiness check while dry runs re
     }),
     { appCache: true, downloads: false, defaultInputs: true },
   );
+});
+
+test('qualification campaign owns one state writer and atomically replaces its receipt', () => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-qualification-campaign-'));
+  const lockPath = join(root, 'campaign-state.json.lock');
+  const statePath = join(root, 'campaign-state.json');
+  try {
+    const release = acquireCampaignLock(lockPath, process.pid);
+    assert.equal(JSON.parse(readFileSync(lockPath, 'utf8')).pid, process.pid);
+    assert.throws(() => acquireCampaignLock(lockPath, process.pid), /another release qualification campaign/i);
+    writeCampaignStateAtomic(statePath, { schemaVersion: 1, value: 1 });
+    writeCampaignStateAtomic(statePath, { schemaVersion: 1, value: 2 });
+    assert.equal(JSON.parse(readFileSync(statePath, 'utf8')).value, 2);
+    assert.deepEqual(
+      readdirSync(root).filter((entry) => entry.endsWith('.tmp')),
+      [],
+    );
+    release();
+    assert.equal(existsSync(lockPath), false);
+    writeFileSync(lockPath, `${JSON.stringify({ pid: 0, startedAt: new Date(0).toISOString() })}\n`, 'utf8');
+    const releaseRecovered = acquireCampaignLock(lockPath, process.pid);
+    assert.equal(JSON.parse(readFileSync(lockPath, 'utf8')).pid, process.pid);
+    releaseRecovered();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('qualification app readiness rejects malformed app inventory and artifact receipts', () => {
