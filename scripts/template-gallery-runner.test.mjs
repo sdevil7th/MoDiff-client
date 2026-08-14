@@ -22,6 +22,7 @@ import {
   orderTemplatesForRuntimeReuse,
   parseArgs,
   prepareRuntimeForTemplate,
+  requireAppDownloadsIdle,
   shouldPrepareRuntimeForTemplate,
   taskProgressFingerprint,
   waitForQueueIdle,
@@ -555,6 +556,51 @@ test('gallery runner tolerates a transient queue request failure while waiting f
   );
   assert.deepEqual(result, { queued: {}, current: null });
   assert.equal(calls, 2);
+});
+
+test('gallery runner fails closed while app downloads or Gallery installation reserve space', async () => {
+  const status = (overrides = {}) => ({
+    error: false,
+    schemaVersion: 1,
+    downloads: [],
+    activeCount: 0,
+    queuedReservationBytes: 0,
+    templateGalleryReservationBytes: 0,
+    ...overrides,
+  });
+  const fetchStatus =
+    (payload, response = {}) =>
+    async () =>
+      new Response(JSON.stringify(payload), {
+        status: response.status ?? 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+  const ready = await requireAppDownloadsIdle('http://127.0.0.1:8088', fetchStatus(status()));
+  assert.equal(ready.activeCount, 0);
+
+  await assert.rejects(
+    requireAppDownloadsIdle(
+      'http://127.0.0.1:8088',
+      fetchStatus(
+        status({
+          downloads: [{ repo_id: 'owner/model', task_id: 'download-task', status: 'downloading' }],
+          activeCount: 1,
+          queuedReservationBytes: 100,
+        }),
+      ),
+    ),
+    /App downloads.*active.*owner\/model/,
+  );
+  await assert.rejects(
+    requireAppDownloadsIdle('http://127.0.0.1:8088', fetchStatus(status({ templateGalleryReservationBytes: 10 }))),
+    /App downloads.*active/,
+  );
+  await assert.rejects(
+    requireAppDownloadsIdle('http://127.0.0.1:8088', fetchStatus({ error: false, downloads: [] })),
+    /malformed/,
+  );
+  assert.equal(isGalleryInfrastructureFailure(new Error('App downloads or Gallery installation are active')), true);
 });
 
 test('gallery runner waits for the attributed task terminal receipt after media appears', async () => {

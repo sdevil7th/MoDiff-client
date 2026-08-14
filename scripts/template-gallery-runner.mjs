@@ -851,6 +851,74 @@ export async function waitForQueueIdle(server, fetchImpl = fetch, { timeoutMs = 
   );
 }
 
+export async function requireAppDownloadsIdle(server, fetchImpl = fetch, { timeoutMs = 10_000 } = {}) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
+    throw new Error('App download-status timeout must be between 1 and 120000 milliseconds.');
+  }
+  const response = await fetchImpl(new URL('/hf_download/status', server), {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) throw new Error(`Could not inspect app downloads: HTTP ${response.status}.`);
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > 1024 * 1024) {
+    throw new Error('Could not inspect app downloads: response exceeds the 1 MiB bound.');
+  }
+  const body = await response.text();
+  if (Buffer.byteLength(body, 'utf8') > 1024 * 1024) {
+    throw new Error('Could not inspect app downloads: response exceeds the 1 MiB bound.');
+  }
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    throw new Error('Could not inspect app downloads: response is not valid JSON.');
+  }
+  if (
+    payload?.error !== false ||
+    payload?.schemaVersion !== 1 ||
+    !Array.isArray(payload.downloads) ||
+    payload.downloads.length > 256 ||
+    !Number.isSafeInteger(payload.activeCount) ||
+    payload.activeCount < 0 ||
+    payload.activeCount !== payload.downloads.length ||
+    !Number.isSafeInteger(payload.queuedReservationBytes) ||
+    payload.queuedReservationBytes < 0 ||
+    !Number.isSafeInteger(payload.templateGalleryReservationBytes) ||
+    payload.templateGalleryReservationBytes < 0 ||
+    payload.downloads.some(
+      (download) =>
+        !download ||
+        typeof download !== 'object' ||
+        Array.isArray(download) ||
+        typeof download.repo_id !== 'string' ||
+        download.repo_id.length < 3 ||
+        download.repo_id.length > 256 ||
+        typeof download.task_id !== 'string' ||
+        download.task_id.length < 1 ||
+        download.task_id.length > 128 ||
+        typeof download.status !== 'string' ||
+        download.status.length < 1 ||
+        download.status.length > 64,
+    )
+  ) {
+    throw new Error('Could not inspect app downloads: status payload is malformed or exceeds its bound.');
+  }
+  if (payload.activeCount > 0 || payload.queuedReservationBytes > 0 || payload.templateGalleryReservationBytes > 0) {
+    const activeRepos = payload.downloads
+      .slice(0, 3)
+      .map((download) => download?.repo_id)
+      .filter((repo) => typeof repo === 'string' && repo)
+      .join(', ');
+    throw new Error(
+      `App downloads or Gallery installation are active (${payload.activeCount} task(s), ` +
+        `${payload.queuedReservationBytes} model bytes and ${payload.templateGalleryReservationBytes} Gallery bytes reserved)` +
+        `${activeRepos ? `: ${activeRepos}` : '.'}`,
+    );
+  }
+  return payload;
+}
+
 export function isGalleryInfrastructureFailure(error) {
   const message = error instanceof Error ? error.message : String(error ?? '');
   return [
@@ -860,6 +928,8 @@ export function isGalleryInfrastructureFailure(error) {
     /ERR_CONNECTION_REFUSED/i,
     /backend queue did not become idle/i,
     /Could not inspect the backend queue/i,
+    /Could not inspect app downloads/i,
+    /App downloads.*active/i,
     /Frontend port \d+ is already occupied/i,
     /Timed out waiting for .*\/health/i,
     /websocket.*(?:connect|timeout)/i,
@@ -2051,6 +2121,7 @@ async function main() {
       timeoutMs: args.queueWaitTimeoutMs,
       pollMs: 1_000,
     });
+    await requireAppDownloadsIdle(args.server, fetch, { timeoutMs: Math.min(args.queueWaitTimeoutMs, 120_000) });
     const frontend = await ensureFrontend(args, managedProcesses);
     const browser = await chromium.launch({ headless: args.headless });
     try {
@@ -2137,6 +2208,9 @@ async function main() {
       let previousTemplate = args.reuseExistingRuntimeKey ? { runtimeReuseKey: args.reuseExistingRuntimeKey } : null;
       for (const template of templates) {
         try {
+          await requireAppDownloadsIdle(args.server, fetch, {
+            timeoutMs: Math.min(args.queueWaitTimeoutMs, 120_000),
+          });
           const templateArgs = argsForTemplateInputs(args, template);
           const shouldPrepare = shouldPrepareRuntimeForTemplate(
             previousTemplate,

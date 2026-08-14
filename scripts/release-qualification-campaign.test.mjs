@@ -6,8 +6,10 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   appCacheUrl,
+  appDownloadStatusUrl,
   appReadinessForJobs,
   campaignStatusForRunner,
+  downloadReadinessForStatus,
   galleryArgsForGroup,
   inputReadinessForJobs,
   jobGroups,
@@ -200,6 +202,62 @@ test('qualification app readiness permits only uncredentialed loopback HTTP orig
   for (const server of ['https://example.com', 'file:///tmp/app', 'http://user:secret@127.0.0.1:8088', 'not a URL']) {
     assert.throws(() => appCacheUrl(server), /loopback/);
   }
+});
+
+test('qualification campaign requires an idle app download and Gallery reservation state', () => {
+  const ready = downloadReadinessForStatus({
+    error: false,
+    schemaVersion: 1,
+    downloads: [],
+    activeCount: 0,
+    queuedReservationBytes: 0,
+    templateGalleryReservationBytes: 0,
+  });
+  assert.equal(ready.status, 'ready');
+  assert.equal(appDownloadStatusUrl('http://127.0.0.1:8088/path'), 'http://127.0.0.1:8088/hf_download/status');
+
+  const blocked = downloadReadinessForStatus({
+    error: false,
+    schemaVersion: 1,
+    downloads: [
+      {
+        repo_id: 'owner/model',
+        revision: 'd'.repeat(40),
+        task_id: 'download-task',
+        status: 'downloading',
+        phase: 'downloading',
+        progress: 0.5,
+        remaining_bytes: 50,
+      },
+    ],
+    activeCount: 1,
+    queuedReservationBytes: 50,
+    templateGalleryReservationBytes: 0,
+  });
+  assert.equal(blocked.status, 'blocked');
+  assert.deepEqual(blocked.activeDownloads[0], {
+    repo: 'owner/model',
+    revision: 'd'.repeat(40),
+    taskId: 'download-task',
+    status: 'downloading',
+    phase: 'downloading',
+    progress: 0.5,
+    remainingBytes: 50,
+  });
+
+  assert.throws(
+    () =>
+      downloadReadinessForStatus({
+        error: false,
+        schemaVersion: 1,
+        downloads: [],
+        activeCount: 1,
+        queuedReservationBytes: 0,
+        templateGalleryReservationBytes: 0,
+      }),
+    /malformed|bound/,
+  );
+  assert.throws(() => appDownloadStatusUrl('https://example.com'), /loopback/);
 });
 
 test('qualification app readiness rejects malformed app inventory and artifact receipts', () => {

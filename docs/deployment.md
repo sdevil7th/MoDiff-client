@@ -58,6 +58,7 @@ Gallery payload:
 npm run release:qualification:run -- \
   --dry-run \
   --check-app-readiness \
+  --check-download-idle \
   --check-input-readiness \
   --batch-by-model-family \
   --server http://127.0.0.1:8088
@@ -65,7 +66,11 @@ npm run release:qualification:run -- \
 
 The app readiness check is read-only, accepts only an uncredentialed loopback
 origin, and fails if a required repository or revision is absent, incomplete,
-not installed, or marked for repair. The input readiness check reads only the
+not installed, or marked for repair. The download-idle check uses the app's
+bounded status receipt and blocks while any model transfer or Template Gallery
+installation is active or reserved. A real campaign performs that check even
+without the dry-run flag, repeats it before every model-family group, and the
+Gallery runner repeats it immediately before every selected template. The input readiness check reads only the
 selected templates' local defaults and rejects absent files, links, size or
 SHA-256 mismatches, unpinned bindings, and inconsistent asset-manifest records.
 A source-release checkout without the installer-managed Gallery payload is

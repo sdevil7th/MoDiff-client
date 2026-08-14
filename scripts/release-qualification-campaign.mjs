@@ -27,6 +27,7 @@ function parseArgs(argv) {
   const args = {
     dryRun: false,
     checkAppReadiness: false,
+    checkDownloadIdle: false,
     checkInputReadiness: false,
     maxTemplates: Number.POSITIVE_INFINITY,
     port: Number(process.env.MODIFF_QUALIFICATION_FRONTEND_PORT || 5194),
@@ -47,6 +48,10 @@ function parseArgs(argv) {
     }
     if (entry === '--check-app-readiness') {
       args.checkAppReadiness = true;
+      continue;
+    }
+    if (entry === '--check-download-idle') {
+      args.checkDownloadIdle = true;
       continue;
     }
     if (entry === '--check-input-readiness') {
@@ -237,6 +242,72 @@ export function appCacheUrl(server) {
     throw new Error('Qualification app readiness accepts only an uncredentialed loopback HTTP(S) server URL.');
   }
   return new URL('/hf_cache', parsed.origin).toString();
+}
+
+export function appDownloadStatusUrl(server) {
+  const cacheUrl = new URL(appCacheUrl(server));
+  return new URL('/hf_download/status', cacheUrl.origin).toString();
+}
+
+export function downloadReadinessForStatus(payload) {
+  const downloads = payload?.downloads;
+  const activeCount = payload?.activeCount;
+  const queuedReservationBytes = payload?.queuedReservationBytes;
+  const templateGalleryReservationBytes = payload?.templateGalleryReservationBytes;
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    Array.isArray(payload) ||
+    payload.error !== false ||
+    payload.schemaVersion !== 1 ||
+    !Array.isArray(downloads) ||
+    downloads.length > 256 ||
+    !Number.isSafeInteger(activeCount) ||
+    activeCount < 0 ||
+    activeCount !== downloads.length ||
+    !Number.isSafeInteger(queuedReservationBytes) ||
+    queuedReservationBytes < 0 ||
+    !Number.isSafeInteger(templateGalleryReservationBytes) ||
+    templateGalleryReservationBytes < 0 ||
+    downloads.some(
+      (download) =>
+        !download ||
+        typeof download !== 'object' ||
+        Array.isArray(download) ||
+        typeof download.repo_id !== 'string' ||
+        download.repo_id.length < 3 ||
+        download.repo_id.length > 256 ||
+        typeof download.task_id !== 'string' ||
+        download.task_id.length < 1 ||
+        download.task_id.length > 128 ||
+        typeof download.status !== 'string' ||
+        download.status.length < 1 ||
+        download.status.length > 64 ||
+        (download.revision != null &&
+          (typeof download.revision !== 'string' || !IMMUTABLE_REVISION.test(download.revision))),
+    )
+  ) {
+    throw new Error('The qualification app download status is malformed or exceeds its bound.');
+  }
+  const blocked = activeCount > 0 || queuedReservationBytes > 0 || templateGalleryReservationBytes > 0;
+  return {
+    status: blocked ? 'blocked' : 'ready',
+    activeCount,
+    queuedReservationBytes,
+    templateGalleryReservationBytes,
+    activeDownloads: downloads.map((download) => ({
+      repo: download.repo_id,
+      revision: download.revision ?? null,
+      taskId: download.task_id,
+      status: download.status,
+      phase: typeof download.phase === 'string' ? download.phase : null,
+      progress: typeof download.progress === 'number' && Number.isFinite(download.progress) ? download.progress : null,
+      remainingBytes:
+        Number.isSafeInteger(download.remaining_bytes) && download.remaining_bytes >= 0
+          ? download.remaining_bytes
+          : null,
+    })),
+  };
 }
 
 function artifactKey(artifact) {
@@ -514,6 +585,30 @@ async function fetchAppCache(server, timeoutMs) {
   }
 }
 
+async function fetchAppDownloadStatus(server, timeoutMs) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
+    throw new Error('Qualification download-status timeout must be between 1 and 120000 milliseconds.');
+  }
+  const response = await fetch(appDownloadStatusUrl(server), {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) throw new Error(`The app download-status request failed with HTTP ${response.status}.`);
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > 1024 * 1024) {
+    throw new Error('The app download-status response exceeds the 1 MiB bound.');
+  }
+  const body = await response.text();
+  if (Buffer.byteLength(body, 'utf8') > 1024 * 1024) {
+    throw new Error('The app download-status response exceeds the 1 MiB bound.');
+  }
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error('The app download-status response is not valid JSON.');
+  }
+}
+
 function writeState(state) {
   mkdirSync(dirname(STATE_PATH), { recursive: true });
   writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
@@ -585,6 +680,10 @@ export async function runCampaign(argv = process.argv) {
   const appReadiness = args.checkAppReadiness
     ? appReadinessForJobs(selection.jobs, await fetchAppCache(args.server, args.cacheTimeoutMs))
     : null;
+  const downloadReadiness =
+    !args.dryRun || args.checkDownloadIdle
+      ? downloadReadinessForStatus(await fetchAppDownloadStatus(args.server, args.cacheTimeoutMs))
+      : null;
   const inputReadiness = args.checkInputReadiness
     ? inputReadinessForJobs(selection.jobs, readJson(INPUT_BINDINGS_PATH), readJson(ASSET_MANIFEST_PATH))
     : null;
@@ -604,6 +703,7 @@ export async function runCampaign(argv = process.argv) {
           reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
           excludedMedia: [...new Set(args.excludedMedia)],
           appReadiness,
+          downloadReadiness,
           inputReadiness,
           groups: groups.map((group) => ({
             modelFamily: group.modelFamily,
@@ -616,11 +716,13 @@ export async function runCampaign(argv = process.argv) {
         2,
       ),
     );
-    return appReadiness?.status === 'blocked' || inputReadiness?.status === 'blocked' ? 1 : 0;
+    return [appReadiness, downloadReadiness, inputReadiness].some((readiness) => readiness?.status === 'blocked')
+      ? 1
+      : 0;
   }
 
-  if (appReadiness?.status === 'blocked' || inputReadiness?.status === 'blocked') {
-    console.error(JSON.stringify({ appReadiness, inputReadiness }, null, 2));
+  if ([appReadiness, downloadReadiness, inputReadiness].some((readiness) => readiness?.status === 'blocked')) {
+    console.error(JSON.stringify({ appReadiness, downloadReadiness, inputReadiness }, null, 2));
     return 1;
   }
 
@@ -634,6 +736,7 @@ export async function runCampaign(argv = process.argv) {
     reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
     excludedMedia: [...new Set(args.excludedMedia)],
     appReadiness,
+    downloadReadiness,
     inputReadiness,
     jobs: selection.jobs,
     deferred: selection.deferred,
@@ -641,6 +744,20 @@ export async function runCampaign(argv = process.argv) {
   writeState(state);
 
   for (const group of groups) {
+    const currentDownloadReadiness = downloadReadinessForStatus(
+      await fetchAppDownloadStatus(args.server, args.cacheTimeoutMs),
+    );
+    state.downloadReadiness = currentDownloadReadiness;
+    if (currentDownloadReadiness.status === 'blocked') {
+      state.status = 'blocked';
+      state.stoppedReason =
+        `App downloads became active before the ${group.modelFamily} qualification group; ` +
+        'no graph in that group was submitted.';
+      state.updatedAt = new Date().toISOString();
+      writeState(state);
+      console.error(JSON.stringify({ downloadReadiness: currentDownloadReadiness }, null, 2));
+      return 1;
+    }
     const startedAt = new Date().toISOString();
     for (const job of group.jobs) {
       job.startedAt = startedAt;
