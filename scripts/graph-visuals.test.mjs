@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Position, ReactFlowProvider } from '@xyflow/react';
 import { createServer } from 'vite';
+import {
+  closeWorkflowBrowser,
+  createWorkflowBrowserSessionGuard,
+  parseWorkflowBrowserBatchSize,
+  shouldRecycleWorkflowBrowser,
+} from './workflow-library-browser-session.mjs';
 import {
   createEphemeralWorkflowRouteHandler,
   installEphemeralWorkflowStorage,
@@ -8538,13 +8545,105 @@ test('template creation arranges exactly once after finalization and measurement
   assert.ok(arrangeIndex < revealIndex);
 });
 
+test('canonical workflow browser guards reject terminal renderer failures and bounded stalls', async () => {
+  const session = () => {
+    const page = new EventEmitter();
+    const browser = new EventEmitter();
+    browser.connected = true;
+    browser.isConnected = () => browser.connected;
+    browser.close = async () => {
+      browser.connected = false;
+      browser.emit('disconnected');
+    };
+    return { browser, page };
+  };
+
+  for (const [target, event, code] of [
+    ['page', 'crash', 'page_crashed'],
+    ['page', 'close', 'page_closed'],
+    ['browser', 'disconnected', 'browser_disconnected'],
+  ]) {
+    const current = session();
+    const guard = createWorkflowBrowserSessionGuard({ ...current, operationTimeoutMs: 1_000 });
+    const pending = guard.run('building a test graph', () => new Promise(() => {}));
+    current[target].emit(event);
+    await assert.rejects(
+      pending,
+      (error) => error?.code === code && /canonical workflow/i.test(error.message),
+      `${event} must reject the pending browser operation`,
+    );
+    assert.equal(guard.terminalError?.code, code);
+    guard.dispose();
+  }
+
+  const stalled = session();
+  const stalledGuard = createWorkflowBrowserSessionGuard({ ...stalled, operationTimeoutMs: 5 });
+  await assert.rejects(
+    stalledGuard.run('building a stalled graph', () => new Promise(() => {})),
+    (error) => error?.code === 'operation_timeout' && /5 ms/.test(error.message),
+  );
+  stalledGuard.dispose();
+
+  const intentional = session();
+  const intentionalGuard = createWorkflowBrowserSessionGuard({ ...intentional });
+  intentionalGuard.dispose();
+  intentional.page.emit('close');
+  intentional.browser.emit('disconnected');
+  assert.equal(intentionalGuard.terminalError, null);
+  await assert.rejects(
+    intentionalGuard.run('using a disposed browser', async () => null),
+    (error) => error?.code === 'session_disposed',
+  );
+});
+
+test('canonical workflow browser batches and closure stay bounded', async () => {
+  assert.equal(parseWorkflowBrowserBatchSize(undefined), 20);
+  assert.equal(parseWorkflowBrowserBatchSize('1'), 1);
+  assert.equal(parseWorkflowBrowserBatchSize('100'), 100);
+  for (const invalid of ['0', '101', '1.5', 'unbounded']) {
+    assert.throws(() => parseWorkflowBrowserBatchSize(invalid), /integer from 1 through 100/);
+  }
+
+  const completedBatches = [];
+  let completedInSession = 0;
+  for (let workflow = 0; workflow < 41; workflow += 1) {
+    if (shouldRecycleWorkflowBrowser(completedInSession, 20)) {
+      completedBatches.push(completedInSession);
+      completedInSession = 0;
+    }
+    completedInSession += 1;
+  }
+  completedBatches.push(completedInSession);
+  assert.deepEqual(completedBatches, [20, 20, 1]);
+
+  const closed = {
+    connected: true,
+    isConnected() {
+      return this.connected;
+    },
+    async close() {
+      this.connected = false;
+    },
+  };
+  await closeWorkflowBrowser(closed, 50);
+  assert.equal(closed.connected, false);
+  await assert.rejects(
+    closeWorkflowBrowser({ close: () => new Promise(() => {}), isConnected: () => true }, 5),
+    (error) => error?.code === 'browser_close_timeout',
+  );
+  await assert.rejects(
+    closeWorkflowBrowser({ close: async () => undefined, isConnected: () => true }, 50),
+    (error) => error?.code === 'browser_close_incomplete',
+  );
+});
+
 test('canonical workflow generation persists the final layout and library open does not rearrange it', () => {
   const generator = fs.readFileSync(path.join(ROOT, 'scripts', 'workflow-library-generator.mjs'), 'utf8');
   const graphList = fs.readFileSync(path.join(ROOT, 'src', 'components', 'GraphList.tsx'), 'utf8');
   const verifier = fs.readFileSync(path.join(ROOT, 'scripts', 'workflow-library-verify.mjs'), 'utf8');
 
-  const ephemeralStorageIndex = generator.indexOf('await installEphemeralWorkflowStorage(page)');
-  const navigationIndex = generator.indexOf("await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' })");
+  const ephemeralStorageIndex = generator.indexOf('installEphemeralWorkflowStorage(currentPage)');
+  const navigationIndex = generator.indexOf("currentPage.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' })");
   const prepareIndex = generator.indexOf('prepareWorkflowGraphForExport');
   const preCanonicalArrangeIndex = generator.indexOf('const arrangedBeforeCanonicalIds = await arrangeSnapshot(graph)');
   const canonicalizeIndex = generator.indexOf('canonicalizeGraphIds(arrangedBeforeCanonicalIds)');
@@ -8555,6 +8654,11 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(generator, /applyTaskTemplateSkeleton/);
   assert.match(generator, /applyTemplate\(templateId, \{ resourceMode: 'expert' \}\)/);
   assert.match(generator, /if \(!byPair\.has\(pair\)\)/);
+  assert.match(generator, /shouldRecycleWorkflowBrowser\(completedWorkflowsInSession, WORKFLOW_BROWSER_BATCH_SIZE\)/);
+  assert.match(generator, /if \(isWorkflowBrowserSessionError\(error\)\) throw error/);
+  assert.match(generator, /completedWorkflowsInSession \+= 1/);
+  assert.match(generator, /browserSession\?\.guard\.assertHealthy\('publishing the canonical workflow manifest'\)/);
+  assert.equal((generator.match(/buildTemplateGraphWithRecovery\(/g) ?? []).length, 2);
   assert.ok(ephemeralStorageIndex >= 0 && ephemeralStorageIndex < navigationIndex);
   assert.ok(prepareIndex >= 0);
   assert.ok(preCanonicalArrangeIndex >= 0 && canonicalizeIndex > preCanonicalArrangeIndex);

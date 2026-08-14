@@ -3,6 +3,13 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { canonicalJsonHash as hash, stableJsonValue as stable } from './canonical-json.mjs';
+import {
+  closeWorkflowBrowser,
+  createWorkflowBrowserSessionGuard,
+  isWorkflowBrowserSessionError,
+  parseWorkflowBrowserBatchSize,
+  shouldRecycleWorkflowBrowser,
+} from './workflow-library-browser-session.mjs';
 import { installEphemeralWorkflowStorage } from './workflow-library-ephemeral-storage.mjs';
 import { normalizePortableWorkflowNodeOffload } from './workflow-library-contract.mjs';
 
@@ -27,6 +34,8 @@ const FRONTEND_URL = process.env.MODIFF_FRONTEND || 'http://127.0.0.1:5173';
 const LAYOUT_ALGORITHM = 'modiff-layered-v1';
 const LAYOUT_HORIZONTAL_GAP = 140;
 const LAYOUT_VERTICAL_GAP = 72;
+const WORKFLOW_BROWSER_BATCH_SIZE = parseWorkflowBrowserBatchSize(process.env.MODIFF_WORKFLOW_BROWSER_BATCH_SIZE);
+const WORKFLOW_BROWSER_RECOVERY_ATTEMPTS = 2;
 const pairArgument = process.argv.find((argument) => argument.startsWith('--pair='));
 const requestedPair = pairArgument?.slice('--pair='.length) ?? null;
 if (requestedPair && !/^[A-Za-z\d_]+\|[a-z\d_]+$/.test(requestedPair)) {
@@ -40,6 +49,10 @@ function slug(value) {
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-|-$/g, '')
     .toLowerCase();
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 const DROP_KEYS = new Set([
@@ -277,54 +290,47 @@ async function main() {
     'chrome-linux64',
     'chrome',
   );
-  const browser = await chromium.launch({
+  const browserLaunchOptions = {
     headless: true,
     ...(existsSync(installedChrome) ? { executablePath: installedChrome } : {}),
-  });
-  const page = await browser.newPage();
-  try {
-    // Canonical generation intentionally exercises the real application graph
-    // assembly path, but it is not a user editing session. Keep its browser
-    // and backend workflow documents ephemeral so one template cannot hydrate
-    // or autosave state that interferes with another. Production browser
-    // sessions retain their normal persistence behavior.
-    await installEphemeralWorkflowStorage(page);
-    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-    // Startup registry discovery also scans the model caches. Those scans can
-    // occupy the single backend event loop long enough for the concurrent
-    // capability request to time out, while repeating the full index refresh
-    // only starts another competing scan. Retry the narrow app-owned
-    // capability path instead; the latest-request gate can cancel one attempt
-    // when startup discovery catches up, so keep this bounded and re-check the
-    // authoritative store after every attempt.
-    let taskSkeletonCount = 0;
-    for (let attempt = 1; attempt <= 8; attempt += 1) {
-      taskSkeletonCount = await page.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons().length ?? 0);
-      if (taskSkeletonCount > 0) break;
-      taskSkeletonCount = await page.evaluate(
-        async () => (await window.__MODIFF_E2E__?.refreshTaskTemplateContracts()) ?? 0,
+  };
+  let browserSession = null;
+  let completedWorkflowsInSession = 0;
+  let completedSuccessfully = false;
+
+  const closeBrowserSession = async ({ bestEffort = false } = {}) => {
+    const session = browserSession;
+    browserSession = null;
+    completedWorkflowsInSession = 0;
+    if (!session) return;
+    session.guard.dispose();
+    try {
+      await closeWorkflowBrowser(session.browser);
+    } catch (error) {
+      if (!bestEffort) throw error;
+      process.stderr.write(
+        `Could not fully close a failed canonical workflow browser: ${error instanceof Error ? error.message : error}\n`,
       );
-      if (taskSkeletonCount > 0) break;
-      if (attempt < 8) await page.waitForTimeout(500);
     }
-    if (taskSkeletonCount === 0) {
-      throw new Error('The frontend did not load authoritative Studio task-template contracts.');
-    }
-    // A fresh Vite page can expose the E2E bridge before node/model discovery
-    // settles. Use the same app-owned refresh path as gallery qualification so
-    // graph generation never races an empty node registry.
-    await page.evaluate(() => window.__MODIFF_E2E__?.refreshModelIndexes());
-    // Include blocked planning templates here so graph contracts remain
-    // portable and migration-safe even when the browser correctly hides an
-    // execution path that has not passed live qualification yet.
+  };
+
+  const pageOperation = (description, action) => {
+    if (!browserSession) throw new Error(`No browser session is available while ${description}.`);
+    return browserSession.guard.run(description, action);
+  };
+
+  const loadPageTemplateCatalog = async () => {
     let templates = [];
     let taskTemplates = [];
     let byPair = new Map();
     let missingPairs = [];
     for (let attempt = 1; attempt <= 20; attempt += 1) {
-      templates = await page.evaluate(() => window.__MODIFF_E2E__?.listTemplates(true) ?? []);
-      taskTemplates = await page.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons() ?? []);
+      templates = await pageOperation('reading Studio templates', (page) =>
+        page.evaluate(() => window.__MODIFF_E2E__?.listTemplates(true) ?? []),
+      );
+      taskTemplates = await pageOperation('reading Studio task-template skeletons', (page) =>
+        page.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons() ?? []),
+      );
       byPair = new Map();
       for (const template of templates) {
         const pair = `${template.modelType}|${template.mode}`;
@@ -343,11 +349,84 @@ async function main() {
           .filter((pair) => !byPair.has(pair)),
       );
       if (missingPairs.length === 0) break;
-      if (attempt < 20) await page.waitForTimeout(500);
+      if (attempt < 20) await delay(500);
     }
     if (missingPairs.length > 0) {
       throw new Error(`No Studio template can build: ${missingPairs.join(', ')}.`);
     }
+    return { templates, taskTemplates, byPair };
+  };
+
+  const openBrowserSession = async () => {
+    const browser = await chromium.launch(browserLaunchOptions);
+    try {
+      const page = await browser.newPage();
+      const guard = createWorkflowBrowserSessionGuard({ browser, page });
+      browserSession = { browser, page, guard, catalog: null };
+      // Every recycled renderer gets a clean, non-persistent application store.
+      await pageOperation('installing ephemeral workflow storage', (currentPage) =>
+        installEphemeralWorkflowStorage(currentPage),
+      );
+      await pageOperation('loading the MoDiff client', (currentPage) =>
+        currentPage.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' }),
+      );
+      await pageOperation('waiting for the MoDiff test bridge', (currentPage) =>
+        currentPage.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 }),
+      );
+      // Startup registry discovery also scans the model caches. Those scans can
+      // occupy the single backend event loop long enough for a concurrent
+      // capability request to time out, so retry only the app-owned capability
+      // path and re-check its authoritative store after every attempt.
+      let taskSkeletonCount = 0;
+      for (let attempt = 1; attempt <= 8; attempt += 1) {
+        taskSkeletonCount = await pageOperation('reading authoritative Studio task-template contracts', (currentPage) =>
+          currentPage.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons().length ?? 0),
+        );
+        if (taskSkeletonCount > 0) break;
+        taskSkeletonCount = await pageOperation(
+          'refreshing authoritative Studio task-template contracts',
+          (currentPage) =>
+            currentPage.evaluate(async () => (await window.__MODIFF_E2E__?.refreshTaskTemplateContracts()) ?? 0),
+        );
+        if (taskSkeletonCount > 0) break;
+        if (attempt < 8) await delay(500);
+      }
+      if (taskSkeletonCount === 0) {
+        throw new Error('The frontend did not load authoritative Studio task-template contracts.');
+      }
+      // A fresh page can expose the E2E bridge before node/model discovery
+      // settles. Await the app-owned refresh before constructing any graph.
+      await pageOperation('refreshing model indexes', (currentPage) =>
+        currentPage.evaluate(() => window.__MODIFF_E2E__?.refreshModelIndexes()),
+      );
+      browserSession.catalog = await loadPageTemplateCatalog();
+    } catch (error) {
+      if (browserSession?.browser === browser) {
+        await closeBrowserSession();
+      } else {
+        await closeWorkflowBrowser(browser);
+      }
+      throw error;
+    }
+  };
+
+  const ensureBrowserSession = async () => {
+    const unhealthy = Boolean(browserSession?.guard.terminalError);
+    const batchComplete = browserSession
+      ? shouldRecycleWorkflowBrowser(completedWorkflowsInSession, WORKFLOW_BROWSER_BATCH_SIZE)
+      : false;
+    if (browserSession && !unhealthy && !batchComplete) return;
+    if (browserSession) {
+      const reason = unhealthy ? 'terminal browser failure' : `${completedWorkflowsInSession}-workflow batch boundary`;
+      process.stdout.write(`Recycling canonical workflow browser after ${reason}.\n`);
+      await closeBrowserSession();
+    }
+    await openBrowserSession();
+  };
+
+  try {
+    await ensureBrowserSession();
+    const initialTemplates = [...browserSession.catalog.templates];
     let records = [];
     let experimentalRecords = [];
     if (requestedPair && existsSync(MANIFEST_PATH)) {
@@ -358,9 +437,8 @@ async function main() {
     }
 
     const arrangeSnapshot = async (graph) => {
-      const arranged = await page.evaluate(
-        (snapshot) => window.__MODIFF_E2E__?.arrangeWorkflowGraphSnapshot(snapshot),
-        graph,
+      const arranged = await pageOperation('arranging a canonical workflow graph', (page) =>
+        page.evaluate((snapshot) => window.__MODIFF_E2E__?.arrangeWorkflowGraphSnapshot(snapshot), graph),
       );
       if (!arranged || !Array.isArray(arranged.nodes) || !Array.isArray(arranged.edges)) {
         throw new Error('The frontend did not expose a usable canonical workflow layout hook.');
@@ -383,18 +461,21 @@ async function main() {
       let buildError = null;
       for (let attempt = 1; attempt <= 4; attempt += 1) {
         try {
-          await page.evaluate(
-            ({ templateId, taskContract }) =>
-              taskContract
-                ? window.__MODIFF_E2E__?.applyTaskTemplateSkeleton(templateId)
-                : window.__MODIFF_E2E__?.applyTemplate(templateId, { resourceMode: 'expert' }),
-            { templateId: template.id, taskContract: template.taskContract === true },
+          await pageOperation(`applying template ${template.id}`, (page) =>
+            page.evaluate(
+              ({ templateId, taskContract }) =>
+                taskContract
+                  ? window.__MODIFF_E2E__?.applyTaskTemplateSkeleton(templateId)
+                  : window.__MODIFF_E2E__?.applyTemplate(templateId, { resourceMode: 'expert' }),
+              { templateId: template.id, taskContract: template.taskContract === true },
+            ),
           );
           buildError = null;
           break;
         } catch (error) {
+          if (isWorkflowBrowserSessionError(error)) throw error;
           buildError = error;
-          if (attempt < 4) await page.waitForTimeout(1_000);
+          if (attempt < 4) await delay(1_000);
         }
       }
       if (buildError) {
@@ -402,12 +483,45 @@ async function main() {
           `Could not build ${description} from template ${template.id}: ${buildError instanceof Error ? buildError.message : buildError}`,
         );
       }
-      const exported = await page.evaluate(() => window.__MODIFF_E2E__?.prepareWorkflowGraphForExport());
+      const exported = await pageOperation(`exporting ${description}`, (page) =>
+        page.evaluate(() => window.__MODIFF_E2E__?.prepareWorkflowGraphForExport()),
+      );
       if (!exported || !Array.isArray(exported.nodes) || !Array.isArray(exported.edges)) {
         throw new Error(`Could not export a completed graph for ${description}.`);
       }
       return finalizeCanonicalGraph(
         applyCatalogArtifactPins(applyPortableContracts(sanitize(exported), mode), artifactPins),
+      );
+    };
+
+    const buildTemplateGraphWithRecovery = async (resolveTemplate, mode, description) => {
+      let terminalError = null;
+      for (let attempt = 1; attempt <= WORKFLOW_BROWSER_RECOVERY_ATTEMPTS; attempt += 1) {
+        try {
+          await ensureBrowserSession();
+          const template = resolveTemplate(browserSession.catalog);
+          if (!template) throw new Error(`No Studio template can build ${description}.`);
+          const graph = await buildTemplateGraph(template, mode, description);
+          browserSession.guard.assertHealthy(`completing ${description}`);
+          completedWorkflowsInSession += 1;
+          return graph;
+        } catch (error) {
+          if (
+            !isWorkflowBrowserSessionError(error) ||
+            ['browser_close_incomplete', 'browser_close_timeout'].includes(error.code)
+          )
+            throw error;
+          terminalError = error;
+          await closeBrowserSession();
+          if (attempt < WORKFLOW_BROWSER_RECOVERY_ATTEMPTS) {
+            process.stderr.write(
+              `Retrying ${description} in a fresh browser after terminal session failure: ${error.message}\n`,
+            );
+          }
+        }
+      }
+      throw new Error(
+        `Could not build ${description} after ${WORKFLOW_BROWSER_RECOVERY_ATTEMPTS} browser sessions: ${terminalError?.message ?? 'unknown terminal browser failure'}`,
       );
     };
 
@@ -419,9 +533,13 @@ async function main() {
       for (const mode of capability.runnableModes ?? []) {
         const pair = `${capability.modelType}|${mode}`;
         if (requestedPair && pair !== requestedPair) continue;
-        const template = byPair.get(pair);
+        const template = browserSession.catalog.byPair.get(pair);
         if (!template) throw new Error(`No Studio template can build ${pair}.`);
-        const graph = await buildTemplateGraph(template, mode, `canonical workflow ${pair}`);
+        const graph = await buildTemplateGraphWithRecovery(
+          (catalog) => catalog.byPair.get(pair),
+          mode,
+          `canonical workflow ${pair}`,
+        );
         const graphHash = hash(graph);
         const isSupported = capability.supportTier === 'supported';
         const libraryTier = isSupported ? 'studio' : 'experimental';
@@ -459,7 +577,7 @@ async function main() {
     const capabilitiesByType = new Map(
       capabilities.capabilities.map((capability) => [capability.modelType, capability]),
     );
-    const loraTemplates = templates.filter(
+    const loraTemplates = initialTemplates.filter(
       (candidate) =>
         candidate.category === 'lora' &&
         (!requestedPair || `${candidate.modelType}|${candidate.mode}` === requestedPair),
@@ -471,7 +589,11 @@ async function main() {
           `LoRA template ${template.id} has no runnable capability for ${template.modelType}|${template.mode}.`,
         );
       }
-      const graph = await buildTemplateGraph(template, template.mode, `LoRA workflow variant`);
+      const graph = await buildTemplateGraphWithRecovery(
+        (catalog) => catalog.templates.find((candidate) => candidate.id === template.id),
+        template.mode,
+        `LoRA workflow variant ${template.id}`,
+      );
       const graphHash = hash(graph);
       const isSupported = capability.supportTier === 'supported';
       const libraryTier = isSupported ? 'studio' : 'experimental';
@@ -515,6 +637,7 @@ async function main() {
       (isSupported ? records : experimentalRecords).push(record);
     }
 
+    browserSession?.guard.assertHealthy('publishing the canonical workflow manifest');
     records.sort((left, right) => left.id.localeCompare(right.id));
     const manifest = {
       schemaVersion: 1,
@@ -535,8 +658,9 @@ async function main() {
     process.stdout.write(
       `Generated ${records.length} supported and ${experimentalRecords.length} qualified experimental portable workflows.\n`,
     );
+    completedSuccessfully = true;
   } finally {
-    await browser.close();
+    await closeBrowserSession({ bestEffort: !completedSuccessfully });
   }
 }
 
@@ -549,6 +673,7 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
       '  MODIFF_SERVER       Backend URL (default http://127.0.0.1:8088)',
       '  MODIFF_FRONTEND     Client URL (default http://127.0.0.1:5173)',
       '  MODIFF_BACKEND_DIR  Backend repository root (default ../MoDiff)',
+      '  MODIFF_WORKFLOW_BROWSER_BATCH_SIZE  Workflows per fresh browser (default 20)',
       '',
       'Options:',
       '  --pair=ModelType|mode  Regenerate one canonical pair and its variants, then merge them into the manifest.',
