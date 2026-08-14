@@ -306,14 +306,28 @@ async function main() {
     await installEphemeralWorkflowStorage(page);
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-    // The E2E bridge can appear while the application's initial capability
-    // request is still in flight. Starting another discovery batch at that
-    // instant aborts the first request and can leave task-template skeletons
-    // empty for this page. Wait for authoritative task contracts before the
-    // explicit refresh used to synchronize model indexes.
-    await page.waitForFunction(() => (window.__MODIFF_E2E__?.listTaskTemplateSkeletons() ?? []).length > 0, null, {
-      timeout: 30_000,
-    });
+    // Startup registry discovery also scans the model caches. Those scans can
+    // occupy the single backend event loop long enough for the concurrent
+    // capability request to time out, while repeating the full index refresh
+    // only starts another competing scan. Retry the narrow app-owned
+    // capability path instead; the latest-request gate can cancel one attempt
+    // when startup discovery catches up, so keep this bounded and re-check the
+    // authoritative store after every attempt.
+    let taskSkeletonCount = 0;
+    for (let attempt = 1; attempt <= 8; attempt += 1) {
+      taskSkeletonCount = await page.evaluate(
+        () => window.__MODIFF_E2E__?.listTaskTemplateSkeletons().length ?? 0,
+      );
+      if (taskSkeletonCount > 0) break;
+      taskSkeletonCount = await page.evaluate(
+        async () => (await window.__MODIFF_E2E__?.refreshTaskTemplateContracts()) ?? 0,
+      );
+      if (taskSkeletonCount > 0) break;
+      if (attempt < 8) await page.waitForTimeout(500);
+    }
+    if (taskSkeletonCount === 0) {
+      throw new Error('The frontend did not load authoritative Studio task-template contracts.');
+    }
     // A fresh Vite page can expose the E2E bridge before node/model discovery
     // settles. Use the same app-owned refresh path as gallery qualification so
     // graph generation never races an empty node registry.

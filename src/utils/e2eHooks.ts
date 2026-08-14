@@ -93,6 +93,7 @@ type ModiffE2EHooks = {
     block: ControlledWorkflowBlockForTest,
     settingsTemplateId: StudioTemplateId,
   ) => Promise<void>;
+  refreshTaskTemplateContracts: () => Promise<number>;
   refreshModelIndexes: () => Promise<void>;
   installHfModel: (repoId: string, repair?: boolean, files?: string[]) => Promise<unknown>;
   runActiveTemplate: () => Promise<GalleryRunResult>;
@@ -984,6 +985,10 @@ export function installE2EHooks() {
     applyTemplate,
     applyTaskTemplateSkeleton,
     applyControlledWorkflowBlockForTest,
+    refreshTaskTemplateContracts: async () => {
+      await useNodesStore.getState().fetchStudioModelCapabilities();
+      return useNodesStore.getState().studioTaskTemplateSkeletons.length;
+    },
     refreshModelIndexes: () => useNodesStore.getState().refreshModelIndexes(true),
     installHfModel: (repoId: string, repair = false, files: string[] = []) =>
       useNodesStore.getState().installHfModel(repoId, useWebsocketStore.getState().sid, { repair, files }),
