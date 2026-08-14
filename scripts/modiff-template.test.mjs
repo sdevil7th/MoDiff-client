@@ -848,31 +848,43 @@ test('canonical Shap-E graphs infer the rendered 3D form', async () => {
   assert.equal(form.fps, 12);
 });
 
-test('LCM DreamShaper exposes the exact generic one-to-four-step recipe', () => {
+test('LCM DreamShaper exposes exact generic text and image-edit recipes', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');
+  const editForm = profilesModule.getFormDefaultsForMode('edit_image', 'LatentConsistencyModelPipeline');
   assert.equal(profile.defaultRepo, profilesModule.LCM_DREAMSHAPER_REPO);
   assert.equal(profile.defaultDtype, 'float32');
   assert.equal(profile.supportsNegativePrompt, false);
-  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.supportsImageInput, true);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
   assert.equal(form.width, 512);
   assert.equal(form.height, 512);
   assert.equal(form.steps, 4);
   assert.equal(form.guidanceScale, 8.5);
+  assert.equal(editForm.strength, 0.8);
 });
 
-test('Stable Diffusion PAG exposes generic PAG controls over the pinned 1.5 base', () => {
+test('Stable Diffusion PAG exposes generic text, edit, and inpaint controls over the pinned 1.5 base', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPAGPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionPAGPipeline');
+  const editForm = profilesModule.getFormDefaultsForMode('edit_image', 'StableDiffusionPAGPipeline');
+  const inpaintForm = profilesModule.getFormDefaultsForMode('inpaint', 'StableDiffusionPAGPipeline');
   assert.equal(profile.defaultRepo, profilesModule.SD15_BASE_REPO);
   assert.equal(profile.defaultDtype, 'float32');
-  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.supportsImageInput, true);
+  assert.equal(profile.supportsMask, true);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(profile.modeRequirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
   assert.equal(form.width, 512);
   assert.equal(form.height, 512);
   assert.equal(form.steps, 30);
   assert.equal(form.guidanceScale, 7.5);
   assert.equal(form.pagScale, 3);
   assert.equal(form.pagAdaptiveScale, 0);
+  assert.equal(editForm.strength, 0.8);
+  assert.equal(inpaintForm.strength, 0.8);
 });
 
 test('Marigold depth exposes a generic source-to-prediction-map profile', () => {
