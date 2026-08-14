@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -62,7 +62,11 @@ function validMeasurement(entry) {
 }
 
 const contract = readJson(CONTRACT_PATH);
-const history = readJson(HISTORY_PATH);
+// Runtime history is intentionally local and may not exist in a clean checkout
+// or on a freshly provisioned qualification host. Its absence means there is
+// no legacy evidence; it must not prevent the campaign from reporting every
+// recipe as missing and scheduling the required real-weight runs.
+const history = existsSync(HISTORY_PATH) ? readJson(HISTORY_PATH) : { entries: {} };
 const contractTemplateById = new Map(contract.templates.map((template) => [template.id, template]));
 const releaseEligibleTemplateIds = new Set(
   contract.templates.filter((template) => template.releaseEligible).map((template) => template.id),
@@ -227,6 +231,7 @@ if (CHECK) {
   }
   console.log(`Resource qualification report verified: ${qualified}/${recipes.length}`);
 } else {
+  mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
   writeFileSync(OUTPUT_PATH, serialized);
   console.log(`Wrote ${OUTPUT_PATH}: ${qualified}/${recipes.length} qualified.`);
 }

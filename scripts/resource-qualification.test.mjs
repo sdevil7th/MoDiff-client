@@ -246,3 +246,57 @@ test('resource coverage consumes a retained full-workload receipt', () => {
     rmSync(backendRoot, { recursive: true, force: true });
   }
 });
+
+test('resource coverage treats missing local history as empty evidence on a clean host', () => {
+  const backendRoot = mkdtempSync(join(tmpdir(), 'modiff-resource-report-clean-'));
+  try {
+    mkdirSync(join(backendRoot, 'data'), { recursive: true });
+    writeFileSync(
+      join(backendRoot, 'data', 'release-contract.v1.json'),
+      `${JSON.stringify({
+        generatedAt: '2026-07-28T00:00:00.000Z',
+        contractHash: 'sha256:contract',
+        templates: [
+          {
+            id: 'clean-template',
+            modelType: 'CleanPipeline',
+            releaseEligible: false,
+            qualificationExemption: null,
+            resourceRecipes: {
+              declaredRecipes: [
+                {
+                  dtype: 'float16',
+                  offloadMode: 'model_cpu',
+                  quantizationMode: 'none',
+                },
+              ],
+            },
+          },
+        ],
+      })}\n`,
+    );
+
+    const result = spawnSync(process.execPath, [resolve('scripts/resource-qualification-report.mjs')], {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+      env: { ...process.env, MODIFF_BACKEND_DIR: backendRoot },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(
+      readFileSync(join(backendRoot, 'data', 'qualification', 'release', 'resource-recipe-coverage.v1.json'), 'utf8'),
+    );
+    assert.equal(report.status, 'incomplete');
+    assert.deepEqual(report.coverage, {
+      required: 1,
+      qualified: 0,
+      missing: 1,
+      byReleaseLane: {
+        releaseEligible: { required: 0, qualified: 0, missing: 0 },
+        deferred: { required: 1, qualified: 0, missing: 1 },
+      },
+    });
+    assert.equal(report.recipes[0].status, 'missing');
+  } finally {
+    rmSync(backendRoot, { recursive: true, force: true });
+  }
+});
