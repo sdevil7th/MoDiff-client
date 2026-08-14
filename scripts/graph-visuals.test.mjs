@@ -11,6 +11,7 @@ import {
   createEphemeralWorkflowRouteHandler,
   installEphemeralWorkflowStorage,
 } from './workflow-library-ephemeral-storage.mjs';
+import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -7463,4 +7464,85 @@ test('canonical generation isolates browser and backend workflow persistence', a
   assert.deepEqual((await request('GET', `${baseUrl}/generated%20workflow`)).json, first.json);
   assert.equal((await request('DELETE', `${baseUrl}/generated%20workflow`)).status, 200);
   assert.deepEqual((await request('GET', baseUrl)).json, { workflows: [] });
+});
+
+test('workflow verification permits only the exact disabled soundtrack export fallback', () => {
+  const managedNode = (id, studioRole, module, action, disabled = false) => ({
+    id,
+    data: {
+      module,
+      action,
+      studioRole,
+      studioOwned: true,
+      ...(disabled ? { uiState: { disabled: true } } : {}),
+    },
+  });
+  const nodes = [
+    managedNode('video', 'wanGenerate', 'modules.DiffusersVideo', 'Generate'),
+    managedNode('base-export', 'videoExport', 'modules.Video', 'Export', true),
+    managedNode(
+      'soundtrack-quantization',
+      'soundtrackQuantization',
+      'modules.DiffusersRuntime',
+      'PipelineQuantizationConfigV2',
+    ),
+    managedNode('soundtrack-recipe', 'soundtrackRecipe', 'modules.DiffusersRuntime', 'DiffusersExecutionRecipe'),
+    managedNode('soundtrack-pipeline', 'soundtrackPipeline', 'modules.DiffusersAudio', 'LoadPipeline'),
+    managedNode('soundtrack-generate', 'soundtrackGenerate', 'modules.DiffusersAudio', 'Generate'),
+    managedNode('soundtrack-fit', 'soundtrackAudioFit', 'modules.Audio', 'FitDuration'),
+    managedNode('mux-export', 'exportWithAudio', 'modules.Video', 'ExportWithAudio'),
+  ];
+  const edge = (source, sourceHandle, target, targetHandle) => ({ source, sourceHandle, target, targetHandle });
+  const edges = [
+    edge('soundtrack-quantization', 'quantization_config', 'soundtrack-recipe', 'quantization_config'),
+    edge('soundtrack-recipe', 'execution_recipe', 'soundtrack-pipeline', 'execution_recipe'),
+    edge('soundtrack-pipeline', 'pipeline', 'soundtrack-generate', 'pipeline'),
+    edge('soundtrack-generate', 'audio', 'soundtrack-fit', 'audio'),
+    edge('soundtrack-fit', 'output', 'mux-export', 'audio'),
+    edge('video', 'video_out', 'mux-export', 'video'),
+  ];
+  const workflow = { id: 'soundtrack-contract' };
+  const graph = { nodes, edges };
+
+  assert.doesNotThrow(() => verifyNoDeadWorkflowNodes(workflow, graph));
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes: [...nodes, managedNode('arbitrary-disabled', 'other', 'modules.Image', 'Preview', true)],
+        edges,
+      }),
+    /disabled nodes.*arbitrary-disabled/,
+  );
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes: nodes.map((node) =>
+          node.id === 'base-export' ? { ...node, data: { ...node.data, studioOwned: false } } : node,
+        ),
+        edges,
+      }),
+    /disabled nodes.*base-export/,
+  );
+  assert.throws(
+    () => verifyNoDeadWorkflowNodes(workflow, { nodes, edges: edges.filter((item) => item.targetHandle !== 'audio') }),
+    /disabled nodes.*base-export/,
+  );
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes,
+        edges: [...edges, edge('video', 'video_out', 'base-export', 'video')],
+      }),
+    /disabled nodes.*base-export/,
+  );
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes: nodes.map((node) =>
+          node.id === 'video' ? { ...node, data: { ...node.data, action: 'UnreviewedVideoSource' } } : node,
+        ),
+        edges,
+      }),
+    /disabled nodes.*base-export/,
+  );
 });

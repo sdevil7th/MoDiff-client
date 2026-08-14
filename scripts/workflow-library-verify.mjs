@@ -3,10 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
-import {
-  workflowNodeAttentionBackendError,
-  workflowNodeDeviceOffloadError,
-} from './workflow-library-contract.mjs';
+import { workflowNodeAttentionBackendError, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -55,65 +53,6 @@ function graphLayoutHash(graph) {
   return createHash('sha256')
     .update(JSON.stringify(graphLayoutSignature(graph)))
     .digest('hex');
-}
-
-const OUTPUT_NODE_KEYS = new Set([
-  'modules.Audio.Export',
-  'modules.Image.Preview',
-  'modules.Primitive.DataViewer',
-  'modules.Video.Export',
-  'modules.Video.ExportWithAudio',
-]);
-
-function verifyNoDeadWorkflowNodes(workflow, graph) {
-  const nodes = graph.nodes ?? [];
-  const edges = graph.edges ?? [];
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const incoming = new Map(nodes.map((node) => [node.id, []]));
-  const incident = new Set();
-  for (const edge of edges) {
-    if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) continue;
-    incoming.get(edge.target)?.push(edge.source);
-    incident.add(edge.source);
-    incident.add(edge.target);
-  }
-
-  const outputNodes = nodes.filter((node) => OUTPUT_NODE_KEYS.has(`${node?.data?.module}.${node?.data?.action}`));
-  if (outputNodes.length === 0) {
-    throw new Error(`${workflow.id} has no preview, export, or data-viewer output node.`);
-  }
-
-  const used = new Set(outputNodes.map((node) => node.id));
-  const pending = [...used];
-  while (pending.length > 0) {
-    const nodeId = pending.pop();
-    for (const sourceId of incoming.get(nodeId) ?? []) {
-      if (used.has(sourceId)) continue;
-      used.add(sourceId);
-      pending.push(sourceId);
-    }
-  }
-
-  const disabled = nodes.filter((node) => node?.data?.uiState?.disabled === true);
-  if (disabled.length > 0) {
-    throw new Error(
-      `${workflow.id} contains disabled nodes that cannot contribute to execution: ${disabled
-        .map((node) => node.id)
-        .join(', ')}.`,
-    );
-  }
-  const isolated = nodes.filter((node) => !incident.has(node.id));
-  if (isolated.length > 0) {
-    throw new Error(`${workflow.id} contains isolated nodes: ${isolated.map((node) => node.id).join(', ')}.`);
-  }
-  const unreachable = nodes.filter((node) => !used.has(node.id));
-  if (unreachable.length > 0) {
-    throw new Error(
-      `${workflow.id} contains nodes outside every output dependency path: ${unreachable
-        .map((node) => node.id)
-        .join(', ')}.`,
-    );
-  }
 }
 
 function verifyCanonicalLayout(workflow, graph, graphLayout) {
