@@ -50,22 +50,31 @@ must not require or synthesize one.
 
 Before starting the long-running template qualification campaign on a clean
 host, refresh its plan and verify every selected template's exact immutable
-model and LoRA receipt against the running app's cache:
+model and LoRA receipt against the running app's cache. Also verify every
+byte-pinned default image, video, and audio input from the installed Template
+Gallery payload:
 
 ```bash
 npm run release:qualification:run -- \
   --dry-run \
   --check-app-readiness \
+  --check-input-readiness \
   --batch-by-model-family \
   --server http://127.0.0.1:8088
 ```
 
-The readiness check is read-only, accepts only an uncredentialed loopback app
+The app readiness check is read-only, accepts only an uncredentialed loopback
 origin, and fails if a required repository or revision is absent, incomplete,
-not installed, or marked for repair. A successful result proves cache
-readiness only; it does not run a graph, qualify output, approve rights, or
-publish Gallery media. Remove `--dry-run` only on the approved qualification
-host when the campaign's long-running model execution is intentional.
+not installed, or marked for repair. The input readiness check reads only the
+selected templates' local defaults and rejects absent files, links, size or
+SHA-256 mismatches, unpinned bindings, and inconsistent asset-manifest records.
+A source-release checkout without the installer-managed Gallery payload is
+expected to fail the input check; complete the normal app installation rather
+than bypassing it or substituting unverified media. A successful result proves
+cache and source-input readiness only; it does not run a graph, qualify output,
+approve rights, or publish Gallery media. Remove `--dry-run` only on the
+approved qualification host when the campaign's long-running model execution
+is intentional.
 
 ## Inspect The Build
 

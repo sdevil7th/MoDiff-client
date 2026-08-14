@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -7,6 +8,14 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(CLIENT_ROOT, '..', 'MoDiff'));
 const CONTRACT_PATH = join(BACKEND_ROOT, 'data', 'release-contract.v1.json');
+const INPUT_BINDINGS_PATH = join(
+  CLIENT_ROOT,
+  'public',
+  'template-gallery',
+  'runtime-inputs',
+  'default-input-bindings.json',
+);
+const ASSET_MANIFEST_PATH = join(CLIENT_ROOT, 'config', 'template-assets.v1.json');
 const STATE_PATH = resolve(
   process.env.MODIFF_QUALIFICATION_CAMPAIGN_STATE ||
     join(CLIENT_ROOT, 'artifacts', 'template-qualification', 'campaign-state.v1.json'),
@@ -18,6 +27,7 @@ function parseArgs(argv) {
   const args = {
     dryRun: false,
     checkAppReadiness: false,
+    checkInputReadiness: false,
     maxTemplates: Number.POSITIVE_INFINITY,
     port: Number(process.env.MODIFF_QUALIFICATION_FRONTEND_PORT || 5194),
     server: process.env.MODIFF_GALLERY_SERVER || 'http://127.0.0.1:8088',
@@ -37,6 +47,10 @@ function parseArgs(argv) {
     }
     if (entry === '--check-app-readiness') {
       args.checkAppReadiness = true;
+      continue;
+    }
+    if (entry === '--check-input-readiness') {
+      args.checkInputReadiness = true;
       continue;
     }
     const value = argv[index + 1];
@@ -194,6 +208,18 @@ export function selectedJobs(contract, args) {
 
 const IMMUTABLE_REVISION = /^[0-9a-f]{40}$/;
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const RUNTIME_INPUT_PATH = /^\/template-gallery\/runtime-inputs\/assets\/([a-f0-9]{64})\.([a-z0-9]+)$/;
+const MAX_QUALIFICATION_INPUT_BYTES = 256 * 1024 * 1024;
+const QUALIFICATION_INPUT_FIELDS = new Set([
+  'referenceImages',
+  'maskImage',
+  'controlImage',
+  'sourceVideo',
+  'maskVideo',
+  'controlVideo',
+  'sourceAudio',
+  'referenceAudio',
+]);
 
 export function appCacheUrl(server) {
   let parsed;
@@ -332,6 +358,125 @@ export function appReadinessForJobs(jobs, cache) {
   };
 }
 
+function inputAssetIdentity(asset) {
+  const runtimePath = String(asset?.runtimePath ?? '');
+  const match = RUNTIME_INPUT_PATH.exec(runtimePath);
+  const runtimeSha256 = String(asset?.runtimeSha256 ?? '');
+  if (!match || runtimeSha256 !== `sha256:bytes:${match?.[1] ?? ''}`) {
+    throw new Error('Qualification default inputs require a content-addressed runtime path and matching SHA-256.');
+  }
+  return { runtimePath, runtimeSha256 };
+}
+
+function inputAssetStatus(asset, manifestByPath, publicRoot) {
+  const { runtimePath, runtimeSha256 } = inputAssetIdentity(asset);
+  const manifestPath = runtimePath.replace(/^\/+/, '');
+  const manifestAsset = manifestByPath.get(manifestPath);
+  if (!manifestAsset) {
+    return { runtimePath, runtimeSha256, byteSize: null, ready: false, reason: 'asset_manifest_missing' };
+  }
+  if (
+    manifestAsset.sha256 !== runtimeSha256 ||
+    !Number.isSafeInteger(manifestAsset.size) ||
+    manifestAsset.size < 0 ||
+    manifestAsset.size > MAX_QUALIFICATION_INPUT_BYTES
+  ) {
+    throw new Error(`Qualification input manifest metadata is invalid for ${runtimePath}.`);
+  }
+  const status = {
+    runtimePath,
+    runtimeSha256,
+    byteSize: manifestAsset.size,
+    ready: false,
+    reason: 'local_file_missing',
+  };
+  const localPath = resolve(publicRoot, manifestPath);
+  if (!existsSync(localPath)) return status;
+  const file = lstatSync(localPath);
+  if (!file.isFile() || file.isSymbolicLink()) return { ...status, reason: 'unsafe_local_file' };
+  if (file.size !== manifestAsset.size) return { ...status, reason: 'byte_size_mismatch' };
+  const digest = `sha256:bytes:${createHash('sha256').update(readFileSync(localPath)).digest('hex')}`;
+  if (digest !== runtimeSha256) return { ...status, reason: 'sha256_mismatch' };
+  return { ...status, ready: true, reason: null };
+}
+
+export function inputReadinessForJobs(jobs, bindings, assetManifest, publicRoot = join(CLIENT_ROOT, 'public')) {
+  if (
+    !Array.isArray(jobs) ||
+    jobs.length > 10_000 ||
+    jobs.some(
+      (job) =>
+        !job ||
+        typeof job !== 'object' ||
+        typeof job.templateId !== 'string' ||
+        job.templateId.length < 1 ||
+        job.templateId.length > 256,
+    ) ||
+    !bindings ||
+    typeof bindings !== 'object' ||
+    Array.isArray(bindings) ||
+    !assetManifest ||
+    !Array.isArray(assetManifest.assets) ||
+    assetManifest.assets.length > 100_000
+  ) {
+    throw new Error('The qualification job, input binding, or asset inventory is malformed or exceeds its bound.');
+  }
+  const manifestByPath = new Map();
+  for (const asset of assetManifest.assets) {
+    if (!asset || typeof asset.path !== 'string' || manifestByPath.has(asset.path)) {
+      throw new Error('The qualification asset inventory contains an invalid or duplicate path.');
+    }
+    manifestByPath.set(asset.path, asset);
+  }
+  const assetStatuses = new Map();
+  const assessedJobs = jobs.map((job) => {
+    const templateBindings = bindings[job.templateId] ?? [];
+    if (!Array.isArray(templateBindings) || templateBindings.length > 128) {
+      throw new Error(`Qualification input bindings are malformed for ${job.templateId}.`);
+    }
+    const statuses = [];
+    for (const binding of templateBindings) {
+      if (
+        !binding ||
+        !QUALIFICATION_INPUT_FIELDS.has(binding.field) ||
+        !Array.isArray(binding.defaultAssets) ||
+        binding.defaultAssets.length < 1 ||
+        binding.defaultAssets.length > 128
+      ) {
+        throw new Error(`Qualification default input binding is malformed for ${job.templateId}.`);
+      }
+      for (const asset of binding.defaultAssets) {
+        const { runtimePath, runtimeSha256 } = inputAssetIdentity(asset);
+        if (!assetStatuses.has(runtimePath)) {
+          assetStatuses.set(runtimePath, inputAssetStatus(asset, manifestByPath, publicRoot));
+        } else if (assetStatuses.get(runtimePath).runtimeSha256 !== runtimeSha256) {
+          throw new Error(`Qualification default input bindings disagree for ${runtimePath}.`);
+        }
+        statuses.push(assetStatuses.get(runtimePath));
+      }
+    }
+    return {
+      templateId: job.templateId,
+      ready: statuses.every((asset) => asset.ready),
+      blockedInputs: statuses.filter((asset) => !asset.ready),
+    };
+  });
+  const assets = [...assetStatuses.values()].sort((left, right) => left.runtimePath.localeCompare(right.runtimePath));
+  const blockedJobs = assessedJobs.filter((job) => !job.ready);
+  return {
+    status: blockedJobs.length === 0 ? 'ready' : 'blocked',
+    jobCount: assessedJobs.length,
+    readyJobCount: assessedJobs.length - blockedJobs.length,
+    blockedJobCount: blockedJobs.length,
+    assetCount: assets.length,
+    readyAssetCount: assets.filter((asset) => asset.ready).length,
+    blockedAssetCount: assets.filter((asset) => !asset.ready).length,
+    requiredBytes: assets.reduce((total, asset) => total + (asset.byteSize ?? 0), 0),
+    blockedJobs,
+    blockedAssets: assets.filter((asset) => !asset.ready),
+  };
+}
+
 async function fetchAppCache(server, timeoutMs) {
   if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
     throw new Error('Qualification cache timeout must be between 1 and 120000 milliseconds.');
@@ -427,6 +572,9 @@ export async function runCampaign(argv = process.argv) {
   const appReadiness = args.checkAppReadiness
     ? appReadinessForJobs(selection.jobs, await fetchAppCache(args.server, args.cacheTimeoutMs))
     : null;
+  const inputReadiness = args.checkInputReadiness
+    ? inputReadinessForJobs(selection.jobs, readJson(INPUT_BINDINGS_PATH), readJson(ASSET_MANIFEST_PATH))
+    : null;
   if (args.reuseExistingRuntimeKey && groups.length > 1) {
     throw new Error('--reuse-existing-runtime-key is only safe for a campaign containing one model-family group.');
   }
@@ -443,6 +591,7 @@ export async function runCampaign(argv = process.argv) {
           reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
           excludedMedia: [...new Set(args.excludedMedia)],
           appReadiness,
+          inputReadiness,
           groups: groups.map((group) => ({
             modelFamily: group.modelFamily,
             templateIds: group.jobs.map((job) => job.templateId),
@@ -454,11 +603,11 @@ export async function runCampaign(argv = process.argv) {
         2,
       ),
     );
-    return appReadiness?.status === 'blocked' ? 1 : 0;
+    return appReadiness?.status === 'blocked' || inputReadiness?.status === 'blocked' ? 1 : 0;
   }
 
-  if (appReadiness?.status === 'blocked') {
-    console.error(JSON.stringify(appReadiness, null, 2));
+  if (appReadiness?.status === 'blocked' || inputReadiness?.status === 'blocked') {
+    console.error(JSON.stringify({ appReadiness, inputReadiness }, null, 2));
     return 1;
   }
 
@@ -471,6 +620,8 @@ export async function runCampaign(argv = process.argv) {
     batchByModelFamily: args.batchByModelFamily,
     reuseExistingRuntimeKey: args.reuseExistingRuntimeKey || null,
     excludedMedia: [...new Set(args.excludedMedia)],
+    appReadiness,
+    inputReadiness,
     jobs: selection.jobs,
     deferred: selection.deferred,
   };

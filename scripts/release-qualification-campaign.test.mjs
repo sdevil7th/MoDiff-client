@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   appCacheUrl,
   appReadinessForJobs,
   campaignStatusForRunner,
   galleryArgsForGroup,
+  inputReadinessForJobs,
   jobGroups,
   modelFamilyForTemplate,
   selectedJobs,
@@ -209,5 +214,106 @@ test('qualification app readiness rejects malformed app inventory and artifact r
         [],
       ),
     /immutable revision/,
+  );
+});
+
+test('qualification input readiness verifies exact local default-input bytes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-qualification-inputs-'));
+  try {
+    const bytes = Buffer.from('byte-pinned qualification input');
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    const runtimePath = `/template-gallery/runtime-inputs/assets/${digest}.webp`;
+    const localPath = join(root, runtimePath.replace(/^\/+/, ''));
+    mkdirSync(dirname(localPath), { recursive: true });
+    writeFileSync(localPath, bytes);
+    const readiness = inputReadinessForJobs(
+      [{ templateId: 'with-input' }, { templateId: 'text-only' }],
+      {
+        'with-input': [
+          {
+            field: 'referenceImages',
+            defaultAssets: [{ runtimePath, runtimeSha256: `sha256:bytes:${digest}` }],
+          },
+        ],
+      },
+      {
+        assets: [
+          {
+            path: runtimePath.replace(/^\/+/, ''),
+            sha256: `sha256:bytes:${digest}`,
+            size: bytes.length,
+          },
+        ],
+      },
+      root,
+    );
+    assert.equal(readiness.status, 'ready');
+    assert.equal(readiness.jobCount, 2);
+    assert.equal(readiness.assetCount, 1);
+    assert.equal(readiness.requiredBytes, bytes.length);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('qualification input readiness blocks absent and hash-mismatched local bytes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-qualification-inputs-'));
+  try {
+    const expected = Buffer.from('expected');
+    const digest = createHash('sha256').update(expected).digest('hex');
+    const runtimePath = `/template-gallery/runtime-inputs/assets/${digest}.png`;
+    const bindings = {
+      input: [
+        {
+          field: 'controlImage',
+          defaultAssets: [{ runtimePath, runtimeSha256: `sha256:bytes:${digest}` }],
+        },
+      ],
+    };
+    const manifest = {
+      assets: [
+        {
+          path: runtimePath.replace(/^\/+/, ''),
+          sha256: `sha256:bytes:${digest}`,
+          size: expected.length,
+        },
+      ],
+    };
+    const missing = inputReadinessForJobs([{ templateId: 'input' }], bindings, manifest, root);
+    assert.equal(missing.status, 'blocked');
+    assert.equal(missing.blockedAssets[0].reason, 'local_file_missing');
+
+    const localPath = join(root, runtimePath.replace(/^\/+/, ''));
+    mkdirSync(dirname(localPath), { recursive: true });
+    writeFileSync(localPath, Buffer.from('tampered'));
+    const mismatched = inputReadinessForJobs([{ templateId: 'input' }], bindings, manifest, root);
+    assert.equal(mismatched.blockedAssets[0].reason, 'sha256_mismatch');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('qualification input readiness rejects unpinned binding and manifest metadata', () => {
+  assert.throws(
+    () =>
+      inputReadinessForJobs(
+        [{ templateId: 'input' }],
+        {
+          input: [
+            {
+              field: 'sourceVideo',
+              defaultAssets: [
+                {
+                  runtimePath: '/template-gallery/runtime-inputs/assets/moving.png',
+                  runtimeSha256: 'sha256:bytes:not-a-digest',
+                },
+              ],
+            },
+          ],
+        },
+        { assets: [] },
+        '/tmp',
+      ),
+    /content-addressed/,
   );
 });
