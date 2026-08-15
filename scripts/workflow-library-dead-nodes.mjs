@@ -2,6 +2,7 @@ const OUTPUT_NODE_KEYS = new Set([
   'modules.Audio.Export',
   'modules.Image.Preview',
   'modules.Primitive.DataViewer',
+  'modules.Primitive.ExportData',
   'modules.Video.Export',
   'modules.Video.ExportWithAudio',
 ]);
@@ -109,7 +110,7 @@ export function verifyNoDeadWorkflowNodes(workflow, graph) {
   const intentionalFallbacks = intentionalDisabledManagedFallbackNodeIds(graph);
   const outputNodes = nodes.filter((node) => OUTPUT_NODE_KEYS.has(nodeKey(node)) && !intentionalFallbacks.has(node.id));
   if (outputNodes.length === 0) {
-    throw new Error(`${workflow.id} has no preview, export, or data-viewer output node.`);
+    throw new Error(`${workflow.id} has no preview, export, or data output node.`);
   }
 
   const used = new Set(outputNodes.map((node) => node.id));
