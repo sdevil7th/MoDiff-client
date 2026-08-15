@@ -12,6 +12,7 @@ import {
 } from './workflow-library-browser-session.mjs';
 import { installEphemeralWorkflowStorage } from './workflow-library-ephemeral-storage.mjs';
 import { normalizePortableWorkflowNodeOffload } from './workflow-library-contract.mjs';
+import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -431,9 +432,16 @@ async function main() {
     let experimentalRecords = [];
     if (requestedPair && existsSync(MANIFEST_PATH)) {
       const existingManifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-      const retainOtherCanonicalPairs = (record) => `${record.modelType}|${record.mode}` !== requestedPair;
-      records = (existingManifest.workflows ?? []).filter(retainOtherCanonicalPairs);
-      experimentalRecords = (existingManifest.experimentalWorkflows ?? []).filter(retainOtherCanonicalPairs);
+      records = retainUnselectedCurrentWorkflowRecords(
+        existingManifest.workflows,
+        capabilities.capabilities,
+        requestedPair,
+      );
+      experimentalRecords = retainUnselectedCurrentWorkflowRecords(
+        existingManifest.experimentalWorkflows,
+        capabilities.capabilities,
+        requestedPair,
+      );
     }
 
     const arrangeSnapshot = async (graph) => {

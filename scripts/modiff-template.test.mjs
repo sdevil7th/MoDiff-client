@@ -4557,7 +4557,7 @@ test('built-in image operations are locally ready without model discovery or ins
     'image_adjustment',
     'image_filter',
     'image_crop',
-    'image_resize',
+    'image_upscale',
     'image_tile',
     'image_channels',
   ]);

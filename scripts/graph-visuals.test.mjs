@@ -19,6 +19,7 @@ import {
   installEphemeralWorkflowStorage,
 } from './workflow-library-ephemeral-storage.mjs';
 import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
+import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -8635,6 +8636,34 @@ test('canonical workflow browser batches and closure stay bounded', async () => 
     closeWorkflowBrowser({ close: async () => undefined, isConnected: () => true }, 50),
     (error) => error?.code === 'browser_close_incomplete',
   );
+});
+
+test('targeted generation drops stale pairs and retains only current unselected workflows', () => {
+  const capabilities = [
+    {
+      modelType: 'BuiltinImageOperation',
+      runnableModes: ['image_adjustment', 'image_upscale'],
+    },
+    {
+      modelType: 'FluxDevPipeline',
+      runnableModes: ['text_to_image'],
+    },
+  ];
+  const records = [
+    { id: 'stale', modelType: 'BuiltinImageOperation', mode: 'image_resize' },
+    { id: 'selected', modelType: 'BuiltinImageOperation', mode: 'image_upscale' },
+    { id: 'current', modelType: 'BuiltinImageOperation', mode: 'image_adjustment' },
+    { id: 'variant', modelType: 'FluxDevPipeline', mode: 'text_to_image', variant: 'fast_lora' },
+    { id: 'removed', modelType: 'RemovedPipeline', mode: 'text_to_image' },
+  ];
+
+  assert.deepEqual(
+    retainUnselectedCurrentWorkflowRecords(records, capabilities, 'BuiltinImageOperation|image_upscale').map(
+      (record) => record.id,
+    ),
+    ['current', 'variant'],
+  );
+  assert.deepEqual(retainUnselectedCurrentWorkflowRecords(records, capabilities, null), []);
 });
 
 test('canonical workflow generation persists the final layout and library open does not rearrange it', () => {

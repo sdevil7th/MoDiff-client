@@ -1532,7 +1532,7 @@ test('built-in image operations preserve exact install-free task contracts', () 
     image_adjustment: ['studio-spec-v1-0b33529b', 'task-template-v1-192dc695'],
     image_filter: ['studio-spec-v1-79b9fe9f', 'task-template-v1-70f8b61b'],
     image_crop: ['studio-spec-v1-2ab6b5fb', 'task-template-v1-80ab83f0'],
-    image_resize: ['studio-spec-v1-62a88777', 'task-template-v1-5a5a38e4'],
+    image_upscale: ['studio-spec-v1-769830b5', 'task-template-v1-539bf425'],
     image_tile: ['studio-spec-v1-54fee057', 'task-template-v1-202bc67b'],
     image_channels: ['studio-spec-v1-c76ee6b7', 'task-template-v1-69640a3d'],
   };
