@@ -388,14 +388,14 @@ function usesDiffusersThreeDFacade(form: StudioFormState | Pick<StudioGraphBindi
   return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-three-d';
 }
 
-function usesStaticHuggingFaceExecutionSpec(
+function usesStaticExecutionSpecGraph(
   form: Pick<StudioFormState, 'modelType' | 'mode'>,
   binding?: StudioGraphBinding | null,
 ) {
   const executionSpec = binding ? executionSpecForBinding(binding) : executionSpecForForm(form);
   return (
     executionSpec?.executionPath.startsWith('direct-huggingface-') ||
-    executionSpec?.executionPath === 'builtin-image-operation' ||
+    executionSpec?.executionPath.startsWith('builtin-') ||
     false
   );
 }
@@ -2725,8 +2725,7 @@ async function waitForValue<T>(read: () => T | undefined, timeout: number, inter
 }
 
 function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGraphBinding | null) {
-  if (usesStaticHuggingFaceExecutionSpec(form, binding) || (binding && usesDiffusersThreeDFacade(binding)))
-    return false;
+  if (usesStaticExecutionSpecGraph(form, binding) || (binding && usesDiffusersThreeDFacade(binding))) return false;
   return (
     modularVideoGroupObserved(binding) ||
     (!isVideoMode(form.mode) && !isAudioMode(form.mode) && !usesDiffusersImageFacade(form))
@@ -4444,7 +4443,7 @@ async function finalizeStudioGraph(
       definitionRevision = graphDefinitionRevision;
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
-    } else if (usesStaticHuggingFaceExecutionSpec(form, binding) || usesDiffusersThreeDFacade(binding)) {
+    } else if (usesStaticExecutionSpecGraph(form, binding) || usesDiffusersThreeDFacade(binding)) {
       await finalizeStaticExecutionSpecGraph(binding, form, token);
     } else if (!isVideoMode(form.mode)) {
       await finalizeModularGraph(binding, form, timedOutGroups, token);
