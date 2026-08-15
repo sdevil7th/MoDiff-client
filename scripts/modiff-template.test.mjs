@@ -4623,6 +4623,43 @@ test('built-in video operations are locally ready and preserve multi-video infer
   assert.deepEqual(inferred.referenceVideos, ['first.mp4', 'second.mp4']);
 });
 
+test('Real-ESRGAN video upscale stays model-backed and infers the generic source-video contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.SpandrelVideoUpscale;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.SpandrelVideoUpscale;
+  assert.equal(profile.runtimeKind, 'spandrel');
+  assert.equal(profile.artifactKind, 'spandrel_upscaler');
+  assert.equal(profile.artifactInstallRequired, true);
+  assert.equal(profile.defaultRepo, 'nateraw/real-esrgan');
+  assert.deepEqual(profile.downloadFiles, ['RealESRGAN_x2plus.pth']);
+  assert.deepEqual(profile.revisionCandidates, ['42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094']);
+  assert.deepEqual(profile.modes, ['video_upscale']);
+  assert.deepEqual(requirement.artifacts, ['nateraw/real-esrgan']);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'UpscaleVideo',
+          studioRole: 'videoUpscaler',
+          params: {
+            operation: { value: 'video_upscale' },
+            video: { value: '/managed/source.mp4' },
+            device: { value: 'cpu' },
+            fps: { value: 30 },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'SpandrelVideoUpscale');
+  assert.equal(inferred.mode, 'video_upscale');
+  assert.equal(inferred.sourceVideo, '/managed/source.mp4');
+  assert.equal(inferred.device, 'cpu');
+  assert.equal(inferred.fps, 30);
+});
+
 test('video stitching requires two local source videos before execution', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;

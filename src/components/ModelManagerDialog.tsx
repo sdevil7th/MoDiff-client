@@ -273,8 +273,9 @@ function compactHealthBadge(label: string) {
 }
 
 function runtimeBadgeForProfile(profile: (typeof STUDIO_MODEL_PROFILES)[keyof typeof STUDIO_MODEL_PROFILES]) {
-  if (!isStudioModelDiffusersBacked(profile)) return 'Legacy';
   const runtimeKind = getStudioModelRuntimeKind(profile);
+  if (runtimeKind === 'spandrel') return 'Spandrel';
+  if (!isStudioModelDiffusersBacked(profile)) return 'Legacy';
   if (runtimeKind === 'diffusers_accelerated') return 'Accelerated';
   return 'Diffusers';
 }

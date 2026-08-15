@@ -198,6 +198,7 @@ const NODE_KEYS = {
   transformersTextPreview: 'modules.Primitive.DataViewer',
   imageOperation: 'modules.ImageOperations.ProcessImage',
   videoOperation: 'modules.Video.ProcessVideo',
+  videoUpscaler: 'modules.Video.UpscaleVideo',
 } satisfies Record<StudioGraphRole, string>;
 
 const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
@@ -270,6 +271,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   transformersTextPreview: { x: 240, y: -80 },
   imageOperation: { x: -160, y: -80 },
   videoOperation: { x: -220, y: -80 },
+  videoUpscaler: { x: -220, y: -80 },
 };
 
 const REQUIRED_BASE_ROLES: StudioGraphRole[] = ['models', 'prompt', 'denoise', 'decode', 'preview'];
@@ -2990,6 +2992,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
   if (role === 'loadAdapter') return 'Diffusers.LoadAdapter';
   if (role === 'imageOperation') return 'Image.Process';
   if (role === 'videoOperation') return 'Video.Process';
+  if (role === 'videoUpscaler') return 'Video.Upscale';
   return null;
 }
 

@@ -126,6 +126,8 @@ export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
 export const BUILTIN_IMAGE_OPERATION_REPO = 'builtin://modiff/image-operations/v1';
 export const BUILTIN_VIDEO_OPERATION_REPO = 'builtin://modiff/video-operations/v1';
+export const SPANDREL_VIDEO_UPSCALE_REPO = 'nateraw/real-esrgan';
+export const SPANDREL_VIDEO_UPSCALE_REVISION = '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094';
 export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'image_adjustment',
   'image_filter',
@@ -136,6 +138,7 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'mask_composite',
 ];
 export const BUILTIN_VIDEO_OPERATION_MODES: StudioMode[] = ['video_frame_extract', 'video_stitch'];
+export const SPANDREL_VIDEO_UPSCALE_MODES: StudioMode[] = ['video_upscale'];
 
 export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   id: 'qwen-controlnet-union',
@@ -337,6 +340,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'LTX-2 Standard Video + Audio',
   'Built-in Image Operations',
   'Built-in Video Operations',
+  'Real-ESRGAN x2 Video Upscale',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -380,6 +384,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   mask_composite: 'Composite a foreground over a background through an explicit mask.',
   video_frame_extract: 'Extract a bounded set of still frames from one local video.',
   video_stitch: 'Join two to sixteen local videos through the app-owned FFmpeg path.',
+  video_upscale: 'Stream a bounded source video through an exact app-managed Real-ESRGAN x2 model.',
   advanced_workflow: 'Build an empty graph manually.',
 };
 
@@ -495,6 +500,7 @@ export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'character_replace',
   'video_frame_extract',
   'video_stitch',
+  'video_upscale',
 ];
 
 export const AUDIO_STUDIO_MODES: StudioMode[] = [
@@ -2421,6 +2427,47 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     galleryEligible: false,
     liveProof: false,
   },
+  SpandrelVideoUpscale: {
+    family: 'Real-ESRGAN',
+    surfaceCategory: 'Video',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'spandrel',
+    isDiffusersBacked: false,
+    defaultRepo: SPANDREL_VIDEO_UPSCALE_REPO,
+    downloadFiles: ['RealESRGAN_x2plus.pth'],
+    artifactLabel: 'Reviewed BSD-3-Clause Real-ESRGAN x2 Spandrel weight',
+    artifactKind: 'spandrel_upscaler',
+    artifactInstallRequired: true,
+    defaultDtype: 'float32',
+    defaultSize: { width: 1920, height: 1080, aspectRatio: '16:9' },
+    offloadSupport: { modes: ['none'], default: 'none', lowVram: 'none', emergency: 'none' },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    guidanceLabel: 'Not used',
+    supportFlags: 0,
+    supportsPrompt: false,
+    supportsNegativePrompt: false,
+    supportsVideoInput: true,
+    outputKind: 'video',
+    lowVram: {
+      dtype: 'float32',
+      autoOffload: false,
+      offloadMode: 'none',
+      steps: 1,
+      width: 1920,
+      height: 1080,
+    },
+    modes: SPANDREL_VIDEO_UPSCALE_MODES,
+    modeRequirements: { video_upscale: { requiredVideos: ['sourceVideo'] } },
+    executionStatus: 'expert_only',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    revisionCandidates: [SPANDREL_VIDEO_UPSCALE_REVISION],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 export const STUDIO_MODEL_PROFILES = Object.fromEntries(
@@ -3021,6 +3068,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Runs entirely through the versioned built-in video-operation contract.',
     manualOnlyReason: 'Use the Expert workflow surface to configure operation-specific controls.',
   },
+  SpandrelVideoUpscale: {
+    modelType: 'SpandrelVideoUpscale',
+    supportedModes: SPANDREL_VIDEO_UPSCALE_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'One app-installed exact Real-ESRGAN x2 weight and a supported Torch device.',
+    recommended: 'A supported accelerator; CPU remains available for small bounded clips.',
+    qualityDefaults: 'Exact x2 model scale, 256px tiles, 32px overlap, and at most 1,200 frames.',
+    artifacts: [SPANDREL_VIDEO_UPSCALE_REPO],
+    notes: 'Streams one frame at a time and does not preserve source audio.',
+    manualOnlyReason: 'Live performance, memory, and output quality are not yet qualified.',
+  },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {
@@ -3156,6 +3214,9 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   }
   if (BUILTIN_VIDEO_OPERATION_MODES.includes(mode)) {
     return 'BuiltinVideoOperation';
+  }
+  if (SPANDREL_VIDEO_UPSCALE_MODES.includes(mode)) {
+    return 'SpandrelVideoUpscale';
   }
   if (VIDEO_STUDIO_MODES.includes(mode)) {
     return 'WanVACEPipeline';

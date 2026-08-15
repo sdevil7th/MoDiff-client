@@ -8699,6 +8699,9 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(verifier, /does not equal a deterministic re-layout/);
   assert.match(verifier, /LAYOUT_HORIZONTAL_GAP = 140/);
   assert.match(verifier, /LAYOUT_VERTICAL_GAP = 72/);
+  assert.match(verifier, /modules\.Video.*UpscaleVideo/);
+  assert.match(verifier, /nateraw\/real-esrgan\/RealESRGAN_x2plus\.pth/);
+  assert.match(verifier, /video-upscale graph is missing its exact reviewed artifact or route/);
 });
 
 test('canonical generation isolates browser and backend workflow persistence', async () => {

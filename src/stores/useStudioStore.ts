@@ -1221,7 +1221,8 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
     currentMode === 'video_outpaint' ||
     currentMode === 'control_to_video' ||
     currentMode === 'control_video_to_video' ||
-    currentMode === 'video_color_edit'
+    currentMode === 'video_color_edit' ||
+    currentMode === 'video_upscale'
   ) {
     return currentMode;
   }

@@ -336,6 +336,42 @@ test('model capabilities keep schema-v2 runnable modes exact and ignore experime
   );
 });
 
+test('model capabilities admit only the reviewed installed Spandrel artifact kind', async () => {
+  const capability = {
+    modelType: 'SpandrelVideoUpscale',
+    modes: ['video_upscale'],
+    runnableModes: ['video_upscale'],
+    artifactKind: 'spandrel_upscaler',
+    artifactInstallRequired: true,
+    executionStatus: 'expert_only',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  };
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.equal(state.studioModelCapabilities[0].artifactKind, 'spandrel_upscaler');
+  assert.equal(state.studioModelCapabilities[0].artifactInstallRequired, true);
+
+  for (const malformed of [
+    { ...capability, artifactKind: 'arbitrary_checkpoint' },
+    { ...capability, artifactInstallRequired: false },
+  ]) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [malformed] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.equal(state.studioModelCapabilities[0].artifactKind, 'spandrel_upscaler');
+  }
+});
+
 test('Janus capability parsing preserves mode outputs and fail-closed license compliance', async () => {
   const compliance = {
     state: 'product_and_user_review_required',

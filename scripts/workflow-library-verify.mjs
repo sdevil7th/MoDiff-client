@@ -172,6 +172,9 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
     const builtInVideoOperations = (graph.nodes ?? []).filter(
       (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'ProcessVideo',
     );
+    const spandrelVideoUpscalers = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'UpscaleVideo',
+    );
     if (pipelineNodes.length === 0) {
       if (builtInVideoOperations.length === 1) {
         const operation = builtInVideoOperations[0];
@@ -185,6 +188,40 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           modularModels.length !== 0
         ) {
           throw new Error(`${workflow.id} built-in video graph is missing its exact bounded operation identity.`);
+        }
+      } else if (spandrelVideoUpscalers.length === 1) {
+        const upscaler = spandrelVideoUpscalers[0];
+        const params = upscaler.data?.params ?? {};
+        const artifact = params.model_id?.value ?? params.model_id?.default;
+        const exportNode = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'Export',
+        );
+        const hasUpscaleRoute = (graph.edges ?? []).some(
+          (edge) =>
+            edge.source === upscaler.id &&
+            edge.sourceHandle === 'video_out' &&
+            edge.target === exportNode?.id &&
+            edge.targetHandle === 'video',
+        );
+        if (
+          workflow.modelType !== 'SpandrelVideoUpscale' ||
+          workflow.mode !== 'video_upscale' ||
+          upscaler.data?.studioRole !== 'videoUpscaler' ||
+          params.pipeline_class?.value !== 'SpandrelVideoUpscaleV1' ||
+          params.operation?.value !== 'video_upscale' ||
+          artifact?.source !== 'hub' ||
+          artifact?.value !== 'nateraw/real-esrgan/RealESRGAN_x2plus.pth' ||
+          artifact?.revision !== '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094' ||
+          artifact?.sha256 !== '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb' ||
+          artifact?.byteSize !== 67_061_725 ||
+          artifact?.license !== 'bsd-3-clause' ||
+          !workflow.pipelineClasses.includes('SpandrelVideoUpscaleV1') ||
+          !workflow.requiredArtifacts.includes('nateraw/real-esrgan') ||
+          modularModels.length !== 0 ||
+          builtInVideoOperations.length !== 0 ||
+          !hasUpscaleRoute
+        ) {
+          throw new Error(`${workflow.id} video-upscale graph is missing its exact reviewed artifact or route.`);
         }
       } else {
         if (modularModels.length !== 1) {

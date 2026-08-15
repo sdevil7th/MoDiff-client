@@ -46,6 +46,7 @@ export type StudioMode =
   | 'mask_composite'
   | 'video_frame_extract'
   | 'video_stitch'
+  | 'video_upscale'
   | 'advanced_workflow';
 
 export type StudioModelType =
@@ -148,7 +149,8 @@ export type StudioModelType =
   | 'DreamLitePipeline'
   | 'DreamLiteMobilePipeline'
   | 'BuiltinImageOperation'
-  | 'BuiltinVideoOperation';
+  | 'BuiltinVideoOperation'
+  | 'SpandrelVideoUpscale';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -491,7 +493,8 @@ export type StudioGraphRole =
   | 'transformersAnyToAnyGenerate'
   | 'transformersTextPreview'
   | 'imageOperation'
-  | 'videoOperation';
+  | 'videoOperation'
+  | 'videoUpscaler';
 
 export type StudioGraphBinding = {
   mode: StudioMode;
@@ -917,17 +920,24 @@ export type StudioModelProfile = {
     | 'SmolVLM'
     | 'Janus'
     | 'Whisper'
-    | 'Built-in Media';
+    | 'Built-in Media'
+    | 'Real-ESRGAN';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
   runtimeKind?:
-    'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'transformers' | 'builtin' | 'unsupported';
+    | 'diffusers'
+    | 'diffusers_accelerated'
+    | 'experimental_diffusers'
+    | 'transformers'
+    | 'spandrel'
+    | 'builtin'
+    | 'unsupported';
   isDiffusersBacked?: boolean;
   acceleratorStrategy?: string;
   specializedReason?: string;
   defaultRepo: string;
   artifactLabel?: string;
-  artifactKind?: 'model' | 'builtin';
+  artifactKind?: 'model' | 'spandrel_upscaler' | 'builtin';
   artifactInstallRequired?: boolean;
   alternateArtifact?: string;
   defaultDtype: StudioFormState['dtype'];

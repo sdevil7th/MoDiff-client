@@ -694,7 +694,7 @@ function parseStudioModelCapabilities(value: unknown) {
       ) ||
       ((layerCount || layerResolutions) && !modes.includes('layer_decomposition')) ||
       Boolean(layerCount) !== Boolean(layerResolutions) ||
-      (artifactKind !== undefined && !['model', 'builtin'].includes(String(artifactKind))) ||
+      (artifactKind !== undefined && !['model', 'spandrel_upscaler', 'builtin'].includes(String(artifactKind))) ||
       (artifactInstallRequired !== undefined && typeof artifactInstallRequired !== 'boolean') ||
       ((artifactKind === 'builtin' || artifactInstallRequired === false) &&
         !(artifactKind === 'builtin' && artifactInstallRequired === false)) ||

@@ -303,6 +303,11 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
   ) {
     return 'BuiltinVideoOperation';
   }
+  if (
+    nodes.some((node) => node.data?.studioRole === 'videoUpscaler' || nodeKey(node) === 'modules.Video.UpscaleVideo')
+  ) {
+    return 'SpandrelVideoUpscale';
+  }
   const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
   if (explicit) return explicit;
   const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
@@ -344,6 +349,9 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     );
     const operation = stringValue(paramValue(operationNode, ['operation']));
     return operation === 'video_stitch' ? 'video_stitch' : 'video_frame_extract';
+  }
+  if (modelType === 'SpandrelVideoUpscale' || roles.has('videoUpscaler')) {
+    return 'video_upscale';
   }
   if (
     modelType === 'ShapEPipeline' ||
@@ -504,6 +512,7 @@ export function inferStudioFormFromWorkflow(
         'diffusersImagePipeline',
         'audioPipeline',
         'speechModel',
+        'videoUpscaler',
       ].includes(String(node.data?.studioRole)) ||
       [
         'ModelsLoader',
@@ -511,6 +520,7 @@ export function inferStudioFormFromWorkflow(
         'LoadInpaintPipeline',
         'LoadSpeechRecognitionModel',
         'LoadAnyToAnyModel',
+        'UpscaleVideo',
       ].includes(String(node.data?.action)),
   );
   const quantizationNode = findNode(
@@ -577,6 +587,10 @@ export function inferStudioFormFromWorkflow(
   const videoOperationNode = findNode(
     nodes,
     (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
+  );
+  const videoUpscaleNode = findNode(
+    nodes,
+    (node) => node.data?.studioRole === 'videoUpscaler' || nodeKey(node) === 'modules.Video.UpscaleVideo',
   );
   const operationVideos = arrayStringValue(paramValue(videoOperationNode, ['videos']));
   const loadImageNode = loadImages.find((node) => node.data?.studioRole === 'loadImage') ?? loadImages[0];
@@ -648,7 +662,9 @@ export function inferStudioFormFromWorkflow(
       stringValue(paramValue(loadControlImageNode, ['file'])) ||
       (mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : ''),
     sourceVideo:
-      (mode === 'video_frame_extract' ? operationVideos[0] : '') || stringValue(paramValue(sourceVideoNode, ['file'])),
+      (mode === 'video_frame_extract' ? operationVideos[0] : '') ||
+      (mode === 'video_upscale' ? stringValue(paramValue(videoUpscaleNode, ['video'])) : '') ||
+      stringValue(paramValue(sourceVideoNode, ['file'])),
     maskVideo: stringValue(paramValue(maskVideoNode, ['file'])),
     controlVideo: stringValue(paramValue(controlVideoNode, ['file'])),
     sourceAudio: stringValue(paramValue(loadAudioNode, ['file'])),
@@ -675,7 +691,7 @@ export function inferStudioFormFromWorkflow(
       paramValue(
         findNode(nodes, (node) => node.data?.studioRole === 'videoExport'),
         ['fps'],
-      ),
+      ) ?? paramValue(videoUpscaleNode, ['fps']),
       defaults.fps,
     ),
     conditioningScale: numberValue(paramValue(generateNode, ['conditioning_scale']), defaults.conditioningScale),

@@ -1772,6 +1772,104 @@ test('built-in video operations preserve exact install-free multi-media contract
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinVideoOperation.artifacts, []);
 });
 
+test('model-backed video upscale preserves the exact Spandrel task boundary', () => {
+  const mode = 'video_upscale';
+  const repo = modelProfilesModule.SPANDREL_VIDEO_UPSCALE_REPO;
+  const profile = {
+    id: 'real-esrgan-x2-video-upscale:direct',
+    model_type: 'SpandrelVideoUpscale',
+    modes: [mode],
+    loader_module: 'modules.Video',
+    loader_action: 'UpscaleVideo',
+    execution_path: 'spandrel-video-upscale',
+    pipeline_class: 'SpandrelVideoUpscaleV1',
+    default_repo: repo,
+    fallback_repo: null,
+    compatible_repos: [],
+  };
+  const semanticSpec = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'real-esrgan-x2-video-upscale:v1',
+    modelType: 'SpandrelVideoUpscale',
+    mode,
+    executionProfileId: profile.id,
+    loaderModule: profile.loader_module,
+    loaderAction: profile.loader_action,
+    executionPath: profile.execution_path,
+    pipelineClass: profile.pipeline_class,
+    defaultRepo: repo,
+    roles: [
+      ['videoUpscaler', 'modules.Video.UpscaleVideo', -220, -80],
+      ['videoExport', 'modules.Video.Export', 300, -80],
+    ],
+    edges: [['videoUpscaler', 'video_out', 'videoExport', 'video']],
+    bindings: [
+      ['videoUpscaler', 'video', 'sourceVideo'],
+      ['videoUpscaler', 'pipeline_class', 'pipelineClass'],
+      ['videoUpscaler', 'operation', 'mode'],
+      ['videoUpscaler', 'device', 'device'],
+      ['videoUpscaler', 'fps', 'fps'],
+      ['videoExport', 'fps', 'fps'],
+    ],
+    autoFields: [
+      'resolvedArtifact',
+      'artifact',
+      'installTarget.repo',
+      'modelRepo',
+      'pipelineClass',
+      'dtype',
+      'offloadMode',
+      'quantizedComponents',
+      'attentionBackend',
+      'regionalCompile',
+      'denoiserCache',
+      'layerwiseCasting',
+      'channelsLast',
+    ],
+    actions: [],
+  };
+  const spec = {
+    ...semanticSpec,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semanticSpec))}`,
+  };
+  assert.equal(spec.contentHash, 'studio-spec-v1-231f621f');
+  const parsedSpecs = executionSpecsModule.parseStudioExecutionSpecs([spec], 'SpandrelVideoUpscale', [mode], [profile]);
+  const semanticContract = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'task-template:real-esrgan-x2-video-upscale:v1',
+    modelType: 'SpandrelVideoUpscale',
+    mode,
+    mediaKind: 'video',
+    executionProfileId: profile.id,
+    executionSpecId: spec.id,
+    executionSpecContentHash: spec.contentHash,
+    loaderModule: profile.loader_module,
+    loaderAction: profile.loader_action,
+    loaderRole: 'videoUpscaler',
+    pipelineClass: profile.pipeline_class,
+    defaultRepo: repo,
+    loaderRepositories: [repo],
+    requiredMedia: [{ kind: 'video', field: 'sourceVideo', minimumCount: 1 }],
+    output: { mediaKind: 'video', role: 'videoExport', nodeKey: 'modules.Video.Export', inputHandle: 'video' },
+    qualificationStatus: 'graph-qualified-execution-pending',
+    galleryEligible: false,
+  };
+  const contract = {
+    ...semanticContract,
+    contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semanticContract))}`,
+  };
+  assert.equal(contract.contentHash, 'task-template-v1-a05b8a58');
+  const capability = {
+    modelType: 'SpandrelVideoUpscale',
+    studioExecutionSpecs: parsedSpecs,
+    executionProfiles: [profile],
+  };
+  assert.equal(contractsModule.parseTaskTemplateContracts([contract], 1, [capability]).length, 1);
+  assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.SpandrelVideoUpscale.artifacts, [repo]);
+});
+
 test('contracts for backend model types unknown to this client are ignored', () => {
   const fixture = buildFixture();
   const parsed = contractsModule.parseTaskTemplateContracts(
