@@ -1706,6 +1706,66 @@ test('built-in video operations preserve exact install-free multi-media contract
       requiredMedia: [{ kind: 'video', field: 'referenceVideos', minimumCount: 2 }],
       output: { mediaKind: 'video', role: 'videoExport', nodeKey: 'modules.Video.Export', inputHandle: 'video' },
     },
+    {
+      mode: 'video_trim',
+      id: 'builtin-video-operations:trim:v1',
+      specHash: 'studio-spec-v1-8ae51a00',
+      taskHash: 'task-template-v1-0eef5c73',
+      roles: [
+        ['videoOperation', 'modules.Video.ProcessVideo', -220, -80],
+        ['videoExport', 'modules.Video.Export', 260, -80],
+      ],
+      edges: [['videoOperation', 'video', 'videoExport', 'video']],
+      bindings: [
+        ['videoOperation', 'pipeline_class', 'pipelineClass'],
+        ['videoOperation', 'operation', 'mode'],
+        ['videoOperation', 'videos', 'sourceVideo'],
+        ['videoExport', 'fps', 'fps'],
+      ],
+      mediaKind: 'video',
+      requiredMedia: [{ kind: 'video', field: 'sourceVideo', minimumCount: 1 }],
+      output: { mediaKind: 'video', role: 'videoExport', nodeKey: 'modules.Video.Export', inputHandle: 'video' },
+    },
+    {
+      mode: 'video_reverse',
+      id: 'builtin-video-operations:reverse:v1',
+      specHash: 'studio-spec-v1-cbdd8724',
+      taskHash: 'task-template-v1-46a24f4c',
+      roles: [
+        ['videoOperation', 'modules.Video.ProcessVideo', -220, -80],
+        ['videoExport', 'modules.Video.Export', 260, -80],
+      ],
+      edges: [['videoOperation', 'video', 'videoExport', 'video']],
+      bindings: [
+        ['videoOperation', 'pipeline_class', 'pipelineClass'],
+        ['videoOperation', 'operation', 'mode'],
+        ['videoOperation', 'videos', 'sourceVideo'],
+        ['videoExport', 'fps', 'fps'],
+      ],
+      mediaKind: 'video',
+      requiredMedia: [{ kind: 'video', field: 'sourceVideo', minimumCount: 1 }],
+      output: { mediaKind: 'video', role: 'videoExport', nodeKey: 'modules.Video.Export', inputHandle: 'video' },
+    },
+    {
+      mode: 'video_tile',
+      id: 'builtin-video-operations:tile:v1',
+      specHash: 'studio-spec-v1-60a5fab5',
+      taskHash: 'task-template-v1-163731b8',
+      roles: [
+        ['videoOperation', 'modules.Video.ProcessVideo', -220, -80],
+        ['videoExport', 'modules.Video.Export', 260, -80],
+      ],
+      edges: [['videoOperation', 'video', 'videoExport', 'video']],
+      bindings: [
+        ['videoOperation', 'pipeline_class', 'pipelineClass'],
+        ['videoOperation', 'operation', 'mode'],
+        ['videoOperation', 'videos', 'referenceVideos'],
+        ['videoExport', 'fps', 'fps'],
+      ],
+      mediaKind: 'video',
+      requiredMedia: [{ kind: 'video', field: 'referenceVideos', minimumCount: 2 }],
+      output: { mediaKind: 'video', role: 'videoExport', nodeKey: 'modules.Video.Export', inputHandle: 'video' },
+    },
   ];
   const specs = cases.map((item) => {
     const semantic = {
@@ -1768,7 +1828,7 @@ test('built-in video operations preserve exact install-free multi-media contract
     studioExecutionSpecs: parsedSpecs,
     executionProfiles: [profile],
   };
-  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 2);
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 5);
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinVideoOperation.artifacts, []);
 });
 

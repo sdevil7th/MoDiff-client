@@ -1222,6 +1222,11 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
     currentMode === 'control_to_video' ||
     currentMode === 'control_video_to_video' ||
     currentMode === 'video_color_edit' ||
+    currentMode === 'video_frame_extract' ||
+    currentMode === 'video_stitch' ||
+    currentMode === 'video_trim' ||
+    currentMode === 'video_reverse' ||
+    currentMode === 'video_tile' ||
     currentMode === 'video_upscale'
   ) {
     return currentMode;
@@ -1230,7 +1235,7 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
 }
 
 function applyImportedVideoToForm(form: StudioFormState, video: string): StudioFormState {
-  if (form.mode === 'video_stitch') {
+  if (form.mode === 'video_stitch' || form.mode === 'video_tile') {
     return {
       ...form,
       referenceVideos: [video, ...form.referenceVideos.filter((item) => item !== video)].slice(0, 16),

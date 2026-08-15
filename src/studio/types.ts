@@ -46,6 +46,9 @@ export type StudioMode =
   | 'mask_composite'
   | 'video_frame_extract'
   | 'video_stitch'
+  | 'video_trim'
+  | 'video_reverse'
+  | 'video_tile'
   | 'video_upscale'
   | 'advanced_workflow';
 

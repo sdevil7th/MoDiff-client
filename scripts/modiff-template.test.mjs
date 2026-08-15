@@ -4594,7 +4594,7 @@ test('built-in video operations are locally ready and preserve multi-video infer
   assert.equal(profile.artifactKind, 'builtin');
   assert.equal(profile.artifactInstallRequired, false);
   assert.equal(profile.defaultRepo, 'builtin://modiff/video-operations/v1');
-  assert.deepEqual(profile.modes, ['video_frame_extract', 'video_stitch']);
+  assert.deepEqual(profile.modes, ['video_frame_extract', 'video_stitch', 'video_trim', 'video_reverse', 'video_tile']);
   assert.deepEqual(requirement.artifacts, []);
   assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
 
@@ -4621,6 +4621,44 @@ test('built-in video operations are locally ready and preserve multi-video infer
   assert.equal(inferred.modelType, 'BuiltinVideoOperation');
   assert.equal(inferred.mode, 'video_stitch');
   assert.deepEqual(inferred.referenceVideos, ['first.mp4', 'second.mp4']);
+
+  const trimmed = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'video_trim' },
+            videos: { value: ['source.mp4'] },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(trimmed.mode, 'video_trim');
+  assert.equal(trimmed.sourceVideo, 'source.mp4');
+
+  const tiled = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'video_tile' },
+            videos: { value: ['first.mp4', 'second.mp4'] },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(tiled.mode, 'video_tile');
+  assert.deepEqual(tiled.referenceVideos, ['first.mp4', 'second.mp4']);
 });
 
 test('Real-ESRGAN video upscale stays model-backed and infers the generic source-video contract', () => {

@@ -348,7 +348,10 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
       (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
     );
     const operation = stringValue(paramValue(operationNode, ['operation']));
-    return operation === 'video_stitch' ? 'video_stitch' : 'video_frame_extract';
+    if (['video_frame_extract', 'video_stitch', 'video_trim', 'video_reverse', 'video_tile'].includes(operation)) {
+      return operation as StudioMode;
+    }
+    return 'video_frame_extract';
   }
   if (modelType === 'SpandrelVideoUpscale' || roles.has('videoUpscaler')) {
     return 'video_upscale';
@@ -656,13 +659,13 @@ export function inferStudioFormFromWorkflow(
     outpaintFeather: numberValue(paramValue(outpaintNode, ['feather']), defaults.outpaintFeather),
     outpaintFillColor: stringValue(paramValue(outpaintNode, ['fill_color'])) || defaults.outpaintFillColor,
     referenceImages: arrayStringValue(paramValue(loadImageNode, ['file'])),
-    referenceVideos: mode === 'video_stitch' ? operationVideos : defaults.referenceVideos,
+    referenceVideos: mode === 'video_stitch' || mode === 'video_tile' ? operationVideos : defaults.referenceVideos,
     maskImage: stringValue(paramValue(loadMaskNode, ['file'])),
     controlImage:
       stringValue(paramValue(loadControlImageNode, ['file'])) ||
       (mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : ''),
     sourceVideo:
-      (mode === 'video_frame_extract' ? operationVideos[0] : '') ||
+      (['video_frame_extract', 'video_trim', 'video_reverse'].includes(mode) ? operationVideos[0] : '') ||
       (mode === 'video_upscale' ? stringValue(paramValue(videoUpscaleNode, ['video'])) : '') ||
       stringValue(paramValue(sourceVideoNode, ['file'])),
     maskVideo: stringValue(paramValue(maskVideoNode, ['file'])),

@@ -137,7 +137,13 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'image_channels',
   'mask_composite',
 ];
-export const BUILTIN_VIDEO_OPERATION_MODES: StudioMode[] = ['video_frame_extract', 'video_stitch'];
+export const BUILTIN_VIDEO_OPERATION_MODES: StudioMode[] = [
+  'video_frame_extract',
+  'video_stitch',
+  'video_trim',
+  'video_reverse',
+  'video_tile',
+];
 export const SPANDREL_VIDEO_UPSCALE_MODES: StudioMode[] = ['video_upscale'];
 
 export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
@@ -384,6 +390,9 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   mask_composite: 'Composite a foreground over a background through an explicit mask.',
   video_frame_extract: 'Extract a bounded set of still frames from one local video.',
   video_stitch: 'Join two to sixteen local videos through the app-owned FFmpeg path.',
+  video_trim: 'Trim one local video to a bounded time range through the app-owned FFmpeg path.',
+  video_reverse: 'Reverse one bounded local video through the app-owned FFmpeg path.',
+  video_tile: 'Arrange two to sixteen local videos in a bounded synchronized tile wall.',
   video_upscale: 'Stream a bounded source video through an exact app-managed Real-ESRGAN x2 model.',
   advanced_workflow: 'Build an empty graph manually.',
 };
@@ -500,6 +509,9 @@ export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'character_replace',
   'video_frame_extract',
   'video_stitch',
+  'video_trim',
+  'video_reverse',
+  'video_tile',
   'video_upscale',
 ];
 
@@ -2402,7 +2414,13 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     supportsPrompt: false,
     supportsNegativePrompt: false,
     outputKind: 'video',
-    modeOutputKinds: { video_frame_extract: 'image', video_stitch: 'video' },
+    modeOutputKinds: {
+      video_frame_extract: 'image',
+      video_stitch: 'video',
+      video_trim: 'video',
+      video_reverse: 'video',
+      video_tile: 'video',
+    },
     lowVram: {
       dtype: 'float32',
       autoOffload: false,
@@ -2415,6 +2433,12 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: {
       video_frame_extract: { requiredVideos: ['sourceVideo'] },
       video_stitch: {
+        requiredVideos: ['referenceVideos'],
+        minimumCounts: { referenceVideos: 2 },
+      },
+      video_trim: { requiredVideos: ['sourceVideo'] },
+      video_reverse: { requiredVideos: ['sourceVideo'] },
+      video_tile: {
         requiredVideos: ['referenceVideos'],
         minimumCounts: { referenceVideos: 2 },
       },
@@ -3063,7 +3087,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     autoStatus: 'manual_only',
     minimum: 'Base MoDiff CPU runtime with app-owned FFmpeg; no model installation is required.',
     recommended: 'Any supported CPU runtime with enough temporary storage for the joined output.',
-    qualityDefaults: 'At most 64 extracted frames or 2–16 bounded local clips.',
+    qualityDefaults: 'Bounded extraction, trim, reverse, stitch, or 2–16 clip tile operations.',
     artifacts: [],
     notes: 'Runs entirely through the versioned built-in video-operation contract.',
     manualOnlyReason: 'Use the Expert workflow surface to configure operation-specific controls.',
