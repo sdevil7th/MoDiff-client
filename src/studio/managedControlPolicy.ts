@@ -606,6 +606,7 @@ export const MANAGED_CONTROL_POLICIES = {
   },
   imageOperation: {
     image: internal(),
+    mask: internal(),
     pipeline_class: internal(),
     operation: internal(),
     brightness: essential(),
@@ -630,6 +631,8 @@ export const MANAGED_CONTROL_POLICIES = {
     rows: essential(),
     columns: essential(),
     channel: essential(),
+    composite_mask_channel: essential(),
+    composite_invert_mask: essential(),
     output: internal(),
   },
   loraAdapter: LORA_POLICY,

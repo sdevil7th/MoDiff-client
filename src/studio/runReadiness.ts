@@ -1168,14 +1168,19 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   });
 
   const requirements = profile.modeRequirements?.[form.mode]?.requiredImages ?? [];
-  if (requirements.includes('referenceImages') && !form.referenceImages.some((image) => image.trim())) {
+  const minimumReferenceImages = profile.modeRequirements?.[form.mode]?.minimumCounts?.referenceImages ?? 1;
+  const selectedReferenceImages = form.referenceImages.filter((image) => image.trim()).length;
+  if (requirements.includes('referenceImages') && selectedReferenceImages < minimumReferenceImages) {
     issues.push(
       issue({
         category: 'asset',
         severity: 'error',
         blocking: true,
         action: 'select_image',
-        message: 'A source image is required before this workflow can run.',
+        message:
+          minimumReferenceImages === 1
+            ? 'A source image is required before this workflow can run.'
+            : `${minimumReferenceImages} source images are required before this workflow can run.`,
       }),
     );
   }

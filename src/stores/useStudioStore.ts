@@ -1195,7 +1195,12 @@ function applyImportedImageToForm(form: StudioFormState, image: string): StudioF
   if (!trimmed) return form;
 
   const requiredImages = STUDIO_MODEL_PROFILES[form.modelType].modeRequirements?.[form.mode]?.requiredImages ?? [];
-  if (requiredImages.includes('referenceImages') && !form.referenceImages[0]?.trim()) {
+  const minimumReferenceImages =
+    STUDIO_MODEL_PROFILES[form.modelType].modeRequirements?.[form.mode]?.minimumCounts?.referenceImages ?? 1;
+  if (
+    requiredImages.includes('referenceImages') &&
+    form.referenceImages.filter((item) => item.trim()).length < minimumReferenceImages
+  ) {
     return withReferenceImage(form, trimmed);
   }
   if (requiredImages.includes('maskImage') && !form.maskImage.trim()) {

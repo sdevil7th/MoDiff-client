@@ -59,7 +59,14 @@ function parseRequiredMedia(value: unknown): StudioTaskTemplateRequiredMedia[] {
   return value.map((item) => {
     if (!record(item) || !exactKeys(item, REQUIRED_MEDIA_KEYS)) invalid();
     const expectedKind = typeof item.field === 'string' ? MEDIA_FIELDS[item.field as keyof typeof MEDIA_FIELDS] : null;
-    if (!expectedKind || item.kind !== expectedKind || item.minimumCount !== 1 || fields.has(item.field as string)) {
+    if (
+      !expectedKind ||
+      item.kind !== expectedKind ||
+      !Number.isInteger(item.minimumCount) ||
+      (item.minimumCount as number) < 1 ||
+      (item.minimumCount as number) > 64 ||
+      fields.has(item.field as string)
+    ) {
       invalid();
     }
     fields.add(item.field as string);

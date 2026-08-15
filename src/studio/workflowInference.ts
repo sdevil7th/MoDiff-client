@@ -318,9 +318,15 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     );
     const operation = stringValue(paramValue(operationNode, ['operation']));
     if (
-      ['image_adjustment', 'image_filter', 'image_crop', 'image_upscale', 'image_tile', 'image_channels'].includes(
-        operation,
-      )
+      [
+        'image_adjustment',
+        'image_filter',
+        'image_crop',
+        'image_upscale',
+        'image_tile',
+        'image_channels',
+        'mask_composite',
+      ].includes(operation)
     ) {
       return operation as StudioMode;
     }

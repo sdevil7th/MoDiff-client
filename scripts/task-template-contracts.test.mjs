@@ -1535,10 +1535,32 @@ test('built-in image operations preserve exact install-free task contracts', () 
     image_upscale: ['studio-spec-v1-769830b5', 'task-template-v1-539bf425'],
     image_tile: ['studio-spec-v1-54fee057', 'task-template-v1-202bc67b'],
     image_channels: ['studio-spec-v1-c76ee6b7', 'task-template-v1-69640a3d'],
+    mask_composite: ['studio-spec-v1-e6a11a52', 'task-template-v1-7b319535'],
   };
   const specs = [];
   const contracts = [];
   for (const mode of modes) {
+    const modeRoles =
+      mode === 'mask_composite'
+        ? [
+            ['loadImage', 'modules.Image.Load', -720, -180],
+            ['loadMask', 'modules.Image.Load', -720, 240],
+            ['imageOperation', 'modules.ImageOperations.ProcessImage', -160, -80],
+            ['preview', 'modules.Image.Preview', 400, -80],
+          ]
+        : roles;
+    const modeEdges =
+      mode === 'mask_composite'
+        ? [
+            ['loadImage', 'image', 'imageOperation', 'image'],
+            ['loadMask', 'image', 'imageOperation', 'mask'],
+            ['imageOperation', 'output', 'preview', 'image'],
+          ]
+        : edges;
+    const modeBindings =
+      mode === 'mask_composite'
+        ? [...bindings, ['loadMask', 'file', 'maskImage'], ['loadMask', 'alpha_channel', 'removeAlpha']]
+        : bindings;
     const semanticSpec = {
       schemaVersion: 1,
       canonicalizationVersion: 1,
@@ -1551,9 +1573,9 @@ test('built-in image operations preserve exact install-free task contracts', () 
       executionPath: profile.execution_path,
       pipelineClass: profile.pipeline_class,
       defaultRepo: repo,
-      roles,
-      edges,
-      bindings,
+      roles: modeRoles,
+      edges: modeEdges,
+      bindings: modeBindings,
       autoFields,
       actions: [],
     };
@@ -1579,7 +1601,13 @@ test('built-in image operations preserve exact install-free task contracts', () 
       pipelineClass: profile.pipeline_class,
       defaultRepo: repo,
       loaderRepositories: [repo],
-      requiredMedia: [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
+      requiredMedia:
+        mode === 'mask_composite'
+          ? [
+              { kind: 'image', field: 'referenceImages', minimumCount: 2 },
+              { kind: 'image', field: 'maskImage', minimumCount: 1 },
+            ]
+          : [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
       output: {
         mediaKind: 'image',
         role: 'preview',
@@ -1603,7 +1631,7 @@ test('built-in image operations preserve exact install-free task contracts', () 
     studioExecutionSpecs: parsedSpecs,
     executionProfiles: [profile],
   };
-  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 6);
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 7);
   assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES.BuiltinImageOperation.artifactInstallRequired, false);
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation.artifacts, []);
 });
@@ -1655,4 +1683,15 @@ test('task contracts reject a loader or output identity that diverges from its e
     () => contractsModule.parseTaskTemplateContracts(outputTamper, 1, fixture.capabilities),
     /Invalid Studio task-template contract/,
   );
+
+  for (const minimumCount of [0, 65]) {
+    const countTamper = structuredClone(fixture.contracts);
+    countTamper[1].requiredMedia[0].minimumCount = minimumCount;
+    const { contentHash: _oldHash, ...semantic } = countTamper[1];
+    countTamper[1].contentHash = `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`;
+    assert.throws(
+      () => contractsModule.parseTaskTemplateContracts(countTamper, 1, fixture.capabilities),
+      /Invalid Studio task-template contract/,
+    );
+  }
 });

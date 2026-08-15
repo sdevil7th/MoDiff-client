@@ -132,6 +132,7 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'image_upscale',
   'image_tile',
   'image_channels',
+  'mask_composite',
 ];
 
 export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
@@ -373,6 +374,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   image_upscale: 'Resize or upscale a source image with bounded traditional interpolation.',
   image_tile: 'Split a source image into a bounded tile grid.',
   image_channels: 'Extract a color, alpha, or luminance channel from a source image.',
+  mask_composite: 'Composite a foreground over a background through an explicit mask.',
   advanced_workflow: 'Build an empty graph manually.',
 };
 
@@ -2349,7 +2351,15 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     },
     modes: BUILTIN_IMAGE_OPERATION_MODES,
     modeRequirements: Object.fromEntries(
-      BUILTIN_IMAGE_OPERATION_MODES.map((mode) => [mode, { requiredImages: ['referenceImages'] }]),
+      BUILTIN_IMAGE_OPERATION_MODES.map((mode) => [
+        mode,
+        mode === 'mask_composite'
+          ? {
+              requiredImages: ['referenceImages', 'maskImage'],
+              minimumCounts: { referenceImages: 2 },
+            }
+          : { requiredImages: ['referenceImages'] },
+      ]),
     ),
     executionStatus: 'supported',
     qualificationStatus: 'graph-qualified-execution-pending',

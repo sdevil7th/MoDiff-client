@@ -43,6 +43,7 @@ export type StudioMode =
   | 'image_upscale'
   | 'image_tile'
   | 'image_channels'
+  | 'mask_composite'
   | 'advanced_workflow';
 
 export type StudioModelType =
@@ -828,7 +829,7 @@ export type StudioTaskTemplateRequiredMedia = {
     | 'backgroundVideo'
     | 'sourceAudio'
     | 'referenceAudio';
-  minimumCount: 1;
+  minimumCount: number;
 };
 
 export type StudioTaskTemplateContract = {
@@ -1024,6 +1025,23 @@ export type StudioModeRequirement = {
   requiredImages?: Array<'referenceImages' | 'lastImage' | 'maskImage' | 'controlImage'>;
   requiredVideos?: Array<'sourceVideo' | 'maskVideo' | 'controlVideo' | 'poseVideo' | 'faceVideo' | 'backgroundVideo'>;
   requiredAudio?: Array<'sourceAudio' | 'referenceAudio'>;
+  minimumCounts?: Partial<
+    Record<
+      | 'referenceImages'
+      | 'lastImage'
+      | 'maskImage'
+      | 'controlImage'
+      | 'sourceVideo'
+      | 'maskVideo'
+      | 'controlVideo'
+      | 'poseVideo'
+      | 'faceVideo'
+      | 'backgroundVideo'
+      | 'sourceAudio'
+      | 'referenceAudio',
+      number
+    >
+  >;
   note?: string;
 };
 
