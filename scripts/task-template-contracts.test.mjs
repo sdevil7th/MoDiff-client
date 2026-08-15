@@ -1652,10 +1652,14 @@ test('built-in data operations preserve exact install-free prompt and JSON contr
     compatible_repos: [],
   };
   const roles = [
-    ['dataOperation', 'modules.Text.ProcessText', -220, -80],
-    ['dataPreview', 'modules.Primitive.DataViewer', 260, -80],
+    ['dataOperation', 'modules.Text.ProcessText', -300, -80],
+    ['dataPreview', 'modules.Primitive.DataViewer', 100, -80],
+    ['dataExport', 'modules.Primitive.ExportData', 480, -80],
   ];
-  const edges = [['dataOperation', 'output', 'dataPreview', 'value']];
+  const edges = [
+    ['dataOperation', 'output', 'dataPreview', 'value'],
+    ['dataPreview', 'output', 'dataExport', 'value'],
+  ];
   const bindings = [
     ['dataOperation', 'pipeline_class', 'pipelineClass'],
     ['dataOperation', 'operation', 'mode'],
@@ -1680,20 +1684,20 @@ test('built-in data operations preserve exact install-free prompt and JSON contr
     {
       mode: 'text_select',
       id: 'builtin-data-operations:text-select:v1',
-      specHash: 'studio-spec-v1-d4bc64df',
-      taskHash: 'task-template-v1-1eefb6b7',
+      specHash: 'studio-spec-v1-9c2dc85a',
+      taskHash: 'task-template-v1-0316a2ed',
     },
     {
       mode: 'data_conversion',
       id: 'builtin-data-operations:data-conversion:v1',
-      specHash: 'studio-spec-v1-ccd283e9',
-      taskHash: 'task-template-v1-72539bcc',
+      specHash: 'studio-spec-v1-3d7fb6e4',
+      taskHash: 'task-template-v1-62126d8c',
     },
     {
       mode: 'graph_utility',
       id: 'builtin-data-operations:value-switch:v1',
-      specHash: 'studio-spec-v1-53bf8e76',
-      taskHash: 'task-template-v1-ace6ea4b',
+      specHash: 'studio-spec-v1-1e3b8d47',
+      taskHash: 'task-template-v1-b7ba0129',
     },
   ];
   const specs = cases.map((item) => {
@@ -1743,8 +1747,8 @@ test('built-in data operations preserve exact install-free prompt and JSON contr
       requiredMedia: [],
       output: {
         mediaKind: 'json',
-        role: 'dataPreview',
-        nodeKey: 'modules.Primitive.DataViewer',
+        role: 'dataExport',
+        nodeKey: 'modules.Primitive.ExportData',
         inputHandle: 'value',
       },
       qualificationStatus: 'graph-qualified-execution-pending',

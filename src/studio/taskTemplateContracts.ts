@@ -92,6 +92,7 @@ function validateOutput(raw: Record<string, unknown>, spec: StudioExecutionSpec)
   if (
     raw.output.mediaKind !== mediaKind ||
     (raw.output.nodeKey !== OUTPUT_NODE_KEYS[mediaKind] &&
+      !(mediaKind === 'json' && raw.output.nodeKey === 'modules.Primitive.ExportData') &&
       !(mediaKind === 'video' && raw.output.nodeKey === 'modules.Video.ExportWithAudio')) ||
     typeof raw.output.role !== 'string' ||
     typeof raw.output.inputHandle !== 'string' ||

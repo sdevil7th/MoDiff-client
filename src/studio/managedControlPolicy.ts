@@ -624,6 +624,14 @@ export const MANAGED_CONTROL_POLICIES = {
     preview: internal(),
     output: internal(),
   },
+  dataExport: {
+    value: internal(),
+    filename: essential(),
+    format: essential(),
+    file: internal(),
+    output: internal(),
+    preview: internal(),
+  },
   imageOperation: {
     image: internal(),
     mask: internal(),

@@ -495,6 +495,7 @@ export type StudioGraphRole =
   | 'audioExport'
   | 'dataOperation'
   | 'dataPreview'
+  | 'dataExport'
   | 'diffusersThreeDPipeline'
   | 'diffusersThreeDGenerate'
   | 'speechModel'
