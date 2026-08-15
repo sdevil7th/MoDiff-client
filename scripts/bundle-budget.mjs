@@ -9,10 +9,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // The capability-driven media contract and graph workspace share one stable
 // production bundle. Keep a narrow margin over the measured largest chunk.
 const MAX_ENTRY_GZIP_BYTES = 438 * 1024;
-// Two direct Qwen and five extended video contracts add 1,890 bytes to the
-// prior 536,420-byte baseline. The audited production surface is 538,310
-// bytes; 527 KiB retains a 1,338-byte regression margin.
-const MAX_TOTAL_GZIP_BYTES = 527 * 1024;
+// The bounded built-in image-operation contracts bring the audited production
+// surface to 540,197 bytes. A 529 KiB ceiling retains a 1,499-byte regression
+// margin while the largest entry remains under its independent cap.
+const MAX_TOTAL_GZIP_BYTES = 529 * 1024;
 
 function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`;
