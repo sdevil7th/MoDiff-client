@@ -685,6 +685,8 @@ function parseStudioModelCapabilities(value: unknown) {
     const licenseCompliance = parseLicenseCompliance(item.licenseCompliance);
     const layerCount = parseLayerCount(item.layerCount);
     const layerResolutions = parseLayerResolutions(item.layerResolutions);
+    const artifactKind = item.artifactKind;
+    const artifactInstallRequired = item.artifactInstallRequired;
     if (
       qualifiedModes?.some((mode) => !modes.includes(mode)) ||
       [item.autoEligible, item.templateEligible, item.galleryEligible, item.liveProof].some(
@@ -692,6 +694,10 @@ function parseStudioModelCapabilities(value: unknown) {
       ) ||
       ((layerCount || layerResolutions) && !modes.includes('layer_decomposition')) ||
       Boolean(layerCount) !== Boolean(layerResolutions) ||
+      (artifactKind !== undefined && !['model', 'builtin'].includes(String(artifactKind))) ||
+      (artifactInstallRequired !== undefined && typeof artifactInstallRequired !== 'boolean') ||
+      ((artifactKind === 'builtin' || artifactInstallRequired === false) &&
+        !(artifactKind === 'builtin' && artifactInstallRequired === false)) ||
       (item.executionStatus !== undefined &&
         !['expert_only', 'supported', 'supported_with_model'].includes(String(item.executionStatus)))
     )

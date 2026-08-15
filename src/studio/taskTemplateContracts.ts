@@ -1,4 +1,4 @@
-import { REPO_ID } from './executionSpecs';
+import { isStudioArtifactId } from './executionSpecs';
 import { hashString, stableStringify } from './stableHash';
 import type {
   StudioExecutionSpec,
@@ -165,7 +165,7 @@ export function parseTaskTemplateContracts(
       item.loaderRepositories.length > 8 ||
       item.loaderRepositories[0] !== item.defaultRepo ||
       new Set(item.loaderRepositories).size !== item.loaderRepositories.length ||
-      item.loaderRepositories.some((repository) => typeof repository !== 'string' || !REPO_ID.test(repository))
+      item.loaderRepositories.some((repository) => typeof repository !== 'string' || !isStudioArtifactId(repository))
     )
       invalid();
     const requiredMedia = parseRequiredMedia(item.requiredMedia);

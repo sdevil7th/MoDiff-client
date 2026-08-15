@@ -124,6 +124,14 @@ export const JANUS_PRO_1B_REVISION = '1655280bb75959cc1cb85529a2a8b26e7016072e';
 export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
+export const BUILTIN_IMAGE_OPERATION_REPO = 'builtin://modiff/image-operations/v1';
+export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
+  'image_adjustment',
+  'image_filter',
+  'image_crop',
+  'image_tile',
+  'image_channels',
+];
 
 export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   id: 'qwen-controlnet-union',
@@ -323,6 +331,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Chroma Image-to-Image (Standard Diffusers)',
   'Chroma1-HD Inpaint (Standard Diffusers)',
   'LTX-2 Standard Video + Audio',
+  'Built-in Image Operations',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -357,6 +366,11 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   audio_continuation: 'Continue source audio from a prompt.',
   audio_repaint: 'Regenerate a selected audio range.',
   text_to_3d: 'Generate a bounded rendered orbit of a 3D object from a prompt.',
+  image_adjustment: 'Apply bounded color and tone adjustments to a source image.',
+  image_filter: 'Apply a bounded deterministic filter to a source image.',
+  image_crop: 'Crop a bounded region from a source image.',
+  image_tile: 'Split a source image into a bounded tile grid.',
+  image_channels: 'Extract a color, alpha, or luminance channel from a source image.',
   advanced_workflow: 'Build an empty graph manually.',
 };
 
@@ -2304,6 +2318,45 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     outputMedia: ['video', 'audio'],
     revisionCandidates: [LTX2_REVISION],
   },
+  BuiltinImageOperation: {
+    family: 'Built-in Media',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'builtin',
+    isDiffusersBacked: false,
+    defaultRepo: BUILTIN_IMAGE_OPERATION_REPO,
+    artifactLabel: 'Versioned MoDiff built-in operation contract',
+    artifactKind: 'builtin',
+    artifactInstallRequired: false,
+    defaultDtype: 'float32',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    offloadSupport: { modes: ['none'], default: 'none', lowVram: 'none', emergency: 'none' },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    guidanceLabel: 'Not used',
+    supportFlags: 5,
+    supportsNegativePrompt: false,
+    outputKind: 'image',
+    lowVram: {
+      dtype: 'float32',
+      autoOffload: false,
+      offloadMode: 'none',
+      steps: 1,
+      width: 1024,
+      height: 1024,
+    },
+    modes: BUILTIN_IMAGE_OPERATION_MODES,
+    modeRequirements: Object.fromEntries(
+      BUILTIN_IMAGE_OPERATION_MODES.map((mode) => [mode, { requiredImages: ['referenceImages'] }]),
+    ),
+    executionStatus: 'supported',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 export const STUDIO_MODEL_PROFILES = Object.fromEntries(
@@ -2882,6 +2935,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   ChromaImg2ImgPipeline: /* @__PURE__ */ pendingPlanningRequirement('ChromaImg2ImgPipeline'),
   ChromaInpaintPipeline: /* @__PURE__ */ pendingPlanningRequirement('ChromaInpaintPipeline'),
   LTX2Pipeline: /* @__PURE__ */ pendingPlanningRequirement('LTX2Pipeline'),
+  BuiltinImageOperation: {
+    modelType: 'BuiltinImageOperation',
+    supportedModes: BUILTIN_IMAGE_OPERATION_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'Base MoDiff CPU runtime; no model installation is required.',
+    recommended: 'Any supported CPU runtime.',
+    qualityDefaults: 'Source-sized deterministic operation with bounded inputs.',
+    artifacts: [],
+    notes: 'Runs entirely through the versioned built-in image-operation contract.',
+    manualOnlyReason: 'Use the Expert workflow surface to configure operation-specific controls.',
+  },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {
@@ -2896,6 +2960,7 @@ export function getStudioModelRuntimeLabel(
   profile: StudioModelProfile,
   form?: Pick<StudioFormState, 'dtype' | 'autoOffload' | 'quantizationMode' | 'offloadMode'>,
 ) {
+  if (profile.artifactInstallRequired === false) return 'Built-in · CPU · no model download';
   const dtype = form?.dtype ?? profile.defaultDtype;
   const quantization = form?.quantizationMode && form.quantizationMode !== 'none' ? ` · ${form.quantizationMode}` : '';
   const offloadMode = normalizeStudioOffloadMode(form?.offloadMode ?? DEFAULT_STUDIO_FORM.offloadMode);

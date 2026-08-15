@@ -291,6 +291,13 @@ export function adoptManagedWorkflowGraph(
 }
 
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
+  if (
+    nodes.some(
+      (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
+    )
+  ) {
+    return 'BuiltinImageOperation';
+  }
   const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
   if (explicit) return explicit;
   const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
@@ -304,6 +311,17 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
 function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
+  if (modelType === 'BuiltinImageOperation' || roles.has('imageOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    if (['image_adjustment', 'image_filter', 'image_crop', 'image_tile', 'image_channels'].includes(operation)) {
+      return operation as StudioMode;
+    }
+    return 'image_adjustment';
+  }
   if (
     modelType === 'ShapEPipeline' ||
     roles.has('diffusersThreeDGenerate') ||

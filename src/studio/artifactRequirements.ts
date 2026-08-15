@@ -157,7 +157,7 @@ export function getStudioWorkflowArtifactRequirements({
   const profile = getProfileForForm(form);
   const requirements: WorkflowArtifactRequirement[] = [];
 
-  if (includePipeline) {
+  if (includePipeline && profile.artifactInstallRequired !== false) {
     if (form.resourceMode === 'auto') {
       const installTarget = autoResourceInstallTarget(autoResourcePlan, form);
       const candidate = selectedAutoCandidate(autoResourcePlan, form);

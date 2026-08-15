@@ -79,7 +79,7 @@ export function useStudioReadiness({
   );
   const missingInstallTarget =
     autoInstallTarget ??
-    (form.resourceMode !== 'auto' && !modelStatus.runnable
+    (form.resourceMode !== 'auto' && capability.artifactInstallRequired !== false && !modelStatus.runnable
       ? { repo: capability.defaultRepo, label: capability.label }
       : missingModeRequirement
         ? { repo: missingModeRequirement.repo, label: missingModeRequirement.label }

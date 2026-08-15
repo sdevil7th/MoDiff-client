@@ -37,6 +37,11 @@ export type StudioMode =
   | 'audio_continuation'
   | 'audio_repaint'
   | 'text_to_3d'
+  | 'image_adjustment'
+  | 'image_filter'
+  | 'image_crop'
+  | 'image_tile'
+  | 'image_channels'
   | 'advanced_workflow';
 
 export type StudioModelType =
@@ -137,7 +142,8 @@ export type StudioModelType =
   | 'SanaPAGPipeline'
   | 'SanaSprintPipeline'
   | 'DreamLitePipeline'
-  | 'DreamLiteMobilePipeline';
+  | 'DreamLiteMobilePipeline'
+  | 'BuiltinImageOperation';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -478,7 +484,8 @@ export type StudioGraphRole =
   | 'transformersImageTextGenerate'
   | 'transformersAnyToAnyModel'
   | 'transformersAnyToAnyGenerate'
-  | 'transformersTextPreview';
+  | 'transformersTextPreview'
+  | 'imageOperation';
 
 export type StudioGraphBinding = {
   mode: StudioMode;
@@ -901,15 +908,19 @@ export type StudioModelProfile = {
     | 'SmolLM'
     | 'SmolVLM'
     | 'Janus'
-    | 'Whisper';
+    | 'Whisper'
+    | 'Built-in Media';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
-  runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'transformers' | 'unsupported';
+  runtimeKind?:
+    'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'transformers' | 'builtin' | 'unsupported';
   isDiffusersBacked?: boolean;
   acceleratorStrategy?: string;
   specializedReason?: string;
   defaultRepo: string;
   artifactLabel?: string;
+  artifactKind?: 'model' | 'builtin';
+  artifactInstallRequired?: boolean;
   alternateArtifact?: string;
   defaultDtype: StudioFormState['dtype'];
   defaultSize: { width: number; height: number; aspectRatio: StudioAspectRatio };

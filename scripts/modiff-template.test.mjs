@@ -4535,11 +4535,48 @@ test('every Studio model declares Auto requirements or an explicit Manual-only r
     assert.ok(requirement.minimum, `${id} declares minimum hardware requirements`);
     assert.ok(requirement.recommended, `${id} declares recommended hardware requirements`);
     assert.ok(requirement.qualityDefaults, `${id} declares quality-safe defaults`);
-    assert.ok(requirement.artifacts.length > 0, `${id} declares required artifacts`);
+    if (profilesModule.STUDIO_MODEL_PROFILES[id].artifactInstallRequired === false) {
+      assert.deepEqual(requirement.artifacts, [], `${id} does not invent an installable artifact`);
+    } else {
+      assert.ok(requirement.artifacts.length > 0, `${id} declares required artifacts`);
+    }
     if (requirement.autoStatus === 'manual_only') {
       assert.ok(requirement.manualOnlyReason, `${id} explains why Auto is not enabled`);
     }
   }
+});
+
+test('built-in image operations are locally ready without model discovery or installation', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinImageOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/image-operations/v1');
+  assert.deepEqual(profile.modes, ['image_adjustment', 'image_filter', 'image_crop', 'image_tile', 'image_channels']);
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+  assert.match(status.reason, /no model installation/i);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.ImageOperations',
+          action: 'ProcessImage',
+          studioRole: 'imageOperation',
+          params: { operation: { value: 'image_filter' } },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinImageOperation');
+  assert.equal(inferred.mode, 'image_filter');
 });
 
 test('Studio form migration normalizes legacy offload and leaves quantization to exact readiness', () => {

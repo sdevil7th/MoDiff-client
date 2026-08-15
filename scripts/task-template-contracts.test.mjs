@@ -1483,6 +1483,130 @@ test('the final 13 direct image and synchronized LTX2 pairs preserve sealed cont
   );
 });
 
+test('built-in image operations preserve exact install-free task contracts', () => {
+  const modes = modelProfilesModule.BUILTIN_IMAGE_OPERATION_MODES;
+  const repo = modelProfilesModule.BUILTIN_IMAGE_OPERATION_REPO;
+  const profile = {
+    id: 'builtin-image-operations:direct',
+    model_type: 'BuiltinImageOperation',
+    modes,
+    loader_module: 'modules.ImageOperations',
+    loader_action: 'ProcessImage',
+    execution_path: 'builtin-image-operation',
+    pipeline_class: 'BuiltinImageOperationV1',
+    default_repo: repo,
+    fallback_repo: null,
+    compatible_repos: [],
+  };
+  const roles = [
+    ['loadImage', 'modules.Image.Load', -620, -80],
+    ['imageOperation', 'modules.ImageOperations.ProcessImage', -160, -80],
+    ['preview', 'modules.Image.Preview', 300, -80],
+  ];
+  const edges = [
+    ['loadImage', 'image', 'imageOperation', 'image'],
+    ['imageOperation', 'output', 'preview', 'image'],
+  ];
+  const bindings = [
+    ['loadImage', 'file', 'referenceImages'],
+    ['loadImage', 'alpha_channel', 'alphaMode'],
+    ['imageOperation', 'pipeline_class', 'pipelineClass'],
+    ['imageOperation', 'operation', 'mode'],
+  ];
+  const autoFields = [
+    'resolvedArtifact',
+    'artifact',
+    'installTarget.repo',
+    'modelRepo',
+    'pipelineClass',
+    'dtype',
+    'offloadMode',
+    'quantizedComponents',
+    'attentionBackend',
+    'regionalCompile',
+    'denoiserCache',
+    'layerwiseCasting',
+    'channelsLast',
+  ];
+  const expectedHashes = {
+    image_adjustment: ['studio-spec-v1-0b33529b', 'task-template-v1-192dc695'],
+    image_filter: ['studio-spec-v1-79b9fe9f', 'task-template-v1-70f8b61b'],
+    image_crop: ['studio-spec-v1-2ab6b5fb', 'task-template-v1-80ab83f0'],
+    image_tile: ['studio-spec-v1-54fee057', 'task-template-v1-202bc67b'],
+    image_channels: ['studio-spec-v1-c76ee6b7', 'task-template-v1-69640a3d'],
+  };
+  const specs = [];
+  const contracts = [];
+  for (const mode of modes) {
+    const semanticSpec = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `builtin-image-operations:${mode.replaceAll('_', '-')}:v1`,
+      modelType: 'BuiltinImageOperation',
+      mode,
+      executionProfileId: profile.id,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      roles,
+      edges,
+      bindings,
+      autoFields,
+      actions: [],
+    };
+    const spec = {
+      ...semanticSpec,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semanticSpec))}`,
+    };
+    assert.equal(spec.contentHash, expectedHashes[mode][0]);
+    specs.push(spec);
+    const semanticContract = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${spec.id}`,
+      modelType: 'BuiltinImageOperation',
+      mode,
+      mediaKind: 'image',
+      executionProfileId: profile.id,
+      executionSpecId: spec.id,
+      executionSpecContentHash: spec.contentHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole: 'imageOperation',
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      loaderRepositories: [repo],
+      requiredMedia: [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
+      output: {
+        mediaKind: 'image',
+        role: 'preview',
+        nodeKey: 'modules.Image.Preview',
+        inputHandle: 'image',
+      },
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    const contract = {
+      ...semanticContract,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semanticContract))}`,
+    };
+    assert.equal(contract.contentHash, expectedHashes[mode][1]);
+    contracts.push(contract);
+  }
+
+  const parsedSpecs = executionSpecsModule.parseStudioExecutionSpecs(specs, 'BuiltinImageOperation', modes, [profile]);
+  const capability = {
+    modelType: 'BuiltinImageOperation',
+    studioExecutionSpecs: parsedSpecs,
+    executionProfiles: [profile],
+  };
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 5);
+  assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES.BuiltinImageOperation.artifactInstallRequired, false);
+  assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation.artifacts, []);
+});
+
 test('contracts for backend model types unknown to this client are ignored', () => {
   const fixture = buildFixture();
   const parsed = contractsModule.parseTaskTemplateContracts(

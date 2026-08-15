@@ -52,6 +52,19 @@ export function getStudioModelCacheStatus(
   localModels: unknown[],
   diagnostics: ModelCacheDiagnostics | null,
 ): StudioModelCacheStatus {
+  if (profile.artifactInstallRequired === false) {
+    return {
+      hfCached: false,
+      localCached: true,
+      appDataDiscovered: false,
+      matchingExternalPackages: [],
+      matchingExternalRepos: [],
+      installed: true,
+      runnable: true,
+      reason: 'Built into this MoDiff version; no model installation is required',
+      scannedPaths: [],
+    };
+  }
   return getRepoCacheStatus(profile.defaultRepo, hfCache, localModels, diagnostics);
 }
 

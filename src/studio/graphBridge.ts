@@ -196,6 +196,7 @@ const NODE_KEYS = {
   transformersAnyToAnyModel: 'modules.HuggingFaceTransformers.LoadAnyToAnyModel',
   transformersAnyToAnyGenerate: 'modules.HuggingFaceTransformers.GenerateAnyToAny',
   transformersTextPreview: 'modules.Primitive.DataViewer',
+  imageOperation: 'modules.ImageOperations.ProcessImage',
 } satisfies Record<StudioGraphRole, string>;
 
 const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
@@ -266,6 +267,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   transformersAnyToAnyModel: { x: -720, y: -80 },
   transformersAnyToAnyGenerate: { x: -240, y: -80 },
   transformersTextPreview: { x: 240, y: -80 },
+  imageOperation: { x: -160, y: -80 },
 };
 
 const REQUIRED_BASE_ROLES: StudioGraphRole[] = ['models', 'prompt', 'denoise', 'decode', 'preview'];
@@ -380,7 +382,11 @@ function usesStaticHuggingFaceExecutionSpec(
   binding?: StudioGraphBinding | null,
 ) {
   const executionSpec = binding ? executionSpecForBinding(binding) : executionSpecForForm(form);
-  return executionSpec?.executionPath.startsWith('direct-huggingface-') ?? false;
+  return (
+    executionSpec?.executionPath.startsWith('direct-huggingface-') ||
+    executionSpec?.executionPath === 'builtin-image-operation' ||
+    false
+  );
 }
 
 function usesExpertProfileQuantization(form: StudioFormState) {
@@ -2979,6 +2985,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
   if (role === 'diffusersImageControlEdit') return 'Diffusers.ControlEdit';
   if (role === 'diffusersImageControlInpaint') return 'Diffusers.ControlInpaint';
   if (role === 'loadAdapter') return 'Diffusers.LoadAdapter';
+  if (role === 'imageOperation') return 'Image.Process';
   return null;
 }
 
