@@ -9,6 +9,7 @@ const SESSION_ERROR_CODES = new Set([
   'browser_close_incomplete',
   'browser_close_timeout',
   'browser_disconnected',
+  'browser_launch_failed',
   'operation_timeout',
   'page_closed',
   'page_crashed',
@@ -45,6 +46,32 @@ export function shouldRecycleWorkflowBrowser(completedInSession, batchSize) {
     throw new Error('The workflow browser batch size must be a positive integer.');
   }
   return completedInSession >= batchSize;
+}
+
+export async function launchWorkflowBrowser(launch, { attempts = 3, retryDelayMs = 500 } = {}) {
+  if (typeof launch !== 'function') throw new Error('The workflow browser launcher must be callable.');
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 5) {
+    throw new Error('Workflow browser launch attempts must be an integer from 1 through 5.');
+  }
+  if (!Number.isSafeInteger(retryDelayMs) || retryDelayMs < 0 || retryDelayMs > 5_000) {
+    throw new Error('Workflow browser launch retry delay must be between 0 and 5000 ms.');
+  }
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await launch();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts && retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+  const detail = lastError instanceof Error && lastError.message ? `: ${lastError.message}` : '';
+  throw new WorkflowBrowserSessionError(
+    'browser_launch_failed',
+    `The canonical workflow browser failed to launch after ${attempts} attempts${detail}`,
+  );
 }
 
 export function createWorkflowBrowserSessionGuard({

@@ -11,6 +11,7 @@ import { createServer } from 'vite';
 import {
   closeWorkflowBrowser,
   createWorkflowBrowserSessionGuard,
+  launchWorkflowBrowser,
   parseWorkflowBrowserBatchSize,
   shouldRecycleWorkflowBrowser,
 } from './workflow-library-browser-session.mjs';
@@ -8597,6 +8598,33 @@ test('canonical workflow browser guards reject terminal renderer failures and bo
   );
 });
 
+test('canonical workflow browser launch retries stay finite and classify exhaustion', async () => {
+  let attempts = 0;
+  const browser = await launchWorkflowBrowser(
+    async () => {
+      attempts += 1;
+      if (attempts < 3) throw new Error('transient SIGTRAP');
+      return { id: 'browser' };
+    },
+    { attempts: 3, retryDelayMs: 0 },
+  );
+  assert.deepEqual(browser, { id: 'browser' });
+  assert.equal(attempts, 3);
+
+  await assert.rejects(
+    launchWorkflowBrowser(
+      async () => {
+        throw new Error('persistent SIGTRAP');
+      },
+      { attempts: 2, retryDelayMs: 0 },
+    ),
+    (error) =>
+      error?.code === 'browser_launch_failed' &&
+      /after 2 attempts/.test(error.message) &&
+      /persistent SIGTRAP/.test(error.message),
+  );
+});
+
 test('canonical workflow browser batches and closure stay bounded', async () => {
   assert.equal(parseWorkflowBrowserBatchSize(undefined), 20);
   assert.equal(parseWorkflowBrowserBatchSize('1'), 1);
@@ -8684,6 +8712,7 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(generator, /applyTemplate\(templateId, \{ resourceMode: 'expert' \}\)/);
   assert.match(generator, /if \(!byPair\.has\(pair\)\)/);
   assert.match(generator, /shouldRecycleWorkflowBrowser\(completedWorkflowsInSession, WORKFLOW_BROWSER_BATCH_SIZE\)/);
+  assert.match(generator, /launchWorkflowBrowser\(\(\) => chromium\.launch\(browserLaunchOptions\)\)/);
   assert.match(generator, /if \(isWorkflowBrowserSessionError\(error\)\) throw error/);
   assert.match(generator, /completedWorkflowsInSession \+= 1/);
   assert.match(generator, /browserSession\?\.guard\.assertHealthy\('publishing the canonical workflow manifest'\)/);

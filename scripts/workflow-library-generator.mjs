@@ -7,6 +7,7 @@ import {
   closeWorkflowBrowser,
   createWorkflowBrowserSessionGuard,
   isWorkflowBrowserSessionError,
+  launchWorkflowBrowser,
   parseWorkflowBrowserBatchSize,
   shouldRecycleWorkflowBrowser,
 } from './workflow-library-browser-session.mjs';
@@ -359,7 +360,7 @@ async function main() {
   };
 
   const openBrowserSession = async () => {
-    const browser = await chromium.launch(browserLaunchOptions);
+    const browser = await launchWorkflowBrowser(() => chromium.launch(browserLaunchOptions));
     try {
       const page = await browser.newPage();
       const guard = createWorkflowBrowserSessionGuard({ browser, page });
