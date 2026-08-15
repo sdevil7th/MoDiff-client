@@ -20,6 +20,10 @@ import {
   installEphemeralWorkflowStorage,
 } from './workflow-library-ephemeral-storage.mjs';
 import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
+import {
+  normalizePortableWorkflowDataReference,
+  normalizePortableWorkflowFieldState,
+} from './workflow-library-contract.mjs';
 import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -8623,6 +8627,42 @@ test('canonical workflow browser launch retries stay finite and classify exhaust
       /after 2 attempts/.test(error.message) &&
       /persistent SIGTRAP/.test(error.message),
   );
+});
+
+test('canonical workflow data references remove only backend collision suffixes', () => {
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/audio/source_audio_9B6X5J.wav'),
+    '@data/audio/source_audio.wav',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/images/reference_image_1__r8TJ-.webp'),
+    '@data/images/reference_image_1.webp',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/videos/source_video_cM-tcU.mp4'),
+    '@data/videos/source_video.mp4',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/images/already_portable.png'),
+    '@data/images/already_portable.png',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('https://example.test/image_A1b2C3.png'),
+    'https://example.test/image_A1b2C3.png',
+  );
+});
+
+test('canonical workflow connected fields have one stable disabled state', () => {
+  assert.deepEqual(normalizePortableWorkflowFieldState({ type: 'image', isConnected: true, disabled: false }), {
+    type: 'image',
+    isConnected: true,
+    disabled: true,
+  });
+  assert.deepEqual(normalizePortableWorkflowFieldState({ type: 'image', isConnected: false, disabled: false }), {
+    type: 'image',
+    isConnected: false,
+    disabled: false,
+  });
 });
 
 test('canonical workflow browser batches and closure stay bounded', async () => {

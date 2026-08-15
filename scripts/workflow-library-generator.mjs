@@ -12,7 +12,11 @@ import {
   shouldRecycleWorkflowBrowser,
 } from './workflow-library-browser-session.mjs';
 import { installEphemeralWorkflowStorage } from './workflow-library-ephemeral-storage.mjs';
-import { normalizePortableWorkflowNodeOffload } from './workflow-library-contract.mjs';
+import {
+  normalizePortableWorkflowDataReference,
+  normalizePortableWorkflowFieldState,
+  normalizePortableWorkflowNodeOffload,
+} from './workflow-library-contract.mjs';
 import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
 
 const ROOT = process.cwd();
@@ -80,6 +84,8 @@ function sanitize(value, key = '', ancestors = []) {
   if (DROP_KEYS.has(key)) return undefined;
   if (key === 'preview' && !ancestors.includes('params')) return undefined;
   if (typeof value === 'string') {
+    const portableDataReference = normalizePortableWorkflowDataReference(value);
+    if (portableDataReference !== value) return portableDataReference;
     if (/^(?:cuda|mps|cpu)(?::\d+)?$/i.test(value)) {
       if (
         key === 'options' ||
@@ -99,11 +105,13 @@ function sanitize(value, key = '', ancestors = []) {
     return value.map((item) => sanitize(item, key, ancestors)).filter((item) => item !== undefined);
   if (!value || typeof value !== 'object') return value;
   const isGeneratedPreviewField = typeof value.display === 'string' && GENERATED_PREVIEW_DISPLAYS.has(value.display);
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([childKey]) => !isGeneratedPreviewField || childKey !== 'value')
-      .map(([childKey, child]) => [childKey, sanitize(child, childKey, [...ancestors, key])])
-      .filter(([, child]) => child !== undefined),
+  return normalizePortableWorkflowFieldState(
+    Object.fromEntries(
+      Object.entries(value)
+        .filter(([childKey]) => !isGeneratedPreviewField || childKey !== 'value')
+        .map(([childKey, child]) => [childKey, sanitize(child, childKey, [...ancestors, key])])
+        .filter(([, child]) => child !== undefined),
+    ),
   );
 }
 

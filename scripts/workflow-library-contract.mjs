@@ -3,6 +3,18 @@ function paramValue(node, key) {
 }
 
 const FORBIDDEN_ATTENTION_BACKENDS = new Set(['aiter', 'aiter_fa2_hub']);
+const APP_DATA_COLLISION_REFERENCE = /^(@data\/(?:audio|images|videos)\/[^/]+?)_[A-Za-z0-9_-]{6}(\.[A-Za-z0-9]+)$/;
+
+export function normalizePortableWorkflowDataReference(value) {
+  if (typeof value !== 'string') return value;
+  return value.replace(APP_DATA_COLLISION_REFERENCE, '$1$2');
+}
+
+export function normalizePortableWorkflowFieldState(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (value.isConnected !== true || typeof value.disabled !== 'boolean') return value;
+  return value.disabled === true ? value : { ...value, disabled: true };
+}
 
 export function workflowNodeAttentionBackendError(node) {
   const attention = node?.data?.params?.attention_backend;
