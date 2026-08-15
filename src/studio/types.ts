@@ -40,6 +40,7 @@ export type StudioMode =
   | 'image_adjustment'
   | 'image_filter'
   | 'image_crop'
+  | 'image_resize'
   | 'image_tile'
   | 'image_channels'
   | 'advanced_workflow';

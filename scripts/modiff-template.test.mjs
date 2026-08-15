@@ -4553,7 +4553,14 @@ test('built-in image operations are locally ready without model discovery or ins
   assert.equal(profile.artifactKind, 'builtin');
   assert.equal(profile.artifactInstallRequired, false);
   assert.equal(profile.defaultRepo, 'builtin://modiff/image-operations/v1');
-  assert.deepEqual(profile.modes, ['image_adjustment', 'image_filter', 'image_crop', 'image_tile', 'image_channels']);
+  assert.deepEqual(profile.modes, [
+    'image_adjustment',
+    'image_filter',
+    'image_crop',
+    'image_resize',
+    'image_tile',
+    'image_channels',
+  ]);
   assert.deepEqual(requirement.artifacts, []);
   assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
 

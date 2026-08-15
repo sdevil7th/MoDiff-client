@@ -129,6 +129,7 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'image_adjustment',
   'image_filter',
   'image_crop',
+  'image_resize',
   'image_tile',
   'image_channels',
 ];
@@ -369,6 +370,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   image_adjustment: 'Apply bounded color and tone adjustments to a source image.',
   image_filter: 'Apply a bounded deterministic filter to a source image.',
   image_crop: 'Crop a bounded region from a source image.',
+  image_resize: 'Resize a source image with bounded traditional interpolation.',
   image_tile: 'Split a source image into a bounded tile grid.',
   image_channels: 'Extract a color, alpha, or luminance channel from a source image.',
   advanced_workflow: 'Build an empty graph manually.',
