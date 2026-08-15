@@ -1689,6 +1689,12 @@ test('built-in data operations preserve exact install-free prompt and JSON contr
       specHash: 'studio-spec-v1-ccd283e9',
       taskHash: 'task-template-v1-72539bcc',
     },
+    {
+      mode: 'graph_utility',
+      id: 'builtin-data-operations:value-switch:v1',
+      specHash: 'studio-spec-v1-53bf8e76',
+      taskHash: 'task-template-v1-ace6ea4b',
+    },
   ];
   const specs = cases.map((item) => {
     const semantic = {
@@ -1756,7 +1762,7 @@ test('built-in data operations preserve exact install-free prompt and JSON contr
     studioExecutionSpecs: parsedSpecs,
     executionProfiles: [profile],
   };
-  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 2);
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 3);
   assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES.BuiltinDataOperation.artifactInstallRequired, false);
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinDataOperation.artifacts, []);
 });

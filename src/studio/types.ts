@@ -41,6 +41,7 @@ export type StudioMode =
   | 'audio_loudness_match'
   | 'text_select'
   | 'data_conversion'
+  | 'graph_utility'
   | 'text_to_3d'
   | 'image_adjustment'
   | 'image_filter'

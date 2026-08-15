@@ -4594,9 +4594,10 @@ test('built-in data operations are locally ready and preserve source text infere
   assert.equal(profile.artifactKind, 'builtin');
   assert.equal(profile.artifactInstallRequired, false);
   assert.equal(profile.defaultRepo, 'builtin://modiff/data-operations/v1');
-  assert.deepEqual(profile.modes, ['text_select', 'data_conversion']);
+  assert.deepEqual(profile.modes, ['text_select', 'data_conversion', 'graph_utility']);
   assert.deepEqual(requirement.artifacts, []);
   assert.equal(profilesModule.getDefaultModelForMode('text_select'), 'BuiltinDataOperation');
+  assert.equal(profilesModule.getDefaultModelForMode('graph_utility'), 'BuiltinDataOperation');
   assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
 
   const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);

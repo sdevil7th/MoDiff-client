@@ -140,7 +140,7 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'mask_composite',
 ];
 export const BUILTIN_AUDIO_OPERATION_MODES: StudioMode[] = ['audio_trim', 'audio_join', 'audio_loudness_match'];
-export const BUILTIN_DATA_OPERATION_MODES: StudioMode[] = ['text_select', 'data_conversion'];
+export const BUILTIN_DATA_OPERATION_MODES: StudioMode[] = ['text_select', 'data_conversion', 'graph_utility'];
 export const BUILTIN_VIDEO_OPERATION_MODES: StudioMode[] = [
   'video_frame_extract',
   'video_stitch',
@@ -391,6 +391,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   audio_loudness_match: 'Match source loudness to a bounded reference window.',
   text_select: 'Select one line from bounded text by an explicit index policy.',
   data_conversion: 'Convert bounded text to one strict interchange type.',
+  graph_utility: 'Select one of two bounded text values using an explicit boolean branch.',
   text_to_3d: 'Generate a bounded rendered orbit of a 3D object from a prompt.',
   image_adjustment: 'Apply bounded color and tone adjustments to a source image.',
   image_filter: 'Apply a bounded deterministic filter to a source image.',

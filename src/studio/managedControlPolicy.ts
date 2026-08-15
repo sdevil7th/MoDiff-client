@@ -606,6 +606,7 @@ export const MANAGED_CONTROL_POLICIES = {
   },
   dataOperation: {
     source: essential('prompt'),
+    alternate_source: essential(),
     pipeline_class: internal(),
     operation: internal(),
     index: essential(),
@@ -613,6 +614,7 @@ export const MANAGED_CONTROL_POLICIES = {
     ignore_empty_lines: essential(),
     strip_line: essential(),
     target_type: essential(),
+    condition: essential(),
     output: internal(),
     selected_index: internal(),
     item_count: internal(),
