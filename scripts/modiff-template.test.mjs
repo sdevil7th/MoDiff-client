@@ -4689,7 +4689,14 @@ test('built-in video operations are locally ready and preserve multi-video infer
   assert.equal(profile.artifactKind, 'builtin');
   assert.equal(profile.artifactInstallRequired, false);
   assert.equal(profile.defaultRepo, 'builtin://modiff/video-operations/v1');
-  assert.deepEqual(profile.modes, ['video_frame_extract', 'video_stitch', 'video_trim', 'video_reverse', 'video_tile']);
+  assert.deepEqual(profile.modes, [
+    'video_frame_extract',
+    'frame_interpolation',
+    'video_stitch',
+    'video_trim',
+    'video_reverse',
+    'video_tile',
+  ]);
   assert.deepEqual(requirement.artifacts, []);
   assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
 
@@ -4735,6 +4742,36 @@ test('built-in video operations are locally ready and preserve multi-video infer
   );
   assert.equal(trimmed.mode, 'video_trim');
   assert.equal(trimmed.sourceVideo, 'source.mp4');
+
+  const interpolated = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'frame_interpolation' },
+            videos: { value: ['source.mp4'] },
+            interpolation_fps: { value: 60 },
+          },
+        },
+      },
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'Export',
+          studioRole: 'videoExport',
+          params: { fps: { value: 60 } },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(interpolated.mode, 'frame_interpolation');
+  assert.equal(interpolated.sourceVideo, 'source.mp4');
+  assert.equal(interpolated.fps, 60);
+  assert.equal(profilesModule.getFormDefaultsForMode('frame_interpolation', 'BuiltinVideoOperation').fps, 60);
 
   const tiled = workflowInferenceModule.inferStudioFormFromWorkflow(
     [

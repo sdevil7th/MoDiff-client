@@ -1964,6 +1964,27 @@ test('built-in video operations preserve exact install-free multi-media contract
       output: { mediaKind: 'image', role: 'preview', nodeKey: 'modules.Image.Preview', inputHandle: 'image' },
     },
     {
+      mode: 'frame_interpolation',
+      id: 'builtin-video-operations:frame-interpolation:v1',
+      specHash: 'studio-spec-v1-11bf9107',
+      taskHash: 'task-template-v1-3ab99005',
+      roles: [
+        ['videoOperation', 'modules.Video.ProcessVideo', -220, -80],
+        ['videoExport', 'modules.Video.Export', 260, -80],
+      ],
+      edges: [['videoOperation', 'video', 'videoExport', 'video']],
+      bindings: [
+        ['videoOperation', 'pipeline_class', 'pipelineClass'],
+        ['videoOperation', 'operation', 'mode'],
+        ['videoOperation', 'videos', 'sourceVideo'],
+        ['videoOperation', 'interpolation_fps', 'fps'],
+        ['videoExport', 'fps', 'fps'],
+      ],
+      mediaKind: 'video',
+      requiredMedia: [{ kind: 'video', field: 'sourceVideo', minimumCount: 1 }],
+      output: { mediaKind: 'video', role: 'videoExport', nodeKey: 'modules.Video.Export', inputHandle: 'video' },
+    },
+    {
       mode: 'video_stitch',
       id: 'builtin-video-operations:stitch:v1',
       specHash: 'studio-spec-v1-bd7dbb61',
@@ -2105,7 +2126,7 @@ test('built-in video operations preserve exact install-free multi-media contract
     studioExecutionSpecs: parsedSpecs,
     executionProfiles: [profile],
   };
-  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 5);
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 6);
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinVideoOperation.artifacts, []);
 });
 

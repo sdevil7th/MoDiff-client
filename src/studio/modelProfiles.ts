@@ -143,6 +143,7 @@ export const BUILTIN_AUDIO_OPERATION_MODES: StudioMode[] = ['audio_trim', 'audio
 export const BUILTIN_DATA_OPERATION_MODES: StudioMode[] = ['text_select', 'data_conversion', 'graph_utility'];
 export const BUILTIN_VIDEO_OPERATION_MODES: StudioMode[] = [
   'video_frame_extract',
+  'frame_interpolation',
   'video_stitch',
   'video_trim',
   'video_reverse',
@@ -401,6 +402,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   image_channels: 'Extract a color, alpha, or luminance channel from a source image.',
   mask_composite: 'Composite a foreground over a background through an explicit mask.',
   video_frame_extract: 'Extract a bounded set of still frames from one local video.',
+  frame_interpolation: 'Increase a local video frame rate through bounded deterministic frame blending.',
   video_stitch: 'Join two to sixteen local videos through the app-owned FFmpeg path.',
   video_trim: 'Trim',
   video_reverse: 'Reverse',
@@ -520,6 +522,7 @@ export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'character_animate',
   'character_replace',
   'video_frame_extract',
+  'frame_interpolation',
   'video_stitch',
   'video_trim',
   'video_reverse',
@@ -2510,7 +2513,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     supportsPrompt: false,
     supportsNegativePrompt: false,
     outputKind: 'video',
-    modeOutputKinds: { video_frame_extract: 'image' },
+    modeOutputKinds: { video_frame_extract: 'image', frame_interpolation: 'video' },
     lowVram: {
       dtype: 'float32',
       autoOffload: false,
@@ -2522,6 +2525,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modes: BUILTIN_VIDEO_OPERATION_MODES,
     modeRequirements: {
       video_frame_extract: { requiredVideos: ['sourceVideo'] },
+      frame_interpolation: { requiredVideos: ['sourceVideo'] },
       video_stitch: {
         requiredVideos: ['referenceVideos'],
         minimumCounts: { referenceVideos: 2 },
@@ -3417,7 +3421,7 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
     resourceMode: DEFAULT_STUDIO_FORM.resourceMode,
     strength: mode === 'outpaint' ? 0.85 : (profile.recommendedStrength ?? DEFAULT_STUDIO_FORM.strength),
     numFrames: profile.recommendedFrames ?? DEFAULT_STUDIO_FORM.numFrames,
-    fps: profile.recommendedFps ?? DEFAULT_STUDIO_FORM.fps,
+    fps: mode === 'frame_interpolation' ? 60 : (profile.recommendedFps ?? DEFAULT_STUDIO_FORM.fps),
     conditioningScale: profile.conditioningScale ?? DEFAULT_STUDIO_FORM.conditioningScale,
     layers: profile.layerCount?.default ?? DEFAULT_STUDIO_FORM.layers,
     audioDuration: profile.recommendedDuration ?? DEFAULT_STUDIO_FORM.audioDuration,

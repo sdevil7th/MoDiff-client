@@ -51,6 +51,7 @@ export type StudioMode =
   | 'image_channels'
   | 'mask_composite'
   | 'video_frame_extract'
+  | 'frame_interpolation'
   | 'video_stitch'
   | 'video_trim'
   | 'video_reverse'

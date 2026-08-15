@@ -694,7 +694,9 @@ export function inferStudioFormFromWorkflow(
       stringValue(paramValue(loadControlImageNode, ['file'])) ||
       (mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : ''),
     sourceVideo:
-      (['video_frame_extract', 'video_trim', 'video_reverse'].includes(mode) ? operationVideos[0] : '') ||
+      (['video_frame_extract', 'frame_interpolation', 'video_trim', 'video_reverse'].includes(mode)
+        ? operationVideos[0]
+        : '') ||
       (mode === 'video_upscale' ? stringValue(paramValue(videoUpscaleNode, ['video'])) : '') ||
       stringValue(paramValue(sourceVideoNode, ['file'])),
     maskVideo: stringValue(paramValue(maskVideoNode, ['file'])),
