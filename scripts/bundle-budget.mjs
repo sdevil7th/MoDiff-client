@@ -9,10 +9,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // The capability-driven media contract and graph workspace share one stable
 // production bundle. Keep a narrow margin over the measured largest chunk.
 const MAX_ENTRY_GZIP_BYTES = 438 * 1024;
-// The bounded built-in image-operation contracts bring the audited production
-// surface to 540,197 bytes. A 529 KiB ceiling retains a 1,499-byte regression
+// The bounded built-in audio-operation contracts bring the audited production
+// surface to 542,058 bytes. A 530 KiB ceiling retains a 662-byte regression
 // margin while the largest entry remains under its independent cap.
-const MAX_TOTAL_GZIP_BYTES = 529 * 1024;
+const MAX_TOTAL_GZIP_BYTES = 530 * 1024;
 
 function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`;
