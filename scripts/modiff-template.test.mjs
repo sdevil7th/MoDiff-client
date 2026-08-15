@@ -4558,6 +4558,7 @@ test('built-in image operations are locally ready without model discovery or ins
     'image_filter',
     'image_crop',
     'image_upscale',
+    'image_stitch',
     'image_tile',
     'image_channels',
     'mask_composite',
@@ -4910,6 +4911,49 @@ test('mask compositing requires two source images and one mask before execution'
       .map(({ message }) => message);
     assert.equal(
       messages.some((message) => /source images|required.*mask image/i.test(message)),
+      false,
+    );
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousCapabilities,
+      studioModelCapabilitiesAuthoritative: previousAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
+test('image stitching requires at least two source images before execution', () => {
+  const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+  const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    const baseForm = {
+      ...profilesModule.getFormDefaultsForMode('image_stitch', 'BuiltinImageOperation'),
+      referenceImages: ['first.png'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: baseForm, graphBinding: null });
+    let messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.ok(messages.some((message) => /2 source images/i.test(message)));
+
+    studioStoreModule.useStudioStore.setState({
+      form: { ...baseForm, referenceImages: ['first.png', 'second.png'] },
+    });
+    messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.equal(
+      messages.some((message) => /2 source images/i.test(message)),
       false,
     );
   } finally {

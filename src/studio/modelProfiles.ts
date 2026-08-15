@@ -135,6 +135,7 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'image_filter',
   'image_crop',
   'image_upscale',
+  'image_stitch',
   'image_tile',
   'image_channels',
   'mask_composite',
@@ -398,6 +399,7 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   image_filter: 'Apply a bounded deterministic filter to a source image.',
   image_crop: 'Crop a bounded region from a source image.',
   image_upscale: 'Resize or upscale a source image with bounded traditional interpolation.',
+  image_stitch: 'Join two to 64 source images into a bounded deterministic grid.',
   image_tile: 'Split a source image into a bounded tile grid.',
   image_channels: 'Extract a color, alpha, or luminance channel from a source image.',
   mask_composite: 'Composite a foreground over a background through an explicit mask.',
@@ -2401,7 +2403,12 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
               requiredImages: ['referenceImages', 'maskImage'],
               minimumCounts: { referenceImages: 2 },
             }
-          : { requiredImages: ['referenceImages'] },
+          : mode === 'image_stitch'
+            ? {
+                requiredImages: ['referenceImages'],
+                minimumCounts: { referenceImages: 2 },
+              }
+            : { requiredImages: ['referenceImages'] },
       ]),
     ),
     executionStatus: 'supported',

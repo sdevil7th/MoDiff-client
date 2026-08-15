@@ -47,6 +47,7 @@ export type StudioMode =
   | 'image_filter'
   | 'image_crop'
   | 'image_upscale'
+  | 'image_stitch'
   | 'image_tile'
   | 'image_channels'
   | 'mask_composite'

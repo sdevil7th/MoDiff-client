@@ -1533,6 +1533,7 @@ test('built-in image operations preserve exact install-free task contracts', () 
     image_filter: ['studio-spec-v1-79b9fe9f', 'task-template-v1-70f8b61b'],
     image_crop: ['studio-spec-v1-2ab6b5fb', 'task-template-v1-80ab83f0'],
     image_upscale: ['studio-spec-v1-769830b5', 'task-template-v1-539bf425'],
+    image_stitch: ['studio-spec-v1-0136cf6f', 'task-template-v1-f1be82e7'],
     image_tile: ['studio-spec-v1-54fee057', 'task-template-v1-202bc67b'],
     image_channels: ['studio-spec-v1-c76ee6b7', 'task-template-v1-69640a3d'],
     mask_composite: ['studio-spec-v1-e6a11a52', 'task-template-v1-7b319535'],
@@ -1607,7 +1608,9 @@ test('built-in image operations preserve exact install-free task contracts', () 
               { kind: 'image', field: 'referenceImages', minimumCount: 2 },
               { kind: 'image', field: 'maskImage', minimumCount: 1 },
             ]
-          : [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
+          : mode === 'image_stitch'
+            ? [{ kind: 'image', field: 'referenceImages', minimumCount: 2 }]
+            : [{ kind: 'image', field: 'referenceImages', minimumCount: 1 }],
       output: {
         mediaKind: 'image',
         role: 'preview',
@@ -1631,7 +1634,7 @@ test('built-in image operations preserve exact install-free task contracts', () 
     studioExecutionSpecs: parsedSpecs,
     executionProfiles: [profile],
   };
-  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 7);
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 8);
   assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES.BuiltinImageOperation.artifactInstallRequired, false);
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation.artifacts, []);
 });
