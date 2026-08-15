@@ -2,6 +2,7 @@ import type { Edge, Viewport } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { rebaseGraphDevices } from './deviceRebase';
 import {
+  BUILTIN_VIDEO_OPERATION_MODES,
   DEFAULT_STUDIO_FORM,
   QWEN_OUTPAINT_CANVAS_NODE_KEY,
   STUDIO_MODEL_PROFILES,
@@ -348,7 +349,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
       (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
     );
     const operation = stringValue(paramValue(operationNode, ['operation']));
-    if (['video_frame_extract', 'video_stitch', 'video_trim', 'video_reverse', 'video_tile'].includes(operation)) {
+    if (BUILTIN_VIDEO_OPERATION_MODES.includes(operation as StudioMode)) {
       return operation as StudioMode;
     }
     return 'video_frame_extract';
