@@ -4587,6 +4587,62 @@ test('built-in image operations are locally ready without model discovery or ins
   assert.equal(inferred.mode, 'image_filter');
 });
 
+test('built-in audio operations are locally ready and preserve dual-source inference', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinAudioOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinAudioOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/audio-operations/v1');
+  assert.deepEqual(profile.modes, ['audio_trim', 'audio_join', 'audio_loudness_match']);
+  assert.deepEqual(profile.modeRequirements, {
+    audio_trim: { requiredAudio: ['sourceAudio'] },
+    audio_join: { requiredAudio: ['sourceAudio', 'referenceAudio'] },
+    audio_loudness_match: { requiredAudio: ['sourceAudio', 'referenceAudio'] },
+  });
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getDefaultModelForMode('audio_trim'), 'BuiltinAudioOperation');
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Audio',
+          action: 'Load',
+          studioRole: 'loadAudio',
+          params: { file: { value: 'source.wav' } },
+        },
+      },
+      {
+        data: {
+          module: 'modules.Audio',
+          action: 'Load',
+          studioRole: 'loadReferenceAudio',
+          params: { file: { value: 'reference.wav' } },
+        },
+      },
+      {
+        data: {
+          module: 'modules.Audio',
+          action: 'ProcessAudio',
+          studioRole: 'audioOperation',
+          params: { operation: { value: 'audio_loudness_match' } },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinAudioOperation');
+  assert.equal(inferred.mode, 'audio_loudness_match');
+  assert.equal(inferred.sourceAudio, 'source.wav');
+  assert.equal(inferred.referenceAudio, 'reference.wav');
+});
+
 test('built-in video operations are locally ready and preserve multi-video inference', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinVideoOperation;
   const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinVideoOperation;

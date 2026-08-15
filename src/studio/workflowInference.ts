@@ -2,6 +2,7 @@ import type { Edge, Viewport } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { rebaseGraphDevices } from './deviceRebase';
 import {
+  BUILTIN_AUDIO_OPERATION_MODES,
   BUILTIN_VIDEO_OPERATION_MODES,
   DEFAULT_STUDIO_FORM,
   QWEN_OUTPAINT_CANVAS_NODE_KEY,
@@ -293,6 +294,11 @@ export function adoptManagedWorkflowGraph(
 
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
   if (
+    nodes.some((node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio')
+  ) {
+    return 'BuiltinAudioOperation';
+  }
+  if (
     nodes.some(
       (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
     )
@@ -322,6 +328,14 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
 function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
+  if (modelType === 'BuiltinAudioOperation' || roles.has('audioOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    return BUILTIN_AUDIO_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'audio_trim';
+  }
   if (modelType === 'BuiltinImageOperation' || roles.has('imageOperation')) {
     const operationNode = findNode(
       nodes,

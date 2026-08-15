@@ -183,6 +183,7 @@ const NODE_KEYS = {
   audioGenerate: 'modules.DiffusersAudio.Generate',
   audioLoudnessMatch: 'modules.Audio.MatchLoudness',
   audioJoin: 'modules.Audio.Join',
+  audioOperation: 'modules.Audio.ProcessAudio',
   audioExport: 'modules.Audio.Export',
   diffusersThreeDPipeline: 'modules.DiffusersThreeD.LoadPipeline',
   diffusersThreeDGenerate: 'modules.DiffusersThreeD.GenerateRenderedArtifact',
@@ -256,6 +257,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   audioGenerate: { x: -120, y: -80 },
   audioLoudnessMatch: { x: 300, y: -80 },
   audioJoin: { x: 680, y: -80 },
+  audioOperation: { x: -220, y: -80 },
   audioExport: { x: 1060, y: -80 },
   diffusersThreeDPipeline: { x: -520, y: -80 },
   diffusersThreeDGenerate: { x: -120, y: -80 },
@@ -2990,6 +2992,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
   if (role === 'diffusersImageControlEdit') return 'Diffusers.ControlEdit';
   if (role === 'diffusersImageControlInpaint') return 'Diffusers.ControlInpaint';
   if (role === 'loadAdapter') return 'Diffusers.LoadAdapter';
+  if (role === 'audioOperation') return 'Audio.Process';
   if (role === 'imageOperation') return 'Image.Process';
   if (role === 'videoOperation') return 'Video.Process';
   if (role === 'videoUpscaler') return 'Video.Upscale';

@@ -1259,7 +1259,14 @@ function applyImportedVideoToForm(form: StudioFormState, video: string): StudioF
 }
 
 function importedAudioMode(currentMode: StudioMode): StudioMode {
-  if (currentMode === 'audio_variation' || currentMode === 'audio_continuation' || currentMode === 'audio_repaint') {
+  if (
+    currentMode === 'audio_variation' ||
+    currentMode === 'audio_continuation' ||
+    currentMode === 'audio_repaint' ||
+    currentMode === 'audio_trim' ||
+    currentMode === 'audio_join' ||
+    currentMode === 'audio_loudness_match'
+  ) {
     return currentMode;
   }
   return 'audio_variation';

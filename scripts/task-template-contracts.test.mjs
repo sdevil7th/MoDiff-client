@@ -1636,6 +1636,152 @@ test('built-in image operations preserve exact install-free task contracts', () 
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation.artifacts, []);
 });
 
+test('built-in audio operations preserve exact install-free source and reference contracts', () => {
+  const modes = modelProfilesModule.BUILTIN_AUDIO_OPERATION_MODES;
+  const repo = modelProfilesModule.BUILTIN_AUDIO_OPERATION_REPO;
+  const profile = {
+    id: 'builtin-audio-operations:direct',
+    model_type: 'BuiltinAudioOperation',
+    modes,
+    loader_module: 'modules.Audio',
+    loader_action: 'ProcessAudio',
+    execution_path: 'builtin-audio-operation',
+    pipeline_class: 'BuiltinAudioOperationV1',
+    default_repo: repo,
+    fallback_repo: null,
+    compatible_repos: [],
+  };
+  const autoFields = [
+    'resolvedArtifact',
+    'artifact',
+    'installTarget.repo',
+    'modelRepo',
+    'pipelineClass',
+    'dtype',
+    'offloadMode',
+    'quantizedComponents',
+    'attentionBackend',
+    'regionalCompile',
+    'denoiserCache',
+    'layerwiseCasting',
+    'channelsLast',
+  ];
+  const cases = [
+    {
+      mode: 'audio_trim',
+      id: 'builtin-audio-operations:trim:v1',
+      specHash: 'studio-spec-v1-12b8e293',
+      taskHash: 'task-template-v1-b514b0d6',
+      requiredMedia: [{ kind: 'audio', field: 'sourceAudio', minimumCount: 1 }],
+    },
+    {
+      mode: 'audio_join',
+      id: 'builtin-audio-operations:join:v1',
+      specHash: 'studio-spec-v1-03d9427a',
+      taskHash: 'task-template-v1-d59c3071',
+      requiredMedia: [
+        { kind: 'audio', field: 'sourceAudio', minimumCount: 1 },
+        { kind: 'audio', field: 'referenceAudio', minimumCount: 1 },
+      ],
+    },
+    {
+      mode: 'audio_loudness_match',
+      id: 'builtin-audio-operations:loudness-match:v1',
+      specHash: 'studio-spec-v1-a3373c8c',
+      taskHash: 'task-template-v1-4baf5cf9',
+      requiredMedia: [
+        { kind: 'audio', field: 'sourceAudio', minimumCount: 1 },
+        { kind: 'audio', field: 'referenceAudio', minimumCount: 1 },
+      ],
+    },
+  ];
+  const baseRoles = [
+    ['loadAudio', 'modules.Audio.Load', -620, -80],
+    ['audioOperation', 'modules.Audio.ProcessAudio', -220, -80],
+    ['audioExport', 'modules.Audio.Export', 260, -80],
+  ];
+  const baseEdges = [
+    ['loadAudio', 'audio', 'audioOperation', 'source'],
+    ['audioOperation', 'output', 'audioExport', 'audio'],
+  ];
+  const baseBindings = [
+    ['audioOperation', 'pipeline_class', 'pipelineClass'],
+    ['audioOperation', 'operation', 'mode'],
+    ['loadAudio', 'file', 'sourceAudio'],
+    ['audioExport', 'sample_rate', 'sampleRate48000'],
+  ];
+  const specs = cases.map((item) => {
+    const dualSource = item.mode !== 'audio_trim';
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.id,
+      modelType: 'BuiltinAudioOperation',
+      mode: item.mode,
+      executionProfileId: profile.id,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      roles: dualSource ? [...baseRoles, ['loadReferenceAudio', 'modules.Audio.Load', -620, 160]] : baseRoles,
+      edges: dualSource ? [...baseEdges, ['loadReferenceAudio', 'audio', 'audioOperation', 'reference']] : baseEdges,
+      bindings: dualSource ? [...baseBindings, ['loadReferenceAudio', 'file', 'referenceAudio']] : baseBindings,
+      autoFields,
+      actions: [],
+    };
+    const spec = {
+      ...semantic,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+    assert.equal(spec.contentHash, item.specHash);
+    return spec;
+  });
+  const parsedSpecs = executionSpecsModule.parseStudioExecutionSpecs(specs, 'BuiltinAudioOperation', modes, [profile]);
+  const contracts = cases.map((item, index) => {
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${item.id}`,
+      modelType: 'BuiltinAudioOperation',
+      mode: item.mode,
+      mediaKind: 'audio',
+      executionProfileId: profile.id,
+      executionSpecId: item.id,
+      executionSpecContentHash: specs[index].contentHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole: 'audioOperation',
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      loaderRepositories: [repo],
+      requiredMedia: item.requiredMedia,
+      output: {
+        mediaKind: 'audio',
+        role: 'audioExport',
+        nodeKey: 'modules.Audio.Export',
+        inputHandle: 'audio',
+      },
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    const contract = {
+      ...semantic,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+    assert.equal(contract.contentHash, item.taskHash);
+    return contract;
+  });
+  const capability = {
+    modelType: 'BuiltinAudioOperation',
+    studioExecutionSpecs: parsedSpecs,
+    executionProfiles: [profile],
+  };
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 3);
+  assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES.BuiltinAudioOperation.artifactInstallRequired, false);
+  assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinAudioOperation.artifacts, []);
+});
+
 test('built-in video operations preserve exact install-free multi-media contracts', () => {
   const modes = modelProfilesModule.BUILTIN_VIDEO_OPERATION_MODES;
   const repo = modelProfilesModule.BUILTIN_VIDEO_OPERATION_REPO;
