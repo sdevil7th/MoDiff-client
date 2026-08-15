@@ -125,6 +125,7 @@ export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
 export const BUILTIN_IMAGE_OPERATION_REPO = 'builtin://modiff/image-operations/v1';
+export const BUILTIN_VIDEO_OPERATION_REPO = 'builtin://modiff/video-operations/v1';
 export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'image_adjustment',
   'image_filter',
@@ -134,6 +135,7 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'image_channels',
   'mask_composite',
 ];
+export const BUILTIN_VIDEO_OPERATION_MODES: StudioMode[] = ['video_frame_extract', 'video_stitch'];
 
 export const QWEN_CONTROLNET_REQUIREMENT: StudioModelRequirement = {
   id: 'qwen-controlnet-union',
@@ -334,6 +336,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Chroma1-HD Inpaint (Standard Diffusers)',
   'LTX-2 Standard Video + Audio',
   'Built-in Image Operations',
+  'Built-in Video Operations',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -375,6 +378,8 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   image_tile: 'Split a source image into a bounded tile grid.',
   image_channels: 'Extract a color, alpha, or luminance channel from a source image.',
   mask_composite: 'Composite a foreground over a background through an explicit mask.',
+  video_frame_extract: 'Extract a bounded set of still frames from one local video.',
+  video_stitch: 'Join two to sixteen local videos through the app-owned FFmpeg path.',
   advanced_workflow: 'Build an empty graph manually.',
 };
 
@@ -488,6 +493,8 @@ export const VIDEO_STUDIO_MODES: StudioMode[] = [
   'video_color_edit',
   'character_animate',
   'character_replace',
+  'video_frame_extract',
+  'video_stitch',
 ];
 
 export const AUDIO_STUDIO_MODES: StudioMode[] = [
@@ -2369,6 +2376,51 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     galleryEligible: false,
     liveProof: false,
   },
+  BuiltinVideoOperation: {
+    family: 'Built-in Media',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'builtin',
+    isDiffusersBacked: false,
+    defaultRepo: BUILTIN_VIDEO_OPERATION_REPO,
+    artifactLabel: 'Versioned MoDiff built-in operation contract',
+    artifactKind: 'builtin',
+    artifactInstallRequired: false,
+    defaultDtype: 'float32',
+    defaultSize: { width: 1024, height: 576, aspectRatio: '16:9' },
+    offloadSupport: { modes: ['none'], default: 'none', lowVram: 'none', emergency: 'none' },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    guidanceLabel: 'Not used',
+    supportFlags: 0,
+    supportsPrompt: false,
+    supportsNegativePrompt: false,
+    outputKind: 'video',
+    modeOutputKinds: { video_frame_extract: 'image', video_stitch: 'video' },
+    lowVram: {
+      dtype: 'float32',
+      autoOffload: false,
+      offloadMode: 'none',
+      steps: 1,
+      width: 1024,
+      height: 576,
+    },
+    modes: BUILTIN_VIDEO_OPERATION_MODES,
+    modeRequirements: {
+      video_frame_extract: { requiredVideos: ['sourceVideo'] },
+      video_stitch: {
+        requiredVideos: ['referenceVideos'],
+        minimumCounts: { referenceVideos: 2 },
+      },
+    },
+    executionStatus: 'supported',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 export const STUDIO_MODEL_PROFILES = Object.fromEntries(
@@ -2958,6 +3010,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Runs entirely through the versioned built-in image-operation contract.',
     manualOnlyReason: 'Use the Expert workflow surface to configure operation-specific controls.',
   },
+  BuiltinVideoOperation: {
+    modelType: 'BuiltinVideoOperation',
+    supportedModes: BUILTIN_VIDEO_OPERATION_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'Base MoDiff CPU runtime with app-owned FFmpeg; no model installation is required.',
+    recommended: 'Any supported CPU runtime with enough temporary storage for the joined output.',
+    qualityDefaults: 'At most 64 extracted frames or 2–16 bounded local clips.',
+    artifacts: [],
+    notes: 'Runs entirely through the versioned built-in video-operation contract.',
+    manualOnlyReason: 'Use the Expert workflow surface to configure operation-specific controls.',
+  },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {
@@ -3023,6 +3086,7 @@ export const DEFAULT_STUDIO_FORM: StudioFormState = {
   outpaintFillColor: 'black',
   alphaMode: 'ignore',
   referenceImages: [],
+  referenceVideos: [],
   maskImage: '',
   controlImage: '',
   sourceVideo: '',
@@ -3089,6 +3153,9 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   }
   if (mode === 'control_video_to_video') {
     return 'AnimateDiffVideoToVideoControlNetPipeline';
+  }
+  if (BUILTIN_VIDEO_OPERATION_MODES.includes(mode)) {
+    return 'BuiltinVideoOperation';
   }
   if (VIDEO_STUDIO_MODES.includes(mode)) {
     return 'WanVACEPipeline';

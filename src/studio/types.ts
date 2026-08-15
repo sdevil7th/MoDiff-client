@@ -44,6 +44,8 @@ export type StudioMode =
   | 'image_tile'
   | 'image_channels'
   | 'mask_composite'
+  | 'video_frame_extract'
+  | 'video_stitch'
   | 'advanced_workflow';
 
 export type StudioModelType =
@@ -145,7 +147,8 @@ export type StudioModelType =
   | 'SanaSprintPipeline'
   | 'DreamLitePipeline'
   | 'DreamLiteMobilePipeline'
-  | 'BuiltinImageOperation';
+  | 'BuiltinImageOperation'
+  | 'BuiltinVideoOperation';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -487,7 +490,8 @@ export type StudioGraphRole =
   | 'transformersAnyToAnyModel'
   | 'transformersAnyToAnyGenerate'
   | 'transformersTextPreview'
-  | 'imageOperation';
+  | 'imageOperation'
+  | 'videoOperation';
 
 export type StudioGraphBinding = {
   mode: StudioMode;
@@ -721,6 +725,7 @@ export type StudioFormState = {
   outpaintFillColor: string;
   alphaMode: 'ignore' | 'add alpha' | 'remove alpha';
   referenceImages: string[];
+  referenceVideos: string[];
   maskImage: string;
   controlImage: string;
   sourceVideo: string;
@@ -822,6 +827,7 @@ export type StudioTaskTemplateRequiredMedia = {
     | 'maskImage'
     | 'controlImage'
     | 'sourceVideo'
+    | 'referenceVideos'
     | 'maskVideo'
     | 'controlVideo'
     | 'poseVideo'
@@ -1023,7 +1029,9 @@ export type StudioModelRequirement = {
 export type StudioModeRequirement = {
   modelRequirements?: StudioModelRequirement[];
   requiredImages?: Array<'referenceImages' | 'lastImage' | 'maskImage' | 'controlImage'>;
-  requiredVideos?: Array<'sourceVideo' | 'maskVideo' | 'controlVideo' | 'poseVideo' | 'faceVideo' | 'backgroundVideo'>;
+  requiredVideos?: Array<
+    'sourceVideo' | 'referenceVideos' | 'maskVideo' | 'controlVideo' | 'poseVideo' | 'faceVideo' | 'backgroundVideo'
+  >;
   requiredAudio?: Array<'sourceAudio' | 'referenceAudio'>;
   minimumCounts?: Partial<
     Record<
@@ -1032,6 +1040,7 @@ export type StudioModeRequirement = {
       | 'maskImage'
       | 'controlImage'
       | 'sourceVideo'
+      | 'referenceVideos'
       | 'maskVideo'
       | 'controlVideo'
       | 'poseVideo'

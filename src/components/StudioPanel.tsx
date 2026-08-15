@@ -397,6 +397,7 @@ export default function StudioPanel() {
   });
   const requiredVideos = capability.modeRequirements?.[form.mode]?.requiredVideos ?? [];
   const requiresSourceVideo = requiredVideos.includes('sourceVideo');
+  const requiresReferenceVideos = requiredVideos.includes('referenceVideos');
   const requiresControlVideo = requiredVideos.includes('controlVideo');
   const runBlockedReason = runReadiness.blockingIssues[0]?.message ?? '';
   const runControlsBlocked = !runReadiness.canRun;
@@ -1660,6 +1661,21 @@ export default function StudioPanel() {
                     label="Source video path"
                     value={form.sourceVideo}
                     onChange={(value) => updateAndSync({ sourceVideo: value })}
+                  />
+                )}
+                {requiresReferenceVideos && (
+                  <StudioInput
+                    label="Source video paths (one per line)"
+                    value={form.referenceVideos.join('\n')}
+                    onChange={(value) =>
+                      updateAndSync({
+                        referenceVideos: value
+                          .split(/\r?\n/)
+                          .map((item) => item.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    multiline
                   />
                 )}
                 {(form.mode === 'video_inpaint' || form.mode === 'video_outpaint') && (

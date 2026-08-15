@@ -1636,6 +1636,142 @@ test('built-in image operations preserve exact install-free task contracts', () 
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation.artifacts, []);
 });
 
+test('built-in video operations preserve exact install-free multi-media contracts', () => {
+  const modes = modelProfilesModule.BUILTIN_VIDEO_OPERATION_MODES;
+  const repo = modelProfilesModule.BUILTIN_VIDEO_OPERATION_REPO;
+  const profile = {
+    id: 'builtin-video-operations:direct',
+    model_type: 'BuiltinVideoOperation',
+    modes,
+    loader_module: 'modules.Video',
+    loader_action: 'ProcessVideo',
+    execution_path: 'builtin-video-operation',
+    pipeline_class: 'BuiltinVideoOperationV1',
+    default_repo: repo,
+    fallback_repo: null,
+    compatible_repos: [],
+  };
+  const autoFields = [
+    'resolvedArtifact',
+    'artifact',
+    'installTarget.repo',
+    'modelRepo',
+    'pipelineClass',
+    'dtype',
+    'offloadMode',
+    'quantizedComponents',
+    'attentionBackend',
+    'regionalCompile',
+    'denoiserCache',
+    'layerwiseCasting',
+    'channelsLast',
+  ];
+  const cases = [
+    {
+      mode: 'video_frame_extract',
+      id: 'builtin-video-operations:frame-extract:v1',
+      specHash: 'studio-spec-v1-aba82fc2',
+      taskHash: 'task-template-v1-42558889',
+      roles: [
+        ['videoOperation', 'modules.Video.ProcessVideo', -220, -80],
+        ['preview', 'modules.Image.Preview', 260, -80],
+      ],
+      edges: [['videoOperation', 'images', 'preview', 'image']],
+      bindings: [
+        ['videoOperation', 'pipeline_class', 'pipelineClass'],
+        ['videoOperation', 'operation', 'mode'],
+        ['videoOperation', 'videos', 'sourceVideo'],
+      ],
+      mediaKind: 'image',
+      requiredMedia: [{ kind: 'video', field: 'sourceVideo', minimumCount: 1 }],
+      output: { mediaKind: 'image', role: 'preview', nodeKey: 'modules.Image.Preview', inputHandle: 'image' },
+    },
+    {
+      mode: 'video_stitch',
+      id: 'builtin-video-operations:stitch:v1',
+      specHash: 'studio-spec-v1-bd7dbb61',
+      taskHash: 'task-template-v1-b7962657',
+      roles: [
+        ['videoOperation', 'modules.Video.ProcessVideo', -220, -80],
+        ['videoExport', 'modules.Video.Export', 260, -80],
+      ],
+      edges: [['videoOperation', 'video', 'videoExport', 'video']],
+      bindings: [
+        ['videoOperation', 'pipeline_class', 'pipelineClass'],
+        ['videoOperation', 'operation', 'mode'],
+        ['videoOperation', 'videos', 'referenceVideos'],
+        ['videoExport', 'fps', 'fps'],
+      ],
+      mediaKind: 'video',
+      requiredMedia: [{ kind: 'video', field: 'referenceVideos', minimumCount: 2 }],
+      output: { mediaKind: 'video', role: 'videoExport', nodeKey: 'modules.Video.Export', inputHandle: 'video' },
+    },
+  ];
+  const specs = cases.map((item) => {
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.id,
+      modelType: 'BuiltinVideoOperation',
+      mode: item.mode,
+      executionProfileId: profile.id,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      roles: item.roles,
+      edges: item.edges,
+      bindings: item.bindings,
+      autoFields,
+      actions: [],
+    };
+    const spec = {
+      ...semantic,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+    assert.equal(spec.contentHash, item.specHash);
+    return spec;
+  });
+  const parsedSpecs = executionSpecsModule.parseStudioExecutionSpecs(specs, 'BuiltinVideoOperation', modes, [profile]);
+  const contracts = cases.map((item, index) => {
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${item.id}`,
+      modelType: 'BuiltinVideoOperation',
+      mode: item.mode,
+      mediaKind: item.mediaKind,
+      executionProfileId: profile.id,
+      executionSpecId: item.id,
+      executionSpecContentHash: specs[index].contentHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole: 'videoOperation',
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      loaderRepositories: [repo],
+      requiredMedia: item.requiredMedia,
+      output: item.output,
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    const contract = {
+      ...semantic,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+    assert.equal(contract.contentHash, item.taskHash);
+    return contract;
+  });
+  const capability = {
+    modelType: 'BuiltinVideoOperation',
+    studioExecutionSpecs: parsedSpecs,
+    executionProfiles: [profile],
+  };
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 2);
+  assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinVideoOperation.artifacts, []);
+});
+
 test('contracts for backend model types unknown to this client are ignored', () => {
   const fixture = buildFixture();
   const parsed = contractsModule.parseTaskTemplateContracts(

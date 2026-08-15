@@ -298,6 +298,11 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
   ) {
     return 'BuiltinImageOperation';
   }
+  if (
+    nodes.some((node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo')
+  ) {
+    return 'BuiltinVideoOperation';
+  }
   const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
   if (explicit) return explicit;
   const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
@@ -331,6 +336,14 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
       return operation as StudioMode;
     }
     return 'image_adjustment';
+  }
+  if (modelType === 'BuiltinVideoOperation' || roles.has('videoOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    return operation === 'video_stitch' ? 'video_stitch' : 'video_frame_extract';
   }
   if (
     modelType === 'ShapEPipeline' ||
@@ -561,6 +574,11 @@ export function inferStudioFormFromWorkflow(
     loadVideos.find((node) => !['loadControlVideo', 'loadMaskVideo'].includes(String(node.data?.studioRole)));
   const maskVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadMaskVideo');
   const controlVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadControlVideo');
+  const videoOperationNode = findNode(
+    nodes,
+    (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
+  );
+  const operationVideos = arrayStringValue(paramValue(videoOperationNode, ['videos']));
   const loadImageNode = loadImages.find((node) => node.data?.studioRole === 'loadImage') ?? loadImages[0];
   const loadControlImageNode = loadImages.find((node) => node.data?.studioRole === 'loadControlImage');
   const loadMaskNode = loadImages.find((node) => node.data?.studioRole === 'loadMask');
@@ -624,11 +642,13 @@ export function inferStudioFormFromWorkflow(
     outpaintFeather: numberValue(paramValue(outpaintNode, ['feather']), defaults.outpaintFeather),
     outpaintFillColor: stringValue(paramValue(outpaintNode, ['fill_color'])) || defaults.outpaintFillColor,
     referenceImages: arrayStringValue(paramValue(loadImageNode, ['file'])),
+    referenceVideos: mode === 'video_stitch' ? operationVideos : defaults.referenceVideos,
     maskImage: stringValue(paramValue(loadMaskNode, ['file'])),
     controlImage:
       stringValue(paramValue(loadControlImageNode, ['file'])) ||
       (mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : ''),
-    sourceVideo: stringValue(paramValue(sourceVideoNode, ['file'])),
+    sourceVideo:
+      (mode === 'video_frame_extract' ? operationVideos[0] : '') || stringValue(paramValue(sourceVideoNode, ['file'])),
     maskVideo: stringValue(paramValue(maskVideoNode, ['file'])),
     controlVideo: stringValue(paramValue(controlVideoNode, ['file'])),
     sourceAudio: stringValue(paramValue(loadAudioNode, ['file'])),

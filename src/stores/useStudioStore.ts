@@ -831,6 +831,7 @@ function studioFormInputs(): AppModeInput[] {
     { id: 'studio:width', kind: 'studio-form', label: 'Width', formKey: 'width' },
     { id: 'studio:height', kind: 'studio-form', label: 'Height', formKey: 'height' },
     { id: 'studio:referenceImages', kind: 'studio-form', label: 'Reference images', formKey: 'referenceImages' },
+    { id: 'studio:referenceVideos', kind: 'studio-form', label: 'Reference videos', formKey: 'referenceVideos' },
     { id: 'studio:controlImage', kind: 'studio-form', label: 'Control image', formKey: 'controlImage' },
     { id: 'studio:maskImage', kind: 'studio-form', label: 'Mask image', formKey: 'maskImage' },
     { id: 'studio:sourceVideo', kind: 'studio-form', label: 'Source video', formKey: 'sourceVideo' },
@@ -1228,6 +1229,12 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
 }
 
 function applyImportedVideoToForm(form: StudioFormState, video: string): StudioFormState {
+  if (form.mode === 'video_stitch') {
+    return {
+      ...form,
+      referenceVideos: [video, ...form.referenceVideos.filter((item) => item !== video)].slice(0, 16),
+    };
+  }
   if (form.mode === 'control_video_to_video') {
     if (!form.sourceVideo.trim()) return { ...form, sourceVideo: video };
     return form.controlVideo.trim() ? { ...form, sourceVideo: video } : { ...form, controlVideo: video };
@@ -1490,6 +1497,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             prompt: current.prompt,
             negativePrompt: current.negativePrompt,
             referenceImages: current.referenceImages,
+            referenceVideos: current.referenceVideos,
             maskImage: current.maskImage,
             controlImage: current.controlImage,
             sourceVideo: current.sourceVideo,
@@ -1523,6 +1531,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               prompt: state.form.prompt,
               negativePrompt: state.form.negativePrompt,
               referenceImages: state.form.referenceImages,
+              referenceVideos: state.form.referenceVideos,
               maskImage: state.form.maskImage,
               controlImage: state.form.controlImage,
               sourceVideo: state.form.sourceVideo,
@@ -1804,6 +1813,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               isVideoOutput || isAudioOutput
                 ? current.referenceImages
                 : [output.url, ...current.referenceImages.filter((image) => image !== output.url)],
+            referenceVideos: current.referenceVideos,
             sourceVideo: isVideoOutput ? output.url : current.sourceVideo,
             sourceAudio: isAudioOutput ? output.url : current.sourceAudio,
             maskImage: current.maskImage,

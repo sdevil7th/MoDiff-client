@@ -1239,6 +1239,19 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
       }),
     );
   }
+  const minimumReferenceVideos = profile.modeRequirements?.[form.mode]?.minimumCounts?.referenceVideos ?? 1;
+  const selectedReferenceVideos = form.referenceVideos.filter((video) => video.trim()).length;
+  if (videoRequirements.includes('referenceVideos') && selectedReferenceVideos < minimumReferenceVideos) {
+    issues.push(
+      issue({
+        category: 'asset',
+        severity: 'error',
+        blocking: true,
+        action: 'select_image',
+        message: `${minimumReferenceVideos} source videos are required before this workflow can run.`,
+      }),
+    );
+  }
   if (videoRequirements.includes('maskVideo') && !form.maskVideo.trim()) {
     issues.push(
       issue({

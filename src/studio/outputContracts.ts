@@ -180,6 +180,7 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     outpaintFillColor: stringValue(form.outpaintFillColor, DEFAULT_STUDIO_FORM.outpaintFillColor),
     alphaMode: stringUnionValue(form.alphaMode, STUDIO_ALPHA_MODES, DEFAULT_STUDIO_FORM.alphaMode),
     referenceImages: stringArrayValue(form.referenceImages, DEFAULT_STUDIO_FORM.referenceImages),
+    referenceVideos: stringArrayValue(form.referenceVideos, DEFAULT_STUDIO_FORM.referenceVideos),
     maskImage: stringValue(form.maskImage, DEFAULT_STUDIO_FORM.maskImage),
     controlImage: stringValue(form.controlImage, DEFAULT_STUDIO_FORM.controlImage),
     sourceVideo: stringValue(form.sourceVideo, DEFAULT_STUDIO_FORM.sourceVideo),

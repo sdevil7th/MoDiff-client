@@ -4587,6 +4587,85 @@ test('built-in image operations are locally ready without model discovery or ins
   assert.equal(inferred.mode, 'image_filter');
 });
 
+test('built-in video operations are locally ready and preserve multi-video inference', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinVideoOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinVideoOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/video-operations/v1');
+  assert.deepEqual(profile.modes, ['video_frame_extract', 'video_stitch']);
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'video_stitch' },
+            videos: { value: ['first.mp4', 'second.mp4'] },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinVideoOperation');
+  assert.equal(inferred.mode, 'video_stitch');
+  assert.deepEqual(inferred.referenceVideos, ['first.mp4', 'second.mp4']);
+});
+
+test('video stitching requires two local source videos before execution', () => {
+  const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+  const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    const baseForm = {
+      ...profilesModule.getFormDefaultsForMode('video_stitch', 'BuiltinVideoOperation'),
+      referenceVideos: ['first.mp4'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: baseForm, graphBinding: null });
+    let messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.ok(messages.some((message) => /2 source videos/i.test(message)));
+
+    studioStoreModule.useStudioStore.setState({
+      form: { ...baseForm, referenceVideos: ['first.mp4', 'second.mp4'] },
+    });
+    messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.equal(
+      messages.some((message) => /source videos/i.test(message)),
+      false,
+    );
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousCapabilities,
+      studioModelCapabilitiesAuthoritative: previousAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
 test('mask compositing requires two source images and one mask before execution', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;

@@ -26,6 +26,7 @@ const MEDIA_FIELDS = {
   maskImage: 'image',
   controlImage: 'image',
   sourceVideo: 'video',
+  referenceVideos: 'video',
   maskVideo: 'video',
   controlVideo: 'video',
   poseVideo: 'video',

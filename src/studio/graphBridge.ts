@@ -197,6 +197,7 @@ const NODE_KEYS = {
   transformersAnyToAnyGenerate: 'modules.HuggingFaceTransformers.GenerateAnyToAny',
   transformersTextPreview: 'modules.Primitive.DataViewer',
   imageOperation: 'modules.ImageOperations.ProcessImage',
+  videoOperation: 'modules.Video.ProcessVideo',
 } satisfies Record<StudioGraphRole, string>;
 
 const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
@@ -268,6 +269,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   transformersAnyToAnyGenerate: { x: -240, y: -80 },
   transformersTextPreview: { x: 240, y: -80 },
   imageOperation: { x: -160, y: -80 },
+  videoOperation: { x: -220, y: -80 },
 };
 
 const REQUIRED_BASE_ROLES: StudioGraphRole[] = ['models', 'prompt', 'denoise', 'decode', 'preview'];
@@ -336,6 +338,7 @@ function cloneStudioFormForGraph(form: StudioFormState): StudioFormState {
   return {
     ...form,
     referenceImages: [...form.referenceImages],
+    referenceVideos: [...form.referenceVideos],
   };
 }
 
@@ -2986,6 +2989,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
   if (role === 'diffusersImageControlInpaint') return 'Diffusers.ControlInpaint';
   if (role === 'loadAdapter') return 'Diffusers.LoadAdapter';
   if (role === 'imageOperation') return 'Image.Process';
+  if (role === 'videoOperation') return 'Video.Process';
   return null;
 }
 
