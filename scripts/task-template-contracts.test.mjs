@@ -1636,6 +1636,131 @@ test('built-in image operations preserve exact install-free task contracts', () 
   assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation.artifacts, []);
 });
 
+test('built-in data operations preserve exact install-free prompt and JSON contracts', () => {
+  const modes = modelProfilesModule.BUILTIN_DATA_OPERATION_MODES;
+  const repo = modelProfilesModule.BUILTIN_DATA_OPERATION_REPO;
+  const profile = {
+    id: 'builtin-data-operations:direct',
+    model_type: 'BuiltinDataOperation',
+    modes,
+    loader_module: 'modules.Text',
+    loader_action: 'ProcessText',
+    execution_path: 'builtin-data-operation',
+    pipeline_class: 'BuiltinDataOperationV1',
+    default_repo: repo,
+    fallback_repo: null,
+    compatible_repos: [],
+  };
+  const roles = [
+    ['dataOperation', 'modules.Text.ProcessText', -220, -80],
+    ['dataPreview', 'modules.Primitive.DataViewer', 260, -80],
+  ];
+  const edges = [['dataOperation', 'output', 'dataPreview', 'value']];
+  const bindings = [
+    ['dataOperation', 'pipeline_class', 'pipelineClass'],
+    ['dataOperation', 'operation', 'mode'],
+    ['dataOperation', 'source', 'prompt'],
+  ];
+  const autoFields = [
+    'resolvedArtifact',
+    'artifact',
+    'installTarget.repo',
+    'modelRepo',
+    'pipelineClass',
+    'dtype',
+    'offloadMode',
+    'quantizedComponents',
+    'attentionBackend',
+    'regionalCompile',
+    'denoiserCache',
+    'layerwiseCasting',
+    'channelsLast',
+  ];
+  const cases = [
+    {
+      mode: 'text_select',
+      id: 'builtin-data-operations:text-select:v1',
+      specHash: 'studio-spec-v1-d4bc64df',
+      taskHash: 'task-template-v1-1eefb6b7',
+    },
+    {
+      mode: 'data_conversion',
+      id: 'builtin-data-operations:data-conversion:v1',
+      specHash: 'studio-spec-v1-ccd283e9',
+      taskHash: 'task-template-v1-72539bcc',
+    },
+  ];
+  const specs = cases.map((item) => {
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.id,
+      modelType: 'BuiltinDataOperation',
+      mode: item.mode,
+      executionProfileId: profile.id,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      roles,
+      edges,
+      bindings,
+      autoFields,
+      actions: [],
+    };
+    const spec = {
+      ...semantic,
+      contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+    assert.equal(spec.contentHash, item.specHash);
+    return spec;
+  });
+  const parsedSpecs = executionSpecsModule.parseStudioExecutionSpecs(specs, 'BuiltinDataOperation', modes, [profile]);
+  const contracts = cases.map((item, index) => {
+    const semantic = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `task-template:${item.id}`,
+      modelType: 'BuiltinDataOperation',
+      mode: item.mode,
+      mediaKind: 'json',
+      executionProfileId: profile.id,
+      executionSpecId: item.id,
+      executionSpecContentHash: specs[index].contentHash,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      loaderRole: 'dataOperation',
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      loaderRepositories: [repo],
+      requiredMedia: [],
+      output: {
+        mediaKind: 'json',
+        role: 'dataPreview',
+        nodeKey: 'modules.Primitive.DataViewer',
+        inputHandle: 'value',
+      },
+      qualificationStatus: 'graph-qualified-execution-pending',
+      galleryEligible: false,
+    };
+    const contract = {
+      ...semantic,
+      contentHash: `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+    };
+    assert.equal(contract.contentHash, item.taskHash);
+    return contract;
+  });
+  const capability = {
+    modelType: 'BuiltinDataOperation',
+    studioExecutionSpecs: parsedSpecs,
+    executionProfiles: [profile],
+  };
+  assert.equal(contractsModule.parseTaskTemplateContracts(contracts, 1, [capability]).length, 2);
+  assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES.BuiltinDataOperation.artifactInstallRequired, false);
+  assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinDataOperation.artifacts, []);
+});
+
 test('built-in audio operations preserve exact install-free source and reference contracts', () => {
   const modes = modelProfilesModule.BUILTIN_AUDIO_OPERATION_MODES;
   const repo = modelProfilesModule.BUILTIN_AUDIO_OPERATION_REPO;

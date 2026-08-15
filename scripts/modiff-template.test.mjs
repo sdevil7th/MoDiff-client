@@ -4587,6 +4587,44 @@ test('built-in image operations are locally ready without model discovery or ins
   assert.equal(inferred.mode, 'image_filter');
 });
 
+test('built-in data operations are locally ready and preserve source text inference', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinDataOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinDataOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/data-operations/v1');
+  assert.deepEqual(profile.modes, ['text_select', 'data_conversion']);
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getDefaultModelForMode('text_select'), 'BuiltinDataOperation');
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+  assert.match(status.reason, /no model installation/i);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Text',
+          action: 'ProcessText',
+          studioRole: 'dataOperation',
+          params: {
+            operation: { value: 'text_select' },
+            source: { value: 'first\nsecond' },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinDataOperation');
+  assert.equal(inferred.mode, 'text_select');
+  assert.equal(inferred.prompt, 'first\nsecond');
+});
+
 test('built-in audio operations are locally ready and preserve dual-source inference', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinAudioOperation;
   const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinAudioOperation;

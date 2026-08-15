@@ -125,6 +125,7 @@ export const WHISPER_TINY_REPO = 'openai/whisper-tiny';
 export const DDPM_CIFAR10_REPO = 'google/ddpm-cifar10-32';
 export const CONSISTENCY_IMAGENET64_REPO = 'openai/diffusers-cd_imagenet64_l2';
 export const BUILTIN_AUDIO_OPERATION_REPO = 'builtin://modiff/audio-operations/v1';
+export const BUILTIN_DATA_OPERATION_REPO = 'builtin://modiff/data-operations/v1';
 export const BUILTIN_IMAGE_OPERATION_REPO = 'builtin://modiff/image-operations/v1';
 export const BUILTIN_VIDEO_OPERATION_REPO = 'builtin://modiff/video-operations/v1';
 export const SPANDREL_VIDEO_UPSCALE_REPO = 'nateraw/real-esrgan';
@@ -139,6 +140,7 @@ export const BUILTIN_IMAGE_OPERATION_MODES: StudioMode[] = [
   'mask_composite',
 ];
 export const BUILTIN_AUDIO_OPERATION_MODES: StudioMode[] = ['audio_trim', 'audio_join', 'audio_loudness_match'];
+export const BUILTIN_DATA_OPERATION_MODES: StudioMode[] = ['text_select', 'data_conversion'];
 export const BUILTIN_VIDEO_OPERATION_MODES: StudioMode[] = [
   'video_frame_extract',
   'video_stitch',
@@ -347,6 +349,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Chroma1-HD Inpaint (Standard Diffusers)',
   'LTX-2 Standard Video + Audio',
   'Built-in Audio Operations',
+  'Built-in Data Operations',
   'Built-in Image Operations',
   'Built-in Video Operations',
   'Real-ESRGAN x2 Video Upscale',
@@ -386,6 +389,8 @@ export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
   audio_trim: 'Trim or pad one bounded audio source.',
   audio_join: 'Join two bounded audio sources with an optional boundary fade.',
   audio_loudness_match: 'Match source loudness to a bounded reference window.',
+  text_select: 'Select one line from bounded text by an explicit index policy.',
+  data_conversion: 'Convert bounded text to one strict interchange type.',
   text_to_3d: 'Generate a bounded rendered orbit of a 3D object from a prompt.',
   image_adjustment: 'Apply bounded color and tone adjustments to a source image.',
   image_filter: 'Apply a bounded deterministic filter to a source image.',
@@ -2403,6 +2408,44 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     galleryEligible: false,
     liveProof: false,
   },
+  BuiltinDataOperation: {
+    family: 'Built-in Media',
+    surfaceCategory: 'Utility',
+    catalogVisibility: 'workflowOnly',
+    runtimeKind: 'builtin',
+    isDiffusersBacked: false,
+    defaultRepo: BUILTIN_DATA_OPERATION_REPO,
+    artifactLabel: 'Versioned MoDiff built-in operation contract',
+    artifactKind: 'builtin',
+    artifactInstallRequired: false,
+    defaultDtype: 'float32',
+    defaultSize: { width: 0, height: 0, aspectRatio: '1:1' },
+    offloadSupport: { modes: ['none'], default: 'none', lowVram: 'none', emergency: 'none' },
+    recommendedSteps: 1,
+    recommendedGuidance: 0,
+    guidanceLabel: 'Not used',
+    supportFlags: 0,
+    supportsPrompt: true,
+    supportsNegativePrompt: false,
+    outputKind: 'json',
+    lowVram: {
+      dtype: 'float32',
+      autoOffload: false,
+      offloadMode: 'none',
+      steps: 1,
+      width: 0,
+      height: 0,
+    },
+    modes: BUILTIN_DATA_OPERATION_MODES,
+    modeRequirements: {},
+    executionStatus: 'supported',
+    qualificationStatus: 'graph-qualified-execution-pending',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: true,
+    galleryEligible: false,
+    liveProof: false,
+  },
   BuiltinAudioOperation: {
     family: 'Built-in Media',
     surfaceCategory: 'Utility',
@@ -3127,6 +3170,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Runs entirely through the versioned built-in image-operation contract.',
     manualOnlyReason: 'Use the Expert workflow surface to configure operation-specific controls.',
   },
+  BuiltinDataOperation: {
+    modelType: 'BuiltinDataOperation',
+    supportedModes: BUILTIN_DATA_OPERATION_MODES,
+    autoStatus: 'manual_only',
+    minimum: 'Base MoDiff CPU runtime; no model installation is required.',
+    recommended: 'Any supported CPU runtime.',
+    qualityDefaults: 'Bounded source text with explicit operation-specific conversion controls.',
+    artifacts: [],
+    notes: 'Runs entirely through the versioned built-in data-operation contract.',
+    manualOnlyReason: 'Use the Expert workflow surface to configure operation-specific controls.',
+  },
   BuiltinAudioOperation: {
     modelType: 'BuiltinAudioOperation',
     supportedModes: BUILTIN_AUDIO_OPERATION_MODES,
@@ -3292,6 +3346,9 @@ export function getDefaultModelForMode(mode: StudioMode): StudioModelType {
   }
   if (mode === 'control_video_to_video') {
     return 'AnimateDiffVideoToVideoControlNetPipeline';
+  }
+  if (BUILTIN_DATA_OPERATION_MODES.includes(mode)) {
+    return 'BuiltinDataOperation';
   }
   if (BUILTIN_AUDIO_OPERATION_MODES.includes(mode)) {
     return 'BuiltinAudioOperation';

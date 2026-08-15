@@ -185,6 +185,8 @@ const NODE_KEYS = {
   audioJoin: 'modules.Audio.Join',
   audioOperation: 'modules.Audio.ProcessAudio',
   audioExport: 'modules.Audio.Export',
+  dataOperation: 'modules.Text.ProcessText',
+  dataPreview: 'modules.Primitive.DataViewer',
   diffusersThreeDPipeline: 'modules.DiffusersThreeD.LoadPipeline',
   diffusersThreeDGenerate: 'modules.DiffusersThreeD.GenerateRenderedArtifact',
   speechModel: 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel',
@@ -259,6 +261,8 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   audioJoin: { x: 680, y: -80 },
   audioOperation: { x: -220, y: -80 },
   audioExport: { x: 1060, y: -80 },
+  dataOperation: { x: -220, y: -80 },
+  dataPreview: { x: 260, y: -80 },
   diffusersThreeDPipeline: { x: -520, y: -80 },
   diffusersThreeDGenerate: { x: -120, y: -80 },
   speechModel: { x: -720, y: -80 },
@@ -2993,6 +2997,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
   if (role === 'diffusersImageControlInpaint') return 'Diffusers.ControlInpaint';
   if (role === 'loadAdapter') return 'Diffusers.LoadAdapter';
   if (role === 'audioOperation') return 'Audio.Process';
+  if (role === 'dataOperation') return 'Data.Process';
   if (role === 'imageOperation') return 'Image.Process';
   if (role === 'videoOperation') return 'Video.Process';
   if (role === 'videoUpscaler') return 'Video.Upscale';

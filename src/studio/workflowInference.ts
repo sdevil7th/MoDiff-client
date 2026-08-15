@@ -3,6 +3,7 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import { rebaseGraphDevices } from './deviceRebase';
 import {
   BUILTIN_AUDIO_OPERATION_MODES,
+  BUILTIN_DATA_OPERATION_MODES,
   BUILTIN_VIDEO_OPERATION_MODES,
   DEFAULT_STUDIO_FORM,
   QWEN_OUTPAINT_CANVAS_NODE_KEY,
@@ -293,6 +294,9 @@ export function adoptManagedWorkflowGraph(
 }
 
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
+  if (nodes.some((node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText')) {
+    return 'BuiltinDataOperation';
+  }
   if (
     nodes.some((node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio')
   ) {
@@ -328,6 +332,14 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
 function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
+  if (modelType === 'BuiltinDataOperation' || roles.has('dataOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    return BUILTIN_DATA_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'text_select';
+  }
   if (modelType === 'BuiltinAudioOperation' || roles.has('audioOperation')) {
     const operationNode = findNode(
       nodes,
@@ -501,6 +513,7 @@ export function inferStudioFormFromWorkflow(
         'diffusersImageControlInpaint',
         'diffusersImageLayerDecompose',
         'audioGenerate',
+        'dataOperation',
         'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
       [
@@ -516,6 +529,7 @@ export function inferStudioFormFromWorkflow(
         'LayerDecompose',
         'TranscribeAudio',
         'GenerateAnyToAny',
+        'ProcessText',
       ].includes(String(node.data?.action)),
   );
   const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
@@ -640,7 +654,7 @@ export function inferStudioFormFromWorkflow(
     ...defaults,
     mode,
     modelType,
-    prompt: stringValue(paramValue(promptNode, ['prompt'])) || fallback.prompt,
+    prompt: stringValue(paramValue(promptNode, ['prompt', 'source'])) || fallback.prompt,
     negativePrompt: stringValue(paramValue(promptNode, ['negative_prompt'])) || fallback.negativePrompt,
     width: numberValue(paramValue(sizeNode, ['width']), squareResolution),
     height: numberValue(paramValue(sizeNode, ['height']), squareResolution),
