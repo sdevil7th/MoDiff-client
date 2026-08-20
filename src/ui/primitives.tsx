@@ -179,8 +179,11 @@ export function ModiffDialog({
   bodyClassName?: string;
   testId?: string;
 }) {
+  // Headless UI Dialog requires typeof open === 'boolean'. Keep this runtime
+  // coercion even when Terser represents boolean literals as integers.
+  const dialogOpen = Boolean(open);
   return (
-    <Dialog open={open} onClose={onClose} className="relative z-50">
+    <Dialog open={dialogOpen} onClose={onClose} className="relative z-50">
       <DialogBackdrop className="fixed inset-0 bg-modiff-dialog-backdrop/70" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel

@@ -290,9 +290,15 @@ export default function StudioPanel() {
   const selectedModelName = getStudioModelDisplayName(STUDIO_MODEL_PROFILES[form.modelType]);
   const selectedModelRuntimeLabel = getStudioModelRuntimeLabel(STUDIO_MODEL_PROFILES[form.modelType], form);
   const selectedModelArtifactNote = getStudioModelArtifactNote(STUDIO_MODEL_PROFILES[form.modelType]);
+  const exactExecutionProfile = exactStudioExecutionProfileForForm(
+    studioModelCapabilities,
+    studioExecutionSpecInvalid,
+    form,
+  );
   const expertQuantizationModes =
-    exactStudioExecutionProfileForForm(studioModelCapabilities, studioExecutionSpecInvalid, form)
-      ?.expert_quantization_modes ?? [];
+    exactExecutionProfile?.available_expert_quantization_modes ??
+    exactExecutionProfile?.expert_quantization_modes ??
+    [];
   const selectedModelInfo = `${selectedModelRuntimeLabel}. ${selectedModelName} defaults to ${STUDIO_MODEL_PROFILES[form.modelType].recommendedSteps} steps, ${STUDIO_MODEL_PROFILES[form.modelType].guidanceLabel.toLowerCase()} ${STUDIO_MODEL_PROFILES[form.modelType].recommendedGuidance}, ${STUDIO_MODEL_PROFILES[form.modelType].defaultDtype}. ${selectedModelArtifactNote}`;
   const selectedAutoPlanSummary = selectedAutoPlanCandidate
     ? `${selectedAutoPlanCandidate.resolvedArtifact ?? selectedAutoPlanCandidate.artifact ?? selectedAutoPlanCandidate.modelRepo} | ${selectedAutoPlanCandidate.qualityTier ?? 'quality plan'} | ${selectedAutoPlanCandidate.generation?.width ?? form.width}x${selectedAutoPlanCandidate.generation?.height ?? form.height} | ${selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps | ${selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}`

@@ -691,6 +691,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
               expert_quantization_policy: expertQuantizationPolicy,
               expert_mps_policy: expertMpsPolicy,
               expert_quantization_modes: ['bnb_4bit'],
+              available_expert_quantization_modes: [],
             },
           ],
         },
@@ -710,6 +711,7 @@ test('optional runtime contracts normalize exact nested profile metadata', async
   );
   assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].expert_mps_policy, expertMpsPolicy);
   assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].expert_quantization_modes, ['bnb_4bit']);
+  assert.deepEqual(state.studioModelCapabilities[0].executionProfiles[0].available_expert_quantization_modes, []);
   assert.equal(state.studioModelCapabilities[0].executionProfiles[0].optional_runtime_requirement, undefined);
   const previousForm = studioStoreModule.useStudioStore.getState().form;
   const previousFlow = flowStoreModule.useFlowStore.getState();
@@ -872,6 +874,16 @@ test('mixed-version and conflicting execution runtime contracts fail closed', as
     },
     {
       profiles: [{ id: firstId, modes: ['text_to_image'], expert_quantization_modes: ['future_quantization'] }],
+    },
+    {
+      profiles: [
+        {
+          id: firstId,
+          modes: ['text_to_image'],
+          expert_quantization_modes: ['bnb_4bit'],
+          available_expert_quantization_modes: ['torchao_float8'],
+        },
+      ],
     },
     {
       profiles: [
@@ -1158,12 +1170,112 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
       ],
       overlay: {
         processLoadStatus: 'active',
-        state: { activeEnvironmentId: null, previousEnvironmentId: null },
-        environments: [],
+        state: { activeEnvironmentId: 'runtime-1-12345678', previousEnvironmentId: null },
+        environments: [
+          {
+            id: 'runtime-1-12345678',
+            status: 'ready',
+            active: true,
+            specs: [
+              {
+                kind: 'optional_runtime',
+                id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+                specDigest: `sha256:${'1'.repeat(64)}`,
+              },
+            ],
+          },
+        ],
       },
     }),
   );
   assert.equal(optionalRuntimesModule.optionalRuntimeBlockState(required, activeCatalog), null);
+  const mixedPins = runtimeRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    state: 'active',
+    reason: 'optional_runtime_active',
+    profileIds: ['huggingface-transformers-peft-5.14.1-0.20.0', 'huggingface-transformers-main-96fe6dce-peft-0.20.0'],
+  });
+  const mixedCatalog = optionalRuntimesModule.parseOptionalRuntimeCatalog(
+    optionalRuntimeCatalog({
+      profiles: [
+        {
+          ...optionalRuntimeCatalog().profiles[0],
+          id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+          contractState: 'qualified',
+          cutoverReady: true,
+          status: 'wrong_version',
+          overlayStatus: 'missing',
+        },
+        {
+          ...optionalRuntimeCatalog().profiles[0],
+          id: 'huggingface-transformers-main-96fe6dce-peft-0.20.0',
+          contractState: 'qualified',
+          cutoverReady: true,
+          status: 'present_unqualified',
+          overlayStatus: 'active',
+        },
+      ],
+      overlay: {
+        processLoadStatus: 'active',
+        state: { activeEnvironmentId: 'runtime-1-12345678', previousEnvironmentId: null },
+        environments: [
+          {
+            id: 'runtime-1-12345678',
+            status: 'ready',
+            active: true,
+            specs: [
+              {
+                kind: 'optional_runtime',
+                id: 'huggingface-transformers-main-96fe6dce-peft-0.20.0',
+                specDigest: `sha256:${'1'.repeat(64)}`,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(
+    optionalRuntimesModule.optionalRuntimeBlockState(mixedPins, mixedCatalog),
+    null,
+    'one active alternative pin must satisfy the optional-runtime requirement',
+  );
+  for (const [label, activeProfileId, activeDigest] of [
+    [
+      'an unrelated active profile must not satisfy the requirement',
+      'huggingface-transformers-main-96fe6dce-peft-0.20.0',
+      `sha256:${'1'.repeat(64)}`,
+    ],
+    [
+      'a mismatched active profile digest must not satisfy the requirement',
+      'huggingface-transformers-peft-5.14.1-0.20.0',
+      `sha256:${'2'.repeat(64)}`,
+    ],
+  ]) {
+    const mismatchedActiveCatalog = optionalRuntimesModule.parseOptionalRuntimeCatalog(
+      optionalRuntimeCatalog({
+        profiles: activeCatalog.profiles,
+        overlay: {
+          processLoadStatus: 'active',
+          state: { activeEnvironmentId: 'runtime-1-12345678', previousEnvironmentId: null },
+          environments: [
+            {
+              id: 'runtime-1-12345678',
+              status: 'ready',
+              active: true,
+              specs: [{ kind: 'optional_runtime', id: activeProfileId, specDigest: activeDigest }],
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal(
+      optionalRuntimesModule.optionalRuntimeBlockState(required, mismatchedActiveCatalog),
+      'unavailable',
+      label,
+    );
+  }
   assert.equal(
     optionalRuntimesModule.optionalRuntimeBlockState(
       required,

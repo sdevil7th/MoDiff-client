@@ -3388,7 +3388,8 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     quantizationMode,
     quantizedComponents: ['transformer'],
     deviceMapNone: 'none',
-    attentionBackend: 'auto',
+    attentionBackend:
+      typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto',
     nativeMath: '_native_math',
     empty: '',
     true: true,
@@ -3590,7 +3591,13 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    setParamIfPresent(diffusersRecipe, ['attention_backend'], autoCandidate?.attentionBackend ?? 'auto');
+    setParamIfPresent(
+      diffusersRecipe,
+      ['attention_backend'],
+      typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
+        ? form.attentionBackend
+        : (autoCandidate?.attentionBackend ?? 'auto'),
+    );
     setParamIfPresent(diffusersRecipe, ['attention_components'], '');
     setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
     setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
@@ -4652,6 +4659,7 @@ async function createOrUpdateStudioGraphInner(
 export async function createOrUpdateStudioGraph(
   form: StudioFormState = useStudioStore.getState().form,
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
+  finalizationTimeout = 15_000,
 ): Promise<BridgeResult> {
   const requestedForm = cloneStudioFormForGraph(form);
   const previousUpdate = graphUpdatePromise;
@@ -4659,7 +4667,7 @@ export async function createOrUpdateStudioGraph(
     if (previousUpdate) await previousUpdate.catch(() => undefined);
     assertWorkflowOperationContext(context);
     const result = await createOrUpdateStudioGraphInner(requestedForm, context);
-    const finalized = await waitForStudioGraphFinalization(15_000, context);
+    const finalized = await waitForStudioGraphFinalization(finalizationTimeout, context);
     if (!finalized) {
       throw new Error(
         useStudioStore.getState().graphFinalization?.message ?? 'Graph preparation timed out before it was finalized.',

@@ -19,6 +19,7 @@ import type {
 export type TemplateBrowserCategoryId =
   | 'recommended'
   | 'all'
+  | 'experimental'
   | 'getting-started'
   | 'image'
   | 'edit'
@@ -51,6 +52,7 @@ export type TemplateMediaSlot = {
 export const TEMPLATE_BROWSER_CATEGORIES: Array<{ id: TemplateBrowserCategoryId; label: string }> = [
   { id: 'recommended', label: 'Recommended' },
   { id: 'all', label: 'All templates' },
+  { id: 'experimental', label: 'Experimental' },
   { id: 'getting-started', label: 'Getting Started' },
   { id: 'image', label: 'Image' },
   { id: 'edit', label: 'Edit' },
@@ -197,6 +199,7 @@ export function filterStudioTemplates(
     )
       return false;
     if (selectedCategory === 'recommended' && blocked) return false;
+    if (selectedCategory === 'experimental') return false;
     if (selectedCategory !== 'recommended' && selectedCategory !== 'all') {
       if (!templateCategoryIds(template).includes(selectedCategory)) return false;
     }

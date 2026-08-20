@@ -476,6 +476,8 @@ export function getStudioQuantizationCapabilityIssue(
   const resolvedForm = resolveStudioResourceForm(form);
   const profile = getProfileForForm(resolvedForm);
   const executionProfile = readinessExecutionProfile(resolvedForm);
+  const availableQuantizationModes =
+    executionProfile?.available_expert_quantization_modes ?? executionProfile?.expert_quantization_modes;
   if (
     resolvedForm.resourceMode === 'expert' &&
     resolvedForm.quantizationMode !== 'none' &&
@@ -488,6 +490,22 @@ export function getStudioQuantizationCapabilityIssue(
       action: 'apply_low_vram_preset',
       message: `${getStudioModelDisplayName(profile)} does not declare ${resolvedForm.quantizationMode} for this task.`,
       details: 'Choose a quantization mode published by the exact backend execution profile.',
+    } satisfies Omit<RunReadinessIssue, 'id'>;
+  }
+  if (
+    resolvedForm.resourceMode === 'expert' &&
+    resolvedForm.quantizationMode !== 'none' &&
+    executionProfile?.expert_quantization_modes?.includes(resolvedForm.quantizationMode) &&
+    !availableQuantizationModes?.includes(resolvedForm.quantizationMode)
+  ) {
+    return {
+      category: 'package',
+      severity: 'error',
+      blocking: true,
+      action: 'open_setup',
+      message: `${resolvedForm.quantizationMode} is not available in the active app-managed runtime.`,
+      details:
+        'Open Setup to review the required quantization package. Run remains blocked until the backend reports an app-qualified active dependency.',
     } satisfies Omit<RunReadinessIssue, 'id'>;
   }
   const policy = executionProfile?.expert_quantization_policy;
@@ -571,6 +589,13 @@ export function getStudioOffloadCapabilityIssue(
 
   const offloadParam = registryParam(registry, loaderNodeKey, 'offload_mode');
   if (!offloadParam) {
+    const spec = readinessExecutionSpec(resolvedForm);
+    const bindsOffloadMode = spec?.bindings?.some(([, , source]) => source === 'offloadMode') ?? false;
+    // A none-only execution profile has nothing to configure when its exact
+    // graph contract does not bind an offload field. Requiring a synthetic
+    // loader parameter here blocks legitimate built-in and non-Diffusers
+    // actions such as image operations and frame-streaming upscalers.
+    if (offloadMode === 'none' && !bindsOffloadMode) return null;
     return {
       category: 'package',
       severity: 'error',

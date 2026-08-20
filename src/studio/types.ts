@@ -775,6 +775,8 @@ export type StudioFormState = {
   outputType: 'pil' | 'np' | 'pt';
   maxSequenceLength: number;
   attentionKwargsJson: string;
+  /** Campaign / expert override for diffusersRecipe.attention_backend (e.g. _native_math). */
+  attentionBackend?: string;
 };
 
 export type StudioInpaintContractStatus = {
@@ -803,6 +805,7 @@ export type StudioExecutionProfile = {
   supported_offload_modes: StudioOffloadMode[];
   retry_offload_modes: StudioOffloadMode[];
   expert_quantization_modes?: Exclude<StudioQuantizationMode, 'none'>[];
+  available_expert_quantization_modes?: Exclude<StudioQuantizationMode, 'none'>[];
   max_low_memory_side?: number | null;
   max_low_memory_steps?: number | null;
   live_proof: boolean;

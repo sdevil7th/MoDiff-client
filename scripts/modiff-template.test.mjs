@@ -1455,14 +1455,17 @@ function optionalRequirement(overrides = {}) {
 }
 
 function qualifiedOptionalRuntimeCatalog() {
+  const profileId = 'huggingface-transformers-peft-5.14.1-0.20.0';
+  const specDigest = `sha256:${'1'.repeat(64)}`;
   return {
     schemaVersion: 1,
     processLoadStatus: 'active',
+    activeOptionalRuntimeSpecs: [{ profileId, specDigest }],
     profiles: [
       {
-        id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+        id: profileId,
         label: 'Hugging Face Transformers + PEFT',
-        specDigest: `sha256:${'1'.repeat(64)}`,
+        specDigest,
         contractState: 'qualified',
         cutoverReady: true,
         installActionAvailable: true,
@@ -3665,6 +3668,7 @@ test('template browser exposes the complete workflow catalog across task and ada
     [
       'recommended',
       'all',
+      'experimental',
       'getting-started',
       'image',
       'edit',
@@ -5411,8 +5415,52 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
           ]),
         ],
       },
+      {
+        modelType: 'BuiltinImageOperation',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['image_upscale'],
+        studioExecutionSpecs: [
+          {
+            ...readinessSpec('image_upscale', 'modules.ImageOperations', 'ProcessImage', [
+              ['imageOperation', 'modules.ImageOperations.ProcessImage'],
+            ]),
+            bindings: [],
+          },
+        ],
+      },
+      {
+        modelType: 'SpandrelVideoUpscale',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['video_upscale'],
+        studioExecutionSpecs: [
+          {
+            ...readinessSpec('video_upscale', 'modules.Video', 'UpscaleVideo', [
+              ['videoUpscaler', 'modules.Video.UpscaleVideo'],
+            ]),
+            bindings: [],
+          },
+        ],
+      },
     ],
   });
+
+  for (const [modelType, mode, nodeKey] of [
+    ['BuiltinImageOperation', 'image_upscale', 'modules.ImageOperations.ProcessImage'],
+    ['SpandrelVideoUpscale', 'video_upscale', 'modules.Video.UpscaleVideo'],
+  ]) {
+    const noneOnlyIssue = runReadinessModule.getStudioOffloadCapabilityIssue(
+      {
+        ...form,
+        modelType,
+        mode,
+        resourceMode: 'expert',
+        autoOffload: false,
+        offloadMode: 'none',
+      },
+      { [nodeKey]: { params: {} } },
+    );
+    assert.equal(noneOnlyIssue, null, `${modelType} must not require a synthetic no-op offload field`);
+  }
 
   const missingQuantNodeIssue = runReadinessModule.getStudioQuantizationCapabilityIssue(
     { ...form, mode: 'control_image', resourceMode: 'expert', quantizationMode: 'bnb_4bit' },

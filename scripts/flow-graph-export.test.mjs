@@ -86,6 +86,41 @@ test('random-on-export seeds retain random behavior and metadata', () => {
   }
 });
 
+test('graph export materializes untouched backend defaults without replacing explicit empty values', () => {
+  const exactModel = {
+    source: 'hub',
+    value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth',
+    revision: '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094',
+  };
+  const graph = exportModule.buildApiGraphExport({
+    nodes: [
+      {
+        id: 'upscaler',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'custom',
+          module: 'modules.Video',
+          action: 'UpscaleVideo',
+          params: {
+            model_id: { type: 'string', default: exactModel },
+            tile_overlap: { type: 'int', default: 0 },
+            optional_label: { type: 'string', value: '', default: 'backend label' },
+          },
+        },
+      },
+    ],
+    edges: [],
+    sid: 'default-export-session',
+    setParam: () => {},
+  });
+  const serialized = JSON.parse(JSON.stringify(graph));
+
+  assert.deepEqual(serialized.nodes.upscaler.params.model_id.value, exactModel);
+  assert.equal(serialized.nodes.upscaler.params.tile_overlap.value, 0);
+  assert.equal(serialized.nodes.upscaler.params.optional_label.value, '');
+});
+
 function loaderNode({ autoOffload, device, offloadMode }) {
   return {
     id: 'loader',

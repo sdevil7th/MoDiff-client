@@ -3551,8 +3551,16 @@ async function installMockRoutes(page: Page) {
             activeEnvironmentId: mockOptionalRuntimeQualified ? 'runtime-2-12345678' : null,
             previousEnvironmentId: mockOptionalRuntimeActions ? 'runtime-1-abcdef12' : null,
           },
-          environments:
-            mockOptionalRuntimeJobState === 'ready'
+          environments: mockOptionalRuntimeQualified
+            ? [
+                {
+                  id: 'runtime-2-12345678',
+                  status: 'ready',
+                  active: true,
+                  specs: [{ kind: 'optional_runtime', id: profileId, specDigest: digest }],
+                },
+              ]
+            : mockOptionalRuntimeJobState === 'ready'
               ? [
                   {
                     id: 'runtime-2-12345678',

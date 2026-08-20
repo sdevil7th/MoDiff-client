@@ -42,6 +42,7 @@ export type OptionalRuntimeProfileStatus = {
 export type OptionalRuntimeCatalog = {
   profiles: OptionalRuntimeProfileStatus[];
   processLoadStatus: 'active' | 'base' | 'busy_recovery_only' | 'repair_required' | 'restart_required';
+  activeOptionalRuntimeSpecs: Array<{ profileId: string; specDigest: string }>;
   stagedEnvironmentIds: Record<string, string>;
   previousEnvironmentId: string | null;
   installBusy: boolean;
@@ -259,6 +260,16 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
         ? undefined
         : (ids(profile.expert_quantization_modes, runtimeQuantization, false) as StudioRuntimeQuantization[]);
     if (expertQuantizationModes && expertQuantizationModes.length > 4) invalid();
+    const availableExpertQuantizationModes =
+      profile.available_expert_quantization_modes === undefined
+        ? expertQuantizationModes
+        : (ids(profile.available_expert_quantization_modes, runtimeQuantization, true) as StudioRuntimeQuantization[]);
+    if (
+      availableExpertQuantizationModes &&
+      (!expertQuantizationModes ||
+        availableExpertQuantizationModes.some((mode) => !expertQuantizationModes.includes(mode)))
+    )
+      invalid();
     if (
       (profile.optional_runtime_delivery !== undefined &&
         !delivery.test(profile.optional_runtime_delivery as string)) ||
@@ -276,6 +287,8 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     if (expertQuantizationPolicy) profile.expert_quantization_policy = expertQuantizationPolicy;
     if (expertMpsPolicy) profile.expert_mps_policy = expertMpsPolicy;
     if (expertQuantizationModes) profile.expert_quantization_modes = expertQuantizationModes;
+    if (availableExpertQuantizationModes)
+      profile.available_expert_quantization_modes = availableExpertQuantizationModes;
     return profile as Record<string, unknown> & {
       id: string;
       modes: T[];
@@ -284,6 +297,7 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
       expert_quantization_policy?: StudioExpertQuantizationPolicy;
       expert_mps_policy?: StudioExpertMpsPolicy;
       expert_quantization_modes?: StudioRuntimeQuantization[];
+      available_expert_quantization_modes?: StudioRuntimeQuantization[];
     };
   });
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();
@@ -346,7 +360,8 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
     invalid();
   const profiles = payload.profiles.map(parseProfile);
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();
-  nullableId(state.activeEnvironmentId, environmentId);
+  const activeEnvironmentId = nullableId(state.activeEnvironmentId, environmentId);
+  const activeOptionalRuntimeSpecs: Array<{ profileId: string; specDigest: string }> = [];
   const stagedEnvironmentIds: Record<string, string> = {};
   const ambiguousSpecs = new Set<string>();
   const seenEnvironments = new Set<string>();
@@ -357,6 +372,7 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       environment.status,
       /^(?:legacy_unqualified|missing|ready|repair_required|staged_unchecked)$/,
     );
+    const usable = status === 'ready' || status === 'staged_unchecked';
     if (
       seenEnvironments.has(id) ||
       typeof environment.active !== 'boolean' ||
@@ -370,7 +386,10 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       if (!['optimization', 'optional_runtime'].includes(spec.kind as string)) invalid();
       const profileId = string(spec.id, runtimeId)!;
       const digest = string(spec.specDigest, specDigest)!;
-      if (spec.kind === 'optional_runtime' && !environment.active && ['ready', 'staged_unchecked'].includes(status!)) {
+      if (spec.kind === 'optional_runtime' && environment.active && id === activeEnvironmentId && usable) {
+        activeOptionalRuntimeSpecs.push({ profileId, specDigest: digest });
+      }
+      if (spec.kind === 'optional_runtime' && !environment.active && usable) {
         const key = profileId + digest;
         if (stagedEnvironmentIds[key]) {
           delete stagedEnvironmentIds[key];
@@ -391,6 +410,7 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       overlay.processLoadStatus,
       /^(?:active|base|busy_recovery_only|repair_required|restart_required)$/,
     ) as OptionalRuntimeCatalog['processLoadStatus'],
+    activeOptionalRuntimeSpecs,
     stagedEnvironmentIds,
     previousEnvironmentId: nullableId(state.previousEnvironmentId, environmentId),
     installBusy: payload.activeInstallJob !== null,
@@ -463,14 +483,28 @@ export function optionalRuntimeBlockState(
   if (requirement.state !== 'active') return requirement.state;
   if (!catalog || catalog.processLoadStatus === 'base') return 'unavailable';
   if (catalog.processLoadStatus !== 'active') return catalog.processLoadStatus;
+  // Profile IDs are alternative pins (e.g. transformers 5.14.1 vs reviewed main).
+  // One fully active overlay satisfies the requirement.
+  let fallback: OptionalRuntimeRequirement['state'] = 'unavailable';
   for (const profileId of requirement.profileIds) {
     const profile = catalog.profiles.find(({ id }) => id === profileId);
-    if (!profile?.cutoverReady || profile.contractState !== 'qualified') return 'unavailable';
-    if (profile.overlayStatus !== 'active') {
-      if (profile.overlayStatus === 'staged' || profile.overlayStatus === 'repair_required')
-        return profile.overlayStatus;
-      return profile.status;
+    if (!profile) continue;
+    if (
+      profile.cutoverReady &&
+      profile.contractState === 'qualified' &&
+      profile.overlayStatus === 'active' &&
+      (catalog.activeOptionalRuntimeSpecs ?? []).some(
+        (spec) => spec.profileId === profile.id && spec.specDigest === profile.specDigest,
+      )
+    ) {
+      return null;
+    }
+    if (profile.overlayStatus === 'active' || !profile.cutoverReady || profile.contractState !== 'qualified') continue;
+    if (profile.overlayStatus === 'staged' || profile.overlayStatus === 'repair_required') {
+      fallback = profile.overlayStatus;
+    } else {
+      fallback = profile.status;
     }
   }
-  return null;
+  return fallback;
 }

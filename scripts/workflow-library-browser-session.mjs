@@ -48,7 +48,10 @@ export function shouldRecycleWorkflowBrowser(completedInSession, batchSize) {
   return completedInSession >= batchSize;
 }
 
-export async function launchWorkflowBrowser(launch, { attempts = 3, retryDelayMs = 500 } = {}) {
+export async function launchWorkflowBrowser(
+  launch,
+  { attempts = 3, retryDelayMs = 500, sessionLabel = 'canonical workflow' } = {},
+) {
   if (typeof launch !== 'function') throw new Error('The workflow browser launcher must be callable.');
   if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 5) {
     throw new Error('Workflow browser launch attempts must be an integer from 1 through 5.');
@@ -70,7 +73,7 @@ export async function launchWorkflowBrowser(launch, { attempts = 3, retryDelayMs
   const detail = lastError instanceof Error && lastError.message ? `: ${lastError.message}` : '';
   throw new WorkflowBrowserSessionError(
     'browser_launch_failed',
-    `The canonical workflow browser failed to launch after ${attempts} attempts${detail}`,
+    `The ${sessionLabel} browser failed to launch after ${attempts} attempts${detail}`,
   );
 }
 
@@ -78,6 +81,7 @@ export function createWorkflowBrowserSessionGuard({
   browser,
   page,
   operationTimeoutMs = DEFAULT_WORKFLOW_BROWSER_OPERATION_TIMEOUT_MS,
+  sessionLabel = 'canonical workflow',
 }) {
   if (!Number.isSafeInteger(operationTimeoutMs) || operationTimeoutMs < 1) {
     throw new Error('The workflow browser operation timeout must be a positive integer.');
@@ -98,10 +102,10 @@ export function createWorkflowBrowserSessionGuard({
     terminalError = new WorkflowBrowserSessionError(code, message);
     rejectTermination(terminalError);
   };
-  const onPageCrash = () => terminate('page_crashed', 'The canonical workflow renderer crashed');
-  const onPageClose = () => terminate('page_closed', 'The canonical workflow page closed unexpectedly');
+  const onPageCrash = () => terminate('page_crashed', `The ${sessionLabel} renderer crashed`);
+  const onPageClose = () => terminate('page_closed', `The ${sessionLabel} page closed unexpectedly`);
   const onBrowserDisconnected = () =>
-    terminate('browser_disconnected', 'The canonical workflow browser disconnected unexpectedly');
+    terminate('browser_disconnected', `The ${sessionLabel} browser disconnected unexpectedly`);
 
   page.on('crash', onPageCrash);
   page.on('close', onPageClose);
@@ -115,7 +119,7 @@ export function createWorkflowBrowserSessionGuard({
       if (disposed) {
         throw new WorkflowBrowserSessionError(
           'session_disposed',
-          'The canonical workflow browser session ended',
+          `The ${sessionLabel} browser session ended`,
           operation,
         );
       }
@@ -131,7 +135,7 @@ export function createWorkflowBrowserSessionGuard({
         timeout = setTimeout(() => {
           const error = new WorkflowBrowserSessionError(
             'operation_timeout',
-            `The canonical workflow browser exceeded ${timeoutMs} ms`,
+            `The ${sessionLabel} browser exceeded ${timeoutMs} ms`,
             operation,
           );
           if (!terminalError) {
@@ -151,7 +155,7 @@ export function createWorkflowBrowserSessionGuard({
       if (disposed) {
         throw new WorkflowBrowserSessionError(
           'session_disposed',
-          'The canonical workflow browser session ended',
+          `The ${sessionLabel} browser session ended`,
           operation,
         );
       }
@@ -169,7 +173,11 @@ export function createWorkflowBrowserSessionGuard({
   };
 }
 
-export async function closeWorkflowBrowser(browser, timeoutMs = DEFAULT_WORKFLOW_BROWSER_CLOSE_TIMEOUT_MS) {
+export async function closeWorkflowBrowser(
+  browser,
+  timeoutMs = DEFAULT_WORKFLOW_BROWSER_CLOSE_TIMEOUT_MS,
+  sessionLabel = 'canonical workflow',
+) {
   if (!browser) return;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
     throw new Error('The workflow browser close timeout must be a positive integer.');
@@ -185,7 +193,7 @@ export async function closeWorkflowBrowser(browser, timeoutMs = DEFAULT_WORKFLOW
             reject(
               new WorkflowBrowserSessionError(
                 'browser_close_timeout',
-                `The canonical workflow browser did not close within ${timeoutMs} ms`,
+                `The ${sessionLabel} browser did not close within ${timeoutMs} ms`,
               ),
             ),
           timeoutMs,
@@ -198,7 +206,7 @@ export async function closeWorkflowBrowser(browser, timeoutMs = DEFAULT_WORKFLOW
   if (typeof browser.isConnected === 'function' && browser.isConnected()) {
     throw new WorkflowBrowserSessionError(
       'browser_close_incomplete',
-      'The canonical workflow browser remained connected after close',
+      `The ${sessionLabel} browser remained connected after close`,
     );
   }
 }

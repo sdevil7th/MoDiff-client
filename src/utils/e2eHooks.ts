@@ -88,7 +88,7 @@ type ModiffE2EHooks = {
   listTemplates: (includePlanning?: boolean) => GalleryTemplateSummary[];
   listTaskTemplateSkeletons: () => StudioTaskTemplateSkeleton[];
   applyTemplate: (templateId: StudioTemplateId, formOverrides?: Partial<StudioFormState>) => Promise<void>;
-  applyTaskTemplateSkeleton: (templateId: string) => Promise<void>;
+  applyTaskTemplateSkeleton: (templateId: string, formOverrides?: Partial<StudioFormState>) => Promise<void>;
   applyControlledWorkflowBlockForTest: (
     block: ControlledWorkflowBlockForTest,
     settingsTemplateId: StudioTemplateId,
@@ -175,7 +175,7 @@ function listTaskTemplateSkeletons() {
   return cloneJson(useNodesStore.getState().studioTaskTemplateSkeletons);
 }
 
-async function applyTaskTemplateSkeleton(templateId: string) {
+async function applyTaskTemplateSkeleton(templateId: string, formOverrides: Partial<StudioFormState> = {}) {
   await useNodesStore.getState().fetchStudioModelCapabilities();
   const template = useNodesStore
     .getState()
@@ -188,11 +188,12 @@ async function applyTaskTemplateSkeleton(templateId: string) {
   setGraphScenarioForTest('empty');
   const form = {
     ...getFormDefaultsForMode(template.mode, template.modelType),
-    // Canonical graphs must not absorb a host-specific Auto candidate.
-    resourceMode: 'expert' as const,
+    ...formOverrides,
   };
   useStudioStore.getState().updateForm(form);
-  await createOrUpdateStudioGraph(useStudioStore.getState().form, captureWorkflowOperationContext());
+  const context = captureWorkflowOperationContext();
+  await createOrUpdateStudioGraph(useStudioStore.getState().form, context, 30_000);
+  pendingGalleryFormOverrides = { ...formOverrides };
   useStudioStore.getState().saveActiveWorkflowTab(true);
 }
 
@@ -226,35 +227,41 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
     startedAt: Date.now(),
   });
   try {
-    await createOrUpdateStudioGraph(useStudioStore.getState().form);
-    const coreFinalized = await waitForStudioGraphFinalization(30_000);
-    if (!coreFinalized) {
-      throw new Error('The template graph did not finish finalizing within 30 seconds.');
-    }
+    const context = captureWorkflowOperationContext();
+    await createOrUpdateStudioGraph(useStudioStore.getState().form, context, 30_000);
     for (const block of template.workflowBlocks ?? []) {
       if (block === 'lora') {
         await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora, {
           graphPrepared: true,
+          workflowContext: context,
         });
       } else if (block === 'upscaler') {
-        await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler);
+        await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler, {
+          workflowContext: context,
+        });
       } else if (block === 'video_sequence') {
         await addVideoSequenceWorkflowBlock(
           useStudioStore.getState().form,
           template.workflowBlockSettings?.videoSequence,
+          { workflowContext: context },
         );
       } else if (block === 'quality_video_sequence') {
         await addQualityVideoSequenceWorkflowBlock(
           useStudioStore.getState().form,
           template.workflowBlockSettings?.qualityVideoSequence,
+          { workflowContext: context },
         );
       } else if (block === 'soundtrack') {
-        await addSoundtrackWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.soundtrack);
+        await addSoundtrackWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.soundtrack, {
+          workflowContext: context,
+        });
       } else {
-        await addLyricVideoWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lyricVideo);
+        await addLyricVideoWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lyricVideo, {
+          workflowContext: context,
+        });
       }
     }
-    const blocksFinalized = await waitForStudioGraphFinalization(30_000);
+    const blocksFinalized = await waitForStudioGraphFinalization(30_000, context);
     if (!blocksFinalized) {
       throw new Error('The template workflow blocks did not finish finalizing within 30 seconds.');
     }
@@ -331,14 +338,22 @@ async function runActiveTemplate(): Promise<GalleryRunResult> {
   // A managed graph is created in two phases: its skeleton is synchronous, while
   // dynamic fields and edges finish asynchronously. Waiting here matters even
   // after applyTemplate(), because this call can schedule a fresh graph update.
-  await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  try {
+    await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'Graph changed.') throw error;
+    if (!syncStudioGraphDefinition(useStudioStore.getState().form)) {
+      throw new Error('The template graph schema could not be revalidated before run.');
+    }
+    validateStudioGraphReadyForRun(useStudioStore.getState().form);
+  }
   const autoReady = await ensureStudioAutoPlanReadyForRun();
   if (!autoReady) {
     throw new Error(
       useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
     );
   }
-  if (Object.keys(pendingGalleryFormOverrides).length > 0) {
+  if (Object.keys(pendingGalleryFormOverrides).length > 0 && useStudioStore.getState().form.resourceMode === 'auto') {
     const autoPlan = useStudioStore.getState().autoResourcePlan;
     const selectedCandidate = autoPlan?.selectedCandidate;
     const generationOverrides = Object.fromEntries(
@@ -376,7 +391,14 @@ async function runActiveTemplate(): Promise<GalleryRunResult> {
   // offload settings. Gallery probe overrides may then restore bounded
   // generation values. Both changes schedule a managed-graph finalization, so
   // validate only after the final graph is ready as well.
-  await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  try {
+    await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'Graph changed.') throw error;
+    if (!syncStudioGraphDefinition(useStudioStore.getState().form)) {
+      throw new Error('The template graph schema could not be revalidated after Auto.');
+    }
+  }
   const validation = validateCurrentRun({
     sid,
     isConnected: websocket.isConnected,
@@ -960,6 +982,8 @@ export function installE2EHooks() {
           modelCacheDiagnostics: useNodesStore.getState().modelCacheDiagnostics,
           studioModelCapabilities: useNodesStore.getState().studioModelCapabilities,
           hfDownloadProgress: useNodesStore.getState().hfDownloadProgress,
+          optionalRuntimeCatalog: useNodesStore.getState().optionalRuntimeCatalog,
+          discoveryRequests: useNodesStore.getState().discoveryRequests,
         },
         tasks: {
           currentTask: useTaskStore.getState().currentTask,
@@ -991,7 +1015,30 @@ export function installE2EHooks() {
       await useNodesStore.getState().fetchStudioModelCapabilities();
       return useNodesStore.getState().studioTaskTemplateSkeletons.length;
     },
-    refreshModelIndexes: () => useNodesStore.getState().refreshModelIndexes(true),
+    refreshModelIndexes: (refresh = true) => useNodesStore.getState().refreshModelIndexes(refresh),
+    inspectDiscovery: () => {
+      const nodes = useNodesStore.getState();
+      const cache = Array.isArray(nodes.hfCache) ? nodes.hfCache : [];
+      const ids = cache.map((item) =>
+        item && typeof item === 'object' && 'id' in item ? String(item.id) : String(item),
+      );
+      return {
+        hfCacheCount: cache.length,
+        hfCacheStatus: nodes.discoveryRequests.hfCache.status,
+        optionalRuntimesStatus: nodes.discoveryRequests.optionalRuntimes.status,
+        capabilitiesStatus: nodes.discoveryRequests.capabilities.status,
+        processLoadStatus: nodes.optionalRuntimeCatalog?.processLoadStatus ?? null,
+        profiles: (nodes.optionalRuntimeCatalog?.profiles ?? []).map((profile) => ({
+          id: profile.id,
+          overlayStatus: profile.overlayStatus,
+          cutoverReady: profile.cutoverReady,
+          contractState: profile.contractState,
+          status: profile.status,
+        })),
+        sampleCacheIds: ids.slice(0, 8),
+        hasLcm: ids.some((id) => id.includes('LCM_Dreamshaper_v7')),
+      };
+    },
     installHfModel: (repoId: string, repair = false, files: string[] = []) =>
       useNodesStore.getState().installHfModel(repoId, useWebsocketStore.getState().sid, { repair, files }),
     runActiveTemplate,

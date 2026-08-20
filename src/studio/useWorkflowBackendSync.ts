@@ -173,7 +173,7 @@ export function useWorkflowBackendSync() {
     let retryTimer: number | undefined;
     const hydrate = async () => {
       try {
-        const payload = await requestJson(`${config.serverAddress}/workflows`);
+        const payload = await requestJson(`${config.serverAddress}/workflows`, { timeoutMs: 120_000 });
         const records = isRecord(payload) && Array.isArray(payload.workflows) ? payload.workflows : [];
         if (cancelled) return;
         const store = useStudioStore.getState();

@@ -88,7 +88,7 @@ function compactProductionChunksPlugin(): Plugin {
           if (item.type !== 'chunk') return;
           const result = await minify(item.code, {
             compress: {
-              passes: 5,
+              passes: 10,
               pure_getters: 'strict',
               booleans_as_integers: true,
               // Keep errors, but omit development-only connection, progress,

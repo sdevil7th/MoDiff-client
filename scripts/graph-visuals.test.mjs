@@ -7912,6 +7912,7 @@ test('restored modular video groups require exact typed I2V and first-last-frame
 
 test('managed graph entry points wait for finalization and Auto only rebuilds when graph shape changes', () => {
   const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+  const e2eHooksSource = fs.readFileSync(path.join(ROOT, 'src', 'utils', 'e2eHooks.ts'), 'utf8');
   const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
   const studioPanelSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'StudioPanel.tsx'), 'utf8');
   const issuesDialogSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'RunIssuesDialog.tsx'), 'utf8');
@@ -7929,6 +7930,23 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   assert.ok(waitForFinalization);
   assert.ok(autoRunPreparation);
   assert.equal((createGraph.match(/await waitForStudioGraphFinalization/g) ?? []).length, 1);
+  assert.match(createGraph, /finalizationTimeout = 15_000/);
+  assert.match(createGraph, /waitForStudioGraphFinalization\(finalizationTimeout, context\)/);
+  const galleryApplyTemplate = e2eHooksSource.slice(
+    e2eHooksSource.indexOf('async function applyTemplate('),
+    e2eHooksSource.indexOf('async function applyControlledWorkflowBlockForTest('),
+  );
+  const galleryApplySkeleton = e2eHooksSource.slice(
+    e2eHooksSource.indexOf('async function applyTaskTemplateSkeleton('),
+    e2eHooksSource.indexOf('async function applyTemplate('),
+  );
+  assert.ok(galleryApplyTemplate);
+  assert.ok(galleryApplySkeleton);
+  assert.match(galleryApplySkeleton, /createOrUpdateStudioGraph\([^;]*context, 30_000\)/);
+  assert.match(galleryApplyTemplate, /createOrUpdateStudioGraph\([^;]*context, 30_000\)/);
+  assert.match(galleryApplyTemplate, /waitForStudioGraphFinalization\(30_000, context\)/);
+  assert.match(galleryApplyTemplate, /workflowContext: context/);
+  assert.doesNotMatch(galleryApplyTemplate, /Graph preparation is still running/);
   assert.match(waitForFinalization, /status === 'pending'[\s\S]*scheduleStudioGraphFinalization/);
   assert.match(
     autoRunPreparation,

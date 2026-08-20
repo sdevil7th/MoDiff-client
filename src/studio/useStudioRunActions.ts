@@ -212,13 +212,14 @@ export function useStudioRunActions({
     (modelType: StudioModelType) => {
       const current = useStudioStore.getState().form;
       const nodeStore = useNodesStore.getState();
-      const quantizationMode = exactStudioExecutionProfileForForm(
+      const executionProfile = exactStudioExecutionProfileForForm(
         nodeStore.studioModelCapabilities,
         nodeStore.studioExecutionSpecInvalid,
         { modelType, mode: current.mode },
-      )?.expert_quantization_modes?.includes(
-        current.quantizationMode as Exclude<StudioFormState['quantizationMode'], 'none'>,
-      )
+      );
+      const quantizationMode = (
+        executionProfile?.available_expert_quantization_modes ?? executionProfile?.expert_quantization_modes
+      )?.includes(current.quantizationMode as Exclude<StudioFormState['quantizationMode'], 'none'>)
         ? current.quantizationMode
         : 'none';
       const profile = STUDIO_MODEL_PROFILES[modelType];

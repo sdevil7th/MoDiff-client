@@ -59,7 +59,7 @@ import {
 import { getTemplateReadiness, type TemplateReadinessResult } from '../studio/templateReadiness';
 import { resolveTemplateInputs } from '../studio/templateInputs';
 import { createWorkflowFromTemplate } from '../studio/templateWorkflow';
-import { getPreset, STUDIO_TEMPLATES } from '../studio/templates';
+import { getPreset, PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
 import { acknowledgementRequiredForTemplate } from '../studio/modelUsagePolicies';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
 import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
@@ -92,6 +92,8 @@ const difficultyOptions: Array<TemplateBrowserFilter['difficulty']> = [
   'advanced',
   'blocked',
 ];
+
+const BROWSER_CATALOG_TEMPLATES = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES];
 
 const sortOptions: Array<{ value: TemplateBrowserFilter['sort']; label: string }> = [
   { value: 'recommended', label: 'Recommended' },
@@ -508,20 +510,26 @@ export default function TemplateBrowserDialog() {
     (template: StudioTemplate) => localRuntimeEstimate(autoPlanForTemplate(template)),
     [autoPlanForTemplate],
   );
-  const filteredTemplates = useMemo(
-    () =>
-      filterStudioTemplates(
-        STUDIO_TEMPLATES,
-        form,
-        effectiveFilter,
-        (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
-      ),
-    [effectiveFilter, form, runtimeEstimateForTemplate],
+  const isExperimentalTemplate = useCallback(
+    (template: StudioTemplate) => !templateHasPublishedMedia(template, manifest),
+    [manifest],
   );
+  const filteredTemplates = useMemo(() => {
+    const source = filter.category === 'experimental' ? BROWSER_CATALOG_TEMPLATES : STUDIO_TEMPLATES;
+    const category = filter.category === 'experimental' ? 'all' : filter.category;
+    const filtered = filterStudioTemplates(
+      source,
+      form,
+      { ...effectiveFilter, category },
+      (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
+    );
+    if (filter.category !== 'experimental') return filtered;
+    return filtered.filter(isExperimentalTemplate);
+  }, [effectiveFilter, filter.category, form, isExperimentalTemplate, runtimeEstimateForTemplate]);
   const catalogTemplates = useMemo(
     () =>
       filterStudioTemplates(
-        STUDIO_TEMPLATES,
+        BROWSER_CATALOG_TEMPLATES,
         form,
         {
           ...effectiveFilter,
@@ -534,6 +542,10 @@ export default function TemplateBrowserDialog() {
         (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
       ),
     [effectiveFilter, form, runtimeEstimateForTemplate],
+  );
+  const experimentalTemplateCount = useMemo(
+    () => catalogTemplates.filter(isExperimentalTemplate).length,
+    [catalogTemplates, isExperimentalTemplate],
   );
   const publishedTemplateCount = useMemo(
     () => catalogTemplates.filter((template) => templateHasPublishedMedia(template, manifest)).length,
@@ -562,7 +574,7 @@ export default function TemplateBrowserDialog() {
     manifest,
   ]);
   const selectedTemplate = useMemo(
-    () => STUDIO_TEMPLATES.find((template) => template.id === selectedTemplateId) ?? null,
+    () => BROWSER_CATALOG_TEMPLATES.find((template) => template.id === selectedTemplateId) ?? null,
     [selectedTemplateId],
   );
   const categoryCounts = useMemo(
@@ -571,6 +583,9 @@ export default function TemplateBrowserDialog() {
         TEMPLATE_BROWSER_CATEGORIES.map((category) => {
           if (category.id === 'recommended' && publishedTemplateCount > 0) {
             return [category.id, publishedTemplateCount];
+          }
+          if (category.id === 'experimental') {
+            return [category.id, experimentalTemplateCount];
           }
           return [
             category.id,
@@ -585,7 +600,7 @@ export default function TemplateBrowserDialog() {
           ];
         }),
       ),
-    [effectiveFilter, form, publishedTemplateCount],
+    [effectiveFilter, experimentalTemplateCount, form, publishedTemplateCount],
   );
   const visibleCategories = useMemo(
     () =>

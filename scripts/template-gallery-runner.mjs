@@ -33,6 +33,12 @@ import {
   resolvedModelReposFromOutput,
   selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
+import {
+  closeWorkflowBrowser,
+  createWorkflowBrowserSessionGuard,
+  isWorkflowBrowserSessionError,
+  launchWorkflowBrowser,
+} from './workflow-library-browser-session.mjs';
 
 const ROOT = process.cwd();
 const ARTIFACT_ROOT = join(ROOT, 'artifacts', 'template-gallery');
@@ -41,6 +47,8 @@ const DEFAULT_PORT = Number(process.env.MODIFF_GALLERY_FRONTEND_PORT || 5192);
 const DEFAULT_BACKEND_DIR = process.env.MODIFF_BACKEND_DIR || resolve(ROOT, '..', 'MoDiff');
 const RUNNER_LOCK_PATH = join(ARTIFACT_ROOT, '.runner.lock');
 export const RUNNER_INFRASTRUCTURE_EXIT_CODE = 70;
+export const GALLERY_BROWSER_RECOVERY_ATTEMPTS = 2;
+const GALLERY_BROWSER_SESSION_LABEL = 'template Gallery';
 const DEFAULT_INPUT_BINDINGS_PATH = join(
   ROOT,
   'public',
@@ -648,6 +656,86 @@ export async function installEphemeralGalleryStorage(page) {
   });
 }
 
+export function createGalleryBrowserSessionGuard(options) {
+  return createWorkflowBrowserSessionGuard({
+    ...options,
+    sessionLabel: GALLERY_BROWSER_SESSION_LABEL,
+  });
+}
+
+export function isGalleryBrowserLifecycleFailure(error) {
+  if (isWorkflowBrowserSessionError(error)) return true;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /Target page, context or browser has been closed|Target crashed|Page crashed|browser has been closed/i.test(
+    message,
+  );
+}
+
+export async function runWithGalleryBrowserRecovery(action, recover, attempts = GALLERY_BROWSER_RECOVERY_ATTEMPTS) {
+  let recovery = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return { value: await action(attempt), recovery };
+    } catch (error) {
+      if (!isGalleryBrowserLifecycleFailure(error) || attempt === attempts) throw error;
+      recovery = await recover(error, attempt + 1);
+    }
+  }
+  throw new Error('Template Gallery browser recovery exhausted without a terminal result.');
+}
+
+async function closeGalleryBrowser(browser) {
+  await closeWorkflowBrowser(browser, undefined, GALLERY_BROWSER_SESSION_LABEL);
+}
+
+async function withGalleryBrowserPage(args, frontendUrl, operation, action, operationTimeoutMs = 180_000) {
+  const browser = await launchWorkflowBrowser(
+    () => chromium.launch({ headless: args.headless, args: ['--disable-dev-shm-usage'] }),
+    { sessionLabel: GALLERY_BROWSER_SESSION_LABEL },
+  );
+  let guard = null;
+  let operationError = null;
+  try {
+    const page = await browser.newPage();
+    guard = createGalleryBrowserSessionGuard({
+      browser,
+      page,
+      operationTimeoutMs: Math.max(180_000, Number(operationTimeoutMs) || 0),
+    });
+    const websocketEvents = [];
+    page.on('websocket', (websocket) => {
+      websocket.on('framereceived', (event) => {
+        try {
+          websocketEvents.push(JSON.parse(String(event.payload)));
+        } catch {
+          websocketEvents.push({ raw: String(event.payload) });
+        }
+      });
+    });
+    await guard.run('initializing the app page', async (currentPage) => {
+      await installEphemeralGalleryStorage(currentPage);
+      await currentPage.goto(frontendUrl, { waitUntil: 'domcontentloaded' });
+      await currentPage.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+      await currentPage.waitForFunction(
+        () => Boolean(window.__MODIFF_E2E__?.getState()?.websocket?.isConnected),
+        null,
+        { timeout: 60_000 },
+      );
+    });
+    return await guard.run(operation, (currentPage) => action(currentPage, websocketEvents));
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    guard?.dispose();
+    try {
+      await closeGalleryBrowser(browser);
+    } catch (closeError) {
+      if (!operationError) throw closeError;
+    }
+  }
+}
+
 export function galleryGenerateInvocation({
   mediaDir,
   modelRevision,
@@ -781,6 +869,7 @@ async function recoverOutputFromBackendCache(page, { receipt, server, taskId, te
 
 export async function waitForTaskTerminal(page, { taskId, server, timeoutMs = 120_000 }) {
   const started = Date.now();
+  let backendUnreachableStreak = 0;
   while (Date.now() - started < timeoutMs) {
     const observation = await page.evaluate((expectedTaskId) => {
       const state = window.__MODIFF_E2E__?.getState();
@@ -800,6 +889,21 @@ export async function waitForTaskTerminal(page, { taskId, server, timeoutMs = 12
     }
     const failureMessage = failureMessageForRun(observation?.failure, { taskId, startedAt: started });
     if (failureMessage) throw new Error(`Task ${taskId} failed while waiting for terminal state: ${failureMessage}`);
+    let backendReachable = true;
+    try {
+      const response = await fetch(new URL('/health', server), { signal: AbortSignal.timeout(5_000) });
+      backendReachable = response.ok;
+    } catch {
+      backendReachable = false;
+    }
+    if (!backendReachable) {
+      backendUnreachableStreak += 1;
+      if (backendUnreachableStreak >= 24) {
+        throw new Error(`Backend became unreachable while waiting for task ${taskId}.`);
+      }
+    } else {
+      backendUnreachableStreak = 0;
+    }
     const receipt = await queueReceiptForTask(server, taskId);
     if (receipt?.status === 'completed') return receipt;
     throwForTerminalReceipt(receipt, taskId);
@@ -920,6 +1024,7 @@ export async function requireAppDownloadsIdle(server, fetchImpl = fetch, { timeo
 }
 
 export function isGalleryInfrastructureFailure(error) {
+  if (isGalleryBrowserLifecycleFailure(error)) return true;
   const message = error instanceof Error ? error.message : String(error ?? '');
   return [
     /Failed to fetch/i,
@@ -2123,222 +2228,225 @@ async function main() {
     });
     await requireAppDownloadsIdle(args.server, fetch, { timeoutMs: Math.min(args.queueWaitTimeoutMs, 120_000) });
     const frontend = await ensureFrontend(args, managedProcesses);
-    const browser = await chromium.launch({ headless: args.headless });
-    try {
-      const page = await browser.newPage();
-      // Gallery qualification is an isolated proof session. Persisting imported
-      // media and workflow state can exceed the browser's per-origin quota before
-      // a graph is submitted, while none of that state is needed after capture.
-      await installEphemeralGalleryStorage(page);
-      const websocketEvents = [];
-      page.on('websocket', (websocket) => {
-        websocket.on('framereceived', (event) => {
-          try {
-            websocketEvents.push(JSON.parse(String(event.payload)));
-          } catch {
-            websocketEvents.push({ raw: String(event.payload) });
-          }
-        });
-      });
-      await page.goto(frontend.url, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-      await page.waitForFunction(
-        () => {
-          const state = window.__MODIFF_E2E__?.getState();
-          return Boolean(state?.websocket?.isConnected);
-        },
-        null,
-        { timeout: 60_000 },
-      );
-
-      if (args.installModel) {
-        const installResult = await page.evaluate(
-          ({ repoId, repair, files }) => window.__MODIFF_E2E__?.installHfModel(repoId, repair, files),
-          {
+    if (args.installModel) {
+      const installResult = await withGalleryBrowserPage(
+        args,
+        frontend.url,
+        `installing ${args.installModel}`,
+        (page) =>
+          page.evaluate(({ repoId, repair, files }) => window.__MODIFF_E2E__?.installHfModel(repoId, repair, files), {
             repoId: args.installModel,
             repair: Boolean(args.repairModel),
             files: args.installModelFiles,
-          },
-        );
-        const report = {
-          mode: 'install-model',
-          artifactDir,
-          frontend,
-          backend,
-          server: args.server,
-          repoId: args.installModel,
-          requestedFiles: args.installModelFiles,
-          repair: Boolean(args.repairModel),
-          result: installResult,
-        };
-        writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2));
-        console.log(JSON.stringify(report, null, 2));
-        return;
-      }
-
-      // A freshly started frontend can connect before its initial model-index
-      // discovery has settled. Refresh explicitly so app-installed snapshots are
-      // the readiness source for every proof run.
-      await page.evaluate(() => window.__MODIFF_E2E__?.refreshModelIndexes());
-
-      const templates = selectedTemplates(
-        await page.evaluate(
-          (includePlanning) => window.__MODIFF_E2E__?.listTemplates(includePlanning) ?? [],
-          args.allowBlockedProbe,
-        ),
-        args,
+          }),
+        Math.max(args.timeoutMs, 180_000),
       );
-      if (
-        args.reuseExistingRuntimeKey &&
-        String(templates[0]?.runtimeReuseKey ?? '') !== args.reuseExistingRuntimeKey
-      ) {
-        throw new Error(
-          `The first template loader key does not match --reuse-existing-runtime-key (${args.reuseExistingRuntimeKey}).`,
-        );
-      }
-      if (
-        !args.sourceOnly &&
-        templates.length > 0 &&
-        templates.every((template) => template.mediaType === 'audio' || template.mediaType === 'video')
-      ) {
-        args.reviewed = true;
-        args.runs = 1;
-      }
-      const results = [];
-      let previousTemplate = args.reuseExistingRuntimeKey ? { runtimeReuseKey: args.reuseExistingRuntimeKey } : null;
-      for (const template of templates) {
-        try {
-          await requireAppDownloadsIdle(args.server, fetch, {
-            timeoutMs: Math.min(args.queueWaitTimeoutMs, 120_000),
-          });
-          const templateArgs = argsForTemplateInputs(args, template);
-          const shouldPrepare = shouldPrepareRuntimeForTemplate(
-            previousTemplate,
-            template,
-            args.reuseRuntimeWithinModel,
-          );
-          const runtimePreparation = shouldPrepare
-            ? await prepareRuntimeForTemplate(args.server, fetch, { timeoutMs: args.queueWaitTimeoutMs })
-            : null;
-          const result = await runTemplate(
-            page,
-            template,
-            templateArgs,
-            mediaDir,
-            websocketEvents,
-            templateRuntime,
-            backendSource,
-          );
-          if (args.recordQualification && !result.sourceOnly && !result.skipped) {
-            const provenancePath = result.outputs?.at(-1)?.evidence?.provenance;
-            if (!provenancePath) {
-              throw new Error(`Template ${template.id} completed without a provenance file to record.`);
-            }
-            const qualification = spawnSync(process.execPath, [join(ROOT, 'scripts', 'template-qualification.mjs')], {
-              cwd: ROOT,
-              encoding: 'utf8',
-              env: {
-                ...process.env,
-                MODIFF_BACKEND_DIR: args.backendDir,
-                MODIFF_TEMPLATE_PROVENANCE: provenancePath,
-              },
-            });
-            if (qualification.error || qualification.status !== 0) {
-              throw new Error(
-                `Could not record ${template.id} qualification: ${
-                  qualification.error?.message ?? qualification.stderr?.trim() ?? `exit ${qualification.status}`
-                }`,
-              );
-            }
-            result.qualification = {
-              recorded: true,
-              provenancePath,
-              message: qualification.stdout.trim(),
-            };
-          }
-          if (args.recordResourceQualification && !result.sourceOnly && !result.skipped) {
-            const provenancePath = result.outputs?.at(-1)?.evidence?.provenance;
-            if (!provenancePath) {
-              throw new Error(
-                `Template ${template.id} completed without a provenance file to record as resource evidence.`,
-              );
-            }
-            const qualification = spawnSync(process.execPath, [join(ROOT, 'scripts', 'resource-qualification.mjs')], {
-              cwd: ROOT,
-              encoding: 'utf8',
-              env: {
-                ...process.env,
-                MODIFF_BACKEND_DIR: args.backendDir,
-                MODIFF_RESOURCE_PROVENANCE: provenancePath,
-              },
-            });
-            if (qualification.error || qualification.status !== 0) {
-              throw new Error(
-                `Could not record ${template.id} resource qualification: ${
-                  qualification.error?.message ?? qualification.stderr?.trim() ?? `exit ${qualification.status}`
-                }`,
-              );
-            }
-            result.resourceQualification = {
-              recorded: true,
-              provenancePath,
-              message: qualification.stdout.trim(),
-            };
-          }
-          if (runtimePreparation) result.runtimePreparation = runtimePreparation;
-          if (!shouldPrepare) {
-            result.runtimeReuse = {
-              modelType: template.modelType,
-              previousTemplateId: previousTemplate?.id ?? null,
-              proof: 'matching-loader-contract-key-and-backend-loader-cache-eligible',
-            };
-          }
-          results.push(result);
-          previousTemplate = template;
-        } catch (error) {
-          results.push({
-            templateId: template.id,
-            skipped: true,
-            reason: error instanceof Error ? error.message : String(error),
-            failureKind: isGalleryInfrastructureFailure(error) ? 'infrastructure' : 'template',
-            outputs: error?.partialOutputs ?? [],
-          });
-          previousTemplate = null;
-          if (args.stopOnFailure) break;
-        }
-      }
-      const manifestGeneration = args.sourceOnly
-        ? {
-            skipped: true,
-            reason: 'Source-only capture never generates or publishes a gallery manifest.',
-          }
-        : args.recordQualification || args.recordResourceQualification
-          ? {
-              skipped: true,
-              reason:
-                'Qualification-only capture records execution receipts without generating or publishing gallery media.',
-            }
-          : await maybeGenerateManifest(args, artifactDir, mediaDir, results);
       const report = {
-        mode: args.sourceOnly ? 'source-only' : 'run',
+        mode: 'install-model',
         artifactDir,
-        mediaDir,
         frontend,
         backend,
         server: args.server,
-        templates: templates.length,
-        captured: results.filter((item) => !item.skipped).length,
-        skipped: results.filter((item) => item.skipped),
-        results,
-        manifestGeneration,
+        repoId: args.installModel,
+        requestedFiles: args.installModelFiles,
+        repair: Boolean(args.repairModel),
+        result: installResult,
       };
       writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2));
       console.log(JSON.stringify(report, null, 2));
-      const exitCode = galleryRunExitCode(results, manifestGeneration);
-      if (exitCode !== 0) process.exitCode = exitCode;
-    } finally {
-      await browser.close();
+      return;
     }
+
+    const allTemplates = await withGalleryBrowserPage(
+      args,
+      frontend.url,
+      'loading the template catalog',
+      async (page) => {
+        // A freshly started frontend can connect before its initial model-index
+        // discovery has settled. Refresh explicitly so app-installed snapshots
+        // are the readiness source for every proof run.
+        await page.evaluate(() => window.__MODIFF_E2E__?.refreshModelIndexes());
+        return page.evaluate(
+          (includePlanning) => window.__MODIFF_E2E__?.listTemplates(includePlanning) ?? [],
+          args.allowBlockedProbe,
+        );
+      },
+    );
+    const templates = selectedTemplates(allTemplates, args);
+    if (args.reuseExistingRuntimeKey && String(templates[0]?.runtimeReuseKey ?? '') !== args.reuseExistingRuntimeKey) {
+      throw new Error(
+        `The first template loader key does not match --reuse-existing-runtime-key (${args.reuseExistingRuntimeKey}).`,
+      );
+    }
+    if (
+      !args.sourceOnly &&
+      templates.length > 0 &&
+      templates.every((template) => template.mediaType === 'audio' || template.mediaType === 'video')
+    ) {
+      args.reviewed = true;
+      args.runs = 1;
+    }
+    const results = [];
+    let previousTemplate = args.reuseExistingRuntimeKey ? { runtimeReuseKey: args.reuseExistingRuntimeKey } : null;
+    for (const template of templates) {
+      try {
+        await requireAppDownloadsIdle(args.server, fetch, {
+          timeoutMs: Math.min(args.queueWaitTimeoutMs, 120_000),
+        });
+        const templateArgs = argsForTemplateInputs(args, template);
+        const shouldPrepare = shouldPrepareRuntimeForTemplate(previousTemplate, template, args.reuseRuntimeWithinModel);
+        const runtimePreparation = shouldPrepare
+          ? await prepareRuntimeForTemplate(args.server, fetch, { timeoutMs: args.queueWaitTimeoutMs })
+          : null;
+        const browserExecution = await runWithGalleryBrowserRecovery(
+          () =>
+            withGalleryBrowserPage(
+              args,
+              frontend.url,
+              `capturing template ${template.id}`,
+              async (page, websocketEvents) => {
+                await page.evaluate(() => window.__MODIFF_E2E__?.refreshModelIndexes());
+                return runTemplate(
+                  page,
+                  template,
+                  templateArgs,
+                  mediaDir,
+                  websocketEvents,
+                  templateRuntime,
+                  backendSource,
+                );
+              },
+              args.timeoutMs * args.runs + 180_000,
+            ),
+          async (error, nextAttempt) => {
+            // The renderer may disappear after the backend accepted a graph.
+            // Wait for that attributed work to reach a terminal state, then
+            // clear its node cache before retrying the same template in a new
+            // browser. This prevents both overlapping executions and vacuous
+            // cached duplicate evidence.
+            await waitForQueueIdle(args.server, fetch, {
+              timeoutMs: args.queueWaitTimeoutMs,
+              pollMs: 1_000,
+            });
+            const cleanup = await prepareRuntimeForTemplate(args.server, fetch, {
+              timeoutMs: args.queueWaitTimeoutMs,
+            });
+            return {
+              attempts: nextAttempt,
+              reason: error instanceof Error ? error.message : String(error),
+              cleanup,
+            };
+          },
+        );
+        const result = browserExecution.value;
+        if (browserExecution.recovery) result.browserRecovery = browserExecution.recovery;
+        if (args.recordQualification && !result.sourceOnly && !result.skipped) {
+          const provenancePath = result.outputs?.at(-1)?.evidence?.provenance;
+          if (!provenancePath) {
+            throw new Error(`Template ${template.id} completed without a provenance file to record.`);
+          }
+          const qualification = spawnSync(process.execPath, [join(ROOT, 'scripts', 'template-qualification.mjs')], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              MODIFF_BACKEND_DIR: args.backendDir,
+              MODIFF_TEMPLATE_PROVENANCE: provenancePath,
+            },
+          });
+          if (qualification.error || qualification.status !== 0) {
+            throw new Error(
+              `Could not record ${template.id} qualification: ${
+                qualification.error?.message ?? qualification.stderr?.trim() ?? `exit ${qualification.status}`
+              }`,
+            );
+          }
+          result.qualification = {
+            recorded: true,
+            provenancePath,
+            message: qualification.stdout.trim(),
+          };
+        }
+        if (args.recordResourceQualification && !result.sourceOnly && !result.skipped) {
+          const provenancePath = result.outputs?.at(-1)?.evidence?.provenance;
+          if (!provenancePath) {
+            throw new Error(
+              `Template ${template.id} completed without a provenance file to record as resource evidence.`,
+            );
+          }
+          const qualification = spawnSync(process.execPath, [join(ROOT, 'scripts', 'resource-qualification.mjs')], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              MODIFF_BACKEND_DIR: args.backendDir,
+              MODIFF_RESOURCE_PROVENANCE: provenancePath,
+            },
+          });
+          if (qualification.error || qualification.status !== 0) {
+            throw new Error(
+              `Could not record ${template.id} resource qualification: ${
+                qualification.error?.message ?? qualification.stderr?.trim() ?? `exit ${qualification.status}`
+              }`,
+            );
+          }
+          result.resourceQualification = {
+            recorded: true,
+            provenancePath,
+            message: qualification.stdout.trim(),
+          };
+        }
+        if (runtimePreparation) result.runtimePreparation = runtimePreparation;
+        if (!shouldPrepare) {
+          result.runtimeReuse = {
+            modelType: template.modelType,
+            previousTemplateId: previousTemplate?.id ?? null,
+            proof: 'matching-loader-contract-key-and-backend-loader-cache-eligible',
+          };
+        }
+        results.push(result);
+        previousTemplate = template;
+      } catch (error) {
+        results.push({
+          templateId: template.id,
+          skipped: true,
+          reason: error instanceof Error ? error.message : String(error),
+          failureKind: isGalleryInfrastructureFailure(error) ? 'infrastructure' : 'template',
+          outputs: error?.partialOutputs ?? [],
+        });
+        previousTemplate = null;
+        if (args.stopOnFailure) break;
+      }
+    }
+    const manifestGeneration = args.sourceOnly
+      ? {
+          skipped: true,
+          reason: 'Source-only capture never generates or publishes a gallery manifest.',
+        }
+      : args.recordQualification || args.recordResourceQualification
+        ? {
+            skipped: true,
+            reason:
+              'Qualification-only capture records execution receipts without generating or publishing gallery media.',
+          }
+        : await maybeGenerateManifest(args, artifactDir, mediaDir, results);
+    const report = {
+      mode: args.sourceOnly ? 'source-only' : 'run',
+      artifactDir,
+      mediaDir,
+      frontend,
+      backend,
+      server: args.server,
+      templates: templates.length,
+      captured: results.filter((item) => !item.skipped).length,
+      skipped: results.filter((item) => item.skipped),
+      results,
+      manifestGeneration,
+    };
+    writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(report, null, 2));
+    const exitCode = galleryRunExitCode(results, manifestGeneration);
+    if (exitCode !== 0) process.exitCode = exitCode;
   } finally {
     for (const managed of managedProcesses.reverse()) {
       if (managed.role === 'frontend' && args.keepFrontend) continue;

@@ -22,6 +22,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "gallery:run": "node scripts/template-gallery-runner.mjs",
+    "campaign:retry-ledger": "node scripts/generation-campaign-retry-ledger.mjs",
     "gallery:source": "node scripts/template-gallery-source-runner.mjs",
     "gallery:inputs": "node scripts/template-gallery-input-tools.mjs",
     "gallery:runtime-inputs": "node scripts/template-default-inputs.mjs",
@@ -83,7 +84,7 @@
     "test:asset-storage": "node --test scripts/template-assets.test.mjs && node scripts/run-python.mjs scripts/template-gallery-assets.test.py",
     "test:workflow-save": "node --test scripts/workflow-save.test.mjs",
     "test:styles": "node --test scripts/modiff-style.test.mjs",
-    "test:unit": "npm run test:styles && npm run test:templates && npm run test:task-templates && npm run test:template-quality && npm run gallery:card-coverage && npm run test:release-contract && npm run test:live-qwen-proof && npm run test:gallery-harness && npm run test:gallery-runner && npm run test:gallery-queue && npm run test:driver-contract && npm run test:graph-export && npm run test:graph-mutations && npm run test:graph-visuals && npm run test:media-viewer && npm run test:requests && npm run test:run-coordinator && npm run test:run-activity && npm run test:template-input-preview && npm run test:asset-storage && npm run test:workflow-save",
+    "test:unit": "npm run test:styles && npm run test:templates && npm run test:task-templates && npm run test:template-quality && npm run gallery:card-coverage && npm run test:release-contract && npm run test:live-qwen-proof && npm run test:gallery-harness && npm run test:gallery-runner && node --test scripts/generation-campaign-retry-ledger.test.mjs && npm run test:gallery-queue && npm run test:driver-contract && npm run test:graph-export && npm run test:graph-mutations && npm run test:graph-visuals && npm run test:media-viewer && npm run test:requests && npm run test:run-coordinator && npm run test:run-activity && npm run test:template-input-preview && npm run test:asset-storage && npm run test:workflow-save",
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview"
   },

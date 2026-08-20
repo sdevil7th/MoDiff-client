@@ -196,7 +196,11 @@ export function buildApiGraphExport({
 
       const randomField =
         paramData.display === 'random' ? resolveRandomFieldValue(node, paramName, paramData, setParam) : null;
-      const exportValue = randomField ? randomField.value : paramData.value;
+      // The executable graph contains values, not the full registry schema.
+      // Preserve backend-owned defaults when a field has not been edited;
+      // otherwise JSON serialization drops `undefined` and the worker sees an
+      // empty parameter instead of the exact structured model selection.
+      const exportValue = randomField ? randomField.value : (paramData.value ?? paramData.default);
 
       const param: ApiGraphExport['nodes'][string]['params'][string] = {
         value: exportValue as NodeParamValue,

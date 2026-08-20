@@ -1012,6 +1012,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/custom_modules`, {
           signal,
+          timeoutMs: 120_000,
           parse: (value) => parseCustomModules(value, 'Could not read custom modules.'),
         }),
       (data) => ({ customModules: data.modules, customModuleError: null }),
@@ -1068,6 +1069,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/runtime/status`, {
           signal,
+          timeoutMs: 120_000,
           parse: parseRuntimeStatus,
         }),
       (runtimeStatus) => {
@@ -1092,6 +1094,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/runtime/optional-runtimes`, {
           signal,
+          timeoutMs: 120_000,
           parse: parseOptionalRuntimeCatalog,
         }),
       (optionalRuntimeCatalog) => ({ optionalRuntimeCatalog }),
@@ -1111,6 +1114,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/nodes`, {
           signal,
+          timeoutMs: 120_000,
           parse: parseNodesResponse,
         }),
       (data) => ({ nodesRegistry: data.nodes, instance: data.instance, error: null }),
@@ -1135,6 +1139,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         requestJson(`${config.serverAddress}/hf_cache?compact=1&refresh=${refresh}`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: (value) => parseArrayResponse(value, 'Hugging Face cache'),
         }),
       (hfCache) => ({ hfCache }),
@@ -1151,6 +1156,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         requestJson(`${config.serverAddress}/local_models?refresh=${refresh}`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: (value) => parseArrayResponse(value, 'Local models'),
         }),
       (localModels) => ({ localModels }),
@@ -1167,6 +1173,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         requestJson(`${config.serverAddress}/model_cache/diagnostics?refresh=${refresh}`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: parseModelCacheDiagnostics,
         }),
       (modelCacheDiagnostics) => ({ modelCacheDiagnostics }),
@@ -1183,6 +1190,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         requestJson(`${config.serverAddress}/model_capabilities`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: parseStudioModelCapabilities,
         }),
       ({ authoritative, capabilities, taskTemplateContracts }) => ({
