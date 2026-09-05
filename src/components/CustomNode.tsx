@@ -24,6 +24,7 @@ import {
   Play,
   Power,
   RefreshCcw,
+  Save,
   Trash2,
   TriangleAlert,
 } from 'lucide-react';
@@ -62,6 +63,7 @@ import {
 } from '../ui/GraphMenuAction';
 import { executionProgressDetail } from '../studio/executionProgress';
 import type { ExecutionProgress } from '../studio/types';
+import BlockSaveDialogV2 from './BlockSaveDialogV2';
 
 const MAX_NODE_WIDTH = modiffLayout.maxNodeWidth;
 
@@ -140,12 +142,26 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const reactFlowStore = useStoreApi();
   const scheduleNodeLayoutSync = useNodeLayoutSync(node.id, nodeRef);
-  const validationSeverity = node.data.uiState?.validationSeverity;
-  const validationMessage = node.data.uiState?.validationMessage || node.data.uiState?.errorMessage;
+  const isClusterGraphProjection = node.data.huggingFaceClusterRole === 'execution';
+  const isModularBlockProjection = useFlowStore((state) => {
+    const ownerId = node.data.blockProjectionOwnerId;
+    const semanticNodeId = node.data.blockProjectionNodeId;
+    if (!ownerId || !semanticNodeId) return false;
+    const owner = state.nodes.find((candidate) => candidate.id === ownerId);
+    return Boolean(
+      owner?.data.blockInstanceV2?.effectiveGraph.nodes.find(({ nodeId }) => nodeId === semanticNodeId)
+        ?.modularDiffusers?.kind === 'upstream_block',
+    );
+  });
+  const validationSeverity = isClusterGraphProjection ? undefined : node.data.uiState?.validationSeverity;
+  const validationMessage = isClusterGraphProjection
+    ? undefined
+    : node.data.uiState?.validationMessage || node.data.uiState?.errorMessage;
   const recentChangeLabel = node.data.uiState?.recentChangeLabel;
   const isError = validationSeverity === 'error';
   const isCollapsed = Boolean(node.data.uiState?.collapsed || node.data.minimized);
   const isDisabledForRun = Boolean(node.data.uiState?.disabled);
+  const showDisabledForRun = isDisabledForRun && !isClusterGraphProjection;
 
   const handleUpdateStore = useCallback(
     (param: string, value: unknown, key?: keyof NodeParams) => {
@@ -224,6 +240,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     enqueueSnackbar('Node info copied', { variant: 'success', autoHideDuration: 1600 });
   }, [closeContextMenu, node.data.action, node.data.module, node.id]);
 
+  const [saveChoicesOpen, setSaveChoicesOpen] = useState(false);
+
   const onResizeStart = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
       beginHistoryTransaction('Resize node');
@@ -283,7 +301,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
         normalizeDataType(`${node.data.module}_${node.data.action}`),
         normalizeDataType(node.data.module),
         dataTypeClass(node.data.category),
-        isDisabledForRun && 'opacity-60',
+        showDisabledForRun && 'opacity-60',
         recentChangeLabel && 'outline-hf-yellow border-hf-yellow shadow-modiff-panel',
       )}
       nodeStyle={style}
@@ -295,7 +313,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       <CustomNodeHeaderFrame headerColor={node.data.headerColor}>
         <div className="min-w-0 flex-1">
           <span className="block truncate text-sm font-bold">{label}</span>
-          {isDisabledForRun && <span className="block truncate text-xs text-hf-orange">Disabled for run export</span>}
+          {showDisabledForRun && <span className="block truncate text-xs text-hf-orange">Disabled for run export</span>}
           {recentChangeLabel && <span className="block truncate text-xs text-hf-yellow">{recentChangeLabel}</span>}
         </div>
         <div className="nodrag flex items-center gap-1">
@@ -495,6 +513,18 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           >
             Duplicate
           </ContextMenuItem>
+          {isModularBlockProjection ? (
+            <ContextMenuItem
+              data-testid="node-menu-save-modular-subtree"
+              icon={<Save size={15} />}
+              onClick={() => {
+                closeContextMenu();
+                setSaveChoicesOpen(true);
+              }}
+            >
+              Save Block changes
+            </ContextMenuItem>
+          ) : null}
           <ContextMenuItem
             data-testid="node-menu-collapse-toggle"
             icon={isCollapsed ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
@@ -607,6 +637,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           </ModiffButton>
         </NodePopover>
       )}
+      {saveChoicesOpen ? <BlockSaveDialogV2 nodeId={node.id} onClose={() => setSaveChoicesOpen(false)} /> : null}
     </CustomNodeFrame>
   );
 });

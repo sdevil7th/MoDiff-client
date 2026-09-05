@@ -319,6 +319,11 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
   ) {
     return 'SpandrelVideoUpscale';
   }
+  if (
+    nodes.some((node) => node.data?.studioRole === 'imageUpscaler' || nodeKey(node) === 'modules.Spandrel.Upscaler')
+  ) {
+    return 'SpandrelImageUpscale';
+  }
   const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
   if (explicit) return explicit;
   const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
@@ -384,6 +389,9 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   if (modelType === 'SpandrelVideoUpscale' || roles.has('videoUpscaler')) {
     return 'video_upscale';
   }
+  if (modelType === 'SpandrelImageUpscale' || roles.has('imageUpscaler')) {
+    return 'image_upscale';
+  }
   if (
     modelType === 'ShapEPipeline' ||
     roles.has('diffusersThreeDGenerate') ||
@@ -428,13 +436,17 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
 
   if (
     modelType === 'HuggingFaceSpeechRecognitionModel' ||
+    modelType === 'HuggingFaceCTCSpeechRecognitionModel' ||
     roles.has('transcribeAudio') ||
-    keys.has('modules.HuggingFaceSpeech.TranscribeAudio')
+    keys.has('modules.HuggingFaceSpeech.TranscribeAudio') ||
+    keys.has('modules.HuggingFaceSpeech.TranscribeCTCAudio')
   ) {
     const actionNode = findNode(
       nodes,
       (node) =>
-        node.data?.studioRole === 'transcribeAudio' || nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeAudio',
+        node.data?.studioRole === 'transcribeAudio' ||
+        nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeAudio' ||
+        nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeCTCAudio',
     );
     return stringValue(paramValue(actionNode, ['task'])) === 'translate' ? 'speech_translation' : 'speech_to_text';
   }
@@ -545,6 +557,7 @@ export function inferStudioFormFromWorkflow(
         'diffusersImagePipeline',
         'audioPipeline',
         'speechModel',
+        'imageUpscaler',
         'videoUpscaler',
       ].includes(String(node.data?.studioRole)) ||
       [
@@ -553,6 +566,7 @@ export function inferStudioFormFromWorkflow(
         'LoadInpaintPipeline',
         'LoadSpeechRecognitionModel',
         'LoadAnyToAnyModel',
+        'Upscaler',
         'UpscaleVideo',
       ].includes(String(node.data?.action)),
   );

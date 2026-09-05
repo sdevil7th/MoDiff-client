@@ -32,6 +32,7 @@ export function useAutoResourcePlanSync() {
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
   const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
   const launcherDismissed = useStudioStore((state) => state.launcherDismissed);
+  const canvasTransitionType = useStudioStore((state) => state.canvasTransition?.type);
   const graphBindingFingerprint = useStudioStore((state) => state.graphBinding?.fingerprint);
   const nodeCount = useFlowStore((state) => state.nodes.length);
   const setAutoResourcePlan = useStudioStore((state) => state.setAutoResourcePlan);
@@ -110,6 +111,7 @@ export function useAutoResourcePlanSync() {
 
   useEffect(() => {
     if (
+      canvasTransitionType === 'template_graph_building' ||
       form.resourceMode !== 'auto' ||
       !graphBindingFingerprint ||
       !autoResourcePlan ||
@@ -138,5 +140,12 @@ export function useAutoResourcePlanSync() {
         useStudioStore.getState().setLastError(String(error));
       });
     }
-  }, [autoPlanCheckedAt, autoPlanExecution, autoResourcePlan, form.resourceMode, graphBindingFingerprint]);
+  }, [
+    autoPlanCheckedAt,
+    autoPlanExecution,
+    autoResourcePlan,
+    canvasTransitionType,
+    form.resourceMode,
+    graphBindingFingerprint,
+  ]);
 }

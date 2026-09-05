@@ -18,10 +18,41 @@ import {
   isTemplateExactEligible,
   stableStringify,
 } from './templateExactness';
-import { STUDIO_TEMPLATES } from './templates';
+import { getStudioTemplateLoraBaseModel, STUDIO_TEMPLATES } from './templates';
 import type { StudioFormState } from './types';
 
 const GIB = 1024 ** 3;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+/**
+ * Keep the durable workflow shape needed for backend/cross-session recovery,
+ * but never copy ephemeral execution authority receipts into transport
+ * metadata. The live/saved workflow remains untouched and executable graph
+ * nodes are compiled independently before this metadata is attached.
+ */
+function workflowSnapshotForTransport(snapshot: JsonObject): JsonObject {
+  const nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : null;
+  if (!nodes) return snapshot;
+  let changed = false;
+  const sanitizedNodes = nodes.map((node) => {
+    if (!isRecord(node) || !isRecord(node.data) || !isRecord(node.data.blockInstanceV2)) return node;
+    changed = true;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        blockInstanceV2: {
+          ...node.data.blockInstanceV2,
+          authorities: [],
+        },
+      },
+    };
+  });
+  return changed ? ({ ...snapshot, nodes: sanitizedNodes } as JsonObject) : snapshot;
+}
 
 function cudaIndexFromDevice(device: string) {
   const match = device.trim().match(/^cuda(?::(\d+))?$/i);
@@ -42,18 +73,21 @@ export type StudioRunCorrelation = {
 export function applyRunCorrelationHints(
   apiGraph: APIGraphExport,
   runIdentity: StudioRunCorrelation,
-  options: { targetNodeId?: string } = {},
+  options: { targetNodeId?: string; formSnapshot?: StudioFormState } = {},
 ): APIGraphExport {
   const studio = useStudioStore.getState();
   const workflowTab = studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId);
   const liveGraph = useFlowStore.getState().toObject();
-  const workflowSnapshot =
+  const baseWorkflowSnapshot =
     workflowTab?.snapshot ??
     ({
       nodes: liveGraph.nodes,
       edges: liveGraph.edges,
       viewport: liveGraph.viewport,
     } as unknown as JsonObject);
+  const workflowSnapshot = options.formSnapshot
+    ? ({ ...baseWorkflowSnapshot, studioForm: options.formSnapshot } as unknown as JsonObject)
+    : baseWorkflowSnapshot;
 
   return {
     ...apiGraph,
@@ -64,7 +98,7 @@ export function applyRunCorrelationHints(
       ...(studio.activeWorkflowTabId ? { workflowTabId: studio.activeWorkflowTabId } : {}),
       workflowCanvasEpoch: studio.workflowCanvasEpoch,
       ...(workflowTab?.title ? { workflowTitle: workflowTab.title } : {}),
-      workflowSnapshot: workflowSnapshot as unknown as JsonObject,
+      workflowSnapshot: workflowSnapshotForTransport(workflowSnapshot as unknown as JsonObject),
       ...(options.targetNodeId ? { nodeId: options.targetNodeId } : {}),
     },
   };
@@ -75,8 +109,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   const baseForm = studio.form;
   const autoResourcePlan = studio.autoResourcePlan;
   const auto = baseForm.resourceMode === 'auto';
-  const activeTemplate = STUDIO_TEMPLATES.find((template) => template.id === studio.activeTemplateId);
-  const templateBaseModel = activeTemplate?.workflowBlockSettings?.lora?.baseModel;
+  const templateBaseModel = getStudioTemplateLoraBaseModel(studio.activeTemplateId);
   const templateBaseModelRepo = templateBaseModel?.source === 'hub' ? templateBaseModel.value : undefined;
   const templateBaseModelRevision = templateBaseModel?.revision;
   const selectedCandidate = auto ? selectedAutoCandidate(autoResourcePlan, baseForm) : null;
@@ -195,6 +228,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
       resolvedArtifact,
       modelDependencies,
       studioExecutionSpec,
+      controlledGraphContracts: studio.graphBinding?.controlled?.contractIds,
       executionPath: resolvedExecutionPath,
       pipelineClass: autoCandidate?.pipelineClass,
       dtype: form.dtype,

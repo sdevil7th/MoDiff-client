@@ -50,7 +50,7 @@ The backend may use official model libraries maintained and published by Hugging
 - `src/components/Workflow.tsx` owns the React Flow canvas, graph/node drops, node search, connections, selection, and canvas-level dialogs.
 - `src/components/WorkflowTabsBar.tsx` presents local workflow snapshots managed by `useStudioStore`.
 - `src/components/WorkspacePanel.tsx` owns the right-side Studio, Queue, Setup, and conditional Run-as-app tabs.
-- `src/components/GraphFixDialog.tsx` presents deterministic repairs produced by `src/studio/graphFix.ts`; fixes remain
+- `src/components/GraphFixDialog.tsx` presents deterministic repairs produced by `src/studio/graphFixer.ts`; fixes remain
   explicit user-reviewed graph mutations.
 - `src/components/RuntimeResourceMonitor.tsx` reads the bounded `/runtime/resources` snapshot for top-bar monitoring.
 - `src/components/RuntimeOptimizationsCard.tsx` owns the Setup UI for optimization catalog, jobs, receipts,
@@ -80,7 +80,166 @@ The store persists only nodes, edges, and viewport under `modiff.flow`. Runtime,
 
 Connections are validated against handle/input rules. A normal input accepts one incoming edge unless the backend definition exposes spawn/multi-input behavior. `exportGraph(sid, targetNodeId?)` converts the visible graph into the backend graph payload.
 
+Running from a V2 Block root resolves to a terminal declared preview in its
+effective graph. An intermediate diagnostic preview cannot truncate execution
+merely because legacy lexical ordering marked it `primary`; the primary marker
+is a terminal tie-breaker and fallback.
+
 All execution surfaces, including Studio and Run as app, must submit this graph representation. Do not add a second hidden workflow model.
+
+Registered Clusters, Hub imports, and User Nodes persist one `BlockInstanceV2`
+contract. A legacy registered-Cluster migration uses
+`registeredClusterCompilerSupplement.ts` only after the backend supplies an
+exact current-route or reviewed historical compiler authority. For a reviewed
+historical mapping, the destination `BlockDefinitionV2`, effective graph, and
+public interface are compiled from a clean current registered route, its
+current profile defaults, and its current creator suggestions. Persisted
+historical prompts and parameters never participate in dynamic-field
+publication or definition hashing; they are copied afterward only into declared
+`BlockInstanceV2.values`. Unknown IDs, incompatible concrete JSON/type pairs,
+sealed/static graph rewrites, ambiguous semantic ownership, and stale mapping
+hashes fail closed. Repeating generation from identical saved bytes is
+deterministic, and each converted workflow instance owns an independent values
+object.
+
+`BlockDefinitionV2.graph` is the immutable reusable baseline;
+`BlockInstanceV2.effectiveGraph` is the only workflow-local structural copy.
+`BlockInstanceV2.values` is a sparse override map, not the complete effective
+parameter set. After saving a User Node, a fresh insertion may have no overrides
+because the saved control defaults already contain the chosen prompts/settings.
+Readers and tests must use `blockInstanceValueV2` for effective values; an absent
+override must not be confused with an explicitly empty prompt, zero or false.
+Registered Diffusers Clusters, catalog-only reviewed Diffusers workflows, and
+user-owned Blocks all use the same Block renderer. The pinned catalog currently
+maps all 94 reviewed workflows into 1,794 active ordinary V2 graph nodes at a
+maximum upstream depth of five. The unpruned source tree remains the discovery
+authority, but a Conditional/Auto placement that owns no selected descendant is
+not materialized as a portless active-graph node. It remains available in the
+Modular Diffusers library for a route that selects it. Structural availability
+does not grant Run, Auto, installation, or publication authority.
+
+Exact Modular containment is semantic metadata, not a nested persistence
+authority: `placementPath` and `parentPlacementPath` project recursive React
+Flow `parentId` relationships, while the effective execution graph remains
+flat. Every projected upstream placement uses the shared Block V2 frame and
+ordinary node controls/connectors. Fresh instances start every placement that
+owns descendants collapsed, so expanding the root reveals one level at a time.
+Expansion choices are stored only in
+`BlockInstanceV2.presentation.collapsedContainerNodeIds`; executable `custom`
+placements and structural `group` placements are equally valid containers.
+Saving any projected subtree creates an independent top-level User Node rather
+than a nested `BlockInstanceV2`. Subtree extraction filters both public-input
+and control `mirrorBindings` to retained descendants, promotes the first
+surviving target to the primary binding, and removes `mirrorBindings` when only
+one target remains. Crossing edges become explicit sockets; saved defaults use
+the current instance values. Retained controls keep their relative order and
+receive contiguous zero-based `order` values. No reference to an excluded node may survive in
+the saved `BlockDefinitionV2`, and saving must not mutate the source instance.
+
+`BlockSaveDialogV2` is shared by root headers, projected Modular headers and
+the selection toolbar. It captures the workflow context when opened, then
+`persistBlockSelectionV2Choice` validates that context and the selected
+projection's deterministic owner/node identity before any library write.
+Nested selections offer workflow-only or save-exact-subtree-as-new. They
+cannot update their owner's reusable definition: a projection has no separate
+definition identity. A reinserted saved subtree is an ordinary top-level User
+Node and can explicitly update its own mutable library definition. Cancel and
+workflow-only never write to the reusable library. This changes neither the
+`BlockDefinitionV2` schema nor the single `BlockInstanceV2` persistence authority.
+
+Declared controls are also projected onto every containing Modular Block,
+including collapsed intermediate containers. Canvas-only `block-control:`
+aliases carry the original `blockBindingV2.logicalId`; edits call the same
+owning-instance value reducer as root and leaf fields. Mirror bindings are
+deduplicated per ancestor. These aliases never enter execution exports,
+definitions, graph hashes or saved workflow authority. Initial field actions
+are suppressed on projection mount, just as for ordinary projected fields.
+
+`BlockInterfaceDialogV2` shares the deferred Configure Interface editor between
+root and internal Blocks. An internal entry point scopes **exposure through the
+owning effective interface**, not a separate nested persisted interface. Only
+entries whose complete primary/mirror binding set lies in that subtree can be
+edited there. Shared cross-branch entries and unrelated branches are preserved;
+the root editor is required to change shared consumers. Crossing link sockets
+remain derived from semantic edges. The dialog captures workflow context and
+instance state before lazy loading; changes to graph, interface, values or
+definition while it is open reject Apply. Connected-port and sealed-control
+checks remain in the store/domain reducer. Newly exposed controls inherit the
+current effective field value, including explicit zero, false, null or empty
+values. No `BlockDefinitionV2` schema extension is introduced by this editor.
+
+`BlockInstanceV2.presentation.internalLayout` stores each node's compact own
+box relative to its immediate semantic parent. It must not store a recursively
+expanded subtree size. At render time the projector measures visible children
+bottom-up, derives expanded ancestor bounds with header/right/bottom padding,
+and shifts colliding siblings without rewriting the saved preferred positions.
+If a control or connector tray changes a child's measured size, the complete
+ancestor chain is rematerialized atomically. Collapse restores the compact own
+box; it can never reuse or constrain an expanded descendant envelope.
+
+Global **Arrange graph** treats each V2 root as one layout unit. Its recursive
+projection is owned by the Block fitter and must not be resized or repositioned
+independently by the legacy graph arranger. Arrangement persists the root's
+new position in `BlockInstanceV2.presentation` in the same undo transaction;
+internal layout, values, interface and execution hashes remain unchanged.
+Click-inserting a saved User Node uses the same collision-free placement policy
+as a registered Cluster and focuses the inserted node. If the bounded placement
+search is full, placement continues beyond the occupied rightmost edge instead
+of falling back onto an existing expanded Block. Explicit drag/drop keeps the
+user's chosen target and its normal adoption/composition validation.
+
+Every visible internal Block exposes a derived connection surface. When a
+semantic edge or public binding crosses a subtree boundary, the canvas projects
+that exact descendant socket as a typed handle on the container whether the
+container is collapsed or expanded. A collapsed edge uses the container handle;
+an expanded edge remains attached to its visible leaf while the container keeps
+the same interface for ordinary external connect/reconnect gestures. The
+handle-to-leaf binding is runtime-only projection data: it is not written into
+`BlockDefinitionV2`, `effectiveGraph`, persistence, or content hashes. A
+reconnect through the visible handle updates the original semantic leaf
+endpoint. Edges wholly contained by one unopened subtree remain hidden, and
+opening it restores the original endpoints. Execution always expands the full
+flat `effectiveGraph`, independent of presentation collapse or node size.
+Internal Block resize minimums include the shared header and connector tray so
+shrinking a Block cannot clip its handles or make its crossing links disappear.
+Every contextual upstream placement is searchable under **Modular Diffusers
+Blocks**. Leaf entries insert as ordinary nodes. Container entries insert as
+source-neutral V2 fragments and, when dropped into an expanded compatible
+Block, are flattened and rebased into that root. The immutable
+`sourceDefinitionId`/`sourcePlacementPath`/`sourceExecutionScope` triplet is
+retained for exact backend composition lowering. Upstream Python identifiers
+may begin with `_`; public connector/control IDs remain on the stricter public
+ID grammar.
+
+Fresh registered insertion fetches one build-time compiled, hash-pinned entry
+from `/huggingface/registered-block-v2`. The entry is generated from the live
+backend node schemas, schema-v6 definition/admission, route ledger, and exact
+unpruned Modular hierarchy. Both runtimes validate the complete
+`BlockDefinitionV2` and its canonical SHA-256. Insertion therefore performs no
+hidden node materialization, dynamic field action, optional-runtime activation,
+Hub access, or model load. `npm run catalog:block-v2:generate` regenerates the
+compressed backend catalog; `npm run catalog:block-v2:check` recompiles all
+entries in a disposable temporary directory and is required by the main
+validation gates. The hidden dynamic-field compiler is retained only for
+explicit, receipt-bound legacy V1 migration.
+
+Values stored in a reviewed compiled catalog entry establish the initial
+`BlockInstanceV2` baseline and MUST start with customization state
+`unchanged`; they are not user edits merely because the compiler emits them
+eagerly. A later value edit compares shared public-input/control values with
+the reviewed control default, changes only `instance.values` plus the explicit
+customization marker, and can return to `unchanged` when restored to that
+default. Boundary-only inputs have no definition-owned default and become
+workflow-local as soon as a value is supplied.
+An explicitly reviewed `media_file_path` route may retain the publisher's
+media-shaped public type while binding to an ordinary internal loader's file
+browser. Execution validation recognizes only that narrow file-browser/media
+boundary adaptation; arbitrary incompatible field types still fail closed.
+Graph Fix validates the latter through the same execution expansion used by
+Run. When a structural edit makes it invalid, the owning root receives an
+explicit reviewed-structure recovery choice. Recovery restores baseline nodes
+and edges while retaining only custom additions that keep the resulting graph
+executable. It is never an automatic definition update or silent graph reset.
 
 ## Registry And Model State
 
@@ -111,6 +270,14 @@ full integrity verification. No template, discovery, or planning path invokes
 these mutations automatically.
 
 Model visibility, artifact presence, and Auto readiness are separate concepts.
+User Nodes offer source/family and saved-workflow-context library views. Context is display-only,
+derived from the existing `name — workflow` save convention; it is not `source.workflow`, which names
+the upstream execution route. Legacy names without that convention appear under an explicit fallback.
+The library shows actual V2 content revisions (or legacy save timestamps), never schema numbers as
+revision numbers. Distinct definition IDs remain independently insertable even when their names or
+contents match. Updating a definition replaces its library copy, not embedded workflow snapshots;
+the list is not an archive of overwritten revisions. Grouping/search never modifies definition hashes.
+
 `src/studio/modelCache.ts` and `artifactRequirements.ts` describe local artifact
 state. The backend `/auto_resource/plan` response is the sole Auto compatibility
 authority; `src/studio/autoResource.ts` validates its versioned
@@ -178,6 +345,7 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 - `modelUsagePolicies.ts`: reviewed dependency usage/access notices and acknowledgement fingerprints
 - `runReadiness.ts` and `useRunReadinessIssues.ts`: graph/model/input/runtime validation
 - `runPreparation.ts` and `runCoordinator.ts`: submission metadata, deterministic identity, runtime hints, and response attachment
+- `blockResourceRouteBindingV2.ts`: fail-closed identity projection for one current registered admission; it binds the canonical `BlockDefinitionV2`, Studio execution specification, immutable primary artifact, and every pinned admission dependency without granting execution or Auto authority
 - `outputContracts.ts`, `outputApi.ts`, `outputUtils.ts`, and `previewState.ts`: validate, persist, classify, and present generated outputs
 - `workflowPackage.ts`: portable JSON/PNG workflow metadata
 - `templateReadiness.ts`, `templateExactness.ts`, and `templateQuality.ts`: publication/readiness rules
@@ -190,6 +358,66 @@ API. Local tabs remain the editing surface; a successful explicit Save creates o
 while Save JSON copy is a browser download.
 
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
+
+Registered-route metadata uses a reserved
+`provenance.registeredBlockV2RouteBinding` field. `runCoordinator.ts` always
+removes an inherited value first and attaches a replacement only after the
+current embedded definition, graph/interface, library admission, canonical
+SHA-256, artifact, and dependency list match. A prepared graph must also match
+the current exported nodes and paths and already carry the identical binding;
+otherwise the run remains valid in Expert mode but its publication proof is
+explicitly unbound. Missing WebCrypto follows the same non-blocking/unbound
+path.
+
+The Node release scripts keep family resource coverage and exact-route
+qualification separate. `live-proof-provenance.mjs` locks the route-binding
+hash and full model-set hash. The standard `resource-qualification.mjs` lane
+may qualify only a recipe explicitly declared by a release-contract template;
+even when its retained proof carries an exact route binding, it cannot create
+an exact-route qualification. Existing family history is emitted as
+`legacy_unbound` and cannot authorize a sibling Cluster route.
+
+Exact-route resource evidence has its own two-run lane:
+
+- `current-resource-routes.mjs` asks the backend publication audit for the
+  current reviewed definition/admission manifest. The manifest binds the
+  canonical `BlockDefinitionV2` SHA-256, Studio spec, immutable primary
+  artifact, and the complete sorted dependency set. Unknown, stale, sibling,
+  duplicate, custom, or ambiguous routes fail closed.
+- `route-resource-qualification.mjs` accepts exactly two completed V2 live
+  proofs with distinct backend task IDs and capture times. Both proofs must
+  have the same current route binding, canonical workload hash, full model-set
+  hash, complete execution recipe, runtime lock, backend source/contract, and
+  deterministic contract, plus positive measured duration/memory and retained
+  output hashes.
+- Backend-source identity is process-bound. The replaceable backend worker
+  captures a canonical source fingerprint before importing executable backend
+  and node modules, exposes that startup claim through `/health`, and includes
+  it in the complete `graph_completed.runtimeFingerprint` receipt. The capture
+  runner computes full source-file inventories before and after execution and
+  requires both inventories to match the worker claim. Missing claims, changed
+  source, malformed inventories, and reused workers started from older source
+  fail closed. A reused worker is acceptable only while its startup identity
+  still exactly matches both filesystem snapshots.
+- V2 provenance created before process-start source attestation is not current
+  qualification evidence. Offline repair may use only the original retained
+  before/after inventories and completion receipt; it never substitutes the
+  source currently present in a checkout.
+- Run it with
+  `MODIFF_ROUTE_RESOURCE_PROVENANCE_A=/absolute/proof-a.json MODIFF_ROUTE_RESOURCE_PROVENANCE_B=/absolute/proof-b.json npm run release:route-resource:qualify`.
+  It copies both proofs into
+  `data/qualification/release/route-resource-provenance/` and records their
+  hashes in `route-resource-workload-receipts.v1.json`.
+- `resource-qualification-report.mjs` reopens both retained proofs, checks
+  their file hashes and every receipt field, resolves the route against the
+  current backend manifest again, and only then adds a `routeQualifications`
+  entry. This does not increment model-family recipe coverage.
+
+The route receipt explicitly records `familyCoverageDeclared: false`,
+`publicationAuthority: false`, and `autoAuthority: false`. Therefore the lane
+cannot promote `executable`, `autoEligible`, Gallery, or public flags. The
+checked-in registry may remain absent/empty until two real current-V2 frontend
+proofs exist; no baseline is inferred from standard-template evidence.
 
 ## Guided Graph Reconciliation
 
@@ -249,6 +477,34 @@ User selects Run
 ```
 
 `src/studio/runCoordinator.ts` owns submission identity and output attribution. `src/utils/runGraph.ts` owns transport. Callers own readiness and user feedback.
+
+Saved User Nodes retain model/prompt/settings provenance independently of
+registered-route authority. For an unambiguous Modular Diffusers User Node,
+`blockRunFormV2.ts` reads its expanded executable loader and parameter fields
+for display and run-context attribution. It does not reuse the global Studio
+form or issue an admission/Auto receipt. Conflicting parameter summaries,
+multiple loaders, and unknown model/mode identities are not collapsed into a
+claimed single-model summary. The complete submitted API graph remains the
+execution record. Output hydration can recover a saved User Node's summary
+from its immutable graph snapshot and exact preview-node ownership, including
+outputs previously mislabeled using unrelated Studio state.
+
+A Studio-owned run carries its exact resource receipt in both Auto and Expert
+mode. Expert mode removes Auto admission requirements; it does not remove the
+executed model, dtype, quantization, placement, or offload provenance. A raw or
+imported graph without a Studio run context still receives correlation and
+workflow-origin metadata only, so the client never labels an arbitrary manual
+graph with the current Studio form.
+
+Qualification capture treats `graph_completed.runtimeFingerprint` as the
+terminal complete runtime receipt. Compact queue/output fingerprints are
+corroborating scalar claims and cannot replace its packages, torch, and data
+directory payload. Before inference, the Gallery harness persists the backend
+source identity; after inference it persists and compares a second identity.
+Offline repair may use only those original source snapshots plus the retained
+node contract, model fingerprint, executed graph, completion receipt, and
+decoded media. Missing or disagreeing evidence remains blocked instead of
+being filled from the current filesystem or a later backend response.
 
 `POST /graph` is always queue admission. The toolbar labels the one-shot action **Run** while the queue is idle and **Queue** while work is active or waiting; both paths use the same coordinator and never invoke cancellation. A queued context is indexed immediately for attribution but does not replace the active canvas owner until its exact `task_started` event arrives for the same workflow tab and canvas epoch.
 
@@ -344,6 +600,14 @@ Request owners also use latest-request/mutation guards so a delayed response can
 - Feature components use tokens/primitives and describe domain behavior/layout.
 - Dialogs, menus, tabs, and icon-only actions must retain focus, keyboard, label, dismissal, and scroll behavior.
 
+`ModiffDialog` owns the bounded flex frame and accessible description. Optional toolbars stay outside the
+scrolling body alongside the fixed header and footer. Model Manager uses that toolbar for search and inventory
+sections; local search filters already-resolved profiles without refetching resource plans for each keystroke.
+Refresh leaves search, section navigation and dismissal available, with progress in the footer. Destructive cache
+actions remain disabled while an inventory operation is pending. Token drafts are password fields, cleared on
+cancel/dismissal and never read back from the server. These presentation controls do not grant model access,
+acknowledge licenses, change installation targets or initiate downloads by browsing.
+
 See the [frontend style guide](frontend-style-guide.md). `npm run style:audit` prevents new raw visual literals outside approved source areas.
 
 ## Tests And Gates
@@ -355,6 +619,21 @@ See the [frontend style guide](frontend-style-guide.md). `npm run style:audit` p
 - Gallery verify/coverage commands: public example and template publication gates
 
 Mocked browser coverage proves client behavior. It does not prove model installation, GPU compatibility, output quality, or a live backend model path.
+
+Set `MODIFF_GALLERY_STABLE=1` for long browser regression runs to disable
+development hot reload while independent checks update files. Headless Vite
+servers used by tests/catalog readers set `server.watch: null`; they do not
+need live reload. The interactive development server excludes generated
+`artifacts/` as well as Playwright result directories from its watchers, so
+large qualification traces cannot exhaust the host's inotify limit. When exercising
+byte-pinned default-media uploads, `MODIFF_E2E_TEMPLATE_INPUT_CACHE` may point
+to the `template-gallery/runtime-inputs/assets` directory of a pinned Hub
+Dataset snapshot pulled through `huggingface_hub`. The mocked harness serves
+matching cached bytes only after validating the SHA-256 basename; the app
+still performs its normal checksum and upload. Missing cache entries retain
+the normal remote path, so this option alone does not make the entire Gallery
+suite offline. Backend file mocks match the `/file` endpoint exactly; broad
+substring mocks can corrupt unrelated font requests containing `/files/`.
 
 ## Change Guardrails
 

@@ -213,3 +213,8 @@ export function nodeCatalogEntries(nodes: Record<string, NodeData>) {
 export function compareNodeSurfaceCategories(left: NodeSurfaceCategory, right: NodeSurfaceCategory) {
   return SURFACE_CATEGORY_ORDER.indexOf(left) - SURFACE_CATEGORY_ORDER.indexOf(right) || left.localeCompare(right);
 }
+
+export function nodeGroupForCatalogEntry(entry: NodeCatalogEntry, expertMode: boolean) {
+  if (entry.node.module === 'modules.HuggingFaceTransformers') return 'Transformers Nodes';
+  return expertMode ? entry.node.category || entry.node.module || entry.surfaceCategory : entry.surfaceCategory;
+}

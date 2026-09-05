@@ -198,7 +198,6 @@ export default function StudioPanel() {
     recentChange,
     pinnedGraphInputIds,
     workflowCanvasHydrated,
-    launcherDismissed,
     applyPreset,
     addPromptHistory,
     togglePinnedGraphInput,
@@ -222,7 +221,6 @@ export default function StudioPanel() {
       recentChange: state.recentChange,
       pinnedGraphInputIds: state.pinnedGraphInputIds,
       workflowCanvasHydrated: state.workflowCanvasHydrated,
-      launcherDismissed: state.launcherDismissed,
       applyPreset: state.applyPreset,
       addPromptHistory: state.addPromptHistory,
       togglePinnedGraphInput: state.togglePinnedGraphInput,
@@ -367,8 +365,13 @@ export default function StudioPanel() {
         ? `${runReadiness.warningIssues.length} warning${runReadiness.warningIssues.length === 1 ? '' : 's'}`
         : undefined;
   const graphNodes = useFlowStore(useShallow((state) => state.nodes));
+  // A template can fail before its graph skeleton is committed (for example,
+  // when the connected backend is missing a required node contract). Keep the
+  // selected template's task controls and readiness issue visible in that
+  // state; treating every zero-node canvas as a brand-new workflow hides the
+  // actionable failure behind the empty-workflow launcher.
   const emptyWorkflow =
-    workflowCanvasHydrated && !templateGraphPreparing && !launcherDismissed && !graphBinding && graphNodes.length === 0;
+    workflowCanvasHydrated && !templateGraphPreparing && !activeTemplateId && graphNodes.length === 0;
   const selectedGraphNodes = useMemo(() => graphNodes.filter((node) => node.selected), [graphNodes]);
   const inspectExactNode = showExactNodeInspector || selectedGraphNodes.length > 0;
   const graphInputCandidates = useMemo(
@@ -389,6 +392,7 @@ export default function StudioPanel() {
     showImageTray,
     requiresMaskImage,
     requiresControlImage,
+    requiresIPAdapterImage,
     supportsMask,
     inpaintContract,
     missingInstallTarget,
@@ -416,6 +420,8 @@ export default function StudioPanel() {
     handleModelTypeChange,
     handleResourceModeChange,
     handleRun,
+    handleInstallMissingModel,
+    isInstallingMissingModel,
     openSetup,
   } = useStudioRunActions({
     sid,
@@ -1103,6 +1109,22 @@ export default function StudioPanel() {
                 />
               </>
             )}
+            {missingInstallTarget ? (
+              <StudioButton
+                fullWidth
+                tone="secondary"
+                data-testid="studio-install-missing-model"
+                disabled={isWorking || isInstallingMissingModel}
+                onClick={() => {
+                  void handleInstallMissingModel();
+                }}
+                title={`${missingInstallTarget.label} | ${missingInstallTarget.repo}`}
+              >
+                {isInstallingMissingModel
+                  ? 'Installing model...'
+                  : `${missingInstallTarget.actionLabel ?? (missingInstallTarget.repair ? 'Repair' : 'Install')} ${missingInstallTarget.label}`}
+              </StudioButton>
+            ) : null}
             {templateGraphPreparing ? (
               <ActionStatusRow tone="info" title="Preparing graph" testId="studio-run-readiness" />
             ) : (
@@ -1618,6 +1640,17 @@ export default function StudioPanel() {
                       />
                     </ModiffFieldShell>
                   )}
+                  {requiresIPAdapterImage && (
+                    <ModiffFieldShell label={`IP-Adapter scale: ${form.ipAdapterScale}`}>
+                      <StudioSlider
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        value={form.ipAdapterScale}
+                        onChange={(value) => updateAndSync({ ipAdapterScale: value })}
+                      />
+                    </ModiffFieldShell>
+                  )}
                   {capability.supportsLayers && (
                     <StudioInput
                       label={
@@ -1947,15 +1980,17 @@ export default function StudioPanel() {
             </StudioSection>
           )}
 
-          {(requiresMaskImage || requiresControlImage) && (
+          {(requiresMaskImage || requiresControlImage || requiresIPAdapterImage) && (
             <StudioSection
               id="mask-control"
               title={
-                requiresMaskImage && requiresControlImage
-                  ? 'Mask and control inputs'
+                [requiresMaskImage, requiresControlImage, requiresIPAdapterImage].filter(Boolean).length > 1
+                  ? 'Conditioning inputs'
                   : requiresMaskImage
                     ? 'Mask draft'
-                    : 'Control image'
+                    : requiresControlImage
+                      ? 'Control image'
+                      : 'IP-Adapter image'
               }
               defaultOpen
             >
@@ -2004,6 +2039,26 @@ export default function StudioPanel() {
                   />
                   <p className="text-xs text-modiff-subtle-text">
                     The control image is a separate structural guide declared by the selected task contract.
+                  </p>
+                  {form.mode.includes('control_union') && (
+                    <StudioInput
+                      label="ControlNet Union mode (0–5)"
+                      value={form.controlMode}
+                      onChange={(value) => updateAndSync({ controlMode: numberValue(value, form.controlMode) })}
+                    />
+                  )}
+                </>
+              )}
+              {requiresIPAdapterImage && (
+                <>
+                  <StudioInput
+                    label="IP-Adapter image path"
+                    value={form.ipAdapterImage}
+                    onChange={(value) => updateAndSync({ ipAdapterImage: value })}
+                  />
+                  <p className="text-xs text-modiff-subtle-text">
+                    This reference is encoded by the separately editable IP-Adapter block; it is not the source or
+                    ControlNet image.
                   </p>
                 </>
               )}

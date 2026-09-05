@@ -18,7 +18,7 @@ before(async () => {
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   runIssueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');

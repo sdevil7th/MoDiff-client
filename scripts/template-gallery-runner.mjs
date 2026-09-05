@@ -26,11 +26,13 @@ import {
   technicalMediaErrors,
 } from './template-gallery-harness.mjs';
 import {
+  backendSourceEvidence,
   backendSourceIdentity,
   compareRunProvenance,
   createRunProvenance,
   modelSetIdentity,
   resolvedModelReposFromOutput,
+  selectBackendRuntimeFingerprintEvidence,
   selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
 import {
@@ -48,6 +50,7 @@ const DEFAULT_BACKEND_DIR = process.env.MODIFF_BACKEND_DIR || resolve(ROOT, '..'
 const RUNNER_LOCK_PATH = join(ARTIFACT_ROOT, '.runner.lock');
 export const RUNNER_INFRASTRUCTURE_EXIT_CODE = 70;
 export const GALLERY_BROWSER_RECOVERY_ATTEMPTS = 2;
+export const GALLERY_CAPTURE_OPERATION_TIMEOUT_FLOOR_MS = 2 * 60 * 60 * 1000;
 const GALLERY_BROWSER_SESSION_LABEL = 'template Gallery';
 const DEFAULT_INPUT_BINDINGS_PATH = join(
   ROOT,
@@ -684,6 +687,22 @@ export async function runWithGalleryBrowserRecovery(action, recover, attempts = 
   throw new Error('Template Gallery browser recovery exhausted without a terminal result.');
 }
 
+export function galleryCaptureOperationTimeoutMs(timeoutMs, runs = 1) {
+  const perRunTimeoutMs = Number(timeoutMs);
+  const runCount = Number(runs);
+  if (!Number.isFinite(perRunTimeoutMs) || perRunTimeoutMs < 1) {
+    throw new Error('Gallery capture inactivity timeout must be a positive number.');
+  }
+  if (!Number.isInteger(runCount) || runCount < 1) {
+    throw new Error('Gallery capture run count must be a positive integer.');
+  }
+  // waitForOutput and waitForTaskTerminal already enforce the caller's
+  // inactivity timeout and refresh it when the backend reports progress. The
+  // outer browser guard is only a final safety net; it must not expire first
+  // during a healthy cold load or a long exact workload such as Qwen.
+  return Math.max(GALLERY_CAPTURE_OPERATION_TIMEOUT_FLOOR_MS, perRunTimeoutMs * runCount + 180_000);
+}
+
 async function closeGalleryBrowser(browser) {
   await closeWorkflowBrowser(browser, undefined, GALLERY_BROWSER_SESSION_LABEL);
 }
@@ -910,6 +929,36 @@ export async function waitForTaskTerminal(page, { taskId, server, timeoutMs = 12
     await delay(500);
   }
   throw new Error(`Timed out waiting for task ${taskId} to become terminal after its output was captured.`);
+}
+
+export async function applyGalleryTemplate(page, templateId, formOverrides = {}, timeoutMs = 180_000) {
+  try {
+    await page.evaluate(
+      ({ selectedTemplateId, selectedFormOverrides }) =>
+        window.__MODIFF_E2E__?.applyTemplate(selectedTemplateId, selectedFormOverrides),
+      { selectedTemplateId: templateId, selectedFormOverrides: formOverrides },
+    );
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/Graph preparation is still running/i.test(message)) throw error;
+  }
+
+  // A timeout does not cancel the owned finalizer. Keep the same page and wait
+  // for that operation to settle instead of re-applying the template and
+  // superseding its dynamic field requests with a new workflow context.
+  await page.waitForFunction(
+    () => {
+      const status = window.__MODIFF_E2E__?.getState()?.studio?.graphFinalization?.status;
+      return status === 'complete' || status === 'error';
+    },
+    null,
+    { timeout: timeoutMs },
+  );
+  const finalization = await page.evaluate(() => window.__MODIFF_E2E__?.getState()?.studio?.graphFinalization);
+  if (finalization?.status !== 'complete') {
+    throw new Error(finalization?.message ?? `Template ${templateId} graph finalization failed.`);
+  }
 }
 
 async function requestRuntimeCleanup(server, fetchImpl = fetch) {
@@ -1429,6 +1478,13 @@ export function formOverridesForTemplate(template, args) {
   return { overrides };
 }
 
+export function expectedOutputContractForCapture(runtimeTemplate, args) {
+  // Source-only captures deliberately change dimensions/frame counts to make
+  // reviewed dependency media. They must still decode cleanly, but they are
+  // not evidence that the parent public template met its locked release size.
+  return args.sourceOnly ? {} : (runtimeTemplate.example?.expectedOutput ?? {});
+}
+
 export function preferredOutputRoleForTemplate(template) {
   if (template.workflowBlocks?.includes('lyric_video') || template.workflowBlocks?.includes('soundtrack')) {
     return 'exportWithAudio';
@@ -1498,6 +1554,23 @@ export function executionReceiptForProvenance(completionEvent, terminalTask) {
   };
 }
 
+export function runtimeFingerprintForProvenance({ deterministicEvent, completionEvent, terminalTask, output }) {
+  const deterministicMode = deterministicEvent?.deterministicMode ?? output?.apiGraphSnapshot?.deterministicMode;
+  return selectBackendRuntimeFingerprintEvidence(
+    [
+      // graph_completed is the terminal execution receipt and carries the
+      // complete packages/torch/directories payload. A compact /queue task
+      // normally carries only the corresponding scalar fingerprint.
+      completionEvent?.runtimeFingerprint,
+      deterministicEvent?.runtimeFingerprint,
+      output?.backendProvenance?.runtimeFingerprint,
+      terminalTask?.runtimeFingerprint,
+      output?.provenance?.runtimeFingerprint,
+    ],
+    deterministicMode,
+  );
+}
+
 function comparisonBeforeMediaForTemplate(template, args) {
   if (!['compareSlider', 'hoverDissolve', 'contactSheet'].includes(template.thumbnailVariant)) return '';
   return args.sourceVideo || args.referenceImages[0] || args.controlImage || args.controlVideo || '';
@@ -1526,6 +1599,8 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
       const modelEvidencePath = join(evidenceDir, `${evidenceBase}.model-fingerprint.json`);
       const websocketEvidencePath = join(evidenceDir, `${evidenceBase}.websocket-events.json`);
       const provenancePath = join(evidenceDir, `${evidenceBase}.provenance.json`);
+      const incompleteProvenancePath = join(evidenceDir, `${evidenceBase}.provenance.incomplete.json`);
+      const backendSourceAfterPath = join(evidenceDir, `${evidenceBase}.backend-source-after.json`);
       const fileName = readdirSync(mediaDir).find(
         (name) => name.startsWith(`${outputBase}.run${runIndex}.`) && !name.includes('.before.'),
       );
@@ -1572,10 +1647,7 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
   // deterministic duplicates discards the valid Auto plan and can trigger a
   // minute-scale full model-store rescan even though only runtime tensors were
   // cleared. The graph and locked form remain unchanged across runtime cleanup.
-  await page.evaluate(
-    ({ templateId, formOverrides }) => window.__MODIFF_E2E__?.applyTemplate(templateId, formOverrides),
-    { templateId: template.id, formOverrides: overrides ?? {} },
-  );
+  await applyGalleryTemplate(page, template.id, overrides ?? {}, Math.max(180_000, args.timeoutMs));
   if (process.env.MODIFF_GALLERY_DEBUG_STATE === '1') {
     const debugState = await page.evaluate(() => {
       const state = window.__MODIFF_E2E__?.getState();
@@ -1793,7 +1865,11 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
         .find((event) => event?.type === 'graph_completed' && event?.task_id === run.taskId);
       const analyses = fetchedOutputs.map(({ filePath: capturedPath, fetched: capturedOutput }, outputIndex) => {
         const decoded = decodedOutputs[outputIndex];
-        const errors = technicalMediaErrors(decoded, runtimeTemplate.example?.expectedOutput ?? {}, template.mediaType);
+        const errors = technicalMediaErrors(
+          decoded,
+          expectedOutputContractForCapture(runtimeTemplate, args),
+          template.mediaType,
+        );
         return {
           ...decoded,
           mediaType: template.mediaType,
@@ -1845,6 +1921,39 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
       const resolvedTemplateLockHash = args.sourceOnly
         ? catalogTemplateLockHash
         : templateRuntime.templateLockHash(runtimeTemplate, modelSet.revisionLock);
+      const selectedRuntimeFingerprint = runtimeFingerprintForProvenance({
+        deterministicEvent,
+        completionEvent,
+        terminalTask,
+        output,
+      });
+      let backendSourceAfter = null;
+      let backendSourceAfterError = null;
+      try {
+        backendSourceAfter = backendSourceIdentity(args.backendDir);
+      } catch (error) {
+        backendSourceAfterError = error instanceof Error ? error.message : String(error);
+      }
+      const sourceEvidence = backendSourceEvidence({
+        before: backendSource,
+        after: backendSourceAfter,
+        runtimeFingerprint: selectedRuntimeFingerprint,
+      });
+      writeFileSync(
+        backendSourceAfterPath,
+        `${JSON.stringify(
+          {
+            capturedAt: new Date().toISOString(),
+            identity: backendSourceAfter,
+            workerAttestation: sourceEvidence.attestation,
+            error: backendSourceAfterError,
+            blockers: sourceEvidence.blockers,
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
       const provenance = createRunProvenance({
         templateId: template.id,
         lockedSettings: executedLockedSettings,
@@ -1856,20 +1965,21 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
         modelIdentity: modelIdentities[0],
         modelIdentities,
         inputArtifacts: runInputArtifacts,
-        runtimeFingerprint:
-          deterministicEvent?.runtimeFingerprint ??
-          terminalTask?.runtimeFingerprint ??
-          output.backendProvenance?.runtimeFingerprint ??
-          null,
+        runtimeFingerprint: selectedRuntimeFingerprint,
         deterministicMode: deterministicEvent?.deterministicMode ?? output.apiGraphSnapshot?.deterministicMode,
-        backendSource,
+        backendSource: sourceEvidence.identity,
         outputAnalysis,
         executedOutput: output,
         executionReceipt: executionReceiptForProvenance(completionEvent, terminalTask),
         taskId: run.taskId,
-        expectedOutput: runtimeTemplate.example?.expectedOutput,
+        expectedOutput: expectedOutputContractForCapture(runtimeTemplate, args),
       });
+      if (backendSourceAfterError) {
+        provenance.blockers.push(`backend source capture failed after execution: ${backendSourceAfterError}`);
+      }
+      provenance.blockers.push(...sourceEvidence.blockers);
       if (provenance.blockers.length > 0) {
+        writeFileSync(incompleteProvenancePath, `${JSON.stringify(provenance, null, 2)}\n`, 'utf8');
         throw new Error(`Run provenance is incomplete: ${provenance.blockers.join(' ')}`);
       }
       provenances.push(provenance);
@@ -2217,7 +2327,43 @@ async function main() {
   try {
     const templateRuntime = await loadTemplateRuntime(ROOT, { includePlanning: args.allowBlockedProbe });
     const backendSource = backendSourceIdentity(args.backendDir);
+    writeFileSync(
+      join(artifactDir, 'backend-source-before.json'),
+      `${JSON.stringify({ capturedAt: new Date().toISOString(), identity: backendSource }, null, 2)}\n`,
+      'utf8',
+    );
     const backend = await ensureBackend(args, managedProcesses, artifactDir);
+    const backendHealthResponse = await fetch(new URL('/health', args.server), {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!backendHealthResponse.ok) {
+      throw new Error(`Backend source preflight could not read /health (HTTP ${backendHealthResponse.status}).`);
+    }
+    const backendHealth = await backendHealthResponse.json();
+    const backendSourcePreflight = backendSourceEvidence({
+      before: backendSource,
+      after: backendSource,
+      runtimeFingerprint: { backendSource: backendHealth?.backend_source },
+    });
+    writeFileSync(
+      join(artifactDir, 'backend-source-before.json'),
+      `${JSON.stringify(
+        {
+          capturedAt: new Date().toISOString(),
+          identity: backendSource,
+          workerAttestation: backendSourcePreflight.attestation,
+          blockers: backendSourcePreflight.blockers,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+    if (backendSourcePreflight.blockers.length > 0) {
+      throw new Error(
+        `Backend source preflight failed before generation. Restart the backend after the final source edit: ${backendSourcePreflight.blockers.join(' ')}`,
+      );
+    }
     // An interrupted capture can leave a valid backend graph running after its
     // browser exits. Wait for that graph before opening a second app session;
     // otherwise model loading can delay websocket bootstrap and make session
@@ -2316,7 +2462,7 @@ async function main() {
                   backendSource,
                 );
               },
-              args.timeoutMs * args.runs + 180_000,
+              galleryCaptureOperationTimeoutMs(args.timeoutMs, args.runs),
             ),
           async (error, nextAttempt) => {
             // The renderer may disappear after the backend accepted a graph.

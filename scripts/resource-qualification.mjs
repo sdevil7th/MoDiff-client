@@ -3,6 +3,9 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { validateRunProvenance } from './live-proof-provenance.mjs';
+import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
+
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(SCRIPT_PATH);
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -74,6 +77,33 @@ function required(path, label) {
 function exactRevision(value) {
   const text = typeof value === 'string' ? value.trim() : '';
   return /^.+@[0-9a-f]{40,64}$/i.test(text) ? text : null;
+}
+
+export function exactRouteModelSetWasExecuted(provenance, routeBinding) {
+  const items = Array.isArray(provenance?.models?.items) ? provenance.models.items : [];
+  if (items.length > 0) {
+    const required = [routeBinding.artifact, ...routeBinding.modelDependencies].map((artifact) => ({
+      repository: artifact.repository.toLowerCase(),
+      revision: artifact.revision,
+    }));
+    const executed = items.map((item) => ({
+      repository: String(item?.repoId ?? '').toLowerCase(),
+      revision: item?.selectedRevision,
+      validModelRevision: item?.modelRevision === `${item?.repoId}@${item?.selectedRevision}`,
+    }));
+    return (
+      required.length === executed.length &&
+      executed.every(({ validModelRevision }) => validModelRevision) &&
+      required.every(({ repository, revision }) =>
+        executed.some((item) => item.repository === repository && item.revision === revision),
+      )
+    );
+  }
+  const { repository, revision } = routeBinding.artifact;
+  return (
+    routeBinding.modelDependencies.length === 0 &&
+    exactRevision(provenance?.modelRevision ?? provenance?.model?.modelRevision) === `${repository}@${revision}`
+  );
 }
 
 function normalizedNode(node) {
@@ -161,8 +191,9 @@ export function validateResourceQualificationEvidence({ provenance, baseline, co
   if (Number(provenance?.schemaVersion) < 2 || provenance?.format !== 'modiff.live-proof.provenance.v2') {
     throw new Error('Resource qualification requires a v2 live-proof provenance record.');
   }
-  if ((provenance?.blockers ?? []).length > 0) {
-    throw new Error(`Resource proof contains blocker(s): ${provenance.blockers.join(' ')}`);
+  const proofBlockers = [...new Set([...(provenance?.blockers ?? []), ...validateRunProvenance(provenance)])];
+  if (proofBlockers.length > 0) {
+    throw new Error(`Resource proof contains blocker(s): ${proofBlockers.join(' ')}`);
   }
   if (provenance?.template?.id !== contractTemplate?.id || baseline?.template?.id !== contractTemplate?.id) {
     throw new Error('Resource proof and locked-template baseline must identify the current contract template.');
@@ -173,10 +204,36 @@ export function validateResourceQualificationEvidence({ provenance, baseline, co
   ) {
     throw new Error('Resource proof does not match the current locked template prompt/settings identity.');
   }
-  const baselineModelRevision = exactRevision(baseline?.modelRevision ?? baseline?.model?.modelRevision);
-  const modelRevision = exactRevision(provenance?.modelRevision ?? provenance?.model?.modelRevision);
+  const baselineModelRevision = String(baseline?.modelRevision ?? baseline?.model?.modelRevision ?? '').trim();
+  const modelRevision = String(provenance?.modelRevision ?? provenance?.model?.modelRevision ?? '').trim();
   if (!modelRevision || modelRevision !== baselineModelRevision) {
     throw new Error('Resource proof does not use the locked template model revision.');
+  }
+  const baselineModelSetHash = baseline?.models?.hash ?? null;
+  const modelSetHash = provenance?.models?.hash ?? null;
+  if ((modelSetHash || baselineModelSetHash) && (!modelSetHash || modelSetHash !== baselineModelSetHash)) {
+    throw new Error('Resource proof does not use the locked template model set.');
+  }
+  const hasRouteBinding = provenance?.routeBinding !== undefined && provenance?.routeBinding !== null;
+  const hasRouteBindingHash = provenance?.routeBindingHash !== undefined && provenance?.routeBindingHash !== null;
+  if (hasRouteBinding !== hasRouteBindingHash) {
+    throw new Error('Resource proof routeBinding and routeBindingHash must both be present.');
+  }
+  const routeBinding = hasRouteBinding ? normalizeResourceRouteBinding(provenance.routeBinding) : null;
+  const routeBindingHash = routeBinding ? resourceRouteBindingHash(routeBinding) : null;
+  if (routeBinding && routeBindingHash !== provenance.routeBindingHash) {
+    throw new Error('Resource proof routeBindingHash does not match its exact registered route binding.');
+  }
+  if (routeBinding && !exactRouteModelSetWasExecuted(provenance, routeBinding)) {
+    throw new Error(
+      'Resource proof route binding artifacts and dependencies do not match the complete executed immutable model set.',
+    );
+  }
+  if (
+    routeBinding &&
+    (!modelSetHash || !Array.isArray(provenance?.models?.items) || provenance.models.items.length < 1)
+  ) {
+    throw new Error('Exact route resource proof must retain the complete executed model set identity.');
   }
   const baselineWorkloadHash = resourceWorkloadHash(baseline);
   const workloadHash = resourceWorkloadHash(provenance);
@@ -219,13 +276,17 @@ export function validateResourceQualificationEvidence({ provenance, baseline, co
   return {
     recipe,
     modelRevision,
+    modelSetHash,
     workloadHash,
     baselineWorkloadHash,
+    routeBinding,
+    routeBindingHash,
   };
 }
 
 function receiptKey(receipt) {
   return [
+    receipt.routeBindingHash ?? 'legacy_unbound',
     receipt.recipeHash ??
       resourceRecipeHash({
         modelType: receipt.modelType,
@@ -286,7 +347,11 @@ export async function recordResourceQualification({
     ...validated.recipe,
     recipe: validated.recipe,
     recipeHash,
+    bindingStatus: validated.routeBinding ? 'exact_route_bound' : 'legacy_unbound',
+    routeBinding: validated.routeBinding,
+    routeBindingHash: validated.routeBindingHash,
     modelRevision: validated.modelRevision,
+    modelSetHash: validated.modelSetHash,
     resourceCandidateId,
     graphHash: provenance.graphHash ?? provenance.graph.hash,
     workloadHash: validated.workloadHash,

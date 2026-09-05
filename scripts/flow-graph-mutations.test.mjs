@@ -8,6 +8,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let flowStoreModule;
 let nodeStoreModule;
+let blockRuntimeModule;
+let blockSchemaModule;
+let snackbarModule;
 let server;
 let originalFetch;
 let requests;
@@ -34,11 +37,14 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   nodeStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  blockRuntimeModule = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  blockSchemaModule = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  snackbarModule = await server.ssrLoadModule('/src/ui/snackbar.ts');
   originalFetch = globalThis.fetch;
 });
 
@@ -62,6 +68,7 @@ beforeEach(() => {
     historyTransaction: null,
   });
   nodeStoreModule.useNodesStore.setState({ nodesRegistry: {} });
+  snackbarModule.closeSnackbar();
 });
 
 after(async () => {
@@ -93,6 +100,221 @@ function edge(id, source, target, sourceHandle, targetHandle) {
 function cacheRequests() {
   return requests.filter((request) => request.url.endsWith('/cache') && request.init.method === 'DELETE');
 }
+
+function blockV2DeletionFixture(instanceId = 'block-v2-delete') {
+  const semanticGraph = {
+    nodes: [
+      {
+        nodeId: 'generate',
+        nodeType: 'custom',
+        semanticRole: 'generate',
+        data: {
+          type: 'custom',
+          module: 'modules.Test',
+          action: 'Generate',
+          params: {
+            prompt: { type: 'string', display: 'textarea', default: 'creator prompt' },
+            images: { type: 'list[image]', display: 'output' },
+          },
+        },
+      },
+      {
+        nodeId: 'utility',
+        nodeType: 'custom',
+        semanticRole: 'utility',
+        data: {
+          type: 'custom',
+          module: 'modules.Test',
+          action: 'Utility',
+          params: {
+            images: { type: 'list[image]', display: 'input' },
+            output: { type: 'list[image]', display: 'output' },
+          },
+        },
+      },
+      {
+        nodeId: 'preview',
+        nodeType: 'custom',
+        semanticRole: 'preview',
+        data: {
+          type: 'custom',
+          module: 'modules.Test',
+          action: 'Preview',
+          params: { images: { type: 'list[image]', display: 'ui_image' } },
+        },
+      },
+    ],
+    edges: [
+      {
+        edgeId: 'utility-input',
+        sourceNodeId: 'generate',
+        sourcePortId: 'images',
+        targetNodeId: 'utility',
+        targetPortId: 'images',
+      },
+      {
+        edgeId: 'utility-preview',
+        sourceNodeId: 'utility',
+        sourcePortId: 'output',
+        targetNodeId: 'preview',
+        targetPortId: 'images',
+      },
+    ],
+    executionOrder: ['generate', 'utility', 'preview'],
+  };
+  const graph = { ...semanticGraph, graphHash: blockSchemaModule.blockGraphHashV2(semanticGraph) };
+  const semanticDefinition = {
+    schemaVersion: 2,
+    definitionId: 'user:block-v2-delete-fixture',
+    displayName: 'Block V2 delete fixture',
+    source: { kind: 'user' },
+    graph,
+    boundary: {
+      mode: 'explicit',
+      inputs: [
+        {
+          portId: 'prompt',
+          label: 'Prompt',
+          valueType: 'string',
+          required: true,
+          binding: { nodeId: 'generate', fieldOrPortId: 'prompt' },
+        },
+      ],
+      outputs: [
+        {
+          portId: 'images',
+          label: 'Images',
+          valueType: 'list[image]',
+          required: true,
+          binding: { nodeId: 'generate', fieldOrPortId: 'images' },
+        },
+      ],
+    },
+    controls: [
+      {
+        controlId: 'prompt',
+        label: 'Prompt',
+        binding: { nodeId: 'generate', fieldId: 'prompt' },
+        valueType: 'string',
+        defaultValue: 'creator prompt',
+        required: true,
+        order: 0,
+      },
+    ],
+    previews: [{ nodeId: 'preview', outputPortId: 'images', mediaType: 'image', primary: true }],
+    ownership: { kind: 'user', definitionMutable: true },
+  };
+  const definition = {
+    ...semanticDefinition,
+    contentHash: blockSchemaModule.blockDefinitionContentHashV2(semanticDefinition),
+  };
+  let instance = blockSchemaModule.createBlockInstanceV2(definition, {
+    instanceId,
+    position: { x: 120, y: 80 },
+    size: { width: 980, height: 620 },
+    values: { prompt: 'instance prompt' },
+    internalLayout: {
+      generate: { x: 32, y: 80, width: 280, height: 240 },
+      utility: { x: 350, y: 80, width: 280, height: 240 },
+      preview: { x: 668, y: 80, width: 280, height: 240 },
+    },
+  });
+  instance = blockRuntimeModule.setBlockPresentationV2(instance, { expanded: true });
+  instance = blockSchemaModule.normalizeBlockInstanceV2({
+    ...instance,
+    authorities: [
+      {
+        kind: 'reviewed_execution',
+        definitionId: instance.definitionRef.definitionId,
+        definitionContentHash: instance.definitionRef.contentHash,
+        effectiveGraphHash: instance.effectiveGraph.graphHash,
+        executionParameterHash: 'delete-fixture-parameters',
+        artifactRevisions: { 'owner/model': 'b'.repeat(40) },
+        admissionId: 'diffusers:test:delete-fixture',
+        issuedAt: '2026-09-01T00:00:00Z',
+      },
+    ],
+  });
+  const projection = blockRuntimeModule.materializeBlockProjectionV2(
+    blockRuntimeModule.createBlockRootNodeV2(instance, { selected: true }),
+  );
+  const source = node('outside-source', { text: { type: 'string', display: 'output' } });
+  const sink = node('outside-sink', { images: { type: 'list[image]', display: 'input' } });
+  const externalEdges = [
+    edge('external-input', source.id, instanceId, 'text', 'prompt'),
+    edge('external-output', instanceId, sink.id, 'images', 'images'),
+  ];
+  return {
+    rootId: instanceId,
+    generateId: blockRuntimeModule.blockProjectionNodeIdV2(instanceId, 'generate'),
+    utilityId: blockRuntimeModule.blockProjectionNodeIdV2(instanceId, 'utility'),
+    previewId: blockRuntimeModule.blockProjectionNodeIdV2(instanceId, 'preview'),
+    nodes: [source, ...projection.nodes, sink],
+    edges: [...externalEdges, ...projection.edges],
+  };
+}
+
+test('a final V2 projection move is absorbed by its durable root and survives persistence', async () => {
+  const fixture = blockV2DeletionFixture('block-v2-move');
+  flowStoreModule.useFlowStore.setState({ nodes: fixture.nodes, edges: fixture.edges });
+  const originalRoot = fixture.nodes.find((item) => item.id === fixture.rootId);
+  const originalUtilityLayout = originalRoot.data.blockInstanceV2.presentation.internalLayout.utility;
+
+  await flowStoreModule.useFlowStore.getState().onNodesChange([
+    {
+      id: fixture.utilityId,
+      type: 'position',
+      position: { x: 424, y: 146 },
+      dragging: true,
+    },
+  ]);
+  let state = flowStoreModule.useFlowStore.getState();
+  let root = state.nodes.find((item) => item.id === fixture.rootId);
+  assert.deepEqual(root.data.blockInstanceV2.presentation.internalLayout.utility, originalUtilityLayout);
+
+  await state.onNodesChange([
+    {
+      id: fixture.utilityId,
+      type: 'position',
+      position: { x: 424, y: 146 },
+      dragging: false,
+    },
+  ]);
+  state = flowStoreModule.useFlowStore.getState();
+  root = state.nodes.find((item) => item.id === fixture.rootId);
+  assert.deepEqual(root.data.blockInstanceV2.presentation.internalLayout.utility, {
+    x: 424,
+    y: 146,
+    width: 280,
+    height: 240,
+  });
+  assert.equal(root.data.blockInstanceV2.authorities.length, 1);
+  assert.deepEqual(state.nodes.find((item) => item.id === fixture.utilityId).position, { x: 424, y: 146 });
+
+  state.toggleUserBlockExpanded(fixture.rootId);
+  const saved = state.toObject();
+  assert.equal(
+    saved.nodes.some((item) => item.data.blockProjectionOwnerId === fixture.rootId),
+    false,
+  );
+  const restored = flowStoreModule.normalizePersistedFlowState(saved);
+  flowStoreModule.useFlowStore.setState({
+    ...restored,
+    historyPast: [],
+    historyFuture: [],
+    historyTransaction: null,
+  });
+  flowStoreModule.useFlowStore.getState().toggleUserBlockExpanded(fixture.rootId);
+  state = flowStoreModule.useFlowStore.getState();
+  root = state.nodes.find((item) => item.id === fixture.rootId);
+  assert.deepEqual(root.data.blockInstanceV2.presentation.internalLayout.utility, {
+    x: 424,
+    y: 146,
+    width: 280,
+    height: 240,
+  });
+  assert.deepEqual(state.nodes.find((item) => item.id === fixture.utilityId).position, { x: 424, y: 146 });
+});
 
 test('graph replacement restores missing live UI preview contracts without replacing saved values', () => {
   nodeStoreModule.useNodesStore.setState({
@@ -566,6 +788,143 @@ test('node deletion cleans edges, spawned inputs, signals, handles, cache, and r
   );
   assert.equal(state.edges.length, 0);
   assert.equal(cacheRequests().length, 2);
+});
+
+test('eligible V2 internal deletion is undoable and survives collapse, persistence, and rematerialization', () => {
+  const fixture = blockV2DeletionFixture();
+  flowStoreModule.useFlowStore.setState({ nodes: fixture.nodes, edges: fixture.edges });
+  const originalRoot = fixture.nodes.find((item) => item.id === fixture.rootId);
+
+  flowStoreModule.useFlowStore.getState().removeNodes(fixture.utilityId);
+
+  let state = flowStoreModule.useFlowStore.getState();
+  let root = state.nodes.find((item) => item.id === fixture.rootId);
+  assert.equal(
+    state.nodes.some((item) => item.id === fixture.utilityId),
+    false,
+  );
+  assert.equal(
+    root.data.blockInstanceV2.effectiveGraph.nodes.some(({ nodeId }) => nodeId === 'utility'),
+    false,
+  );
+  assert.equal(
+    root.data.blockInstanceV2.effectiveGraph.edges.some(
+      ({ sourceNodeId, targetNodeId }) => sourceNodeId === 'utility' || targetNodeId === 'utility',
+    ),
+    false,
+  );
+  assert.deepEqual(root.data.blockInstanceV2.effectiveGraph.executionOrder, ['generate', 'preview']);
+  assert.equal(root.data.blockInstanceV2.presentation.internalLayout.utility, undefined);
+  assert.deepEqual(root.data.blockInstanceV2.authorities, []);
+  assert.equal(root.data.blockInstanceV2.customization.state, 'structure_changed');
+  assert.deepEqual(
+    root.data.blockInstanceV2.presentation.position,
+    originalRoot.data.blockInstanceV2.presentation.position,
+  );
+  assert.deepEqual(root.data.blockInstanceV2.presentation.size, originalRoot.data.blockInstanceV2.presentation.size);
+  assert.equal(root.selected, true);
+  assert.deepEqual(state.edges.map(({ id }) => id).sort(), ['external-input', 'external-output']);
+  assert.equal(state.historyPast.length, 1);
+  assert.deepEqual(JSON.parse(cacheRequests()[0].init.body), { nodes: [fixture.utilityId] });
+
+  state.undo();
+  flowStoreModule.useFlowStore.getState().ensureBlockProjectionV2(fixture.rootId);
+  state = flowStoreModule.useFlowStore.getState();
+  root = state.nodes.find((item) => item.id === fixture.rootId);
+  assert.equal(
+    state.nodes.some((item) => item.id === fixture.utilityId),
+    true,
+  );
+  assert.equal(
+    root.data.blockInstanceV2.effectiveGraph.nodes.some(({ nodeId }) => nodeId === 'utility'),
+    true,
+  );
+  assert.equal(root.data.blockInstanceV2.authorities.length, 1);
+
+  state.redo();
+  flowStoreModule.useFlowStore.getState().ensureBlockProjectionV2(fixture.rootId);
+  state = flowStoreModule.useFlowStore.getState();
+  assert.equal(
+    state.nodes.some((item) => item.id === fixture.utilityId),
+    false,
+  );
+
+  state.toggleUserBlockExpanded(fixture.rootId);
+  const saved = flowStoreModule.useFlowStore.getState().toObject();
+  assert.equal(
+    saved.nodes.some((item) => item.data.blockProjectionOwnerId === fixture.rootId),
+    false,
+  );
+  const restored = flowStoreModule.normalizePersistedFlowState(saved);
+  flowStoreModule.useFlowStore.setState({
+    ...restored,
+    historyPast: [],
+    historyFuture: [],
+    historyTransaction: null,
+  });
+  flowStoreModule.useFlowStore.getState().toggleUserBlockExpanded(fixture.rootId);
+  state = flowStoreModule.useFlowStore.getState();
+  root = state.nodes.find((item) => item.id === fixture.rootId);
+  assert.equal(root.data.blockInstanceV2.presentation.expanded, true);
+  assert.equal(
+    root.data.blockInstanceV2.effectiveGraph.nodes.some(({ nodeId }) => nodeId === 'utility'),
+    false,
+  );
+  assert.equal(
+    state.nodes.some((item) => item.id === fixture.utilityId),
+    false,
+  );
+  assert.deepEqual(
+    state.edges
+      .filter(({ id }) => id.startsWith('external-'))
+      .map(({ id }) => id)
+      .sort(),
+    ['external-input', 'external-output'],
+  );
+});
+
+test('V2 internal deletion rejects public bindings atomically and surfaces the exact blockers', () => {
+  const fixture = blockV2DeletionFixture('block-v2-protected-delete');
+  flowStoreModule.useFlowStore.setState({ nodes: fixture.nodes, edges: fixture.edges });
+  const before = flowStoreModule.useFlowStore.getState().toObject();
+
+  flowStoreModule.useFlowStore.getState().removeNodes([fixture.generateId, fixture.utilityId]);
+
+  const state = flowStoreModule.useFlowStore.getState();
+  assert.deepEqual(state.toObject(), before);
+  assert.equal(
+    state.nodes.some((item) => item.id === fixture.generateId),
+    true,
+  );
+  assert.equal(
+    state.nodes.some((item) => item.id === fixture.utilityId),
+    true,
+  );
+  assert.equal(state.historyPast.length, 0);
+  assert.equal(cacheRequests().length, 0);
+  const toast = snackbarModule.getToastItems().at(-1);
+  assert.equal(toast.variant, 'error');
+  assert.match(String(toast.message), /public input "Prompt"/u);
+  assert.match(String(toast.message), /public output "Images"/u);
+  assert.match(String(toast.message), /exposed control "Prompt"/u);
+  assert.match(String(toast.message), /Rebind those public declarations first/u);
+});
+
+test('deleting a V2 root removes the complete composite instead of structurally editing its children', () => {
+  const fixture = blockV2DeletionFixture('block-v2-root-delete');
+  flowStoreModule.useFlowStore.setState({ nodes: fixture.nodes, edges: fixture.edges });
+
+  flowStoreModule.useFlowStore.getState().removeNodes(fixture.rootId);
+
+  const state = flowStoreModule.useFlowStore.getState();
+  assert.deepEqual(state.nodes.map(({ id }) => id).sort(), ['outside-sink', 'outside-source']);
+  assert.equal(state.edges.length, 0);
+  assert.equal(state.historyPast.length, 1);
+  const deletedCacheIds = JSON.parse(cacheRequests()[0].init.body).nodes;
+  assert.deepEqual(
+    deletedCacheIds.sort(),
+    [fixture.rootId, fixture.generateId, fixture.utilityId, fixture.previewId].sort(),
+  );
 });
 
 test('terminal cleanup is task-scoped and durable graph snapshots never retain execution state', () => {

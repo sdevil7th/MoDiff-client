@@ -1,9 +1,10 @@
 import { enqueueSnackbar } from '../ui/snackbar';
 import { deepEqual } from '../utils/deepEqual';
 import { markStudioGraphDefinitionPending, syncStudioGraphDefinition } from '../studio/graphBridge';
+import { collapsedHuggingFaceClusterPreviewTarget } from '../studio/huggingFaceClusterGraph';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
-import { collapsedUserBlockPreviewTarget, runtimeProgressTarget } from '../studio/userBlocks';
+import { blockPreviewTargetV2, collapsedUserBlockPreviewTarget, runtimeProgressTarget } from '../studio/userBlocks';
 import { executionProgressFrom } from '../studio/executionProgress';
 import {
   backendWorkflowTab,
@@ -12,7 +13,7 @@ import {
   markBackendWorkflow,
 } from '../studio/useWorkflowBackendSync';
 import { isWebsocketMessage, type TaskWebsocketMessage, type WebsocketMessage } from '../types/api';
-import { useFlowStore } from './useFlowStore';
+import { useFlowStore, type CustomNodeType } from './useFlowStore';
 import { NodeParams, useNodesStore } from './useNodeStore';
 import { useRunIssueStore } from './useRunIssueStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -260,7 +261,27 @@ function capturedPreviewDescriptor(
 ) {
   const runContext = findStudioRunContext(taskId, clientRunId);
   if (!runContext) return null;
-  const node = runContext.graph.nodes.map(recordValue).find((candidate) => candidate?.id === nodeId);
+  const capturedNodes = runContext.graph.nodes;
+  const node = capturedNodes.map(recordValue).find((candidate) => candidate?.id === nodeId);
+  if (!node) {
+    const blockPreview = blockPreviewTargetV2(capturedNodes as unknown as CustomNodeType[], nodeId, fieldKey);
+    if (blockPreview) {
+      return {
+        found: true,
+        module: 'MoDiff',
+        action: 'BlockV2',
+        display:
+          blockPreview.mediaType === 'image'
+            ? 'ui_image'
+            : blockPreview.mediaType === 'video'
+              ? 'ui_video'
+              : blockPreview.mediaType === 'audio'
+                ? 'ui_audio'
+                : 'ui_text',
+        hidden: false,
+      };
+    }
+  }
   const data = recordValue(node?.data);
   const params = recordValue(data?.params);
   const param = recordValue(params?.[fieldKey]);
@@ -271,6 +292,29 @@ function capturedPreviewDescriptor(
     display: typeof param?.display === 'string' ? param.display : undefined,
     hidden: param?.hidden === true,
   };
+}
+
+function boundedPreviewReference(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const candidate = value.trim();
+    return candidate && candidate.length <= 8192 ? candidate : undefined;
+  }
+  if (!Array.isArray(value)) return undefined;
+  for (const candidate of value) {
+    const reference = boundedPreviewReference(candidate);
+    if (reference) return reference;
+  }
+  return undefined;
+}
+
+function previewMediaReference(value: unknown, artifacts: unknown) {
+  if (Array.isArray(artifacts)) {
+    for (const artifact of artifacts) {
+      const reference = boundedPreviewReference(recordValue(artifact)?.url);
+      if (reference) return reference;
+    }
+  }
+  return boundedPreviewReference(value);
 }
 
 function isGeneratedPreviewUpdate(message: WebsocketMessage) {
@@ -336,6 +380,24 @@ function preserveCurrentParamValue(current: NodeParams | undefined, incoming: No
   }
   if (current.isConnected !== undefined) {
     preserved.isConnected = current.isConnected;
+  }
+  // Cluster execution metadata belongs to the workflow instance, not to the
+  // backend's dynamic field definition. In particular, dropping
+  // suppressInitialFieldAction for even one render causes a republished
+  // onSignal/onChange handle to dispatch again, which feeds the definition
+  // response back into the backend and leaves React Flow rebuilding edges in
+  // a loop. Preserve only the app-owned Cluster keys while accepting every
+  // other field option from the fresh backend definition.
+  const clusterFieldOptions = Object.fromEntries(
+    Object.entries(current.fieldOptions ?? {}).filter(
+      ([key]) => key === 'suppressInitialFieldAction' || key.startsWith('huggingFaceCluster'),
+    ),
+  );
+  if (Object.keys(clusterFieldOptions).length > 0) {
+    preserved.fieldOptions = {
+      ...(incoming.fieldOptions ?? {}),
+      ...clusterFieldOptions,
+    };
   }
   // Dynamic definitions are allowed to republish their declarative actions.
   // Keep the existing object identity when the action itself did not change:
@@ -409,7 +471,8 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       const workflow = backendWorkflowTab(message.workflow);
       if (workflow) {
         markBackendWorkflow(workflow);
-        if (!isWorkflowTabClosed(workflow.id)) {
+        const isOpen = useStudioStore.getState().workflowTabs.some((tab) => tab.id === workflow.id);
+        if (isOpen && !isWorkflowTabClosed(workflow.id)) {
           useStudioStore.getState().mergeBackendWorkflow(workflow);
         }
       }
@@ -448,6 +511,12 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       const completedRunContext = findStudioRunContext(message.task_id, message.client_run_id);
       markNodeProgressTaskTerminal(message.task_id);
       useStudioStore.getState().markRunContextStatus(message.task_id, message.client_run_id, 'completed');
+      // A collapsed User/Cluster Node executes backend-owned synthetic preview
+      // node IDs that are intentionally absent from the captured canvas graph.
+      // The update_value classifier therefore cannot always enrich local
+      // history from that event. The backend persists previews before emitting
+      // graph_completed, so rehydrate its authoritative output record here.
+      void useStudioStore.getState().fetchBackendOutputs();
       if (message.runtimeFingerprint) {
         console.info('Graph runtime fingerprint', message.runtimeFingerprint);
       }
@@ -503,8 +572,9 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         enqueueSnackbar(message.message, { variant: 'info', autoHideDuration: 3200 });
       }
       break;
-    case 'auto_resource_cleanup': {
-      console.info('Auto resource cleanup', message);
+    case 'auto_resource_cleanup':
+    case 'runtime_resource_cleanup': {
+      console.info('Runtime resource cleanup', message);
       if (message.performed) {
         const reason = message.reasons?.filter(Boolean).join('; ');
         enqueueSnackbar(reason ? `Released stale runtime resources: ${reason}` : 'Released stale runtime resources.', {
@@ -585,12 +655,28 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
           studio.shouldApplyRunUpdateToActiveWorkflow(message.task_id, message.client_run_id, message.workflow_tab_id))
       ) {
         const flow = useFlowStore.getState();
-        flow.setParam(message.node, message.key, value);
-        flow.setParam(message.node, message.key, message.artifacts, 'artifacts');
-        const blockPreview = collapsedUserBlockPreviewTarget(flow.nodes, message.node, message.key);
+        const blockPreview = blockPreviewTargetV2(flow.nodes, message.node, message.key);
         if (blockPreview) {
-          flow.setParam(blockPreview.nodeId, blockPreview.fieldKey, value);
-          flow.setParam(blockPreview.nodeId, blockPreview.fieldKey, message.artifacts, 'artifacts');
+          const mediaReference = previewMediaReference(value, message.artifacts);
+          flow.setBlockPreviewStateV2(
+            blockPreview.rootId,
+            { nodeId: blockPreview.nodeId, outputPortId: blockPreview.outputPortId },
+            {
+              mediaReference: mediaReference ?? null,
+              taskId: message.task_id ?? null,
+              status: 'complete',
+            },
+          );
+        } else {
+          flow.setParam(message.node, message.key, value);
+          flow.setParam(message.node, message.key, message.artifacts, 'artifacts');
+          const compositePreview =
+            collapsedUserBlockPreviewTarget(flow.nodes, message.node, message.key) ??
+            collapsedHuggingFaceClusterPreviewTarget(flow.nodes, message.node, message.key);
+          if (compositePreview) {
+            flow.setParam(compositePreview.nodeId, compositePreview.fieldKey, value);
+            flow.setParam(compositePreview.nodeId, compositePreview.fieldKey, message.artifacts, 'artifacts');
+          }
         }
       }
       if (generatedPreviewUpdate) {
@@ -918,6 +1004,30 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       });
 
       const newParams = { ...defaultDef.params, ...definitionParams };
+      if (node.data.huggingFaceClusterRole === 'execution') {
+        // A reviewed Cluster admission owns an exact, already-finalized edge
+        // schema. Late dynamic-definition responses can be older than that
+        // receipt and omit handles that are still required by the immutable
+        // graph. Retain only connected or explicitly bound Cluster fields;
+        // ordinary unowned dynamic fields continue to follow the backend's
+        // latest definition exactly.
+        const ownedFields = new Set(
+          useFlowStore
+            .getState()
+            .edges.flatMap((edge) => [
+              ...(edge.source === node.id && edge.sourceHandle ? [edge.sourceHandle] : []),
+              ...(edge.target === node.id && edge.targetHandle ? [edge.targetHandle] : []),
+            ]),
+        );
+        Object.entries(node.data.params).forEach(([key, currentParam]) => {
+          if (
+            newParams[key] === undefined &&
+            (ownedFields.has(key) || currentParam.fieldOptions?.huggingFaceClusterBinding !== undefined)
+          ) {
+            newParams[key] = currentParam;
+          }
+        });
+      }
       Object.keys(newParams).forEach((key) => {
         const currentParam = node.data.params[key];
         const incomingParam = newParams[key];

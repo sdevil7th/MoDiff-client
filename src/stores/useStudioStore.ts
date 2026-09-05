@@ -176,7 +176,7 @@ type StudioActions = {
     apiGraph?: unknown,
     variation?: Pick<StudioRunContext, 'variationGroupId' | 'variationLabel'>,
     identity?: { clientRunId: string; runInputHash: string },
-    options?: { activate?: boolean },
+    options?: { activate?: boolean; form?: StudioFormState },
   ) => StudioRunContext;
   activateRunContext: (taskId?: string | null, clientRunId?: string | null) => StudioRunContext | null;
   clearRunContext: () => void;
@@ -577,6 +577,11 @@ function normalizeWorkflowSnapshot(
   const shouldRecoverManagedIdentity =
     allowCanonicalAdoption &&
     !activeTemplateId &&
+    // A V2 Block is a self-contained, workflow-owned exact graph authority.
+    // Legacy template inference must never reinterpret, rebuild, or remove
+    // registered/User Block roots merely because their internal actions look
+    // like one managed task graph.
+    !nodes.some((node) => Boolean(node.data.blockInstanceV2)) &&
     (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
   const inferredManagedForm = shouldRecoverManagedIdentity
     ? resolveStudioResourceForm(inferStudioFormFromWorkflow(nodes, persistedStudioForm))
@@ -691,9 +696,26 @@ function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
 
 function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
   return (
-    JSON.stringify([left.title, left.source, left.sourceLabel, left.snapshot]) ===
-    JSON.stringify([right.title, right.source, right.sourceLabel, right.snapshot])
+    stableStringify([left.title, left.source, left.sourceLabel, left.snapshot]) ===
+    stableStringify([right.title, right.source, right.sourceLabel, right.snapshot])
   );
+}
+
+const MAX_LOCAL_WORKFLOW_TABS = 12;
+
+/**
+ * Workflow documents are backend-owned. localStorage is only a bounded crash
+ * checkpoint for tabs currently in use; mirroring a large saved-workflow
+ * library here can exceed the browser's per-origin quota.
+ */
+export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkflowTabId: string | null) {
+  const ranked = [...tabs].sort((left, right) => {
+    if (left.id === activeWorkflowTabId) return -1;
+    if (right.id === activeWorkflowTabId) return 1;
+    if (left.dirty !== right.dirty) return left.dirty ? -1 : 1;
+    return right.updatedAt - left.updatedAt;
+  });
+  return ranked.slice(0, MAX_LOCAL_WORKFLOW_TABS);
 }
 
 function normalizePersistedStudioState(
@@ -706,7 +728,10 @@ function normalizePersistedStudioState(
     ...persistedState,
   } as StudioState & StudioVolatileState & StudioActions;
   const workflowTabs = Array.isArray(mergedState.workflowTabs)
-    ? normalizeWorkflowTabs(mergedState.workflowTabs)
+    ? workflowTabsForLocalCheckpoint(
+        normalizeWorkflowTabs(mergedState.workflowTabs),
+        typeof mergedState.activeWorkflowTabId === 'string' ? mergedState.activeWorkflowTabId : null,
+      )
     : currentState.workflowTabs;
   const activeWorkflowTab = workflowTabs.find((tab) => tab.id === mergedState.activeWorkflowTabId);
   const activeSnapshot = activeWorkflowTab?.snapshot;
@@ -1196,19 +1221,28 @@ function applyImportedImageToForm(form: StudioFormState, image: string): StudioF
   if (!trimmed) return form;
 
   const requiredImages = STUDIO_MODEL_PROFILES[form.modelType].modeRequirements?.[form.mode]?.requiredImages ?? [];
-  const minimumReferenceImages =
+  const declaredMinimumReferenceImages =
     STUDIO_MODEL_PROFILES[form.modelType].modeRequirements?.[form.mode]?.minimumCounts?.referenceImages ?? 1;
+  const minimumReferenceImages = requiredImages.includes('lastImage')
+    ? Math.max(2, declaredMinimumReferenceImages)
+    : declaredMinimumReferenceImages;
   if (
     requiredImages.includes('referenceImages') &&
     form.referenceImages.filter((item) => item.trim()).length < minimumReferenceImages
   ) {
-    return withReferenceImage(form, trimmed);
+    return {
+      ...form,
+      referenceImages: [...form.referenceImages.filter((item) => item !== trimmed), trimmed],
+    };
   }
   if (requiredImages.includes('maskImage') && !form.maskImage.trim()) {
     return { ...form, maskImage: trimmed };
   }
   if (requiredImages.includes('controlImage') && !form.controlImage.trim()) {
     return { ...form, controlImage: trimmed };
+  }
+  if (requiredImages.includes('ipAdapterImage') && !form.ipAdapterImage.trim()) {
+    return { ...form, ipAdapterImage: trimmed };
   }
 
   return withReferenceImage(form, trimmed);
@@ -1434,6 +1468,20 @@ function isNonEmptyPreviewValue(value: unknown) {
 const STUDIO_STORAGE_KEY = 'modiff.studio';
 migrateLocalStorageKey('studio', STUDIO_STORAGE_KEY);
 
+const resilientStudioStorage = {
+  getItem: (name: string) => localStorage.getItem(name),
+  removeItem: (name: string) => localStorage.removeItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch (error) {
+      // The full documents remain on the backend. A failed browser checkpoint
+      // must not break tab switching or a notification click.
+      console.warn('Could not update the local Studio checkpoint; backend workflows remain available.', error);
+    }
+  },
+};
+
 export type WorkflowOperationContext = {
   workflowTabId: string | null;
   canvasEpoch: number;
@@ -1643,7 +1691,13 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           workflowCanvasHydrated: true,
           workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
           workflowFormEpoch: state.workflowFormEpoch + 1,
-          launcherDismissed: activeTab ? activeTab.snapshot.nodes.length > 0 : state.launcherDismissed,
+          // Hydration may finish after the user has already dismissed the
+          // launcher's empty-workflow modal (for example while Setup is
+          // repairing an optional runtime). Do not resurrect it merely
+          // because the authoritative snapshot is still empty. Explicit
+          // document transitions below continue to reset this flag for a new
+          // empty workflow.
+          launcherDismissed: state.launcherDismissed || (activeTab ? activeTab.snapshot.nodes.length > 0 : false),
         });
       },
       detachManagedGraph: () => {
@@ -1665,7 +1719,15 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const { form, graphBinding } = get();
         const target = currentAutoResourcePlanTarget(plan, form, graphBinding);
         if (target) {
-          set({ lastError: target });
+          const planKey = autoPlanKeyForForm(form);
+          set((state) => ({
+            lastError: target,
+            autoResourcePlan: plan,
+            autoResourcePlans: {
+              ...state.autoResourcePlans,
+              [planKey]: plan,
+            },
+          }));
           throw new Error(target);
         }
         set((state) => {
@@ -1935,7 +1997,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           runInputHash,
           workflowTabId: state.activeWorkflowTabId,
           canvasEpoch: state.workflowCanvasEpoch,
-          form: cloneJson(state.form),
+          form: cloneJson(options?.form ?? state.form),
           graph: currentGraphSnapshot(),
           binding: state.graphBinding ? cloneJson(state.graphBinding) : null,
           apiGraph,
@@ -2757,11 +2819,25 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         if (!normalized) return;
         const state = get();
         const existing = state.workflowTabs.find((tab) => tab.id === normalized.id);
-        if (existing && (existing.backendRevision ?? 0) >= (normalized.backendRevision ?? 0)) return;
+        if (existing && (existing.backendRevision ?? 0) > (normalized.backendRevision ?? 0)) return;
         const localDocument =
           existing && state.activeWorkflowTabId === normalized.id
             ? { ...existing, snapshot: currentWorkflowSnapshot(state) }
             : existing;
+        if (existing && (existing.backendRevision ?? 0) === (normalized.backendRevision ?? 0)) {
+          // A websocket broadcast for revision N can arrive before the PUT
+          // response for that same revision. Do not let the duplicate replace
+          // newer local work, but do let an exact acknowledgement clear the
+          // dirty marker left by the in-flight save.
+          if (localDocument && existing.dirty && sameWorkflowDocument(localDocument, normalized)) {
+            set({
+              workflowTabs: state.workflowTabs.map((tab) =>
+                tab.id === normalized.id ? { ...tab, snapshot: localDocument.snapshot, dirty: false } : tab,
+              ),
+            });
+          }
+          return;
+        }
         if (existing && localDocument && sameWorkflowDocument(localDocument, normalized)) {
           // An autosave acknowledgement for the document already on screen
           // only advances backend metadata. Replacing the live canvas here
@@ -3003,7 +3079,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
     }),
     {
       name: STUDIO_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => resilientStudioStorage),
       partialize: (state) => ({
         selectedMode: state.selectedMode,
         form: state.form,
@@ -3013,7 +3089,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         activeTemplateId: state.activeTemplateId,
         sourceOutputId: state.sourceOutputId,
         importedAssets: state.importedAssets,
-        workflowTabs: state.workflowTabs,
+        workflowTabs: workflowTabsForLocalCheckpoint(state.workflowTabs, state.activeWorkflowTabId),
         activeWorkflowTabId: state.activeWorkflowTabId,
         appModeConfigs: state.appModeConfigs,
         activeAppModeConfigId: state.activeAppModeConfigId,

@@ -29,6 +29,7 @@ function resolveRandomFieldValue(
   paramName: string,
   paramData: NodeParams,
   setParam: SetNodeParam,
+  sharedRandomValues: Map<string, number>,
 ) {
   const randomValue = isRecord(paramData.value) ? paramData.value : null;
   const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : paramData.value;
@@ -38,7 +39,19 @@ function resolveRandomFieldValue(
     return { isRandom, value: fieldValue };
   }
 
-  const generatedValue = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+  const minimum = Number.isSafeInteger(paramData.min) ? Number(paramData.min) : 0;
+  const maximum = Number.isSafeInteger(paramData.max) ? Number(paramData.max) : 0xffff_ffff;
+  // Studio exposes one seed control for the entire managed workflow. Resolve
+  // that random seed once per export so every route-bound encoder, ControlNet,
+  // and denoiser receives the same concrete value. Manual graph nodes remain
+  // independently random as before.
+  const sharedKey = node.data.studioOwned === true && paramName === 'seed' ? 'managed-studio-seed' : null;
+  const sharedValue = sharedKey ? sharedRandomValues.get(sharedKey) : undefined;
+  if (sharedValue !== undefined && (sharedValue < minimum || sharedValue > maximum)) {
+    throw new Error('Managed Studio seed fields have incompatible random bounds.');
+  }
+  const generatedValue = sharedValue ?? Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
+  if (sharedKey && sharedValue === undefined) sharedRandomValues.set(sharedKey, generatedValue);
   setParam(node.id, paramName, { value: generatedValue, isRandom });
   return { isRandom, value: generatedValue };
 }
@@ -185,6 +198,7 @@ export function buildApiGraphExport({
   const includedNodeIds = new Set(filteredExecutableNodes.map((node) => node.id));
 
   const nodesExport: ApiGraphExport['nodes'] = {};
+  const sharedRandomValues = new Map<string, number>();
 
   filteredExecutableNodes.forEach((node) => {
     const params: ApiGraphExport['nodes'][string]['params'] = {};
@@ -195,7 +209,9 @@ export function buildApiGraphExport({
       }
 
       const randomField =
-        paramData.display === 'random' ? resolveRandomFieldValue(node, paramName, paramData, setParam) : null;
+        paramData.display === 'random'
+          ? resolveRandomFieldValue(node, paramName, paramData, setParam, sharedRandomValues)
+          : null;
       // The executable graph contains values, not the full registry schema.
       // Preserve backend-owned defaults when a field has not been edited;
       // otherwise JSON serialization drops `undefined` and the worker sees an

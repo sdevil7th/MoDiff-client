@@ -11,7 +11,7 @@ import { getModelRequirementsForMode, getProfileForForm } from './modelProfiles'
 import type { StudioFormState, StudioModelRequirement } from './types';
 
 export type WorkflowArtifactRequirementRole =
-  'Pipeline' | 'Adapter' | 'Control' | 'Text encoder' | 'VAE' | 'Transformer' | 'Other component';
+  'Pipeline' | 'Adapter' | 'Control' | 'Safety checker' | 'Text encoder' | 'VAE' | 'Transformer' | 'Other component';
 
 export type WorkflowArtifactPrimaryAction = 'Ready' | 'Install' | 'Repair' | 'Use local' | 'Retry' | 'Details';
 
@@ -47,6 +47,7 @@ export type WorkflowGraphArtifactReference = {
   kind: 'repo' | 'path';
   value: string;
   paramKey: string;
+  revision?: string;
 };
 
 type GraphWorkflowArtifactRequirementOptions = {
@@ -58,6 +59,7 @@ type GraphWorkflowArtifactRequirementOptions = {
 
 function roleForRequirement(requirement: StudioModelRequirement): WorkflowArtifactRequirementRole {
   if (requirement.kind === 'controlnet') return 'Control';
+  if (requirement.kind === 'safety_checker') return 'Safety checker';
   if (requirement.kind === 'adapter' || requirement.kind === 't2i_adapter') return 'Adapter';
   return roleForArtifact(requirement.repo, requirement.label);
 }
@@ -93,6 +95,7 @@ function localPathStatus(path: string, localModels: unknown[]): StudioModelCache
     matchingExternalRepos: [],
     installed: localCached,
     runnable: localCached,
+    repairRequired: false,
     reason: localCached ? 'Found in MoDiff local model files' : 'Not found in MoDiff local model files',
     scannedPaths: [],
   };
@@ -121,7 +124,12 @@ function requirementFromRepo({
   hfCache: unknown[];
   localModels: unknown[];
 }): WorkflowArtifactRequirement {
-  const status = getRepoCacheStatus(repo, hfCache, localModels, modelCacheDiagnostics);
+  const status = getRepoCacheStatus(repo, hfCache, localModels, modelCacheDiagnostics, {
+    revision: installTarget?.revision,
+    files: installTarget?.files,
+  });
+  const effectiveInstallTarget =
+    status.repairRequired && installTarget ? { ...installTarget, repair: true, actionLabel: 'Repair' } : installTarget;
   return {
     id,
     role,
@@ -130,8 +138,8 @@ function requirementFromRepo({
     artifact: repo,
     source,
     status,
-    primaryAction: actionForStatus(status, installTarget),
-    installTarget,
+    primaryAction: actionForStatus(status, effectiveInstallTarget),
+    installTarget: effectiveInstallTarget,
     details: details ?? status.reason,
   };
 }
@@ -213,7 +221,13 @@ export function getStudioWorkflowArtifactRequirements({
         details: requirement.description,
         hfCache,
         id: `mode:${profile.modelType}:${form.mode}:${requirement.id}`,
-        installTarget: { repo: requirement.repo, label: requirement.label, actionLabel: 'Install' },
+        installTarget: {
+          repo: requirement.repo,
+          label: requirement.label,
+          actionLabel: 'Install',
+          revision: requirement.revision,
+          files: requirement.downloadFiles,
+        },
         label: requirement.label,
         localModels,
         modelCacheDiagnostics,
@@ -254,8 +268,16 @@ export function getGraphWorkflowArtifactRequirements({
       };
     }
 
-    const status = getRepoCacheStatus(reference.value, hfCache, localModels, modelCacheDiagnostics);
-    const primaryAction = actionForStatus(status, { repo: reference.value, label, actionLabel: 'Install' });
+    const installTarget = {
+      repo: reference.value,
+      label,
+      actionLabel: 'Install' as const,
+      revision: reference.revision,
+    };
+    const status = getRepoCacheStatus(reference.value, hfCache, localModels, modelCacheDiagnostics, {
+      revision: reference.revision,
+    });
+    const primaryAction = actionForStatus(status, installTarget);
     return {
       id: `graph:${reference.nodeId}:${reference.paramKey}:${reference.value}`,
       role: roleForArtifact(reference.value, label),
@@ -267,7 +289,7 @@ export function getGraphWorkflowArtifactRequirements({
       primaryAction,
       installTarget:
         primaryAction === 'Install' || primaryAction === 'Repair'
-          ? { repo: reference.value, label, actionLabel: primaryAction }
+          ? { ...installTarget, actionLabel: primaryAction }
           : undefined,
       nodeId: reference.nodeId,
       nodeLabel: reference.nodeLabel,

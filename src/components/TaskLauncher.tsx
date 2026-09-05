@@ -19,7 +19,8 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { createOrUpdateStudioGraph } from '../studio/graphBridge';
 import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODE_LABELS } from '../studio/modelProfiles';
 import type { StudioMode } from '../studio/types';
-import { ModiffButton } from '../ui';
+import { ModiffButton, ModiffDialog } from '../ui';
+import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
 
 const launcherModes: { mode: StudioMode; icon: ReactNode }[] = [
   { mode: 'text_to_image', icon: <Sparkles size={18} /> },
@@ -32,6 +33,7 @@ const launcherModes: { mode: StudioMode; icon: ReactNode }[] = [
   { mode: 'control_inpaint', icon: <ScanLine size={18} /> },
   { mode: 'layer_decomposition', icon: <Layers size={18} /> },
   { mode: 'text_to_video', icon: <Clapperboard size={18} /> },
+  { mode: 'image_to_video', icon: <Clapperboard size={18} /> },
   { mode: 'video_to_video', icon: <Video size={18} /> },
   { mode: 'video_color_edit', icon: <SlidersHorizontal size={18} /> },
   { mode: 'text_to_3d', icon: <Layers size={18} /> },
@@ -72,61 +74,63 @@ export default function TaskLauncher() {
   };
 
   return (
-    <div
-      data-testid="task-launcher"
-      className="absolute inset-0 z-[5] flex items-center justify-center bg-modiff-dialog-backdrop/50 p-6 backdrop-blur-sm"
+    <ModiffDialog
+      open
+      onClose={prepareWorkflowForManualInsertion}
+      title="Start with a task"
+      panelClassName="max-w-[920px]"
+      bodyClassName="max-h-[78vh]"
+      testId="task-launcher"
     >
-      <div className="w-full max-w-[920px] border border-modiff-border bg-modiff-surface p-4 shadow-modiff-node">
-        <h1 className="mb-1 text-lg font-bold text-modiff-text">Start with a task</h1>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-modiff-subtle-text">
-            Pick a task mode, browse templates, or jump straight into the graph.
-          </p>
-          <ModiffButton
-            tone="primary"
-            size="normal"
-            icon={<GalleryVerticalEnd size={16} />}
-            data-testid="launcher-open-template-browser"
-            onClick={() => {
-              setTemplateBrowserOpen(true);
-              setRightPanelOpen(true);
-              setRightPanelTab('studio');
-            }}
-          >
-            Browse templates
-          </ModiffButton>
-        </div>
-
-        <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]">
-          {launcherModes.map(({ mode, icon }) => {
-            const isLoading = loadingMode === mode;
-
-            return (
-              <ModiffButton
-                key={mode}
-                tone="secondary"
-                align="left"
-                fullWidth
-                disabled={loadingMode !== null}
-                loading={isLoading}
-                icon={icon}
-                data-testid={`launcher-mode-${mode}`}
-                onClick={() => {
-                  void handleModeSelect(mode);
-                }}
-                className="h-auto min-h-24 items-start gap-3 bg-modiff-bg p-3 hover:bg-modiff-panel"
-              >
-                <span className="min-w-0">
-                  <span className="block text-sm font-bold">{STUDIO_MODE_LABELS[mode]}</span>
-                  <span className="mt-1 block text-xs leading-5 text-modiff-subtle-text">
-                    {STUDIO_MODE_DESCRIPTIONS[mode]}
-                  </span>
-                </span>
-              </ModiffButton>
-            );
-          })}
-        </div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-modiff-subtle-text">
+          Pick a task mode, browse templates, or jump straight into the graph.
+        </p>
+        <ModiffButton
+          tone="primary"
+          size="normal"
+          icon={<GalleryVerticalEnd size={16} />}
+          data-testid="launcher-open-template-browser"
+          onClick={() => {
+            prepareWorkflowForManualInsertion();
+            setTemplateBrowserOpen(true);
+            setRightPanelOpen(true);
+            setRightPanelTab('studio');
+          }}
+        >
+          Browse templates
+        </ModiffButton>
       </div>
-    </div>
+
+      <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]">
+        {launcherModes.map(({ mode, icon }) => {
+          const isLoading = loadingMode === mode;
+
+          return (
+            <ModiffButton
+              key={mode}
+              tone="secondary"
+              align="left"
+              fullWidth
+              disabled={loadingMode !== null}
+              loading={isLoading}
+              icon={icon}
+              data-testid={`launcher-mode-${mode}`}
+              onClick={() => {
+                void handleModeSelect(mode);
+              }}
+              className="h-auto min-h-24 items-start gap-3 bg-modiff-bg p-3 hover:bg-modiff-panel"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-bold">{STUDIO_MODE_LABELS[mode]}</span>
+                <span className="mt-1 block text-xs leading-5 text-modiff-subtle-text">
+                  {STUDIO_MODE_DESCRIPTIONS[mode]}
+                </span>
+              </span>
+            </ModiffButton>
+          );
+        })}
+      </div>
+    </ModiffDialog>
   );
 }

@@ -73,7 +73,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   connectionTypes = await server.ssrLoadModule('/src/theme/connectionTypes.ts');
@@ -1753,7 +1753,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'WanTI2VPipeline',
       'wan-22-ti2v-5b:direct',
       'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
-      'studio-spec-v1-da22e734',
+      'studio-spec-v1-a83efd57',
     ),
     id: 'wan-22-ti2v-5b:text-to-video:v1',
     mode: 'text_to_video',
@@ -1762,7 +1762,14 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     pipelineClass: 'WanTI2VPipeline',
     roles: videoRoleRows,
     edges: videoEdgeRows,
-    bindings: videoBindingRows,
+    bindings: [
+      ...videoBindingRows.map(([role, param, source]) => [
+        role,
+        param,
+        role === 'wanPipeline' && param === 'revision' ? 'defaultRevision' : source,
+      ]),
+      ['wanPipeline', 'execution_profile_id', 'executionProfileId'],
+    ],
   };
   const wanT2vSpec = {
     ...ti2vSpec,
@@ -1772,6 +1779,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     pipelineClass: 'WanPipeline',
     defaultRepo: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
     contentHash: 'studio-spec-v1-10c9a3f2',
+    bindings: videoBindingRows,
   };
   const wanVaceT2vSpec = {
     ...wanT2vSpec,
@@ -2211,6 +2219,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: [spec.mode],
     studioExecutionSpecs: [spec],
   });
+  const ti2vCapability = {
+    ...capability(ti2vSpec),
+    revisionCandidates: ['b8fff7315c768468a5333511427288870b2e9635'],
+  };
   const kontextCapability = {
     ...capability(kontextSpec),
     modes: ['edit_image', 'multi_image_reference_edit'],
@@ -2403,7 +2415,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...depthBindingRows,
     ...editBindingRows,
     ...inpaintBindingRows,
-    ...videoBindingRows,
+    ...ti2vSpec.bindings,
     ...i2vBindingRows,
     ...wanVaceInpaintBindingRows,
     ...wanVaceControlBindingRows,
@@ -2642,7 +2654,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         qwenLayeredCapability,
         qwenImageCapability,
         capability(i2vSpec),
-        capability(ti2vSpec),
+        ti2vCapability,
         {
           ...capability(wanT2vSpec),
           modes: ['text_to_video', 'video_to_video', 'video_color_edit'],
@@ -2810,6 +2822,19 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       contentHash: devSpec.contentHash,
       nodes: Object.fromEntries(devSpec.roles.map(([role]) => [role, devBinding.nodes[role]])),
     });
+
+    const controlledBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    studioStoreModule.useStudioStore.setState({
+      graphBinding: {
+        ...controlledBinding,
+        controlled: { schemaVersion: 1, contractRevision: 1, contractIds: ['upscale.video.v1'] },
+      },
+    });
+    assert.deepEqual(
+      runPreparationModule.applyStudioRuntimeHints({ nodes: {}, paths: [] }).runtimeHints.controlledGraphContracts,
+      ['upscale.video.v1'],
+    );
+    studioStoreModule.useStudioStore.setState({ graphBinding: controlledBinding });
 
     const candidate = {
       id: 'flux-dev-ready',
@@ -3521,7 +3546,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       steps: 50,
       guidanceScale: 5,
       guidanceScale2: 0,
-      shift: 8,
+      shift: 5,
       conditioningScale: 1,
       attentionKwargsJson: '',
     };
@@ -3537,16 +3562,16 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         .sort(),
     );
     const ti2vNodes = flowStoreModule.useFlowStore.getState().nodes;
-    assert.equal(
-      ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanPipeline).data.params.pipeline_class.value,
-      'WanTI2VPipeline',
-    );
+    const ti2vPipeline = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanPipeline).data.params;
+    assert.equal(ti2vPipeline.pipeline_class.value, 'WanTI2VPipeline');
+    assert.equal(ti2vPipeline.revision.value, 'b8fff7315c768468a5333511427288870b2e9635');
+    assert.equal(ti2vPipeline.execution_profile_id.value, 'wan-22-ti2v-5b:direct');
     const ti2vRecipe = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.diffusersRecipe).data.params;
     assert.equal(ti2vRecipe.attention_backend.value, '_native_flash');
     assert.equal(ti2vRecipe.attention_components.value, 'transformer');
     assert.equal(ti2vRecipe.vae_tiling.value, true);
     const ti2vGenerate = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanGenerate).data.params;
-    assert.equal(ti2vGenerate.scheduler_flow_shift.value, 8);
+    assert.equal(ti2vGenerate.scheduler_flow_shift.value, 5);
     assert.equal(ti2vGenerate.use_guidance_scale_2.value, false);
     assert.equal(ti2vNodes.find((item) => item.id === ti2vBinding.nodes.videoExport).data.params.fps.value, 24);
     assert.deepEqual(ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanGenerate).position, { x: 220, y: -80 });
@@ -4376,6 +4401,7 @@ test('direct Qwen and extended video specs materialize their exact generic route
       params: {
         model_id: scalar(),
         revision: scalar(),
+        execution_profile_id: scalar(),
         pipeline_class: { ...scalar(), onChange: 'update_video_contract' },
         motion_adapter_id: scalar(),
         motion_adapter_revision: scalar(),
@@ -5641,12 +5667,11 @@ test('schema-v3 controlled commits roll back partial routes and seal extension e
     studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof,
     binding.finalizationProof,
   );
-  assert.equal(
-    runReadinessModule
-      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
-      .find((issue) => issue.action === 'detach_graph')?.blocking,
-    true,
-  );
+  const invalidReceiptIssue = runReadinessModule
+    .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+    .find((issue) => issue.action === 'detach_graph');
+  assert.equal(invalidReceiptIssue?.blocking, false);
+  assert.equal(invalidReceiptIssue?.severity, 'warning');
   await assert.rejects(() => graphBridge.createOrUpdateStudioGraph(form), /saved Studio graph proof is invalid/i);
 });
 
@@ -5918,6 +5943,20 @@ test('Closed blocks derive possible frontier sockets and route collapsed preview
       ['preview', 'selected'],
     ],
   );
+  flowStoreModule.useFlowStore.setState({ nodes: [created.blockNode], edges: [] });
+  const collapsedReadiness = runReadinessModule.collectRunReadinessIssues({
+    sid: 'test-session',
+    isConnected: true,
+  });
+  assert.equal(
+    collapsedReadiness.find((item) => /connected output|connect the graph to an output/i.test(item.message)),
+    undefined,
+    'a collapsed User Node must be validated through the same expanded graph that will execute',
+  );
+  const collapsedInspection = runReadinessModule.inspectCurrentGraph();
+  assert.equal(collapsedInspection.nodeCount, 1, 'inspection preserves the visible wrapper count');
+  assert.equal(collapsedInspection.enabledExecutableCount, 3, 'inspection validates the three internal nodes');
+  assert.equal(collapsedInspection.outputPathCount, 1, 'the internal preview remains a connected execution output');
   const runtimePreviewNodeId = `${created.blockNode.id}__preview`;
   const previewTarget = userBlocksModule.collapsedUserBlockPreviewTarget(
     created.nodes,
@@ -5937,6 +5976,257 @@ test('Closed blocks derive possible frontier sockets and route collapsed preview
     userBlocksModule.runtimeProgressTarget(created.nodes, 'unknown-runtime-id', 'Closed render block'),
     created.blockNode.id,
     'a unique visible label can restore progress after a durable queue snapshot',
+  );
+});
+
+test('existing canvas nodes move into expanded User Nodes while Cluster and User Node nesting stays rejected', () => {
+  const loader = node('adopt-loader', 0, 0, {
+    params: { output: { display: 'output', type: 'image' } },
+  });
+  const preview = node('adopt-preview', 360, 0, {
+    params: {
+      input: { display: 'input', type: 'image' },
+      preview: { display: 'ui_image', type: 'url', value: null },
+    },
+  });
+  loader.selected = true;
+  preview.selected = true;
+  const created = userBlocksModule.createUserBlockFromSelection(
+    { nodes: [loader, preview], edges: [edge('adopt-internal', loader.id, preview.id)] },
+    'Adoption target',
+  );
+  assert.equal(created.ok, true);
+  const expanded = userBlocksModule.expandUserBlockInstance(
+    { nodes: created.nodes, edges: created.edges },
+    created.blockNode.id,
+    [],
+  );
+  const root = expanded.nodes.find((item) => item.id === created.blockNode.id);
+  const ordinary = node('existing-canvas-node', root.position.x + 140, root.position.y + 180, {
+    params: {
+      input: { display: 'input', type: 'image' },
+      output: { display: 'output', type: 'image' },
+    },
+  });
+  const adoptedGraph = userBlocksModule.placeExistingNodeInsideExpandedUserBlock(
+    { nodes: [...expanded.nodes, ordinary], edges: expanded.edges },
+    ordinary.id,
+    root.id,
+  );
+  const adopted = adoptedGraph.nodes.find((item) => item.id === ordinary.id);
+  assert.equal(adopted.parentId, root.id);
+  assert.equal(adopted.data.userBlockInstanceId, root.id);
+  assert.equal(adopted.data.userBlockSourceNodeId, ordinary.id);
+  assert.equal(adopted.position.x, 140);
+  assert.equal(adopted.position.y, 180);
+  assert.ok(adoptedGraph.nodes.findIndex((item) => item.id === root.id) < adoptedGraph.nodes.indexOf(adopted));
+
+  const rejectedUserNesting = userBlocksModule.placeExistingNodeInsideExpandedUserBlock(adoptedGraph, root.id, root.id);
+  assert.equal(rejectedUserNesting, adoptedGraph);
+  const cluster = {
+    ...node('cluster-container', root.position.x + 180, root.position.y + 220),
+    type: 'cluster',
+    data: { ...node('cluster-container').data, type: 'cluster' },
+  };
+  const withCluster = { nodes: [...adoptedGraph.nodes, cluster], edges: adoptedGraph.edges };
+  assert.equal(
+    userBlocksModule.placeExistingNodeInsideExpandedUserBlock(withCluster, cluster.id, root.id),
+    withCluster,
+  );
+
+  const collapsed = userBlocksModule.collapseUserBlockInstance(adoptedGraph, root.id, []);
+  const collapsedRoot = collapsed.nodes.find((item) => item.id === root.id);
+  assert.equal(collapsedRoot.data.userBlockSnapshot.nodes.length, 3);
+  const restored = userBlocksModule.expandUserBlockGraph(collapsed.nodes, collapsed.edges, []);
+  assert.ok(restored.nodes.some((item) => item.id.endsWith(ordinary.id)));
+
+  const captured = userBlocksModule.snapshotUserBlockInstance(adoptedGraph, root.id, []);
+  assert.equal(captured.nodes.length, 3);
+  const copied = userBlocksModule.copyUserBlockDefinition(
+    captured,
+    `${captured.name} — Workflow Demo`,
+    'new-user-node-definition',
+  );
+  assert.equal(copied.id, 'new-user-node-definition');
+  assert.equal(copied.name, 'Adoption target — Workflow Demo');
+  const otherInstance = userBlocksModule.createUserBlockNode(created.block, { x: 1800, y: 0 }, 'other-instance');
+  const applied = userBlocksModule.applyUserBlockDefinitionToInstance(
+    { nodes: [...adoptedGraph.nodes, otherInstance], edges: adoptedGraph.edges },
+    root.id,
+    copied,
+  );
+  const updatedInstance = applied.nodes.find((item) => item.id === root.id);
+  const unchangedInstance = applied.nodes.find((item) => item.id === otherInstance.id);
+  assert.equal(updatedInstance.data.userBlockId, copied.id);
+  assert.equal(updatedInstance.data.label, copied.name);
+  assert.equal(updatedInstance.data.userBlockSnapshot.nodes.length, 3);
+  assert.equal(unchangedInstance.data.userBlockId, created.block.id);
+  assert.equal(unchangedInstance.data.userBlockSnapshot.nodes.length, 2);
+});
+
+test('User Node composition guides typed insertion, validates Modular state identity, and keeps the splice undoable', () => {
+  const source = node('composition-source', 0, 0, {
+    params: { image: { display: 'output', type: 'image' } },
+  });
+  const target = node('composition-target', 720, 0, {
+    params: { image: { display: 'input', type: 'image', required: true } },
+  });
+  source.selected = true;
+  target.selected = true;
+  const created = userBlocksModule.createUserBlockFromSelection(
+    {
+      nodes: [source, target],
+      edges: [edge('composition-edge', source.id, target.id, 'image', 'image')],
+    },
+    'Semantic composition',
+  );
+  assert.equal(created.ok, true);
+  const expanded = userBlocksModule.expandUserBlockInstance(
+    { nodes: created.nodes, edges: created.edges },
+    created.blockNode.id,
+    [],
+  );
+  const root = expanded.nodes.find((item) => item.id === created.blockNode.id);
+  const relay = userBlocksModule.placeNodeInsideExpandedUserBlock(
+    node('composition-relay', root.position.x + 360, root.position.y + 180, {
+      params: {
+        image_in: { display: 'input', type: 'image' },
+        image_out: { display: 'output', type: 'image' },
+      },
+    }),
+    root,
+  );
+  const withRelay = { nodes: [...expanded.nodes, relay], edges: expanded.edges };
+  const report = userBlocksModule.inspectUserBlockComposition(withRelay, root.id);
+  assert.equal(report.valid, true);
+  assert.equal(report.insertionSuggestions.length, 1);
+  assert.match(
+    report.insertionSuggestions[0].label,
+    /Insert composition-relay between composition-source and composition-target/,
+  );
+  const replacedEdgeId = report.insertionSuggestions[0].edgeId;
+
+  flowStoreModule.useFlowStore.setState({
+    ...withRelay,
+    historyPast: [],
+    historyFuture: [],
+  });
+  flowStoreModule.useFlowStore.getState().insertNodeInUserBlock(root.id, report.insertionSuggestions[0]);
+  let current = flowStoreModule.useFlowStore.getState();
+  assert.equal(
+    current.edges.some((item) => item.id === replacedEdgeId),
+    false,
+  );
+  assert.equal(current.edges.filter((item) => item.source === relay.id || item.target === relay.id).length, 2);
+  assert.equal(userBlocksModule.inspectUserBlockComposition(current, root.id).valid, true);
+  current.undo();
+  current = flowStoreModule.useFlowStore.getState();
+  assert.equal(
+    current.edges.some((item) => item.id === replacedEdgeId),
+    true,
+  );
+  assert.equal(current.edges.filter((item) => item.source === relay.id || item.target === relay.id).length, 0);
+  current.redo();
+  current = flowStoreModule.useFlowStore.getState();
+  assert.equal(current.edges.filter((item) => item.source === relay.id || item.target === relay.id).length, 2);
+
+  const firstState = node('state-first', 0, 0, {
+    params: {
+      pipeline_class: { type: 'string', value: 'MiniMaxMusic3ModularPipeline', hidden: true },
+      workflow_id: { type: 'string', value: 'default', hidden: true },
+      state: { display: 'output', type: 'modular_workflow_state' },
+    },
+  });
+  const wrongState = node('state-wrong', 360, 0, {
+    params: {
+      pipeline_class: { type: 'string', value: 'FutureMusicModularPipeline', hidden: true },
+      workflow_id: { type: 'string', value: 'default', hidden: true },
+      state: { display: 'input', type: 'modular_workflow_state' },
+    },
+  });
+  firstState.selected = true;
+  wrongState.selected = true;
+  const stateBlock = userBlocksModule.createUserBlockFromSelection(
+    {
+      nodes: [firstState, wrongState],
+      edges: [edge('state-edge', firstState.id, wrongState.id, 'state', 'state')],
+    },
+    'State identity',
+  );
+  assert.equal(stateBlock.ok, true);
+  const expandedState = userBlocksModule.expandUserBlockInstance(
+    { nodes: stateBlock.nodes, edges: stateBlock.edges },
+    stateBlock.blockNode.id,
+    [],
+  );
+  const stateReport = userBlocksModule.inspectUserBlockComposition(expandedState, stateBlock.blockNode.id);
+  assert.equal(stateReport.valid, false);
+  assert.equal(stateReport.issues[0].kind, 'state_identity_mismatch');
+  assert.match(stateReport.issues[0].message, /MiniMaxMusic3ModularPipeline\/default/);
+  assert.match(stateReport.issues[0].message, /FutureMusicModularPipeline\/default/);
+});
+
+test('User Node connection scope permits exposed boundaries but rejects private and cross-instance links', () => {
+  const source = node('boundary-source', 0, 0, {
+    params: {
+      public_image: { display: 'output', type: 'image' },
+      private_image: { display: 'output', type: 'image' },
+    },
+  });
+  source.selected = true;
+  const created = userBlocksModule.createUserBlockFromSelection({ nodes: [source], edges: [] }, 'Boundary block');
+  assert.equal(created.ok, true);
+  const expanded = userBlocksModule.expandUserBlockInstance(
+    { nodes: created.nodes, edges: created.edges },
+    created.blockNode.id,
+    [],
+  );
+  const child = expanded.nodes.find((item) => item.data.userBlockInstanceId === created.blockNode.id);
+  const outside = node('boundary-outside', 900, 0, {
+    params: { image: { display: 'input', type: 'image' } },
+  });
+  assert.equal(
+    userBlocksModule.userBlockConnectionIsAllowed(
+      [...expanded.nodes, outside],
+      child.id,
+      'public_image',
+      outside.id,
+      'image',
+    ),
+    true,
+  );
+
+  const restrictedDefinition = structuredClone(created.block);
+  restrictedDefinition.outputs = restrictedDefinition.outputs.filter((port) => port.paramKey === 'public_image');
+  const restrictedRoot = expanded.nodes.find((item) => item.id === created.blockNode.id);
+  restrictedRoot.data.userBlockSnapshot = restrictedDefinition;
+  assert.equal(
+    userBlocksModule.userBlockConnectionIsAllowed(
+      [...expanded.nodes, outside],
+      child.id,
+      'private_image',
+      outside.id,
+      'image',
+    ),
+    false,
+  );
+
+  const second = userBlocksModule.createUserBlockNode(created.block, { x: 1200, y: 0 }, 'second-boundary-block');
+  const expandedSecond = userBlocksModule.expandUserBlockInstance(
+    { nodes: [...expanded.nodes, second], edges: expanded.edges },
+    second.id,
+    [],
+  );
+  const secondChild = expandedSecond.nodes.find((item) => item.data.userBlockInstanceId === second.id);
+  assert.equal(
+    userBlocksModule.userBlockConnectionIsAllowed(
+      expandedSecond.nodes,
+      child.id,
+      'public_image',
+      secondChild.id,
+      'public_image',
+    ),
+    false,
   );
 });
 
@@ -6056,7 +6346,16 @@ test('Auto canvas renders the exact workflow graph instead of a projected facade
   assert.doesNotMatch(workflowSource, /buildManagedWorkflowPresentation|managedAutoCanvas|ManagedWorkflowStageNode/);
   assert.match(workflowSource, /nodes=\{exactVisibleNodes\}/);
   assert.match(workflowSource, /edges=\{exactVisibleEdges\}/);
-  assert.match(workflowSource, /onlyRenderVisibleElements=\{!canvasSuspended\}/);
+  assert.match(
+    workflowSource,
+    /onlyRenderVisibleElements=\{!canvasSuspended && !workflowFocusRequest && !requiresCompleteCompositeMount\}/,
+  );
+  assert.match(workflowSource, /isUserBlockExpandedInstance\(\{ nodes, edges \}, node\.id\)/);
+  assert.match(workflowSource, /huggingFaceClusterInstance\?\.presentation\.expanded === true/);
+  assert.equal(
+    [...workflowSource.matchAll(/fitView\([\s\S]*?\.finally\(\(\) => \{\s*setWorkflowFocusRequest\(null\);/g)].length,
+    2,
+  );
   assert.match(workflowSource, /nodesDraggable[\s\S]*nodesConnectable[\s\S]*elementsSelectable/);
   assert.ok(runPreparation);
   assert.doesNotMatch(runPreparation, /createOrUpdateStudioGraph/);
@@ -7758,6 +8057,7 @@ test('restored modular video groups require exact typed I2V and first-last-frame
   assert.match(graphBridge.getStudioGraphRunBlockingMessage(missingCoreMap.form), /route pending/i);
 
   const flf = buildFixture({ flf: true, omit: { role: 'imageEncode', field: 'last_image' } });
+  flf.form.referenceImages = ['opening-from-form.png', 'ending-from-form.png'];
   graphBridge.markStudioGraphDefinitionPending();
   assert.equal(graphBridge.syncStudioGraphDefinition(flf.form), false);
   assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
@@ -7772,10 +8072,16 @@ test('restored modular video groups require exact typed I2V and first-last-frame
   assert.ok(ledger().includes(`${flf.roles.loadLastImage}:image->${flf.roles.imageEmbeddings}:last_image`));
   assert.ok(ledger().includes(`${flf.roles.loadLastImage}:image->${flf.roles.imageEncode}:last_image`));
   assert.deepEqual(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === flf.roles.loadImage).data.params.file
+      .value,
+    ['opening-from-form.png'],
+    'the first-frame loader receives exactly the first selected image',
+  );
+  assert.equal(
     flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === flf.roles.loadLastImage).data.params.file
       .value,
-    ['ending.png'],
-    'form synchronization never aliases the opening image into the ending-image loader',
+    'ending-from-form.png',
+    'the last-frame loader receives exactly the second selected image',
   );
 
   const flfNodeIds = new Set([flf.roles.loadLastImage]);
@@ -7915,6 +8221,9 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   const e2eHooksSource = fs.readFileSync(path.join(ROOT, 'src', 'utils', 'e2eHooks.ts'), 'utf8');
   const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
   const studioPanelSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'StudioPanel.tsx'), 'utf8');
+  const topBarSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'TopBar.tsx'), 'utf8');
+  const handleFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'HandleField.tsx'), 'utf8');
+  const numberFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'NumberField.tsx'), 'utf8');
   const issuesDialogSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'RunIssuesDialog.tsx'), 'utf8');
   const createGraph = bridgeSource.match(
     /export async function createOrUpdateStudioGraph[\s\S]*?\n\}\n\nexport async function waitForStudioGraphFinalization/,
@@ -7925,10 +8234,18 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   const autoRunPreparation = runActionsSource.match(
     /export async function ensureStudioAutoPlanReadyForRun[\s\S]*?\n\}\n\ntype MissingInstallTarget/,
   )?.[0];
+  const resourceModeChange = runActionsSource.match(
+    /const handleResourceModeChange = useCallback\([\s\S]*?\n  \);/,
+  )?.[0];
+  const topBarResourceModeChange = topBarSource.match(
+    /const handleStudioViewModeChange = \(mode: StudioViewMode\) => \{[\s\S]*?\n  \};/,
+  )?.[0];
 
   assert.ok(createGraph);
   assert.ok(waitForFinalization);
   assert.ok(autoRunPreparation);
+  assert.ok(resourceModeChange);
+  assert.ok(topBarResourceModeChange);
   assert.equal((createGraph.match(/await waitForStudioGraphFinalization/g) ?? []).length, 1);
   assert.match(createGraph, /finalizationTimeout = 15_000/);
   assert.match(createGraph, /waitForStudioGraphFinalization\(finalizationTimeout, context\)/);
@@ -7942,9 +8259,19 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   );
   assert.ok(galleryApplyTemplate);
   assert.ok(galleryApplySkeleton);
-  assert.match(galleryApplySkeleton, /createOrUpdateStudioGraph\([^;]*context, 30_000\)/);
-  assert.match(galleryApplyTemplate, /createOrUpdateStudioGraph\([^;]*context, 30_000\)/);
-  assert.match(galleryApplyTemplate, /waitForStudioGraphFinalization\(30_000, context\)/);
+  assert.match(galleryApplySkeleton, /ensureStudioAutoPlanReadyForRun\(context\)/);
+  assert.match(galleryApplySkeleton, /GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS/);
+  assert.match(galleryApplyTemplate, /ensureStudioAutoPlanReadyForRun\(context\)/);
+  assert.match(galleryApplyTemplate, /GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS/);
+  assert.ok(
+    galleryApplyTemplate.indexOf('createOrUpdateStudioGraph') <
+      galleryApplyTemplate.indexOf('ensureStudioAutoPlanReadyForRun'),
+    'Gallery Auto target validation must run only after the initial loader graph exists.',
+  );
+  assert.match(
+    galleryApplyTemplate,
+    /waitForStudioGraphFinalization\(GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS, context\)/,
+  );
   assert.match(galleryApplyTemplate, /workflowContext: context/);
   assert.doesNotMatch(galleryApplyTemplate, /Graph preparation is still running/);
   assert.match(waitForFinalization, /status === 'pending'[\s\S]*scheduleStudioGraphFinalization/);
@@ -7960,12 +8287,36 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
     studioPanelSource,
     /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*createOrUpdateStudioGraph\(nextForm, context\)/,
   );
+  assert.match(resourceModeChange, /updateAndSync\(\{ resourceMode \}\)/);
+  assert.doesNotMatch(resourceModeChange, /syncStudioGraphValues/);
+  assert.match(topBarResourceModeChange, /previousShapeKey = getStudioGraphShapeKey/);
+  assert.match(
+    topBarResourceModeChange,
+    /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*createOrUpdateStudioGraph\(nextForm, context\)/,
+  );
+  assert.match(handleFieldSource, /consumeAutomaticSignalFieldActionSuppression\(nodeId, fieldKey, signal\)/);
+  assert.match(numberFieldSource, /<GraphControlInput[\s\S]*?id=\{inputId\}/);
   assert.match(issuesDialogSource, /setWorkflowFocusRequest\(\{[\s\S]*nodeId: null/);
   assert.match(
     issuesDialogSource,
     /item\.action === 'detach_graph'[\s\S]*detachManagedGraph\(\)[\s\S]*Detach invalid receipt/,
     'an invalid persisted proof has an explicit operator recovery action',
   );
+});
+
+test('Studio exposes a distinct visible install action for its exact missing model', () => {
+  const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
+  const studioReadinessSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioReadiness.ts'), 'utf8');
+  const studioPanelSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'StudioPanel.tsx'), 'utf8');
+
+  assert.match(runActionsSource, /const \[isInstallingMissingModel, setIsInstallingMissingModel\] = useState\(false\)/);
+  assert.match(runActionsSource, /await installHfModel\(missingInstallTarget\.repo, sid/);
+  assert.match(studioReadinessSource, /revision: exactCapabilityRevision/);
+  assert.match(studioReadinessSource, /files: capability\.downloadFiles/);
+  assert.match(runActionsSource, /handleInstallMissingModel,[\s\S]*isInstallingMissingModel,/);
+  assert.match(studioPanelSource, /data-testid="studio-install-missing-model"/);
+  assert.match(studioPanelSource, /disabled=\{isWorking \|\| isInstallingMissingModel\}/);
+  assert.match(studioPanelSource, /\{isInstallingMissingModel[\s\S]*'Installing model\.\.\.'/);
 });
 
 test('model selector applies only backend class and id filters to opaque installed models', () => {
@@ -8340,6 +8691,41 @@ test('LoRA template construction reuses the core graph that its caller just fina
     e2e,
     /addLoraWorkflowBlock\(useStudioStore\.getState\(\)\.form, template\.workflowBlockSettings\?\.lora, \{\s*graphPrepared: true,/,
   );
+  for (const call of [
+    'addUpscaleWorkflowBlock',
+    'addVideoSequenceWorkflowBlock',
+    'addQualityVideoSequenceWorkflowBlock',
+    'addSoundtrackWorkflowBlock',
+    'addLyricVideoWorkflowBlock',
+  ]) {
+    assert.match(
+      e2e,
+      new RegExp(`${call}\\([\\s\\S]*?graphPrepared: true,`),
+      `${call} must receive the prepared graph owned by the template bridge`,
+    );
+  }
+});
+
+test('every template workflow block reuses a caller-prepared core graph', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'controlledWorkflows.ts'), 'utf8');
+  for (const [name, formExpression] of [
+    ['addLoraWorkflowBlock', 'form'],
+    ['addUpscaleWorkflowBlock', 'form'],
+    ['addVideoSequenceWorkflowBlock', 'form'],
+    ['addQualityVideoSequenceWorkflowBlock', 'executionForm'],
+    ['addSoundtrackWorkflowBlock', 'executionForm'],
+    ['addLyricVideoWorkflowBlock', 'executionForm'],
+  ]) {
+    const start = source.indexOf(`export async function ${name}`);
+    assert.notEqual(start, -1, `${name} must exist`);
+    const next = source.indexOf('\nexport async function ', start + 1);
+    const body = source.slice(start, next === -1 ? undefined : next);
+    assert.match(
+      body,
+      new RegExp(`if \\(!options\\.graphPrepared\\) await createOrUpdateStudioGraph\\(${formExpression}, context\\)`),
+      `${name} must not rebuild a graph its template caller already finalized`,
+    );
+  }
 });
 
 test('managed graph reconciliation preserves pinned Auto sample-rate overrides', () => {

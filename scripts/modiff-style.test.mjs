@@ -28,7 +28,7 @@ before(async () => {
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   styles = await server.ssrLoadModule('/src/theme/modiffStyle.ts');

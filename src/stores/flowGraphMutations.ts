@@ -2,6 +2,13 @@ import type { Edge, NodeChange, Viewport } from '@xyflow/react';
 
 import { deleteNodeCache } from '../utils/serverActions';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
+import {
+  blockProjectionNodeIdV2,
+  isBlockRootV2,
+  removeBlockEffectiveGraphNodesV2,
+  setBlockPresentationV2,
+} from '../studio/blockRuntimeV2';
+import { enqueueSnackbar } from '../ui/snackbar';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { useNodesStore } from './useNodeStore';
@@ -84,24 +91,160 @@ async function deleteServerNodeCache(nodeIds: string[]) {
   }
 }
 
+function planBlockV2InternalNodeDeletion(nodes: CustomNodeType[], nodeIds: ReadonlySet<string>) {
+  const deletingRoots = new Set(
+    nodes.filter((node) => nodeIds.has(node.id) && node.data.blockInstanceV2).map((node) => node.id),
+  );
+  const semanticIdsByOwner = new Map<string, Set<string>>();
+
+  nodes.forEach((node) => {
+    if (!nodeIds.has(node.id)) return;
+    const hasProjectionMarker =
+      node.data.blockProjectionOwnerId !== undefined ||
+      node.data.blockProjectionNodeId !== undefined ||
+      node.data.blockProjectionKind !== undefined;
+    if (!hasProjectionMarker) return;
+    const ownerId = node.data.blockProjectionOwnerId;
+    if (typeof ownerId === 'string' && deletingRoots.has(ownerId)) return;
+    const semanticNodeId = node.data.blockProjectionNodeId;
+    if (
+      node.data.blockProjectionKind !== 'internal' ||
+      typeof ownerId !== 'string' ||
+      !ownerId ||
+      typeof semanticNodeId !== 'string' ||
+      !semanticNodeId ||
+      node.id !== blockProjectionNodeIdV2(ownerId, semanticNodeId)
+    )
+      throw new Error(`Cannot delete malformed Block V2 projection node "${node.id}".`);
+    const root = nodes.find((candidate) => candidate.id === ownerId);
+    if (!root || !isBlockRootV2(root) || !root.data.blockInstanceV2)
+      throw new Error(`Cannot delete Block V2 internal node "${semanticNodeId}": owner "${ownerId}" is invalid.`);
+    const ids = semanticIdsByOwner.get(ownerId) ?? new Set<string>();
+    ids.add(semanticNodeId);
+    semanticIdsByOwner.set(ownerId, ids);
+  });
+
+  const nextInstances = new Map<string, NonNullable<CustomNodeType['data']['blockInstanceV2']>>();
+  semanticIdsByOwner.forEach((semanticNodeIds, ownerId) => {
+    const root = nodes.find((node) => node.id === ownerId);
+    if (!root?.data.blockInstanceV2)
+      throw new Error(`Cannot delete Block V2 internal nodes: owner "${ownerId}" disappeared.`);
+    nextInstances.set(ownerId, removeBlockEffectiveGraphNodesV2(root.data.blockInstanceV2, [...semanticNodeIds]));
+  });
+  return { nextInstances };
+}
+
+/**
+ * React Flow owns pointer movement while a node is being dragged, but a V2
+ * projection is only a replaceable view of its durable root. Absorb the final
+ * parent-relative position into BlockInstanceV2 before persistence can strip
+ * the projection. Intermediate drag frames remain canvas-only to avoid
+ * rebuilding the root on every pointer event.
+ */
+function persistFinalBlockV2ProjectionPositions(
+  nodes: CustomNodeType[],
+  changes: readonly NodeChange<CustomNodeType>[],
+) {
+  type PositionChange = Extract<NodeChange<CustomNodeType>, { type: 'position' }>;
+  const finalPositionChanges = changes.filter(
+    (change): change is PositionChange =>
+      change.type === 'position' && Boolean(change.position) && change.dragging !== true,
+  );
+  if (!finalPositionChanges.length) return nodes;
+
+  let nextNodes = nodes;
+  finalPositionChanges.forEach((change) => {
+    const projection = nextNodes.find((node) => node.id === change.id);
+    if (!projection) return;
+    const hasProjectionMarker =
+      projection.data.blockProjectionOwnerId !== undefined ||
+      projection.data.blockProjectionNodeId !== undefined ||
+      projection.data.blockProjectionKind !== undefined;
+    if (!hasProjectionMarker) return;
+
+    const ownerId = projection.data.blockProjectionOwnerId;
+    const semanticNodeId = projection.data.blockProjectionNodeId;
+    if (
+      projection.data.blockProjectionKind !== 'internal' ||
+      typeof ownerId !== 'string' ||
+      !ownerId ||
+      typeof semanticNodeId !== 'string' ||
+      !semanticNodeId ||
+      projection.id !== blockProjectionNodeIdV2(ownerId, semanticNodeId)
+    )
+      throw new Error(`Cannot persist malformed Block V2 projection node "${projection.id}".`);
+    const root = nextNodes.find((node) => node.id === ownerId);
+    if (!root?.data.blockInstanceV2 || !isBlockRootV2(root))
+      throw new Error(`Cannot persist Block V2 projection node "${projection.id}": owner "${ownerId}" is invalid.`);
+    if (!root.data.blockInstanceV2.effectiveGraph.nodes.some(({ nodeId }) => nodeId === semanticNodeId))
+      throw new Error(
+        `Cannot persist Block V2 projection node "${projection.id}": semantic node "${semanticNodeId}" is absent.`,
+      );
+
+    const previous = root.data.blockInstanceV2.presentation.internalLayout[semanticNodeId];
+    const width = projection.measured?.width ?? projection.width ?? previous?.width;
+    const height = projection.measured?.height ?? projection.height ?? previous?.height;
+    const blockInstanceV2 = setBlockPresentationV2(root.data.blockInstanceV2, {
+      internalLayout: {
+        [semanticNodeId]: {
+          x: projection.position.x,
+          y: projection.position.y,
+          ...(typeof width === 'number' && Number.isFinite(width) && width > 0 ? { width } : {}),
+          ...(typeof height === 'number' && Number.isFinite(height) && height > 0 ? { height } : {}),
+        },
+      },
+    });
+    nextNodes = nextNodes.map((node) =>
+      node.id === ownerId ? { ...node, data: { ...node.data, blockInstanceV2 } } : node,
+    );
+  });
+  return nextNodes;
+}
+
 export function removeFlowNodesInvariant(ids: string | string[], set: FlowStoreSet, get: FlowStoreGet) {
   const currentNodes = get().nodes;
   const nodeIds = collectNodeIdsWithDescendants(currentNodes, toArray(ids));
   const removedNodeIds = currentNodes.filter((node) => nodeIds.has(node.id)).map((node) => node.id);
-  if (removedNodeIds.length === 0) return;
+  if (removedNodeIds.length === 0) return true;
+
+  let blockDeletion;
+  try {
+    blockDeletion = planBlockV2InternalNodeDeletion(currentNodes, nodeIds);
+  } catch (error) {
+    enqueueSnackbar(error instanceof Error ? error.message : 'That Block V2 internal node cannot be deleted.', {
+      variant: 'error',
+      autoHideDuration: 7000,
+    });
+    return false;
+  }
 
   const affectedEdges = get().edges.filter((edge) => nodeIds.has(edge.source) || nodeIds.has(edge.target));
-  if (affectedEdges.length > 0) {
+  const connectionCleanupEdges = affectedEdges.filter((edge) => {
+    const data = edge.data && typeof edge.data === 'object' && !Array.isArray(edge.data) ? edge.data : {};
+    return data.blockProjectionKind !== 'internal';
+  });
+  if (connectionCleanupEdges.length > 0) {
     handleEdgesChange(
-      affectedEdges.map((edge) => ({ id: edge.id, type: 'remove' as const })),
+      connectionCleanupEdges.map((edge) => ({ id: edge.id, type: 'remove' as const })),
       set,
       get,
     );
   }
 
-  set({ nodes: get().nodes.filter((node) => !nodeIds.has(node.id)) });
+  const nodes = get()
+    .nodes.filter((node) => !nodeIds.has(node.id))
+    .map((node) => {
+      const blockInstanceV2 = blockDeletion.nextInstances.get(node.id);
+      return blockInstanceV2 ? { ...node, data: { ...node.data, blockInstanceV2 } } : node;
+    });
+  const edges = decorateConnectionEdges(
+    nodes,
+    get().edges.filter((edge) => !nodeIds.has(edge.source) && !nodeIds.has(edge.target)),
+  );
+  set({ nodes, edges });
   reconcileGraphConnections(get);
   void deleteServerNodeCache(removedNodeIds);
+  return true;
 }
 
 export function applyFlowNodeChangesInvariant(
@@ -112,11 +255,12 @@ export function applyFlowNodeChangesInvariant(
 ) {
   const removedIds = changes.filter((change) => change.type === 'remove').map((change) => change.id);
   if (removedIds.length > 0) {
-    removeFlowNodesInvariant(removedIds, set, get);
+    if (!removeFlowNodesInvariant(removedIds, set, get)) return;
   }
   const remainingChanges = changes.filter((change) => change.type !== 'remove');
   if (remainingChanges.length > 0) {
-    set({ nodes: applyRemainingChanges(remainingChanges, get().nodes) });
+    const nodes = applyRemainingChanges(remainingChanges, get().nodes);
+    set({ nodes: persistFinalBlockV2ProjectionPositions(nodes, remainingChanges) });
   }
 }
 

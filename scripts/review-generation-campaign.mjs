@@ -3,11 +3,13 @@
  * Batch-generate review assets through the running app.
  *
  * Public templates keep their locked campaign briefs. Hidden skeletons overlay
- * original MoDiff campaign briefs and Auto. Outputs land in review-pending/
- * for one human pass. Nothing is Gallery-registered.
+ * original MoDiff campaign briefs and Auto. Raw outputs land in
+ * review-pending/raw-campaign/ and are not human-review candidates. A separate
+ * quality screen must explicitly shortlist an output. Nothing is
+ * Gallery-registered.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
@@ -26,6 +28,8 @@ const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(CLIENT_ROOT, '..', 'MoDiff'));
 const SERVER = process.env.MODIFF_GALLERY_SERVER || 'http://127.0.0.1:8088';
 const PENDING_ROOT = join(BACKEND_ROOT, 'review-pending');
+const RAW_ROOT = join(PENDING_ROOT, 'raw-campaign');
+const RESEARCH_ROOT = join(PENDING_ROOT, 'research');
 const CAMPAIGN_LOCK_PATH = join(PENDING_ROOT, '.campaign-runner.lock');
 const CAMPAIGN_REPORT_PATH = join(PENDING_ROOT, 'generation-campaign-report.v1.json');
 const CAMPAIGN_RETRY_PATH = join(PENDING_ROOT, 'generation-campaign-retry-ledger.v1.json');
@@ -54,6 +58,7 @@ const CAMPAIGN_EXTENSION_BY_MIME = {
   'audio/mpeg': '.mp3',
   'audio/flac': '.flac',
   'application/json': '.json',
+  'text/plain': '.txt',
 };
 
 const CAMPAIGN_EXTENSION_BY_TYPE = {
@@ -62,6 +67,8 @@ const CAMPAIGN_EXTENSION_BY_TYPE = {
   video: '.mp4',
   audio: '.wav',
   json: '.json',
+  string: '.txt',
+  text: '.txt',
 };
 
 const FIXTURE_FIELDS = {
@@ -78,6 +85,86 @@ const FIXTURE_FIELDS = {
   maskVideo: ['mask_motion.mp4'],
   sourceAudio: ['tone_a.wav'],
   referenceAudio: ['tone_b.wav'],
+};
+
+const WORKFLOW_AUDIO_FIXTURES = {
+  'AceStepAudioPipeline:audio_continuation': {
+    sourceAudio: join(BACKEND_ROOT, 'web', 'template-gallery', 'ace_step_text_to_audio.current.wav'),
+  },
+  'AceStepAudioPipeline:audio_repaint': {
+    sourceAudio: join(BACKEND_ROOT, 'web', 'template-gallery', 'ace_step_text_to_audio.current.wav'),
+  },
+  'AceStepAudioPipeline:audio_variation': {
+    sourceAudio: join(BACKEND_ROOT, 'web', 'template-gallery', 'ace_step_text_to_audio.current.wav'),
+  },
+};
+
+const WORKFLOW_IMAGE_FIXTURES = {
+  'HuggingFaceImageTextToTextModel:image_to_text': {
+    referenceImages: join(
+      PENDING_ROOT,
+      'AuraFlowPipeline__text_to_image',
+      'campaign-auraflowpipeline__text_to_image-gpu-v1.png',
+    ),
+  },
+  'JoyImageEditPipeline:edit_image': {
+    referenceImages: join(
+      PENDING_ROOT,
+      'JoyImageEditPipeline__text_to_image',
+      'campaign-joyimageeditpipeline__text_to_image-gpu-v1.webp',
+    ),
+  },
+  'OmniGenPipeline:multi_image_reference_edit': {
+    referenceImages: [
+      join(
+        PENDING_ROOT,
+        'QwenImageModularPipeline__text_to_image',
+        'campaign-qwenimagemodularpipeline__text_to_image-gpu-v1.png',
+      ),
+      join(
+        PENDING_ROOT,
+        'FluxSchnellPipeline__text_to_image__gguf_q4_0',
+        'campaign-fluxschnellpipeline__text_to_image__gguf_q4_0-gpu-v1.webp',
+      ),
+    ],
+  },
+  'OmniGenPipeline:edit_image': {
+    referenceImages: join(
+      PENDING_ROOT,
+      'LongCatImagePipeline__text_to_image',
+      'campaign-longcatimagepipeline__text_to_image-gpu-v1.png',
+    ),
+  },
+  'LongCatImageEditPipeline:edit_image': {
+    referenceImages: join(
+      PENDING_ROOT,
+      'LongCatImagePipeline__text_to_image',
+      'campaign-longcatimagepipeline__text_to_image-gpu-v1.png',
+    ),
+  },
+  'SanaSprintPipeline:edit_image': {
+    referenceImages: join(
+      PENDING_ROOT,
+      'AuraFlowPipeline__text_to_image',
+      'campaign-auraflowpipeline__text_to_image-gpu-v1.png',
+    ),
+  },
+  'StableDiffusionXLInstructPix2PixPipeline:edit_image': {
+    referenceImages: join(
+      PENDING_ROOT,
+      'ErnieImagePipeline__text_to_image',
+      'campaign-ernieimagepipeline__text_to_image-gpu-v1.png',
+    ),
+  },
+  'SpandrelImageUpscale:image_upscale': {
+    referenceImages: join(PENDING_ROOT, 'input-fixtures', 'upscaling', 'aura-rain-stop-lowres-q72.jpg'),
+  },
+};
+
+const WORKFLOW_VIDEO_FIXTURES = {
+  'SpandrelVideoUpscale:video_upscale': {
+    sourceVideo: join(PENDING_ROOT, 'input-fixtures', 'upscaling', 'sana-greenhouse-motion-lowres.mp4'),
+  },
 };
 
 function loadBriefs() {
@@ -119,9 +206,40 @@ function workflowIdForSkeleton(skeleton) {
   return `${skeleton.modelType}:${skeleton.mode}`;
 }
 
-function fixtureOverrides(requiredMedia) {
+export function fixtureOverrides(workflowId, requiredMedia) {
   const overrides = {};
   for (const item of requiredMedia || []) {
+    const reviewedAudioPath = WORKFLOW_AUDIO_FIXTURES[workflowId]?.[item.field];
+    const reviewedImagePath = WORKFLOW_IMAGE_FIXTURES[workflowId]?.[item.field];
+    const reviewedVideoPath = WORKFLOW_VIDEO_FIXTURES[workflowId]?.[item.field];
+    if (reviewedVideoPath) {
+      if (!existsSync(reviewedVideoPath)) {
+        throw new Error(`${workflowId} requires the reviewed workflow-specific ${item.field} fixture.`);
+      }
+      overrides[item.field] = item.field.endsWith('s') ? [reviewedVideoPath] : reviewedVideoPath;
+      continue;
+    }
+    if (reviewedImagePath) {
+      const reviewedImagePaths = Array.isArray(reviewedImagePath) ? reviewedImagePath : [reviewedImagePath];
+      if (
+        reviewedImagePaths.length < (item.minimumCount || 1) ||
+        reviewedImagePaths.some((path) => !existsSync(path))
+      ) {
+        throw new Error(`${workflowId} requires the reviewed workflow-specific ${item.field} fixture.`);
+      }
+      overrides[item.field] = item.field.endsWith('s') ? reviewedImagePaths : reviewedImagePaths[0];
+      continue;
+    }
+    if (item.field === 'sourceAudio' || item.field === 'referenceAudio') {
+      if (!reviewedAudioPath || !existsSync(reviewedAudioPath)) {
+        throw new Error(
+          `${workflowId} requires a reviewed workflow-specific ${item.field} fixture; ` +
+            'the two-second synthetic campaign tones are technical canaries and cannot be used for showcase generation.',
+        );
+      }
+      overrides[item.field] = reviewedAudioPath;
+      continue;
+    }
     const files = FIXTURE_FIELDS[item.field];
     if (!files) continue;
     const paths = files.slice(0, item.minimumCount || 1).map((name) => join(FIXTURE_KIT, name));
@@ -147,6 +265,34 @@ function installedRepos(localModels) {
   return repos;
 }
 
+export function qualityBlockedWorkflowsFromResearch(documents) {
+  const blocked = new Set();
+  for (const document of documents || []) {
+    if (
+      document?.kind === 'generation_recipe_research' &&
+      typeof document.workflowId === 'string' &&
+      typeof document.status === 'string' &&
+      document.status.startsWith('quality_blocked')
+    ) {
+      blocked.add(document.workflowId);
+    }
+  }
+  return blocked;
+}
+
+function loadQualityBlockedWorkflows() {
+  if (!existsSync(RESEARCH_ROOT)) return new Set();
+  const documents = [];
+  for (const name of readdirSync(RESEARCH_ROOT).sort()) {
+    if (!name.endsWith('.json')) continue;
+    const path = join(RESEARCH_ROOT, name);
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink()) continue;
+    documents.push(JSON.parse(readFileSync(path, 'utf8')));
+  }
+  return qualityBlockedWorkflowsFromResearch(documents);
+}
+
 export function extensionForCampaignOutput(output, absoluteUrl, contentType) {
   const normalizedContentType = String(contentType || '')
     .split(';')[0]
@@ -155,11 +301,26 @@ export function extensionForCampaignOutput(output, absoluteUrl, contentType) {
   const mimeExtension = CAMPAIGN_EXTENSION_BY_MIME[normalizedContentType];
   if (mimeExtension) return mimeExtension;
 
-  const urlExtension = extname(new URL(absoluteUrl).pathname).toLowerCase();
-  if (urlExtension) return urlExtension;
+  const parsedUrl = new URL(absoluteUrl);
+  if (['http:', 'https:', 'file:'].includes(parsedUrl.protocol)) {
+    const urlExtension = extname(parsedUrl.pathname).toLowerCase();
+    if (/^\.[a-z0-9]{1,10}$/.test(urlExtension)) return urlExtension;
+  }
 
   const displayType = String(output?.displayType || output?.mediaKind || '');
   return CAMPAIGN_EXTENSION_BY_TYPE[displayType] || '.bin';
+}
+
+export function isCampaignImagePayload(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 10) return false;
+  const ascii = (start, end) => buffer.subarray(start, end).toString('ascii');
+  return (
+    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ||
+    (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) ||
+    ascii(0, 6) === 'GIF87a' ||
+    ascii(0, 6) === 'GIF89a' ||
+    (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP')
+  );
 }
 
 export async function copyOutput(page, run, frontendUrl, destination, mediaKind, options = {}) {
@@ -221,9 +382,9 @@ export async function copyOutput(page, run, frontendUrl, destination, mediaKind,
   const response = await fetchImpl(absoluteUrl);
   if (!response.ok) throw new Error(`Could not fetch output ${absoluteUrl}: HTTP ${response.status}`);
   const buffer = Buffer.from(await response.arrayBuffer());
-  if (wantImage && buffer.length < 8_000) {
+  if (wantImage && !isCampaignImagePayload(buffer)) {
     throw new Error(
-      `Studio output for task ${run.taskId} was too small to be a campaign image (${buffer.length} bytes).`,
+      `Studio output for task ${run.taskId} was not a recognized campaign image (${buffer.length} bytes).`,
     );
   }
   const extension = extensionForCampaignOutput(output, absoluteUrl, response.headers.get('content-type'));
@@ -231,9 +392,9 @@ export async function copyOutput(page, run, frontendUrl, destination, mediaKind,
   return destination + extension;
 }
 
-function destinationStem(workflowId) {
+export function destinationStem(workflowId) {
   const slug = workflowId.replace(/:/g, '__');
-  return join(PENDING_ROOT, slug, `campaign-${slug.toLowerCase()}-gpu-v1`);
+  return join(RAW_ROOT, slug, `campaign-${slug.toLowerCase()}-gpu-v1`);
 }
 
 function existingOutput(workflowId) {
@@ -373,7 +534,7 @@ function buildOverrides(skeleton, { expertFallback = false, capability } = {}) {
   const workflowId = workflowIdForSkeleton(skeleton);
   const overrides = {
     ...loadOverrides(workflowId, skeleton.mode, skeleton.modelType),
-    ...fixtureOverrides(skeleton.requiredMedia),
+    ...fixtureOverrides(workflowId, skeleton.requiredMedia),
     resourceMode: expertFallback ? 'expert' : 'auto',
   };
   if (skeleton.galleryVisible) {
@@ -494,14 +655,6 @@ async function runSkeleton(page, skeleton, args, results, capability) {
     }
     if (/Graph changed/i.test(message)) {
       run = await queueRun();
-    } else if (/optional runtime required/i.test(message)) {
-      console.warn(`optional runtime gate stale for ${workflowId}; refreshing indexes then retrying`);
-      await page.evaluate(async () => {
-        await window.__MODIFF_E2E__?.refreshModelIndexes?.(false);
-      });
-      // Readiness remains backend-owned and is checked again by runActiveTemplate.
-      // The driver must not infer that an unrelated active overlay satisfies it.
-      run = await queueRun();
     } else if (!preferAuto || !isAutoAdmissionError(message)) {
       throw error;
     } else {
@@ -526,7 +679,7 @@ async function runSkeleton(page, skeleton, args, results, capability) {
     server: args.server,
     timeoutMs: args.timeoutMs,
   });
-  mkdirSync(join(PENDING_ROOT, workflowId.replace(/:/g, '__')), { recursive: true });
+  mkdirSync(join(RAW_ROOT, workflowId.replace(/:/g, '__')), { recursive: true });
   const filePath = await copyOutput(
     page,
     run,
@@ -575,6 +728,7 @@ async function main() {
     headless: true,
   };
   loadBriefs();
+  const qualityBlockedWorkflows = loadQualityBlockedWorkflows();
   const health = await fetchJson('/health');
   const backend = health?.runtime_profile?.device_validation?.backend || health?.runtime_profile?.smoke?.backend;
   if (backend && backend !== 'rocm' && backend !== 'cuda') {
@@ -625,7 +779,12 @@ async function main() {
     }
     await page.evaluate(() => window.__MODIFF_E2E__?.refreshModelIndexes?.(false));
     console.log(`loaded ${skeletons.length} generation targets`);
-    const runnable = skeletons.filter((item) => isCampaignSkeletonRunnable(item, { modes, only }));
+    const selected = skeletons.filter((item) => isCampaignSkeletonRunnable(item, { modes, only }));
+    const blockedSelected = selected.filter((item) => qualityBlockedWorkflows.has(workflowIdForSkeleton(item)));
+    for (const item of blockedSelected) {
+      console.warn(`quality-blocked by reviewed research dossier: ${workflowIdForSkeleton(item)}`);
+    }
+    const runnable = selected.filter((item) => !qualityBlockedWorkflows.has(workflowIdForSkeleton(item)));
     const textFirst = [
       ...runnable.filter((item) => item.mode === 'text_to_image'),
       ...runnable.filter((item) => item.mode === 'text_to_video'),
@@ -800,7 +959,7 @@ async function main() {
   const completed = merged.filter((item) => item.status === 'completed').length;
   const newAttempts = results.filter((item) => !item.skippedExisting).length;
   console.log(
-    `Wrote ${completed}/${merged.length} cumulative assets into ${PENDING_ROOT}. ` +
+    `Wrote ${completed}/${merged.length} cumulative raw assets into ${RAW_ROOT}. ` +
       `This run: ${newAttempts} attempt(s). Report: ${reportPath}`,
   );
   if (Number.isFinite(maxNewJobs) && newAttempts === 0) {

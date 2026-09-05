@@ -224,6 +224,98 @@ export function readQualityRejections(pendingRoot) {
   });
 }
 
+export function readQualityScreenRejections(pendingRoot) {
+  const specifications = [
+    {
+      fileName: 'generation-campaign-video-screen.v1.json',
+      kind: 'generation_campaign_video_screen',
+      correctiveAction:
+        'Research and restore the exact upstream family recipe and a motion-bearing fixture, then require a ' +
+        'focused motion canary before one bounded showcase rerun.',
+    },
+    {
+      fileName: 'generation-campaign-audio-integrity.v1.json',
+      kind: 'generation_campaign_audio_integrity',
+      correctiveAction:
+        'Research and restore the exact upstream family recipe and a meaningful duration-matched source, then ' +
+        'require duration, ending-integrity, and listening canaries before one bounded showcase rerun.',
+    },
+  ];
+  const rejections = [];
+  for (const specification of specifications) {
+    const path = join(pendingRoot, specification.fileName);
+    if (!existsSync(path)) continue;
+    const document = JSON.parse(readFileSync(path, 'utf8'));
+    if (document?.kind !== specification.kind || !Array.isArray(document?.results)) {
+      throw new Error(`Unexpected quality screen contract: ${path}`);
+    }
+    for (const result of document.results) {
+      if (result?.outcome !== 'rerun_required') continue;
+      const workflowId = typeof result.workflowId === 'string' ? result.workflowId.trim() : '';
+      const reason = typeof result.reason === 'string' ? result.reason.trim() : '';
+      if (!workflowId || !reason) {
+        throw new Error(`Quality screen rejection is missing workflowId or reason: ${path}`);
+      }
+      rejections.push({
+        kind: 'generation_quality_rejection',
+        workflowId,
+        taskId: typeof result.taskId === 'string' ? result.taskId : null,
+        outcome: 'rerun_required',
+        reason,
+        correctiveAction: specification.correctiveAction,
+        mediaPath: typeof result.mediaPath === 'string' ? result.mediaPath : null,
+        mediaSha256: typeof result.sha256 === 'string' ? result.sha256 : null,
+        sourceReport: specification.fileName,
+      });
+    }
+  }
+  return rejections;
+}
+
+export function readUserQualityRejections(pendingRoot) {
+  if (!existsSync(pendingRoot)) return [];
+  const paths = readdirSync(pendingRoot)
+    .filter((name) => /^user-quality-review-.+\.v1\.json$/.test(name))
+    .map((name) => join(pendingRoot, name))
+    .sort();
+  const rejections = [];
+  for (const path of paths) {
+    const document = JSON.parse(readFileSync(path, 'utf8'));
+    if (document?.kind !== 'generation_campaign_user_quality_review' || !Array.isArray(document?.results)) {
+      throw new Error(`Unexpected user quality review contract: ${path}`);
+    }
+    for (const result of document.results) {
+      if (result?.outcome !== 'rerun_required') continue;
+      const workflowId = typeof result.workflowId === 'string' ? result.workflowId.trim() : '';
+      const reason = typeof result.reason === 'string' ? result.reason.trim() : '';
+      const correctiveAction = typeof result.correctiveAction === 'string' ? result.correctiveAction.trim() : '';
+      if (!workflowId || !reason || !correctiveAction) {
+        throw new Error(`User quality rejection is missing workflowId, reason, or correctiveAction: ${path}`);
+      }
+      rejections.push({
+        kind: 'generation_quality_rejection',
+        workflowId,
+        taskId: typeof result.taskId === 'string' ? result.taskId : null,
+        outcome: 'rerun_required',
+        reason,
+        correctiveAction,
+        mediaPath: typeof result.mediaPath === 'string' ? result.mediaPath : null,
+        mediaSha256: typeof result.mediaSha256 === 'string' ? result.mediaSha256 : null,
+        sourceReport: path.slice(pendingRoot.length + 1),
+      });
+    }
+  }
+  return rejections;
+}
+
+function allQualityRejections(pendingRoot) {
+  return [
+    ...readQualityRejections(pendingRoot),
+    ...readQualityScreenRejections(pendingRoot),
+    ...readUserQualityRejections(pendingRoot),
+  ];
+}
+
 export function readQualityAcceptances(pendingRoot) {
   if (!existsSync(pendingRoot)) return [];
   const paths = [];
@@ -249,7 +341,7 @@ export function readQualityAcceptances(pendingRoot) {
 export function writeRetryLedger(reportPath = DEFAULT_REPORT, outputPath = DEFAULT_OUTPUT) {
   if (!existsSync(reportPath)) throw new Error(`Generation campaign report is missing: ${reportPath}`);
   const document = retryLedgerForReportBytes(readFileSync(reportPath), {
-    qualityRejections: readQualityRejections(dirname(reportPath)),
+    qualityRejections: allQualityRejections(dirname(reportPath)),
     qualityAcceptances: readQualityAcceptances(dirname(reportPath)),
   });
   const serialized = `${JSON.stringify(document, null, 2)}\n`;
@@ -287,7 +379,7 @@ function main() {
   const { reportPath, outputPath, check } = parseArgs(process.argv.slice(2));
   const reportBytes = readFileSync(reportPath);
   const document = retryLedgerForReportBytes(reportBytes, {
-    qualityRejections: readQualityRejections(dirname(reportPath)),
+    qualityRejections: allQualityRejections(dirname(reportPath)),
     qualityAcceptances: readQualityAcceptances(dirname(reportPath)),
   });
   const serialized = `${JSON.stringify(document, null, 2)}\n`;

@@ -418,11 +418,51 @@ export const MANAGED_CONTROL_POLICIES = {
     image: internal(),
     embeddings: internal(),
   },
+  beforeEncode: {
+    pipeline_components: internal(),
+    state_out: internal(),
+    pipeline_class: internal(),
+    workflow_id: internal(),
+    block_path: internal(),
+  },
+  textEncode: {
+    pipeline_components: internal(),
+    state_in: internal(),
+    state_out: internal(),
+    pipeline_class: internal(),
+    workflow_id: internal(),
+    block_path: internal(),
+  },
+  duration: {
+    pipeline_components: internal(),
+    state_in: internal(),
+    state_out: internal(),
+    pipeline_class: internal(),
+    workflow_id: internal(),
+    block_path: internal(),
+  },
+  conditionEncode: {
+    pipeline_components: internal(),
+    state_in: internal(),
+    state_out: internal(),
+    pipeline_class: internal(),
+    workflow_id: internal(),
+    block_path: internal(),
+  },
+  referenceEncode: {
+    pipeline_components: internal(),
+    state_in: internal(),
+    state_out: internal(),
+    pipeline_class: internal(),
+    workflow_id: internal(),
+    block_path: internal(),
+  },
   denoise: {
     ...IMAGE_GENERATION_POLICY,
     num_frames: essential('numFrames'),
   },
   decode: OUTPUT_PREVIEW_POLICY,
+  afterDecode: OUTPUT_PREVIEW_POLICY,
   preview: OUTPUT_PREVIEW_POLICY,
   loadImage: IMAGE_SOURCE_POLICY,
   controlPreprocessor: {
@@ -463,6 +503,19 @@ export const MANAGED_CONTROL_POLICIES = {
     route_state_in: internal(),
     route_state_out: internal(),
   },
+  videoEncode: {
+    pipeline_components: internal(),
+    state_in: internal(),
+    pipeline_class: internal(),
+    workflow_id: internal(),
+    block_path: internal(),
+    video: internal(),
+    width: essential('width'),
+    height: essential('height'),
+    num_latent_frames_per_chunk: advanced(),
+    seed: essential('seed'),
+    state_out: internal(),
+  },
   loadLastImage: IMAGE_SOURCE_POLICY,
   controlnetModel: {
     ...MODELS_POLICY,
@@ -482,6 +535,23 @@ export const MANAGED_CONTROL_POLICIES = {
     controlnet: internal(),
     controlnet_bundle: internal(),
     vae: internal(),
+  },
+  loadIPAdapterImage: IMAGE_SOURCE_POLICY,
+  guider: {
+    guider: advanced(),
+    guidance_scale: essential('guidanceScale'),
+    guider_out: internal(),
+    layers_config: internal(),
+  },
+  ipAdapter: {
+    unet: internal(),
+    guider: internal(),
+    ip_adapter_image: internal(),
+    adapter_model: internal(),
+    adapter_revision: internal(),
+    adapter_weight_name: internal(),
+    adapter_scale: essential('ipAdapterScale'),
+    ip_adapter: internal(),
   },
   diffusersQuantization: QUANTIZATION_POLICY,
   diffusersRecipe: EXECUTION_RECIPE_POLICY,
@@ -710,6 +780,15 @@ export const MANAGED_CONTROL_POLICIES = {
     height: internal(),
     frames: internal(),
   },
+  imageUpscaler: {
+    image: internal(),
+    model_id: essential(),
+    downscale: advanced(),
+    tile_size: essential(),
+    tile_overlap: advanced(),
+    device: internal(),
+    output: internal(),
+  },
   loraAdapter: LORA_POLICY,
   upscaler: UPSCALE_POLICY,
   upscalePreview: OUTPUT_PREVIEW_POLICY,
@@ -868,12 +947,29 @@ export function classifyManagedControl(
   paramKey: string,
   param?: ManagedControlParamMetadata,
 ): ManagedControlClassification {
+  // Intermediate Block fields use collision-free canvas aliases. Their
+  // presentation policy belongs to the original declared control, not that
+  // generated key; otherwise even the prompt falls into Advanced on collapse.
+  const bindingValue = param?.fieldOptions?.blockBindingV2;
+  const binding =
+    bindingValue && typeof bindingValue === 'object' && !Array.isArray(bindingValue)
+      ? (bindingValue as Record<string, unknown>)
+      : undefined;
+  const policyKey =
+    binding &&
+    typeof binding === 'object' &&
+    !Array.isArray(binding) &&
+    binding.schemaVersion === 2 &&
+    binding.direction === 'control' &&
+    typeof binding.logicalId === 'string'
+      ? binding.logicalId
+      : paramKey;
   const rolePolicy = role
     ? (MANAGED_CONTROL_POLICIES[role as ManagedControlRole] as RolePolicy | undefined)
     : undefined;
-  const declaredPolicy = rolePolicy?.[paramKey] ?? GENERIC_CONTROL_POLICY[paramKey];
+  const declaredPolicy = rolePolicy?.[policyKey] ?? GENERIC_CONTROL_POLICY[policyKey];
 
-  if (isStructurallyInternal(paramKey, param)) {
+  if (isStructurallyInternal(policyKey, param)) {
     return {
       tier: 'internal',
       surface: 'hidden',

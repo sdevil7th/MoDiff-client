@@ -19,7 +19,7 @@ before(async () => {
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   qualityModule = await server.ssrLoadModule('/src/studio/templateQuality.ts');

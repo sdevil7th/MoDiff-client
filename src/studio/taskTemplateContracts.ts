@@ -12,11 +12,18 @@ const CONTRACT_ID = /^task-template:[a-z\d][a-z\d._:-]{0,160}$/;
 const CONTENT_HASH = /^task-template-v1-[0-9a-f]{8}$/;
 const NODE_KEY = /^modules\.[A-Za-z\d_]+\.[A-Za-z\d_]+$/;
 const FIELD_ID = /^[A-Za-z_][A-Za-z\d_]{0,63}$/;
-// Capability discovery accepts at most 128 model types and each model type
+// Capability discovery accepts at most 512 model types and each model type
 // accepts at most 16 Studio execution specifications. Keep the aggregate
 // contract envelope consistent with those already-bounded inputs.
-export const MAX_TASK_TEMPLATE_CONTRACTS = 128 * 16;
+export const MAX_TASK_TEMPLATE_CONTRACTS = 512 * 16;
 const CONTRACT_KEYS =
+  'auxiliaryTerminalRoles,canonicalizationVersion,contentHash,defaultRepo,executionProfileId,executionSpecContentHash,executionSpecId,galleryEligible,id,loaderAction,loaderModule,loaderRepositories,loaderRole,mediaKind,mode,modelType,output,pipelineClass,qualificationStatus,requiredMedia,schemaVersion';
+// `auxiliaryTerminalRoles` was added to schema v1 after the first contracts
+// had already shipped.  A missing field therefore has the original, exact
+// meaning: the graph has no declared auxiliary terminal roles.  Continue to
+// accept those hash-covered legacy v1 contracts while validating the current
+// representation strictly when the field is present.
+const LEGACY_CONTRACT_KEYS =
   'canonicalizationVersion,contentHash,defaultRepo,executionProfileId,executionSpecContentHash,executionSpecId,galleryEligible,id,loaderAction,loaderModule,loaderRepositories,loaderRole,mediaKind,mode,modelType,output,pipelineClass,qualificationStatus,requiredMedia,schemaVersion';
 const OUTPUT_KEYS = 'inputHandle,mediaKind,nodeKey,role';
 const REQUIRED_MEDIA_KEYS = 'field,kind,minimumCount';
@@ -25,6 +32,8 @@ const MEDIA_FIELDS = {
   lastImage: 'image',
   maskImage: 'image',
   controlImage: 'image',
+  ipAdapterImage: 'image',
+  conditionImages: 'image',
   sourceVideo: 'video',
   referenceVideos: 'video',
   maskVideo: 'video',
@@ -86,7 +95,25 @@ function exactSpec(capability: StudioModelProfile, raw: Record<string, unknown>)
   return matches.length === 1 ? matches[0] : null;
 }
 
-function validateOutput(raw: Record<string, unknown>, spec: StudioExecutionSpec) {
+function parseAuxiliaryTerminalRoles(value: unknown, spec: StudioExecutionSpec): StudioGraphRole[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > 16 ||
+    value.some((role) => typeof role !== 'string' || !FIELD_ID.test(role)) ||
+    new Set(value).size !== value.length
+  )
+    invalid();
+  const outgoingRoles = new Set(spec.edges.map(([sourceRole]) => sourceRole));
+  const sinkRoles = new Set(spec.roles.filter(([role]) => !outgoingRoles.has(role)).map(([role]) => role));
+  if (value.some((role) => !sinkRoles.has(role as StudioGraphRole))) invalid();
+  return [...value] as StudioGraphRole[];
+}
+
+function validateOutput(
+  raw: Record<string, unknown>,
+  spec: StudioExecutionSpec,
+  auxiliaryTerminalRoles: readonly StudioGraphRole[],
+) {
   if (!record(raw.output) || !exactKeys(raw.output, OUTPUT_KEYS)) invalid();
   const mediaKind = raw.mediaKind as keyof typeof OUTPUT_NODE_KEYS;
   if (
@@ -102,12 +129,24 @@ function validateOutput(raw: Record<string, unknown>, spec: StudioExecutionSpec)
   const outputRole = raw.output.role as StudioGraphRole;
   const role = spec.roles.find(([candidate]) => candidate === outputRole);
   const outgoing = spec.edges.some(([sourceRole]) => sourceRole === outputRole);
+  const outgoingRoles = new Set(spec.edges.map(([sourceRole]) => sourceRole));
+  const mediaSinkRoles = spec.roles
+    .filter(([candidate]) => !outgoingRoles.has(candidate) && !auxiliaryTerminalRoles.includes(candidate))
+    .map(([candidate]) => candidate);
   const expectedInputHandle = mediaKind === 'json' ? 'value' : mediaKind;
   const incoming = spec.edges.filter(
     ([, , targetRole, targetHandle]) => targetRole === outputRole && targetHandle === expectedInputHandle,
   );
   const inputEdge = incoming.length === 1 ? incoming[0] : undefined;
-  if (!role || role[1] !== raw.output.nodeKey || outgoing || !inputEdge || inputEdge[3] !== raw.output.inputHandle) {
+  if (
+    !role ||
+    role[1] !== raw.output.nodeKey ||
+    outgoing ||
+    mediaSinkRoles.length !== 1 ||
+    mediaSinkRoles[0] !== outputRole ||
+    !inputEdge ||
+    inputEdge[3] !== raw.output.inputHandle
+  ) {
     invalid();
   }
 }
@@ -127,7 +166,7 @@ export function parseTaskTemplateContracts(
     // client version. Apply the same forward-compatible boundary here while
     // continuing to validate every known contract fail-closed.
     if (!capability) return [];
-    if (!exactKeys(item, CONTRACT_KEYS)) invalid();
+    if (!exactKeys(item, CONTRACT_KEYS) && !exactKeys(item, LEGACY_CONTRACT_KEYS)) invalid();
     const spec = capability ? exactSpec(capability, item) : null;
     const profile =
       capability?.executionProfiles?.filter((candidate) => candidate.id === item.executionProfileId) ?? [];
@@ -178,12 +217,13 @@ export function parseTaskTemplateContracts(
     )
       invalid();
     const requiredMedia = parseRequiredMedia(item.requiredMedia);
-    validateOutput(item, spec);
+    const auxiliaryTerminalRoles = parseAuxiliaryTerminalRoles(item.auxiliaryTerminalRoles ?? [], spec);
+    validateOutput(item, spec, auxiliaryTerminalRoles);
     const { contentHash, ...semantic } = item;
     if (contentHash !== `task-template-v1-${hashString(stableStringify(semantic))}`) invalid();
     ids.add(item.id);
     pairs.add(pair);
-    return [{ ...item, requiredMedia } as StudioTaskTemplateContract];
+    return [{ ...item, requiredMedia, auxiliaryTerminalRoles } as StudioTaskTemplateContract];
   });
 
   const expectedSpecs = capabilities.flatMap((capability) => capability.studioExecutionSpecs ?? []);

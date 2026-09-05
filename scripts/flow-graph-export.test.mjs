@@ -19,7 +19,7 @@ before(async () => {
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   exportModule = await server.ssrLoadModule('/src/stores/flowGraphExport.ts');
@@ -74,13 +74,88 @@ test('random-on-export seeds retain random behavior and metadata', () => {
 
   try {
     const seed = exportSeed({ value: 1234, isRandom: true }, (...args) => updates.push(args));
-    const generatedSeed = Math.floor(0.5 * Number.MAX_SAFE_INTEGER);
+    const generatedSeed = 2_147_483_648;
 
     assert.deepEqual(seed, {
       display: 'random',
       value: generatedSeed,
     });
     assert.deepEqual(updates, [['generate', 'seed', { value: generatedSeed, isRandom: true }]]);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('random-on-export values respect backend field bounds', () => {
+  const originalRandom = Math.random;
+  Math.random = () => 0.999_999_999_999;
+
+  try {
+    const seed = exportSeed({ value: 1234, isRandom: true });
+
+    assert.equal(Number.isSafeInteger(seed.value), true);
+    assert.equal(seed.value >= 0 && seed.value <= 4_294_967_295, true);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('managed Studio seed consumers share one materialized random seed per export', () => {
+  const originalRandom = Math.random;
+  const updates = [];
+  let calls = 0;
+  Math.random = () => (calls++ === 0 ? 0.25 : 0.75);
+
+  try {
+    const managedSeedNode = (id, studioRole) => ({
+      ...seedNode({ value: 42, isRandom: true }),
+      id,
+      data: {
+        ...seedNode({ value: 42, isRandom: true }).data,
+        studioOwned: true,
+        studioRole,
+      },
+    });
+    const graph = exportModule.buildApiGraphExport({
+      nodes: [managedSeedNode('encode', 'imageEncode'), managedSeedNode('denoise', 'denoise')],
+      edges: [],
+      sid: 'managed-studio-seed-session',
+      setParam: (...args) => updates.push(args),
+    });
+    const expected = 1_073_741_824;
+
+    assert.equal(graph.nodes.encode.params.seed.value, expected);
+    assert.equal(graph.nodes.denoise.params.seed.value, expected);
+    assert.equal(calls, 1);
+    assert.deepEqual(updates, [
+      ['encode', 'seed', { value: expected, isRandom: true }],
+      ['denoise', 'seed', { value: expected, isRandom: true }],
+    ]);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('manual random seed nodes remain independent', () => {
+  const originalRandom = Math.random;
+  let calls = 0;
+  Math.random = () => (calls++ === 0 ? 0.25 : 0.75);
+
+  try {
+    const first = seedNode({ value: 42, isRandom: true });
+    first.id = 'first';
+    const second = seedNode({ value: 42, isRandom: true });
+    second.id = 'second';
+    const graph = exportModule.buildApiGraphExport({
+      nodes: [first, second],
+      edges: [],
+      sid: 'manual-independent-seed-session',
+      setParam: () => {},
+    });
+
+    assert.equal(graph.nodes.first.params.seed.value, 1_073_741_824);
+    assert.equal(graph.nodes.second.params.seed.value, 3_221_225_472);
+    assert.equal(calls, 2);
   } finally {
     Math.random = originalRandom;
   }

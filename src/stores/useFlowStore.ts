@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { NodeData, NodeParams, type NodeParamSignal } from './useNodeStore';
 import { Node, Edge, OnNodesChange, OnEdgesChange, NodeChange, EdgeChange, Connection, Viewport } from '@xyflow/react';
+import { nanoid } from 'nanoid';
 
 import type { ApiGraphExport } from '../types/api';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
@@ -11,6 +12,7 @@ import { arrangeGraphNodes } from '../workflow/graphLayout';
 import {
   handleConnect,
   handleEdgesChange,
+  handleReconnect,
   refreshHandleConnectionStatus,
   updateSignalsForEdges,
 } from './flowConnectionMutations';
@@ -47,16 +49,71 @@ import { deepEqual } from '../utils/deepEqual';
 import {
   collapseUserBlockInstance,
   configureUserBlockInstance,
+  applyUserBlockDefinitionToInstance,
   expandUserBlockGraph,
   expandUserBlockInstance,
   fitUserBlockInstance,
+  insertNodeAtUserBlockSuggestion,
   isUserBlockExpandedInstance,
+  placeExistingNodeInsideExpandedUserBlock,
   USER_BLOCK_COLLAPSED_HEIGHT,
   USER_BLOCK_COLLAPSED_WIDTH,
 } from '../studio/userBlocks';
 import { useUserBlockStore } from './useUserBlockStore';
 import { replaceFlowGraph, type FlowGraphReplacement, type FlowGraphReplacementOptions } from './flowGraphMutations';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
+import { blockValueTypesAreCompatibleV2 } from '../studio/blockValueTypeCompatibilityV2';
+import {
+  collapseHuggingFaceClusterInstance,
+  expandHuggingFaceClusterInstance,
+  expandHuggingFaceClusterBoundaryEdges,
+  fitHuggingFaceClusterInstance,
+  HUGGING_FACE_CLUSTER_COLLAPSED_HEIGHT,
+  HUGGING_FACE_CLUSTER_COLLAPSED_WIDTH,
+  isHuggingFaceClusterExpanded,
+  setHuggingFaceClusterGraphChildParameter,
+  setHuggingFaceClusterGraphExecution,
+  setHuggingFaceClusterGraphExecutionParameter,
+  setHuggingFaceClusterGraphExecutionPosition,
+  setHuggingFaceClusterGraphParameter,
+  toggleHuggingFaceClusterBlockExpanded,
+} from '../studio/huggingFaceClusterGraph';
+import { useHuggingFaceNodeLibraryStore } from './useHuggingFaceNodeLibraryStore';
+import { useHuggingFaceClusterRuntimeStore } from './useHuggingFaceClusterRuntimeStore';
+import type { UserBlockDefinition } from '../studio/types';
+import type { UserBlockInsertionSuggestion } from '../studio/userBlocks';
+import type {
+  BlockBoundaryV2,
+  BlockControlV2,
+  BlockDefinitionV2,
+  BlockGraphNodeV2,
+  BlockJsonValue,
+} from '../studio/blockSchemaV2';
+import { blockModularContainerNodeIdsV2 } from '../studio/blockSchemaV2';
+import { rebaseBlockInstanceV2ToDefinition } from '../studio/blockDefinitionPersistenceV2';
+import { assertBlockRouteEdgesCompatibleV1, switchBlockRouteInstanceV1 } from '../studio/blockRouteSelectionV1';
+import {
+  addBlockEffectiveGraphNodeV2,
+  addBlockEffectiveGraphSubtreeV2,
+  blockExpandedProjectionSizeV2,
+  blockInputPortBindingsV2,
+  blockProjectionNodeIdV2,
+  canonicalizePersistedBlockGraphV2,
+  createBlockRootNodeV2,
+  expandBlockGraphV2ForExecution,
+  isBlockRootV2,
+  materializeBlockProjectionV2,
+  replaceBlockEffectiveGraphV2,
+  replaceBlockEffectiveGraphNodeV2,
+  replaceBlockEffectiveInterfaceV2,
+  removeBlockEffectiveGraphNodesV2,
+  setBlockInstanceValueV2 as reduceBlockInstanceValueV2,
+  setBlockPreviewStateV2 as reduceBlockPreviewStateV2,
+  setBlockPresentationV2 as reduceBlockPresentationV2,
+  type BlockPreviewPatchV2,
+  type BlockPresentationPatchV2,
+} from '../studio/blockRuntimeV2';
 
 export type CustomNodeType = Node<NodeData, NodeData['type']>;
 export interface CustomConnection extends Connection {
@@ -85,6 +142,7 @@ export type FlowStore = {
   onNodesChange: OnNodesChange<CustomNodeType>;
   onEdgesChange: OnEdgesChange<Edge>;
   onConnect: (conn: CustomConnection) => void;
+  onReconnect: (oldEdge: Edge, conn: Connection) => void;
 
   // actions
   addNode: (node: CustomNodeType) => void;
@@ -115,8 +173,39 @@ export type FlowStore = {
   groupNodes: (ids: string[]) => void;
   loopNodes: (ids: string[]) => void;
   setNodeLoopParent: (nodeId: string, loopId: string | null) => void;
+  toggleHuggingFaceClusterExpanded: (id: string) => void;
+  toggleHuggingFaceClusterBlockExpanded: (id: string, path: string) => void;
+  setHuggingFaceClusterParameter: (id: string, name: string, value: unknown) => void;
+  setHuggingFaceClusterExecution: (id: string, admissionId: string | null) => void;
+  setHuggingFaceClusterExecutionParameter: (id: string, source: string, value: unknown) => void;
+  persistHuggingFaceClusterExecutionPosition: (nodeId: string) => void;
   toggleUserBlockExpanded: (id: string) => void;
+  setBlockInstanceValueV2: (id: string, logicalId: string, value: BlockJsonValue) => void;
+  switchBlockRouteV1: (
+    id: string,
+    routeKey: string,
+    compiledDestination: NonNullable<NodeData['blockInstanceV2']>,
+  ) => void;
+  applyBlockSuggestedInputsV2: (id: string, suggestionId: string) => void;
+  setBlockPresentationV2: (id: string, patch: BlockPresentationPatchV2) => void;
+  toggleBlockContainerExpandedV2: (id: string, semanticNodeId: string) => void;
+  setBlockPreviewStateV2: (
+    id: string,
+    preview: { nodeId: string; outputPortId: string },
+    patch: BlockPreviewPatchV2,
+  ) => void;
+  ensureBlockProjectionV2: (id: string) => void;
+  ensureBlockMinimumHeightV2: (id: string, minimumHeight: number) => void;
+  persistBlockCanvasPresentationV2: (nodeId: string) => void;
+  fitBlockProjectionToChildrenV2: (id: string) => void;
+  adoptNodeIntoBlockV2: (nodeId: string, blockId: string, parentSemanticNodeId?: string) => void;
+  adoptBlockFragmentIntoBlockV2: (fragmentId: string, blockId: string, parentSemanticNodeId?: string) => void;
+  replaceNodeInBlockV2: (nodeId: string, projectedNodeId: string) => void;
+  moveNodeOutOfBlockV2: (projectedNodeId: string, position: { x: number; y: number }) => string;
+  configureBlockInterfaceV2: (id: string, value: { boundary: BlockBoundaryV2; controls: BlockControlV2[] }) => void;
   fitUserBlockToChildren: (id: string) => void;
+  placeNodeInUserBlock: (nodeId: string, blockId: string) => void;
+  insertNodeInUserBlock: (blockId: string, suggestion: UserBlockInsertionSuggestion) => void;
   configureUserBlock: (
     id: string,
     changes: {
@@ -126,6 +215,8 @@ export type FlowStore = {
       exposedParamIds: Set<string>;
     },
   ) => void;
+  applyUserBlockDefinition: (id: string, definition: UserBlockDefinition) => void;
+  applyBlockDefinitionV2: (id: string, definition: BlockDefinitionV2) => void;
   arrangeGraph: (options?: ArrangeGraphOptions) => Promise<void>;
   refreshConnectionVisuals: () => void;
   ungroupNodes: (id: string) => void;
@@ -186,6 +277,70 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/**
+ * Resolve a durable canvas target to the concrete node that will exist after
+ * composite expansion. Keeping this beside exportGraph prevents toolbar runs,
+ * direct store exports, and queued submissions from selecting different paths.
+ */
+export function resolveFlowExecutionTargetNodeId(nodes: CustomNodeType[], targetNodeId?: string): string | undefined {
+  if (!targetNodeId) return undefined;
+  const target = nodes.find((node) => node.id === targetNodeId);
+  if (!target) return targetNodeId;
+
+  if (target.data.blockInstanceV2 !== undefined) {
+    if (!isBlockRootV2(target)) {
+      throw new Error(`Block V2 run target ${targetNodeId} has malformed instance authority.`);
+    }
+    const instance = target.data.blockInstanceV2;
+    const nodesWithOutgoingEdges = new Set(instance.effectiveGraph.edges.map(({ sourceNodeId }) => sourceNodeId));
+    // Some reviewed graphs expose diagnostic text previews on intermediate
+    // encoder nodes as well as the actual terminal media preview. Lexical
+    // compiler order historically marked the diagnostic preview as primary.
+    // Running a Block must target a terminal preview when one exists so the
+    // complete generation path executes; retain the explicit primary marker
+    // only as the tie-breaker/fallback.
+    const terminalPreviews = instance.definitionSnapshot.previews.filter(
+      ({ nodeId }) => !nodesWithOutgoingEdges.has(nodeId),
+    );
+    const preview =
+      terminalPreviews.find((candidate) => candidate.primary === true) ??
+      terminalPreviews.find((candidate) => candidate.mediaType !== 'text') ??
+      terminalPreviews[0] ??
+      instance.definitionSnapshot.previews.find((candidate) => candidate.primary === true) ??
+      instance.definitionSnapshot.previews[0];
+    return preview ? blockProjectionNodeIdV2(instance.instanceId, preview.nodeId) : undefined;
+  }
+
+  // Legacy composite roots do not exist in their concrete execution graph.
+  if (target.data.userBlockId || target.data.huggingFaceClusterRole === 'root') return undefined;
+  return targetNodeId;
+}
+
+/** Remove hidden registered-definition compiler sessions from every durable or executable graph view. */
+export function withoutBlockCompilationTransientsV2(nodes: CustomNodeType[], edges: Edge[]) {
+  const transientNodeIds = new Set(
+    nodes.filter((node) => Boolean(node.data.blockCompilationTransientV2)).map((node) => node.id),
+  );
+  if (!transientNodeIds.size) return { nodes, edges };
+  return {
+    nodes: nodes.filter((node) => !transientNodeIds.has(node.id)),
+    edges: edges.filter((edge) => !transientNodeIds.has(edge.source) && !transientNodeIds.has(edge.target)),
+  };
+}
+
+function huggingFaceDefinitionForNode(node: CustomNodeType | undefined) {
+  const reference = node?.data.huggingFaceClusterInstance?.definition;
+  if (!reference) return undefined;
+  return useHuggingFaceNodeLibraryStore
+    .getState()
+    .library?.definitions.find(
+      (definition) =>
+        definition.id === reference.id &&
+        definition.libraryRevision === reference.libraryRevision &&
+        definition.contentHash === reference.contentHash,
+    );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
@@ -234,17 +389,24 @@ function persistedViewport(value: unknown): Viewport {
 
 export function normalizePersistedFlowState(value: unknown): FlowHistorySnapshot {
   const record = isRecord(value) ? value : {};
-  const nodes = (Array.isArray(record.nodes) ? record.nodes : [])
+  const durableNodes = (Array.isArray(record.nodes) ? record.nodes : [])
     .filter(isPersistedFlowNode)
-    .map(durableFlowNodeSnapshot);
-  const nodeIds = new Set(nodes.map((node) => node.id));
-  const edges = (Array.isArray(record.edges) ? record.edges : [])
+    .filter((node) => !node.data.blockCompilationTransientV2)
+    .map(durableFlowNodeSnapshot)
+    // Cluster block and execution children are deterministic projections of
+    // the pinned root definition. In particular, executable children require
+    // volatile runtime/resource authority and must never regain authority by
+    // being restored from a browser or workflow checkpoint.
+    .filter((node) => node.data.huggingFaceClusterRole !== 'block' && node.data.huggingFaceClusterRole !== 'execution');
+  const durableNodeIds = new Set(durableNodes.map((node) => node.id));
+  const durableEdges = (Array.isArray(record.edges) ? record.edges : [])
     .filter(isPersistedFlowEdge)
-    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    .filter((edge) => durableNodeIds.has(edge.source) && durableNodeIds.has(edge.target))
     .map((edge) => cloneJson(edge));
+  const canonical = canonicalizePersistedBlockGraphV2(durableNodes, durableEdges);
   return {
-    nodes,
-    edges,
+    nodes: canonical.nodes,
+    edges: canonical.edges,
     viewport: persistedViewport(record.viewport),
   };
 }
@@ -270,10 +432,16 @@ export function durableFlowNodeSnapshot(node: CustomNodeType) {
         blockExpanded: snapshot.data.uiState.blockExpanded,
         blockCollapsedWidth: snapshot.data.uiState.blockCollapsedWidth,
         blockCollapsedHeight: snapshot.data.uiState.blockCollapsedHeight,
+        clusterCollapsedWidth: snapshot.data.uiState.clusterCollapsedWidth,
+        clusterCollapsedHeight: snapshot.data.uiState.clusterCollapsedHeight,
         disabled: snapshot.data.uiState.disabled,
       }
     : undefined;
-  Object.values(snapshot.data.params).forEach((param) => {
+  Object.entries(snapshot.data.params).forEach(([name, param]) => {
+    if (param.fieldOptions?.huggingFaceClusterPreviewSourceNodeId) {
+      delete snapshot.data.params[name];
+      return;
+    }
     delete param.artifacts;
     delete param.onChange;
     delete param.onSignal;
@@ -285,11 +453,7 @@ export function durableFlowNodeSnapshot(node: CustomNodeType) {
 }
 
 function snapshotFlowState(state: Pick<FlowStore, 'nodes' | 'edges' | 'viewport'>): FlowHistorySnapshot {
-  return {
-    nodes: state.nodes.map(durableFlowNodeSnapshot),
-    edges: cloneJson(state.edges),
-    viewport: cloneJson(state.viewport),
-  };
+  return normalizePersistedFlowState(state);
 }
 
 function pushHistory(past: FlowHistorySnapshot[], snapshot: FlowHistorySnapshot) {
@@ -302,9 +466,610 @@ function sameSnapshot(left: FlowHistorySnapshot, right: FlowHistorySnapshot) {
   );
 }
 
-function isUndoableNodeChange(change: NodeChange<CustomNodeType>) {
+/**
+ * Replace the derived canvas projection for one source-neutral composite.
+ * `BlockInstanceV2` remains the only durable authority: root controls and
+ * connector params are intentionally never copied into `NodeData.params`.
+ */
+function projectBlockInstanceV2(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  id: string,
+  instance: NonNullable<NodeData['blockInstanceV2']>,
+) {
+  const current = state.nodes.find((node) => node.id === id);
+  if (!current) return null;
+  const candidateHasInstance = Boolean(current.data.blockInstanceV2);
+  if (!isBlockRootV2(current)) {
+    if (candidateHasInstance) throw new Error(`Invalid Block V2 root ${id}.`);
+    return null;
+  }
+
+  const root = createBlockRootNodeV2(instance, { selected: current.selected });
+  const projection = materializeBlockProjectionV2(root);
+  const [canonicalRoot, ...projectedChildren] = projection.nodes;
+  if (!canonicalRoot) throw new Error(`Could not project Block V2 root ${id}.`);
+  const projectedRoot = {
+    ...canonicalRoot,
+    ...(current.selected === undefined ? {} : { selected: current.selected }),
+    ...(current.zIndex === undefined ? {} : { zIndex: current.zIndex }),
+  };
+
+  const nodes = state.nodes.flatMap((node) => {
+    if (node.data.blockProjectionOwnerId === id) return [];
+    if (node.id === id) return [projectedRoot, ...projectedChildren];
+    return [node];
+  });
+  const retainedEdges = state.edges.filter((edge) => {
+    const data = isRecord(edge.data) ? edge.data : {};
+    return data.blockProjectionOwnerId !== id;
+  });
+  return { nodes, edges: [...retainedEdges, ...projection.edges] };
+}
+
+function ordinaryBlockGraphNodeV2(node: CustomNodeType): BlockGraphNodeV2 {
+  const snapshot = durableFlowNodeSnapshot(node);
+  const nodeType = snapshot.type ?? snapshot.data.type;
+  if (nodeType !== 'custom' && nodeType !== 'any')
+    throw new Error(
+      `Cannot move node "${node.id}" into this Block: only ordinary, non-container graph nodes are supported.`,
+    );
+  const data = cloneJson(snapshot.data) as unknown as BlockGraphNodeV2['data'];
+  const modularDiffusers = snapshot.data.modularDiffusersCatalogNode
+    ? cloneJson(snapshot.data.modularDiffusersCatalogNode)
+    : undefined;
+  delete (data as Record<string, unknown>).modularDiffusersCatalogNode;
+  return {
+    nodeId: snapshot.id,
+    nodeType,
+    data,
+    ...(modularDiffusers ? { modularDiffusers } : {}),
+  };
+}
+
+/**
+ * Atomically replace one disconnected top-level canvas node with an ordinary
+ * projected child owned by an expanded V2 Block. The explicit public
+ * interface remains the immutable definition snapshot; this gesture only
+ * changes the instance effective graph and presentation layout.
+ */
+function adoptTopLevelNodeIntoBlockV2(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  nodeId: string,
+  blockId: string,
+  parentSemanticNodeId?: string,
+) {
+  const source = state.nodes.find((node) => node.id === nodeId);
+  if (!source) throw new Error(`Cannot move node "${nodeId}" into this Block because it no longer exists.`);
+  const target = state.nodes.find((node) => node.id === blockId);
+  if (!target) throw new Error(`Cannot move node "${nodeId}" into Block "${blockId}" because it no longer exists.`);
+  if (!target.data.blockInstanceV2 || !isBlockRootV2(target))
+    throw new Error(`Cannot move node "${nodeId}" into Block "${blockId}": the target Block is invalid.`);
+  if (!target.data.blockInstanceV2.presentation.expanded)
+    throw new Error(`Cannot move node "${nodeId}" into Block "${blockId}": expand the Block before dropping.`);
+  if (source.id === target.id || source.data.type === 'block' || source.data.type === 'cluster')
+    throw new Error('Cluster Nodes and User Nodes cannot be nested.');
+  if (source.parentId)
+    throw new Error(`Cannot move node "${nodeId}" into this Block: only disconnected top-level nodes are supported.`);
+  if (state.nodes.some((node) => node.parentId === source.id))
+    throw new Error(`Cannot move node "${nodeId}" into this Block because it owns nested canvas nodes.`);
+  const parentSemantic = parentSemanticNodeId
+    ? target.data.blockInstanceV2.effectiveGraph.nodes.find(
+        ({ nodeId: candidate }) => candidate === parentSemanticNodeId,
+      )
+    : null;
+  if (parentSemanticNodeId && (!parentSemantic || parentSemantic.nodeType !== 'group'))
+    throw new Error(`Cannot move node "${nodeId}" into unknown Modular container "${parentSemanticNodeId}".`);
+  const incidentEdges = state.edges.filter((edge) => edge.source === source.id || edge.target === source.id);
+  const crossingEdges = incidentEdges.flatMap((edge) => {
+    if (edge.source === source.id && edge.target === target.id) {
+      const port = target.data.blockInstanceV2!.effectiveInterface.boundary.inputs.find(
+        ({ portId }) => portId === edge.targetHandle,
+      );
+      const sourceParam = nodeConnectorParam(source, edge.sourceHandle);
+      if (
+        !port ||
+        !edge.sourceHandle ||
+        sourceParam?.display !== 'output' ||
+        !blockValueTypesAreCompatibleV2(sourceParam.type, port.valueType)
+      )
+        throw new Error(
+          `Cannot move connected node "${nodeId}" into this Block: its incoming public-port edge is invalid.`,
+        );
+      return blockInputPortBindingsV2(port).map((binding) => ({
+        edgeId: `workflow-edge-${nanoid()}`,
+        sourceNodeId: source.id,
+        sourcePortId: edge.sourceHandle!,
+        targetNodeId: binding.nodeId,
+        targetPortId: binding.fieldOrPortId,
+      }));
+    }
+    if (edge.source === target.id && edge.target === source.id) {
+      const port = target.data.blockInstanceV2!.effectiveInterface.boundary.outputs.find(
+        ({ portId }) => portId === edge.sourceHandle,
+      );
+      const targetParam = nodeConnectorParam(source, edge.targetHandle);
+      if (
+        !port ||
+        !edge.targetHandle ||
+        (targetParam?.display !== 'input' && !targetParam?.isInput) ||
+        !blockValueTypesAreCompatibleV2(port.valueType, targetParam.type)
+      )
+        throw new Error(
+          `Cannot move connected node "${nodeId}" into this Block: its outgoing public-port edge is invalid.`,
+        );
+      return [
+        {
+          edgeId: `workflow-edge-${nanoid()}`,
+          sourceNodeId: port.binding.nodeId,
+          sourcePortId: port.binding.fieldOrPortId,
+          targetNodeId: source.id,
+          targetPortId: edge.targetHandle,
+        },
+      ];
+    }
+    throw new Error(
+      `Cannot move connected node "${nodeId}" into this Block while an edge crosses to another top-level node. Disconnect it, move the node, configure the Block interface, then reconnect through a public port.`,
+    );
+  });
+
+  const width = source.measured?.width ?? source.width;
+  const height = source.measured?.height ?? source.height;
+  let adoptedNode = ordinaryBlockGraphNodeV2(source);
+  if (parentSemantic) {
+    const parentMetadata = parentSemantic.modularDiffusers;
+    const sourceMetadata = adoptedNode.modularDiffusers;
+    if (
+      parentMetadata?.kind !== 'upstream_block' ||
+      !parentMetadata.placementPath?.length ||
+      sourceMetadata?.kind !== 'upstream_block'
+    )
+      throw new Error('Only a Modular Diffusers catalog node can be dropped into a nested Modular container.');
+    if (
+      sourceMetadata.pipelineClass !== parentMetadata.pipelineClass ||
+      sourceMetadata.libraryRevision !== parentMetadata.libraryRevision
+    )
+      throw new Error(
+        `Cannot place ${sourceMetadata.blockClass ?? 'this block'} inside ${parentMetadata.blockClass ?? 'this container'}: choose a block from the same pinned pipeline family.`,
+      );
+    const occupied = new Set(
+      target.data.blockInstanceV2.effectiveGraph.nodes.map(({ modularDiffusers }) =>
+        modularDiffusers?.placementPath?.join('/'),
+      ),
+    );
+    const sourcePlacementPath = sourceMetadata.placementPath ?? [];
+    const leaf = sourcePlacementPath[sourcePlacementPath.length - 1] ?? sourceMetadata.blockClass ?? 'block';
+    let placementPath = [...parentMetadata.placementPath, leaf];
+    let suffix = 2;
+    while (occupied.has(placementPath.join('/')))
+      placementPath = [...parentMetadata.placementPath, `${leaf}_${suffix++}`];
+    adoptedNode = {
+      ...adoptedNode,
+      modularDiffusers: {
+        ...sourceMetadata,
+        runtimeRole: `custom:${placementPath.join('/')}`,
+        placementPath,
+        parentPlacementPath: [...parentMetadata.placementPath],
+      },
+    };
+  }
+  const nodeById = new Map(state.nodes.map((node) => [node.id, node]));
+  const absolutePosition = (node: CustomNodeType) => {
+    let x = node.position.x;
+    let y = node.position.y;
+    let parentId = node.parentId;
+    const visited = new Set([node.id]);
+    while (parentId) {
+      if (visited.has(parentId)) throw new Error(`Cannot place node "${nodeId}": canvas parent cycle detected.`);
+      visited.add(parentId);
+      const parent = nodeById.get(parentId);
+      if (!parent) break;
+      x += parent.position.x;
+      y += parent.position.y;
+      parentId = parent.parentId;
+    }
+    return { x, y };
+  };
+  const layoutOrigin = parentSemanticNodeId
+    ? state.nodes.find(
+        (node) =>
+          node.data.blockProjectionOwnerId === blockId && node.data.blockProjectionNodeId === parentSemanticNodeId,
+      )
+    : target;
+  const origin = layoutOrigin ? absolutePosition(layoutOrigin) : target.position;
+  let instance = addBlockEffectiveGraphNodeV2(target.data.blockInstanceV2, adoptedNode, {
+    layout: {
+      x: source.position.x - origin.x,
+      y: source.position.y - origin.y,
+      ...(width && Number.isFinite(width) && width > 0 ? { width } : {}),
+      ...(height && Number.isFinite(height) && height > 0 ? { height } : {}),
+    },
+  });
+  if (crossingEdges.length) {
+    instance = replaceBlockEffectiveGraphV2(instance, {
+      ...instance.effectiveGraph,
+      edges: [...instance.effectiveGraph.edges, ...crossingEdges],
+    });
+  }
+  const projected = projectBlockInstanceV2(state, target.id, instance);
+  if (!projected) throw new Error(`Cannot move node "${nodeId}" into Block "${blockId}": projection failed.`);
+  return {
+    nodes: projected.nodes.filter((node) => node.id !== source.id),
+    edges: projected.edges.filter((edge) => !incidentEdges.some(({ id }) => id === edge.id)),
+  };
+}
+
+function adoptTopLevelBlockFragmentIntoBlockV2(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  fragmentId: string,
+  blockId: string,
+  parentSemanticNodeId?: string,
+) {
+  const source = state.nodes.find((node) => node.id === fragmentId);
+  const target = state.nodes.find((node) => node.id === blockId);
+  const fragment = source?.data.blockInstanceV2;
+  const targetInstance = target?.data.blockInstanceV2;
+  if (!source || !fragment || !isBlockRootV2(source))
+    throw new Error('The Modular Diffusers fragment is no longer available.');
+  if (!target || !targetInstance || !isBlockRootV2(target) || !targetInstance.presentation.expanded)
+    throw new Error('Expand a valid destination Block before dropping this Modular Diffusers fragment.');
+  if (
+    fragment.definitionSnapshot.source.kind !== 'diffusers_catalog' ||
+    fragment.effectiveGraph.nodes.length === 0 ||
+    fragment.effectiveGraph.nodes.some(({ modularDiffusers }) => modularDiffusers?.kind !== 'upstream_block')
+  )
+    throw new Error('Only an exact Modular Diffusers catalog subtree can be flattened into another Block.');
+  if (
+    state.edges.some(
+      (edge) =>
+        (edge.source === fragmentId || edge.target === fragmentId) && edge.data?.blockProjectionOwnerId !== fragmentId,
+    )
+  )
+    throw new Error('Disconnect the Modular Diffusers fragment before moving it into another Block.');
+
+  const destinationParent = parentSemanticNodeId
+    ? targetInstance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === parentSemanticNodeId)
+    : null;
+  if (parentSemanticNodeId && destinationParent?.nodeType !== 'group')
+    throw new Error(`The destination Modular container ${parentSemanticNodeId} is unavailable.`);
+  const destinationMetadata = destinationParent?.modularDiffusers;
+  const sourceMetadata = fragment.effectiveGraph.nodes[0]?.modularDiffusers;
+  const destinationFamily =
+    destinationMetadata?.kind === 'upstream_block'
+      ? destinationMetadata
+      : targetInstance.effectiveGraph.nodes.find(({ modularDiffusers }) => modularDiffusers?.kind === 'upstream_block')
+          ?.modularDiffusers;
+  if (
+    sourceMetadata?.kind !== 'upstream_block' ||
+    !destinationFamily ||
+    destinationFamily.kind !== 'upstream_block' ||
+    sourceMetadata.pipelineClass !== destinationFamily.pipelineClass ||
+    sourceMetadata.libraryRevision !== destinationFamily.libraryRevision
+  )
+    throw new Error('Choose a Modular Diffusers subtree from the same pinned pipeline family as the destination.');
+
+  const sourcePaths = new Map(
+    fragment.effectiveGraph.nodes.map((node) => [node.nodeId, node.modularDiffusers!.placementPath!]),
+  );
+  const sourcePathKeys = new Set([...sourcePaths.values()].map((path) => path.join('/')));
+  const roots = fragment.effectiveGraph.nodes.filter((node) => {
+    const parent = node.modularDiffusers?.parentPlacementPath;
+    return !parent?.length || !sourcePathKeys.has(parent.join('/'));
+  });
+  if (roots.length !== 1) throw new Error('The selected Modular Diffusers catalog item is not one exact subtree.');
+  const sourceRootPath = roots[0]!.modularDiffusers!.placementPath!;
+  const destinationParentPath =
+    destinationMetadata?.kind === 'upstream_block' ? (destinationMetadata.placementPath ?? []) : [];
+  const occupied = new Set(
+    targetInstance.effectiveGraph.nodes.flatMap(({ modularDiffusers }) =>
+      modularDiffusers?.placementPath?.length ? [modularDiffusers.placementPath.join('/')] : [],
+    ),
+  );
+  const rootLeaf = sourceRootPath[sourceRootPath.length - 1]!;
+  let destinationRootPath = [...destinationParentPath, rootLeaf];
+  let suffix = 2;
+  while (occupied.has(destinationRootPath.join('/')))
+    destinationRootPath = [...destinationParentPath, `${rootLeaf}_${suffix++}`];
+
+  const semanticIdBySource = new Map<string, string>();
+  fragment.effectiveGraph.nodes.forEach((node, index) => {
+    semanticIdBySource.set(node.nodeId, `adopted-${nanoid(16)}-${index}`);
+  });
+  const rebasedPathBySource = new Map<string, string[]>();
+  fragment.effectiveGraph.nodes.forEach((node) => {
+    const path = sourcePaths.get(node.nodeId)!;
+    rebasedPathBySource.set(node.nodeId, [...destinationRootPath, ...path.slice(sourceRootPath.length)]);
+  });
+  const nodes = fragment.effectiveGraph.nodes.map((node) => {
+    const placementPath = rebasedPathBySource.get(node.nodeId)!;
+    const metadata = node.modularDiffusers!;
+    return {
+      ...cloneJson(node),
+      nodeId: semanticIdBySource.get(node.nodeId)!,
+      modularDiffusers: {
+        ...cloneJson(metadata),
+        runtimeRole: `custom:${placementPath.join('/')}`,
+        placementPath,
+        ...(placementPath.length > 1 ? { parentPlacementPath: placementPath.slice(0, -1) } : {}),
+      },
+    };
+  });
+  const edges = fragment.effectiveGraph.edges.map((edge) => ({
+    ...cloneJson(edge),
+    edgeId: `adopted-edge-${nanoid(16)}`,
+    sourceNodeId: semanticIdBySource.get(edge.sourceNodeId)!,
+    targetNodeId: semanticIdBySource.get(edge.targetNodeId)!,
+  }));
+  const nodeById = new Map(state.nodes.map((node) => [node.id, node]));
+  const absolutePosition = (node: CustomNodeType) => {
+    let position = { ...node.position };
+    let parentId = node.parentId;
+    while (parentId) {
+      const parent = nodeById.get(parentId);
+      if (!parent) break;
+      position = { x: position.x + parent.position.x, y: position.y + parent.position.y };
+      parentId = parent.parentId;
+    }
+    return position;
+  };
+  const destinationCanvasParent = parentSemanticNodeId
+    ? state.nodes.find(
+        (node) =>
+          node.data.blockProjectionOwnerId === blockId && node.data.blockProjectionNodeId === parentSemanticNodeId,
+      )
+    : target;
+  const origin = destinationCanvasParent ? absolutePosition(destinationCanvasParent) : target.position;
+  const layouts = Object.fromEntries(
+    fragment.effectiveGraph.nodes.map((node) => {
+      const nextId = semanticIdBySource.get(node.nodeId)!;
+      const sourceLayout = fragment.presentation.internalLayout[node.nodeId];
+      return [
+        nextId,
+        node.nodeId === roots[0]!.nodeId
+          ? {
+              x: source.position.x - origin.x,
+              y: source.position.y - origin.y,
+              ...(sourceLayout?.width ? { width: sourceLayout.width } : {}),
+              ...(sourceLayout?.height ? { height: sourceLayout.height } : {}),
+            }
+          : cloneJson(sourceLayout ?? { x: 32, y: 80 }),
+      ];
+    }),
+  );
+  const nextInstance = addBlockEffectiveGraphSubtreeV2(targetInstance, nodes, edges, layouts);
+  const projected = projectBlockInstanceV2(state, target.id, nextInstance);
+  if (!projected) throw new Error('The destination Block could not project the inserted Modular subtree.');
+  const removedCanvasIds = new Set([
+    fragmentId,
+    ...state.nodes.filter(({ data }) => data.blockProjectionOwnerId === fragmentId).map(({ id }) => id),
+  ]);
+  return {
+    nodes: projected.nodes.filter((node) => !removedCanvasIds.has(node.id)),
+    edges: projected.edges.filter((edge) => !removedCanvasIds.has(edge.source) && !removedCanvasIds.has(edge.target)),
+  };
+}
+
+function replaceProjectedNodeInBlockV2(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  sourceId: string,
+  projectedNodeId: string,
+) {
+  const source = state.nodes.find((node) => node.id === sourceId);
+  const projected = state.nodes.find((node) => node.id === projectedNodeId);
+  if (!source || !projected) throw new Error('Cannot replace this Block node because one of the nodes disappeared.');
+  const ownerId = projected.data.blockProjectionOwnerId;
+  const semanticNodeId = projected.data.blockProjectionNodeId;
+  const root = state.nodes.find((node) => node.id === ownerId);
+  if (
+    !ownerId ||
+    !semanticNodeId ||
+    projected.data.blockProjectionKind !== 'internal' ||
+    !root?.data.blockInstanceV2 ||
+    !isBlockRootV2(root)
+  )
+    throw new Error('Cannot replace a malformed Block V2 internal projection.');
+  if (!root.data.blockInstanceV2.presentation.expanded)
+    throw new Error('Expand the Block before replacing an internal node.');
+  if (source.parentId || source.data.type === 'block' || source.data.type === 'cluster')
+    throw new Error('Only an ordinary top-level node can replace a Block internal node.');
+  if (state.nodes.some((node) => node.parentId === source.id))
+    throw new Error(`Cannot use node "${source.id}" as a replacement because it owns nested canvas nodes.`);
+  if (state.edges.some((edge) => edge.source === source.id || edge.target === source.id))
+    throw new Error(`Disconnect node "${source.id}" before using it as a Block replacement.`);
+
+  let replacement = ordinaryBlockGraphNodeV2(source);
+  const replacedSemantic = root.data.blockInstanceV2.effectiveGraph.nodes.find(
+    ({ nodeId }) => nodeId === semanticNodeId,
+  );
+  const sourceMetadata = replacement.modularDiffusers;
+  const targetMetadata = replacedSemantic?.modularDiffusers;
+  if (sourceMetadata?.kind === 'upstream_block' && targetMetadata?.kind === 'upstream_block') {
+    if (
+      sourceMetadata.pipelineClass !== targetMetadata.pipelineClass ||
+      sourceMetadata.libraryRevision !== targetMetadata.libraryRevision
+    )
+      throw new Error(
+        `Cannot replace ${targetMetadata.blockClass ?? 'this block'} with ${sourceMetadata.blockClass ?? 'that block'}: choose a block from the same pinned pipeline family.`,
+      );
+    if (sourceMetadata.blockKind !== 'block' || targetMetadata.blockKind !== 'block')
+      throw new Error(
+        'Container replacement requires its reviewed child subtree. Drag a leaf block here, or replace the container through the nested subtree action.',
+      );
+    const placementPath = targetMetadata.placementPath ?? [];
+    const sourceIdentity = { ...sourceMetadata };
+    delete sourceIdentity.parentPlacementPath;
+    replacement = {
+      ...replacement,
+      modularDiffusers: {
+        ...sourceIdentity,
+        runtimeRole: `custom:${placementPath.join('/')}`,
+        placementPath: [...placementPath],
+        ...(targetMetadata.parentPlacementPath ? { parentPlacementPath: [...targetMetadata.parentPlacementPath] } : {}),
+      },
+    };
+  }
+  const instance = replaceBlockEffectiveGraphNodeV2(root.data.blockInstanceV2, semanticNodeId, replacement);
+  const graph = projectBlockInstanceV2(state, ownerId, instance);
+  if (!graph) throw new Error(`Cannot replace Block V2 internal node "${semanticNodeId}": projection failed.`);
+  return { nodes: graph.nodes.filter((node) => node.id !== source.id), edges: graph.edges };
+}
+
+function moveProjectedNodeOutOfBlockV2(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  projectedNodeId: string,
+  position: { x: number; y: number },
+) {
+  const projected = state.nodes.find((node) => node.id === projectedNodeId);
+  const ownerId = projected?.data.blockProjectionOwnerId;
+  const semanticNodeId = projected?.data.blockProjectionNodeId;
+  const root = state.nodes.find((node) => node.id === ownerId);
+  if (
+    !projected ||
+    !ownerId ||
+    !semanticNodeId ||
+    projected.data.blockProjectionKind !== 'internal' ||
+    !root?.data.blockInstanceV2 ||
+    !isBlockRootV2(root)
+  )
+    throw new Error('Cannot move a malformed Block V2 internal projection out of its Block.');
+  if (!root.data.blockInstanceV2.presentation.expanded)
+    throw new Error('Expand the Block before moving an internal node out.');
+  const instance = root.data.blockInstanceV2;
+  const semantic = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === semanticNodeId);
+  if (!semantic) throw new Error(`Cannot move unknown Block V2 internal node "${semanticNodeId}" out.`);
+  const incident = instance.effectiveGraph.edges.filter(
+    ({ sourceNodeId, targetNodeId }) => sourceNodeId === semanticNodeId || targetNodeId === semanticNodeId,
+  );
+  const translatedCandidates = incident.map((edge) => {
+    if (edge.sourceNodeId === semanticNodeId && edge.targetNodeId === semanticNodeId) {
+      return { kind: 'self' as const, sourceHandle: edge.sourcePortId, targetHandle: edge.targetPortId };
+    }
+    if (edge.sourceNodeId === semanticNodeId) {
+      const port = instance.effectiveInterface.boundary.inputs.find((candidate) =>
+        blockInputPortBindingsV2(candidate).some(
+          ({ nodeId, fieldOrPortId }) => nodeId === edge.targetNodeId && fieldOrPortId === edge.targetPortId,
+        ),
+      );
+      if (!port)
+        throw new Error(
+          `Cannot move "${semanticNodeId}" out while ${edge.edgeId} crosses the Block boundary. Configure a public input for ${edge.targetNodeId}.${edge.targetPortId} first.`,
+        );
+      if (
+        !port.multiple &&
+        state.edges.some((candidate) => candidate.target === ownerId && candidate.targetHandle === port.portId)
+      )
+        throw new Error(`Cannot move "${semanticNodeId}" out: public input ${port.portId} is already connected.`);
+      return {
+        kind: 'input' as const,
+        sourceHandle: edge.sourcePortId,
+        targetRootPortId: port.portId,
+        targetBindingKey: `${edge.targetNodeId}\0${edge.targetPortId}`,
+      };
+    }
+    const port = instance.effectiveInterface.boundary.outputs.find(
+      ({ binding }) => binding.nodeId === edge.sourceNodeId && binding.fieldOrPortId === edge.sourcePortId,
+    );
+    if (!port)
+      throw new Error(
+        `Cannot move "${semanticNodeId}" out while ${edge.edgeId} crosses the Block boundary. Configure a public output for ${edge.sourceNodeId}.${edge.sourcePortId} first.`,
+      );
+    return { kind: 'output' as const, sourceRootPortId: port.portId, targetHandle: edge.targetPortId };
+  });
+  const seenInputGroups = new Set<string>();
+  const translated = translatedCandidates.filter((candidate) => {
+    if (candidate.kind !== 'input') return true;
+    const groupKey = `${candidate.sourceHandle}\0${candidate.targetRootPortId}`;
+    if (seenInputGroups.has(groupKey)) return false;
+    const group = translatedCandidates.filter(
+      (other) =>
+        other.kind === 'input' &&
+        other.sourceHandle === candidate.sourceHandle &&
+        other.targetRootPortId === candidate.targetRootPortId,
+    );
+    const port = instance.effectiveInterface.boundary.inputs.find(
+      ({ portId }) => portId === candidate.targetRootPortId,
+    );
+    if (!port) throw new Error(`Cannot move "${semanticNodeId}" out: its public input disappeared.`);
+    const expected = new Set(
+      blockInputPortBindingsV2(port).map(({ nodeId, fieldOrPortId }) => `${nodeId}\0${fieldOrPortId}`),
+    );
+    const actual = new Set(group.flatMap((other) => (other.kind === 'input' ? [other.targetBindingKey] : [])));
+    if (
+      actual.size !== group.length ||
+      actual.size !== expected.size ||
+      [...actual].some((target) => !expected.has(target))
+    )
+      throw new Error(
+        `Cannot move "${semanticNodeId}" out: its connections do not cover the complete fan-out for public input ${port.portId}.`,
+      );
+    seenInputGroups.add(groupKey);
+    return true;
+  });
+  const nextInstance = removeBlockEffectiveGraphNodesV2(instance, [semanticNodeId]);
+  const graph = projectBlockInstanceV2(state, ownerId, nextInstance);
+  if (!graph) throw new Error(`Cannot move Block V2 internal node "${semanticNodeId}" out: projection failed.`);
+
+  const occupied = new Set(graph.nodes.map(({ id }) => id));
+  const topLevelId = occupied.has(semanticNodeId) ? `node-${nanoid()}` : semanticNodeId;
+  const snapshot = durableFlowNodeSnapshot(projected);
+  const data = cloneJson(snapshot.data);
+  delete data.blockProjectionOwnerId;
+  delete data.blockProjectionNodeId;
+  delete data.blockProjectionKind;
+  delete data.blockProjectionContainer;
+  delete data.blockProjectionModular;
+  delete data.blockProjectionChildCount;
+  delete data.blockProjectionDepth;
+  delete data.blockProjectionPortBindings;
+  Object.values(data.params).forEach((param) => {
+    if (!isRecord(param.fieldOptions)) return;
+    const fieldOptions = { ...param.fieldOptions };
+    delete fieldOptions.blockBindingV2;
+    param.fieldOptions = fieldOptions;
+  });
+  const topLevel: CustomNodeType = {
+    ...snapshot,
+    id: topLevelId,
+    position,
+    data,
+  };
+  delete topLevel.parentId;
+  delete topLevel.extent;
+  delete topLevel.expandParent;
+
+  const crossingEdges: Edge[] = translated.map((translation) => ({
+    id: `workflow-edge-${nanoid()}`,
+    source: translation.kind === 'self' ? topLevelId : translation.kind === 'output' ? ownerId : topLevelId,
+    sourceHandle: translation.kind === 'output' ? translation.sourceRootPortId : translation.sourceHandle,
+    target: translation.kind === 'self' ? topLevelId : translation.kind === 'input' ? ownerId : topLevelId,
+    targetHandle: translation.kind === 'input' ? translation.targetRootPortId : translation.targetHandle,
+    type: 'smoothstep',
+  }));
+  const nodes = [...graph.nodes, topLevel];
+  return { nodes, edges: decorateConnectionEdges(nodes, [...graph.edges, ...crossingEdges]), topLevelId };
+}
+
+function updateBlockInstanceV2(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  id: string,
+  reducer: (instance: NonNullable<NodeData['blockInstanceV2']>) => NonNullable<NodeData['blockInstanceV2']>,
+) {
+  const root = state.nodes.find((node) => node.id === id);
+  if (!root?.data.blockInstanceV2) return null;
+  return projectBlockInstanceV2(state, id, reducer(root.data.blockInstanceV2));
+}
+
+function isUndoableNodeChange(change: NodeChange<CustomNodeType>, nodes: CustomNodeType[]) {
   if (change.type === 'select' || change.type === 'dimensions') {
     return false;
+  }
+
+  // React Flow emits final parent-relative position reconciliation after a
+  // User Node is expanded or its children are adopted. The surrounding drag
+  // transaction already owns user-initiated movement; recording these trailing
+  // child updates separately makes one structural gesture require many undos.
+  if (change.type === 'position' && change.dragging !== true) {
+    const node = nodes.find((candidate) => candidate.id === change.id);
+    if (node?.parentId && node.data.userBlockInstanceId) return false;
   }
 
   return true;
@@ -334,7 +1099,7 @@ export const useFlowStore = create<FlowStore>()(
         const applyChanges = () => {
           void applyFlowNodeChanges(changes, set, get);
         };
-        if (changes.some(isUndoableNodeChange)) {
+        if (changes.some((change) => isUndoableNodeChange(change, get().nodes))) {
           get().withHistory('Change nodes', applyChanges);
         } else {
           applyChanges();
@@ -350,6 +1115,9 @@ export const useFlowStore = create<FlowStore>()(
       },
       onConnect: (conn: CustomConnection) => {
         get().withHistory('Connect nodes', () => handleConnect(conn, set, get));
+      },
+      onReconnect: (oldEdge, conn) => {
+        get().withHistory('Reconnect edge', () => handleReconnect(oldEdge, conn, set, get));
       },
       updateSignalValues: (edges: Edge | Edge[]) => {
         updateSignalsForEdges(edges, get);
@@ -376,6 +1144,7 @@ export const useFlowStore = create<FlowStore>()(
       },
       clearWorkflow: () => {
         get().withHistory('Clear workflow', () => clearFlowWorkflow(set, get));
+        useHuggingFaceClusterRuntimeStore.getState().clearAuthorities();
       },
       replaceGraph: (replacement, options = {}) => {
         const applyReplacement = () => replaceFlowGraph(replacement, options, set, get);
@@ -400,7 +1169,69 @@ export const useFlowStore = create<FlowStore>()(
         value: NodeParams[K],
         key?: K,
       ) => {
-        get().withHistory('Edit node parameter', () => writeNodeParam(id, param, value, key, set));
+        const node = get().nodes.find((candidate) => candidate.id === id);
+        const blockOwnerId = node?.data.blockProjectionOwnerId;
+        const blockSemanticNodeId = node?.data.blockProjectionNodeId;
+        if (blockOwnerId && blockSemanticNodeId && (key === undefined || key === 'value')) {
+          const bindingValue = node.data.params[param]?.fieldOptions?.blockBindingV2;
+          const binding = isRecord(bindingValue) ? bindingValue : null;
+          const logicalId =
+            binding?.ownerId === blockOwnerId && typeof binding.logicalId === 'string' ? binding.logicalId : null;
+          if (logicalId) {
+            get().setBlockInstanceValueV2(blockOwnerId, logicalId, value as BlockJsonValue);
+            return;
+          }
+          get().withHistory('Edit block internal parameter', () => {
+            set((state) => {
+              const graph = updateBlockInstanceV2(state, blockOwnerId, (instance) => {
+                const effectiveGraph = cloneJson(instance.effectiveGraph);
+                const graphNode = effectiveGraph.nodes.find((candidate) => candidate.nodeId === blockSemanticNodeId);
+                if (!graphNode) throw new Error(`Unknown Block V2 internal node ${blockSemanticNodeId}.`);
+                const params = isRecord(graphNode.data.params) ? graphNode.data.params : {};
+                const currentParam = isRecord(params[param]) ? params[param] : {};
+                const nextParam = { ...currentParam };
+                if (value === undefined) delete nextParam.value;
+                else nextParam.value = cloneJson(value) as BlockJsonValue;
+                graphNode.data.params = { ...params, [param]: nextParam };
+                return replaceBlockEffectiveGraphV2(instance, effectiveGraph);
+              });
+              return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+            });
+          });
+          return;
+        }
+        const clusterBinding = node?.data.params[param]?.fieldOptions?.huggingFaceClusterBinding;
+        if (
+          node?.data.huggingFaceClusterRole === 'execution' &&
+          clusterBinding &&
+          typeof clusterBinding === 'object' &&
+          (key === undefined || key === 'value')
+        ) {
+          if (
+            'persistence' in clusterBinding &&
+            clusterBinding.persistence === 'sealed' &&
+            deepEqual(node.data.params[param]?.value, value)
+          )
+            return;
+          get().withHistory('Edit Diffusers Cluster Node parameter', () => {
+            set((state) => {
+              const root = state.nodes.find((candidate) => candidate.id === node.data.huggingFaceClusterInstanceId);
+              const definition = huggingFaceDefinitionForNode(root);
+              if (!definition) return state;
+              const graph = setHuggingFaceClusterGraphChildParameter(state, id, definition, param, value);
+              return { nodes: graph.nodes, edges: graph.edges };
+            });
+          });
+          if (node.data.huggingFaceClusterInstanceId) {
+            useHuggingFaceClusterRuntimeStore.getState().clearAuthority(node.data.huggingFaceClusterInstanceId);
+          }
+          return;
+        }
+        if (key && ['disabled', 'hidden', 'isConnected', 'isInput', 'signal'].includes(key)) {
+          writeNodeParam(id, param, value, key, set);
+        } else {
+          get().withHistory('Edit node parameter', () => writeNodeParam(id, param, value, key, set));
+        }
         if (key === 'type') {
           get().refreshConnectionVisuals();
         }
@@ -433,6 +1264,42 @@ export const useFlowStore = create<FlowStore>()(
       },
       resetNodeSize: (id) => {
         const node = get().nodes.find((item) => item.id === id);
+        if (node?.data.huggingFaceClusterRole === 'root') {
+          const expanded = Boolean(node.data.huggingFaceClusterInstance?.presentation.expanded);
+          get().withHistory(expanded ? 'Fit Cluster Node to contents' : 'Reset Cluster Node size', () => {
+            if (expanded) {
+              set((state) => {
+                const graph = fitHuggingFaceClusterInstance(state, id);
+                return graph === state ? state : { nodes: graph.nodes };
+              });
+              return;
+            }
+            set((state) => ({
+              nodes: state.nodes.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      width: HUGGING_FACE_CLUSTER_COLLAPSED_WIDTH,
+                      height: HUGGING_FACE_CLUSTER_COLLAPSED_HEIGHT,
+                      data: {
+                        ...item.data,
+                        uiState: {
+                          ...item.data.uiState,
+                          clusterCollapsedWidth: HUGGING_FACE_CLUSTER_COLLAPSED_WIDTH,
+                          clusterCollapsedHeight: HUGGING_FACE_CLUSTER_COLLAPSED_HEIGHT,
+                        },
+                      },
+                    }
+                  : item,
+              ),
+            }));
+          });
+          return;
+        }
+        if (node?.data.blockInstanceV2) {
+          get().setBlockPresentationV2(id, { size: { width: 360, height: 320 } });
+          return;
+        }
         if (node?.data.type === 'block') {
           get().withHistory(node.data.uiState?.blockExpanded ? 'Fit block to contents' : 'Reset block size', () => {
             if (node.data.uiState?.blockExpanded) {
@@ -480,11 +1347,346 @@ export const useFlowStore = create<FlowStore>()(
           setFlowNodeLoopParent(nodeId, loopId, set),
         );
       },
+      toggleHuggingFaceClusterExpanded: (id) => {
+        get().withHistory('Toggle Hugging Face Cluster Node expansion', () => {
+          set((state) => {
+            const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
+            if (!definition) return state;
+            const graph = isHuggingFaceClusterExpanded(state, id)
+              ? collapseHuggingFaceClusterInstance(state, id, definition)
+              : expandHuggingFaceClusterInstance(state, id, definition);
+            return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };
+          });
+        });
+      },
+      toggleHuggingFaceClusterBlockExpanded: (id, path) => {
+        get().withHistory('Toggle Hugging Face Cluster block parameters', () => {
+          set((state) => {
+            const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
+            if (!definition) return state;
+            const graph = toggleHuggingFaceClusterBlockExpanded(state, id, path, definition);
+            return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };
+          });
+        });
+      },
+      setHuggingFaceClusterParameter: (id, name, value) => {
+        get().withHistory('Change Hugging Face Cluster Node parameter', () => {
+          set((state) => {
+            const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
+            if (!definition) return state;
+            const graph = setHuggingFaceClusterGraphParameter(state, id, definition, name, value);
+            return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };
+          });
+        });
+        useHuggingFaceClusterRuntimeStore.getState().clearAuthority(id);
+      },
+      setHuggingFaceClusterExecution: (id, admissionId) => {
+        get().withHistory('Change Hugging Face Cluster Node execution mode', () => {
+          set((state) => {
+            const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
+            if (!definition) return state;
+            const graph = setHuggingFaceClusterGraphExecution(state, id, definition, admissionId);
+            return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };
+          });
+        });
+        useHuggingFaceClusterRuntimeStore.getState().clearAuthority(id);
+      },
+      setHuggingFaceClusterExecutionParameter: (id, source, value) => {
+        get().withHistory('Change Hugging Face Cluster Node execution parameter', () => {
+          set((state) => {
+            const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
+            if (!definition) return state;
+            const graph = setHuggingFaceClusterGraphExecutionParameter(state, id, definition, source, value);
+            return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };
+          });
+        });
+        useHuggingFaceClusterRuntimeStore.getState().clearAuthority(id);
+      },
+      persistHuggingFaceClusterExecutionPosition: (nodeId) => {
+        set((state) => {
+          const child = state.nodes.find((node) => node.id === nodeId);
+          const root = state.nodes.find((node) => node.id === child?.data.huggingFaceClusterInstanceId);
+          const definition = huggingFaceDefinitionForNode(root);
+          if (!definition) return state;
+          const graph = setHuggingFaceClusterGraphExecutionPosition(state, nodeId, definition);
+          return graph === state ? state : { nodes: graph.nodes };
+        });
+      },
+      setBlockInstanceValueV2: (id, logicalId, value) => {
+        get().withHistory('Edit block parameter', () => {
+          set((state) => {
+            const graph = updateBlockInstanceV2(state, id, (instance) =>
+              reduceBlockInstanceValueV2(instance, logicalId, value),
+            );
+            return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+          });
+        });
+      },
+      switchBlockRouteV1: (id, routeKey, compiledDestination) => {
+        get().withHistory('Switch block model route', () => {
+          set((state) => {
+            const root = state.nodes.find((candidate) => candidate.id === id);
+            if (!root?.data.blockInstanceV2) throw new Error(`Block V2 root ${id} is unavailable.`);
+            if (
+              root.data.blockInstanceV2.previewStates.some(({ status }) => status === 'queued' || status === 'running')
+            )
+              throw new Error('Cannot switch this Block while its current run is queued or running.');
+            assertBlockRouteEdgesCompatibleV1(root.data.blockInstanceV2, compiledDestination, state.edges);
+            const graph = updateBlockInstanceV2(state, id, (instance) =>
+              switchBlockRouteInstanceV1(instance, routeKey, compiledDestination),
+            );
+            if (!graph) throw new Error(`Block V2 root ${id} could not be switched.`);
+            return { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) };
+          });
+        });
+      },
+      applyBlockSuggestedInputsV2: (id, suggestionId) => {
+        get().withHistory('Apply block starter values', () => {
+          set((state) => {
+            const graph = updateBlockInstanceV2(state, id, (instance) => {
+              const suggestion = instance.definitionSnapshot.suggestedInputs?.find(
+                (candidate) => candidate.suggestionId === suggestionId,
+              );
+              if (!suggestion) throw new Error(`Unknown Block V2 starter values ${suggestionId}.`);
+              const allowed = new Set([
+                ...instance.effectiveInterface.boundary.inputs.map(({ portId }) => portId),
+                ...instance.effectiveInterface.controls.map(({ controlId }) => controlId),
+              ]);
+              return Object.entries(suggestion.values).reduce(
+                (current, [logicalId, value]) =>
+                  allowed.has(logicalId) ? reduceBlockInstanceValueV2(current, logicalId, value) : current,
+                instance,
+              );
+            });
+            return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+          });
+        });
+      },
+      setBlockPresentationV2: (id, patch) => {
+        get().withHistory('Change block presentation', () => {
+          set((state) => {
+            const graph = updateBlockInstanceV2(state, id, (instance) => reduceBlockPresentationV2(instance, patch));
+            return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+          });
+        });
+      },
+      toggleBlockContainerExpandedV2: (id, semanticNodeId) => {
+        get().withHistory('Toggle Modular Diffusers container', () => {
+          set((state) => {
+            const graph = updateBlockInstanceV2(state, id, (instance) => {
+              const containerIds = new Set(blockModularContainerNodeIdsV2(instance.effectiveGraph));
+              if (!containerIds.has(semanticNodeId))
+                throw new Error(`Modular Diffusers container ${semanticNodeId} is unavailable.`);
+              const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+              if (collapsed.has(semanticNodeId)) collapsed.delete(semanticNodeId);
+              else collapsed.add(semanticNodeId);
+              return reduceBlockPresentationV2(instance, {
+                collapsedContainerNodeIds: [...collapsed].sort(),
+              });
+            });
+            return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+          });
+        });
+      },
+      setBlockPreviewStateV2: (id, preview, patch) => {
+        // Preview updates are backend-owned run state. They must not create an
+        // undo entry or rebuild/replace the derived execution projection.
+        set((state) => {
+          const root = state.nodes.find((node) => node.id === id);
+          if (!root?.data.blockInstanceV2) return state;
+          if (!isBlockRootV2(root)) throw new Error(`Invalid Block V2 preview owner ${id}.`);
+          const blockInstanceV2 = reduceBlockPreviewStateV2(root.data.blockInstanceV2, preview, patch);
+          return {
+            nodes: state.nodes.map((node) =>
+              node.id === id ? { ...node, data: { ...node.data, blockInstanceV2 } } : node,
+            ),
+          };
+        });
+      },
+      ensureBlockProjectionV2: (id) => {
+        set((state) => {
+          const root = state.nodes.find((node) => node.id === id);
+          if (!root?.data.blockInstanceV2) return state;
+          const graph = projectBlockInstanceV2(state, id, root.data.blockInstanceV2);
+          return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+        });
+      },
+      ensureBlockMinimumHeightV2: (id, minimumHeight) => {
+        if (!Number.isFinite(minimumHeight) || minimumHeight <= 0) return;
+        set((state) => {
+          const root = state.nodes.find((node) => node.id === id);
+          const instance = root?.data.blockInstanceV2;
+          if (!instance || instance.presentation.expanded || instance.presentation.size.height >= minimumHeight)
+            return state;
+          const graph = projectBlockInstanceV2(
+            state,
+            id,
+            reduceBlockPresentationV2(instance, {
+              size: { width: instance.presentation.size.width, height: Math.ceil(minimumHeight) },
+            }),
+          );
+          return graph ? { nodes: graph.nodes, edges: graph.edges } : state;
+        });
+      },
+      persistBlockCanvasPresentationV2: (nodeId) => {
+        set((state) => {
+          const node = state.nodes.find((candidate) => candidate.id === nodeId);
+          if (!node) return state;
+          if (node.data.blockInstanceV2) {
+            const graph = updateBlockInstanceV2(state, node.id, (instance) => {
+              // Expanded dimensions are derived projection bounds. Persisting
+              // them as the collapsed user size makes one child move silently
+              // change the Block's collapsed appearance and can leave React
+              // Flow reusing a stale measured frame for the same node id.
+              const presentation = instance.presentation.expanded
+                ? { position: node.position }
+                : {
+                    position: node.position,
+                    size: {
+                      width: node.width ?? node.measured?.width ?? instance.presentation.size.width,
+                      height: node.height ?? node.measured?.height ?? instance.presentation.size.height,
+                    },
+                  };
+              return reduceBlockPresentationV2(instance, presentation);
+            });
+            return graph ? { nodes: graph.nodes, edges: graph.edges } : state;
+          }
+          const ownerId = node.data.blockProjectionOwnerId;
+          const semanticNodeId = node.data.blockProjectionNodeId;
+          if (!ownerId || !semanticNodeId) return state;
+          const graph = updateBlockInstanceV2(state, ownerId, (instance) =>
+            reduceBlockPresentationV2(instance, {
+              internalLayout: {
+                [semanticNodeId]: {
+                  x: node.position.x,
+                  y: node.position.y,
+                  ...((node.measured?.width ?? node.width) ? { width: node.measured?.width ?? node.width } : {}),
+                  ...((node.measured?.height ?? node.height) ? { height: node.measured?.height ?? node.height } : {}),
+                },
+              },
+            }),
+          );
+          return graph ? { nodes: graph.nodes, edges: graph.edges } : state;
+        });
+      },
+      fitBlockProjectionToChildrenV2: (id) => {
+        set((state) => {
+          const root = state.nodes.find((node) => node.id === id);
+          const instance = root?.data.blockInstanceV2;
+          if (!root || !instance?.presentation.expanded) return state;
+          const children = state.nodes.filter((node) => node.data.blockProjectionOwnerId === id);
+          if (!children.length) return state;
+          const size = blockExpandedProjectionSizeV2(instance, children);
+          // Always publish a fresh controlled root after projection mount.
+          // React Flow may retain a collapsed wrapper measurement for the same
+          // node id even when our durable/store width is already correct; an
+          // equality early-return leaves the rendered frame stale forever.
+          return {
+            nodes: state.nodes.map((node) =>
+              node.id === id
+                ? {
+                    ...node,
+                    width: size.width,
+                    height: size.height,
+                    style: { ...node.style, width: size.width, height: size.height },
+                  }
+                : node,
+            ),
+          };
+        });
+      },
+      adoptNodeIntoBlockV2: (nodeId, blockId, parentSemanticNodeId) => {
+        get().withHistory('Move node into Block', () => {
+          set((state) => {
+            const graph = adoptTopLevelNodeIntoBlockV2(state, nodeId, blockId, parentSemanticNodeId);
+            return {
+              nodes: graph.nodes,
+              edges: decorateConnectionEdges(graph.nodes, graph.edges),
+            };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
+      adoptBlockFragmentIntoBlockV2: (fragmentId, blockId, parentSemanticNodeId) => {
+        get().withHistory('Move Modular subtree into Block', () => {
+          set((state) => {
+            const graph = adoptTopLevelBlockFragmentIntoBlockV2(state, fragmentId, blockId, parentSemanticNodeId);
+            return {
+              nodes: graph.nodes,
+              edges: decorateConnectionEdges(graph.nodes, graph.edges),
+            };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
+      replaceNodeInBlockV2: (nodeId, projectedNodeId) => {
+        get().withHistory('Replace Block internal node', () => {
+          set((state) => {
+            const graph = replaceProjectedNodeInBlockV2(state, nodeId, projectedNodeId);
+            return { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
+      moveNodeOutOfBlockV2: (projectedNodeId, position) => {
+        let topLevelId = '';
+        get().withHistory('Move node out of Block', () => {
+          set((state) => {
+            const graph = moveProjectedNodeOutOfBlockV2(state, projectedNodeId, position);
+            topLevelId = graph.topLevelId;
+            return { nodes: graph.nodes, edges: graph.edges };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+        if (!topLevelId) throw new Error('Could not materialize the node outside this Block.');
+        return topLevelId;
+      },
+      configureBlockInterfaceV2: (id, value) => {
+        get().withHistory('Configure Block interface', () => {
+          set((state) => {
+            const root = state.nodes.find((node) => node.id === id);
+            if (!root?.data.blockInstanceV2 || !isBlockRootV2(root))
+              throw new Error(`Cannot configure invalid Block V2 root "${id}".`);
+            const inputIds = new Set(value.boundary.inputs.map(({ portId }) => portId));
+            const outputIds = new Set(value.boundary.outputs.map(({ portId }) => portId));
+            const impacted = state.edges.filter(
+              (edge) =>
+                (edge.target === id && (!edge.targetHandle || !inputIds.has(edge.targetHandle))) ||
+                (edge.source === id && (!edge.sourceHandle || !outputIds.has(edge.sourceHandle))),
+            );
+            if (impacted.length)
+              throw new Error(
+                `Cannot remove ${impacted.length} connected Block port${impacted.length === 1 ? '' : 's'}. Disconnect the affected edge${impacted.length === 1 ? '' : 's'} first.`,
+              );
+            const graph = updateBlockInstanceV2(state, id, (instance) =>
+              replaceBlockEffectiveInterfaceV2(instance, value, { preserveOmittedMirrors: false }),
+            );
+            return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
       toggleUserBlockExpanded: (id) => {
         get().withHistory('Toggle block expansion', () => {
           set((state) => {
             const block = state.nodes.find((node) => node.id === id && node.data.type === 'block');
             if (!block) return state;
+            if (block.data.blockInstanceV2) {
+              const graph = updateBlockInstanceV2(state, id, (instance) =>
+                reduceBlockPresentationV2(instance, {
+                  expanded: !instance.presentation.expanded,
+                  ...(!instance.presentation.expanded && instance.presentation.collapsedContainerNodeIds === undefined
+                    ? { collapsedContainerNodeIds: blockModularContainerNodeIdsV2(instance.effectiveGraph) }
+                    : {}),
+                }),
+              );
+              return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+            }
             const graph = isUserBlockExpandedInstance(state, id)
               ? collapseUserBlockInstance(state, id, useUserBlockStore.getState().blocks)
               : expandUserBlockInstance(state, id, useUserBlockStore.getState().blocks);
@@ -505,6 +1707,34 @@ export const useFlowStore = create<FlowStore>()(
           return graph === state ? state : { nodes: graph.nodes };
         });
       },
+      placeNodeInUserBlock: (nodeId, blockId) => {
+        get().withHistory('Move node into User Node', () => {
+          set((state) => {
+            const graph = placeExistingNodeInsideExpandedUserBlock(state, nodeId, blockId);
+            return graph === state
+              ? state
+              : {
+                  nodes: graph.nodes,
+                  edges: decorateConnectionEdges(graph.nodes, graph.edges),
+                };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
+      insertNodeInUserBlock: (blockId, suggestion) => {
+        get().withHistory('Insert node into User Node execution path', () => {
+          set((state) => {
+            const graph = insertNodeAtUserBlockSuggestion(state, blockId, suggestion);
+            return {
+              nodes: graph.nodes,
+              edges: decorateConnectionEdges(graph.nodes, graph.edges),
+            };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
       configureUserBlock: (id, changes) => {
         get().withHistory('Configure block', () => {
           set((state) => {
@@ -514,10 +1744,42 @@ export const useFlowStore = create<FlowStore>()(
           get().updateHandleConnectionStatus();
         });
       },
+      applyUserBlockDefinition: (id, definition) => {
+        get().withHistory('Apply User Node definition', () => {
+          set((state) => {
+            const graph = applyUserBlockDefinitionToInstance(state, id, definition);
+            return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
+      applyBlockDefinitionV2: (id, definition) => {
+        get().withHistory('Apply Block V2 definition', () => {
+          set((state) => {
+            const graph = updateBlockInstanceV2(state, id, (instance) =>
+              rebaseBlockInstanceV2ToDefinition(instance, definition),
+            );
+            return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+          });
+          get().updateHandleConnectionStatus();
+          get().updateSignalValues(get().edges);
+        });
+      },
       arrangeGraph: async (options = {}) => {
         const applyLayout = () => {
           set((state) => {
-            const arranged = arrangeGraphNodes(state.nodes, state.edges);
+            const arranged = arrangeGraphNodes(state.nodes, state.edges).map((node) => {
+              const instance = node.data.blockInstanceV2;
+              if (!instance) return node;
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  blockInstanceV2: reduceBlockPresentationV2(instance, { position: node.position }),
+                },
+              };
+            });
             return {
               nodes: arranged,
               layoutRevision: state.layoutRevision + 1,
@@ -558,12 +1820,15 @@ export const useFlowStore = create<FlowStore>()(
 
       exportGraph: (sid: string, targetNodeId?: string) => {
         const { nodes, edges } = get();
-        const expanded = expandUserBlockGraph(nodes, edges, useUserBlockStore.getState().blocks);
+        const durable = withoutBlockCompilationTransientsV2(nodes, edges);
+        const expanded = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
+        const withClusterBoundaries = expandHuggingFaceClusterBoundaryEdges(expanded);
+        const executable = expandBlockGraphV2ForExecution(withClusterBoundaries.nodes, withClusterBoundaries.edges);
         return buildApiGraphExport({
-          nodes: expanded.nodes,
-          edges: expanded.edges,
+          nodes: executable.nodes,
+          edges: executable.edges,
           sid,
-          targetNodeId: nodes.find((node) => node.id === targetNodeId)?.data.userBlockId ? undefined : targetNodeId,
+          targetNodeId: resolveFlowExecutionTargetNodeId(nodes, targetNodeId),
           setParam: get().setParam,
         });
       },
@@ -658,7 +1923,21 @@ export const useFlowStore = create<FlowStore>()(
         }));
       },
       cancelHistoryTransaction: () => {
+        const current = get().historyTransaction;
+        if (!current) return;
+        replaceFlowGraph(
+          {
+            nodes: cloneJson(current.snapshot.nodes),
+            edges: cloneJson(current.snapshot.edges),
+            viewport: cloneJson(current.snapshot.viewport),
+          },
+          { clearRemovedCache: false },
+          set,
+          get,
+        );
         set({ historyTransaction: null });
+        get().updateHandleConnectionStatus();
+        get().updateSignalValues(get().edges);
       },
       resetHistory: () => {
         set({ historyPast: [], historyFuture: [], historyTransaction: null });

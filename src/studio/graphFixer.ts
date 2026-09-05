@@ -5,6 +5,8 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { dataTypeClass } from '../utils/dataTypeCategory';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
+import { createBlockRootNodeV2, expandBlockGraphV2ForExecution, replaceBlockEffectiveGraphV2 } from './blockRuntimeV2';
+import { isBlockRootV2Node, nodeConnectorParam, nodeConnectorParams } from './nodeConnectorResolution';
 import type { RunReadinessIssue } from './types';
 
 export type GraphFixConfidence = 'safe' | 'choice';
@@ -19,6 +21,7 @@ export type GraphFixOperation =
   | { kind: 'remove_edges'; edgeIds: string[] }
   | { kind: 'add_node'; ref: string; nodeKey: string; position: { x: number; y: number } }
   | { kind: 'connect'; source: GraphFixEndpoint; target: GraphFixEndpoint }
+  | { kind: 'restore_block_structure'; rootNodeId: string }
   | { kind: 'external'; action: GraphFixExternalAction; nodeId?: string; repoId?: string };
 
 export type GraphFixCandidate = {
@@ -41,6 +44,7 @@ export type GraphFixIssue = {
     | 'missing_output'
     | 'missing_model'
     | 'missing_media'
+    | 'block_structure'
     | 'environment';
   title: string;
   description: string;
@@ -72,12 +76,99 @@ export type GraphFixMaterialization = {
 const MEDIA_TYPES = new Set(['image', 'video', 'audio']);
 const SIMPLE_TYPES = new Set(['bool', 'float', 'int', 'number', 'str', 'string', 'text']);
 
+function blockExecutionError(node: CustomNodeType) {
+  if (!isBlockRootV2Node(node)) return null;
+  try {
+    expandBlockGraphV2ForExecution([node], []);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+function blockExecutionErrorTarget(root: CustomNodeType, details: string, nodes: readonly CustomNodeType[]) {
+  const candidates = nodes
+    .filter(({ data }) => data.blockProjectionOwnerId === root.id && typeof data.blockProjectionNodeId === 'string')
+    .sort(
+      (left, right) => String(right.data.blockProjectionNodeId).length - String(left.data.blockProjectionNodeId).length,
+    );
+  return (
+    candidates.find(({ id, data }) => {
+      const semanticId = String(data.blockProjectionNodeId);
+      return (
+        details.includes(id) ||
+        details.includes(`"${semanticId}"`) ||
+        details.includes(`'${semanticId}'`) ||
+        details.includes(` ${semanticId}:`) ||
+        details.includes(` ${semanticId}.`) ||
+        details.endsWith(` ${semanticId}`)
+      );
+    })?.id ?? root.id
+  );
+}
+
+/**
+ * Recover reviewed structure without discarding compatible user additions.
+ * Base nodes and edges are authoritative; custom nodes/edges are retained one
+ * at a time only when the complete candidate remains executable.
+ */
+function restoreReviewedBlockStructure(node: CustomNodeType) {
+  if (!isBlockRootV2Node(node) || !node.data.blockInstanceV2)
+    throw new Error('The Block selected for structural repair no longer exists.');
+  const instance = node.data.blockInstanceV2;
+  const reviewed = instance.definitionSnapshot.graph;
+  const reviewedNodeIds = new Set(reviewed.nodes.map(({ nodeId }) => nodeId));
+  const reviewedEdgeIds = new Set(reviewed.edges.map(({ edgeId }) => edgeId));
+  let graph = {
+    nodes: structuredClone(reviewed.nodes),
+    edges: structuredClone(reviewed.edges),
+    ...(reviewed.executionOrder ? { executionOrder: structuredClone(reviewed.executionOrder) } : {}),
+  };
+
+  const accepts = (candidate: typeof graph) => {
+    try {
+      const candidateInstance = replaceBlockEffectiveGraphV2(instance, candidate);
+      expandBlockGraphV2ForExecution([createBlockRootNodeV2(candidateInstance)], []);
+      return candidateInstance;
+    } catch {
+      return null;
+    }
+  };
+  let repaired = accepts(graph);
+  if (!repaired)
+    throw new Error('The reviewed Block definition is not executable and cannot be restored automatically.');
+
+  instance.effectiveGraph.nodes
+    .filter(({ nodeId }) => !reviewedNodeIds.has(nodeId))
+    .forEach((customNode) => {
+      const candidate = { ...graph, nodes: [...graph.nodes, structuredClone(customNode)] };
+      const accepted = accepts(candidate);
+      if (!accepted) return;
+      graph = candidate;
+      repaired = accepted;
+    });
+  instance.effectiveGraph.edges
+    .filter(({ edgeId }) => !reviewedEdgeIds.has(edgeId))
+    .forEach((customEdge) => {
+      const candidate = { ...graph, edges: [...graph.edges, structuredClone(customEdge)] };
+      const accepted = accepts(candidate);
+      if (!accepted) return;
+      graph = candidate;
+      repaired = accepted;
+    });
+  return createBlockRootNodeV2(repaired, { selected: node.selected });
+}
+
 function nodeRegistryKey(node: Pick<CustomNodeType, 'data'>) {
   return `${node.data.module}.${node.data.action}`;
 }
 
 function nodesWithLiveContracts(nodes: CustomNodeType[], registry: Record<string, NodeData>) {
   return nodes.map((node) => {
+    // Block V2 owns an immutable embedded definition snapshot. Applying a
+    // registry contract to its empty root params would create a second socket
+    // authority and make Graph Fix disagree with the canvas/runtime.
+    if (isBlockRootV2Node(node)) return node;
     const definition = registry[nodeRegistryKey(node)];
     if (!definition) return node;
     const params = Object.fromEntries(
@@ -122,11 +213,11 @@ export function graphSocketTypesAreCompatible(source?: Pick<NodeParams, 'type'>,
 }
 
 function inputFields(node: Pick<CustomNodeType, 'data'>) {
-  return Object.entries(node.data.params).filter(([, param]) => param.display === 'input' || param.isInput);
+  return Object.entries(nodeConnectorParams(node)).filter(([, param]) => param.display === 'input' || param.isInput);
 }
 
 function outputFields(node: Pick<CustomNodeType, 'data'>) {
-  return Object.entries(node.data.params).filter(([, param]) => param.display === 'output');
+  return Object.entries(nodeConnectorParams(node)).filter(([, param]) => param.display === 'output');
 }
 
 function usableValue(value: unknown) {
@@ -163,11 +254,11 @@ function executableNodes(nodes: CustomNodeType[]) {
 
 export function graphNodeIsOutputLike(node: Pick<CustomNodeType, 'data'>) {
   const text = `${node.data.module} ${node.data.action} ${node.data.label} ${node.data.category}`.toLowerCase();
-  return /\b(preview|export|save|display|output|gallery)\b/.test(text);
+  return /\b(preview|export|save|display|output|gallery)\b|viewer\b/.test(text);
 }
 
 function fieldLabel(node: Pick<CustomNodeType, 'data'>, handle: string) {
-  return node.data.params[handle]?.label || handle.replace(/_/g, ' ');
+  return nodeConnectorParam(node, handle)?.label || handle.replace(/_/g, ' ');
 }
 
 function lastKeySegment(key: string) {
@@ -523,13 +614,39 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
   const nodesById = new Map(context.nodes.map((node) => [node.id, node]));
   const validIncoming = new Set<string>();
 
+  context.nodes.forEach((node) => {
+    const error = blockExecutionError(node);
+    if (!error) return;
+    const targetNodeId = blockExecutionErrorTarget(node, error, context.nodes);
+    const issueId = candidateId('block-structure', node.id, error);
+    issues.push({
+      id: issueId,
+      kind: 'block_structure',
+      title: `${node.data.label || 'Block'} has invalid internal structure`,
+      description: error,
+      targetNodeId,
+      candidates: [
+        {
+          id: candidateId(issueId, 'restore-reviewed'),
+          issueId,
+          title: 'Restore reviewed internal structure',
+          description:
+            'Restore the registered nodes and links for this workflow instance. Compatible custom additions are retained; incompatible structural edits are removed.',
+          confidence: 'choice',
+          targetNodeId,
+          operations: [{ kind: 'restore_block_structure', rootNodeId: node.id }],
+        },
+      ],
+    });
+  });
+
   context.edges.forEach((edge) => {
     const source = nodesById.get(edge.source);
     const target = nodesById.get(edge.target);
     const sourceHandle = edge.sourceHandle ?? '';
     const targetHandle = edge.targetHandle ?? '';
-    const sourceParam = source?.data.params[sourceHandle];
-    const targetParam = target?.data.params[targetHandle];
+    const sourceParam = nodeConnectorParam(source, sourceHandle);
+    const targetParam = nodeConnectorParam(target, targetHandle);
     if (!source || !target || !sourceHandle || !targetHandle || !sourceParam || !targetParam) {
       const issueId = candidateId('broken-link', edge.id);
       issues.push({
@@ -636,7 +753,11 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
 
   const seenReadinessKeys = new Set<string>();
   (context.readinessIssues ?? []).forEach((readiness) => {
-    if (!readiness.blocking) return;
+    // Expert mode deliberately demotes policy, artifact, and runtime findings
+    // to non-blocking warnings so users can submit the graph to the backend.
+    // They are still actionable diagnostics: Graph Fix must keep offering the
+    // same explicit Setup, Models, or Gallery route without silently applying
+    // anything. Branches below remain the allowlist for fixable findings.
     if (
       ['environment', 'package', 'backend', 'hardware_fit'].includes(readiness.category) &&
       readiness.action === 'open_setup'
@@ -771,7 +892,7 @@ export function materializeGraphFixes(
         }
         edges = edges.filter((edge) => !(edge.target === target && edge.targetHandle === operation.target.handle));
         const sourceNode = nodes.find((node) => node.id === source);
-        const sourceParam = sourceNode?.data.params[operation.source.handle];
+        const sourceParam = nodeConnectorParam(sourceNode, operation.source.handle);
         edges.push({
           id: nanoid(),
           source,
@@ -781,6 +902,12 @@ export function materializeGraphFixes(
           type: edgeType,
           className: dataTypeClass(sourceParam?.type ?? 'any'),
         });
+      } else if (operation.kind === 'restore_block_structure') {
+        const index = nodes.findIndex(({ id }) => id === operation.rootNodeId);
+        if (index < 0) throw new Error('The Block selected for structural repair no longer exists.');
+        const current = nodes[index];
+        if (!current) throw new Error('The Block selected for structural repair no longer exists.');
+        nodes[index] = restoreReviewedBlockStructure(current);
       } else {
         externalActions.push(operation);
       }

@@ -43,7 +43,7 @@ export type ApiGraphRuntimeHints = {
    * Correlation and workflow fields are attached to every graph submission.
    * Studio-managed runs additionally provide the resource/model fields below.
    */
-  source?: 'studio';
+  source?: 'studio' | 'diffusers-cluster' | 'hugging-face-cluster';
   device?: string;
   cudaIndex?: number;
   cudaMemoryFreeBytes?: number;
@@ -56,6 +56,7 @@ export type ApiGraphRuntimeHints = {
   resolvedArtifact?: string;
   modelDependencies?: JsonObject[];
   studioExecutionSpec?: JsonObject;
+  controlledGraphContracts?: string[];
   loaderModule?: string;
   loaderAction?: string;
   executionPath?: string;
@@ -76,6 +77,7 @@ export type ApiGraphRuntimeHints = {
   supportedOffloadModes?: string[];
   offloadDiskPath?: string;
   resourcePlan?: JsonObject;
+  clusterRuntimeQualification?: JsonObject;
   autoResourcePlan?: JsonObject;
   autoResourceCandidates?: JsonObject[];
   autoResourceProofStatus?: string;
@@ -293,6 +295,7 @@ export type GraphCompletedWebsocketMessage = BaseWebsocketMessage<'graph_complet
   deterministicMode?: unknown;
   runtimeHints?: unknown;
   runtimeBudget?: unknown;
+  runtimePreparation?: unknown;
 };
 
 export type DeterministicExecutionWebsocketMessage = BaseWebsocketMessage<'deterministic_execution'> & {
@@ -313,7 +316,7 @@ export type ResourceRetryWebsocketMessage = BaseWebsocketMessage<'resource_retry
 };
 
 export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
-  'auto_resource_plan_applied' | 'auto_resource_cleanup' | 'auto_retry_requires_approval'
+  'auto_resource_plan_applied' | 'auto_resource_cleanup' | 'runtime_resource_cleanup' | 'auto_retry_requires_approval'
 > & {
   task_id?: string | null;
   client_run_id?: string;
@@ -330,6 +333,7 @@ export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
   retryPlans?: JsonObject[];
   performed?: boolean;
   reasons?: string[];
+  resourceMode?: 'auto' | 'expert';
   incomingModelFamily?: string | null;
   previousModelFamily?: string | null;
   residentRecipeReusable?: boolean;
@@ -404,6 +408,7 @@ const websocketMessageTypes = new Set<WebsocketMessage['type']>([
   'resource_retry_cleanup',
   'auto_resource_plan_applied',
   'auto_resource_cleanup',
+  'runtime_resource_cleanup',
   'auto_retry_requires_approval',
   'runtime_loader_reused',
   'error',
@@ -670,6 +675,7 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
         typeof value.action === 'string'
       );
     case 'auto_resource_cleanup':
+    case 'runtime_resource_cleanup':
       return (
         ['residentRecipeReusable', 'resourceRecipeChanged'].every((key) =>
           optionalField(value, key, (field) => typeof field === 'boolean'),
@@ -678,6 +684,7 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
         ['incomingModelFamily', 'previousModelFamily'].every((key) =>
           optionalField(value, key, (field) => typeof field === 'string', true),
         ) &&
+        optionalField(value, 'resourceMode', (field) => field === 'auto' || field === 'expert') &&
         optionalField(value, 'cleanup', isRecord, true)
       );
     case 'graph_completed':

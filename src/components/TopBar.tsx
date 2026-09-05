@@ -1,6 +1,6 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import {
   Boxes,
@@ -41,11 +41,14 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { useRunReadinessIssues } from '../studio/useRunReadinessIssues';
 import {
+  createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
+  getStudioGraphShapeKey,
   inspectStudioGraphBindingDivergence,
   syncStudioGraphValues,
 } from '../studio/graphBridge';
 import { coordinateGraphRun } from '../studio/runCoordinator';
+import { prepareHuggingFaceClustersForRun } from '../studio/huggingFaceClusterPreparation';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { getDownloadPercent, hasHfDownloadFailed, isHfDownloadActive } from '../studio/modelInstall';
@@ -67,9 +70,12 @@ import {
   ModiffSwitch,
 } from '../ui';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
-import WorkflowSaveDialog, { type WorkflowSaveDestination } from './WorkflowSaveDialog';
+import type { WorkflowSaveDestination } from './WorkflowSaveDialog';
+
+const WorkflowSaveDialog = lazy(() => import('./WorkflowSaveDialog'));
 import { saveWorkflowNow } from '../studio/useWorkflowBackendSync';
 import { saveWorkflowSnapshotFile } from '../studio/workflowFileSave';
+import { resolveTopBarAutoPolicyV2 } from '../studio/topBarAutoPolicyV2';
 
 type ExecuteOption = {
   id: 'run' | 'auto' | 'loop';
@@ -135,10 +141,12 @@ function TopBarButton({
 type AutoModeSwitchProps = {
   checked: boolean;
   disabled?: boolean;
+  unavailableReason?: string;
   onCheckedChange: (checked: boolean) => void;
 };
 
-function AutoModeSwitch({ checked, disabled, onCheckedChange }: AutoModeSwitchProps) {
+function AutoModeSwitch({ checked, disabled, unavailableReason, onCheckedChange }: AutoModeSwitchProps) {
+  const disabledLabel = unavailableReason || 'Auto is unavailable for this custom graph.';
   return (
     <ModiffSwitch
       checked={checked}
@@ -146,8 +154,8 @@ function AutoModeSwitch({ checked, disabled, onCheckedChange }: AutoModeSwitchPr
       onCheckedChange={onCheckedChange}
       label={<span className="text-xs font-bold text-modiff-text">Auto</span>}
       className="h-9 flex-row-reverse px-1"
-      aria-label={disabled ? 'Auto is unavailable for custom graphs' : checked ? 'Turn Auto off' : 'Turn Auto on'}
-      title={disabled ? 'Custom graphs use Expert view' : checked ? 'Auto is on' : 'Auto is off'}
+      aria-label={disabled ? disabledLabel : checked ? 'Turn Auto off' : 'Turn Auto on'}
+      title={disabled ? disabledLabel : checked ? 'Auto is on' : 'Auto is off'}
       data-testid="topbar-auto-switch"
     />
   );
@@ -305,8 +313,21 @@ function TopBar() {
     canvasTransition?.type !== 'template_graph_building'
       ? inspectStudioGraphBindingDivergence(graphBinding)
       : null;
-  const customGraphActive =
-    workflowCanvasHydrated && graphFixNodes.length > 0 && (!graphBinding || Boolean(graphBindingDivergence));
+  const topBarAutoPolicy = useMemo(
+    () =>
+      resolveTopBarAutoPolicyV2({
+        workflowCanvasHydrated,
+        graphBindingPresent: Boolean(graphBinding),
+        graphBindingDiverged: Boolean(graphBindingDivergence),
+        nodes: graphFixNodes,
+        edges: graphFixEdges,
+      }),
+    [graphBinding, graphBindingDivergence, graphFixEdges, graphFixNodes, workflowCanvasHydrated],
+  );
+  const customGraphAutoUnavailable = topBarAutoPolicy.autoUnavailable;
+  const customGraphAutoUnavailableReason = graphBindingDivergence
+    ? 'This managed graph changed. Review it in Expert before using Auto.'
+    : topBarAutoPolicy.registeredBlockEligibility.reason;
   const latestWorkflowOutput = useMemo(
     () => latestOutputForWorkflow(studioOutputs, activeWorkflowTabId, { includeUnscopedFallback: false }),
     [activeWorkflowTabId, studioOutputs],
@@ -463,10 +484,24 @@ function TopBar() {
   };
 
   const handleStudioViewModeChange = (mode: StudioViewMode) => {
+    const previousShapeKey = getStudioGraphShapeKey(useStudioStore.getState().form);
     setStudioViewMode(mode);
     updateStudioForm({ resourceMode: mode });
     const nextForm = useStudioStore.getState().form;
     syncStudioGraphValues(nextForm);
+    if (
+      graphBinding &&
+      (previousShapeKey !== getStudioGraphShapeKey(nextForm) ||
+        useStudioStore.getState().graphFinalization?.status === 'pending')
+    ) {
+      const context = captureWorkflowOperationContext();
+      void createOrUpdateStudioGraph(nextForm, context).catch((error) => {
+        if (isWorkflowOperationCancelled(error)) return;
+        const message = String(error);
+        useStudioStore.getState().setLastError(message);
+        enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
+      });
+    }
   };
 
   const handleAutoSwitchChange = (checked: boolean) => {
@@ -494,6 +529,7 @@ function TopBar() {
         }
         await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
       }
+      await prepareHuggingFaceClustersForRun();
       const validation = validateCurrentRun({ sid, isConnected, includeStudio: Boolean(graphBinding) });
       if (!validation.canRun) return;
 
@@ -567,21 +603,21 @@ function TopBar() {
   }, [openSaveAs, persistCurrentWorkflow]);
 
   useEffect(() => {
-    if (customGraphActive) {
+    if (graphBindingDivergence) detachManagedGraph();
+    if (customGraphAutoUnavailable) {
       if (studioViewMode !== 'expert') {
         setStudioViewMode('expert');
       }
       if (formResourceMode !== 'expert') {
         updateStudioForm({ resourceMode: 'expert' });
       }
-      if (graphBindingDivergence) detachManagedGraph();
       return;
     }
     if (graphBinding && formResourceMode !== studioViewMode) {
       setStudioViewMode(formResourceMode);
     }
   }, [
-    customGraphActive,
+    customGraphAutoUnavailable,
     detachManagedGraph,
     formResourceMode,
     graphBinding,
@@ -725,7 +761,8 @@ function TopBar() {
       <div className="flex flex-none items-center gap-2">
         <AutoModeSwitch
           checked={studioViewMode === 'auto'}
-          disabled={customGraphActive}
+          disabled={customGraphAutoUnavailable}
+          unavailableReason={customGraphAutoUnavailableReason}
           onCheckedChange={handleAutoSwitchChange}
         />
         <TopBarButton
@@ -869,16 +906,20 @@ function TopBar() {
         />
       </div>
 
-      <WorkflowSaveDialog
-        open={Boolean(saveDialog)}
-        initialName={activeWorkflowTab?.title ?? 'Workflow'}
-        initialDestination={saveDialog?.destination}
-        loading={savingWorkflow}
-        onClose={() => setSaveDialog(null)}
-        onSave={(name, destination) => {
-          void handleSaveAs(name, destination);
-        }}
-      />
+      <Suspense fallback={null}>
+        {saveDialog && (
+          <WorkflowSaveDialog
+            open
+            initialName={activeWorkflowTab?.title ?? 'Workflow'}
+            initialDestination={saveDialog.destination}
+            loading={savingWorkflow}
+            onClose={() => setSaveDialog(null)}
+            onSave={(name, destination) => {
+              void handleSaveAs(name, destination);
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

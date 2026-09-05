@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -87,16 +87,26 @@ function recipeKey(recipe) {
   return [recipe.modelType, recipe.dtype, recipe.offloadMode, recipe.quantizationMode].join('|');
 }
 
-function representativeTemplate(recipe, contractById) {
-  return [...recipe.templates]
+function lockedBaselinePath(template) {
+  const run = template?.lastSuccessfulRealRun;
+  const path = typeof run?.provenancePath === 'string' ? run.provenancePath.trim() : '';
+  return run?.evidenceMatch === 'current' && run?.proofFormat === 'modiff.live-proof.provenance.v2' && path
+    ? path
+    : null;
+}
+
+function representativeTemplate(recipe, contractById, requestedTemplates = new Set()) {
+  const candidates = [...recipe.templates]
+    .filter((templateId) => requestedTemplates.size === 0 || requestedTemplates.has(templateId))
     .map((templateId) => contractById.get(templateId))
-    .filter(Boolean)
-    .sort(
-      (left, right) =>
-        Number(left.lastSuccessfulRealRun?.executionDurationSeconds ?? Number.POSITIVE_INFINITY) -
-          Number(right.lastSuccessfulRealRun?.executionDurationSeconds ?? Number.POSITIVE_INFINITY) ||
-        left.id.localeCompare(right.id),
-    )[0];
+    .filter(Boolean);
+  const baselineCandidates = candidates.filter((template) => lockedBaselinePath(template));
+  return (baselineCandidates.length > 0 ? baselineCandidates : candidates).sort(
+    (left, right) =>
+      Number(left.lastSuccessfulRealRun?.executionDurationSeconds ?? Number.POSITIVE_INFINITY) -
+        Number(right.lastSuccessfulRealRun?.executionDurationSeconds ?? Number.POSITIVE_INFINITY) ||
+      left.id.localeCompare(right.id),
+  )[0];
 }
 
 export function selectResourceQualificationJobs(contract, coverage, args) {
@@ -113,8 +123,9 @@ export function selectResourceQualificationJobs(contract, coverage, args) {
         requestedTemplates.size === 0 || recipe.templates.some((templateId) => requestedTemplates.has(templateId)),
     )
     .map((recipe) => {
-      const template = representativeTemplate(recipe, contractById);
+      const template = representativeTemplate(recipe, contractById, requestedTemplates);
       if (!template) throw new Error(`No current template owns missing resource recipe ${recipeKey(recipe)}.`);
+      const baselineProvenancePath = lockedBaselinePath(template);
       return {
         key: recipeKey(recipe),
         modelType: recipe.modelType,
@@ -123,11 +134,15 @@ export function selectResourceQualificationJobs(contract, coverage, args) {
         quantizationMode: recipe.quantizationMode,
         releaseLane: recipe.releaseLane,
         templateId: template.id,
+        baselineProvenancePath,
         baselineExecutionDurationSeconds: Number(
           template.lastSuccessfulRealRun?.executionDurationSeconds ?? Number.POSITIVE_INFINITY,
         ),
         owningTemplates: recipe.templates,
-        status: 'pending',
+        status: baselineProvenancePath ? 'pending' : 'blocked',
+        blocker: baselineProvenancePath
+          ? null
+          : 'No current v2 locked-template baseline exists; recording this resource recipe would fail after inference.',
       };
     })
     .sort(
@@ -141,6 +156,11 @@ export function selectResourceQualificationJobs(contract, coverage, args) {
 }
 
 export function galleryArgsForResourceJob(job, args) {
+  if (job?.status === 'blocked' || !job?.baselineProvenancePath) {
+    throw new Error(
+      `Resource qualification cannot run ${job?.key ?? 'this recipe'} without a current v2 locked-template baseline.`,
+    );
+  }
   return [
     join(CLIENT_ROOT, 'scripts', 'template-gallery-runner.mjs'),
     '--template',
@@ -223,6 +243,15 @@ export function runResourceCampaign(argv = process.argv) {
   writeState(state);
 
   for (const job of jobs) {
+    const baselinePath = job.baselineProvenancePath ? resolve(BACKEND_ROOT, job.baselineProvenancePath) : null;
+    if (job.status === 'blocked' || !baselinePath || !existsSync(baselinePath)) {
+      job.status = 'blocked';
+      job.error = baselinePath ? `Locked-template baseline is missing: ${job.baselineProvenancePath}` : job.blocker;
+      job.finishedAt = new Date().toISOString();
+      state.updatedAt = job.finishedAt;
+      writeState(state);
+      continue;
+    }
     job.status = 'running';
     job.startedAt = new Date().toISOString();
     state.updatedAt = job.startedAt;
@@ -248,11 +277,12 @@ export function runResourceCampaign(argv = process.argv) {
     total: jobs.length,
     qualified: jobs.filter((job) => job.status === 'qualified').length,
     failed: jobs.filter((job) => job.status === 'failed').length,
+    blocked: jobs.filter((job) => job.status === 'blocked').length,
     pending: jobs.filter((job) => job.status === 'pending').length,
   };
   writeState(state);
   console.log(JSON.stringify(state.coverage, null, 2));
-  return state.coverage.failed > 0 || state.coverage.pending > 0 ? 1 : 0;
+  return state.coverage.failed > 0 || state.coverage.blocked > 0 || state.coverage.pending > 0 ? 1 : 0;
 }
 
 const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;

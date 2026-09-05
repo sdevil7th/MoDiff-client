@@ -1,8 +1,12 @@
 import {
+  ANIMA_REPO,
+  ANIMA_REVISION,
   ANIMATEDIFF_MOTION_REPO,
   ANIMATEDIFF_MOTION_REVISION,
   ANIMATELCM_MOTION_REPO,
   ANIMATELCM_MOTION_REVISION,
+  COSMOS3_GUARDRAIL_REPO,
+  COSMOS3_GUARDRAIL_REVISION,
   FLUX_DEV_FP8_REPO,
   FLUX_DEV_REPO,
   FLUX_DEV_REVISION,
@@ -10,11 +14,24 @@ import {
   HUNYUAN_DIT_CONTROLNET_CANNY_REPO,
   HUNYUAN_DIT_DISTILLED_REPO,
   HUNYUAN_DIT_DISTILLED_REVISION,
+  HUNYUAN_VIDEO_15_I2V_REPO,
+  HUNYUAN_VIDEO_15_I2V_REVISION,
+  HUNYUAN_VIDEO_15_LICENSE_REPO,
+  HUNYUAN_VIDEO_15_LICENSE_REVISION,
+  HUNYUAN_VIDEO_15_T2V_REPO,
+  HUNYUAN_VIDEO_15_T2V_REVISION,
   JANUS_PRO_1B_REPO,
   JANUS_PRO_1B_REVISION,
+  LTX2_REPO,
+  LTX2_REVISION,
+  MINIMAX_MUSIC3_REPO,
+  MINIMAX_MUSIC3_REVISION,
+  MINIMAX_H3_REPO,
+  MINIMAX_H3_REVISION,
   STABLE_VIDEO_DIFFUSION_REPO,
   STABLE_VIDEO_DIFFUSION_REVISION,
   STUDIO_MODEL_PROFILES,
+  getProfileForArtifactMode,
   getModelRequirementsForMode,
 } from './modelProfiles';
 import type { StudioFormState, StudioTemplate, StudioTemplateModelArtifact } from './types';
@@ -87,14 +104,59 @@ const HUNYUAN_DIT_POLICY: ModelUsagePolicy = {
   reviewedAt: '2026-08-13',
 };
 
+function hunyuanVideo15Policy(repository: string, reviewedRevision: string): ModelUsagePolicy {
+  return {
+    id: `hunyuanvideo-1.5-community-license:${repository}`,
+    repository,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The Tencent Hunyuan Community License and incorporated acceptable-use policy have territory exclusions, a 100M monthly-active-user threshold, distribution notice duties, and generated-content disclosure requirements. Eligibility and product legal review are required before install or Run.',
+    termsUrl: `https://huggingface.co/${HUNYUAN_VIDEO_15_LICENSE_REPO}/blob/${HUNYUAN_VIDEO_15_LICENSE_REVISION}/LICENSE`,
+    access: 'public',
+    reviewedRevision,
+    policyVersion: '2026-09-02',
+    reviewedAt: '2026-09-02',
+  };
+}
+
 /**
  * Reviewed usage policies for dependencies that need an explicit user notice.
  * Components render this data generically; they must not infer rights from a
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
+  [ANIMA_REPO]: {
+    id: 'circlestone-labs-non-commercial-license-v1:anima-base-v1',
+    repository: ANIMA_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The CircleStone Labs Non-Commercial License v1.0 limits model and derivative use to non-commercial purposes; outputs may be used commercially except for prohibited uses such as training a competing model. Distribution, attribution, use-restriction, and termination terms also apply.',
+    termsUrl: `https://huggingface.co/${ANIMA_REPO}/blob/${ANIMA_REVISION}/LICENSE.md`,
+    access: 'public',
+    reviewedRevision: ANIMA_REVISION,
+    policyVersion: '2026-08-28',
+    reviewedAt: '2026-08-28',
+  },
   [HUNYUAN_DIT_DISTILLED_REPO]: HUNYUAN_DIT_POLICY,
   [HUNYUAN_DIT_CONTROLNET_CANNY_REPO]: HUNYUAN_DIT_POLICY,
+  [HUNYUAN_VIDEO_15_T2V_REPO]: hunyuanVideo15Policy(HUNYUAN_VIDEO_15_T2V_REPO, HUNYUAN_VIDEO_15_T2V_REVISION),
+  [HUNYUAN_VIDEO_15_I2V_REPO]: hunyuanVideo15Policy(HUNYUAN_VIDEO_15_I2V_REPO, HUNYUAN_VIDEO_15_I2V_REVISION),
+  [COSMOS3_GUARDRAIL_REPO]: {
+    id: 'nvidia-open-model-license:cosmos-guardrail1',
+    repository: COSMOS3_GUARDRAIL_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'Cosmos Guardrail 1 is a mandatory gated safety dependency governed by NVIDIA terms. Review and acknowledge the exact model-card terms before installation or Run; acknowledgement is not product legal approval.',
+    termsUrl: `https://huggingface.co/${COSMOS3_GUARDRAIL_REPO}/blob/${COSMOS3_GUARDRAIL_REVISION}/README.md`,
+    modelCardUrl: `https://huggingface.co/${COSMOS3_GUARDRAIL_REPO}/tree/${COSMOS3_GUARDRAIL_REVISION}`,
+    access: 'huggingface_gated',
+    reviewedRevision: COSMOS3_GUARDRAIL_REVISION,
+    policyVersion: '2026-09-02',
+    reviewedAt: '2026-09-02',
+  },
   [ANIMATEDIFF_MOTION_REPO]: {
     id: 'undeclared-weight-license:animatediff-v1-5-2',
     repository: ANIMATEDIFF_MOTION_REPO,
@@ -145,6 +207,45 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     reviewedRevision: JANUS_PRO_1B_REVISION,
     policyVersion: '2026-08-15',
     reviewedAt: '2026-08-15',
+  },
+  [MINIMAX_MUSIC3_REPO]: {
+    id: 'minimax-music3-community-license',
+    repository: MINIMAX_MUSIC3_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The MiniMax-Music3 Community License includes commercial-product attribution, hosted-generation safeguards, an acceptable-use policy, and separate authorization above its stated annual-revenue threshold.',
+    termsUrl: `https://huggingface.co/${MINIMAX_MUSIC3_REPO}/blob/${MINIMAX_MUSIC3_REVISION}/LICENSE`,
+    access: 'public',
+    reviewedRevision: MINIMAX_MUSIC3_REVISION,
+    policyVersion: '2026-08-06',
+    reviewedAt: '2026-08-26',
+  },
+  [MINIMAX_H3_REPO]: {
+    id: 'minimax-h3-community-license-agreement',
+    repository: MINIMAX_H3_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The MiniMax-H3 Community License excludes use in the European Union, Republic of Korea, United Kingdom, and United States of America, and requires separate commercial authorization above USD 20 million annual revenue. Eligibility and product legal review are required before install or Run.',
+    termsUrl: `https://huggingface.co/${MINIMAX_H3_REPO}/blob/${MINIMAX_H3_REVISION}/LICENSE`,
+    access: 'public',
+    reviewedRevision: MINIMAX_H3_REVISION,
+    policyVersion: '2026-09-02',
+    reviewedAt: '2026-09-02',
+  },
+  [LTX2_REPO]: {
+    id: 'ltx-2-community-license-agreement',
+    repository: LTX2_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The LTX-2 Community License Agreement includes a $10 million entity-wide annual-revenue threshold, distribution and machine-generated-content notices, use restrictions, and a separate commercial-license requirement at or above that threshold.',
+    termsUrl: `https://huggingface.co/${LTX2_REPO}/blob/${LTX2_REVISION}/LICENSE`,
+    access: 'public',
+    reviewedRevision: LTX2_REVISION,
+    policyVersion: '2026-08-27',
+    reviewedAt: '2026-08-27',
   },
   [FLUX_DEV_REPO]: fluxDevPolicy(FLUX_DEV_REPO, FLUX_DEV_REVISION),
   'black-forest-labs/FLUX.1-Krea-dev': fluxDevPolicy(
@@ -235,7 +336,7 @@ function workflowArtifacts(template: StudioTemplate) {
 }
 
 export function templateUsagePolicies(template: StudioTemplate): ResolvedModelUsagePolicy[] {
-  const profile = STUDIO_MODEL_PROFILES[template.modelType];
+  const profile = getProfileForArtifactMode(STUDIO_MODEL_PROFILES[template.modelType], template.mode);
   const dependencies: Array<{ repository: string; revision?: string }> = [
     { repository: profile.defaultRepo },
     ...getModelRequirementsForMode(profile, template.mode).map((requirement) => ({
@@ -258,10 +359,14 @@ function resolvedUsagePolicies(dependencies: Array<{ repository: string; revisio
   return policies.filter((policy, index) => policies.findIndex((candidate) => candidate.id === policy.id) === index);
 }
 
+export function acknowledgementRequiredForRepository(repository: string, revision?: string) {
+  return resolvedUsagePolicies([{ repository, revision }]).filter((policy) => policy.acknowledgementRequired);
+}
+
 export function acknowledgementRequiredForModelRun(
   form: Pick<StudioFormState, 'modelType' | 'mode'>,
 ): ResolvedModelUsagePolicy[] {
-  const profile = STUDIO_MODEL_PROFILES[form.modelType];
+  const profile = getProfileForArtifactMode(STUDIO_MODEL_PROFILES[form.modelType], form.mode);
   const revision = profile.revisionCandidates?.length === 1 ? profile.revisionCandidates[0] : undefined;
   return resolvedUsagePolicies([
     { repository: profile.defaultRepo, revision },

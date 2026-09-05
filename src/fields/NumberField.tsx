@@ -255,6 +255,7 @@ export default function NumberField(props: FieldProps) {
         >
           <GraphControlInput
             ref={inputRef}
+            id={inputId}
             value={draftValue}
             onChange={(event) => setDraftValue(event.target.value)}
             autoComplete="off"

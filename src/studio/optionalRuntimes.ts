@@ -37,6 +37,7 @@ export type OptionalRuntimeProfileStatus = {
   activationAvailable: boolean;
   status: 'missing' | 'present_unqualified' | 'wrong_version';
   overlayStatus: 'active' | 'missing' | 'repair_required' | 'staged' | 'staged_unchecked';
+  satisfiesProfiles: Array<{ profileId: string; specDigest: string }>;
 };
 
 export type OptionalRuntimeCatalog = {
@@ -44,6 +45,7 @@ export type OptionalRuntimeCatalog = {
   processLoadStatus: 'active' | 'base' | 'busy_recovery_only' | 'repair_required' | 'restart_required';
   activeOptionalRuntimeSpecs: Array<{ profileId: string; specDigest: string }>;
   stagedEnvironmentIds: Record<string, string>;
+  activeEnvironmentId: string | null;
   previousEnvironmentId: string | null;
   installBusy: boolean;
 };
@@ -339,7 +341,21 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
   string(item.contractState);
   string(item.status, /^(?:missing|present_unqualified|wrong_version)$/);
   string(item.overlayStatus, /^(?:active|missing|repair_required|staged|staged_unchecked)$/);
-  return item as unknown as OptionalRuntimeProfileStatus;
+  const rawSatisfiedProfiles = item.satisfiesProfiles ?? [];
+  if (!Array.isArray(rawSatisfiedProfiles) || rawSatisfiedProfiles.length > 32) invalid();
+  const satisfiesProfiles = rawSatisfiedProfiles.map((rawProfile) => {
+    const profile = record(rawProfile);
+    return {
+      profileId: string(profile.id, runtimeId)!,
+      specDigest: string(profile.specDigest, specDigest)!,
+    };
+  });
+  if (
+    new Set(satisfiesProfiles.map(({ profileId, specDigest: digest }) => profileId + digest)).size !==
+    satisfiesProfiles.length
+  )
+    invalid();
+  return { ...(item as unknown as OptionalRuntimeProfileStatus), satisfiesProfiles };
 }
 
 function nullableId(value: unknown, pattern: RegExp) {
@@ -361,7 +377,9 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
   const profiles = payload.profiles.map(parseProfile);
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();
   const activeEnvironmentId = nullableId(state.activeEnvironmentId, environmentId);
+  const previousEnvironmentId = nullableId(state.previousEnvironmentId, environmentId);
   const activeOptionalRuntimeSpecs: Array<{ profileId: string; specDigest: string }> = [];
+  const activeOptionalRuntimeSpecKeys = new Set<string>();
   const stagedEnvironmentIds: Record<string, string> = {};
   const ambiguousSpecs = new Set<string>();
   const seenEnvironments = new Set<string>();
@@ -372,7 +390,7 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       environment.status,
       /^(?:legacy_unqualified|missing|ready|repair_required|staged_unchecked)$/,
     );
-    const usable = status === 'ready' || status === 'staged_unchecked';
+    const activeUsable = status === 'ready' || status === 'staged_unchecked';
     if (
       seenEnvironments.has(id) ||
       typeof environment.active !== 'boolean' ||
@@ -386,10 +404,25 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       if (!['optimization', 'optional_runtime'].includes(spec.kind as string)) invalid();
       const profileId = string(spec.id, runtimeId)!;
       const digest = string(spec.specDigest, specDigest)!;
-      if (spec.kind === 'optional_runtime' && environment.active && id === activeEnvironmentId && usable) {
-        activeOptionalRuntimeSpecs.push({ profileId, specDigest: digest });
+      if (spec.kind === 'optional_runtime' && environment.active && id === activeEnvironmentId && activeUsable) {
+        const activeSpecs = [
+          { profileId, specDigest: digest },
+          ...(profiles.find((profile) => profile.id === profileId && profile.specDigest === digest)
+            ?.satisfiesProfiles ?? []),
+        ];
+        for (const activeSpec of activeSpecs) {
+          const key = activeSpec.profileId + activeSpec.specDigest;
+          if (activeOptionalRuntimeSpecKeys.has(key)) continue;
+          activeOptionalRuntimeSpecKeys.add(key);
+          activeOptionalRuntimeSpecs.push(activeSpec);
+        }
       }
-      if (spec.kind === 'optional_runtime' && !environment.active && usable) {
+      if (
+        spec.kind === 'optional_runtime' &&
+        !environment.active &&
+        status === 'ready' &&
+        id !== previousEnvironmentId
+      ) {
         const key = profileId + digest;
         if (stagedEnvironmentIds[key]) {
           delete stagedEnvironmentIds[key];
@@ -412,7 +445,8 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
     ) as OptionalRuntimeCatalog['processLoadStatus'],
     activeOptionalRuntimeSpecs,
     stagedEnvironmentIds,
-    previousEnvironmentId: nullableId(state.previousEnvironmentId, environmentId),
+    activeEnvironmentId,
+    previousEnvironmentId,
     installBusy: payload.activeInstallJob !== null,
   };
 }

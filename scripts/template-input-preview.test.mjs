@@ -5,7 +5,7 @@ import { createServer } from 'vite';
 
 import { PROJECT_ROOT, readStudioTemplateIds, renderRuntimeInputTypescript } from './template-default-inputs.mjs';
 
-const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+const server = await createServer({ server: { middlewareMode: true, watch: null }, appType: 'custom' });
 const { bundledTemplateInputPreviewUrl } = await server.ssrLoadModule('/src/studio/templateInputPreview.ts');
 const { resolveTemplateAssetUrl } = await server.ssrLoadModule('/src/studio/templateAssets.ts');
 const { templateDefaultInputBindings } = await server.ssrLoadModule(

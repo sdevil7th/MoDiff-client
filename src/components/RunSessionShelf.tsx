@@ -39,7 +39,10 @@ function runDuration(run: SessionRun, now: number) {
 function statusLabel(run: SessionRun) {
   if (run.status === 'running') return run.message || 'Running';
   if (run.status === 'completed') return 'Completed';
-  if (run.status === 'failed') return run.error || run.message || 'Failed';
+  if (run.status === 'failed') {
+    const detail = run.error || run.message;
+    return detail ? `Failed: ${detail}` : 'Failed';
+  }
   if (run.status === 'cancelled') return 'Cancelled';
   return 'Queued';
 }

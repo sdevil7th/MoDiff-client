@@ -10,6 +10,7 @@ let contractsModule;
 let executionSpecsModule;
 let hashModule;
 let modelProfilesModule;
+let modelUsagePoliciesModule;
 let server;
 
 before(async () => {
@@ -18,17 +19,38 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   contractsModule = await server.ssrLoadModule('/src/studio/taskTemplateContracts.ts');
   executionSpecsModule = await server.ssrLoadModule('/src/studio/executionSpecs.ts');
   hashModule = await server.ssrLoadModule('/src/studio/stableHash.ts');
   modelProfilesModule = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
+  modelUsagePoliciesModule = await server.ssrLoadModule('/src/studio/modelUsagePolicies.ts');
 });
 
 after(async () => {
   await server?.close();
+});
+
+test('Cosmos 3 Nano remains an exact manual-only profile behind its mandatory guardrail', () => {
+  const profile = modelProfilesModule.STUDIO_MODEL_PROFILES.Cosmos3OmniModularPipeline;
+  assert.equal(profile.defaultRepo, modelProfilesModule.COSMOS3_NANO_REPO);
+  assert.deepEqual(profile.revisionCandidates, [modelProfilesModule.COSMOS3_NANO_REVISION]);
+  assert.deepEqual(profile.downloadFiles, modelProfilesModule.COSMOS3_NANO_FILES);
+  assert.deepEqual(profile.modes, modelProfilesModule.COSMOS3_NANO_MODES);
+  assert.deepEqual(profile.additionalRequirements, [modelProfilesModule.COSMOS3_GUARDRAIL_REQUIREMENT]);
+  assert.equal(profile.templateEligible, false);
+  assert.equal(profile.galleryEligible, false);
+  assert.equal(profile.liveProof, false);
+  assert.equal(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.Cosmos3OmniModularPipeline.autoStatus, 'manual_only');
+
+  const guardrail = modelUsagePoliciesModule.MODEL_USAGE_POLICIES[modelProfilesModule.COSMOS3_GUARDRAIL_REPO];
+  assert.equal(guardrail.access, 'huggingface_gated');
+  assert.equal(guardrail.acknowledgementRequired, true);
+  assert.equal(guardrail.useScope, 'license_review_required');
+  assert.equal(guardrail.reviewedRevision, modelProfilesModule.COSMOS3_GUARDRAIL_REVISION);
+  assert.match(guardrail.termsUrl, new RegExp(modelProfilesModule.COSMOS3_GUARDRAIL_REVISION, 'u'));
 });
 
 const fixtures = [
@@ -185,6 +207,7 @@ function buildFixture() {
       defaultRepo: fixture.repo,
       loaderRepositories: [fixture.repo],
       requiredMedia: fixture.requiredMedia,
+      auxiliaryTerminalRoles: [],
       output: {
         mediaKind: fixture.mediaKind,
         role: fixture.outputRole,
@@ -232,6 +255,40 @@ test('qualification-pending task skeletons remain hidden from Gallery', () => {
   const parsed = contractsModule.parseTaskTemplateContracts(fixture.contracts, 1, fixture.capabilities);
   assert.deepEqual(contractsModule.galleryTaskTemplateSkeletons(parsed), []);
   assert.ok(parsed.every((contract) => contract.galleryEligible === false));
+});
+
+test('auxiliary terminal roles preserve exactly one media sink and are hash covered', () => {
+  const fixture = buildFixture();
+  const capability = fixture.capabilities[0];
+  const specification = capability.studioExecutionSpecs[0];
+  const contract = fixture.contracts[0];
+  specification.roles.push(['auditReceipt', 'modules.Primitive.DataViewer', 400, 240]);
+  specification.contentHash = 'studio-spec-v1-aux00001';
+  contract.executionSpecContentHash = specification.contentHash;
+  contract.auxiliaryTerminalRoles = ['auditReceipt'];
+  const { contentHash: _previousHash, ...semantic } = contract;
+  contract.contentHash = `task-template-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`;
+
+  const parsed = contractsModule.parseTaskTemplateContracts([contract], 1, [capability]);
+  assert.deepEqual(parsed[0].auxiliaryTerminalRoles, ['auditReceipt']);
+
+  const missingAuxiliaryDeclaration = { ...contract, auxiliaryTerminalRoles: [] };
+  const { contentHash: _missingHash, ...missingSemantic } = missingAuxiliaryDeclaration;
+  missingAuxiliaryDeclaration.contentHash = `task-template-v1-${hashModule.hashString(
+    hashModule.stableStringify(missingSemantic),
+  )}`;
+  assert.throws(
+    () => contractsModule.parseTaskTemplateContracts([missingAuxiliaryDeclaration], 1, [capability]),
+    /Invalid Studio task-template contract/,
+  );
+
+  const nonSinkAuxiliary = { ...contract, auxiliaryTerminalRoles: ['diffusersImagePipeline'] };
+  const { contentHash: _nonSinkHash, ...nonSinkSemantic } = nonSinkAuxiliary;
+  nonSinkAuxiliary.contentHash = `task-template-v1-${hashModule.hashString(hashModule.stableStringify(nonSinkSemantic))}`;
+  assert.throws(
+    () => contractsModule.parseTaskTemplateContracts([nonSinkAuxiliary], 1, [capability]),
+    /Invalid Studio task-template contract/,
+  );
 });
 
 test('Smol Transformers profiles and exact generic execution roles stay workflow-only', () => {
@@ -505,7 +562,7 @@ test('static Studio profiles bridge the six newly admitted generic Diffusers pai
       5,
       undefined,
     ],
-    ['PixArtSigmaPAGPipeline', 'PixArt Sigma XL 1024px PAG', 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS', 20, 4.5, 300],
+    ['PixArtSigmaPAGPipeline', 'PixArt Sigma XL 1024px PAG', 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS', 20, 1, 300],
     ['SanaPAGPipeline', 'Sana 0.6B PAG', 'Efficient-Large-Model/Sana_600M_1024px_diffusers', 20, 4.5, 300],
   ];
   for (const [modelType, label, repo, steps, guidance, maxSequenceLength] of pagTextProfiles) {
@@ -516,7 +573,10 @@ test('static Studio profiles bridge the six newly admitted generic Diffusers pai
     assert.equal(profile.recommendedSteps, steps);
     assert.equal(profile.recommendedGuidance, guidance);
     assert.equal(profile.recommendedMaxSequenceLength, maxSequenceLength);
-    assert.equal(profile.recommendedPagScale, 3);
+    if (modelType === 'PixArtSigmaPAGPipeline') {
+      assert.equal(profile.defaultDtype, 'float32');
+    }
+    assert.equal(profile.recommendedPagScale, modelType === 'PixArtSigmaPAGPipeline' ? 4 : 3);
     assert.equal(profile.recommendedPagAdaptiveScale, 0);
     assert.deepEqual(profile.modes, ['text_to_image']);
     assert.deepEqual(modelProfilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].supportedModes, ['text_to_image']);
@@ -2255,7 +2315,7 @@ test('the bounded contract envelope admits catalogs larger than the legacy 128-e
 
   const parsed = contractsModule.parseTaskTemplateContracts(currentCatalog, 1, fixture.capabilities);
   assert.equal(parsed.length, fixture.contracts.length);
-  assert.equal(contractsModule.MAX_TASK_TEMPLATE_CONTRACTS, 128 * 16);
+  assert.equal(contractsModule.MAX_TASK_TEMPLATE_CONTRACTS, 512 * 16);
   assert.throws(
     () =>
       contractsModule.parseTaskTemplateContracts(

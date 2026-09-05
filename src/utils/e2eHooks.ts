@@ -2,6 +2,7 @@ import { useFlowStore, type APIGraphExport, type CustomNodeType } from '../store
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { useHuggingFaceClusterRuntimeStore } from '../stores/useHuggingFaceClusterRuntimeStore';
 import { captureWorkflowOperationContext, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
@@ -25,6 +26,7 @@ import {
 import { handleWebsocketMessage } from '../stores/websocketMessageHandler';
 import { inspectCurrentGraph, validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
+import { applyHuggingFaceClusterRuntimeHints } from '../studio/huggingFaceClusterRuntime';
 import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
 import { getFormDefaultsForMode } from '../studio/modelProfiles';
 import type { StudioTaskTemplateSkeleton } from '../studio/taskTemplateContracts';
@@ -100,8 +102,10 @@ type ModiffE2EHooks = {
   runPreparedTemplateGraph: (graph: APIGraphExport) => Promise<GalleryRunResult>;
   applyNodeDefinitionForAction: (action: string, params: Record<string, unknown>) => boolean;
   inspectCurrentGraph: () => unknown;
+  inspectRunReadiness: () => unknown;
   inspectStudioGraphBindingDivergence: () => unknown;
   exportWorkflowGraph: () => unknown;
+  exportAuthorizedApiGraph: () => unknown;
   prepareWorkflowGraphForExport: () => Promise<unknown>;
   arrangeWorkflowGraphSnapshot: (graph: {
     nodes?: CustomNodeType[];
@@ -132,6 +136,7 @@ type ModiffE2EHooks = {
     assets: Array<Partial<StudioImportedAsset> & { id: string; url: string; name: string }>,
   ) => void;
   openWorkspacePanelForTest: (tab: WorkspacePanelTab) => void;
+  rehydrateActiveWorkflowCanvasForTest: () => void;
   setWorkspacePanelOpenForTest: (open: boolean) => void;
   sendWebsocketMessage: (message: unknown) => void;
 };
@@ -150,6 +155,7 @@ declare global {
 // the selected template and Auto contracts unchanged.
 let pendingGalleryFormOverrides: Partial<StudioFormState> = {};
 let managedGraphFinalizationForTest: Promise<void> | null = null;
+const GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS = 120_000;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -192,7 +198,14 @@ async function applyTaskTemplateSkeleton(templateId: string, formOverrides: Part
   };
   useStudioStore.getState().updateForm(form);
   const context = captureWorkflowOperationContext();
-  await createOrUpdateStudioGraph(useStudioStore.getState().form, context, 30_000);
+  await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
+  const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+  if (!autoReady) {
+    throw new Error(
+      useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
+    );
+  }
+  await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
   pendingGalleryFormOverrides = { ...formOverrides };
   useStudioStore.getState().saveActiveWorkflowTab(true);
 }
@@ -228,7 +241,17 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
   });
   try {
     const context = captureWorkflowOperationContext();
-    await createOrUpdateStudioGraph(useStudioStore.getState().form, context, 30_000);
+    // Materialize the loader graph before validating Auto's selected target.
+    // The app-wide Auto sync is paused by this template transition while the
+    // caller owns the initial graph and the subsequent plan commit.
+    await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
+    const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+    if (!autoReady) {
+      throw new Error(
+        useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
+      );
+    }
+    await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
     for (const block of template.workflowBlocks ?? []) {
       if (block === 'lora') {
         await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora, {
@@ -237,33 +260,36 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
         });
       } else if (block === 'upscaler') {
         await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler, {
+          graphPrepared: true,
           workflowContext: context,
         });
       } else if (block === 'video_sequence') {
         await addVideoSequenceWorkflowBlock(
           useStudioStore.getState().form,
           template.workflowBlockSettings?.videoSequence,
-          { workflowContext: context },
+          { graphPrepared: true, workflowContext: context },
         );
       } else if (block === 'quality_video_sequence') {
         await addQualityVideoSequenceWorkflowBlock(
           useStudioStore.getState().form,
           template.workflowBlockSettings?.qualityVideoSequence,
-          { workflowContext: context },
+          { graphPrepared: true, workflowContext: context },
         );
       } else if (block === 'soundtrack') {
         await addSoundtrackWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.soundtrack, {
+          graphPrepared: true,
           workflowContext: context,
         });
       } else {
         await addLyricVideoWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lyricVideo, {
+          graphPrepared: true,
           workflowContext: context,
         });
       }
     }
-    const blocksFinalized = await waitForStudioGraphFinalization(30_000, context);
+    const blocksFinalized = await waitForStudioGraphFinalization(GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS, context);
     if (!blocksFinalized) {
-      throw new Error('The template workflow blocks did not finish finalizing within 30 seconds.');
+      throw new Error('The template workflow blocks did not finish finalizing within 120 seconds.');
     }
     const finalization = useStudioStore.getState().graphFinalization;
     if (finalization?.status === 'error') {
@@ -920,12 +946,15 @@ export function installE2EHooks() {
               : useFlowStore.getState().nodes.length,
           nodes: useFlowStore.getState().nodes.map((node) => ({
             id: node.id,
+            type: node.type,
+            dataType: node.data.type,
             parentId: node.parentId,
             selected: node.selected,
             position: node.position,
             module: node.data.module,
             action: node.data.action,
             label: node.data.label,
+            category: node.data.category,
             params: Object.fromEntries(
               Object.entries(node.data.params).map(([key, param]) => [
                 key,
@@ -949,6 +978,14 @@ export function installE2EHooks() {
             studioRole: node.data.studioRole,
             studioOwned: node.data.studioOwned,
             studioAuxiliary: node.data.studioAuxiliary,
+            huggingFaceClusterRole: node.data.huggingFaceClusterRole,
+            huggingFaceClusterInstance: node.data.huggingFaceClusterInstance,
+            huggingFaceClusterInstanceId: node.data.huggingFaceClusterInstanceId,
+            huggingFaceClusterExecutionRole: node.data.huggingFaceClusterExecutionRole,
+            huggingFaceClusterExecutionAdmissionId: node.data.huggingFaceClusterExecutionAdmissionId,
+            blockInstanceV2: node.data.blockInstanceV2,
+            blockProjectionOwnerId: node.data.blockProjectionOwnerId,
+            blockProjectionNodeId: node.data.blockProjectionNodeId,
           })),
           edges: useFlowStore.getState().edges.map((edge) => ({
             id: edge.id,
@@ -956,6 +993,7 @@ export function installE2EHooks() {
             target: edge.target,
             sourceHandle: edge.sourceHandle,
             targetHandle: edge.targetHandle,
+            blockProjectionOwnerId: edge.data?.blockProjectionOwnerId,
           })),
           historyPast: useFlowStore.getState().historyPast.length,
           historyFuture: useFlowStore.getState().historyFuture.length,
@@ -994,6 +1032,7 @@ export function installE2EHooks() {
         settings: {
           rightPanelOpen: useSettingsStore.getState().isRightPanelOpen,
           rightPanelTab: useSettingsStore.getState().rightPanelTab,
+          studioViewMode: useSettingsStore.getState().studioViewMode,
         },
         runIssues: {
           issues: useRunIssueStore.getState().issues,
@@ -1004,6 +1043,9 @@ export function installE2EHooks() {
         websocket: {
           sid: useWebsocketStore.getState().sid,
           isConnected: useWebsocketStore.getState().isConnected,
+        },
+        huggingFaceClusterRuntime: {
+          authorities: useHuggingFaceClusterRuntimeStore.getState().authorities,
         },
       }),
     listTemplates,
@@ -1045,8 +1087,22 @@ export function installE2EHooks() {
     runPreparedTemplateGraph,
     applyNodeDefinitionForAction,
     inspectCurrentGraph: () => cloneJson(inspectCurrentGraph()),
+    inspectRunReadiness: () =>
+      cloneJson(
+        validateCurrentRun({
+          sid: useWebsocketStore.getState().sid,
+          isConnected: useWebsocketStore.getState().isConnected,
+          includeStudio: true,
+          showDialog: false,
+        }),
+      ),
     inspectStudioGraphBindingDivergence: () => cloneJson(inspectStudioGraphBindingDivergence()),
     exportWorkflowGraph: () => cloneJson(useFlowStore.getState().toObject()),
+    exportAuthorizedApiGraph: () => {
+      const sid = useWebsocketStore.getState().sid;
+      if (!sid) throw new Error('Backend session is unavailable.');
+      return cloneJson(applyHuggingFaceClusterRuntimeHints(useFlowStore.getState().exportGraph(sid)));
+    },
     prepareWorkflowGraphForExport,
     arrangeWorkflowGraphSnapshot,
     setGraphScenarioForTest,
@@ -1079,6 +1135,7 @@ export function installE2EHooks() {
     seedStudioOutputsForTest,
     seedImportedAssetsForTest,
     openWorkspacePanelForTest,
+    rehydrateActiveWorkflowCanvasForTest: () => useStudioStore.getState().hydrateActiveWorkflowCanvas(),
     setWorkspacePanelOpenForTest,
     sendWebsocketMessage,
   };

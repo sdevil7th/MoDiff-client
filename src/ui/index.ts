@@ -1,6 +1,8 @@
 export type { AnyNodeFrameProps } from './AnyNodeFrame';
 export { AnyNodeFrame } from './AnyNodeFrame';
 export { ActionStatusRow } from './ActionStatusRow';
+export type { BlockNodeFrameProps } from './BlockNodeFrame';
+export { BlockNodeFrame } from './BlockNodeFrame';
 export type { AnchoredPanelProps } from './AnchoredPanel';
 export { AnchoredPanel } from './AnchoredPanel';
 export type { CustomNodeFrameProps } from './CustomNodeFrame';
@@ -138,7 +140,7 @@ export {
   ModiffMenuTrigger,
 } from './menus';
 export type { ModiffMenuActionProps, ModiffMenuRootProps, ModiffMenuSurfaceProps } from './menus';
-export { ModiffButton, ModiffDialog, ModiffIconButton, ModiffProgress } from './primitives';
+export { ModiffButton, ModiffDialog, ModiffIconButton, ModiffProgress, ModiffStatusOverlay } from './primitives';
 export type { ModiffActionTone } from './actionStyles';
 export type { ModiffButtonProps, ModiffIconButtonProps } from './primitives';
 export { ModiffPopover, ModiffTooltip } from './overlays';

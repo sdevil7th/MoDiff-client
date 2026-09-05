@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
   buildRetryLedger,
   classifyCampaignFailure,
+  readQualityScreenRejections,
+  readUserQualityRejections,
   retryLedgerForReportBytes,
 } from './generation-campaign-retry-ledger.mjs';
 import { orderCampaignTargetsForRetry } from './review-generation-campaign.mjs';
@@ -199,6 +204,79 @@ test('keeps the latest quality rejection in the retry ledger after technical com
     sourceFixtureRightsState: 'review_required',
     qualityAttemptCount: 2,
   });
+});
+
+test('video and audio screen failures enter the retry ledger instead of the human shortlist', () => {
+  const pendingRoot = mkdtempSync(join(tmpdir(), 'modiff-quality-screens-'));
+  writeFileSync(
+    join(pendingRoot, 'generation-campaign-video-screen.v1.json'),
+    JSON.stringify({
+      kind: 'generation_campaign_video_screen',
+      results: [
+        {
+          workflowId: 'StaticVideoPipeline:text_to_video',
+          outcome: 'rerun_required',
+          reason: 'The clip is effectively a still image.',
+          sha256: 'video-hash',
+        },
+      ],
+    }),
+  );
+  writeFileSync(
+    join(pendingRoot, 'generation-campaign-audio-integrity.v1.json'),
+    JSON.stringify({
+      kind: 'generation_campaign_audio_integrity',
+      results: [
+        {
+          workflowId: 'ShortAudioPipeline:text_to_audio',
+          outcome: 'rerun_required',
+          reason: 'The output ends abruptly.',
+          sha256: 'audio-hash',
+        },
+      ],
+    }),
+  );
+
+  const rejections = readQualityScreenRejections(pendingRoot);
+  assert.equal(rejections.length, 2);
+  const ledger = buildRetryLedger(
+    {
+      results: rejections.map(({ workflowId }) => ({ workflowId, status: 'completed' })),
+    },
+    { qualityRejections: rejections },
+  );
+  assert.equal(ledger.summary.retryCount, 2);
+  assert.equal(ledger.summary.byCategory.quality, 2);
+  assert.ok(ledger.retries.every((retry) => retry.nextState === 'fix'));
+});
+
+test('workspace-owner rejections remain machine-readable retry evidence', () => {
+  const pendingRoot = mkdtempSync(join(tmpdir(), 'modiff-user-review-'));
+  writeFileSync(
+    join(pendingRoot, 'user-quality-review-2026-08-21.v1.json'),
+    JSON.stringify({
+      kind: 'generation_campaign_user_quality_review',
+      results: [
+        {
+          workflowId: 'MalformedImagePipeline:text_to_image',
+          outcome: 'rerun_required',
+          reason: 'The main subject geometry is malformed.',
+          correctiveAction: 'Research the exact family recipe and pass a geometry canary before rerunning.',
+          mediaPath: 'MalformedImagePipeline__text_to_image/campaign.webp',
+        },
+        {
+          workflowId: 'ApprovedPipeline:text_to_image',
+          outcome: 'quality_approved_rights_pending',
+          reason: 'Quality approved by the workspace owner.',
+        },
+      ],
+    }),
+  );
+
+  const rejections = readUserQualityRejections(pendingRoot);
+  assert.equal(rejections.length, 1);
+  assert.equal(rejections[0].workflowId, 'MalformedImagePipeline:text_to_image');
+  assert.equal(rejections[0].outcome, 'rerun_required');
 });
 
 test('rejects duplicate workflows and failures without preserved errors', () => {

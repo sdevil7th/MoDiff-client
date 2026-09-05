@@ -22,6 +22,31 @@
       "negativePrompt": "round bottle, cylinder, closed top, lid, cap, pump, liquid, label, lettering, logo, duplicate vessel, extra object, hand, plant, warped glass, melting corner, uneven rim, floating object, illustration, cartoon, CGI"
     },
     {
+      "id": "ltx-wan-glass-orbit-source-v2",
+      "template": "ltx_video_text_to_video",
+      "mediaType": "video",
+      "stagedFilename": "wan-glass-orbit-source-v2.mp4",
+      "downstreamTemplates": ["wan_vace_masked_object_replace"],
+      "timeoutMs": 3600000,
+      "width": 512,
+      "height": 320,
+      "numFrames": 81,
+      "resourceContract": {
+        "reason": "The 121-frame 768x512 decode reached 82,028,304 KiB anonymous RSS and was OOM-killed after denoising on the qualification host.",
+        "pixelFrameRatioVersusRejectedRecipe": 0.27892561983471076
+      },
+      "prompt": "Locked-camera five-second product shot. One centered open-top square vessel of emerald translucent glass stands on pale limestone against warm gray. Four rigid faces, rounded corners, visible square rim, even walls, thick grounded base. A turntable makes one slow quarter-turn; camera, scale, slab, lighting and shadow remain fixed. Reflections move. No people, text, duplicates, camera motion, shape change or cut.",
+      "promptTokenContract": {
+        "tokenizerRepo": "Lightricks/LTX-Video-0.9.8-13B-distilled",
+        "tokenizerRevision": "7c64400e1861cc0d7b98d570a1926d5408ec60cd",
+        "tokenCount": 99,
+        "negativePromptTokenCount": 47,
+        "maximum": 128,
+        "promptSha256": "568d52d20b934528757c7c084596a90f5b3e2867c461564ccb9b9496b67f61d1"
+      },
+      "negativePrompt": "camera movement, zoom, scale change, off-center vessel, round bottle, closed top, cap, liquid, label, text, duplicate, hand, plant, warped glass, floating object, cut, illustration, CGI"
+    },
+    {
       "id": "qwen-layered-coastal-singer-source",
       "template": "high_quality",
       "mediaType": "image",

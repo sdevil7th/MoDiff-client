@@ -8,6 +8,7 @@ import {
 import { normalizeStudioResourceMode } from './resourcePlanner';
 import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from './templates';
 import { CONTROLLED_GRAPH_CONTRACT_IDS, type ControlledGraphContractId } from './controlledWorkflowContracts';
+import { blockOutputRunFormV2 } from './blockRunFormV2';
 import type {
   StudioFormState,
   StudioGraphBinding,
@@ -183,6 +184,9 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     referenceVideos: stringArrayValue(form.referenceVideos, DEFAULT_STUDIO_FORM.referenceVideos),
     maskImage: stringValue(form.maskImage, DEFAULT_STUDIO_FORM.maskImage),
     controlImage: stringValue(form.controlImage, DEFAULT_STUDIO_FORM.controlImage),
+    controlMode: numberValue(form.controlMode, DEFAULT_STUDIO_FORM.controlMode),
+    ipAdapterImage: stringValue(form.ipAdapterImage, DEFAULT_STUDIO_FORM.ipAdapterImage),
+    ipAdapterScale: numberValue(form.ipAdapterScale, DEFAULT_STUDIO_FORM.ipAdapterScale),
     sourceVideo: stringValue(form.sourceVideo, DEFAULT_STUDIO_FORM.sourceVideo),
     maskVideo: stringValue(form.maskVideo, DEFAULT_STUDIO_FORM.maskVideo),
     controlVideo: stringValue(form.controlVideo, DEFAULT_STUDIO_FORM.controlVideo),
@@ -384,10 +388,13 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
   const url = stringValue(value.url);
   if (!id || !url) return undefined;
 
-  const mode = stringUnionValue(value.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode);
-  const modelType = stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType);
+  const registeredBlockRun = blockOutputRunFormV2(value);
+  const mode = registeredBlockRun?.form.mode ?? stringUnionValue(value.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode);
+  const modelType =
+    registeredBlockRun?.form.modelType ??
+    stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType);
   const profile = STUDIO_MODEL_PROFILES[modelType];
-  const formSnapshot = coerceStudioFormState(value.formSnapshot);
+  const formSnapshot = registeredBlockRun?.form ?? coerceStudioFormState(value.formSnapshot);
 
   return {
     id,
@@ -401,21 +408,27 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
     url,
     mode,
     modelType,
-    modelLabel: stringValue(value.modelLabel, profile.label),
-    repo: stringValue(value.repo, profile.defaultRepo),
+    modelLabel: registeredBlockRun ? profile.label : stringValue(value.modelLabel, profile.label),
+    repo: registeredBlockRun?.form.modelRepo ?? stringValue(value.repo, profile.defaultRepo),
     templateId: coerceStudioTemplateId(value.templateId),
     templateLabel: optionalString(value.templateLabel),
     runId: optionalString(value.runId),
     taskId: optionalNullableString(value.taskId),
     sid: optionalNullableString(value.sid),
-    prompt: stringValue(value.prompt, formSnapshot.prompt),
-    negativePrompt: stringValue(value.negativePrompt, formSnapshot.negativePrompt),
-    seed: numberValue(value.seed, formSnapshot.seed),
-    width: numberValue(value.width, formSnapshot.width),
-    height: numberValue(value.height, formSnapshot.height),
-    steps: numberValue(value.steps, formSnapshot.steps),
-    guidanceScale: numberValue(value.guidanceScale, formSnapshot.guidanceScale),
-    referenceImages: stringArrayValue(value.referenceImages, formSnapshot.referenceImages),
+    prompt: registeredBlockRun ? formSnapshot.prompt : stringValue(value.prompt, formSnapshot.prompt),
+    negativePrompt: registeredBlockRun
+      ? formSnapshot.negativePrompt
+      : stringValue(value.negativePrompt, formSnapshot.negativePrompt),
+    seed: registeredBlockRun ? formSnapshot.seed : numberValue(value.seed, formSnapshot.seed),
+    width: registeredBlockRun ? formSnapshot.width : numberValue(value.width, formSnapshot.width),
+    height: registeredBlockRun ? formSnapshot.height : numberValue(value.height, formSnapshot.height),
+    steps: registeredBlockRun ? formSnapshot.steps : numberValue(value.steps, formSnapshot.steps),
+    guidanceScale: registeredBlockRun
+      ? formSnapshot.guidanceScale
+      : numberValue(value.guidanceScale, formSnapshot.guidanceScale),
+    referenceImages: registeredBlockRun
+      ? formSnapshot.referenceImages
+      : stringArrayValue(value.referenceImages, formSnapshot.referenceImages),
     sourceOutputId: optionalString(value.sourceOutputId),
     formSnapshot,
     graphSnapshot: coerceStudioGraphSnapshot(value.graphSnapshot),

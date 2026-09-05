@@ -7,9 +7,14 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let coordinatorModule;
+let blockRuntimeModule;
+let blockSchemaModule;
+let blockAuthorityModule;
+let clusterRuntimeStoreModule;
 let fieldActionModule;
 let flowStoreModule;
 let nodesStoreModule;
+let runIssueStoreModule;
 let runPreparationModule;
 let studioStoreModule;
 let taskStoreModule;
@@ -43,13 +48,18 @@ before(async () => {
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   coordinatorModule = await server.ssrLoadModule('/src/studio/runCoordinator.ts');
+  blockRuntimeModule = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  blockSchemaModule = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  blockAuthorityModule = await server.ssrLoadModule('/src/studio/blockExecutionAuthorityV2.ts');
+  clusterRuntimeStoreModule = await server.ssrLoadModule('/src/stores/useHuggingFaceClusterRuntimeStore.ts');
   fieldActionModule = await server.ssrLoadModule('/src/utils/fieldAction.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  runIssueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');
   runPreparationModule = await server.ssrLoadModule('/src/studio/runPreparation.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
@@ -102,7 +112,15 @@ beforeEach(() => {
     fetchState: { status: 'idle', error: null, requestId: null },
     focusedTaskId: null,
   });
+  runIssueStoreModule.useRunIssueStore.setState({
+    issues: [],
+    issueDialogOpen: false,
+    failure: null,
+    failureDialogOpen: false,
+    failuresByTaskId: {},
+  });
   nodesStoreModule.useNodesStore.setState({ hfDownloadProgress: {} });
+  clusterRuntimeStoreModule.useHuggingFaceClusterRuntimeStore.setState({ authorities: {} });
   websocketStoreModule.useWebsocketStore.setState({ sid: 'session-1' });
 });
 
@@ -139,6 +157,340 @@ function graph(sid = 'session-1') {
     paths: [['generate']],
   };
 }
+
+function blockV2Root(instanceId = 'coordinator-block-v2', primaryPreview = true, registered = false) {
+  const graphWithoutHash = {
+    nodes: [
+      {
+        nodeId: 'generate',
+        nodeType: 'custom',
+        semanticRole: 'generate',
+        data: {
+          type: 'custom',
+          module: 'modules.Test',
+          action: 'Generate',
+          params: {
+            prompt: { type: 'string', display: 'textarea', default: 'creator prompt' },
+            images: { type: 'list[image]', display: 'output' },
+          },
+        },
+      },
+      {
+        nodeId: 'preview',
+        nodeType: 'custom',
+        semanticRole: 'preview',
+        data: {
+          type: 'custom',
+          module: 'modules.Test',
+          action: 'Preview',
+          params: { images: { type: 'list[image]', display: 'ui_image' } },
+        },
+      },
+    ],
+    edges: [
+      {
+        edgeId: 'preview-images',
+        sourceNodeId: 'generate',
+        sourcePortId: 'images',
+        targetNodeId: 'preview',
+        targetPortId: 'images',
+      },
+    ],
+    executionOrder: ['generate', 'preview'],
+  };
+  const blockGraph = {
+    ...graphWithoutHash,
+    graphHash: blockSchemaModule.blockGraphHashV2(graphWithoutHash),
+  };
+  const definitionWithoutHash = {
+    schemaVersion: 2,
+    definitionId: registered
+      ? 'diffusers.cluster-admission:TestModularPipeline:text2image:mode:text_to_image'
+      : 'user:coordinator-target',
+    displayName: 'Coordinator target block',
+    source: registered
+      ? {
+          kind: 'diffusers_catalog',
+          catalogCategory: 'diffusers',
+          provider: 'huggingface',
+          library: 'diffusers',
+          libraryRevision: 'a'.repeat(40),
+          pipelineClass: 'TestModularPipeline',
+          workflow: 'text2image',
+          manifestDefinitionId: 'diffusers.modular:TestModularPipeline:text2image',
+          manifestContentHash: 'manifest-test-content',
+          executionAdmissionId: 'diffusers.cluster-admission:TestModularPipeline:text2image:mode:text_to_image',
+          repository: 'owner/model',
+          repositoryRevision: 'b'.repeat(40),
+        }
+      : { kind: 'user' },
+    graph: blockGraph,
+    boundary: {
+      mode: 'explicit',
+      inputs: [
+        {
+          portId: 'prompt',
+          label: 'Prompt',
+          valueType: 'string',
+          required: true,
+          binding: { nodeId: 'generate', fieldOrPortId: 'prompt' },
+        },
+      ],
+      outputs: [
+        {
+          portId: 'images',
+          label: 'Images',
+          valueType: 'list[image]',
+          required: true,
+          binding: { nodeId: 'generate', fieldOrPortId: 'images' },
+        },
+      ],
+    },
+    controls: [
+      {
+        controlId: 'prompt',
+        label: 'Prompt',
+        binding: { nodeId: 'generate', fieldId: 'prompt' },
+        valueType: 'string',
+        defaultValue: 'creator prompt',
+        required: true,
+        order: 0,
+      },
+    ],
+    previews: [
+      {
+        nodeId: 'preview',
+        outputPortId: 'images',
+        mediaType: 'image',
+        ...(primaryPreview ? { primary: true } : {}),
+      },
+    ],
+    ownership: registered
+      ? { kind: 'registered', definitionMutable: false }
+      : { kind: 'user', definitionMutable: true },
+  };
+  const definition = {
+    ...definitionWithoutHash,
+    contentHash: blockSchemaModule.blockDefinitionContentHashV2(definitionWithoutHash),
+  };
+  return blockRuntimeModule.createBlockRootNodeV2(
+    blockSchemaModule.createBlockInstanceV2(definition, {
+      instanceId,
+      position: { x: 100, y: 100 },
+      size: { width: 560, height: 640 },
+      values: { prompt: 'coordinated prompt' },
+    }),
+  );
+}
+
+test('a fresh supervisor-recovered worker crash opens an actionable failure with memory evidence', () => {
+  const now = Date.now();
+  taskStoreModule.useTaskStore.getState().setTasks(undefined, {}, [
+    {
+      task_id: 'native-crash-task',
+      name: 'Graph execution',
+      status: 'failed',
+      completed_at: now / 1000,
+      current_node: 'cluster-root__denoise',
+      current_node_name: 'modules.ModularDiffusers.Denoise',
+      phase: 'denoising',
+      message: 'The backend worker exited unexpectedly during execution.',
+      category: 'runtime',
+      error_code: 'backend_worker_exited',
+      recovery_hint: 'Retry with a lower-memory resource plan.',
+      resource_snapshot: {
+        process: { rssBytes: 30 * 1024 ** 3 },
+        system: { ramAvailableBytes: 38 * 1024 ** 3 },
+        accelerators: [{ allocatedBytes: 58 * 1024 ** 3 }],
+      },
+    },
+  ]);
+
+  const issues = runIssueStoreModule.useRunIssueStore.getState();
+  assert.equal(issues.failureDialogOpen, true);
+  assert.equal(issues.failure?.taskId, 'native-crash-task');
+  assert.equal(issues.failure?.errorCode, 'backend_worker_exited');
+  assert.match(issues.failure?.memorySummary ?? '', /worker RAM 30\.0 GiB/);
+  assert.match(issues.failure?.memorySummary ?? '', /accelerator allocations 58\.0 GiB/);
+
+  issues.closeFailure();
+  taskStoreModule.useTaskStore.getState().setTasks(undefined, {}, [
+    {
+      task_id: 'native-crash-task',
+      name: 'Graph execution',
+      status: 'failed',
+      completed_at: now / 1000,
+      error_code: 'backend_worker_exited',
+    },
+  ]);
+  assert.equal(runIssueStoreModule.useRunIssueStore.getState().failureDialogOpen, false);
+});
+
+test('submission rejects an invalid User Node composition with an actionable socket error', async () => {
+  const source = {
+    id: 'source',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'ImageSource',
+      label: 'Image source',
+      category: 'Test',
+      params: { output: { type: 'image', display: 'output' } },
+    },
+  };
+  const target = {
+    id: 'target',
+    type: 'custom',
+    position: { x: 300, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'TextSink',
+      label: 'Text sink',
+      category: 'Test',
+      params: { value: { type: 'string', display: 'input', isInput: true } },
+    },
+  };
+  const definition = {
+    id: 'invalid-composition',
+    name: 'Invalid composition',
+    version: 1,
+    nodes: [source, target],
+    edges: [
+      {
+        id: 'bad-edge',
+        source: source.id,
+        sourceHandle: 'output',
+        target: target.id,
+        targetHandle: 'value',
+      },
+    ],
+    inputs: [],
+    outputs: [],
+    exposedParams: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  flowStoreModule.useFlowStore.setState({
+    nodes: [
+      {
+        id: 'invalid-instance',
+        type: 'block',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'block',
+          module: 'modiff.user_blocks',
+          action: definition.id,
+          label: definition.name,
+          category: 'User Nodes',
+          params: {},
+          userBlockId: definition.id,
+          userBlockSnapshot: definition,
+          uiState: { blockExpanded: false },
+        },
+      },
+    ],
+    edges: [],
+  });
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    return jsonResponse({ task_id: 'must-not-submit' });
+  };
+
+  await assert.rejects(
+    coordinatorModule.coordinateGraphRun({ sid: 'session-1' }),
+    /User Node "Invalid composition" cannot run: Image source\.output \(image\) cannot connect to Text sink\.value \(string\)/u,
+  );
+  assert.equal(requestCount, 0);
+});
+
+test('a historical registered V2 fixture remains runnable in Expert but fails Auto before submission', async () => {
+  const registeredRoot = blockV2Root('registered-coordinator-block-v2', true, true);
+  flowStoreModule.useFlowStore.setState({ nodes: [registeredRoot], edges: [] });
+  const baseForm = studioStoreModule.useStudioStore.getState().form;
+  studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'auto' } });
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    return jsonResponse({ task_id: 'registered-v2-run', sid: 'session-1', message: 'queued' });
+  };
+
+  await assert.rejects(
+    coordinatorModule.coordinateGraphRun({ sid: 'session-1', targetNodeId: registeredRoot.id }),
+    /Auto requires the current exact registered Block definition/u,
+  );
+  assert.equal(requestCount, 0);
+
+  studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'expert' } });
+  const manual = await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    targetNodeId: registeredRoot.id,
+  });
+  assert.equal(requestCount, 1);
+  assert.equal(manual.response.task_id, 'registered-v2-run');
+  assert.equal(manual.submittedGraph.nodes[registeredRoot.id], undefined);
+  assert.equal(JSON.stringify(manual.submittedGraph.nodes).includes('blockInstanceV2'), false);
+
+  const instance = registeredRoot.data.blockInstanceV2;
+  const now = Date.now();
+  const authorized = blockSchemaModule.normalizeBlockInstanceV2({
+    ...instance,
+    authorities: [
+      {
+        kind: 'auto',
+        definitionId: instance.definitionRef.definitionId,
+        definitionContentHash: instance.definitionRef.contentHash,
+        effectiveGraphHash: instance.effectiveGraph.graphHash,
+        executionParameterHash: blockAuthorityModule.blockExecutionParameterHashV2(instance),
+        artifactRevisions: { 'owner/model': 'b'.repeat(40) },
+        admissionId: instance.definitionSnapshot.source.executionAdmissionId,
+        issuedAt: new Date(now - 60_000).toISOString(),
+        expiresAt: new Date(now + 60_000).toISOString(),
+      },
+    ],
+  });
+  flowStoreModule.useFlowStore.setState({
+    nodes: [blockRuntimeModule.createBlockRootNodeV2(authorized)],
+    edges: [],
+  });
+  studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'auto' } });
+  await assert.rejects(
+    coordinatorModule.coordinateGraphRun({ sid: 'session-1', targetNodeId: registeredRoot.id }),
+    /Auto requires the current exact registered Block definition/u,
+  );
+  assert.equal(requestCount, 1);
+  studioStoreModule.useStudioStore.setState({ form: baseForm });
+});
+
+test('an untargeted two-Block graph queues in Expert while Auto rejects ambiguous planning', async () => {
+  const first = blockV2Root('registered-expert-first', true, true);
+  const second = blockV2Root('registered-expert-second', true, true);
+  flowStoreModule.useFlowStore.setState({ nodes: [first, second], edges: [] });
+  const baseForm = studioStoreModule.useStudioStore.getState().form;
+  studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'expert' } });
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    return jsonResponse({ task_id: 'two-block-expert-run', sid: 'session-1', message: 'queued' });
+  };
+
+  const manual = await coordinatorModule.coordinateGraphRun({ sid: 'session-1' });
+  assert.equal(manual.response.task_id, 'two-block-expert-run');
+  assert.equal(requestCount, 1);
+  assert.equal(Object.keys(manual.submittedGraph.nodes).length, 4);
+  assert.equal(JSON.stringify(manual.submittedGraph.nodes).includes('blockInstanceV2'), false);
+
+  studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'auto' } });
+  await assert.rejects(
+    coordinatorModule.coordinateGraphRun({ sid: 'session-1' }),
+    /Auto currently plans one registered Block at a time/u,
+  );
+  assert.equal(requestCount, 1);
+  studioStoreModule.useStudioStore.setState({ form: baseForm });
+});
 
 test('out-of-order graph responses attach to their immutable submission contexts', async () => {
   const requests = [];
@@ -201,6 +553,99 @@ test('Studio submission sends the same correlation identity that the store captu
     studioStoreModule.useStudioStore.getState().runContextsByTaskId['task-correlated'].clientRunId,
     result.context.clientRunId,
   );
+});
+
+test('Expert Studio submission retains its executed resource recipe while imported graphs stay generic', async () => {
+  const baseForm = studioStoreModule.useStudioStore.getState().form;
+  const expertForm = {
+    ...baseForm,
+    modelType: 'QwenImageModularPipeline',
+    resourceMode: 'expert',
+    dtype: 'bfloat16',
+    quantizationMode: 'none',
+    autoOffload: false,
+    offloadMode: 'none',
+    device: 'cuda:0',
+  };
+  studioStoreModule.useStudioStore.setState({ form: expertForm });
+  let submittedGraph;
+  globalThis.fetch = async (_url, init) => {
+    submittedGraph = JSON.parse(init.body);
+    return jsonResponse({ task_id: 'task-expert-studio', sid: 'session-1', message: 'queued' });
+  };
+
+  await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    preparedGraph: graph(),
+    studioContext: { clearChangedPreviews: false },
+  });
+
+  assert.equal(submittedGraph.runtimeHints.source, 'studio');
+  assert.equal(submittedGraph.runtimeHints.modelType, expertForm.modelType);
+  assert.equal(submittedGraph.runtimeHints.resourceMode, 'expert');
+  assert.equal(submittedGraph.runtimeHints.resolvedResourceMode, 'expert');
+  assert.equal(submittedGraph.runtimeHints.dtype, 'bfloat16');
+  assert.equal(submittedGraph.runtimeHints.quantizationMode, 'none');
+  assert.equal(submittedGraph.runtimeHints.autoOffload, false);
+  assert.equal(submittedGraph.runtimeHints.offloadMode, 'none');
+  assert.equal(submittedGraph.runtimeHints.device, 'cuda:0');
+});
+
+test('Cluster submission fingerprints and captures its authorized Auto form', async () => {
+  let submittedGraph;
+  globalThis.fetch = async (_url, init) => {
+    submittedGraph = JSON.parse(init.body);
+    return jsonResponse({ task_id: 'task-cluster-form', sid: 'session-1', message: 'queued' });
+  };
+  const globalForm = {
+    ...studioStoreModule.useStudioStore.getState().form,
+    prompt: 'canvas prompt',
+    resourceMode: 'expert',
+  };
+  const clusterForm = {
+    ...globalForm,
+    prompt: 'authorized cluster prompt',
+    resourceMode: 'auto',
+    dtype: 'bfloat16',
+    offloadMode: 'model_cpu',
+  };
+  studioStoreModule.useStudioStore.setState({ form: globalForm });
+  nodesStoreModule.useNodesStore.setState({
+    runtimeStatus: { ready: true, runtime_fingerprint: 'cluster-runtime-fingerprint' },
+  });
+  clusterRuntimeStoreModule.useHuggingFaceClusterRuntimeStore.setState({
+    authorities: {
+      cluster: {
+        schemaVersion: 1,
+        instanceId: 'cluster',
+        definitionId: 'definition',
+        admissionId: 'admission',
+        executionFingerprint: 'execution-fingerprint',
+        runtimeFingerprint: 'cluster-runtime-fingerprint',
+        checkedAt: 1,
+        claim: 'qualification_execution_authorized',
+        publicationExecutable: false,
+        nodeIds: ['generate'],
+        bindingValues: {},
+        form: clusterForm,
+        runtimeHints: { source: 'diffusers-cluster', resourceMode: 'auto' },
+      },
+    },
+  });
+
+  const result = await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    preparedGraph: graph(),
+  });
+
+  assert.equal(submittedGraph.runtimeHints.source, 'diffusers-cluster');
+  assert.equal(submittedGraph.runtimeHints.workflowSnapshot.studioForm.modelType, clusterForm.modelType);
+  assert.equal(submittedGraph.runtimeHints.workflowSnapshot.studioForm.prompt, 'authorized cluster prompt');
+  assert.equal(submittedGraph.runtimeHints.workflowSnapshot.studioForm.resourceMode, 'auto');
+  assert.equal(result.context.form.prompt, 'authorized cluster prompt');
+  assert.equal(result.context.form.resourceMode, 'auto');
+  assert.equal(result.context.runInputHash, runPreparationModule.getStudioRunInputHash(clusterForm, graph()));
+  assert.notEqual(result.context.runInputHash, runPreparationModule.getStudioRunInputHash(globalForm, graph()));
 });
 
 test('queued submission preserves the active canvas owner until its exact task starts', async () => {
@@ -316,6 +761,25 @@ test('field actions send the workflow tab and canvas epoch captured at dispatch'
   assert.equal(submitted.workflowTabId, 'workflow-field-action');
   assert.equal(submitted.workflowCanvasEpoch, 23);
   assert.equal(submitted.queue, true);
+});
+
+test('managed signal dispatch suppresses only its exact automatic handle action once', () => {
+  const signal = { direction: 'input', value: 'WanImage2VideoModularPipeline' };
+  const replacement = { direction: 'input', value: 'WanImage2VideoModularPipeline' };
+
+  fieldActionModule.suppressNextAutomaticSignalFieldAction('denoise', 'unet', signal);
+  assert.equal(
+    fieldActionModule.consumeAutomaticSignalFieldActionSuppression('denoise', 'unet', replacement),
+    false,
+    'an equal-looking but distinct user/edge signal is not suppressed',
+  );
+  fieldActionModule.suppressNextAutomaticSignalFieldAction('denoise', 'unet', signal);
+  assert.equal(fieldActionModule.consumeAutomaticSignalFieldActionSuppression('denoise', 'unet', signal), true);
+  assert.equal(
+    fieldActionModule.consumeAutomaticSignalFieldActionSuppression('denoise', 'unet', signal),
+    false,
+    'the programmatic suppression is single use',
+  );
 });
 
 test('field schema actions invert hide conditions, merge the target, and preserve registry defaults', async () => {
@@ -627,6 +1091,168 @@ test('imported graph submission captures generic correlation without Studio reso
   assert.equal(sessionRun.status, 'queued');
 });
 
+test('run from a V2 root submits its primary preview path without executable wrapper authority', async () => {
+  const root = blockV2Root();
+  const firstDeclaredFallback = blockV2Root('coordinator-block-v2-fallback', false);
+  assert.equal(
+    flowStoreModule.resolveFlowExecutionTargetNodeId([firstDeclaredFallback], firstDeclaredFallback.id),
+    blockRuntimeModule.blockProjectionNodeIdV2(firstDeclaredFallback.id, 'preview'),
+  );
+  const diagnosticBase = blockV2Root('coordinator-block-v2-terminal-selection').data.blockInstanceV2;
+  const diagnosticDefinitionWithoutHash = {
+    ...structuredClone(diagnosticBase.definitionSnapshot),
+    previews: [
+      { nodeId: 'generate', outputPortId: 'prompt', mediaType: 'text', primary: true },
+      { nodeId: 'preview', outputPortId: 'images', mediaType: 'image' },
+    ],
+  };
+  delete diagnosticDefinitionWithoutHash.contentHash;
+  const diagnosticDefinition = {
+    ...diagnosticDefinitionWithoutHash,
+    contentHash: blockSchemaModule.blockDefinitionContentHashV2(diagnosticDefinitionWithoutHash),
+  };
+  const diagnosticRoot = blockRuntimeModule.createBlockRootNodeV2(
+    blockSchemaModule.createBlockInstanceV2(diagnosticDefinition, {
+      instanceId: 'coordinator-block-v2-terminal-selection',
+      position: { x: 0, y: 0 },
+      size: { width: 560, height: 640 },
+      values: { prompt: 'coordinated prompt' },
+    }),
+  );
+  assert.equal(
+    flowStoreModule.resolveFlowExecutionTargetNodeId([diagnosticRoot], diagnosticRoot.id),
+    blockRuntimeModule.blockProjectionNodeIdV2(diagnosticRoot.id, 'preview'),
+    'an intermediate diagnostic marked primary must not truncate the terminal media path',
+  );
+  flowStoreModule.useFlowStore.setState({ nodes: [root], edges: [] });
+  let submittedGraph;
+  globalThis.fetch = async (_url, init) => {
+    submittedGraph = JSON.parse(init.body);
+    return jsonResponse({ task_id: 'task-block-v2', sid: 'session-1', message: 'queued' });
+  };
+
+  const result = await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    targetNodeId: root.id,
+  });
+  const previewTarget = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'preview');
+  const generateTarget = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'generate');
+
+  assert.equal(submittedGraph.nodes[root.id], undefined);
+  assert.ok(submittedGraph.nodes[generateTarget]);
+  assert.ok(submittedGraph.nodes[previewTarget]);
+  assert.equal(submittedGraph.paths.length, 1);
+  assert.equal(submittedGraph.paths[0].at(-1), previewTarget);
+  assert.equal(submittedGraph.nodes[generateTarget].params.prompt.value, 'coordinated prompt');
+  assert.equal(submittedGraph.runtimeHints.nodeId, previewTarget);
+  assert.equal(result.context.apiGraph.runtimeHints.nodeId, previewTarget);
+  const executablePayload = JSON.stringify({ nodes: submittedGraph.nodes, paths: submittedGraph.paths });
+  assert.equal(executablePayload.includes('blockInstanceV2'), false);
+  assert.equal(executablePayload.includes('blockProjectionOwnerId'), false);
+  assert.equal(executablePayload.includes('blockProjectionNodeId'), false);
+  assert.equal(executablePayload.includes('blockProjectionKind'), false);
+  const sessionRun = taskStoreModule.useTaskStore.getState().sessionRuns.find((run) => run.id === 'task-block-v2');
+  assert.equal(sessionRun.node_id, previewTarget);
+});
+
+test('an unrelated prepared graph cannot retain or mint registered route provenance', async () => {
+  const root = blockV2Root('prepared-unrelated-block-v2');
+  flowStoreModule.useFlowStore.setState({ nodes: [root], edges: [] });
+  const previewTarget = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'preview');
+  const generateTarget = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'generate');
+  const prepared = flowStoreModule.useFlowStore.getState().exportGraph('session-1', previewTarget);
+  prepared.nodes[generateTarget].params.prompt.value = 'unrelated prepared prompt';
+  prepared.provenance = {
+    unrelated: true,
+    registeredBlockV2RouteBinding: { forged: true },
+  };
+  let submittedGraph;
+  globalThis.fetch = async (_url, init) => {
+    submittedGraph = JSON.parse(init.body);
+    return jsonResponse({ task_id: 'task-prepared-unrelated', sid: 'session-1', message: 'queued' });
+  };
+
+  await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    targetNodeId: root.id,
+    preparedGraph: prepared,
+  });
+
+  assert.equal(submittedGraph.nodes[generateTarget].params.prompt.value, 'unrelated prepared prompt');
+  assert.equal(submittedGraph.provenance.unrelated, true);
+  assert.equal(submittedGraph.provenance.registeredBlockV2RouteBinding, undefined);
+});
+
+test('collapsed V2 runtime progress and preview output update the owning instance without root params or history', () => {
+  const root = blockV2Root('websocket-block-v2');
+  const previewTarget = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'preview');
+  const generateTarget = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'generate');
+  flowStoreModule.useFlowStore.setState({ nodes: [root], edges: [], historyPast: [] });
+  const identity = { clientRunId: 'client-websocket-block-v2', runInputHash: 'hash-websocket-block-v2' };
+  studioStoreModule.useStudioStore.getState().captureRunContext(undefined, undefined, identity);
+  studioStoreModule.useStudioStore
+    .getState()
+    .attachRunResponse({ task_id: 'task-websocket-block-v2', sid: 'session-1' }, identity.clientRunId);
+  const handlerContext = {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  };
+
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'progress',
+      node: generateTarget,
+      progress: 0.375,
+      status: 'running',
+      phase: 'denoising',
+    },
+    handlerContext,
+  );
+
+  let state = flowStoreModule.useFlowStore.getState();
+  let updated = state.nodes.find((node) => node.id === root.id);
+  assert.equal(updated.data.progress, 0.375);
+  assert.equal(updated.data.executionStatus, 'running');
+  assert.equal(updated.data.executionPhase, 'denoising');
+
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'update_value',
+      node: previewTarget,
+      key: 'images',
+      value: ['fallback-preview.png'],
+      artifacts: [{ url: '/data/generated/websocket-block-v2.png' }],
+      data_type: 'image',
+      task_id: 'task-websocket-block-v2',
+      client_run_id: identity.clientRunId,
+      run_input_hash: identity.runInputHash,
+      workflow_tab_id: 'workflow-origin',
+    },
+    handlerContext,
+  );
+
+  state = flowStoreModule.useFlowStore.getState();
+  updated = state.nodes.find((node) => node.id === root.id);
+  assert.deepEqual(updated.data.blockInstanceV2.previewStates[0], {
+    binding: root.data.blockInstanceV2.previewStates[0].binding,
+    mediaReference: '/data/generated/websocket-block-v2.png',
+    taskId: 'task-websocket-block-v2',
+    status: 'complete',
+  });
+  assert.deepEqual(updated.data.params, {});
+  assert.equal(
+    state.nodes.some((node) => node.id === previewTarget),
+    false,
+  );
+  assert.equal(state.historyPast.length, 0);
+  const recorded = studioStoreModule.useStudioStore.getState().outputs[0];
+  assert.equal(recorded.taskId, 'task-websocket-block-v2');
+  assert.equal(recorded.clientRunId, identity.clientRunId);
+});
+
 test('task coercion and session merges preserve correlation and lifecycle fields', () => {
   const task = taskStoreModule.coerceTask({
     name: 'Correlated graph',
@@ -813,6 +1439,84 @@ test('live backend workflow updates cannot overwrite a newer local active docume
       form: studioStoreModule.useStudioStore.getState().workflowFormEpoch,
     },
     acknowledgementEpochs,
+  );
+
+  // The websocket broadcast and PUT response may carry the same revision.
+  // An exact duplicate acknowledgement clears the save marker without
+  // replacing the live canvas or advancing either hydration epoch.
+  studioStoreModule.useStudioStore.setState({
+    workflowTabs: studioStoreModule.useStudioStore
+      .getState()
+      .workflowTabs.map((tab) => (tab.id === 'workflow-origin' ? { ...tab, dirty: true } : tab)),
+  });
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'workflow_updated',
+      workflow: {
+        id: 'workflow-origin',
+        title: merged.title,
+        createdAt: merged.createdAt,
+        updatedAt: merged.updatedAt,
+        revision: 3,
+        source: merged.source,
+        sourceLabel: merged.sourceLabel,
+        snapshot: merged.snapshot,
+      },
+    },
+    handlerContext,
+  );
+  merged = studioStoreModule.useStudioStore.getState().workflowTabs[0];
+  assert.equal(merged.dirty, false);
+  assert.equal(merged.backendRevision, 3);
+  assert.deepEqual(
+    {
+      canvas: studioStoreModule.useStudioStore.getState().workflowCanvasEpoch,
+      form: studioStoreModule.useStudioStore.getState().workflowFormEpoch,
+    },
+    acknowledgementEpochs,
+  );
+});
+
+test('a backend workflow update does not turn an unopened library document into a browser tab', () => {
+  const studio = studioStoreModule.useStudioStore.getState();
+  const openIds = studio.workflowTabs.map((tab) => tab.id);
+  const handlerContext = {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  };
+
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'workflow_updated',
+      workflow: {
+        id: 'backend-library-only',
+        title: 'Backend library only',
+        createdAt: 1,
+        updatedAt: 2,
+        revision: 1,
+        source: 'manual',
+        snapshot: {
+          nodes: [],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+          studioForm: studio.form,
+          studioGraphBinding: null,
+          selectedMode: studio.selectedMode,
+          activeTemplateId: null,
+          sourceOutputId: null,
+          pinnedGraphInputIds: [],
+        },
+      },
+    },
+    handlerContext,
+  );
+
+  assert.deepEqual(
+    studioStoreModule.useStudioStore.getState().workflowTabs.map((tab) => tab.id),
+    openIds,
   );
 });
 
@@ -1864,6 +2568,41 @@ test('backend-captured output ids are reused when the frontend enriches history'
   );
 
   assert.equal(studioStoreModule.useStudioStore.getState().outputs[0].id, 'run-output-stable');
+});
+
+test('graph completion refreshes backend outputs for collapsed composite preview nodes', async () => {
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({
+      error: false,
+      version: 1,
+      revision: 0,
+      updatedAt: 0,
+      previewSlots: [],
+      outputs: [],
+    });
+  };
+
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'graph_completed',
+      task_id: 'collapsed-cluster-task',
+      client_run_id: 'collapsed-cluster-client',
+      executionTime: 125,
+    },
+    {
+      sid: 'session-1',
+      ws: {},
+      getSid: () => 'session-1',
+      setSid: () => undefined,
+      setLoopTimer: () => undefined,
+    },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(requests.length, 1);
+  assert.match(requests[0], /\/studio_outputs\?limit=80$/);
 });
 
 test('graph and task terminal events clear matching node animations without clearing a newer run', () => {

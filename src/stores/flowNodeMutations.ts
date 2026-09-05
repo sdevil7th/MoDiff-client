@@ -6,6 +6,10 @@ import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { deepEqual } from '../utils/deepEqual';
 import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
+import { normalizeBlockInstanceV2 } from '../studio/blockSchemaV2';
+import { createBlockRootNodeV2, materializeBlockProjectionV2, setBlockPresentationV2 } from '../studio/blockRuntimeV2';
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
+import { decorateConnectionEdges } from '../theme/connectionTypes';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -46,7 +50,7 @@ export function readNodeParam<K extends keyof NodeParams>(id: string, param: str
   if (!node) {
     return null;
   }
-  return (node.data.params?.[param]?.[key] ?? null) as NodeParams[K] | null;
+  return (nodeConnectorParam(node, param)?.[key] ?? null) as NodeParams[K] | null;
 }
 
 export function writeNodeParam<K extends keyof NodeParams = 'value'>(
@@ -60,6 +64,11 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
   set((state) => {
     const node = state.nodes.find((item) => item.id === id);
     if (!node) {
+      return state;
+    }
+    // Block V2 public sockets are a derived view of BlockInstanceV2. Runtime
+    // connection metadata must never create a second authority in params.
+    if (node.data.blockInstanceV2) {
       return state;
     }
     const currentValue = node.data.params[param]?.[paramKey];
@@ -95,13 +104,56 @@ export function setFlowNodeSize(id: string, width: number, height: number, set: 
     if (!node) {
       return state;
     }
-    if (node.width === width && node.height === height) {
+    const ownerId = node.data.blockProjectionOwnerId;
+    const semanticNodeId = node.data.blockProjectionNodeId;
+    const owner =
+      node.data.blockProjectionKind === 'internal' && typeof ownerId === 'string' && typeof semanticNodeId === 'string'
+        ? state.nodes.find((item) => item.id === ownerId && item.data.blockInstanceV2)
+        : undefined;
+    const previousLayout = owner?.data.blockInstanceV2?.presentation.internalLayout[semanticNodeId ?? ''];
+    if (
+      node.width === width &&
+      node.height === height &&
+      (!owner || (previousLayout?.width === width && previousLayout?.height === height))
+    ) {
       return state;
     }
 
-    return {
-      nodes: state.nodes.map((item) => (item.id === id ? { ...item, width, height } : item)),
-    };
+    const blockInstanceV2 =
+      owner?.data.blockInstanceV2 && semanticNodeId
+        ? setBlockPresentationV2(owner.data.blockInstanceV2, {
+            internalLayout: {
+              [semanticNodeId]: {
+                x: node.position.x,
+                y: node.position.y,
+                width,
+                height,
+              },
+            },
+          })
+        : undefined;
+
+    if (blockInstanceV2 && owner && ownerId) {
+      // A projected child's measured minimum can change the required bounds of
+      // every expanded ancestor. Reproject atomically from the updated single
+      // authority; changing only the leaf left parent frames at their previous
+      // height and allowed the child to spill outside them.
+      const projection = materializeBlockProjectionV2(
+        createBlockRootNodeV2(blockInstanceV2, { selected: owner.selected }),
+      );
+      const nodes = state.nodes.flatMap((item) => {
+        if (item.data.blockProjectionOwnerId === ownerId) return [];
+        if (item.id === ownerId) return projection.nodes;
+        return [item];
+      });
+      const edges = [
+        ...state.edges.filter((edge) => edge.data?.blockProjectionOwnerId !== ownerId),
+        ...projection.edges,
+      ];
+      return { nodes, edges: decorateConnectionEdges(nodes, edges) };
+    }
+
+    return { nodes: state.nodes.map((item) => (item.id === id ? { ...item, width, height } : item)) };
   });
 }
 
@@ -128,7 +180,7 @@ export function replaceFlowNodeParams(
   get: FlowStoreGet,
 ) {
   const currentNode = get().nodes.find((node) => node.id === id);
-  if (!currentNode) {
+  if (!currentNode || currentNode.data.blockInstanceV2) {
     return;
   }
 
@@ -191,6 +243,8 @@ export function clearFlowNodeUiStates(set: FlowStoreSet) {
           blockExpanded: node.data.uiState.blockExpanded,
           blockCollapsedWidth: node.data.uiState.blockCollapsedWidth,
           blockCollapsedHeight: node.data.uiState.blockCollapsedHeight,
+          clusterCollapsedWidth: node.data.uiState.clusterCollapsedWidth,
+          clusterCollapsedHeight: node.data.uiState.clusterCollapsedHeight,
           disabled: node.data.uiState.disabled,
         };
         const compactUiState = Object.fromEntries(
@@ -215,6 +269,25 @@ export function duplicateFlowNode(id: string, set: FlowStoreSet, get: FlowStoreG
   }
 
   const cloneId = nanoid();
+  if (node.data.blockInstanceV2) {
+    const instance = normalizeBlockInstanceV2({
+      ...node.data.blockInstanceV2,
+      instanceId: cloneId,
+      presentation: {
+        ...node.data.blockInstanceV2.presentation,
+        position: {
+          x: node.data.blockInstanceV2.presentation.position.x + 36,
+          y: node.data.blockInstanceV2.presentation.position.y + 36,
+        },
+      },
+    });
+    const projection = materializeBlockProjectionV2(createBlockRootNodeV2(instance, { selected: false }));
+    set({
+      nodes: [...get().nodes, ...projection.nodes],
+      edges: [...get().edges, ...projection.edges],
+    });
+    return cloneId;
+  }
   const clonedNode: CustomNodeType = {
     ...node,
     id: cloneId,

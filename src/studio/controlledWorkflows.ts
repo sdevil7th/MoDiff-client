@@ -408,7 +408,7 @@ export async function addUpscaleWorkflowBlock(
     throw new Error(`Upscale block is unavailable because the backend registry is missing ${missing.join(', ')}.`);
   }
 
-  await createOrUpdateStudioGraph(form, context);
+  if (!options.graphPrepared) await createOrUpdateStudioGraph(form, context);
   assertWorkflowOperationContext(context);
   const binding = useStudioStore.getState().graphBinding;
   const decodeNode = binding?.nodes.decode;
@@ -571,7 +571,7 @@ export async function addVideoSequenceWorkflowBlock(
   ]);
   assertWorkflowOperationContext(context);
   if (missing.length > 0) throw new Error(`Video sequence block is missing ${missing.join(', ')}.`);
-  await createOrUpdateStudioGraph(form, context);
+  if (!options.graphPrepared) await createOrUpdateStudioGraph(form, context);
   assertWorkflowOperationContext(context);
   const binding = useStudioStore.getState().graphBinding;
   const pipeline = binding?.nodes.wanPipeline;
@@ -639,7 +639,7 @@ export async function addQualityVideoSequenceWorkflowBlock(
   assertWorkflowOperationContext(context);
   if (missing.length > 0) throw new Error(`Quality video sequence is missing ${missing.join(', ')}.`);
 
-  await createOrUpdateStudioGraph(executionForm, context);
+  if (!options.graphPrepared) await createOrUpdateStudioGraph(executionForm, context);
   assertWorkflowOperationContext(context);
   const binding = useStudioStore.getState().graphBinding;
   const pipeline = binding?.nodes.wanPipeline;
@@ -828,7 +828,7 @@ export async function addSoundtrackWorkflowBlock(
   assertWorkflowOperationContext(context);
   if (missing.length > 0) throw new Error(`Soundtrack block is missing ${missing.join(', ')}.`);
 
-  await createOrUpdateStudioGraph(executionForm, context);
+  if (!options.graphPrepared) await createOrUpdateStudioGraph(executionForm, context);
   assertWorkflowOperationContext(context);
   const binding = useStudioStore.getState().graphBinding;
   const videoGenerate = binding?.nodes.wanGenerate;
@@ -948,7 +948,7 @@ export async function addLyricVideoWorkflowBlock(
   const missing = await ensureRegistryKeys(requiredKeys);
   assertWorkflowOperationContext(context);
   if (missing.length > 0) throw new Error(`Lyric video block is missing ${missing.join(', ')}.`);
-  await createOrUpdateStudioGraph(executionForm, context);
+  if (!options.graphPrepared) await createOrUpdateStudioGraph(executionForm, context);
   assertWorkflowOperationContext(context);
   const binding = useStudioStore.getState().graphBinding;
   const audioGenerate = binding?.nodes.audioGenerate;

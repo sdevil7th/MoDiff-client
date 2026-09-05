@@ -482,7 +482,7 @@ async function main() {
             page.evaluate(
               ({ templateId, taskContract }) =>
                 taskContract
-                  ? window.__MODIFF_E2E__?.applyTaskTemplateSkeleton(templateId)
+                  ? window.__MODIFF_E2E__?.applyTaskTemplateSkeleton(templateId, { resourceMode: 'expert' })
                   : window.__MODIFF_E2E__?.applyTemplate(templateId, { resourceMode: 'expert' }),
               { templateId: template.id, taskContract: template.taskContract === true },
             ),

@@ -37,6 +37,7 @@ interface SettingsState {
 
   activeNodeGroups: string[];
   nodeGroupBy: 'module' | 'category';
+  userBlockGrouping: 'source' | 'workflow';
 
   edgeType: 'default' | 'smoothstep';
   studioSectionOpen: Record<string, boolean>;
@@ -132,6 +133,7 @@ interface SettingsActions {
 
   setActiveNodeGroups: (group: string) => void;
   setNodeGroupBy: (by: 'module' | 'category') => void;
+  setUserBlockGrouping: (by: 'source' | 'workflow') => void;
 
   setEdgeType: (type: 'default' | 'smoothstep') => void;
   setStudioSectionOpen: (section: string, open: boolean) => void;
@@ -177,6 +179,7 @@ const defaultState: SettingsState = {
   studioViewMode: 'auto',
   activeNodeGroups: [],
   nodeGroupBy: 'module',
+  userBlockGrouping: 'source',
   edgeType: 'default',
   studioSectionOpen: {},
   modelTermsAcknowledgements: {},
@@ -228,6 +231,7 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       },
 
       setNodeGroupBy: (by: 'module' | 'category') => set({ nodeGroupBy: by }),
+      setUserBlockGrouping: (by: 'source' | 'workflow') => set({ userBlockGrouping: by }),
 
       setEdgeType: (type: 'default' | 'smoothstep') => set({ edgeType: type }),
       setStudioSectionOpen: (section: string, open: boolean) =>
@@ -287,6 +291,7 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
           ...current,
           ...value,
           studioViewMode: legacyMode === 'manual' || legacyMode === 'expert' ? 'expert' : 'auto',
+          userBlockGrouping: value.userBlockGrouping === 'workflow' ? 'workflow' : 'source',
           modelTermsAcknowledgements:
             value.modelTermsAcknowledgements && typeof value.modelTermsAcknowledgements === 'object'
               ? value.modelTermsAcknowledgements

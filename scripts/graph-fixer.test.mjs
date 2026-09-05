@@ -6,6 +6,8 @@ import { createServer } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let graphFixer;
+let blockSchema;
+let blockRuntime;
 let server;
 
 before(async () => {
@@ -14,10 +16,12 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   graphFixer = await server.ssrLoadModule('/src/studio/graphFixer.ts');
+  blockSchema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  blockRuntime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
 });
 
 after(async () => {
@@ -34,6 +38,81 @@ function node(id, data, x = 0, y = 0) {
 
 function edge(id, source, sourceHandle, target, targetHandle) {
   return { id, source, sourceHandle, target, targetHandle, type: 'default' };
+}
+
+function blockV2Node(instanceId = 'v2-image-block') {
+  const semanticGraph = {
+    nodes: [
+      {
+        nodeId: 'generate',
+        nodeType: 'custom',
+        data: {
+          type: 'custom',
+          module: 'modules.Test',
+          action: 'Generate',
+          label: 'Generate',
+          params: {
+            reference: { display: 'input', type: 'image', label: 'Reference', required: true },
+            image: { display: 'output', type: 'image', label: 'Image' },
+          },
+        },
+      },
+    ],
+    edges: [],
+    executionOrder: ['generate'],
+  };
+  const graph = { ...semanticGraph, graphHash: blockSchema.blockGraphHashV2(semanticGraph) };
+  const withoutHash = {
+    schemaVersion: 2,
+    definitionId: 'diffusers:test:image',
+    displayName: 'Diffusers image block',
+    source: {
+      kind: 'diffusers_catalog',
+      catalogCategory: 'diffusers',
+      provider: 'diffusers',
+      library: 'diffusers',
+      libraryRevision: 'test-revision',
+      pipelineClass: 'TestPipeline',
+      workflow: 'text2image',
+      manifestDefinitionId: 'manifest:test:image',
+      manifestContentHash: 'manifest-hash',
+    },
+    graph,
+    boundary: {
+      mode: 'explicit',
+      inputs: [
+        {
+          portId: 'reference',
+          label: 'Reference',
+          valueType: 'image',
+          required: true,
+          binding: { nodeId: 'generate', fieldOrPortId: 'reference' },
+        },
+      ],
+      outputs: [
+        {
+          portId: 'image',
+          label: 'Image',
+          valueType: 'image',
+          required: false,
+          binding: { nodeId: 'generate', fieldOrPortId: 'image' },
+        },
+      ],
+    },
+    controls: [],
+    previews: [{ nodeId: 'generate', outputPortId: 'image', mediaType: 'image', primary: true }],
+    ownership: { kind: 'registered', definitionMutable: false },
+  };
+  const definitionV2 = {
+    ...withoutHash,
+    contentHash: blockSchema.blockDefinitionContentHashV2(withoutHash),
+  };
+  const instance = blockSchema.createBlockInstanceV2(definitionV2, {
+    instanceId,
+    position: { x: 0, y: 0 },
+    size: { width: 360, height: 420 },
+  });
+  return blockRuntime.createBlockRootNodeV2(instance);
 }
 
 const imageSource = definition('modules.Test', 'GenerateImage', 'Generate image', {
@@ -83,6 +162,98 @@ test('connects an existing compatible pipeline to a required input', () => {
   assert.ok(inputIssue);
   assert.equal(inputIssue.candidates[0].title, 'Connect Load pipeline');
   assert.equal(inputIssue.candidates[0].confidence, 'safe');
+});
+
+test('Graph Fix treats BlockDefinitionV2 boundary ports as ordinary canvas sockets', () => {
+  const source = node('source', imageSource, -300, 0);
+  const block = blockV2Node();
+  const preview = node('preview', imagePreview, 400, 0);
+  const edges = [edge('block-preview', block.id, 'image', preview.id, 'image')];
+
+  const plan = graphFixer.buildGraphFixPlan({ nodes: [source, block, preview], edges, registry: {} });
+  const missingInput = plan.issues.find(
+    (issue) => issue.kind === 'missing_input' && issue.targetNodeId === block.id && issue.targetHandle === 'reference',
+  );
+
+  assert.ok(missingInput);
+  assert.equal(missingInput.candidates[0].title, 'Connect Generate image');
+  const result = graphFixer.materializeGraphFixes({ nodes: [source, block, preview], edges, registry: {} }, [
+    missingInput.candidates[0],
+  ]);
+  assert.equal(
+    result.edges.some((item) => item.source === 'source' && item.target === block.id),
+    true,
+  );
+  assert.deepEqual(result.nodes.find((item) => item.id === block.id).data.params, {});
+
+  const repaired = graphFixer.buildGraphFixPlan({ nodes: result.nodes, edges: result.edges, registry: {} });
+  assert.equal(
+    repaired.issues.some((issue) => issue.targetNodeId === block.id),
+    false,
+  );
+});
+
+test('Graph Fix offers an explicit reviewed-structure recovery and preserves compatible custom additions', () => {
+  const original = blockV2Node('broken-v2-image-block');
+  const graph = structuredClone(original.data.blockInstanceV2.effectiveGraph);
+  delete graph.nodes.find(({ nodeId }) => nodeId === 'generate').data.params.reference;
+  graph.nodes.push({
+    nodeId: 'custom-note',
+    nodeType: 'custom',
+    data: {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'Note',
+      label: 'Custom note',
+      params: {},
+    },
+  });
+  const brokenInstance = blockRuntime.replaceBlockEffectiveGraphV2(original.data.blockInstanceV2, graph);
+  const broken = blockRuntime.createBlockRootNodeV2(brokenInstance);
+
+  const plan = graphFixer.buildGraphFixPlan({ nodes: [broken], edges: [], registry: {} });
+  const issue = plan.issues.find((candidate) => candidate.kind === 'block_structure');
+  assert.ok(issue);
+  assert.equal(issue.targetNodeId, broken.id);
+  assert.equal(issue.candidates[0].confidence, 'choice');
+  assert.equal(issue.candidates[0].title, 'Restore reviewed internal structure');
+
+  const result = graphFixer.materializeGraphFixes({ nodes: [broken], edges: [], registry: {} }, [issue.candidates[0]]);
+  const repaired = result.nodes.find(({ id }) => id === broken.id);
+  assert.ok(repaired?.data.blockInstanceV2);
+  assert.ok(
+    repaired.data.blockInstanceV2.effectiveGraph.nodes.find(({ nodeId }) => nodeId === 'generate').data.params
+      .reference,
+  );
+  assert.equal(
+    repaired.data.blockInstanceV2.effectiveGraph.nodes.some(({ nodeId }) => nodeId === 'custom-note'),
+    true,
+  );
+  assert.doesNotThrow(() => blockRuntime.expandBlockGraphV2ForExecution([repaired], []));
+  assert.equal(
+    graphFixer
+      .buildGraphFixPlan({ nodes: [repaired], edges: [], registry: {} })
+      .issues.some((candidate) => candidate.kind === 'block_structure'),
+    false,
+  );
+});
+
+test('Graph Fix targets the exact expanded internal node named by a structural error', () => {
+  const original = blockV2Node('expanded-broken-v2-image-block');
+  const graph = structuredClone(original.data.blockInstanceV2.effectiveGraph);
+  delete graph.nodes.find(({ nodeId }) => nodeId === 'generate').data.params.reference;
+  const brokenInstance = blockRuntime.setBlockPresentationV2(
+    blockRuntime.replaceBlockEffectiveGraphV2(original.data.blockInstanceV2, graph),
+    { expanded: true },
+  );
+  const projection = blockRuntime.materializeBlockProjectionV2(blockRuntime.createBlockRootNodeV2(brokenInstance));
+  const internal = projection.nodes.find(({ data }) => data.blockProjectionNodeId === 'generate');
+  const plan = graphFixer.buildGraphFixPlan({ nodes: projection.nodes, edges: projection.edges, registry: {} });
+  const issue = plan.issues.find((candidate) => candidate.kind === 'block_structure');
+  assert.ok(issue);
+  assert.equal(issue.targetNodeId, internal.id);
+  assert.equal(issue.candidates[0].targetNodeId, internal.id);
+  assert.deepEqual(issue.candidates[0].operations, [{ kind: 'restore_block_structure', rootNodeId: original.id }]);
 });
 
 test('ranks a typed bridge for an incompatible connection', () => {
@@ -138,6 +309,29 @@ test('routes missing models to the chooser without mutating the graph', () => {
   assert.equal(result.nodes.length, 2);
   assert.equal(result.edges.length, 1);
   assert.equal(result.externalActions[0].action, 'open_model_manager');
+});
+
+test('keeps Expert-mode model warnings actionable without making them blocking', () => {
+  const source = node('source', imageSource);
+  const preview = node('preview', imagePreview, 300, 0);
+  const edges = [edge('valid', 'source', 'image', 'preview', 'image')];
+  const readinessIssues = [
+    {
+      id: 'model-warning',
+      category: 'model',
+      severity: 'warning',
+      blocking: false,
+      nodeId: 'source',
+      repoId: 'owner/model',
+      message: 'owner/model is required.',
+    },
+  ];
+
+  const plan = graphFixer.buildGraphFixPlan({ nodes: [source, preview], edges, registry: {}, readinessIssues });
+
+  assert.equal(plan.issues.length, 1);
+  assert.equal(plan.issues[0].kind, 'missing_model');
+  assert.equal(plan.issues[0].candidates[0].operations[0].action, 'open_model_manager');
 });
 
 test('routes managed runtime mismatches to Setup before model repair', () => {

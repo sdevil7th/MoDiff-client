@@ -330,7 +330,7 @@ const workflowRecords = workflowManifest.workflows.map((workflow) => {
 const vite = await createServer({
   root: CLIENT_ROOT,
   appType: 'custom',
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
 });
 
 try {

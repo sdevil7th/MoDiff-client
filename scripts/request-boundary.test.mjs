@@ -36,7 +36,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');

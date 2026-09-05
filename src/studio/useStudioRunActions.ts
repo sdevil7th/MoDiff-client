@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -27,6 +27,7 @@ import {
   selectedAutoCandidate,
 } from './autoResource';
 import { coordinateGraphRun } from './runCoordinator';
+import { prepareHuggingFaceClustersForRun } from './huggingFaceClusterPreparation';
 import { materializeTemplateDefaultInputs } from './templateInputs';
 import { STUDIO_TEMPLATES } from './templates';
 import { exactStudioExecutionProfileForForm } from './executionSpecs';
@@ -117,6 +118,8 @@ type MissingInstallTarget = {
   reason?: string;
   actionLabel?: string;
   repair?: boolean;
+  revision?: string;
+  files?: string[];
 } | null;
 
 let managedGraphSyncTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -146,7 +149,11 @@ type StudioRunActionsOptions = {
   sid?: string | null;
   isConnected: boolean;
   missingInstallTarget: MissingInstallTarget;
-  installHfModel: (repoId: string, sid?: string | null, options?: { repair?: boolean }) => Promise<unknown>;
+  installHfModel: (
+    repoId: string,
+    sid?: string | null,
+    options?: { repair?: boolean; revision?: string; files?: string[] },
+  ) => Promise<unknown>;
   setIsWorking: Dispatch<SetStateAction<boolean>>;
 };
 
@@ -157,6 +164,7 @@ export function useStudioRunActions({
   installHfModel,
   setIsWorking,
 }: StudioRunActionsOptions) {
+  const [isInstallingMissingModel, setIsInstallingMissingModel] = useState(false);
   const updateAndSync = useCallback((values: Partial<StudioFormState>) => {
     const previousForm = useStudioStore.getState().form;
     const previousShapeKey = getStudioGraphShapeKey(previousForm);
@@ -234,11 +242,17 @@ export function useStudioRunActions({
     [handleCreateGraph],
   );
 
-  const handleResourceModeChange = useCallback(async (resourceMode: StudioResourceMode) => {
-    useStudioStore.getState().updateForm({ resourceMode });
-    const nextForm = useStudioStore.getState().form;
-    syncStudioGraphValues(nextForm);
-  }, []);
+  const handleResourceModeChange = useCallback(
+    (resourceMode: StudioResourceMode) => {
+      // Resource mode participates in the managed graph fingerprint. In
+      // particular, switching Auto off can replace an Auto-selected facade
+      // pipeline with the user's Expert Modular Diffusers model. Use the same
+      // shape-aware synchronization path as every other graph-bearing form
+      // control so the visible canvas cannot retain the previous Auto graph.
+      updateAndSync({ resourceMode });
+    },
+    [updateAndSync],
+  );
 
   const ensureAutoPlanReady = useCallback(async (context?: WorkflowOperationContext) => {
     return ensureStudioAutoPlanReadyForRun(context);
@@ -261,6 +275,7 @@ export function useStudioRunActions({
       if (!autoReady) return;
       await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
       assertWorkflowOperationContext(context);
+      await prepareHuggingFaceClustersForRun();
       const validation = validateCurrentRun({ sid, isConnected, includeStudio: true });
       if (!validation.canRun) {
         const message = validation.blocking[0]?.message || 'This Studio workflow is not ready to run.';
@@ -281,11 +296,16 @@ export function useStudioRunActions({
   }, [ensureAutoPlanReady, isConnected, setIsWorking, sid]);
 
   const handleInstallMissingModel = useCallback(async () => {
-    if (!missingInstallTarget) return;
+    if (!missingInstallTarget || isInstallingMissingModel) return;
     const context = captureWorkflowOperationContext();
     useStudioStore.getState().setLastError(null);
+    setIsInstallingMissingModel(true);
     try {
-      await installHfModel(missingInstallTarget.repo, sid, { repair: missingInstallTarget.repair });
+      await installHfModel(missingInstallTarget.repo, sid, {
+        repair: missingInstallTarget.repair,
+        revision: missingInstallTarget.revision,
+        files: missingInstallTarget.files,
+      });
       assertWorkflowOperationContext(context);
       if (useStudioStore.getState().form.resourceMode === 'auto') {
         const plan = await fetchAutoResourcePlan(useStudioStore.getState().form);
@@ -297,8 +317,10 @@ export function useStudioRunActions({
       const message = error instanceof Error ? error.message : String(error);
       useStudioStore.getState().setLastError(message);
       console.error(error);
+    } finally {
+      setIsInstallingMissingModel(false);
     }
-  }, [installHfModel, missingInstallTarget, sid]);
+  }, [installHfModel, isInstallingMissingModel, missingInstallTarget, sid]);
 
   const openSetup = useCallback(() => {
     useSettingsStore.getState().setRightPanelOpen(true);
@@ -340,6 +362,7 @@ export function useStudioRunActions({
     handleResourceModeChange,
     handleRun,
     handleInstallMissingModel,
+    isInstallingMissingModel,
     openSetup,
     applyTemplateAndSync,
   };

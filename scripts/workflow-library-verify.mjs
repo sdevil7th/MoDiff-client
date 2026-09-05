@@ -158,6 +158,53 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
     const offloadError = workflowNodeDeviceOffloadError(node);
     if (offloadError) throw new Error(`${workflow.id} ${offloadError}.`);
   }
+  if (workflow.modelType === 'SpandrelImageUpscale') {
+    const upscalers = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.Spandrel' && node?.data?.action === 'Upscaler',
+    );
+    const upscaler = upscalers[0];
+    const params = upscaler?.data?.params ?? {};
+    const artifact = params.model_id?.value ?? params.model_id?.default;
+    const loadImage = (graph.nodes ?? []).find(
+      (node) => node?.data?.module === 'modules.Image' && node?.data?.action === 'Load',
+    );
+    const preview = (graph.nodes ?? []).find(
+      (node) => node?.data?.module === 'modules.Image' && node?.data?.action === 'Preview',
+    );
+    const hasInputRoute = (graph.edges ?? []).some(
+      (edge) =>
+        edge.source === loadImage?.id &&
+        edge.sourceHandle === 'image' &&
+        edge.target === upscaler?.id &&
+        edge.targetHandle === 'image',
+    );
+    const hasOutputRoute = (graph.edges ?? []).some(
+      (edge) =>
+        edge.source === upscaler?.id &&
+        edge.sourceHandle === 'output' &&
+        edge.target === preview?.id &&
+        edge.targetHandle === 'image',
+    );
+    if (
+      upscalers.length !== 1 ||
+      upscaler?.data?.studioRole !== 'imageUpscaler' ||
+      artifact?.source !== 'hub' ||
+      artifact?.value !== 'nateraw/real-esrgan/RealESRGAN_x2plus.pth' ||
+      artifact?.revision !== '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094' ||
+      artifact?.sha256 !== '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb' ||
+      artifact?.byteSize !== 67_061_725 ||
+      artifact?.license !== 'bsd-3-clause' ||
+      params.downscale?.default !== 1 ||
+      params.tile_size?.default !== 256 ||
+      params.tile_overlap?.default !== 32 ||
+      !workflow.pipelineClasses.includes('SpandrelImageUpscaleV1') ||
+      !workflow.requiredArtifacts.includes('nateraw/real-esrgan') ||
+      !hasInputRoute ||
+      !hasOutputRoute
+    ) {
+      throw new Error(`${workflow.id} image-upscale graph is missing its exact reviewed artifact or route.`);
+    }
+  }
   if (workflow.mediaKind === 'video') {
     const videoPipelineNodes = (graph.nodes ?? []).filter(
       (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'LoadPipeline',
@@ -674,7 +721,7 @@ const layoutModuleServer = await createServer({
   configFile: false,
   logLevel: 'silent',
   optimizeDeps: { entries: [], noDiscovery: true },
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
   appType: 'custom',
 });
 try {

@@ -4,6 +4,7 @@ import { defineConfig, loadEnv, mergeConfig, type Plugin, type UserConfig } from
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { minify } from 'terser';
+import { createHash } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -90,7 +91,10 @@ function compactProductionChunksPlugin(): Plugin {
             compress: {
               passes: 10,
               pure_getters: 'strict',
-              booleans_as_integers: true,
+              // Runtime node/graph contracts intentionally distinguish JSON
+              // booleans from numeric 0/1. `booleans_as_integers` rewrote
+              // Cluster presentation state into a schema-invalid payload in
+              // production even though development builds remained valid.
               // Keep errors, but omit development-only connection, progress,
               // and stale-event diagnostics from production bundles.
               drop_console: ['debug', 'info', 'warn'],
@@ -104,6 +108,38 @@ function compactProductionChunksPlugin(): Plugin {
           item.code = result.code;
         }),
       );
+    },
+  };
+}
+
+function shellAssetVersionPlugin(): Plugin {
+  return {
+    name: 'modiff-shell-asset-version',
+    apply: 'build',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      const shellFiles = Object.entries(bundle)
+        .filter(([fileName]) => /^assets\/.+\.(?:css|js)$/.test(fileName))
+        .sort(([left], [right]) => left.localeCompare(right));
+      const digest = createHash('sha256');
+      for (const [fileName, item] of shellFiles) {
+        digest.update(fileName);
+        digest.update('\0');
+        digest.update(item.type === 'chunk' ? item.code : item.source);
+        digest.update('\0');
+      }
+      const version = digest.digest('hex').slice(0, 16);
+      const versionReference = (source: string) =>
+        source.replace(/((?:\.\/|\/assets\/)[^"'?]+\.(?:css|js))(?=["'])/g, `$1?v=${version}`);
+
+      for (const [, item] of shellFiles) {
+        if (item.type === 'chunk') item.code = versionReference(item.code);
+      }
+      const index = bundle['index.html'];
+      if (!index || index.type !== 'asset' || typeof index.source !== 'string') {
+        throw new Error('Production build did not emit a versionable index.html shell.');
+      }
+      index.source = versionReference(index.source);
     },
   };
 }
@@ -143,8 +179,10 @@ const backendProxyPaths = [
   '/workflows',
   '/hf_hub',
   '/hf_download',
+  '/huggingface',
   '/template_gallery',
   '/custom_modules',
+  '/custom_modular',
   '/cache',
   '/preview',
   '/stream',
@@ -171,7 +209,7 @@ const backendProxy = Object.fromEntries(
 );
 
 const baseConfig: UserConfig = {
-  plugins: [react(), tailwindcss(), compactProductionChunksPlugin()],
+  plugins: [react(), tailwindcss(), compactProductionChunksPlugin(), shellAssetVersionPlugin()],
   // Keep the browser's process-external recovery endpoint aligned with the
   // backend proxy even when the caller relies on MoDiff's default 8088 port.
   // Without these build-time values, app.config could only see the Vite
@@ -184,6 +222,12 @@ const baseConfig: UserConfig = {
   server: {
     proxy: backendProxy,
     hmr: process.env.MODIFF_GALLERY_STABLE !== '1',
+    watch: {
+      // Playwright can emit tens of thousands of trace resources during a
+      // long-running model qualification. They are neither source nor HMR
+      // inputs, and watching them can exhaust the host's inotify limit.
+      ignored: ['**/artifacts/**', '**/test-results*/**', '**/playwright-report*/**', '**/blob-report/**'],
+    },
   },
   build: {
     emptyOutDir: true,

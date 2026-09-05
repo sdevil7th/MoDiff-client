@@ -35,7 +35,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');

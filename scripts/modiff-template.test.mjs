@@ -52,7 +52,7 @@ before(async () => {
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   templatesModule = await server.ssrLoadModule('/src/studio/templates.ts');
@@ -107,6 +107,28 @@ test('schema-v2 capability modes are exact while legacy mode metadata can fall b
     modelCapabilitiesModule.exactStudioCapabilitySupport([legacy], false, 'FluxDepthPipeline', 'control_image').status,
     'unknown',
   );
+});
+
+test('an installed Expert-only artifact remains ready in Model Manager without an Auto recipe', () => {
+  const expertOnlyPlan = {
+    error: false,
+    schemaVersion: 2,
+    status: 'needs_setup',
+    compatibility: {
+      state: 'expert_only',
+      severity: 'warning',
+      code: 'expert_configuration_required',
+      summary: 'Expert configuration required',
+      detail: 'No Auto recipe is declared for this exact model and task.',
+      action: { type: 'switch_to_expert', label: 'Review in Expert mode' },
+      source: 'backend_auto_planner',
+    },
+    candidates: [],
+  };
+
+  assert.equal(autoResourceModule.autoPlanIsReady(expertOnlyPlan), false);
+  assert.equal(autoResourceModule.modelInstallIsReady(true, expertOnlyPlan), true);
+  assert.equal(autoResourceModule.modelInstallIsReady(false, expertOnlyPlan), false);
 });
 
 test('every public Studio template resolves an exact canonical workflow contract', async () => {
@@ -240,6 +262,84 @@ test('SDXL ControlNet exposes its pinned 1024px Canny recipe', () => {
   assert.equal(form.conditioningScale, 0.5);
 });
 
+test('Modular SDXL exposes exact base, ControlNet Union, and IP-Adapter workflow contracts', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLModularPipeline;
+  const form = profilesModule.getFormDefaultsForMode('control_image', 'StableDiffusionXLModularPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.supportsControlImage, true);
+  assert.deepEqual(profile.modes, [
+    'text_to_image',
+    'edit_image',
+    'inpaint',
+    'control_image',
+    'control_edit_image',
+    'control_inpaint',
+    'control_union_image',
+    'control_union_edit_image',
+    'control_union_inpaint',
+    'ip_adapter_image',
+    'ip_adapter_edit_image',
+    'ip_adapter_inpaint',
+    'ip_adapter_control_image',
+    'ip_adapter_control_edit_image',
+    'ip_adapter_control_inpaint',
+    'ip_adapter_control_union_image',
+    'ip_adapter_control_union_edit_image',
+    'ip_adapter_control_union_inpaint',
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_edit_image.requiredImages, ['referenceImages', 'controlImage']);
+  assert.deepEqual(profile.modeRequirements.control_edit_image.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_inpaint.requiredImages, [
+    'referenceImages',
+    'maskImage',
+    'controlImage',
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_inpaint.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_union_image.requiredImages, ['controlImage']);
+  assert.deepEqual(profile.modeRequirements.control_union_image.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_UNION_REQUIREMENT,
+  ]);
+  assert.deepEqual(profilesModule.SDXL_CONTROLNET_UNION_REQUIREMENT.downloadFiles, [
+    'config.json',
+    'diffusion_pytorch_model.safetensors',
+  ]);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_image.requiredImages, ['ipAdapterImage']);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_image.modelRequirements, [
+    profilesModule.SDXL_IP_ADAPTER_REQUIREMENT,
+  ]);
+  assert.deepEqual(profilesModule.SDXL_IP_ADAPTER_REQUIREMENT.downloadFiles, [
+    'sdxl_models/ip-adapter_sdxl.safetensors',
+    'sdxl_models/image_encoder/config.json',
+    'sdxl_models/image_encoder/model.safetensors',
+  ]);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_control_union_inpaint.requiredImages, [
+    'referenceImages',
+    'maskImage',
+    'controlImage',
+    'ipAdapterImage',
+  ]);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_control_union_inpaint.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_UNION_REQUIREMENT,
+    profilesModule.SDXL_IP_ADAPTER_REQUIREMENT,
+  ]);
+  assert.equal(profile.executionStatus, 'expert_only');
+  assert.equal(profile.autoEligible, true);
+  assert.equal(form.modelType, 'StableDiffusionXLModularPipeline');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 5);
+});
+
 test('Hunyuan-DiT exposes its exact standalone distilled recipe and immutable terms acknowledgement', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanDiTPipeline;
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'HunyuanDiTPipeline');
@@ -371,7 +471,7 @@ test('PixArt Sigma exposes its reviewed 1024px workflow recipe', () => {
   const form = profilesModule.getFormDefaultsForMode('text_to_image', 'PixArtSigmaPipeline');
   assert.equal(profile.label, 'PixArt Sigma XL 1024px');
   assert.equal(profile.defaultRepo, profilesModule.PIXART_SIGMA_REPO);
-  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.defaultDtype, 'float32');
   assert.deepEqual(profile.modes, ['text_to_image']);
   assert.equal(profile.catalogVisibility, 'workflowOnly');
   assert.equal(form.width, 1024);
@@ -1257,6 +1357,98 @@ test('Whisper Tiny exposes generic transcription and translation contracts', () 
   assert.equal(translation.mode, 'speech_translation');
 });
 
+test('equivalent Modular Diffusers Cluster identities retain their exact standard execution profiles', () => {
+  const expected = {
+    ErnieImageModularPipeline: {
+      label: 'ERNIE Image Turbo (Modular Cluster)',
+      repo: profilesModule.ERNIE_IMAGE_TURBO_REPO,
+      modes: ['text_to_image'],
+    },
+    LTXModularPipeline: {
+      label: 'LTX-Video (Modular Cluster)',
+      repo: profilesModule.LTX_VIDEO_REPO,
+      modes: ['text_to_video', 'image_to_video'],
+    },
+    Wan22ModularPipeline: {
+      label: 'Wan 2.2 T2V A14B (Modular Cluster)',
+      repo: profilesModule.WAN_22_T2V_A14B_REPO,
+      modes: ['text_to_video'],
+    },
+    Wan22Image2VideoModularPipeline: {
+      label: 'Wan 2.2 I2V A14B (Modular Cluster)',
+      repo: profilesModule.WAN_22_I2V_A14B_REPO,
+      modes: ['image_to_video'],
+    },
+  };
+  for (const [modelType, contract] of Object.entries(expected)) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    assert.equal(profile.label, contract.label);
+    assert.equal(profile.defaultRepo, contract.repo);
+    assert.deepEqual(profile.modes, contract.modes);
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].autoStatus, 'manual_only');
+  }
+});
+
+test('HunyuanVideo 1.5 keeps exact T2V and source-derived I2V artifacts, defaults, and closed authority', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanVideo15ModularPipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_video', 'HunyuanVideo15ModularPipeline');
+  const image = profilesModule.getFormDefaultsForMode('image_to_video', 'HunyuanVideo15ModularPipeline');
+
+  assert.equal(profile.label, 'HunyuanVideo 1.5 480p (Modular Cluster)');
+  assert.equal(profile.defaultRepo, profilesModule.HUNYUAN_VIDEO_15_T2V_REPO);
+  assert.deepEqual(profile.modes, ['text_to_video', 'image_to_video']);
+  assert.deepEqual(profile.modeRequirements.image_to_video.requiredImages, ['referenceImages']);
+  assert.equal(profile.executionStatus, 'expert_only');
+  assert.equal(profile.qualificationStatus, 'graph-qualified-execution-pending');
+  assert.deepEqual(profile.qualifiedModes, []);
+  assert.equal(profile.autoEligible, false);
+  assert.equal(profile.templateEligible, false);
+  assert.equal(profile.galleryEligible, false);
+  assert.equal(profile.liveProof, false);
+  assert.deepEqual(profile.offloadSupport.modes, ['model_cpu']);
+  assert.deepEqual(
+    profile.artifactSelections.map(({ modes, repo, revision, downloadFiles }) => [
+      modes,
+      repo,
+      revision,
+      downloadFiles.length,
+    ]),
+    [
+      [['text_to_video'], profilesModule.HUNYUAN_VIDEO_15_T2V_REPO, profilesModule.HUNYUAN_VIDEO_15_T2V_REVISION, 35],
+      [['image_to_video'], profilesModule.HUNYUAN_VIDEO_15_I2V_REPO, profilesModule.HUNYUAN_VIDEO_15_I2V_REVISION, 31],
+    ],
+  );
+  assert.deepEqual(
+    [text.width, text.height, text.steps, text.guidanceScale, text.numFrames, text.fps],
+    [848, 480, 50, 6, 121, 24],
+  );
+  assert.deepEqual(
+    [image.width, image.height, image.steps, image.guidanceScale, image.numFrames, image.fps],
+    [848, 480, 12, 1, 121, 24],
+  );
+  assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.HunyuanVideo15ModularPipeline.autoStatus, 'manual_only');
+
+  for (const [mode, repository, revision] of [
+    ['text_to_video', profilesModule.HUNYUAN_VIDEO_15_T2V_REPO, profilesModule.HUNYUAN_VIDEO_15_T2V_REVISION],
+    ['image_to_video', profilesModule.HUNYUAN_VIDEO_15_I2V_REPO, profilesModule.HUNYUAN_VIDEO_15_I2V_REVISION],
+  ]) {
+    const policies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+      modelType: 'HunyuanVideo15ModularPipeline',
+      mode,
+    });
+    assert.deepEqual(
+      policies.map((policy) => [policy.repository, policy.revision, policy.useScope]),
+      [[repository, revision, 'license_review_required']],
+    );
+    assert.equal(policies[0].access, 'public');
+    assert.equal(
+      policies[0].termsUrl,
+      `https://huggingface.co/${profilesModule.HUNYUAN_VIDEO_15_LICENSE_REPO}/blob/${profilesModule.HUNYUAN_VIDEO_15_LICENSE_REVISION}/LICENSE`,
+    );
+  }
+});
+
 test('Janus stays Expert-only with a pinned run acknowledgement and generic mode inference', () => {
   const modelType = 'HuggingFaceAnyToAnyModel';
   const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
@@ -1351,7 +1543,7 @@ test('canonical Whisper graphs infer their speech form without model-specific gr
   }
 });
 
-test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
+test('run readiness blocks unsupported backend modes in Auto and warns in Expert', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
   const previousForm = studioStoreModule.useStudioStore.getState().form;
@@ -1383,8 +1575,17 @@ test('run readiness blocks a model and task pair omitted by authoritative backen
     const issue = runReadinessModule
       .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
       .find((item) => item.code === 'backend_mode_unsupported');
-    assert.equal(issue?.blocking, true);
+    assert.equal(issue?.blocking, false);
+    assert.equal(issue?.severity, 'warning');
     assert.equal(issue?.message, 'Qwen-Image-2512 does not support Control image on the connected backend.');
+    studioStoreModule.useStudioStore.setState({
+      form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+    });
+    const autoIssue = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'backend_mode_unsupported');
+    assert.equal(autoIssue?.blocking, true);
+    assert.equal(autoIssue?.severity, 'error');
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: previousCapabilities,
@@ -1430,6 +1631,7 @@ test('an imported stale Qwen Edit Plus inpaint form stays blocked by backend cap
       .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
       .find((item) => item.code === 'backend_mode_unsupported');
     assert.equal(issue?.blocking, true);
+    assert.equal(issue?.severity, 'error');
     assert.equal(issue?.message, 'Qwen-Image-Edit-2511 does not support Inpaint on the connected backend.');
   } finally {
     nodesStoreModule.useNodesStore.setState({
@@ -1522,7 +1724,8 @@ test('optional runtime readiness is exact-mode scoped and base delivery stays ne
     issue = runReadinessModule
       .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
       .find((item) => item.code === 'optional_runtime_required');
-    assert.equal(issue?.blocking, true);
+    assert.equal(issue?.blocking, false);
+    assert.equal(issue?.severity, 'warning');
     assert.equal(issue?.action, 'open_setup');
     assert.match(issue?.message ?? '', /reviewed optional runtime/i);
   } finally {
@@ -1622,9 +1825,9 @@ test('optional runtime readiness mirrors repository disambiguation for shared lo
     flowStoreModule.useFlowStore.setState({
       nodes: [loader({ source: 'local', value: 'black-forest-labs/FLUX.1-dev' })],
     });
-    assert.equal(optionalIssue()?.blocking, true, 'local selections cannot prove a shared loader profile');
+    assert.equal(optionalIssue()?.blocking, false, 'local selections warn but do not block manual submission');
     flowStoreModule.useFlowStore.setState({ nodes: [loader('example/unknown-flux')] });
-    assert.equal(optionalIssue()?.blocking, true, 'unknown Hub repositories remain ambiguous');
+    assert.equal(optionalIssue()?.blocking, false, 'unknown Hub repositories remain visible manual warnings');
     flowStoreModule.useFlowStore.setState({ nodes: [loader('black-forest-labs/FLUX.1-schnell')] });
     assert.equal(optionalIssue(), undefined, 'a known sibling repository uses that sibling runtime delivery');
 
@@ -1637,6 +1840,114 @@ test('optional runtime readiness mirrors repository disambiguation for shared lo
     });
     flowStoreModule.useFlowStore.setState({ nodes: [loader('example/unknown-flux')] });
     assert.equal(optionalIssue(), undefined, 'ambiguous base-delivered loaders remain readiness-neutral');
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: nodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: nodesState.studioModelCapabilitiesAuthoritative,
+      optionalRuntimeCatalog: nodesState.optionalRuntimeCatalog,
+      discoveryRequests: nodesState.discoveryRequests,
+    });
+    studioStoreModule.useStudioStore.setState({ form: studioState.form, graphBinding: studioState.graphBinding });
+    flowStoreModule.useFlowStore.setState({ nodes: flowState.nodes, edges: flowState.edges });
+  }
+});
+
+test('optional runtime readiness accepts a backend-unique generic loader without a redundant identity field', () => {
+  const nodesState = nodesStoreModule.useNodesStore.getState();
+  const studioState = studioStoreModule.useStudioStore.getState();
+  const flowState = flowStoreModule.useFlowStore.getState();
+  const requirement = optionalRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    executionProfileIds: ['smollm2-135m-instruct:direct'],
+    state: 'active',
+    reason: 'optional_runtime_active',
+  });
+  const executionProfile = {
+    id: 'smollm2-135m-instruct:direct',
+    model_type: 'HuggingFaceTextGenerationModel',
+    modes: ['text_generation'],
+    loader_module: 'modules.HuggingFaceTransformers',
+    loader_action: 'LoadTextGenerationModel',
+    execution_path: 'direct-huggingface-transformers-text',
+    backend_path: 'modules.HuggingFaceTransformers.LoadTextGenerationModel',
+    pipeline_class: 'AutoModelForCausalLM',
+    default_repo: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+    fallback_repo: null,
+    compatible_repos: [],
+    optionalRuntimeRequirement: requirement,
+  };
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilitiesAuthoritative: true,
+      optionalRuntimeCatalog: qualifiedOptionalRuntimeCatalog(),
+      discoveryRequests: {
+        ...nodesState.discoveryRequests,
+        capabilities: { status: 'success', error: null, requestId: 1 },
+        optionalRuntimes: { status: 'success', error: null, requestId: 1 },
+      },
+      studioModelCapabilities: [
+        {
+          modelType: 'HuggingFaceTextGenerationModel',
+          modes: ['text_generation'],
+          runnableModes: ['text_generation'],
+          optionalRuntimeRequirement: requirement,
+          executionProfiles: [executionProfile],
+        },
+      ],
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: {
+        ...studioState.form,
+        modelType: 'HuggingFaceTextGenerationModel',
+        mode: 'text_generation',
+        resourceMode: 'expert',
+      },
+      graphBinding: {
+        mode: 'text_generation',
+        modelType: 'HuggingFaceTextGenerationModel',
+        nodes: { transformersTextModel: 'transformers-loader' },
+        managedNodeIds: ['transformers-loader', 'transformers-viewer'],
+        managedEdgeIds: ['viewer-edge'],
+        fingerprint: 'transformers-runtime-identity-test',
+      },
+    });
+    flowStoreModule.useFlowStore.setState({
+      nodes: [
+        {
+          id: 'transformers-loader',
+          data: {
+            type: 'custom',
+            module: 'modules.HuggingFaceTransformers',
+            action: 'LoadTextGenerationModel',
+            params: {
+              model_id: { value: 'HuggingFaceTB/SmolLM2-135M-Instruct' },
+            },
+          },
+        },
+        {
+          id: 'transformers-viewer',
+          data: {
+            type: 'custom',
+            module: 'modules.Primitive',
+            action: 'DataViewer',
+            label: 'Data Viewer',
+            params: { value: { value: null } },
+          },
+        },
+      ],
+      edges: [{ id: 'viewer-edge', source: 'transformers-loader', target: 'transformers-viewer' }],
+    });
+
+    const issues = runReadinessModule.collectRunReadinessIssues({ sid: 'test-session', isConnected: true });
+    assert.equal(
+      issues.find((item) => item.code === 'optional_runtime_required'),
+      undefined,
+    );
+    assert.equal(
+      issues.find((item) => /connected output node/i.test(item.message)),
+      undefined,
+    );
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: nodesState.studioModelCapabilities,
@@ -1710,19 +2021,19 @@ test('a required runtime becomes ready only with the exact qualified active cata
         },
       ],
     });
-    assert.equal(optionalIssue()?.blocking, true, 'present execution profiles require an exact selected-mode match');
+    assert.equal(optionalIssue()?.blocking, false, 'an exact-mode mismatch remains visible in manual mode');
     nodesStoreModule.useNodesStore.setState({ studioModelCapabilities: [activeCapability] });
     assert.equal(optionalIssue(), undefined);
     for (const key of ['capabilities', 'optionalRuntimes']) {
       for (const status of ['loading', 'error']) {
         setDiscovery(key, status);
-        assert.equal(optionalIssue()?.blocking, true, `${key} ${status} must make retained runtime status stale`);
+        assert.equal(optionalIssue()?.blocking, false, `${key} ${status} remains a manual-mode warning`);
         setDiscovery(key, 'success');
         assert.equal(optionalIssue(), undefined);
       }
     }
     nodesStoreModule.useNodesStore.setState({ optionalRuntimeCatalog: null });
-    assert.equal(optionalIssue()?.blocking, true, 'missing or stale status must restore the blocker');
+    assert.equal(optionalIssue()?.blocking, false, 'missing or stale status must restore the manual warning');
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: previousNodesState.studioModelCapabilities,
@@ -2154,8 +2465,8 @@ test('existing saved canonical imports are adopted during workflow-tab normaliza
       decode: 'decode',
       preview: 'preview',
     });
-    assert.equal(restored.snapshot.studioForm.modelType, 'Flux2KleinPipeline');
-    assert.equal(restored.snapshot.studioGraphBinding.modelType, 'Flux2KleinPipeline');
+    assert.equal(restored.snapshot.studioForm.modelType, 'Flux2KleinModularPipeline');
+    assert.equal(restored.snapshot.studioGraphBinding.modelType, 'Flux2KleinModularPipeline');
     assert.ok(restored.snapshot.nodes.every((node) => node.data.studioOwned === true));
   } finally {
     studioStoreModule.useStudioStore.setState({ workflowTabs: beforeTabs });
@@ -2226,8 +2537,8 @@ test('persisted inferred bindings self-repair stale model metadata from canonica
     const restored = studioStoreModule.useStudioStore
       .getState()
       .workflowTabs.find((tab) => tab.id === 'interim-stale-canonical-import');
-    assert.equal(restored?.snapshot.studioForm.modelType, 'Flux2KleinPipeline');
-    assert.equal(restored?.snapshot.studioGraphBinding?.modelType, 'Flux2KleinPipeline');
+    assert.equal(restored?.snapshot.studioForm.modelType, 'Flux2KleinModularPipeline');
+    assert.equal(restored?.snapshot.studioGraphBinding?.modelType, 'Flux2KleinModularPipeline');
     assert.equal(restored?.snapshot.studioGraphBinding?.createdAt, 0);
     assert.equal(restored?.snapshot.studioGraphBinding?.updatedAt, 0);
   } finally {
@@ -3521,6 +3832,11 @@ test('ACE templates lock musical structure, metadata, and model-aware negative b
     chineseNewYear.workflowBlockSettings.lora.baseModel.value,
     'Runware/acestep-v15-turbo-diffusers',
     'the official 2048-wide LoRA must retain its matching base instead of the XL Studio default',
+  );
+  assert.deepEqual(
+    templatesModule.getStudioTemplateLoraBaseModel(chineseNewYear.id),
+    chineseNewYear.workflowBlockSettings.lora.baseModel,
+    'Auto readiness and runtime hints must share the exact architecture-locked LoRA base',
   );
   assert.equal(
     chineseNewYear.workflowBlockSettings.lora.baseModel.revision,
@@ -4835,6 +5151,39 @@ test('Real-ESRGAN video upscale stays model-backed and infers the generic source
   assert.equal(inferred.fps, 30);
 });
 
+test('Real-ESRGAN image upscale stays model-backed and infers the generic source-image contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.SpandrelImageUpscale;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.SpandrelImageUpscale;
+  assert.equal(profile.runtimeKind, 'spandrel');
+  assert.equal(profile.artifactKind, 'spandrel_upscaler');
+  assert.equal(profile.artifactInstallRequired, true);
+  assert.equal(profile.defaultRepo, 'nateraw/real-esrgan');
+  assert.deepEqual(profile.downloadFiles, ['RealESRGAN_x2plus.pth']);
+  assert.deepEqual(profile.revisionCandidates, ['42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094']);
+  assert.deepEqual(profile.modes, ['image_upscale']);
+  assert.deepEqual(requirement.artifacts, ['nateraw/real-esrgan']);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Spandrel',
+          action: 'Upscaler',
+          studioRole: 'imageUpscaler',
+          params: {
+            image: { value: '/managed/source.png' },
+            device: { value: 'cpu' },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'SpandrelImageUpscale');
+  assert.equal(inferred.mode, 'image_upscale');
+  assert.equal(inferred.device, 'cpu');
+});
+
 test('video stitching requires two local source videos before execution', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
@@ -5441,12 +5790,26 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
           },
         ],
       },
+      {
+        modelType: 'SpandrelImageUpscale',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['image_upscale'],
+        studioExecutionSpecs: [
+          {
+            ...readinessSpec('image_upscale', 'modules.Spandrel', 'Upscaler', [
+              ['imageUpscaler', 'modules.Spandrel.Upscaler'],
+            ]),
+            bindings: [],
+          },
+        ],
+      },
     ],
   });
 
   for (const [modelType, mode, nodeKey] of [
     ['BuiltinImageOperation', 'image_upscale', 'modules.ImageOperations.ProcessImage'],
     ['SpandrelVideoUpscale', 'video_upscale', 'modules.Video.UpscaleVideo'],
+    ['SpandrelImageUpscale', 'image_upscale', 'modules.Spandrel.Upscaler'],
   ]) {
     const noneOnlyIssue = runReadinessModule.getStudioOffloadCapabilityIssue(
       {
@@ -6070,6 +6433,133 @@ test('canonical workflows reject retired or mutable Hub attention backends', () 
   assert.equal(workflowNodeAttentionBackendError({ data: { params: {} } }), null);
 });
 
+test('Hub-backed adapter member filenames are not treated as standalone local models', () => {
+  const references = runReadinessModule.collectNodeModelReferences({
+    id: 'audio-lora',
+    data: {
+      module: 'modules.DiffusersAudio',
+      action: 'LoadAdapter',
+      params: {
+        model: {
+          value: {
+            source: 'hub',
+            value: 'ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA',
+          },
+        },
+        weight_name: { value: 'adapter_model.safetensors', label: 'Weight name', description: 'Adapter weights' },
+      },
+    },
+  });
+
+  assert.deepEqual(references, [
+    {
+      kind: 'repo',
+      value: 'ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA',
+      paramKey: 'model',
+    },
+  ]);
+  assert.deepEqual(
+    runReadinessModule.collectNodeModelReferences({
+      id: 'local-lora',
+      data: {
+        module: 'modules.DiffusersAudio',
+        action: 'LoadAdapter',
+        params: {
+          weight_name: { value: 'adapter_model.safetensors', label: 'Weight name', description: 'Adapter weights' },
+        },
+      },
+    }),
+    [{ kind: 'path', value: 'adapter_model.safetensors', paramKey: 'weight_name' }],
+  );
+
+  assert.deepEqual(
+    runReadinessModule.collectNodeModelReferences({
+      id: 'sdxl-ip-adapter',
+      data: {
+        module: 'modules.ModularDiffusers',
+        action: 'IPAdapter',
+        params: {
+          adapter_model: {
+            display: 'modelselect',
+            value: { source: 'hub', value: 'h94/IP-Adapter' },
+          },
+          adapter_weight_name: {
+            value: 'sdxl_models/ip-adapter_sdxl.safetensors',
+            label: 'Adapter Weight',
+          },
+        },
+      },
+    }),
+    [{ kind: 'repo', value: 'h94/IP-Adapter', paramKey: 'adapter_model' }],
+  );
+});
+
+test('a reviewed Modular model variant replaces the sealed baseline in readiness and Auto lookup', () => {
+  const loader = {
+    id: 'qwen-models',
+    data: {
+      module: 'modules.ModularDiffusers',
+      action: 'ModelsLoader',
+      params: {
+        repo_id: {
+          label: 'Repository ID',
+          value: { source: 'hub', value: 'Qwen/Qwen-Image-2512' },
+        },
+        reviewed_variant: {
+          label: 'Model',
+          description: 'Reviewed model variant',
+          value: 'Qwen/Qwen-Image',
+        },
+      },
+    },
+  };
+  assert.deepEqual(runReadinessModule.collectNodeModelReferences(loader), [
+    { kind: 'repo', value: 'Qwen/Qwen-Image', paramKey: 'reviewed_variant' },
+  ]);
+  assert.equal(autoResourceModule.selectedHubRepo(loader), 'Qwen/Qwen-Image');
+});
+
+test('declarative Dynamic Block readiness follows exact component pins instead of treating the sidecar repo as weights', () => {
+  const references = runReadinessModule.collectNodeModelReferences({
+    id: 'dynamic-modular',
+    data: {
+      module: 'modules.ModularDiffusers',
+      action: 'DynamicBlockNode',
+      params: {
+        repo_id: { value: { source: 'hub', value: 'diffusers/metadata-only-modular' } },
+        modiff_pipeline_identity: {
+          value: {
+            schema: 'modiff.custom-pipeline-identity.v3',
+            component_revisions: {
+              'owner/base-model': 'a'.repeat(40),
+              'owner/quantized-text-encoder': 'b'.repeat(40),
+            },
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(references, [
+    {
+      kind: 'repo',
+      value: 'owner/base-model',
+      paramKey: 'modiff_pipeline_identity.component_revisions.owner/base-model',
+      revision: 'a'.repeat(40),
+    },
+    {
+      kind: 'repo',
+      value: 'owner/quantized-text-encoder',
+      paramKey: 'modiff_pipeline_identity.component_revisions.owner/quantized-text-encoder',
+      revision: 'b'.repeat(40),
+    },
+  ]);
+  assert.equal(
+    references.some((reference) => reference.value === 'diffusers/metadata-only-modular'),
+    false,
+  );
+});
+
 test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-owned CUDA budget', () => {
   const totalBytes = 16 * 1024 ** 3;
   const freeBytes = 15 * 1024 ** 3;
@@ -6400,6 +6890,232 @@ test('partially downloaded Hugging Face snapshots are not runnable cache hits', 
   assert.equal(modelCacheModule.cacheContains([{ id: repo, installed: true, complete: true }], repo), true);
   // Older backends did not provide installation metadata; preserve that wire contract.
   assert.equal(modelCacheModule.cacheContains([{ id: repo }], repo), true);
+});
+
+test('Expert Model Manager installs only an exact reviewed immutable snapshot after its optional runtime is active', () => {
+  const revision = '47da56e2ad66ce4125a9922b4a8826bf407f9d0a';
+  const profile = {
+    ...profilesModule.STUDIO_MODEL_PROFILES.LTX2ConditionPipeline,
+    defaultRepo: 'Lightricks/LTX-2',
+    executionStatus: 'expert_only',
+    revisionCandidates: [revision],
+    downloadFiles: ['transformer/model.safetensors', 'model_index.json', 'model_index.json'],
+    optionalRuntimeRequirement: {
+      requiredNow: true,
+      state: 'active',
+    },
+  };
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.deepEqual(modelCacheModule.reviewedExpertInstallTarget(profile, status), {
+    repo: 'Lightricks/LTX-2',
+    label: profile.artifactLabel || profile.label,
+    reason: 'Install the exact reviewed model revision and file selection required by this Expert workflow.',
+    actionLabel: 'Install',
+    repair: false,
+    revision,
+    files: ['model_index.json', 'transformer/model.safetensors'],
+  });
+
+  assert.equal(
+    modelCacheModule.reviewedExpertInstallTarget(
+      {
+        ...profile,
+        optionalRuntimeRequirement: { requiredNow: true, state: 'missing' },
+      },
+      status,
+    ),
+    null,
+  );
+  assert.equal(
+    modelCacheModule.reviewedExpertInstallTarget({ ...profile, revisionCandidates: ['main'] }, status),
+    null,
+  );
+  assert.equal(
+    modelCacheModule.reviewedExpertInstallTarget({ ...profile, downloadFiles: ['../model.safetensors'] }, status),
+    null,
+  );
+});
+
+test('LTX-2 install and Run use one immutable revision-bound community-license acknowledgement', () => {
+  const policy = modelUsagePoliciesModule.usagePolicyForRepository(profilesModule.LTX2_REPO);
+  assert.equal(policy.repository, 'Lightricks/LTX-2');
+  assert.equal(policy.reviewedRevision, profilesModule.LTX2_REVISION);
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.access, 'public');
+  assert.match(policy.shortSummary, /\$10 million entity-wide annual-revenue threshold/i);
+  assert.equal(policy.termsUrl, `https://huggingface.co/Lightricks/LTX-2/blob/${profilesModule.LTX2_REVISION}/LICENSE`);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForRepository(
+    profilesModule.LTX2_REPO,
+    profilesModule.LTX2_REVISION,
+  );
+  assert.deepEqual(
+    policies.map((candidate) => candidate.revision),
+    [profilesModule.LTX2_REVISION],
+  );
+  assert.match(modelUsagePoliciesModule.usagePolicyAcknowledgementKey(policies), /^terms-v2:[0-9a-f]{8}$/);
+  const runPolicies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+    modelType: 'LTX2ConditionPipeline',
+    mode: 'text_to_video',
+  });
+  assert.deepEqual(
+    runPolicies.map((candidate) => [candidate.repository, candidate.revision]),
+    [[profilesModule.LTX2_REPO, profilesModule.LTX2_REVISION]],
+  );
+  assert.equal(
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(runPolicies),
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(policies),
+  );
+  assert.equal(modelUsagePoliciesModule.repositoryRequiresHuggingFaceGate(profilesModule.LTX2_REPO), false);
+});
+
+test('Anima install and Run use one immutable revision-bound non-commercial-license acknowledgement', () => {
+  const policy = modelUsagePoliciesModule.usagePolicyForRepository(profilesModule.ANIMA_REPO);
+  assert.equal(policy.repository, 'circlestone-labs/Anima-Base-v1.0-Diffusers');
+  assert.equal(policy.reviewedRevision, profilesModule.ANIMA_REVISION);
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.access, 'public');
+  assert.match(policy.shortSummary, /model and derivative use to non-commercial purposes/i);
+  assert.match(policy.shortSummary, /outputs may be used commercially/i);
+  assert.equal(
+    policy.termsUrl,
+    `https://huggingface.co/circlestone-labs/Anima-Base-v1.0-Diffusers/blob/${profilesModule.ANIMA_REVISION}/LICENSE.md`,
+  );
+
+  const installPolicies = modelUsagePoliciesModule.acknowledgementRequiredForRepository(
+    profilesModule.ANIMA_REPO,
+    profilesModule.ANIMA_REVISION,
+  );
+  const runPolicies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+    modelType: 'AnimaModularPipeline',
+    mode: 'text_to_image',
+  });
+  assert.deepEqual(
+    runPolicies.map((candidate) => [candidate.repository, candidate.revision]),
+    [[profilesModule.ANIMA_REPO, profilesModule.ANIMA_REVISION]],
+  );
+  assert.equal(
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(runPolicies),
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(installPolicies),
+  );
+  assert.equal(modelUsagePoliciesModule.repositoryRequiresHuggingFaceGate(profilesModule.ANIMA_REPO), false);
+});
+
+test('shared pipeline classes resolve one exact Expert artifact per workflow mode', () => {
+  const profile = {
+    ...profilesModule.STUDIO_MODEL_PROFILES.WanImage2VideoModularPipeline,
+    executionStatus: 'expert_only',
+    artifactSelections: [
+      {
+        modes: ['single_image_to_video'],
+        repo: 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+        revision: 'b184e23a8a16b20f108f727c902e769e873ffc73',
+        downloadFiles: ['model_index.json', 'transformer/i2v.safetensors'],
+        label: 'Wan I2V 480P',
+      },
+      {
+        modes: ['image_to_video'],
+        repo: 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers',
+        revision: '17c30769b1e0b5dcaa1799b117bf20a9c31f59d7',
+        downloadFiles: ['model_index.json', 'transformer/flf.safetensors'],
+        label: 'Wan FLF2V 720P',
+      },
+    ],
+  };
+  const variants = profilesModule.expandArtifactSelectionProfiles(profile);
+  assert.deepEqual(
+    variants.map(({ modes, defaultRepo, revisionCandidates, downloadFiles }) => ({
+      modes,
+      defaultRepo,
+      revisionCandidates,
+      downloadFiles,
+    })),
+    [
+      {
+        modes: ['single_image_to_video'],
+        defaultRepo: 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+        revisionCandidates: ['b184e23a8a16b20f108f727c902e769e873ffc73'],
+        downloadFiles: ['model_index.json', 'transformer/i2v.safetensors'],
+      },
+      {
+        modes: ['image_to_video'],
+        defaultRepo: 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers',
+        revisionCandidates: ['17c30769b1e0b5dcaa1799b117bf20a9c31f59d7'],
+        downloadFiles: ['model_index.json', 'transformer/flf.safetensors'],
+      },
+    ],
+  );
+  for (const variant of variants) {
+    const status = modelCacheModule.getStudioModelCacheStatus(variant, [], [], null);
+    const target = modelCacheModule.reviewedExpertInstallTarget(variant, status);
+    assert.equal(target.repo, variant.defaultRepo);
+    assert.equal(target.revision, variant.revisionCandidates[0]);
+    assert.deepEqual(target.files, [...variant.downloadFiles].sort());
+  }
+});
+
+test('exact workflow requirements reject a healthy repo with the wrong installed file selection', () => {
+  const repo = 'h94/IP-Adapter';
+  const cache = [
+    {
+      id: repo,
+      installed: true,
+      complete: true,
+      planned_revision: profilesModule.SDXL_IP_ADAPTER_REVISION,
+      planned_files: [
+        'sdxl_models/ip-adapter_sdxl.safetensors',
+        'models/image_encoder/config.json',
+        'models/image_encoder/model.safetensors',
+      ],
+    },
+  ];
+  const expectation = {
+    revision: profilesModule.SDXL_IP_ADAPTER_REVISION,
+    files: profilesModule.SDXL_IP_ADAPTER_FILES,
+  };
+  const mismatch = modelCacheModule.getRepoCacheStatus(repo, cache, [], null, expectation);
+  assert.equal(mismatch.runnable, false);
+  assert.equal(mismatch.repairRequired, true);
+  assert.match(mismatch.reason, /does not include the exact revision and files/);
+
+  cache[0].planned_files = [...profilesModule.SDXL_IP_ADAPTER_FILES];
+  const match = modelCacheModule.getRepoCacheStatus(repo, cache, [], null, expectation);
+  assert.equal(match.runnable, true);
+  assert.equal(match.repairRequired, false);
+});
+
+test('reviewed model profiles require their current immutable path selection before showing Ready', () => {
+  const profile = {
+    ...profilesModule.STUDIO_MODEL_PROFILES.LTXVideoPipeline,
+    defaultRepo: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+    revisionCandidates: ['7c64400e1861cc0d7b98d570a1926d5408ec60cd'],
+    downloadFiles: [
+      'model_index.json',
+      'text_encoder/model-00001-of-00004.safetensors',
+      'vae/text_encoder/model-00001-of-00004.safetensors',
+    ],
+  };
+  const cache = [
+    {
+      id: profile.defaultRepo,
+      installed: true,
+      complete: true,
+      planned_revision: profile.revisionCandidates[0],
+      planned_files: profile.downloadFiles.slice(0, 2),
+    },
+  ];
+
+  const mismatch = modelCacheModule.getStudioModelCacheStatus(profile, cache, [], null);
+  assert.equal(mismatch.runnable, false);
+  assert.equal(mismatch.repairRequired, true);
+  assert.match(mismatch.reason, /does not include the exact revision and files/);
+
+  cache[0].planned_files = [...profile.downloadFiles];
+  const match = modelCacheModule.getStudioModelCacheStatus(profile, cache, [], null);
+  assert.equal(match.runnable, true);
+  assert.equal(match.repairRequired, false);
 });
 
 test('startup request caches recover manifest and plans at their startup readiness signals without a modal refresh', async () => {

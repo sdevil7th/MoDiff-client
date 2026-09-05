@@ -1,7 +1,7 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { useState } from 'react';
-import { Activity, Clock3, Trash2 } from 'lucide-react';
+import { Activity, Clock3, RotateCcw, Settings, Trash2 } from 'lucide-react';
 
 import { useFlowStore } from '../stores/useFlowStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -15,7 +15,6 @@ import {
   ModiffRadioGroup,
   ModiffTabs,
 } from '../ui';
-import { cx } from '../utils/classNames';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { formatRequestError } from '../utils/requestJson';
 import { cancelQueuedTask } from '../utils/serverActions';
@@ -67,24 +66,33 @@ const SettingsDialog = ({ opener, onClose }: { opener: boolean | null; onClose: 
     <ModiffDialog
       open={Boolean(opener)}
       onClose={onClose}
-      title="Settings"
-      panelClassName="max-w-3xl"
-      bodyClassName="!max-h-[68vh] !p-0"
+      title={
+        <span className="flex items-center gap-2">
+          <Settings size={17} className="text-hf-yellow" />
+          Settings
+        </span>
+      }
+      description="App preferences and current task activity."
+      panelClassName="max-w-2xl"
+      bodyClassName="!p-0"
+      testId="settings-dialog"
       footer={<ModiffButton onClick={onClose}>Close</ModiffButton>}
+      toolbar={
+        <ModiffTabs
+          aria-label="Settings sections"
+          className="p-2"
+          options={tabs.map((item) => ({
+            value: item.id,
+            label: item.label,
+            id: `settings-tab-${item.id}`,
+            controls: `settings-panel-${item.id}`,
+          }))}
+          value={tab}
+          onValueChange={setTab}
+          size="normal"
+        />
+      }
     >
-      <ModiffTabs
-        aria-label="Settings sections"
-        className="sticky top-0 z-[1] border-b border-modiff-border bg-modiff-panel p-1"
-        options={tabs.map((item) => ({
-          value: item.id,
-          label: item.label,
-          id: `settings-tab-${item.id}`,
-          controls: `settings-panel-${item.id}`,
-        }))}
-        value={tab}
-        onValueChange={setTab}
-        size="prominent"
-      />
       {tabs
         .filter((item) => item.id !== tab)
         .map((item) => (
@@ -98,13 +106,12 @@ const SettingsDialog = ({ opener, onClose }: { opener: boolean | null; onClose: 
         ))}
       <div id={`settings-panel-${tab}`} role="tabpanel" aria-labelledby={`settings-tab-${tab}`} className="p-4">
         {tab === 'preferences' && (
-          <div className="mx-auto max-w-2xl">
-            <div className="grid gap-3 text-sm text-modiff-text">
+          <div className="grid gap-5 text-sm text-modiff-text">
+            <section className="grid gap-3">
+              <h3 className="font-semibold">Graph appearance</h3>
               <ModiffFieldShell
-                label="Line type"
-                layout="inline"
-                labelClassName="w-32 shrink-0 text-right text-sm text-modiff-text"
-                className="gap-4"
+                label="Connection style"
+                description="Applies to connections on the canvas and newly added links."
               >
                 <ModiffRadioGroup
                   aria-label="Line type"
@@ -115,24 +122,32 @@ const SettingsDialog = ({ opener, onClose }: { opener: boolean | null; onClose: 
                   onValueChange={(value) => handleLineTypeChange(value as 'default' | 'smoothstep')}
                 />
               </ModiffFieldShell>
-
-              <div className="flex items-center gap-4">
-                <span className="w-32 shrink-0 text-right text-sm font-semibold text-modiff-subtle-text">
-                  Local storage
-                </span>
-                <ModiffButton icon={<Trash2 size={15} />} onClick={handleResetToDefault}>
-                  Reset to default
-                </ModiffButton>
+            </section>
+            <section className="flex flex-wrap items-center justify-between gap-3 border-t border-modiff-border pt-4">
+              <div className="min-w-0 flex-1 basis-56">
+                <h3 className="font-semibold">Restore app preferences</h3>
+                <p className="mt-1 text-modiff-subtle-text">
+                  Reset view and panel preferences. Saved workflow files and downloaded models are not deleted.
+                </p>
               </div>
-            </div>
+              <ModiffButton icon={<RotateCcw size={15} />} onClick={handleResetToDefault}>
+                Reset preferences
+              </ModiffButton>
+            </section>
           </div>
         )}
 
         {tab === 'tasks' && (
           <div className="overflow-hidden rounded-modiff-compact border border-modiff-border">
-            <div className="border-b border-modiff-border px-3 py-3 text-center text-sm font-bold text-modiff-green">
-              {`${taskCount ? taskCount : 'No'} tasks queued`}
+            <div className="flex items-center gap-2 border-b border-modiff-border bg-modiff-panel px-3 py-3 text-sm font-semibold text-modiff-text">
+              <Clock3 size={16} className="text-modiff-subtle-text" />
+              {taskCount ? `${taskCount} task${taskCount === 1 ? '' : 's'} in queue` : 'No queued tasks'}
             </div>
+            {!currentTask && Object.keys(queuedTasks).length === 0 ? (
+              <p className="p-4 text-sm text-modiff-subtle-text">
+                Run a workflow to see its progress here. Pending tasks can be cancelled individually.
+              </p>
+            ) : null}
 
             {currentTask && (
               <div className="flex items-center gap-3 border-b border-modiff-border px-3 py-3 text-sm text-modiff-text">
@@ -166,16 +181,17 @@ const SettingsDialog = ({ opener, onClose }: { opener: boolean | null; onClose: 
         )}
 
         {tab === 'about' && (
-          <div
-            className={cx(
-              'flex min-h-48 flex-col items-center justify-center text-center text-modiff-text',
-              'rounded-modiff-compact border border-modiff-border bg-modiff-bg p-6',
-            )}
-          >
-            <p className="text-base font-semibold">
-              <b>MoDiff</b>, modular diffusion without the hype.
+          <div className="grid gap-3 text-sm text-modiff-subtle-text">
+            <h3 className="text-base font-semibold text-modiff-text">MoDiff</h3>
+            <p>A graph workspace for generating images, video and audio with modular model workflows.</p>
+            <p>
+              Use a Cluster as one node, or expand it to inspect and customize its connected blocks. Save workflow
+              changes to keep prompts, parameters and layout.
             </p>
-            <p className="mt-1 text-sm text-modiff-subtle-text">This page will get better, I promise.</p>
+            <p>
+              Models manages local artifacts and Hugging Face downloads. Setup contains runtime diagnostics and recovery
+              actions.
+            </p>
           </div>
         )}
       </div>

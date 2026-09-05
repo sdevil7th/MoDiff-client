@@ -29,7 +29,10 @@ function parseArgs(argv) {
     if (key === 'asset') args.assetId = String(value);
     else if (key === 'server') args.server = String(value);
     else if (key === 'port') args.port = String(value);
-    else throw new Error(`Unknown option: --${key}`);
+    else if (key === 'stage-run') {
+      args.command = 'stage';
+      args.stageRun = resolve(ROOT, String(value));
+    } else throw new Error(`Unknown option: --${key}`);
   }
   return args;
 }
@@ -39,6 +42,7 @@ function usage() {
 Usage:
   npm run gallery:source -- --list
   npm run gallery:source -- --asset <id> [--server <url>] [--port <number>]
+  npm run gallery:source -- --asset <id> --stage-run <artifact-run-directory>
 
 Runs exactly one source-only app capture from the checked-in source catalog. The
 result is staged under artifacts/template-gallery/source-assets for review and is
@@ -82,12 +86,43 @@ function sha256File(path) {
   return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 }
 
-function stageResult(asset, runDir) {
+function stageResult(asset, runDir, { allowCompletedRecovery = false } = {}) {
   const reportPath = join(runDir, 'report.json');
   if (!existsSync(reportPath)) throw new Error(`Source capture did not write a report: ${reportPath}`);
   const report = JSON.parse(readFileSync(reportPath, 'utf8'));
   const result = report.results?.find((item) => item.templateId === asset.template && !item.skipped);
-  const output = result?.outputs?.[0];
+  let output = result?.outputs?.[0];
+  let recovery = null;
+  if (!output && allowCompletedRecovery && report.mode === 'source-only') {
+    const reason = report.results?.find((item) => item.templateId === asset.template)?.reason ?? '';
+    const mediaDir = join(runDir, 'media');
+    const candidates = existsSync(mediaDir)
+      ? readdirSync(mediaDir)
+          .filter((name) => name.startsWith(`${asset.id}.run`) && !name.endsWith('.json'))
+          .map((name) => join(mediaDir, name))
+          .filter((path) => statSync(path).isFile())
+      : [];
+    const evidenceDir = join(mediaDir, 'evidence');
+    const outputEvidence = existsSync(evidenceDir)
+      ? readdirSync(evidenceDir)
+          .filter((name) => name.startsWith(`${asset.template}.run`) && name.endsWith('.output.json'))
+          .map((name) => join(evidenceDir, name))
+      : [];
+    const receipt = outputEvidence.length === 1 ? JSON.parse(readFileSync(outputEvidence[0], 'utf8')) : null;
+    if (
+      reason.startsWith('Run provenance is incomplete:') &&
+      candidates.length === 1 &&
+      outputEvidence.length === 1 &&
+      receipt?.terminalTask?.status === 'completed'
+    ) {
+      output = { filePath: candidates[0], evidence: { output: outputEvidence[0], provenance: null } };
+      recovery = {
+        reason,
+        taskId: receipt.terminalTask.task_id ?? receipt.run?.taskId ?? null,
+        outputEvidencePath: outputEvidence[0],
+      };
+    }
+  }
   if (report.mode !== 'source-only' || !output?.filePath || !existsSync(output.filePath)) {
     throw new Error(result?.reason || report.skipped?.[0]?.reason || 'Source capture did not produce usable media.');
   }
@@ -118,6 +153,7 @@ function stageResult(asset, runDir) {
     sourceRun: runDir,
     reportPath,
     provenancePath: output.evidence?.provenance ?? null,
+    ...(recovery ? { completedRunRecovery: recovery } : {}),
     capturedAt: new Date().toISOString(),
   };
   writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
@@ -149,6 +185,10 @@ function main() {
 
   const asset = config.assets.find((item) => item.id === args.assetId);
   if (!asset) throw new Error(`Unknown --asset ${JSON.stringify(args.assetId)}. Use --list to inspect available ids.`);
+  if (args.command === 'stage') {
+    console.log(JSON.stringify(stageResult(asset, args.stageRun, { allowCompletedRecovery: true }), null, 2));
+    return;
+  }
   const previousRuns = runDirectories();
   const runnerArgs = [
     join(ROOT, 'scripts', 'template-gallery-runner.mjs'),
@@ -170,6 +210,7 @@ function main() {
   if (asset.negativePrompt) runnerArgs.push('--negative-prompt-override', asset.negativePrompt);
   if (asset.width) runnerArgs.push('--width', String(asset.width));
   if (asset.height) runnerArgs.push('--height', String(asset.height));
+  if (asset.numFrames) runnerArgs.push('--num-frames', String(asset.numFrames));
   if (asset.steps) runnerArgs.push('--steps', String(asset.steps));
   if (args.server) runnerArgs.push('--server', args.server);
   if (args.port) runnerArgs.push('--port', args.port);

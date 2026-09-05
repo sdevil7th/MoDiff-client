@@ -129,6 +129,7 @@ const templateAutoPlanEntries = STUDIO_TEMPLATES.map((template) => {
 const templateManifestRequest = createStartupRequestCache<TemplateGalleryManifest>(async () => {
   return requestJson(TEMPLATE_GALLERY_MANIFEST_PATH, {
     credentials: 'omit',
+    timeoutMs: 120_000,
     parse: parseTemplateGalleryManifest,
   });
 });
@@ -368,6 +369,7 @@ export default function TemplateBrowserDialog() {
   }, [open]);
 
   useEffect(() => {
+    if (!open) return undefined;
     let cancelled = false;
     void loadTemplateManifest()
       .then((payload) => {
@@ -385,10 +387,11 @@ export default function TemplateBrowserDialog() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     if (
+      !open ||
       !shouldRetryStaticStartupRequest({
         attempted: manifestStartupRetryAttempted.current,
         failed: manifestStartupFailed && templateManifestRequest.hasRejected(),
@@ -414,9 +417,10 @@ export default function TemplateBrowserDialog() {
       globalThis.clearTimeout(timeoutId);
       manifestStartupRetryAttempted.current = false;
     };
-  }, [manifestStartupFailed]);
+  }, [manifestStartupFailed, open]);
 
   useEffect(() => {
+    if (!open) return undefined;
     let cancelled = false;
     void loadTemplateAutoPlans()
       .then((plans) => {
@@ -432,10 +436,11 @@ export default function TemplateBrowserDialog() {
     return () => {
       cancelled = true;
     };
-  }, [setAutoResourcePlans]);
+  }, [open, setAutoResourcePlans]);
 
   useEffect(() => {
     if (
+      !open ||
       !shouldRetryStartupRequest({
         attempted: autoPlanStartupRetryAttempted.current,
         backendReady: Boolean(sid),
@@ -463,10 +468,10 @@ export default function TemplateBrowserDialog() {
       globalThis.clearTimeout(timeoutId);
       autoPlanStartupRetryAttempted.current = false;
     };
-  }, [autoPlansStartupFailed, modelIndexesRefreshing, setAutoResourcePlans, sid]);
+  }, [autoPlansStartupFailed, modelIndexesRefreshing, open, setAutoResourcePlans, sid]);
 
   useEffect(() => {
-    if (!latestCompletedRunAt || latestCompletedRunAt <= runtimePlanHistoryRefreshedAt.current) return;
+    if (!open || !latestCompletedRunAt || latestCompletedRunAt <= runtimePlanHistoryRefreshedAt.current) return;
     runtimePlanHistoryRefreshedAt.current = latestCompletedRunAt;
     let cancelled = false;
     const timeoutId = globalThis.setTimeout(() => {
@@ -480,7 +485,7 @@ export default function TemplateBrowserDialog() {
       cancelled = true;
       globalThis.clearTimeout(timeoutId);
     };
-  }, [latestCompletedRunAt, setAutoResourcePlans]);
+  }, [latestCompletedRunAt, open, setAutoResourcePlans]);
 
   const readinessContext = useMemo(
     () => ({

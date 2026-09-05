@@ -28,7 +28,7 @@ const vite = await createServer({
   configFile: false,
   logLevel: 'silent',
   optimizeDeps: { entries: [], noDiscovery: true },
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
   appType: 'custom',
 });
 

@@ -13,6 +13,11 @@ export type StudioMode =
   | 'speech_to_text'
   | 'speech_translation'
   | 'text_to_image'
+  | 'image_to_image'
+  | 'inpainting'
+  | 'modular_text_to_image'
+  | 'modular_image_to_image'
+  | 'modular_inpainting'
   | 'edit_image'
   | 'multi_image_reference_edit'
   | 'inpaint'
@@ -20,13 +25,32 @@ export type StudioMode =
   | 'control_image'
   | 'control_edit_image'
   | 'control_inpaint'
+  | 'control_union_image'
+  | 'control_union_edit_image'
+  | 'control_union_inpaint'
+  | 'ip_adapter_image'
+  | 'ip_adapter_edit_image'
+  | 'ip_adapter_inpaint'
+  | 'ip_adapter_control_image'
+  | 'ip_adapter_control_edit_image'
+  | 'ip_adapter_control_inpaint'
+  | 'ip_adapter_control_union_image'
+  | 'ip_adapter_control_union_edit_image'
+  | 'ip_adapter_control_union_inpaint'
   | 'layer_decomposition'
   | 'text_to_video'
   | 'image_to_video'
+  | 'single_image_to_video'
   | 'video_to_video'
+  | 'text_to_video_with_audio'
+  | 'first_last_frame_to_video_with_audio'
+  | 'reference_to_video_with_audio'
+  | 'image_to_video_with_audio'
+  | 'video_to_video_with_audio'
   | 'video_inpaint'
   | 'video_outpaint'
   | 'reference_to_video'
+  | 'in_context_to_video'
   | 'control_to_video'
   | 'control_video_to_video'
   | 'video_color_edit'
@@ -43,6 +67,7 @@ export type StudioMode =
   | 'data_conversion'
   | 'graph_utility'
   | 'text_to_3d'
+  | 'image_to_3d'
   | 'image_adjustment'
   | 'image_filter'
   | 'image_crop'
@@ -61,6 +86,16 @@ export type StudioMode =
   | 'advanced_workflow';
 
 export type StudioModelType =
+  | 'AnimaModularPipeline'
+  | 'HeliosModularPipeline'
+  | 'HeliosPyramidModularPipeline'
+  | 'HeliosPyramidDistilledModularPipeline'
+  | 'HunyuanVideo15ModularPipeline'
+  | 'Cosmos3DistilledModularPipeline'
+  | 'Cosmos3OmniModularPipeline'
+  | 'MiniMaxH3ModularPipeline'
+  | 'WanAnimate2ModularPipeline'
+  | 'WanAnimate2DistilledModularPipeline'
   | 'DDPMPipeline'
   | 'DDIMPipeline'
   | 'ConsistencyModelPipeline'
@@ -72,7 +107,9 @@ export type StudioModelType =
   | 'HuggingFaceImageTextToTextModel'
   | 'HuggingFaceAnyToAnyModel'
   | 'HuggingFaceSpeechRecognitionModel'
+  | 'HuggingFaceCTCSpeechRecognitionModel'
   | 'ZImageModularPipeline'
+  | 'StableDiffusionXLModularPipeline'
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
   | 'QwenImageEditPlusModularPipeline'
@@ -84,14 +121,19 @@ export type StudioModelType =
   | 'ZImageInpaintPipeline'
   | 'WanVACEPipeline'
   | 'WanVideoPipeline'
+  | 'WanModularPipeline'
   | 'WanImageToVideoPipeline'
   | 'WanTI2VPipeline'
   | 'Wan22Pipeline'
+  | 'Wan22ModularPipeline'
+  | 'Wan22Image2VideoModularPipeline'
   | 'WanAnimatePipeline'
   | 'WanImage2VideoModularPipeline'
   | 'LTXVideoPipeline'
+  | 'LTXModularPipeline'
   | 'LTXI2VLongMultiPromptPipeline'
   | 'LTX2ConditionPipeline'
+  | 'LTX2ModularPipeline'
   | 'LTX2Pipeline'
   | 'HunyuanVideoFramepackPipeline'
   | 'StableVideoDiffusionPipeline'
@@ -110,6 +152,7 @@ export type StudioModelType =
   | 'SanaImageToVideoPipeline'
   | 'AceStepAudioPipeline'
   | 'StableAudioPipeline'
+  | 'MiniMaxMusic3ModularPipeline'
   | 'LongCatAudioDiTPipeline'
   | 'AudioLDM2Pipeline'
   | 'ShapEPipeline'
@@ -123,6 +166,10 @@ export type StudioModelType =
   | 'FluxCannyPipeline'
   | 'FluxReduxPipeline'
   | 'Flux2KleinPipeline'
+  | 'FluxModularPipeline'
+  | 'FluxKontextModularPipeline'
+  | 'Flux2KleinModularPipeline'
+  | 'Flux2KleinBaseModularPipeline'
   | 'Flux2KleinInpaintPipeline'
   | 'StableDiffusionXLPipeline'
   | 'StableDiffusionXLTurboPipeline'
@@ -151,6 +198,7 @@ export type StudioModelType =
   | 'CogView3PlusPipeline'
   | 'CogView4Pipeline'
   | 'ErnieImagePipeline'
+  | 'ErnieImageModularPipeline'
   | 'GlmImagePipeline'
   | 'JoyImageEditPipeline'
   | 'JoyImageEditPlusPipeline'
@@ -163,7 +211,8 @@ export type StudioModelType =
   | 'BuiltinDataOperation'
   | 'BuiltinImageOperation'
   | 'BuiltinVideoOperation'
-  | 'SpandrelVideoUpscale';
+  | 'SpandrelVideoUpscale'
+  | 'SpandrelImageUpscale';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -324,6 +373,12 @@ export type RunReadinessIssue = {
   severity: RunReadinessIssueSeverity;
   nodeId?: string;
   repoId?: string;
+  /** Exact Hugging Face Hub snapshot request; never a direct file URL. */
+  installOptions?: {
+    revision?: string;
+    files?: string[];
+    repair?: boolean;
+  };
   modelPath?: string;
   message: string;
   details?: string;
@@ -447,8 +502,14 @@ export type StudioGraphRole =
   | 'outpaintCanvas'
   | 'qwenInpaint'
   | 'prompt'
+  | 'beforeEncode'
+  | 'textEncode'
+  | 'duration'
+  | 'conditionEncode'
+  | 'referenceEncode'
   | 'denoise'
   | 'decode'
+  | 'afterDecode'
   | 'preview'
   | 'loadImage'
   | 'controlPreprocessor'
@@ -457,9 +518,13 @@ export type StudioGraphRole =
   | 'applyMask'
   | 'imageEmbeddings'
   | 'imageEncode'
+  | 'videoEncode'
   | 'loadLastImage'
   | 'controlnetModel'
   | 'controlnet'
+  | 'loadIPAdapterImage'
+  | 'guider'
+  | 'ipAdapter'
   | 'diffusersQuantization'
   | 'diffusersRecipe'
   | 'wanPipeline'
@@ -510,6 +575,7 @@ export type StudioGraphRole =
   | 'transformersAnyToAnyGenerate'
   | 'transformersTextPreview'
   | 'imageOperation'
+  | 'imageUpscaler'
   | 'videoOperation'
   | 'videoUpscaler';
 
@@ -704,11 +770,30 @@ export type UserBlockDefinition = {
   exposedParams: AppModeInput[];
   createdAt: number;
   updatedAt: number;
+  origin?: {
+    schemaVersion: 1;
+    kind: 'hugging_face_cluster_fork' | 'hugging_face_hub_import';
+    provider: 'diffusers' | 'transformers';
+    definitionId?: string;
+    libraryRevision?: string;
+    contentHash?: string;
+    pipelineClass?: string;
+    workflowId?: string;
+    rootBlockDefinitionId?: string;
+    blockContractHash?: string;
+    compositionKind?: 'modiff_graph_snapshot' | 'reviewed_modular_blocks';
+    admissionId?: string;
+    repo?: string;
+    revision?: string;
+    importedAt: number;
+  };
 };
 
 export type StudioFormState = {
   mode: StudioMode;
   modelType: StudioModelType;
+  /** Exact reviewed same-pipeline artifact selected by a registered Block instance. */
+  modelRepo?: string;
   prompt: string;
   negativePrompt: string;
   aspectRatio: StudioAspectRatio;
@@ -748,6 +833,9 @@ export type StudioFormState = {
   referenceVideos: string[];
   maskImage: string;
   controlImage: string;
+  controlMode: number;
+  ipAdapterImage: string;
+  ipAdapterScale: number;
   sourceVideo: string;
   maskVideo: string;
   controlVideo: string;
@@ -839,6 +927,8 @@ export type StudioExecutionSpec = {
   bindings: Array<[StudioGraphRole, string, string]>;
   autoFields: string[];
   actions: [];
+  /** Declared non-media sink roles retained for execution/audit side effects. */
+  auxiliaryTerminalRoles?: StudioGraphRole[];
   contentHash: string;
 };
 
@@ -878,6 +968,7 @@ export type StudioTaskTemplateContract = {
   defaultRepo: string;
   loaderRepositories: string[];
   requiredMedia: StudioTaskTemplateRequiredMedia[];
+  auxiliaryTerminalRoles: StudioGraphRole[];
   output: {
     mediaKind: 'image' | 'video' | 'audio' | 'json';
     role: StudioGraphRole;
@@ -889,11 +980,24 @@ export type StudioTaskTemplateContract = {
   contentHash: string;
 };
 
+export type StudioArtifactSelection = {
+  modes: StudioMode[];
+  repo: string;
+  revision: string;
+  downloadFiles: string[];
+  label?: string;
+};
+
 export type StudioModelProfile = {
   modelType: StudioModelType;
   label: string;
   displayName: string;
   family:
+    | 'Anima'
+    | 'Helios'
+    | 'HunyuanVideo 1.5'
+    | 'Cosmos 3'
+    | 'MiniMax H3'
     | 'Z-Image'
     | 'Qwen Image'
     | 'Wan Video'
@@ -907,6 +1011,7 @@ export type StudioModelProfile = {
     | 'SANA Video'
     | 'ACE Audio'
     | 'Stable Audio'
+    | 'MiniMax Music 3'
     | 'LongCat AudioDiT'
     | 'AudioLDM2'
     | 'Shap-E'
@@ -940,6 +1045,7 @@ export type StudioModelProfile = {
     | 'SmolVLM'
     | 'Janus'
     | 'Whisper'
+    | 'Wav2Vec2'
     | 'Built-in Media'
     | 'Real-ESRGAN';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
@@ -1015,6 +1121,13 @@ export type StudioModelProfile = {
   supportTier?: 'supported' | 'experimental';
   pipelineClasses?: string[];
   revisionCandidates?: string[];
+  artifactSelections?: StudioArtifactSelection[];
+  modeDefaults?: Partial<
+    Record<
+      StudioMode,
+      Partial<Pick<StudioFormState, 'width' | 'height' | 'steps' | 'guidanceScale' | 'numFrames' | 'fps'>>
+    >
+  >;
   executionProfiles?: StudioExecutionProfile[];
   studioExecutionSpecs?: StudioExecutionSpec[];
   studioExecutionSpecSchemaVersion?: 1;
@@ -1051,14 +1164,15 @@ export type StudioModelRequirement = {
   label: string;
   repo: string;
   revision?: string;
-  kind: 'base' | 'controlnet' | 't2i_adapter' | 'adapter';
+  downloadFiles?: string[];
+  kind: 'base' | 'controlnet' | 't2i_adapter' | 'adapter' | 'safety_checker';
   requiredForModes?: StudioMode[];
   description?: string;
 };
 
 export type StudioModeRequirement = {
   modelRequirements?: StudioModelRequirement[];
-  requiredImages?: Array<'referenceImages' | 'lastImage' | 'maskImage' | 'controlImage'>;
+  requiredImages?: Array<'referenceImages' | 'lastImage' | 'maskImage' | 'controlImage' | 'ipAdapterImage'>;
   requiredVideos?: Array<
     'sourceVideo' | 'referenceVideos' | 'maskVideo' | 'controlVideo' | 'poseVideo' | 'faceVideo' | 'backgroundVideo'
   >;
@@ -1069,6 +1183,7 @@ export type StudioModeRequirement = {
       | 'lastImage'
       | 'maskImage'
       | 'controlImage'
+      | 'ipAdapterImage'
       | 'sourceVideo'
       | 'referenceVideos'
       | 'maskVideo'
@@ -1271,6 +1386,7 @@ export type StudioTemplateInputFormField =
   | 'referenceImages'
   | 'maskImage'
   | 'controlImage'
+  | 'ipAdapterImage'
   | 'sourceVideo'
   | 'maskVideo'
   | 'controlVideo'

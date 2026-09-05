@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { exactCurrentResourceRouteFromManifest, loadCurrentResourceRouteManifest } from './current-resource-routes.mjs';
 import { classifyResourceRecipeReleaseLanes } from './release-qualification-policy.mjs';
-import { validateResourceQualificationEvidence } from './resource-qualification.mjs';
+import { resourceRecipeHash, validateResourceQualificationEvidence } from './resource-qualification.mjs';
+import { retainedRouteResourceProofs, validateRouteResourceWorkloadReceipt } from './route-resource-qualification.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -12,6 +14,13 @@ const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(CLIENT_ROOT,
 const CONTRACT_PATH = join(BACKEND_ROOT, 'data', 'release-contract.v1.json');
 const HISTORY_PATH = join(BACKEND_ROOT, 'data', 'auto_resource', 'history.json');
 const RECEIPT_REGISTRY_PATH = join(BACKEND_ROOT, 'data', 'qualification', 'release', 'resource-run-receipts.v1.json');
+const ROUTE_RECEIPT_REGISTRY_PATH = join(
+  BACKEND_ROOT,
+  'data',
+  'qualification',
+  'release',
+  'route-resource-workload-receipts.v1.json',
+);
 const OUTPUT_PATH = join(BACKEND_ROOT, 'data', 'qualification', 'release', 'resource-recipe-coverage.v1.json');
 const CHECK = process.argv.includes('--check');
 
@@ -89,6 +98,7 @@ for (const template of contract.templates) {
 }
 
 const evidenceByKey = new Map();
+const routeQualificationsByKey = new Map();
 for (const entry of Object.values(history.entries ?? {})) {
   if (!validMeasurement(entry)) continue;
   const key = recipeKey(entry.candidate);
@@ -111,6 +121,8 @@ for (const entry of Object.values(history.entries ?? {})) {
       templateId: null,
       proofPath: null,
       proofSha256: null,
+      bindingStatus: 'legacy_unbound',
+      routeBindingHash: null,
     });
   }
 }
@@ -133,17 +145,47 @@ if (existsSync(RECEIPT_REGISTRY_PATH)) {
     if (!existsSync(baselinePath)) {
       throw new Error(`Locked-template baseline proof is missing for ${receipt.templateId}.`);
     }
+    const proof = readJson(proofPath);
     const validated = validateResourceQualificationEvidence({
-      provenance: readJson(proofPath),
+      provenance: proof,
       baseline: readJson(baselinePath),
       contractTemplate,
     });
     if (
       recipeKey(validated.recipe) !== recipeKey(receipt) ||
       validated.workloadHash !== receipt.workloadHash ||
-      validated.modelRevision !== receipt.modelRevision
+      validated.baselineWorkloadHash !== receipt.baselineWorkloadHash ||
+      validated.modelRevision !== receipt.modelRevision ||
+      receipt.taskId !== proof.taskId ||
+      receipt.capturedAt !== proof.capturedAt ||
+      receipt.graphHash !== (proof.graphHash ?? proof.graph?.hash) ||
+      receipt.runtimeFingerprint !== proof.runtimeFingerprint ||
+      receipt.outputHash !== (proof.mediaHash ?? proof.output?.items?.[0]?.decodedSha256) ||
+      receipt.executionDurationSeconds !== proof.execution?.elapsedSeconds ||
+      receipt.peakMemoryBytes !== proof.execution?.peakMemoryBytes ||
+      (receipt.recipe !== undefined && canonicalJson(receipt.recipe) !== canonicalJson(validated.recipe))
     ) {
       throw new Error(`Resource qualification receipt does not match its retained proof: ${receipt.templateId}.`);
+    }
+    if (receipt.recipeHash !== undefined && receipt.recipeHash !== resourceRecipeHash(validated.recipe)) {
+      throw new Error(`Resource qualification receipt has a stale recipe hash: ${receipt.templateId}.`);
+    }
+    const expectedBindingStatus = validated.routeBinding ? 'exact_route_bound' : 'legacy_unbound';
+    if (validated.routeBinding) {
+      if (
+        receipt.bindingStatus !== expectedBindingStatus ||
+        receipt.routeBindingHash !== validated.routeBindingHash ||
+        canonicalJson(receipt.routeBinding) !== canonicalJson(validated.routeBinding) ||
+        receipt.modelSetHash !== validated.modelSetHash
+      ) {
+        throw new Error(`Resource qualification receipt has a stale route binding: ${receipt.templateId}.`);
+      }
+    } else if (
+      (receipt.bindingStatus !== undefined && receipt.bindingStatus !== 'legacy_unbound') ||
+      (receipt.routeBinding !== undefined && receipt.routeBinding !== null) ||
+      (receipt.routeBindingHash !== undefined && receipt.routeBindingHash !== null)
+    ) {
+      throw new Error(`Legacy resource qualification receipt claims an exact route binding: ${receipt.templateId}.`);
     }
     const key = recipeKey(receipt);
     const capturedAt = Date.parse(receipt.capturedAt);
@@ -166,8 +208,58 @@ if (existsSync(RECEIPT_REGISTRY_PATH)) {
         templateId: receipt.templateId,
         proofPath: receipt.proofPath,
         proofSha256: receipt.proofSha256,
+        bindingStatus: expectedBindingStatus,
+        routeBindingHash: validated.routeBindingHash,
+        modelSetHash: validated.modelSetHash,
       });
     }
+  }
+}
+
+// Exact route qualification is deliberately independent of standard-template
+// family coverage. A family receipt may retain an exact binding for audit, but
+// it cannot enter this lane. Only two retained current-V2 route proofs do.
+if (existsSync(ROUTE_RECEIPT_REGISTRY_PATH)) {
+  const registry = readJson(ROUTE_RECEIPT_REGISTRY_PATH);
+  if (
+    registry?.schemaVersion !== 1 ||
+    registry?.format !== 'modiff.route-resource-workload-receipt-registry.v1' ||
+    typeof registry?.generatedAt !== 'string' ||
+    !registry.generatedAt ||
+    !Array.isArray(registry?.receipts) ||
+    Object.keys(registry).sort().join('|') !== ['format', 'generatedAt', 'receipts', 'schemaVersion'].sort().join('|')
+  ) {
+    throw new Error('Route resource workload receipt registry is malformed.');
+  }
+  const currentRouteManifest = loadCurrentResourceRouteManifest({ backendRoot: BACKEND_ROOT });
+  for (const receipt of registry.receipts) {
+    const proofs = retainedRouteResourceProofs({ receipt, backendRoot: BACKEND_ROOT });
+    const currentRoute = exactCurrentResourceRouteFromManifest(receipt.routeBinding, currentRouteManifest);
+    const validated = validateRouteResourceWorkloadReceipt({ receipt, proofs, currentRoute });
+    const routeKey = `${validated.routeBindingHash}|${validated.recipeHash}`;
+    if (routeQualificationsByKey.has(routeKey)) {
+      throw new Error('Route resource workload receipt registry contains a duplicate exact route recipe.');
+    }
+    const evidenceProofs = receipt.proofs.map((proofReceipt) => ({ ...proofReceipt }));
+    routeQualificationsByKey.set(routeKey, {
+      routeBinding: validated.routeBinding,
+      routeBindingHash: validated.routeBindingHash,
+      workloadHash: validated.workloadHash,
+      modelSetHash: validated.modelSetHash,
+      recipe: { ...validated.recipe, recipeHash: validated.recipeHash },
+      runtimeContract: validated.runtimeContract,
+      evidence: {
+        bindingStatus: 'exact_route_bound_two_proof',
+        evidenceSource: 'route_resource_two_live_proofs',
+        proofCount: 2,
+        taskIds: evidenceProofs.map((proof) => proof.taskId),
+        lastSuccessAt: evidenceProofs
+          .map((proof) => proof.capturedAt)
+          .sort()
+          .at(-1),
+        proofs: evidenceProofs,
+      },
+    });
   }
 }
 
@@ -196,6 +288,9 @@ const rawRecipes = [...requiredByKey.values()]
             templateId: evidence.templateId,
             proofPath: evidence.proofPath,
             proofSha256: evidence.proofSha256,
+            bindingStatus: evidence.bindingStatus,
+            routeBindingHash: evidence.routeBindingHash,
+            modelSetHash: evidence.modelSetHash ?? null,
           }
         : null,
     };
@@ -206,7 +301,13 @@ const { recipes, coverage: coverageByReleaseLane } = classifyResourceRecipeRelea
   releaseEligibleTemplateIds,
 );
 const qualified = recipes.filter((recipe) => recipe.status === 'qualified').length;
-const latestSuccessAt = Math.max(0, ...recipes.map((recipe) => Date.parse(recipe.evidence?.lastSuccessAt ?? '') || 0));
+const latestSuccessAt = Math.max(
+  0,
+  ...recipes.map((recipe) => Date.parse(recipe.evidence?.lastSuccessAt ?? '') || 0),
+  ...[...routeQualificationsByKey.values()].map(
+    (qualification) => Date.parse(qualification.evidence.lastSuccessAt) || 0,
+  ),
+);
 const body = {
   schemaVersion: 1,
   format: 'modiff.resource-recipe-coverage.v1',
@@ -220,6 +321,11 @@ const body = {
     byReleaseLane: coverageByReleaseLane,
   },
   recipes,
+  routeQualifications: [...routeQualificationsByKey.values()].sort((left, right) => {
+    const leftKey = `${left.routeBindingHash}|${left.recipe.recipeHash}`;
+    const rightKey = `${right.routeBindingHash}|${right.recipe.recipeHash}`;
+    return leftKey.localeCompare(rightKey);
+  }),
 };
 const report = { ...body, reportHash: reportHash(body) };
 const serialized = canonicalJson(report);

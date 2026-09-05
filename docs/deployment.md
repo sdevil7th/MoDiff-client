@@ -54,6 +54,16 @@ model and LoRA receipt against the running app's cache. Also verify every
 byte-pinned default image, video, and audio input from the installed Template
 Gallery payload:
 
+Restart the backend worker after the final backend-source edit and before the
+first qualification run. Confirm that `/health` includes a non-null
+`backend_source` process-start claim. Do not edit `main.py`, `pyproject.toml`,
+or files below `modiff/`, `modules/`, or `utils/` while a qualification run is
+active. The capture runner compares the worker's startup claim with complete
+before/after inventories and will reject a missing or stale worker claim;
+restarting only the frontend is insufficient. Historical V2 receipts without
+this worker attestation require a fresh run and cannot be upgraded from the
+current checkout.
+
 ```bash
 npm run release:qualification:run -- \
   --dry-run \

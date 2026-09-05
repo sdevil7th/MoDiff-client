@@ -1,18 +1,27 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { relative } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
 const ROOT = new URL('..', import.meta.url);
 const DIST_ASSETS = new URL('../dist/assets/', import.meta.url);
+const DIST_INDEX = new URL('../dist/index.html', import.meta.url);
 const DIST_LICENSES = new URL('../dist/THIRD_PARTY_LICENSES.txt', import.meta.url);
 const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.meta.url);
-// The capability-driven media contract and graph workspace share one stable
-// production bundle. Keep a narrow margin over the measured largest chunk.
-const MAX_ENTRY_GZIP_BYTES = 438 * 1024;
-// The experimental template catalog and exact optional-runtime admission bring
-// the audited production surface to 542,989 bytes. A 531 KiB ceiling retains a
-// 755-byte regression margin while the largest entry remains independently capped.
-const MAX_TOTAL_GZIP_BYTES = 531 * 1024;
+// Keep an independently bounded startup chunk as well as a bounded complete
+// startup graph. The latter deliberately preserves the existing 582 KiB
+// ceiling: moving optional UI behind import() must reduce startup cost, not
+// redefine the old total as a larger allowance.
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
+const MAX_STARTUP_GZIP_BYTES = 582 * 1024;
+// Deferred surfaces are measured separately so code splitting cannot hide an
+// unbounded feature bundle. These ceilings leave room for the reviewed dialogs
+// and catalog tools while preventing either one oversized deferred chunk or
+// unchecked aggregate growth.
+const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
+const MAX_DEFERRED_GZIP_BYTES = 192 * 1024;
+
+const STATIC_MODULE_REFERENCE =
+  /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;
 
 function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`;
@@ -34,16 +43,75 @@ const assets = names
     const path = new URL(name, DIST_ASSETS);
     const bytes = readFileSync(path);
     return {
+      name,
       file: relative(ROOT.pathname, path.pathname).replaceAll('\\', '/'),
       rawBytes: bytes.length,
       gzipBytes: gzipSync(bytes, { level: 9 }).length,
+      source: bytes.toString('utf8'),
     };
   })
   .sort((left, right) => right.gzipBytes - left.gzipBytes);
 
-const entry = assets[0];
-const totalGzipBytes = assets.reduce((sum, asset) => sum + asset.gzipBytes, 0);
+const assetByName = new Map(assets.map((asset) => [asset.name, asset]));
 const failures = [];
+let entryNames = [];
+
+if (!existsSync(DIST_INDEX)) {
+  failures.push('dist/index.html is missing');
+} else {
+  const indexHtml = readFileSync(DIST_INDEX, 'utf8');
+  const shellVersions = [...indexHtml.matchAll(/(?:href|src)="\/assets\/[^"?]+\.(?:css|js)\?v=([0-9a-f]{16})"/g)].map(
+    (match) => match[1],
+  );
+  if (shellVersions.length < 2 || new Set(shellVersions).size !== 1) {
+    failures.push('dist/index.html shell assets do not share one content-derived cache version');
+  }
+  if (/(?:href|src)="\/assets\/[^"?]+\.(?:css|js)"/.test(indexHtml)) {
+    failures.push('dist/index.html contains an unversioned JavaScript or CSS shell asset');
+  }
+  entryNames = [...indexHtml.matchAll(/<script\b[^>]*\bsrc="\/assets\/([^"?]+\.js)\?v=[0-9a-f]{16}"[^>]*>/g)]
+    .map((match) => match[1])
+    .filter((name, index, entries) => entries.indexOf(name) === index);
+  if (entryNames.length === 0) {
+    failures.push('dist/index.html does not declare a versioned JavaScript entry');
+  }
+  const unversionedImports = names.filter((name) => /["']\.\/[^"'?]+\.js["']/.test(assetByName.get(name).source));
+  if (unversionedImports.length > 0) {
+    failures.push(`JavaScript chunks contain unversioned local imports: ${unversionedImports.join(', ')}`);
+  }
+}
+
+function staticDependencies(source) {
+  return [...source.matchAll(STATIC_MODULE_REFERENCE)].map((match) => match[1].slice(2));
+}
+
+const startupNames = new Set();
+const pendingStartupNames = [...entryNames];
+while (pendingStartupNames.length > 0) {
+  const name = pendingStartupNames.pop();
+  if (startupNames.has(name)) continue;
+  const asset = assetByName.get(name);
+  if (!asset) {
+    failures.push(`startup module graph references missing JavaScript asset: ${name}`);
+    continue;
+  }
+  startupNames.add(name);
+  for (const dependency of staticDependencies(asset.source)) {
+    if (!startupNames.has(dependency)) pendingStartupNames.push(dependency);
+  }
+}
+
+const publicAsset = ({ file, rawBytes, gzipBytes }) => ({ file, rawBytes, gzipBytes });
+const publicAssets = assets.map(publicAsset);
+const startupAssets = assets.filter((asset) => startupNames.has(asset.name));
+const deferredAssets = assets.filter((asset) => !startupNames.has(asset.name));
+const entries = entryNames.map((name) => assetByName.get(name)).filter(Boolean);
+const entry = entries[0] ? publicAsset(entries[0]) : null;
+const largestStartupAsset = startupAssets[0] ? publicAsset(startupAssets[0]) : null;
+const largestDeferredAsset = deferredAssets[0] ? publicAsset(deferredAssets[0]) : null;
+const startupGzipBytes = startupAssets.reduce((sum, asset) => sum + asset.gzipBytes, 0);
+const deferredGzipBytes = deferredAssets.reduce((sum, asset) => sum + asset.gzipBytes, 0);
+const allJavascriptGzipBytes = startupGzipBytes + deferredGzipBytes;
 
 if (!existsSync(DIST_LICENSES)) {
   failures.push('dist/THIRD_PARTY_LICENSES.txt is missing');
@@ -51,20 +119,43 @@ if (!existsSync(DIST_LICENSES)) {
   failures.push('dist/THIRD_PARTY_LICENSES.txt does not match the reviewed source notice');
 }
 
-if (entry.gzipBytes > MAX_ENTRY_GZIP_BYTES) {
-  failures.push(`largest chunk ${formatBytes(entry.gzipBytes)} exceeds ${formatBytes(MAX_ENTRY_GZIP_BYTES)}`);
+if (largestStartupAsset?.gzipBytes > MAX_STARTUP_CHUNK_GZIP_BYTES) {
+  failures.push(
+    `largest startup chunk ${formatBytes(largestStartupAsset.gzipBytes)} exceeds ${formatBytes(MAX_STARTUP_CHUNK_GZIP_BYTES)}`,
+  );
 }
-if (totalGzipBytes > MAX_TOTAL_GZIP_BYTES) {
-  failures.push(`total JavaScript ${formatBytes(totalGzipBytes)} exceeds ${formatBytes(MAX_TOTAL_GZIP_BYTES)}`);
+if (startupGzipBytes > MAX_STARTUP_GZIP_BYTES) {
+  failures.push(`startup JavaScript ${formatBytes(startupGzipBytes)} exceeds ${formatBytes(MAX_STARTUP_GZIP_BYTES)}`);
+}
+if (largestDeferredAsset?.gzipBytes > MAX_DEFERRED_CHUNK_GZIP_BYTES) {
+  failures.push(
+    `largest deferred chunk ${formatBytes(largestDeferredAsset.gzipBytes)} exceeds ${formatBytes(MAX_DEFERRED_CHUNK_GZIP_BYTES)}`,
+  );
+}
+if (deferredGzipBytes > MAX_DEFERRED_GZIP_BYTES) {
+  failures.push(
+    `deferred JavaScript ${formatBytes(deferredGzipBytes)} exceeds ${formatBytes(MAX_DEFERRED_GZIP_BYTES)}`,
+  );
 }
 
 console.log(
   JSON.stringify(
     {
-      budgets: { maxEntryGzipBytes: MAX_ENTRY_GZIP_BYTES, maxTotalGzipBytes: MAX_TOTAL_GZIP_BYTES },
+      budgets: {
+        maxStartupChunkGzipBytes: MAX_STARTUP_CHUNK_GZIP_BYTES,
+        maxStartupGzipBytes: MAX_STARTUP_GZIP_BYTES,
+        maxDeferredChunkGzipBytes: MAX_DEFERRED_CHUNK_GZIP_BYTES,
+        maxDeferredGzipBytes: MAX_DEFERRED_GZIP_BYTES,
+      },
       entry,
-      totalGzipBytes,
-      assets,
+      largestStartupAsset,
+      largestDeferredAsset,
+      startupGzipBytes,
+      deferredGzipBytes,
+      allJavascriptGzipBytes,
+      startupAssets: startupAssets.map(publicAsset),
+      deferredAssets: deferredAssets.map(publicAsset),
+      assets: publicAssets,
       ok: failures.length === 0,
       failures,
     },

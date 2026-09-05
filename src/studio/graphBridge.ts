@@ -6,7 +6,6 @@ import {
   waitForSettledGraphFinalization,
   type SettledGraphFinalization,
 } from './graphFinalization';
-import type { FieldProps } from '../components/NodeContent';
 import { useFlowStore, type CustomNodeType, type FlowStore } from '../stores/useFlowStore';
 import { type NodeData, type NodeParams, useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -22,7 +21,10 @@ import {
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
-import fieldAction from '../utils/fieldAction';
+import fieldAction, {
+  buildFieldActionProps as buildFieldProps,
+  suppressNextAutomaticSignalFieldAction,
+} from '../utils/fieldAction';
 import { setManagedGraphSchemaMutationHandler } from '../utils/managedGraphSchemaMutation';
 import {
   QWEN_CONTROLNET_REQUIREMENT,
@@ -138,8 +140,14 @@ const NODE_KEYS = {
   outpaintCanvas: QWEN_OUTPAINT_CANVAS_NODE_KEY,
   qwenInpaint: QWEN_INPAINT_GENERATE_NODE_KEY,
   prompt: 'modules.ModularDiffusers.EncodePrompt',
+  beforeEncode: 'modules.ModularDiffusers.WorkflowMiniMaxH3BeforeEncode',
+  textEncode: 'modules.ModularDiffusers.WorkflowIdeogram4TextEncode',
+  duration: 'modules.ModularDiffusers.WorkflowLTX25Duration',
+  conditionEncode: 'modules.ModularDiffusers.WorkflowLTX25ConditionEncode',
+  referenceEncode: 'modules.ModularDiffusers.WorkflowLTX25ReferenceEncode',
   denoise: 'modules.ModularDiffusers.Denoise',
   decode: 'modules.ModularDiffusers.DecodeLatents',
+  afterDecode: 'modules.ModularDiffusers.WorkflowCosmos3OmniAfterDecode',
   preview: 'modules.Image.Preview',
   loadImage: 'modules.Image.Load',
   controlPreprocessor: 'modules.ImageFilters.Canny',
@@ -148,9 +156,13 @@ const NODE_KEYS = {
   applyMask: 'modules.Image.ApplyMask',
   imageEmbeddings: 'modules.ModularDiffusers.ImageEmbeddings',
   imageEncode: 'modules.ModularDiffusers.ImageEncode',
+  videoEncode: 'modules.ModularDiffusers.WorkflowVideoEncode',
   loadLastImage: 'modules.Image.Load',
   controlnetModel: 'modules.ModularDiffusers.AutoModelLoader',
   controlnet: 'modules.ModularDiffusers.Controlnet',
+  loadIPAdapterImage: 'modules.Image.Load',
+  guider: 'modules.ModularDiffusers.Guider',
+  ipAdapter: 'modules.ModularDiffusers.IPAdapter',
   diffusersQuantization: 'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
   diffusersRecipe: 'modules.DiffusersRuntime.DiffusersExecutionRecipe',
   wanPipeline: 'modules.DiffusersVideo.LoadPipeline',
@@ -201,6 +213,7 @@ const NODE_KEYS = {
   transformersAnyToAnyGenerate: 'modules.HuggingFaceTransformers.GenerateAnyToAny',
   transformersTextPreview: 'modules.Primitive.DataViewer',
   imageOperation: 'modules.ImageOperations.ProcessImage',
+  imageUpscaler: 'modules.Spandrel.Upscaler',
   videoOperation: 'modules.Video.ProcessVideo',
   videoUpscaler: 'modules.Video.UpscaleVideo',
 } satisfies Record<StudioGraphRole, string>;
@@ -215,8 +228,14 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   outpaintCanvas: { x: -520, y: 300 },
   qwenInpaint: { x: -120, y: -80 },
   prompt: { x: -160, y: -160 },
+  beforeEncode: { x: -360, y: 220 },
+  textEncode: { x: 20, y: -160 },
+  duration: { x: 100, y: 220 },
+  conditionEncode: { x: 260, y: 300 },
+  referenceEncode: { x: 420, y: 380 },
   denoise: { x: 220, y: -80 },
   decode: { x: 600, y: -80 },
+  afterDecode: { x: 800, y: 220 },
   preview: { x: 980, y: -80 },
   loadImage: { x: -520, y: 300 },
   controlPreprocessor: { x: -520, y: 300 },
@@ -225,9 +244,13 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   applyMask: { x: -160, y: 430 },
   imageEmbeddings: { x: -160, y: 300 },
   imageEncode: { x: -160, y: 300 },
+  videoEncode: { x: -160, y: 300 },
   loadLastImage: { x: -520, y: 560 },
   controlnetModel: { x: -160, y: 520 },
   controlnet: { x: 220, y: 300 },
+  loadIPAdapterImage: { x: -520, y: 720 },
+  guider: { x: -160, y: 720 },
+  ipAdapter: { x: 220, y: 600 },
   diffusersQuantization: { x: -1280, y: -80 },
   diffusersRecipe: { x: -900, y: -80 },
   wanPipeline: { x: -520, y: -80 },
@@ -278,6 +301,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   transformersAnyToAnyGenerate: { x: -240, y: -80 },
   transformersTextPreview: { x: 240, y: -80 },
   imageOperation: { x: -160, y: -80 },
+  imageUpscaler: { x: -140, y: -80 },
   videoOperation: { x: -220, y: -80 },
   videoUpscaler: { x: -220, y: -80 },
 };
@@ -398,6 +422,7 @@ function usesStaticExecutionSpecGraph(
   return (
     executionSpec?.executionPath.startsWith('direct-huggingface-') ||
     executionSpec?.executionPath.startsWith('builtin-') ||
+    executionSpec?.executionPath.startsWith('spandrel-') ||
     false
   );
 }
@@ -1381,6 +1406,23 @@ function bindingFinalizationSchemaProofMatches(binding: StudioGraphBinding, form
   );
 }
 
+function controlledFinalizationProofMatchesCurrentGraph(binding: StudioGraphBinding) {
+  const proof = binding.finalizationProof;
+  const controlled = binding.controlled;
+  return Boolean(
+    controlled &&
+    !binding.finalizationProofInvalid &&
+    proof?.schemaVersion === 3 &&
+    controlled.schemaVersion === 1 &&
+    controlled.contractRevision === proof.contractRevision &&
+    proof.canonicalizationVersion === 1 &&
+    proof.contractIds.length === controlled.contractIds.length &&
+    proof.contractIds.every((id, index) => id === controlled.contractIds[index]) &&
+    proof.fieldSchemaHash === controlledGraphFieldSchemaHash(binding) &&
+    proof.managedGraphHash === controlledGraphHash(binding, controlled.contractIds),
+  );
+}
+
 function bindingFinalizationProofMatches(binding: StudioGraphBinding, form: StudioFormState) {
   const proof = binding.finalizationProof;
   const plannedForm = resolveGraphResourceForm(form);
@@ -1418,59 +1460,6 @@ function findParamKey(nodeId: string | undefined, candidates: string[]) {
   const node = getNode(nodeId);
   if (!node) return undefined;
   return candidates.find((candidate) => node.data.params[candidate]);
-}
-
-function fieldTypeForParam(param: NodeParams | undefined) {
-  if (!param) return 'text';
-  const display = param.isInput ? 'input' : param.display || '';
-  const type = Array.isArray(param.type) ? (param.type[0] ?? 'string') : (param.type ?? 'string');
-  const dataType = String(type).toLowerCase();
-
-  if (display === 'input' || display === 'output') return display;
-  if (dataType.startsWith('bool')) return display === 'checkbox' || display === 'icontoggle' ? display : 'switch';
-  if (display.startsWith('ui_')) return display;
-  if (dataType === 'text' || display.startsWith('text')) return 'textarea';
-  if (display) return display;
-  if (param.options && typeof param.options === 'object') return 'select';
-  if (dataType.startsWith('int') || dataType === 'float' || dataType === 'number')
-    return display === 'slider' ? 'slider' : 'number';
-  return 'text';
-}
-
-function buildFieldProps(nodeId: string, fieldKey: string): FieldProps | null {
-  const node = getNode(nodeId);
-  const param = getNodeParam(nodeId, fieldKey);
-  if (!node || !param) return null;
-
-  const display = param.isInput ? 'input' : param.display || '';
-  const dataType = String(Array.isArray(param.type) ? (param.type[0] ?? 'string') : (param.type ?? 'string'));
-
-  return {
-    nodeId,
-    fieldKey,
-    label: param.label ?? fieldKey.charAt(0).toUpperCase() + fieldKey.slice(1),
-    display,
-    disabled: param.disabled || false,
-    hidden: param.hidden || false,
-    style: param.style || {},
-    value: param.value ?? param.default,
-    default: param.default,
-    options: param.options || [],
-    optionsSource: param.optionsSource || {},
-    dataType,
-    fieldType: fieldTypeForParam(param),
-    updateStore: (paramKey, value, key) => useFlowStore.getState().setParam(nodeId, paramKey, value, key),
-    module: node.data.module,
-    action: node.data.action,
-    isConnected: display === 'input' || display === 'output' ? param.isConnected || false : undefined,
-    onChange: param.onChange,
-    min: param.min,
-    max: param.max,
-    step: param.step,
-    fieldOptions: param.fieldOptions || {},
-    onSignal: param.onSignal,
-    signal: param.signal,
-  };
 }
 
 function setParamIfPresent(
@@ -3000,6 +2989,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
   if (role === 'audioOperation') return 'Audio.Process';
   if (role === 'dataOperation') return 'Data.Process';
   if (role === 'imageOperation') return 'Image.Process';
+  if (role === 'imageUpscaler') return 'Image.Upscale';
   if (role === 'videoOperation') return 'Video.Process';
   if (role === 'videoUpscaler') return 'Video.Upscale';
   return null;
@@ -3061,7 +3051,9 @@ async function applyManagedInputSignal(nodeId: string | undefined, candidates: s
   const props = buildFieldProps(nodeId, fieldKey);
   if (!props?.onSignal) return;
 
-  useFlowStore.getState().setParam(nodeId, fieldKey, { direction: 'input', value }, 'signal');
+  const signal = { direction: 'input' as const, value };
+  suppressNextAutomaticSignalFieldAction(nodeId, fieldKey, signal);
+  useFlowStore.getState().setParam(nodeId, fieldKey, signal, 'signal');
   await fieldAction(props, value, 'onSignal');
 }
 
@@ -3383,8 +3375,21 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   if (bindsMotionAdapter && !motionAdapter?.revision) {
     throw new Error('The reviewed motion adapter requires an immutable revision.');
   }
+  const controlnetRequirement = auxiliaryRequirements.find((requirement) => requirement.kind === 'controlnet');
+  const ipAdapterRequirement = auxiliaryRequirements.find((requirement) => requirement.id === 'sdxl-ip-adapter');
+  const bindsReviewedControlnet = spec.bindings.some(([, , source]) => source === 'controlnetRepo');
+  const bindsReviewedIPAdapter = spec.bindings.some(([, , source]) => source === 'ipAdapterRepo');
+  if (bindsReviewedControlnet && !controlnetRequirement?.revision) {
+    throw new Error('The reviewed ControlNet component requires one immutable dependency.');
+  }
+  if (bindsReviewedIPAdapter && !ipAdapterRequirement?.revision) {
+    throw new Error('The reviewed IP-Adapter component requires one immutable dependency.');
+  }
+  const unionControlnet = form.mode.includes('control_union');
+  const hasDistinctLastImage = spec.bindings.some(([, , source]) => source === 'lastImage');
   const values: Record<string, unknown> = {
     ...form,
+    referenceImages: hasDistinctLastImage ? form.referenceImages.slice(0, 1) : [...form.referenceImages],
     quantizationMode,
     quantizedComponents: ['transformer'],
     deviceMapNone: 'none',
@@ -3404,9 +3409,35 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     artifact: audioTemplateBaseModel ?? spec.defaultRepo,
     defaultRevision: defaultRevision[0],
     pipelineClass: spec.pipelineClass,
+    executionProfileId: spec.executionProfileId,
+    defaultWorkflow: 'default',
+    workflowId:
+      (
+        {
+          image_to_image: 'img2img',
+          text_to_video: 'text2video',
+          image_to_video: 'image2video',
+          video_to_video: 'video2video',
+        } as Partial<Record<StudioMode, string>>
+      )[spec.mode] ?? 'text2image',
+    semanticGeneratorBlock: 'semantic_generator',
+    workflowTextEncoderBlock: 'text_encoder',
+    workflowImageEncoderBlock: 'vae_encoder',
+    workflowDenoiseBlock: 'denoise',
+    workflowDecodeBlock: 'decode',
     kind: auxiliaryRequirement?.kind,
     repo: auxiliaryRequirement ? { source: 'hub', value: auxiliaryRequirement.repo } : undefined,
     revision: auxiliaryRequirement?.revision,
+    controlnetKind: controlnetRequirement?.kind,
+    controlnetRepo: controlnetRequirement ? { source: 'hub', value: controlnetRequirement.repo } : undefined,
+    controlnetRevision: controlnetRequirement?.revision,
+    controlnetWeightVariant: unionControlnet ? '' : 'fp16',
+    controlnetRouteVariant: unionControlnet ? 'union' : 'ordinary',
+    controlnetLoadClass: unionControlnet ? 'ControlNetUnionModel' : '',
+    ipAdapterRepo: ipAdapterRequirement ? { source: 'hub', value: ipAdapterRequirement.repo } : undefined,
+    ipAdapterRevision: ipAdapterRequirement?.revision,
+    ipAdapterWeightName: ipAdapterRequirement ? 'sdxl_models/ip-adapter_sdxl.safetensors' : undefined,
+    classifierFreeGuidance: 'ClassifierFreeGuidance',
     motionAdapterRepo: motionAdapter ? { source: 'hub', value: motionAdapter.repo } : undefined,
     motionAdapterRevision: motionAdapter?.revision,
     wanVaceRevision: WAN_VACE_REVISION,
@@ -3431,9 +3462,19 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     translate: 'translate',
     anyToAnyText: 'text',
     anyToAnyImage: 'image',
+    maxNewTokens: 256,
+    minNewTokens: 0,
+    doSample: false,
+    temperature: 1,
+    topP: 1,
+    topK: 50,
+    numBeams: 1,
+    repetitionPenalty: 1,
+    useChatTemplate: true,
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
     sampleRate16000: 16000,
     sampleRate24000: 24000,
+    sampleRate44100: 44100,
     sampleRate48000: 48000,
     numWaveforms1: 1,
     numWaveforms3: 3,
@@ -3441,10 +3482,13 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     targetPeakMinus1: -1,
     maxAdjustment12: 12,
     boundaryFade001: 0.01,
-    lastImage: '',
+    lastImage: hasDistinctLastImage ? (form.referenceImages[1] ?? '') : '',
     poseVideo: '',
     faceVideo: '',
     backgroundVideo: '',
+    promptRef: '人物动作的参考视频',
+    segmentFrameLength: 81,
+    previousConditioningFrames: 1,
     segmentFrameLength77: 77,
     previousConditioningFrames1: 1,
     motionEncodeBatchSize1: 1,
@@ -3544,7 +3588,9 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     if (executionSpec) applyExecutionSpecValues(binding, form, executionSpec);
     setParamIfPresent(prompt, ['prompt'], form.prompt);
     setParamIfPresent(prompt, ['negative_prompt'], form.negativePrompt);
-    setParamIfPresent(loadImage, ['file'], form.referenceImages);
+    const firstFrame = binding.nodes.loadLastImage ? form.referenceImages.slice(0, 1) : form.referenceImages;
+    setParamIfPresent(loadImage, ['file'], firstFrame);
+    setParamIfPresent(binding.nodes.loadLastImage, ['file'], form.referenceImages[1] ?? '');
     setParamIfPresent(loadImage, ['alpha_channel'], form.alphaMode);
     // The ending frame remains workflow-local and distinct from this source.
     for (const nodeId of [imageEmbeddings, imageEncode, denoise]) {
@@ -3958,18 +4004,34 @@ export function markStudioGraphDefinitionPending(nodeId?: string, paramKeys?: re
 export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore.getState().form) {
   const plannedForm = resolveGraphResourceForm(form);
   const studio = useStudioStore.getState();
-  const binding = studio.graphBinding;
+  let binding = studio.graphBinding;
   if (!binding) return false;
   if (!bindingMatchesForm(binding, plannedForm)) {
-    setStudioGraphDefinitionPending(binding, 'Graph changed.');
-    return false;
+    const canMigrateControlledFingerprint = Boolean(
+      binding.controlled &&
+      binding.mode === plannedForm.mode &&
+      binding.modelType === plannedForm.modelType &&
+      executionSpecForBinding(binding) !== null &&
+      controlledFinalizationProofMatchesCurrentGraph(binding),
+    );
+    if (!canMigrateControlledFingerprint) {
+      setStudioGraphDefinitionPending(binding, 'Graph changed.');
+      return false;
+    }
+    binding = {
+      ...binding,
+      fingerprint: bindingFingerprint(plannedForm),
+      updatedAt: Date.now(),
+    };
+    studio.setGraphBinding(binding);
   }
+  const sealedControlledGraphStillIntact = controlledFinalizationProofMatchesCurrentGraph(binding);
   syncManagedFormControlAliases(plannedForm, binding);
   applyFormValues(binding, plannedForm);
   if (binding.controlled) {
     const context = captureWorkflowOperationContext();
     const pendingHash = controlledDefinitionGraphHashes.get(context.workflowTabId);
-    if (binding.finalizationProofInvalid || !pendingHash) {
+    if (binding.finalizationProofInvalid || (!pendingHash && !sealedControlledGraphStillIntact)) {
       setStudioGraphDefinitionPending(binding, 'Graph pending.');
       return false;
     }
@@ -3979,7 +4041,8 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
       finalizationProofInvalid: undefined,
     });
     if (
-      controlledGraphHash(updatedBinding, updatedBinding.controlled?.contractIds ?? []) !== pendingHash ||
+      (pendingHash &&
+        controlledGraphHash(updatedBinding, updatedBinding.controlled?.contractIds ?? []) !== pendingHash) ||
       !controlledGraphSemanticsAreValid(updatedBinding, plannedForm)
     ) {
       setStudioGraphDefinitionPending(updatedBinding, 'Graph pending.');
@@ -4865,6 +4928,13 @@ export async function ensureStudioGraphReadyForRun(
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
 ) {
   assertWorkflowOperationContext(context);
+  if (form.resourceMode === 'expert') {
+    // Manual mode runs the graph exactly as authored. Keep editable field
+    // values synchronized, but do not require a managed Studio finalization
+    // receipt—the backend owns execution validation and error reporting.
+    if (useStudioStore.getState().graphBinding) syncStudioGraphValues(form);
+    return;
+  }
   const validatedAutoPlan = form.resourceMode === 'auto' ? useStudioStore.getState().autoResourcePlan : null;
   if (!useStudioStore.getState().graphBinding) {
     throw new Error('Create or open a managed workflow before running it.');

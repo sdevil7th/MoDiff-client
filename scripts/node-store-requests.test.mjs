@@ -41,7 +41,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
@@ -336,6 +336,98 @@ test('model capabilities keep schema-v2 runnable modes exact and ignore experime
   );
 });
 
+test('model capabilities reject untrusted Expert install repositories and file paths', async () => {
+  const capability = {
+    modelType: 'LTX2ConditionPipeline',
+    modes: ['text_to_video'],
+    runnableModes: ['text_to_video'],
+    defaultRepo: 'Lightricks/LTX-2',
+    artifactLabel: 'LTX-2 exact snapshot',
+    executionStatus: 'expert_only',
+    revisionCandidates: ['47da56e2ad66ce4125a9922b4a8826bf407f9d0a'],
+    downloadFiles: ['model_index.json', 'transformer/diffusion_pytorch_model-00001-of-00008.safetensors'],
+  };
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.equal(state.studioModelCapabilities[0].defaultRepo, capability.defaultRepo);
+  assert.deepEqual(state.studioModelCapabilities[0].downloadFiles, capability.downloadFiles);
+
+  for (const malformed of [
+    { ...capability, defaultRepo: 'https://huggingface.co/Lightricks/LTX-2' },
+    { ...capability, artifactLabel: 42 },
+    { ...capability, downloadFiles: ['../model.safetensors'] },
+    { ...capability, downloadFiles: ['/tmp/model.safetensors'] },
+  ]) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [malformed] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.equal(state.studioModelCapabilities[0].defaultRepo, capability.defaultRepo);
+    assert.deepEqual(state.studioModelCapabilities[0].downloadFiles, capability.downloadFiles);
+  }
+});
+
+test('model capabilities preserve exact per-workflow artifact selections and reject ambiguous mappings', async () => {
+  const capability = {
+    modelType: 'WanImage2VideoModularPipeline',
+    modes: ['single_image_to_video', 'image_to_video'],
+    runnableModes: ['single_image_to_video', 'image_to_video'],
+    defaultRepo: 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+    artifactSelections: [
+      {
+        modes: ['single_image_to_video'],
+        repo: 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+        revision: 'b184e23a8a16b20f108f727c902e769e873ffc73',
+        downloadFiles: ['model_index.json', 'transformer/model.safetensors'],
+        label: 'Wan I2V 480P',
+      },
+      {
+        modes: ['image_to_video'],
+        repo: 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers',
+        revision: '17c30769b1e0b5dcaa1799b117bf20a9c31f59d7',
+        downloadFiles: ['model_index.json', 'transformer/model.safetensors'],
+        label: 'Wan FLF2V 720P',
+      },
+    ],
+    modeDefaults: {
+      image_to_video: { steps: 12, guidanceScale: 1 },
+    },
+  };
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [capability] });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  let state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].artifactSelections, capability.artifactSelections);
+  assert.deepEqual(state.studioModelCapabilities[0].modeDefaults, capability.modeDefaults);
+
+  for (const artifactSelections of [
+    [capability.artifactSelections[0], { ...capability.artifactSelections[1], modes: ['single_image_to_video'] }],
+    [{ ...capability.artifactSelections[0], revision: 'main' }],
+    [{ ...capability.artifactSelections[0], downloadFiles: ['../model.safetensors'] }],
+  ]) {
+    globalThis.fetch = async () =>
+      jsonResponse({ schemaVersion: 2, capabilities: [{ ...capability, artifactSelections }] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.deepEqual(state.studioModelCapabilities[0].artifactSelections, capability.artifactSelections);
+  }
+
+  for (const modeDefaults of [
+    { text_to_video: { steps: 12 } },
+    { image_to_video: { steps: 0 } },
+    { image_to_video: { schedulerShift: 7 } },
+  ]) {
+    globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities: [{ ...capability, modeDefaults }] });
+    await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+    state = nodesStoreModule.useNodesStore.getState();
+    assert.equal(state.discoveryRequests.capabilities.status, 'error');
+    assert.deepEqual(state.studioModelCapabilities[0].modeDefaults, capability.modeDefaults);
+  }
+});
+
 test('model capabilities admit only the reviewed installed Spandrel artifact kind', async () => {
   const capability = {
     modelType: 'SpandrelVideoUpscale',
@@ -529,6 +621,21 @@ test('Studio execution specifications require an exact versioned capability cont
   assert.equal(state.studioExecutionSpecInvalid, false);
   assert.equal(state.studioModelCapabilities[0].studioExecutionSpecs[0].contentHash, spec.contentHash);
 
+  const auxiliarySpec = fluxExecutionSpec({
+    roles: [...spec.roles, ['afterDecode', 'modules.ModularDiffusers.WorkflowCosmos3OmniAfterDecode', 980, 240]],
+    edges: [...spec.edges, ['diffusersImageGenerate', 'images', 'afterDecode', 'state_in']],
+    auxiliaryTerminalRoles: ['afterDecode'],
+  });
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [fluxCapability(auxiliarySpec)],
+    });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].studioExecutionSpecs[0].auxiliaryTerminalRoles, ['afterDecode']);
+
   const pinnedSpec = fluxExecutionSpec({
     bindings: [...spec.bindings, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
   });
@@ -555,6 +662,10 @@ test('Studio execution specifications require an exact versioned capability cont
     fluxCapability({ ...spec, edges: [['missingRole', 'output', 'preview', 'image']] }),
     fluxCapability({ ...spec, edges: spec.edges.slice(0, 1) }),
     fluxCapability({ ...spec, bindings: [['diffusersImagePipeline', 'model_id', 'unreviewedSource']] }),
+    fluxCapability(fluxExecutionSpec({ auxiliaryTerminalRoles: ['missingRole'] })),
+    fluxCapability(fluxExecutionSpec({ auxiliaryTerminalRoles: ['diffusersImageGenerate'] })),
+    fluxCapability(fluxExecutionSpec({ auxiliaryTerminalRoles: ['preview'] })),
+    fluxCapability(fluxExecutionSpec({ auxiliaryTerminalRoles: ['preview', 'preview'] })),
     { ...fluxCapability(spec), studioExecutionSpecs: [spec, spec] },
     (() => {
       const defaultRepo = 'x'.repeat(513);
@@ -589,6 +700,85 @@ test('Studio execution specifications require an exact versioned capability cont
   assert.equal(state.studioExecutionSpecInvalid, true);
 });
 
+test('schema-v2 runnable modes admit exact internal Modular Diffusers routes omitted from legacy modes', async () => {
+  const directProfile = fluxExecutionProfile('ZImageModularPipeline', 'z-image:direct');
+  const modularProfile = {
+    ...fluxExecutionProfile('ZImageModularPipeline', 'z-image:modular', 'Tongyi-MAI/Z-Image-Turbo'),
+    modes: ['modular_text_to_image'],
+    loader_module: 'modules.ModularDiffusers',
+    loader_action: 'ModelsLoader',
+    execution_path: 'modular-diffusers',
+    backend_path: 'modules.ModularDiffusers.ModelsLoader',
+    pipeline_class: 'ZImageModularPipeline',
+  };
+  const baseSpec = fluxExecutionSpec();
+  const modularSpec = fluxExecutionSpec({
+    id: 'z-image:modular-text-to-image:v1',
+    modelType: 'ZImageModularPipeline',
+    mode: 'modular_text_to_image',
+    executionProfileId: modularProfile.id,
+    loaderModule: modularProfile.loader_module,
+    loaderAction: modularProfile.loader_action,
+    executionPath: modularProfile.execution_path,
+    pipelineClass: modularProfile.pipeline_class,
+    defaultRepo: modularProfile.default_repo,
+    roles: baseSpec.roles.map((role) =>
+      role[0] === 'diffusersImagePipeline'
+        ? ['diffusersImagePipeline', 'modules.ModularDiffusers.ModelsLoader', role[2], role[3]]
+        : role,
+    ),
+  });
+  globalThis.fetch = async () =>
+    jsonResponse({
+      schemaVersion: 2,
+      capabilities: [
+        {
+          modelType: 'ZImageModularPipeline',
+          // Schema-v1 clients only understand this presentation route.
+          modes: ['text_to_image'],
+          // Schema-v2 clients must use this exact execution set.
+          runnableModes: ['text_to_image', 'modular_text_to_image'],
+          executionProfiles: [directProfile, modularProfile],
+          studioExecutionSpecSchemaVersion: 1,
+          studioExecutionSpecModes: ['modular_text_to_image'],
+          studioExecutionSpecs: [modularSpec],
+        },
+      ],
+    });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.deepEqual(state.studioModelCapabilities[0].modes, ['text_to_image']);
+  assert.deepEqual(state.studioModelCapabilities[0].runnableModes, ['text_to_image', 'modular_text_to_image']);
+  assert.equal(state.studioModelCapabilities[0].studioExecutionSpecs[0].id, modularSpec.id);
+});
+
+test('FLUX Modular Cluster capabilities retain their exact reviewed execution surfaces', async () => {
+  const capabilities = [
+    ['FluxModularPipeline', ['text_to_image', 'image_to_image']],
+    ['FluxKontextModularPipeline', ['text_to_image', 'edit_image']],
+    ['Flux2KleinModularPipeline', ['text_to_image', 'edit_image']],
+    ['Flux2KleinBaseModularPipeline', ['text_to_image', 'edit_image']],
+  ].map(([modelType, modes]) => ({ modelType, modes, runnableModes: modes }));
+  globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities });
+
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+
+  const state = nodesStoreModule.useNodesStore.getState();
+  assert.equal(state.discoveryRequests.capabilities.status, 'success');
+  assert.equal(state.studioModelCapabilitiesAuthoritative, true);
+  assert.deepEqual(
+    state.studioModelCapabilities.map((capability) => capability.modelType),
+    capabilities.map((capability) => capability.modelType),
+  );
+  assert.deepEqual(
+    state.studioModelCapabilities.map((capability) => capability.runnableModes),
+    capabilities.map((capability) => capability.runnableModes),
+  );
+});
+
 test('task-template contracts generate stable planning skeletons from the exact execution spec', async () => {
   const spec = fluxExecutionSpec();
   const contract = fluxTaskTemplateContract(spec);
@@ -608,7 +798,7 @@ test('task-template contracts generate stable planning skeletons from the exact 
   await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
   const state = nodesStoreModule.useNodesStore.getState();
   assert.equal(state.discoveryRequests.capabilities.status, 'success');
-  assert.deepEqual(state.studioTaskTemplateContracts, [contract]);
+  assert.deepEqual(state.studioTaskTemplateContracts, [{ ...contract, auxiliaryTerminalRoles: [] }]);
   assert.deepEqual(state.studioTaskTemplateSkeletons, [
     {
       id: contract.id,
@@ -724,7 +914,8 @@ test('optional runtime contracts normalize exact nested profile metadata', async
     const issue = runReadinessModule
       .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
       .find((item) => item.code === 'optional_runtime_required');
-    assert.equal(issue?.blocking, true, 'the exact backend snake-case required contract must block Run');
+    assert.equal(issue?.blocking, false, 'the exact backend snake-case contract must remain a manual warning');
+    assert.equal(issue?.severity, 'warning');
   } finally {
     studioStoreModule.useStudioStore.setState({ form: previousForm });
     flowStoreModule.useFlowStore.setState({ nodes: previousFlow.nodes, edges: previousFlow.edges });
@@ -1026,7 +1217,10 @@ test('capability identity and runnable execution-profile coverage are exact', as
     [{ ...baseCapability, modes: ['text_to_image', 'text_to_image'] }],
     [{ ...baseCapability, runnableModes: ['text_to_image', 'text_to_image'] }],
     [{ ...baseCapability, modes: Array(100_000).fill('text_to_image') }],
-    Array.from({ length: 129 }, (_, index) => ({ modelType: `FuturePipeline${index}`, modes: [] })),
+    Array.from({ length: nodesStoreModule.MAX_STUDIO_MODEL_CAPABILITIES + 1 }, (_, index) => ({
+      modelType: `FuturePipeline${index}`,
+      modes: [],
+    })),
   ]) {
     globalThis.fetch = async () => jsonResponse({ schemaVersion: 2, capabilities });
     await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
@@ -1089,7 +1283,7 @@ test('a malformed capability refresh preserves the last authoritative runtime co
   assert.deepEqual(state.studioModelCapabilities, previous);
 });
 
-test('a late malformed capability response cannot replace the newest valid contract', async () => {
+test('concurrent model-capability callers join one authoritative discovery request', async () => {
   const calls = [];
   globalThis.fetch = () => {
     const call = deferred();
@@ -1098,7 +1292,8 @@ test('a late malformed capability response cannot replace the newest valid contr
   };
   const first = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
   const second = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
-  calls[1].resolve(
+  assert.equal(calls.length, 1);
+  calls[0].resolve(
     jsonResponse({
       schemaVersion: 2,
       capabilities: [
@@ -1106,9 +1301,7 @@ test('a late malformed capability response cannot replace the newest valid contr
       ],
     }),
   );
-  await second;
-  calls[0].resolve(jsonResponse({ schemaVersion: 2, capabilities: 'malformed' }));
-  await first;
+  await Promise.all([first, second]);
   const state = nodesStoreModule.useNodesStore.getState();
   assert.equal(state.discoveryRequests.capabilities.status, 'success');
   assert.equal(state.studioModelCapabilitiesAuthoritative, true);
@@ -1189,6 +1382,58 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
     }),
   );
   assert.equal(optionalRuntimesModule.optionalRuntimeBlockState(required, activeCatalog), null);
+  const compositeCatalog = optionalRuntimesModule.parseOptionalRuntimeCatalog(
+    optionalRuntimeCatalog({
+      profiles: [
+        {
+          ...optionalRuntimeCatalog().profiles[0],
+          contractState: 'qualified',
+          cutoverReady: true,
+          status: 'present_unqualified',
+          overlayStatus: 'active',
+        },
+        {
+          ...optionalRuntimeCatalog().profiles[0],
+          id: 'gallery-media-opencv-5.0.0.93-pyav-18.1.0',
+          label: 'Transformers main + PEFT + media codecs',
+          specDigest: `sha256:${'3'.repeat(64)}`,
+          contractState: 'qualified',
+          cutoverReady: true,
+          status: 'present_unqualified',
+          overlayStatus: 'active',
+          satisfiesProfiles: [
+            {
+              id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+              specDigest: `sha256:${'1'.repeat(64)}`,
+            },
+          ],
+        },
+      ],
+      overlay: {
+        processLoadStatus: 'active',
+        state: { activeEnvironmentId: 'runtime-1-12345678', previousEnvironmentId: null },
+        environments: [
+          {
+            id: 'runtime-1-12345678',
+            status: 'ready',
+            active: true,
+            specs: [
+              {
+                kind: 'optional_runtime',
+                id: 'gallery-media-opencv-5.0.0.93-pyav-18.1.0',
+                specDigest: `sha256:${'3'.repeat(64)}`,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(
+    optionalRuntimesModule.optionalRuntimeBlockState(required, compositeCatalog),
+    null,
+    'an exact active composite alias must satisfy its reviewed profile requirement',
+  );
   const mixedPins = runtimeRequirement({
     delivery: 'optional_overlay',
     requiredNow: true,
@@ -1366,6 +1611,53 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
     'runtime-2-12345678',
   );
   assert.equal(actionable.previousEnvironmentId, 'runtime-1-abcdef12');
+  assert.equal(actionable.activeEnvironmentId, null);
+  const repairedAfterBaseRollback = optionalRuntimesModule.parseOptionalRuntimeCatalog(
+    optionalRuntimeCatalog({
+      profiles: actionable.profiles,
+      overlay: {
+        processLoadStatus: 'base',
+        state: {
+          activeEnvironmentId: null,
+          previousEnvironmentId: 'runtime-1-abcdef12',
+        },
+        environments: [
+          {
+            id: 'runtime-1-abcdef12',
+            status: 'staged_unchecked',
+            active: false,
+            specs: [
+              {
+                kind: 'optional_runtime',
+                id: actionable.profiles[0].id,
+                specDigest: actionable.profiles[0].specDigest,
+              },
+            ],
+          },
+          {
+            id: 'runtime-2-12345678',
+            status: 'staged_unchecked',
+            active: false,
+            specs: [
+              {
+                kind: 'optional_runtime',
+                id: actionable.profiles[0].id,
+                specDigest: actionable.profiles[0].specDigest,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(
+    optionalRuntimesModule.stagedOptionalRuntimeEnvironment(
+      repairedAfterBaseRollback,
+      repairedAfterBaseRollback.profiles[0],
+    ),
+    undefined,
+    'an unchecked staged environment must be repaired or revalidated before activation',
+  );
   assert.equal(
     optionalRuntimesModule.stagedOptionalRuntimeEnvironment(
       optionalRuntimesModule.parseOptionalRuntimeCatalog(
@@ -1724,8 +2016,10 @@ test('one discovery failure does not suppress successful sibling endpoints', asy
 });
 
 test('an older backend without optional-runtime status keeps critical discovery usable', async () => {
+  const requests = [];
   globalThis.fetch = async (url) => {
     const path = String(url);
+    requests.push(path);
     if (path.endsWith('/nodes')) return jsonResponse({ instance: 'legacy', nodes: {} });
     if (path.includes('/runtime/optional-runtimes')) return jsonResponse({ message: 'Not found' }, 404);
     if (path.includes('/runtime/status')) return jsonResponse({ ready: true, packages: {} });
@@ -1743,6 +2037,12 @@ test('an older backend without optional-runtime status keeps critical discovery 
   }
   assert.equal(state.discoveryRequests.optionalRuntimes.status, 'error');
   assert.equal(state.optionalRuntimeCatalog, null);
+  assert.ok(
+    requests.some((request) => request.includes('/hf_cache?compact=1&refresh=false')),
+    'startup must consume the backend index instead of forcing a second Hub cache scan',
+  );
+  assert.ok(requests.some((request) => request.includes('/local_models?refresh=false')));
+  assert.ok(requests.some((request) => request.includes('/model_cache/diagnostics?refresh=false')));
 });
 
 test('invalid node registry responses report an error and a later retry recovers', async () => {
@@ -1843,9 +2143,10 @@ test('model-install failures use the typed HTTP contract and update progress onc
   };
 
   await assert.rejects(
-    nodesStoreModule.useNodesStore
-      .getState()
-      .installHfModel('gated/model', null, { files: ['weights/model.safetensors'] }),
+    nodesStoreModule.useNodesStore.getState().installHfModel('gated/model', null, {
+      revision: '0123456789abcdef0123456789abcdef01234567',
+      files: ['weights/model.safetensors'],
+    }),
     (error) => {
       assert.equal(error.kind, 'http');
       assert.equal(error.status, 403);
@@ -1859,6 +2160,7 @@ test('model-install failures use the typed HTTP contract and update progress onc
   assert.equal(request.init.headers['Content-Type'], 'application/json');
   assert.deepEqual(JSON.parse(request.init.body), {
     repo_id: 'gated/model',
+    revision: '0123456789abcdef0123456789abcdef01234567',
     files: ['weights/model.safetensors'],
   });
 
@@ -1886,4 +2188,79 @@ test('model-install access failures infer the stable code from legacy error text
   const progress = nodesStoreModule.useNodesStore.getState().hfDownloadProgress['legacy/gated-model'];
   assert.equal(progress.status, 'error');
   assert.equal(progress.error_code, 'huggingface_access_required');
+});
+
+test('an interrupted model-install request recovers from the supervisor download status', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    if (String(url).endsWith('/hf_download')) throw new TypeError('Failed to fetch');
+    if (String(url).endsWith('/hf_download/status')) {
+      return jsonResponse({
+        error: false,
+        downloads: [
+          {
+            repo_id: 'public/large-model',
+            revision: '0123456789abcdef0123456789abcdef01234567',
+            task_id: 'download-1',
+            status: 'downloading',
+            progress: 0.64,
+          },
+        ],
+      });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const result = await nodesStoreModule.useNodesStore.getState().installHfModel('public/large-model', null, {
+    revision: '0123456789abcdef0123456789abcdef01234567',
+    files: ['transformer/model.safetensors'],
+  });
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /\/hf_download$/);
+  assert.match(calls[1].url, /\/hf_download\/status$/);
+  assert.deepEqual(result, {
+    error: false,
+    repo_id: 'public/large-model',
+    task_id: 'download-1',
+  });
+  assert.equal(
+    nodesStoreModule.useNodesStore.getState().hfDownloadProgress['public/large-model'].status,
+    'downloading',
+  );
+});
+
+test('download reconciliation clears stale active installs and refreshes model indexes', async () => {
+  let refreshCount = 0;
+  nodesStoreModule.useNodesStore.setState({
+    hfDownloadProgress: {
+      'public/completed-model': {
+        repo_id: 'public/completed-model',
+        task_id: 'download-complete-offline',
+        status: 'downloading',
+        progress: 0.99,
+      },
+      'public/retained-error': {
+        repo_id: 'public/retained-error',
+        status: 'error',
+        error: 'Retain terminal history.',
+      },
+    },
+    refreshModelIndexes: async (refresh) => {
+      assert.equal(refresh, true);
+      refreshCount += 1;
+    },
+  });
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /\/hf_download\/status$/);
+    return jsonResponse({ error: false, downloads: [] });
+  };
+
+  await nodesStoreModule.useNodesStore.getState().reconcileHfDownloadProgress();
+
+  const progress = nodesStoreModule.useNodesStore.getState().hfDownloadProgress;
+  assert.equal(progress['public/completed-model'], undefined);
+  assert.equal(progress['public/retained-error'].status, 'error');
+  assert.equal(refreshCount, 1);
 });

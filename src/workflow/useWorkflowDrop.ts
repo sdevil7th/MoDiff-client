@@ -1,19 +1,50 @@
 import { type Edge, type Viewport } from '@xyflow/react';
 import { useCallback } from 'react';
+import { nanoid } from 'nanoid';
 
 import config from '../../app.config';
 import { useStudioStore } from '../stores/useStudioStore';
 import type { NodeData } from '../stores/useNodeStore';
-import type { CustomNodeType } from '../stores/useFlowStore';
+import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { WorkflowTab, WorkflowTabSnapshot } from '../studio/types';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
 import { createNodeFromRegistry } from './nodeFactory';
-import { createUserBlockNode, USER_BLOCK_DRAG_PREFIX } from '../studio/userBlocks';
+import {
+  createUserBlockNode,
+  expandedUserBlockAtPosition,
+  placeNodeInsideExpandedUserBlock,
+  USER_BLOCK_DRAG_PREFIX,
+} from '../studio/userBlocks';
 import { useUserBlockStore } from '../stores/useUserBlockStore';
 import { formatRequestError, requestJson, RequestError } from '../utils/requestJson';
 import { isRecord } from '../studio/outputContracts';
 import { parseWorkflowPackage } from '../studio/workflowPackage';
+import { expandedHuggingFaceClusterAtPosition } from '../studio/huggingFaceClusterGraph';
+import { customizeHuggingFaceClusterInstance } from '../studio/huggingFaceClusterCustomization';
+import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
+import { useHuggingFaceModularConditionalStore } from '../stores/useHuggingFaceModularConditionalStore';
+import {
+  buildHuggingFaceCatalogSections,
+  huggingFaceCatalogEntryForPipeline,
+  huggingFaceClusterDisplayLabel,
+} from '../studio/huggingFaceNodeCatalog';
+import { HUGGING_FACE_CLUSTER_DRAG_PREFIX } from '../studio/huggingFaceClusterDrag';
+import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
+import { createBlockInstanceV2 } from '../studio/blockSchemaV2';
+import { createBlockRootNodeV2 } from '../studio/blockRuntimeV2';
+import { USER_BLOCK_V2_DRAG_PREFIX } from '../studio/blockPersistenceV2';
+import {
+  beginBlockInsertionFeedbackV2,
+  cancelBlockInsertionFeedbackV2,
+  completeBlockInsertionFeedbackV2,
+} from '../studio/blockInsertionFeedbackV2';
+import {
+  createModularDiffusersCatalogFragmentV2,
+  createModularDiffusersCatalogNode,
+  HUGGING_FACE_MODULAR_BLOCK_DRAG_PREFIX,
+  modularDiffusersCatalogEntryHasDescendants,
+} from '../studio/modularDiffusersBlockInsertion';
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
 type CreateWorkflowTab = (
@@ -135,12 +166,173 @@ export function useWorkflowDrop({
         y: event.clientY,
       });
 
+      if (data.startsWith(HUGGING_FACE_MODULAR_BLOCK_DRAG_PREFIX)) {
+        const entryId = data.slice(HUGGING_FACE_MODULAR_BLOCK_DRAG_PREFIX.length);
+        const library = useHuggingFaceNodeLibraryStore.getState().library;
+        const modularSnapshot = useHuggingFaceModularConditionalStore.getState().snapshot;
+        const entry = library
+          ? buildHuggingFaceCatalogSections(library, modularSnapshot)
+              .flatMap(({ entries }) => entries)
+              .find((candidate) => candidate.id === entryId && candidate.kind === 'block')
+          : undefined;
+        if (!library || !entry) {
+          showGraphImportError('The exact Modular Diffusers block is no longer available. Reload the node catalog.');
+          return;
+        }
+        try {
+          prepareWorkflowForManualInsertion();
+          const flow = useFlowStore.getState();
+          const nodeById = new Map(flow.nodes.map((node) => [node.id, node]));
+          const absolutePosition = (node: CustomNodeType) => {
+            let x = node.position.x;
+            let y = node.position.y;
+            let parentId = node.parentId;
+            const visited = new Set([node.id]);
+            while (parentId) {
+              if (visited.has(parentId)) break;
+              visited.add(parentId);
+              const parent = nodeById.get(parentId);
+              if (!parent) break;
+              x += parent.position.x;
+              y += parent.position.y;
+              parentId = parent.parentId;
+            }
+            return { x, y };
+          };
+          const target = flow.nodes
+            .filter((node) => {
+              if (node.data.blockInstanceV2?.presentation.expanded === true) return true;
+              return (
+                node.data.blockProjectionContainer === true && node.data.blockProjectionContainerExpanded !== false
+              );
+            })
+            .filter((node) => {
+              const width = node.measured?.width ?? node.width ?? 360;
+              const height = node.measured?.height ?? node.height ?? 320;
+              const origin = absolutePosition(node);
+              return (
+                position.x >= origin.x &&
+                position.x <= origin.x + width &&
+                position.y >= origin.y &&
+                position.y <= origin.y + height
+              );
+            })
+            .sort((left, right) => (right.data.blockProjectionDepth ?? -1) - (left.data.blockProjectionDepth ?? -1))[0];
+          const owner = target
+            ? flow.nodes.find((node) => node.id === (target.data.blockProjectionOwnerId ?? target.id))
+            : undefined;
+          const contextualEntry = huggingFaceCatalogEntryForPipeline(
+            entry,
+            owner?.data.blockInstanceV2?.definitionSnapshot.source.pipelineClass,
+          );
+          const modularNode = modularDiffusersCatalogEntryHasDescendants(contextualEntry, library, modularSnapshot)
+            ? createModularDiffusersCatalogFragmentV2(
+                contextualEntry,
+                library,
+                nodesRegistry,
+                position,
+                modularSnapshot,
+              )
+            : createModularDiffusersCatalogNode(contextualEntry, library, nodesRegistry, position, modularSnapshot);
+          addNode(modularNode);
+          if (target) {
+            const ownerId = target.data.blockProjectionOwnerId ?? target.id;
+            if (modularNode.data.blockInstanceV2) {
+              flow.adoptBlockFragmentIntoBlockV2(modularNode.id, ownerId, target.data.blockProjectionNodeId);
+            } else {
+              flow.adoptNodeIntoBlockV2(modularNode.id, ownerId, target.data.blockProjectionNodeId);
+            }
+          }
+        } catch (error) {
+          showGraphImportError(formatRequestError(error, 'Could not add the Modular Diffusers block.'));
+        }
+        return;
+      }
+
+      if (data.startsWith(HUGGING_FACE_CLUSTER_DRAG_PREFIX)) {
+        const definitionId = data.slice(HUGGING_FACE_CLUSTER_DRAG_PREFIX.length);
+        const definition = useHuggingFaceNodeLibraryStore
+          .getState()
+          .library?.definitions.find((candidate) => candidate.id === definitionId);
+        if (!definition) {
+          showGraphImportError('The exact reviewed Cluster Node is no longer available. Reload the node catalog.');
+          return;
+        }
+        const flow = useFlowStore.getState();
+        if (
+          expandedUserBlockAtPosition(flow.nodes, position) ||
+          expandedHuggingFaceClusterAtPosition(flow.nodes, position)
+        ) {
+          enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested. The Cluster Node was added top-level.', {
+            variant: 'warning',
+            autoHideDuration: 3000,
+          });
+        }
+        prepareWorkflowForManualInsertion();
+        const pendingId = beginBlockInsertionFeedbackV2(huggingFaceClusterDisplayLabel(definition), position);
+        try {
+          const { createHuggingFaceClusterForGraph } = await import('../studio/huggingFaceClusterInsertion');
+          const cluster = await createHuggingFaceClusterForGraph(definition, position, useStudioStore.getState().form, {
+            insert: false,
+          });
+          completeBlockInsertionFeedbackV2(pendingId, cluster);
+        } catch (error) {
+          showGraphImportError(formatRequestError(error, 'Could not add the Cluster Node.'));
+        } finally {
+          cancelBlockInsertionFeedbackV2(pendingId);
+        }
+        return;
+      }
+
+      if (data.startsWith(USER_BLOCK_V2_DRAG_PREFIX)) {
+        const definitionId = data.slice(USER_BLOCK_V2_DRAG_PREFIX.length);
+        const definition = useUserBlockStore
+          .getState()
+          .blockDefinitionsV2.find((item) => item.definitionId === definitionId);
+        if (!definition) {
+          showGraphImportError('Block V2 definition is no longer available.');
+          return;
+        }
+        prepareWorkflowForManualInsertion();
+        const flow = useFlowStore.getState();
+        if (
+          expandedUserBlockAtPosition(flow.nodes, position) ||
+          expandedHuggingFaceClusterAtPosition(flow.nodes, position)
+        ) {
+          enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested. The User Node was added top-level.', {
+            variant: 'warning',
+            autoHideDuration: 3000,
+          });
+        }
+        addNode(
+          createBlockRootNodeV2(
+            createBlockInstanceV2(definition, {
+              instanceId: `block-v2-${nanoid(16)}`,
+              position,
+              size: { width: 420, height: 480 },
+            }),
+          ),
+        );
+        return;
+      }
+
       if (data.startsWith(USER_BLOCK_DRAG_PREFIX)) {
         const blockId = data.slice(USER_BLOCK_DRAG_PREFIX.length);
         const block = useUserBlockStore.getState().blocks.find((item) => item.id === blockId);
         if (!block) {
           showGraphImportError('Block is no longer available.');
           return;
+        }
+        prepareWorkflowForManualInsertion();
+        const flow = useFlowStore.getState();
+        if (
+          expandedUserBlockAtPosition(flow.nodes, position) ||
+          expandedHuggingFaceClusterAtPosition(flow.nodes, position)
+        ) {
+          enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested. The User Node was added top-level.', {
+            variant: 'warning',
+            autoHideDuration: 3000,
+          });
         }
         addNode(createUserBlockNode(block, position));
         return;
@@ -152,7 +344,43 @@ export function useWorkflowDrop({
         return;
       }
 
-      addNode(newNode);
+      prepareWorkflowForManualInsertion();
+      const flow = useFlowStore.getState();
+      const expandedUserBlock = expandedUserBlockAtPosition(flow.nodes, position);
+      const expandedCluster = expandedUserBlock ? null : expandedHuggingFaceClusterAtPosition(flow.nodes, position);
+      if (expandedCluster) {
+        flow.beginHistoryTransaction('Customize Cluster and add node');
+        try {
+          const customized = await customizeHuggingFaceClusterInstance(expandedCluster.id);
+          const customizedFlow = useFlowStore.getState();
+          customizedFlow.toggleUserBlockExpanded(customized.blockNodeId);
+          const expandedCustomized = useFlowStore
+            .getState()
+            .nodes.find((node) => node.id === customized.blockNodeId && node.data.type === 'block');
+          if (!expandedCustomized) throw new Error('The customized User Node could not be expanded.');
+          addNode(placeNodeInsideExpandedUserBlock(newNode, expandedCustomized, position));
+          globalThis.queueMicrotask(() => {
+            useFlowStore.getState().fitUserBlockToChildren(customized.blockNodeId);
+            useStudioStore.getState().saveActiveWorkflowTab(true);
+          });
+          enqueueSnackbar('Cluster customized as a User Node and the new node was added inside it.', {
+            variant: 'success',
+            autoHideDuration: 3000,
+          });
+        } catch (error) {
+          showGraphImportError(formatRequestError(error, 'Could not customize the Cluster as a User Node.'));
+        } finally {
+          useFlowStore.getState().commitHistoryTransaction();
+        }
+        return;
+      }
+      addNode(expandedUserBlock ? placeNodeInsideExpandedUserBlock(newNode, expandedUserBlock, position) : newNode);
+      if (expandedUserBlock) {
+        globalThis.queueMicrotask(() => {
+          useFlowStore.getState().fitUserBlockToChildren(expandedUserBlock.id);
+          useStudioStore.getState().saveActiveWorkflowTab(true);
+        });
+      }
     },
     [screenToFlowPosition, addNode, nodesRegistry, edgeType, createWorkflowTab],
   );

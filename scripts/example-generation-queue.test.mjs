@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -65,8 +66,12 @@ test('masked VACE queue uses the staged amber-vessel source contract', () => {
   const config = validateConfig(
     JSON.parse(readFileSync(join(projectRoot, 'scripts', 'example-generation-queue.config.json'), 'utf8')),
   );
+  const orbitSourceJob = config.jobs.find((job) => job.id === 'source-ltx-wan-glass-orbit-v2');
+  const orbitMaskJob = config.jobs.find((job) => job.id === 'prepare-wan-glass-orbit-mask-v2');
   const sourceJob = config.jobs.find((job) => job.id === 'source-qwen-wan-amber-vessel-reference');
   const maskedJob = config.jobs.find((job) => job.id === 'wan-vace-masked-object-replace-v1');
+  assert.ok(orbitSourceJob);
+  assert.ok(orbitMaskJob);
   assert.ok(sourceJob);
   assert.ok(maskedJob);
   assert.deepEqual(sourceJob.command, [
@@ -75,7 +80,14 @@ test('masked VACE queue uses the staged amber-vessel source contract', () => {
     '--asset',
     'qwen-wan-amber-vessel-reference',
   ]);
-  assert.deepEqual(maskedJob.dependsOn, [sourceJob.id]);
+  assert.deepEqual(orbitSourceJob.command, [
+    'node',
+    'scripts/template-gallery-source-runner.mjs',
+    '--asset',
+    'ltx-wan-glass-orbit-source-v2',
+  ]);
+  assert.deepEqual(orbitMaskJob.dependsOn, [orbitSourceJob.id]);
+  assert.deepEqual(maskedJob.dependsOn, [orbitSourceJob.id, orbitMaskJob.id, sourceJob.id]);
   assert.deepEqual(maskedJob.args.slice(0, 3), [
     '--reviewed',
     '--template-input-map',
@@ -90,7 +102,25 @@ test('masked VACE queue uses the staged amber-vessel source contract', () => {
     readFileSync(join(projectRoot, 'scripts', 'template-gallery-wan-inputs-v2.json'), 'utf8'),
   );
   const amberSource = sourceCatalog.assets.find((asset) => asset.id === 'qwen-wan-amber-vessel-reference');
+  const orbitSource = sourceCatalog.assets.find((asset) => asset.id === 'ltx-wan-glass-orbit-source-v2');
   assert.ok(amberSource);
+  assert.ok(orbitSource);
+  assert.equal(orbitSource.stagedFilename, 'wan-glass-orbit-source-v2.mp4');
+  assert.deepEqual(orbitSource.downstreamTemplates, ['wan_vace_masked_object_replace']);
+  assert.deepEqual(
+    { width: orbitSource.width, height: orbitSource.height, numFrames: orbitSource.numFrames },
+    { width: 512, height: 320, numFrames: 81 },
+  );
+  assert.ok(orbitSource.resourceContract.pixelFrameRatioVersusRejectedRecipe < 0.28);
+  assert.equal(
+    createHash('sha256').update(orbitSource.prompt).digest('hex'),
+    orbitSource.promptTokenContract.promptSha256,
+  );
+  assert.equal(orbitSource.promptTokenContract.tokenCount, 99);
+  assert.equal(orbitSource.promptTokenContract.negativePromptTokenCount, 47);
+  assert.ok(orbitSource.promptTokenContract.tokenCount <= orbitSource.promptTokenContract.maximum);
+  assert.ok(orbitSource.promptTokenContract.negativePromptTokenCount <= orbitSource.promptTokenContract.maximum);
+  assert.equal(orbitSource.promptTokenContract.maximum, 128);
   assert.equal(amberSource.stagedFilename, 'wan-amber-vessel-reference-v2.webp');
   assert.deepEqual(amberSource.downstreamTemplates, ['wan_vace_masked_object_replace']);
   assert.equal(

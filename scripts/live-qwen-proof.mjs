@@ -7,11 +7,13 @@ import path, { basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 import {
+  backendSourceEvidence,
   backendSourceIdentity,
   compareRunProvenance,
   createRunProvenance,
   modelSetIdentity,
   resolvedModelReposFromOutput,
+  selectBackendRuntimeFingerprintEvidence,
   selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
 
@@ -513,12 +515,27 @@ async function main() {
   } catch (error) {
     backendSourceBeforeError = error instanceof Error ? error.message : String(error);
   }
+  const backendSourcePreflight = backendSourceEvidence({
+    before: backendSourceBefore,
+    after: backendSourceBefore,
+    runtimeFingerprint: { backendSource: healthPayload?.backend_source },
+  });
   writeJson('backend-source-before.json', {
     managedBackendStarted,
     diagnosticReuse: !managedBackendStarted,
     identity: backendSourceBefore,
+    workerAttestation: backendSourcePreflight.attestation,
     error: backendSourceBeforeError,
+    blockers: backendSourcePreflight.blockers,
   });
+  if (backendSourceBeforeError || backendSourcePreflight.blockers.length > 0) {
+    throw new Error(
+      `Backend source preflight failed before generation. Restart the backend after the final source edit: ${[
+        ...(backendSourceBeforeError ? [backendSourceBeforeError] : []),
+        ...backendSourcePreflight.blockers,
+      ].join(' ')}`,
+    );
+  }
   const backendWorkDir = healthPayload?.server?.work_dir ?? path.join(backendRoot, 'data');
   const inputArtifacts = [];
   if (template.mode === 'control_image') {
@@ -768,6 +785,15 @@ async function main() {
   const completionEvent = [...websocketEvents]
     .reverse()
     .find((event) => event?.type === 'graph_completed' && event?.task_id === taskId);
+  const selectedRuntimeFingerprint = selectBackendRuntimeFingerprintEvidence(
+    [
+      completionEvent?.runtimeFingerprint,
+      deterministicEvent?.runtimeFingerprint,
+      executedOutput?.backendProvenance?.runtimeFingerprint,
+      executedOutput?.provenance?.runtimeFingerprint,
+    ],
+    deterministicEvent?.deterministicMode ?? executedOutput?.apiGraphSnapshot?.deterministicMode,
+  );
   let backendSourceAfter = null;
   let backendSourceAfterError = null;
   try {
@@ -776,12 +802,19 @@ async function main() {
     backendSourceAfterError = error instanceof Error ? error.message : String(error);
   }
   const backendSourceDrift = backendSourceDriftBlocker(backendSourceBefore, backendSourceAfter);
+  const sourceEvidence = backendSourceEvidence({
+    before: backendSourceBefore,
+    after: backendSourceAfter,
+    runtimeFingerprint: selectedRuntimeFingerprint,
+  });
   writeJson('backend-source-after.json', {
     managedBackendStarted,
     diagnosticReuse: !managedBackendStarted,
     identity: backendSourceAfter,
+    workerAttestation: sourceEvidence.attestation,
     error: backendSourceAfterError,
     driftBlocker: backendSourceDrift,
+    blockers: sourceEvidence.blockers,
   });
   const resolvedModelSet = modelSetIdentity(modelIdentities);
   const resolvedTemplateLockHash =
@@ -797,10 +830,9 @@ async function main() {
     modelIdentity: modelIdentities[0] ?? null,
     modelIdentities,
     inputArtifacts,
-    runtimeFingerprint:
-      deterministicEvent?.runtimeFingerprint ?? executedOutput?.backendProvenance?.runtimeFingerprint ?? null,
+    runtimeFingerprint: selectedRuntimeFingerprint,
     deterministicMode: deterministicEvent?.deterministicMode ?? executedOutput?.apiGraphSnapshot?.deterministicMode,
-    backendSource: backendSourceBefore,
+    backendSource: sourceEvidence.identity,
     outputAnalysis,
     executedOutput,
     executionReceipt: completionEvent,
@@ -814,12 +846,7 @@ async function main() {
   if (backendSourceAfterError) {
     runProvenance.blockers.push(`backend source capture failed after execution: ${backendSourceAfterError}`);
   }
-  if (backendSourceDrift) runProvenance.blockers.push(backendSourceDrift);
-  if (!managedBackendStarted) {
-    runProvenance.blockers.push(
-      'backend process was reused, so its loaded source cannot be proven from the current filesystem snapshot.',
-    );
-  }
+  runProvenance.blockers.push(...sourceEvidence.blockers);
   writeJson('run-provenance.json', runProvenance);
 
   let baselineProvenance = null;

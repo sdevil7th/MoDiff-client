@@ -1,32 +1,24 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { useSettingsStore } from './stores/useSettingsStore';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { useSnackbar } from './ui/snackbar';
 import { AppWindow, Boxes, GalleryVerticalEnd, LayoutTemplate, Workflow as WorkflowIcon } from 'lucide-react';
 
 import Workflow from './components/Workflow';
 import TopBar from './components/TopBar';
-import NodeList from './components/NodeList';
 import { useNodesStore } from './stores/useNodeStore';
 import { useWebsocketStore } from './stores/useWebsocketStore.ts';
-import GraphList from './components/GraphList.tsx';
-import WorkspacePanel from './components/WorkspacePanel.tsx';
 import TaskLauncher from './components/TaskLauncher.tsx';
-import RunIssuesDialog from './components/RunIssuesDialog.tsx';
-import GraphFixDialog from './components/GraphFixDialog.tsx';
 import RunSessionShelf from './components/RunSessionShelf.tsx';
 import StartupWorkspaceGate from './components/StartupWorkspaceGate.tsx';
 import WorkflowTabsBar from './components/WorkflowTabsBar.tsx';
-import TemplateBrowserDialog from './components/TemplateBrowserDialog.tsx';
-import GalleryLibraryDialog from './components/GalleryLibraryDialog.tsx';
-import MediaViewerDialog from './components/MediaViewerDialog.tsx';
-import MediaExportDialog from './components/MediaExportDialog.tsx';
-import { AssetsLibraryPanel, ModelsLibraryPanel, TemplateLibraryPanel } from './components/LeftLibraryPanels.tsx';
 import { useFlowStore } from './stores/useFlowStore.ts';
 import { useStudioStore } from './stores/useStudioStore.ts';
 import { useTaskStore } from './stores/useTaskStore.ts';
+import { useGraphFixStore } from './stores/useGraphFixStore.ts';
+import { useRunIssueStore } from './stores/useRunIssueStore.ts';
 import { modiffLayout } from './theme';
 import { cx } from './utils/classNames';
 import { ModiffIconButton } from './ui';
@@ -34,8 +26,49 @@ import { openRunActivity } from './studio/runActivity.ts';
 import { useAutoResourcePlanSync } from './studio/useAutoResourcePlanSync.ts';
 import { useWorkflowBackendSync } from './studio/useWorkflowBackendSync.ts';
 
+const GraphFixDialog = lazy(() => import('./components/GraphFixDialog.tsx'));
+const RunIssuesDialog = lazy(() => import('./components/RunIssuesDialog.tsx'));
+const TemplateBrowserDialog = lazy(() => import('./components/TemplateBrowserDialog.tsx'));
+const GalleryLibraryDialog = lazy(() => import('./components/GalleryLibraryDialog.tsx'));
+const MediaViewerDialog = lazy(() => import('./components/MediaViewerDialog.tsx'));
+const MediaExportDialog = lazy(() => import('./components/MediaExportDialog.tsx'));
+const WorkspacePanel = lazy(() => import('./components/WorkspacePanel.tsx'));
+const NodeList = lazy(() => import('./components/NodeList.tsx'));
+const GraphList = lazy(() => import('./components/GraphList.tsx'));
+const TemplateLibraryPanel = lazy(() =>
+  import('./components/LeftLibraryPanels.tsx').then(({ TemplateLibraryPanel }) => ({
+    default: TemplateLibraryPanel,
+  })),
+);
+const AssetsLibraryPanel = lazy(() =>
+  import('./components/LeftLibraryPanels.tsx').then(({ AssetsLibraryPanel }) => ({
+    default: AssetsLibraryPanel,
+  })),
+);
+const ModelsLibraryPanel = lazy(() =>
+  import('./components/LeftLibraryPanels.tsx').then(({ ModelsLibraryPanel }) => ({
+    default: ModelsLibraryPanel,
+  })),
+);
+
 const TAB_BAR_WIDTH = modiffLayout.tabBarWidth;
 const WORKSPACE_MIN_WIDTH = modiffLayout.workspaceMinWidth;
+const SUPERVISOR_STARTUP_TIMEOUT_MS = 5_000;
+
+async function boundedSupervisorStartup(fetchSupervisorTasks: () => Promise<void>) {
+  let timeoutId: number | undefined;
+  try {
+    await Promise.race([
+      fetchSupervisorTasks(),
+      new Promise<void>((resolve) => {
+        timeoutId = window.setTimeout(resolve, SUPERVISOR_STARTUP_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+}
+
 if (import.meta.env.DEV) {
   void import('./utils/e2eHooks.ts').then(({ installE2EHooks }) => installE2EHooks());
 }
@@ -78,6 +111,9 @@ export default function App() {
     leftPanelWidth,
     leftPanelTabIndex,
     rightPanelWidth,
+    templateBrowserOpen,
+    galleryLibraryOpen,
+    mediaViewerOpener,
     mediaExportOpener,
     setLeftPanelOpen,
     setLeftPanelWidth,
@@ -91,6 +127,9 @@ export default function App() {
   const websocketConnected = useWebsocketStore((state) => state.isConnected);
   const fetchSupervisorTasks = useTaskStore((state) => state.fetchSupervisorTasks);
   const currentTask = useTaskStore((state) => state.currentTask);
+  const taskCount = useTaskStore((state) => state.taskCount);
+  const graphFixDialogOpen = useGraphFixStore((state) => state.dialogOpen);
+  const runIssuesDialogOpen = useRunIssueStore((state) => state.issueDialogOpen || state.failureDialogOpen);
   const nodeCount = useFlowStore((state) => state.nodes.length);
   const launcherDismissed = useStudioStore((state) => state.launcherDismissed);
   const fetchBackendOutputs = useStudioStore((state) => state.fetchBackendOutputs);
@@ -229,7 +268,7 @@ export default function App() {
     const restoreActiveRun = async () => {
       setSupervisorStartupStatus('loading');
       try {
-        await fetchSupervisorTasks();
+        await boundedSupervisorStartup(fetchSupervisorTasks);
         const task = useTaskStore.getState().currentTask;
         if (
           !task?.task_id ||
@@ -269,15 +308,23 @@ export default function App() {
   }, [websocketConnect, websocketDisconnect]);
 
   useEffect(() => {
-    if (websocketConnected) return;
+    // Native model loading can hold the worker event loop long enough for a
+    // task_started websocket message to be delayed even though the socket
+    // remains connected. Reconcile active runs through the process-external
+    // supervisor until the queue is empty; this keeps the visible task state
+    // truthful without navigating away from the user's current workflow.
+    if (websocketConnected && taskCount === 0) return;
     let disposed = false;
     let timer: number | undefined;
     const pollSupervisor = async () => {
       await fetchSupervisorTasks();
       if (!disposed) {
-        timer = window.setTimeout(() => {
-          void pollSupervisor();
-        }, 1000);
+        timer = window.setTimeout(
+          () => {
+            void pollSupervisor();
+          },
+          websocketConnected ? 2000 : 1000,
+        );
       }
     };
     void pollSupervisor();
@@ -285,7 +332,7 @@ export default function App() {
       disposed = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [fetchSupervisorTasks, websocketConnected]);
+  }, [fetchSupervisorTasks, taskCount, websocketConnected]);
 
   const criticalDiscoveryKeys = useMemo(
     () => ['nodes', 'runtime', 'hfCache', 'localModels', 'modelCache', 'capabilities'] as const,
@@ -335,8 +382,17 @@ export default function App() {
     void loadRegistry();
     void loadBackendOutputs();
     setSupervisorStartupStatus('loading');
-    void fetchSupervisorTasks().finally(() => setSupervisorStartupStatus('settled'));
+    void boundedSupervisorStartup(fetchSupervisorTasks).finally(() => setSupervisorStartupStatus('settled'));
   }, [fetchSupervisorTasks, loadBackendOutputs, loadRegistry]);
+
+  const dismissStartupError = useCallback(() => {
+    if (!startupError) return;
+    // Keep the failed/restored document in its existing tab and open a fresh
+    // empty workflow. Dismissing a load error must never destroy the user's
+    // saved graph merely to make the canvas usable again.
+    useStudioStore.getState().createWorkflowTab();
+    setStartupComplete(true);
+  }, [startupError]);
 
   // Log error if there is one
   useEffect(() => {
@@ -429,15 +485,23 @@ export default function App() {
           className="relative min-w-0 w-[var(--modiff-left-panel-width)] flex-none overflow-y-auto overflow-x-hidden border-r border-modiff-border bg-modiff-bg"
           data-testid="left-panel"
         >
-          {leftPanelTabIndex === 0 && <NodeList />}
+          <Suspense
+            fallback={
+              <div className="px-3 py-4 text-xs text-modiff-subtle-text" data-testid="left-panel-loading">
+                Loading library…
+              </div>
+            }
+          >
+            {leftPanelTabIndex === 0 && <NodeList />}
 
-          {leftPanelTabIndex === 2 && <AssetsLibraryPanel />}
+            {leftPanelTabIndex === 2 && <AssetsLibraryPanel />}
 
-          {leftPanelTabIndex === 1 && <TemplateLibraryPanel />}
+            {leftPanelTabIndex === 1 && <TemplateLibraryPanel />}
 
-          {leftPanelTabIndex === 3 && <ModelsLibraryPanel />}
+            {leftPanelTabIndex === 3 && <ModelsLibraryPanel />}
 
-          {leftPanelTabIndex === 4 && <GraphList />}
+            {leftPanelTabIndex === 4 && <GraphList />}
+          </Suspense>
 
           {/* Resize handle */}
           <div
@@ -459,7 +523,11 @@ export default function App() {
 
         {/* Right Panel */}
         <div className="relative w-[var(--modiff-right-panel-width)] flex-none overflow-y-auto overflow-x-hidden bg-modiff-bg">
-          {isRightPanelOpen && <WorkspacePanel />}
+          {isRightPanelOpen ? (
+            <Suspense fallback={null}>
+              <WorkspacePanel />
+            </Suspense>
+          ) : null}
 
           {/* Resize handle */}
           {isRightPanelOpen && (
@@ -470,14 +538,21 @@ export default function App() {
           )}
         </div>
       </div>
-      <RunIssuesDialog />
-      <GraphFixDialog />
-      <TemplateBrowserDialog />
-      <GalleryLibraryDialog />
-      <MediaViewerDialog />
-      {mediaExportOpener ? <MediaExportDialog /> : null}
+      <Suspense fallback={null}>
+        {runIssuesDialogOpen ? <RunIssuesDialog /> : null}
+        {graphFixDialogOpen ? <GraphFixDialog /> : null}
+        {templateBrowserOpen ? <TemplateBrowserDialog /> : null}
+        {galleryLibraryOpen ? <GalleryLibraryDialog /> : null}
+        {mediaViewerOpener ? <MediaViewerDialog /> : null}
+        {mediaExportOpener ? <MediaExportDialog /> : null}
+      </Suspense>
       {!startupComplete ? (
-        <StartupWorkspaceGate error={startupError} phase={startupPhase} retry={retryStartup} />
+        <StartupWorkspaceGate
+          dismiss={startupError ? dismissStartupError : undefined}
+          error={startupError}
+          phase={startupPhase}
+          retry={retryStartup}
+        />
       ) : null}
     </div>
   );

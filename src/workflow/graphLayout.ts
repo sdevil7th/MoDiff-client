@@ -285,8 +285,14 @@ function containerPadding(node: CustomNodeType | undefined) {
  */
 export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): CustomNodeType[] {
   if (nodes.length < 2) return nodes;
-  const nextById = new Map(nodes.map((node) => [node.id, { ...node, position: { ...node.position } }]));
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  // V2 internals are a derived hierarchical projection, not independent graph
+  // documents. Moving/resizing them here bypasses their durable presentation
+  // and competes with the recursive Block fitter. Arrange each V2 root as one
+  // unit; keep its user-edited internal layout and connector geometry intact.
+  const blockOwners = new Set(nodes.filter((node) => node.data.blockInstanceV2).map(({ id }) => id));
+  const layoutNodes = nodes.filter((node) => !blockOwners.has(node.data.blockProjectionOwnerId ?? ''));
+  const nextById = new Map(layoutNodes.map((node) => [node.id, { ...node, position: { ...node.position } }]));
+  const nodeById = new Map(layoutNodes.map((node) => [node.id, node]));
   const depths = new Map<string, number>();
   const depthOf = (node: CustomNodeType): number => {
     const known = depths.get(node.id);
@@ -296,8 +302,8 @@ export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): Custo
     depths.set(node.id, depth);
     return depth;
   };
-  nodes.forEach(depthOf);
-  const containers = nodes
+  layoutNodes.forEach(depthOf);
+  const containers = layoutNodes
     .filter((node) => node.data.type === 'group' || node.data.type === 'loop')
     .sort((left, right) => (depths.get(right.id) ?? 0) - (depths.get(left.id) ?? 0) || left.id.localeCompare(right.id));
   const levels: Array<string | undefined> = [...containers.map((node) => node.id), undefined];

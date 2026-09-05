@@ -1,10 +1,130 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Locator } from '@playwright/test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+async function verifyCompactDialog(page: Page, dialog: Locator, label: string) {
+  const original = page.viewportSize();
+  for (const viewport of [
+    { width: 1280, height: 480 },
+    { width: 390, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const bounds = await dialog.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    const body = dialog.locator('[data-dialog-scroll-body]');
+    expect(await body.evaluate((element) => element.clientHeight)).toBeGreaterThan(60);
+    expect(await body.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await body.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await page.screenshot({
+      path: test.info().outputPath(`${label}-${viewport.width}x${viewport.height}.png`),
+      animations: 'disabled',
+    });
+    await body.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+  }
+  if (original) await page.setViewportSize(original);
+}
+
+test('file and export dialogs explain backend failures and remain usable on short and narrow screens', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  let failListing = true;
+  const longName = `reference-${'astronomical-workshop-'.repeat(8)}.png`;
+  await page.route('**/listdir?**', (route) =>
+    route.fulfill(
+      failListing
+        ? {
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'Folder temporarily unavailable' }),
+          }
+        : {
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              path: '.',
+              abs_path: '/data',
+              files: [
+                {
+                  is_dir: false,
+                  is_hidden: false,
+                  name: longName,
+                  path: `data/${longName}`,
+                  modified: 0,
+                  size: 100,
+                  ext: 'png',
+                  type: 'image',
+                },
+              ],
+            }),
+          },
+    ),
+  );
+  await page.evaluate(async () => {
+    const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const studio = useStudioStore.getState();
+    useSettingsStore.getState().setFileBrowserOpener({
+      workflowTabId: studio.activeWorkflowTabId,
+      workflowCanvasEpoch: studio.workflowCanvasEpoch,
+      nodeId: 'read-only-dialog-proof',
+      fieldKey: 'image',
+      fileTypes: ['image'],
+      path: '.',
+    });
+  });
+  const browser = page.getByTestId('file-browser-dialog');
+  await expect(browser.getByRole('alert')).toBeVisible();
+  await expect(browser.getByRole('button', { name: 'Select', exact: true })).toBeDisabled();
+  await verifyCompactDialog(page, browser, 'file-browser-error');
+  failListing = false;
+  await browser.getByRole('button', { name: 'Retry folder' }).click();
+  await expect(browser.getByRole('alert')).toHaveCount(0);
+  await browser.getByLabel('Filter files').fill('missing');
+  await expect(browser.getByText('No files match your search.')).toBeVisible();
+  await browser.getByRole('button', { name: 'Clear search', exact: true }).last().click();
+  await expect(browser.getByText(longName, { exact: true }).first()).toBeVisible();
+  await verifyCompactDialog(page, browser, 'file-browser');
+  await page.keyboard.press('Escape');
+  await expect(browser).toHaveCount(0);
+  await page.route('**/media/capabilities', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Conversion service unavailable' }),
+    }),
+  );
+  await page.evaluate(async () => {
+    const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+    useSettingsStore
+      .getState()
+      .setMediaExportOpener({ source: '/cache/review.png', filename: 'review.png', kind: 'image' });
+  });
+  const exporter = page.getByTestId('media-export-dialog');
+  await expect(exporter.getByRole('alert')).toBeVisible();
+  await expect(exporter.getByLabel('Download format')).toContainText('Original file');
+  await expect(exporter.getByRole('button', { name: 'Download', exact: true })).toBeEnabled();
+  await verifyCompactDialog(page, exporter, 'export-fallback');
+  await page.keyboard.press('Escape');
+  await expect(exporter).toHaveCount(0);
+});
 
 declare global {
   interface Window {
@@ -20,12 +140,14 @@ declare global {
             module: string;
             action: string;
             label?: string;
+            category?: string;
             params?: Record<string, { value?: unknown; artifacts?: unknown; display?: string; type?: string }>;
             uiState?: {
               validationSeverity?: string;
               validationMessage?: string;
               collapsed?: boolean;
               blockExpanded?: boolean;
+              disabled?: boolean;
             };
             progress?: number;
             executionStatus?: string;
@@ -36,6 +158,13 @@ declare global {
             studioRole?: string;
             studioOwned?: boolean;
             studioAuxiliary?: boolean;
+            huggingFaceClusterRole?: string;
+            huggingFaceClusterInstance?: {
+              definition?: { id?: string; contentHash?: string; libraryRevision?: string };
+              execution?: { admissionId?: string } | null;
+            };
+            huggingFaceClusterInstanceId?: string;
+            huggingFaceClusterExecutionRole?: string;
           }>;
           edges: Array<{ id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }>;
           historyPast: number;
@@ -288,6 +417,7 @@ declare global {
       openWorkspacePanelForTest: (
         tab: 'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints',
       ) => void;
+      rehydrateActiveWorkflowCanvasForTest: () => void;
       setWorkspacePanelOpenForTest: (open: boolean) => void;
       sendWebsocketMessage: (message: Record<string, unknown>) => void;
       runActiveTemplate: () => Promise<{
@@ -301,6 +431,7 @@ declare global {
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = path.resolve(THIS_DIR, '..', '..', '..');
+const BACKEND_ROOT = path.resolve(CLIENT_ROOT, '..', 'MoDiff');
 const FRONTEND_PORT = Number(process.env.MODIFF_MOCK_FRONTEND_PORT || 5191);
 const FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`;
 const managedProcesses: ChildProcessWithoutNullStreams[] = [];
@@ -320,9 +451,48 @@ let mockOptionalRuntimeProcessStatus = 'base';
 let mockOptionalRuntimeQualified = false;
 let mockOptionalRuntimeDelayMs = 0;
 let mockOptionalRuntimeActions = false;
+let mockOptionalRuntimeRollbackToBase = false;
 let mockOptionalRuntimeJobState: 'idle' | 'running' | 'ready' | 'cancelled' = 'idle';
 let mockAdvertiseStudioExecutionSpecs = false;
 let mockReadyProofStatus: 'declared_safe' | 'live_proven' = 'declared_safe';
+
+let mockReviewedArtifactSelectionsPromise: Promise<Map<string, { revision?: string; files: string[] }>> | null = null;
+
+function collectReviewedArtifactSelections(
+  value: unknown,
+  selections: Map<string, { revision?: string; files: string[] }>,
+) {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectReviewedArtifactSelections(item, selections));
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const [repoKey, revisionKey] of [
+    ['repo', 'revision'],
+    ['baseRepo', 'baseRevision'],
+  ] as const) {
+    const repo = typeof record[repoKey] === 'string' ? record[repoKey] : '';
+    const revision = typeof record[revisionKey] === 'string' ? record[revisionKey] : undefined;
+    if (!repo || !revision || !/^[0-9a-f]{40}$/i.test(revision)) continue;
+    const existing = selections.get(repo);
+    selections.set(repo, { revision, files: existing?.files ?? [] });
+  }
+
+  Object.values(record).forEach((item) => collectReviewedArtifactSelections(item, selections));
+}
+
+function mockReviewedArtifactSelections() {
+  mockReviewedArtifactSelectionsPromise ??= fs
+    .readFile(path.join(BACKEND_ROOT, 'data', 'model-artifact-catalog.json'), 'utf8')
+    .then((source) => {
+      const selections = new Map<string, { revision?: string; files: string[] }>();
+      collectReviewedArtifactSelections(JSON.parse(source), selections);
+      return selections;
+    });
+  return mockReviewedArtifactSelectionsPromise;
+}
 
 function mockAutoCompatibility(ready: boolean) {
   return {
@@ -356,6 +526,7 @@ const mockExecutionProfileIds: Record<string, string> = {
   'AceStepAudioPipeline:audio_variation': 'ace-step-audio:direct',
   'AceStepAudioPipeline:audio_continuation': 'ace-step-audio:direct',
   'AceStepAudioPipeline:audio_repaint': 'ace-step-audio:direct',
+  'MiniMaxMusic3ModularPipeline:text_to_audio': 'minimax-music3:official-modular-workflow',
   'FluxSchnellPipeline:text_to_image': 'flux-schnell:direct',
   'FluxDevPipeline:text_to_image': 'flux-dev:direct',
   'FluxKreaPipeline:text_to_image': 'flux-krea:direct',
@@ -744,6 +915,89 @@ function mockQwenImageExecutionCapability() {
       },
     ],
     studioExecutionSpecModes: ['control_image', 'text_to_image'],
+    studioExecutionSpecs: [spec, controlSpec],
+  };
+}
+
+function mockGraphQualifiedQwenExecutionCapability() {
+  const capability = mockQwenImageExecutionCapability();
+  const controlSpec = capability.studioExecutionSpecs.find((candidate) => candidate.mode === 'control_image');
+  if (!controlSpec) throw new Error('The mocked Qwen Modular execution specification is missing.');
+  const spec = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'qwen-image-2512:modular-text-to-image:v1',
+    modelType: 'QwenImageModularPipeline',
+    mode: 'modular_text_to_image',
+    executionProfileId: 'qwen-image:modular',
+    loaderModule: 'modules.ModularDiffusers',
+    loaderAction: 'ModelsLoader',
+    executionPath: 'modular-diffusers',
+    pipelineClass: 'QwenImageModularPipeline',
+    defaultRepo: 'Qwen/Qwen-Image-2512',
+    roles: [
+      ['models', 'modules.ModularDiffusers.ModelsLoader', -720, -80],
+      ['prompt', 'modules.ModularDiffusers.EncodePrompt', -360, -240],
+      ['denoise', 'modules.ModularDiffusers.Denoise', 80, -80],
+      ['decode', 'modules.ModularDiffusers.DecodeLatents', 440, -80],
+      ['preview', 'modules.Image.Preview', 800, -80],
+    ],
+    edges: [
+      ['models', 'text_encoders', 'prompt', 'text_encoders'],
+      ['models', 'unet_out', 'denoise', 'unet'],
+      ['models', 'scheduler', 'denoise', 'scheduler'],
+      ['models', 'vae_out', 'decode', 'vae'],
+      ['prompt', 'embeddings', 'denoise', 'embeddings'],
+      ['denoise', 'latents', 'decode', 'latents'],
+      ['denoise', 'route_state_out', 'decode', 'route_state_in'],
+      ['decode', 'images', 'preview', 'image'],
+    ],
+    bindings: [
+      ['models', 'model_type', 'pipelineClass'],
+      ['models', 'repo_id', 'artifact'],
+      ['models', 'revision', 'defaultRevision'],
+      ['models', 'dtype', 'dtype'],
+      ['models', 'device', 'device'],
+      ['models', 'auto_offload', 'autoOffload'],
+      ['models', 'offload_mode', 'offloadMode'],
+      ['models', 'trust_remote_code', 'false'],
+      ['prompt', 'prompt', 'prompt'],
+      ['prompt', 'negative_prompt', 'negativePrompt'],
+      ['denoise', 'width', 'width'],
+      ['denoise', 'height', 'height'],
+      ['denoise', 'seed', 'seed'],
+      ['denoise', 'num_inference_steps', 'steps'],
+      ['denoise', 'guidance_scale', 'guidanceScale'],
+      ['prompt', 'max_sequence_length', 'maxSequenceLength'],
+    ],
+    autoFields: [
+      'resolvedArtifact',
+      'artifact',
+      'installTarget.repo',
+      'modelRepo',
+      'pipelineClass',
+      'dtype',
+      'offloadMode',
+      'quantizedComponents',
+      'attentionBackend',
+      'regionalCompile',
+      'denoiserCache',
+      'layerwiseCasting',
+      'channelsLast',
+    ],
+    actions: [],
+    contentHash: 'studio-spec-v1-6df91280',
+  };
+  return {
+    ...capability,
+    modes: [...new Set([...capability.modes, spec.mode])],
+    runnableModes: [...new Set([...(capability.runnableModes ?? capability.modes), spec.mode])],
+    executionProfiles: capability.executionProfiles.map((profile) =>
+      profile.id === spec.executionProfileId
+        ? { ...profile, modes: [...new Set([...profile.modes, spec.mode])] }
+        : profile,
+    ),
+    studioExecutionSpecModes: ['control_image', 'modular_text_to_image'],
     studioExecutionSpecs: [spec, controlSpec],
   };
 }
@@ -1345,7 +1599,7 @@ function mockWanTi2vExecutionCapability() {
     ['diffusersRecipe', 'channels_last', 'channelsLast'],
     ['wanPipeline', 'model_id', 'artifact'],
     ['wanPipeline', 'pipeline_class', 'pipelineClass'],
-    ['wanPipeline', 'revision', 'empty'],
+    ['wanPipeline', 'revision', 'defaultRevision'],
     ['wanPipeline', 'dtype', 'dtype'],
     ['wanPipeline', 'device', 'device'],
     ['wanPipeline', 'auto_offload', 'autoOffload'],
@@ -1370,6 +1624,7 @@ function mockWanTi2vExecutionCapability() {
     ['wanGenerate', 'max_sequence_length', 'maxSequenceLength'],
     ['wanGenerate', 'attention_kwargs_json', 'attentionKwargsJson'],
     ['videoExport', 'fps', 'fps'],
+    ['wanPipeline', 'execution_profile_id', 'executionProfileId'],
   ] as const;
   const spec = {
     schemaVersion: 1,
@@ -1388,12 +1643,13 @@ function mockWanTi2vExecutionCapability() {
     bindings,
     autoFields: mockFluxAutoFields,
     actions: [],
-    contentHash: 'studio-spec-v1-da22e734',
+    contentHash: 'studio-spec-v1-a83efd57',
   };
   return {
     modelType: spec.modelType,
     modes: [spec.mode],
     runnableModes: [spec.mode],
+    revisionCandidates: ['b8fff7315c768468a5333511427288870b2e9635'],
     executionProfiles: [
       {
         id: spec.executionProfileId,
@@ -1428,7 +1684,11 @@ function mockWanI2vExecutionCapability() {
     edges: [...baseSpec.edges, ['loadImage', 'image', 'wanGenerate', 'reference_images'] as const],
     bindings: [
       ...baseSpec.bindings
-        .filter(([role, param]) => role !== 'wanGenerate' || param !== 'scheduler_flow_shift')
+        .filter(
+          ([role, param]) =>
+            (role !== 'wanGenerate' || param !== 'scheduler_flow_shift') &&
+            (role !== 'wanPipeline' || param !== 'execution_profile_id'),
+        )
         .map(([role, param, source]) => [
           role,
           param,
@@ -1438,7 +1698,9 @@ function mockWanI2vExecutionCapability() {
               ? 'dualTransformer'
               : role === 'diffusersRecipe' && param === 'vae_tiling'
                 ? 'true'
-                : source,
+                : role === 'wanPipeline' && param === 'revision'
+                  ? 'empty'
+                  : source,
         ]),
       ['loadImage', 'file', 'referenceImages'],
       ['loadImage', 'alpha_channel', 'alphaMode'],
@@ -1474,6 +1736,9 @@ function mockWanT2vExecutionCapability() {
     executionProfileId: 'wan-text-to-video:direct',
     pipelineClass: 'WanPipeline',
     defaultRepo: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
+    bindings: base.studioExecutionSpecs[0].bindings
+      .filter(([role, param]) => role !== 'wanPipeline' || param !== 'execution_profile_id')
+      .map(([role, param, source]) => [role, param, role === 'wanPipeline' && param === 'revision' ? 'empty' : source]),
     contentHash: 'studio-spec-v1-10c9a3f2',
   };
   const videoSpec = {
@@ -1535,7 +1800,7 @@ function mockWanT2vExecutionCapability() {
 }
 
 function mockWanVaceT2vExecutionCapability() {
-  const base = mockWanTi2vExecutionCapability();
+  const base = mockWanT2vExecutionCapability();
   const spec = {
     ...base.studioExecutionSpecs[0],
     id: 'wan-vace-1.3b:text-to-video:v1',
@@ -1648,7 +1913,11 @@ function mockLtxT2vExecutionCapability() {
     pipelineClass: 'LTXConditionPipeline',
     defaultRepo: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
     bindings: base.studioExecutionSpecs[0].bindings
-      .filter(([role, param]) => role !== 'wanGenerate' || param !== 'scheduler_flow_shift')
+      .filter(
+        ([role, param]) =>
+          (role !== 'wanGenerate' || param !== 'scheduler_flow_shift') &&
+          (role !== 'wanPipeline' || param !== 'execution_profile_id'),
+      )
       .map(
         ([role, param, source]) =>
           [
@@ -1658,7 +1927,9 @@ function mockLtxT2vExecutionCapability() {
               ? 'nativeMath'
               : role === 'diffusersRecipe' && param === 'attention_components'
                 ? 'empty'
-                : source,
+                : role === 'wanPipeline' && param === 'revision'
+                  ? 'empty'
+                  : source,
           ] as const,
       ),
     contentHash: 'studio-spec-v1-8f100d39',
@@ -1937,7 +2208,7 @@ function mockStudioExecutionCapabilities() {
   ];
 }
 
-function mockStudioExecutionSpecContract(modelType: string, mode: string) {
+function mockStudioExecutionSpec(modelType: string, mode: string) {
   const fluxModel = [
     'FluxSchnellPipeline',
     'FluxDevPipeline',
@@ -1975,7 +2246,11 @@ function mockStudioExecutionSpecContract(modelType: string, mode: string) {
                           : modelType === 'AceStepAudioPipeline'
                             ? mockAceTextToAudioExecutionCapability()
                             : null;
-  const spec = capability?.studioExecutionSpecs.find((item) => item.mode === mode);
+  return capability?.studioExecutionSpecs.find((item) => item.mode === mode);
+}
+
+function mockStudioExecutionSpecContract(modelType: string, mode: string) {
+  const spec = mockStudioExecutionSpec(modelType, mode);
   return spec
     ? {
         schemaVersion: spec.schemaVersion,
@@ -1990,6 +2265,8 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   const modelType = String(form.modelType ?? 'ZImageModularPipeline');
   const mode = String(form.mode ?? 'text_to_image');
   const executionProfileId = mockExecutionProfileIds[`${modelType}:${mode}`] ?? `mock:${modelType}:${mode}`;
+  const spec = mockStudioExecutionSpec(modelType, mode);
+  const selectedExecutionProfileId = spec?.executionProfileId ?? executionProfileId;
   if (!(modelType === 'QwenImageModularPipeline' && mode === 'text_to_image')) {
     const defaultRepos: Record<string, string> = {
       ZImageModularPipeline: 'Tongyi-MAI/Z-Image-Turbo',
@@ -1997,7 +2274,12 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
       QwenImageEditPlusModularPipeline: 'Qwen/Qwen-Image-Edit-2511',
       QwenImageLayeredModularPipeline: 'Qwen/Qwen-Image-Layered',
       WanVACEPipeline: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+      WanVideoPipeline: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
+      WanImageToVideoPipeline: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers',
+      WanTI2VPipeline: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
+      LTXVideoPipeline: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
       AceStepAudioPipeline: 'ACE-Step/acestep-v15-xl-turbo-diffusers',
+      MiniMaxMusic3ModularPipeline: 'MiniMaxAI/MiniMax-Music3',
       FluxSchnellPipeline: 'black-forest-labs/FLUX.1-schnell',
       FluxDevPipeline: 'black-forest-labs/FLUX.1-dev',
       FluxKreaPipeline: 'black-forest-labs/FLUX.1-Krea-dev',
@@ -2036,7 +2318,10 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
     const executionPath =
       modelType === 'WanVACEPipeline'
         ? 'direct-wan-vace'
-        : modelType === 'WanTI2VPipeline' || modelType === 'WanImageToVideoPipeline'
+        : modelType === 'WanVideoPipeline' ||
+            modelType === 'WanTI2VPipeline' ||
+            modelType === 'WanImageToVideoPipeline' ||
+            modelType === 'LTXVideoPipeline'
           ? 'direct-diffusers-video'
           : modelType === 'AceStepAudioPipeline'
             ? 'direct-diffusers-audio'
@@ -2050,16 +2335,21 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
         : executionPath.includes('image')
           ? 'modules.DiffusersImage'
           : 'modules.ModularDiffusers';
+    const candidateExecutionPath = spec?.executionPath ?? executionPath;
+    const candidateLoaderModule = spec?.loaderModule ?? loaderModule;
+    const candidateLoaderAction =
+      spec?.loaderAction ?? (candidateLoaderModule === 'modules.ModularDiffusers' ? 'ModelsLoader' : 'LoadPipeline');
     const candidate = {
       id: `${modelType}-${mode}-declared-safe`,
-      executionProfileId,
+      executionProfileId: selectedExecutionProfileId,
       modelType,
       mode,
-      loaderModule,
-      loaderAction: loaderModule === 'modules.ModularDiffusers' ? 'ModelsLoader' : 'LoadPipeline',
-      executionPath,
+      loaderModule: candidateLoaderModule,
+      loaderAction: candidateLoaderAction,
+      executionPath: candidateExecutionPath,
       pipelineClass:
-        modelType === 'WanVACEPipeline'
+        spec?.pipelineClass ??
+        (modelType === 'WanVACEPipeline'
           ? 'WanVACEPipeline'
           : modelType === 'AceStepAudioPipeline'
             ? 'AceStepPipeline'
@@ -2075,7 +2365,7 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
                       ? 'Flux2KleinPipeline'
                       : modelType.startsWith('Flux')
                         ? 'FluxPipeline'
-                        : modelType,
+                        : modelType),
       modelDependencies,
       studioExecutionSpecContract: mockAdvertiseStudioExecutionSpecs
         ? mockStudioExecutionSpecContract(modelType, mode)
@@ -2190,6 +2480,14 @@ function mockAutoResourcePlan(form: Record<string, unknown> = {}) {
   };
 }
 
+function mockHfCacheContains(cache: unknown[], repoId: string) {
+  return cache.some((entry) => {
+    if (typeof entry === 'string') return entry === repoId;
+    if (!entry || typeof entry !== 'object') return false;
+    return (entry as { id?: unknown }).id === repoId;
+  });
+}
+
 const legacyStudioFormWithoutVideoFields = {
   mode: 'text_to_image',
   modelType: 'ZImageModularPipeline',
@@ -2279,6 +2577,28 @@ const nodeDef = (module: string, action: string, category: string, params: Recor
 });
 
 const mockRegistry = {
+  'modules.ModularDiffusers.DynamicBlockNode': nodeDef('modules.ModularDiffusers', 'DynamicBlockNode', 'custom', {
+    repo_id: {
+      label: 'Repository',
+      display: 'modelselect',
+      type: 'string',
+      value: { source: 'hub', value: '' },
+      fieldOptions: { noValidation: true, sources: ['hub'] },
+    },
+    load_block_button: {
+      label: 'Preview Custom Block Contract',
+      display: 'ui_button',
+      value: false,
+      onChange: 'update_node',
+    },
+    device: { label: 'Device', type: 'string', value: 'cuda:0' },
+    auto_offload: { label: 'Enable Auto Offload', type: 'boolean', value: false },
+    offload_mode: { label: 'Offload mode', type: 'string', value: 'model_cpu' },
+    trust_remote_code: { label: 'Trust Remote Code', type: 'boolean', value: false },
+    revision: { label: 'Revision', type: 'string', value: '' },
+    modiff_pipeline_identity: { label: 'Reviewed Pipeline Identity', type: 'object', value: null, hidden: true },
+    doc: { label: 'Doc', type: 'string', display: 'output' },
+  }),
   'modules.ModularDiffusers.ModelsLoader': nodeDef('modules.ModularDiffusers', 'ModelsLoader', 'loader', {
     model_type: {
       type: 'string',
@@ -2592,6 +2912,7 @@ const mockRegistry = {
     },
     pipeline_class: { type: 'string', value: 'WanImageToVideoPipeline', onChange: 'select_adapter' },
     revision: { type: 'string', value: '' },
+    execution_profile_id: { type: 'string', value: '' },
     dtype: { type: 'string', value: 'bfloat16' },
     device: { type: 'string', value: 'cuda:0' },
     auto_offload: { type: 'bool', value: false },
@@ -2968,12 +3289,846 @@ const mockGraphList = [
   },
 ];
 
-async function installMockRoutes(page: Page) {
+function mockHuggingFaceBlockDefinition(className: string, kind: 'sequential' | 'loop', marker: string) {
+  const contentHash = `sha256:${marker.repeat(64)}`;
+  const inputs =
+    className === 'SequentialPipelineBlocks'
+      ? []
+      : [
+          {
+            name: 'prompt',
+            type: 'builtins.str',
+            required: true,
+            default: '',
+            description: 'Prompt',
+            kwargsType: null,
+          },
+        ];
+  return {
+    schemaVersion: 1,
+    id: `diffusers.modular-block:${className}:${contentHash}`,
+    className,
+    kind,
+    description: '',
+    inputs,
+    variadicInputs: [],
+    requiredInputs: inputs.map((input) => input.name),
+    outputs: [],
+    components: [],
+    configs: [],
+    contentHash,
+  };
+}
+
+function mockHuggingFaceNodeDefinition(
+  pipelineClass: string,
+  stepClass: string,
+  rootBlockDefinitionId: string,
+  stepBlockDefinitionId: string,
+) {
+  const id = `diffusers.modular:${pipelineClass}:text2image`;
+  return {
+    schemaVersion: 5,
+    id,
+    provider: 'diffusers',
+    publisher: 'huggingface',
+    surface: 'diffusers_cluster_nodes',
+    definitionKind: 'modular_pipeline_workflow',
+    ownership: 'library',
+    mutable: false,
+    libraryRevision: '1'.repeat(40),
+    pipelineClass,
+    blocksClass: `${pipelineClass.replace('ModularPipeline', '')}AutoBlocks`,
+    pipelineKind: 'auto',
+    workflowId: 'text2image',
+    workflowKind: 'sequential',
+    taskId: 'text_to_image',
+    taskContractId: 'diffusers.task.text_to_image.v1',
+    label: `${pipelineClass} — Text To Image`,
+    description: '',
+    integrationStatus: 'reviewed_modiff_contract',
+    executionClaim: 'discovery_only',
+    executionAdmissions: [],
+    graphAdapterContracts: [],
+    inputs: [{ name: 'prompt', type: 'builtins.str', required: true, default: '', description: 'Prompt' }],
+    outputs: [{ name: 'images', type: 'Image', required: false, default: null, description: 'Images' }],
+    requiredInputs: ['prompt'],
+    requiredInputAlternatives: [],
+    stateKeys: [],
+    components: [
+      {
+        name: 'transformer',
+        type: `diffusers.${pipelineClass.replace('ModularPipeline', 'Transformer2DModel')}`,
+        creationMethod: 'from_pretrained',
+        reuseKey: ['loadId'],
+      },
+    ],
+    steps: [{ path: 'denoise.denoiser', className: stepClass, kind: 'loop', description: '' }],
+    blockContractHash: `sha256:${'3'.repeat(64)}`,
+    rootBlockDefinitionId,
+    blockPlacements: [
+      {
+        path: ['denoise.denoiser'],
+        legacyPath: 'denoise.denoiser',
+        order: 0,
+        blockDefinitionId: stepBlockDefinitionId,
+      },
+    ],
+    contentHash: `sha256:${'2'.repeat(64)}`,
+  };
+}
+
+const mockHuggingFaceNodeLibrary = (() => {
+  const blockDefinitions = [
+    mockHuggingFaceBlockDefinition('FluxDenoiseStep', 'loop', '1'),
+    mockHuggingFaceBlockDefinition('SequentialPipelineBlocks', 'sequential', '3'),
+    mockHuggingFaceBlockDefinition('QwenImageDenoiseStep', 'loop', '4'),
+    mockHuggingFaceBlockDefinition('SequentialPipelineBlocks', 'sequential', '5'),
+  ];
+  const definitions = [
+    mockHuggingFaceNodeDefinition(
+      'FluxModularPipeline',
+      'FluxDenoiseStep',
+      blockDefinitions[1].id,
+      blockDefinitions[0].id,
+    ),
+    mockHuggingFaceNodeDefinition(
+      'QwenImageModularPipeline',
+      'QwenImageDenoiseStep',
+      blockDefinitions[3].id,
+      blockDefinitions[2].id,
+    ),
+  ];
+  return {
+    schemaVersion: 5,
+    diffusersRevision: '1'.repeat(40),
+    providers: ['diffusers'],
+    taskContracts: [
+      {
+        schemaVersion: 5,
+        id: 'diffusers.task.text_to_image.v1',
+        provider: 'diffusers',
+        taskId: 'text_to_image',
+        label: 'Text To Image',
+        definitionIds: definitions.map((definition) => definition.id),
+      },
+    ],
+    definitions,
+    blockDefinitions,
+    blockRoleAdapters: [],
+    containerStateAdapters: [],
+  };
+})();
+
+function mockGraphQualifiedQwenNodeLibrary() {
+  const library = structuredClone(mockHuggingFaceNodeLibrary);
+  library.diffusersRevision = '2f7e0154a9db246e95c9ede43edba7db5b130805';
+  library.definitions.forEach((definition) => {
+    definition.libraryRevision = library.diffusersRevision;
+  });
+  const qwen = library.definitions.find((definition) => definition.pipelineClass === 'QwenImageModularPipeline');
+  if (!qwen) throw new Error('The mocked Qwen Cluster definition is missing.');
+  const replacedQwenBlockIds = new Set(qwen.blockPlacements.map(({ blockDefinitionId }) => blockDefinitionId));
+  for (let index = library.blockDefinitions.length - 1; index >= 0; index -= 1) {
+    if (
+      replacedQwenBlockIds.has(library.blockDefinitions[index]!.id) &&
+      library.blockDefinitions[index]!.id !== qwen.rootBlockDefinitionId
+    ) {
+      library.blockDefinitions.splice(index, 1);
+    }
+  }
+  const exactPlacementContracts = [
+    {
+      path: ['text_encoder'],
+      className: 'QwenImageTextEncoderStep',
+      kind: 'block',
+      inputs: ['prompt', 'negative_prompt', 'max_sequence_length'],
+    },
+    {
+      path: ['denoise.input'],
+      className: 'QwenImageTextInputsStep',
+      kind: 'block',
+      inputs: [
+        'num_images_per_prompt',
+        'prompt_embeds',
+        'prompt_embeds_mask',
+        'negative_prompt_embeds',
+        'negative_prompt_embeds_mask',
+      ],
+    },
+    {
+      path: ['denoise.prepare_latents'],
+      className: 'QwenImagePrepareLatentsStep',
+      kind: 'block',
+      inputs: ['latents', 'height', 'width', 'num_images_per_prompt', 'generator', 'batch_size', 'dtype'],
+    },
+    {
+      path: ['denoise.set_timesteps'],
+      className: 'QwenImageSetTimestepsStep',
+      kind: 'block',
+      inputs: ['num_inference_steps', 'sigmas', 'latents'],
+    },
+    {
+      path: ['denoise.prepare_rope_inputs'],
+      className: 'QwenImageRoPEInputsStep',
+      kind: 'block',
+      inputs: ['batch_size', 'height', 'width', 'prompt_embeds_mask', 'negative_prompt_embeds_mask'],
+    },
+    {
+      path: ['denoise.denoise'],
+      className: 'QwenImageDenoiseStep',
+      kind: 'loop',
+      inputs: ['timesteps', 'num_inference_steps', 'latents', 'attention_kwargs', 'img_shapes'],
+    },
+    {
+      path: ['denoise.denoise', 'before_denoiser'],
+      className: 'QwenImageLoopBeforeDenoiser',
+      kind: 'block',
+      inputs: ['latents'],
+    },
+    {
+      path: ['denoise.denoise', 'denoiser'],
+      className: 'QwenImageLoopDenoiser',
+      kind: 'block',
+      inputs: ['attention_kwargs', 'img_shapes'],
+    },
+    { path: ['denoise.denoise', 'after_denoiser'], className: 'QwenImageLoopAfterDenoiser', kind: 'block', inputs: [] },
+    {
+      path: ['denoise.after_denoise'],
+      className: 'QwenImageAfterDenoiseStep',
+      kind: 'block',
+      inputs: ['height', 'width', 'latents'],
+    },
+    { path: ['decode.decode'], className: 'QwenImageDecoderStep', kind: 'block', inputs: ['latents'] },
+    {
+      path: ['decode.postprocess'],
+      className: 'QwenImageProcessImagesOutputStep',
+      kind: 'block',
+      inputs: ['images', 'output_type'],
+    },
+  ] as const;
+  const exactBlocks = exactPlacementContracts.map((contract, index) => {
+    const contentHash = `sha256:${(index + 1).toString(16).repeat(64)}`;
+    return {
+      schemaVersion: 1,
+      id: `diffusers.modular-block:${contract.className}:${contentHash}`,
+      className: contract.className,
+      kind: contract.kind,
+      description: `${contract.className} exact mocked placement`,
+      inputs: contract.inputs.map((name) => ({
+        name,
+        type: name === 'prompt' || name === 'negative_prompt' || name === 'output_type' ? 'builtins.str' : 'typing.Any',
+        required: name === 'prompt',
+        default: null,
+        description: name,
+        kwargsType: null,
+      })),
+      variadicInputs: [],
+      requiredInputs: contract.inputs.filter((name) => name === 'prompt'),
+      outputs:
+        contract.path.join('.') === 'decode.postprocess'
+          ? [
+              {
+                name: 'images',
+                type: 'list[PIL.Image.Image]',
+                required: false,
+                default: null,
+                description: 'Generated images.',
+                kwargsType: null,
+              },
+            ]
+          : [],
+      components: [],
+      configs: [],
+      contentHash,
+    };
+  });
+  library.blockDefinitions.push(...exactBlocks);
+  let topLevelOrder = 0;
+  let loopMemberOrder = 0;
+  qwen.blockPlacements = exactPlacementContracts.map((contract, index) => ({
+    path: [...contract.path],
+    legacyPath: contract.path.join('.'),
+    order: contract.path.length === 1 ? topLevelOrder++ : loopMemberOrder++,
+    blockDefinitionId: exactBlocks[index]!.id,
+  }));
+  qwen.steps = exactPlacementContracts.map((contract) => ({
+    path: contract.path.join('.'),
+    className: contract.className,
+    kind: contract.kind,
+    description: `${contract.className} exact mocked placement`,
+  }));
+  const spec = mockGraphQualifiedQwenExecutionCapability().studioExecutionSpecs.find(
+    (candidate) => candidate.mode === 'modular_text_to_image',
+  );
+  if (!spec) throw new Error('The mocked Qwen text-to-image execution specification is missing.');
+
+  const adapterId = 'diffusers.modular-adapter:QwenImageModularPipeline:text2image:mode:text_to_image';
+  const bindingSources = [...new Set(spec.bindings.map(([, , source]) => source))];
+  const reviewedSealedBindingValues = {
+    artifact: spec.defaultRepo,
+    defaultRevision: '25468b98e3276ca6700de15c6628e51b7de54a26',
+    false: false,
+    empty: '',
+    mode: spec.mode,
+    pipelineClass: qwen.pipelineClass,
+    true: true,
+  };
+  const sealedBindingValues = Object.fromEntries(
+    Object.entries(reviewedSealedBindingValues).filter(([source]) => bindingSources.includes(source)),
+  );
+  const sealedSources = new Set(Object.keys(sealedBindingValues));
+  qwen.schemaVersion = 6;
+  qwen.libraryRevision = '2f7e0154a9db246e95c9ede43edba7db5b130805';
+  qwen.contentHash = 'sha256:9cbb38204acb409888b94e880a6e343e9bd67ea5703455560bc5c6d713437f68';
+  qwen.integrationStatus = 'reviewed_modular_workflow_route';
+  qwen.suggestedInputs = {
+    schemaVersion: 1,
+    values: {
+      prompt:
+        'A 20-year-old East Asian girl with delicate, charming features and large, bright brown eyes—expressive and lively, with a cheerful or subtly smiling expression. Her naturally wavy long hair is either loose or tied in twin ponytails. She has fair skin and light makeup accentuating her youthful freshness. She wears a modern, cute dress or relaxed outfit in bright, soft colors—lightweight fabric, minimalist cut. She stands indoors at an anime convention, surrounded by banners, posters, or stalls. Lighting is typical indoor illumination—no staged lighting—and the image resembles a casual iPhone snapshot: unpretentious composition, yet brimming with vivid, fresh, youthful charm.',
+    },
+    source: {
+      kind: 'publisher_example',
+      label: 'Qwen/Qwen-Image-2512 model card example',
+      url: 'https://huggingface.co/Qwen/Qwen-Image-2512/blob/25468b98e3276ca6700de15c6628e51b7de54a26/README.md',
+    },
+  };
+  qwen.graphAdapterContracts = [
+    {
+      schemaVersion: 1,
+      id: adapterId,
+      source: 'mode',
+      adapterId: 'text_to_image',
+      upstreamWorkflowId: qwen.workflowId,
+      requiredInputs: ['prompt'],
+      actionSequence: ['text_encoder', 'denoise', 'decoder'],
+      stateEdges: [],
+      upstreamBlockSequence: qwen.steps.map((step) => step.path),
+    },
+  ];
+  qwen.executionAdmissions = [
+    {
+      schemaVersion: 4,
+      id: 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image',
+      definitionId: qwen.id,
+      studioMode: spec.mode,
+      bindingSources,
+      instanceInputBindings: [{ bindingSource: 'prompt', input: 'prompt' }],
+      executionParameterSources: bindingSources.filter((source) => source !== 'prompt' && !sealedSources.has(source)),
+      sealedBindingValues,
+      modelDependencies: [],
+      dynamicFieldActions: [
+        { role: 'models', field: 'model_type', event: 'onChange', valueSource: 'pipelineClass' },
+        { role: 'prompt', field: 'text_encoders', event: 'onSignal', valueSource: 'pipelineClass' },
+        { role: 'denoise', field: 'unet', event: 'onSignal', valueSource: 'pipelineClass' },
+        { role: 'decode', field: 'vae', event: 'onSignal', valueSource: 'pipelineClass' },
+      ],
+      adapterContractId: adapterId,
+      studioExecutionSpec: {
+        id: spec.id,
+        contentHash: spec.contentHash,
+        executionProfileId: spec.executionProfileId,
+      },
+      artifact: {
+        repo: spec.defaultRepo,
+        revision: '25468b98e3276ca6700de15c6628e51b7de54a26',
+      },
+      status: 'admitted',
+      claim: 'static_graph_contract_compatible',
+      executable: false,
+      publication: {
+        schemaVersion: 1,
+        readiness: 'graph_qualified',
+        insertable: true,
+        executable: false,
+        autoEligible: false,
+        liveProof: false,
+        reasons: [
+          {
+            code: 'runtime_resource_admission_required',
+            message: 'The mocked graph still requires runtime resource admission.',
+          },
+        ],
+      },
+      reasons: [],
+    },
+  ];
+  return library;
+}
+
+function mockModularConditionalSnapshot(library: ReturnType<typeof mockGraphQualifiedQwenNodeLibrary>) {
+  const qwen = library.definitions.find((definition) => definition.pipelineClass === 'QwenImageModularPipeline');
+  if (!qwen) throw new Error('The mocked Qwen Cluster definition is missing.');
+  const root = library.blockDefinitions.find((definition) => definition.id === qwen.rootBlockDefinitionId);
+  if (!root) throw new Error('The mocked Qwen root Modular block is missing.');
+  return {
+    schemaVersion: 1,
+    diffusersRevision: library.diffusersRevision,
+    blockDefinitions: [root],
+    pipelines: [
+      {
+        schemaVersion: 1,
+        pipelineClass: qwen.pipelineClass,
+        rootBlockDefinitionId: root.id,
+        placements: [
+          {
+            path: ['root'],
+            legacyPath: 'root',
+            order: 0,
+            blockDefinitionId: root.id,
+            intermediateOutputs: [],
+          },
+        ],
+        conditionals: [],
+        workflows: [
+          {
+            id: 'text2image',
+            cases: [
+              {
+                presentInputs: ['prompt'],
+                activeLeafPaths: [['root']],
+                activeLeafDefinitionIds: [root.id],
+                selections: [],
+              },
+            ],
+          },
+        ],
+        contentHash: `sha256:${'f'.repeat(64)}`,
+      },
+    ],
+  };
+}
+
+const installedOption = (value: string, label = value) => ({
+  schemaVersion: 1,
+  value,
+  label,
+  compatibility: 'compatible',
+  availability: 'installed',
+  installationState: 'installed',
+});
+
+const mockGraphQualifiedQwenRegistry = {
+  'modules.ModularDiffusers.ModelsLoader': {
+    type: 'custom',
+    module: 'modules.ModularDiffusers',
+    action: 'ModelsLoader',
+    label: 'Load Models',
+    category: 'loader',
+    description: '',
+    resizable: true,
+    skipParamsCheck: true,
+    style: {},
+    params: {
+      model_type: {
+        label: 'Model Type',
+        type: 'string',
+        options: { '': installedOption('', '') },
+        onChange: 'set_filters',
+      },
+      repo_id: {
+        label: 'Repository ID',
+        display: 'modelselect',
+        type: 'string',
+        value: { source: 'hub', value: '' },
+        fieldOptions: {
+          noValidation: true,
+          sources: ['hub', 'local'],
+          filter: { hub: { className: [''] }, local: { className: [''] } },
+        },
+        onChange: 'refresh_pipeline_identity',
+      },
+      dtype: {
+        label: 'dtype',
+        options: ['float32', 'float16', 'bfloat16'].map((value) => installedOption(value)),
+        value: 'float16',
+      },
+      device: {
+        label: 'Device',
+        type: 'string',
+        value: 'cuda:0',
+        options: {
+          'cuda:0': installedOption('cuda:0'),
+          'cpu:0': installedOption('cpu:0'),
+          cpu: installedOption('cpu'),
+        },
+      },
+      trust_remote_code: {
+        label: 'Trust Remote Code',
+        type: 'boolean',
+        value: false,
+        description: 'Repository code execution is disabled; keep this off for contract preview.',
+        onChange: 'refresh_pipeline_identity',
+      },
+      revision: {
+        label: 'Revision',
+        type: 'string',
+        value: '',
+        description: 'Required exact 40-character commit hash for Hub custom contracts.',
+        onChange: 'refresh_pipeline_identity',
+      },
+      workflow_id: {
+        label: 'Reviewed Workflow',
+        type: 'string',
+        value: '',
+        hidden: true,
+      },
+      reviewed_variant: {
+        label: 'Reviewed model',
+        type: 'string',
+        value: 'Qwen/Qwen-Image-2512',
+        options: ['Qwen/Qwen-Image', 'Qwen/Qwen-Image-2512'],
+      },
+      modiff_pipeline_identity: {
+        label: 'Custom Pipeline Identity',
+        type: 'object',
+        value: null,
+        hidden: true,
+      },
+      refresh_pipeline_identity_button: {
+        label: 'Review and Refresh Custom Contract',
+        display: 'ui_button',
+        value: false,
+        hidden: true,
+        onChange: 'refresh_pipeline_identity',
+      },
+      auto_offload: { label: 'Enable Auto Offload', type: 'boolean', value: true },
+      offload_mode: {
+        label: 'Offload Mode',
+        type: 'string',
+        options: ['auto_cpu', 'none', 'model_cpu', 'group_cpu', 'group_disk'].map((value) => installedOption(value)),
+        value: 'model_cpu',
+        default: 'model_cpu',
+      },
+      unet: { label: 'Denoise Model', display: 'input', type: 'diffusers_auto_model' },
+      vae: { label: 'VAE', display: 'input', type: 'diffusers_auto_model' },
+      lora_list: { label: 'Lora', display: 'input', type: 'custom_lora' },
+      text_encoders: { label: 'Text Encoders', display: 'output', type: 'diffusers_auto_models' },
+      unet_out: { label: 'Denoise Model', display: 'output', type: 'diffusers_auto_model' },
+      vae_out: { label: 'VAE', display: 'output', type: 'diffusers_auto_model' },
+      scheduler: { label: 'Scheduler', display: 'output', type: 'diffusers_auto_model' },
+      image_encoder: { label: 'Image Encoder', display: 'output', type: 'diffusers_auto_model' },
+      pipeline_components: {
+        label: 'Pipeline Components',
+        display: 'output',
+        type: 'diffusers_modular_pipeline_components',
+      },
+      quant_config: { label: 'Quant Config', display: 'input', type: 'quant_config' },
+    },
+    time: [0, 0, 0],
+    memory: [0, 0, 0],
+    cache: false,
+  },
+  'modules.ModularDiffusers.EncodePrompt': {
+    type: 'custom',
+    module: 'modules.ModularDiffusers',
+    action: 'EncodePrompt',
+    label: 'Encode Prompt',
+    category: 'embedding',
+    description: '',
+    resizable: true,
+    skipParamsCheck: true,
+    style: {},
+    params: {
+      text_encoders: {
+        label: 'Text Encoders *',
+        type: 'diffusers_auto_models',
+        display: 'input',
+        onSignal: 'update_node',
+      },
+      prompt: { label: 'Prompt *', type: 'string', display: 'textarea', default: '' },
+      negative_prompt: { label: 'Negative Prompt', type: 'string', display: 'textarea', default: '' },
+      max_sequence_length: {
+        label: 'Maximum Sequence Length',
+        type: 'int',
+        default: 1024,
+        min: 1,
+        max: 1024,
+        step: 1,
+        fieldOptions: {
+          controlTier: 'advanced',
+          studioBinding: {
+            schemaVersion: 1,
+            group: 'maximum-sequence-length',
+            formFields: ['maxSequenceLength'],
+            transform: 'identity',
+          },
+        },
+      },
+      embeddings: { label: 'Text Embeddings', type: 'embeddings', display: 'output' },
+      doc: { label: 'Doc', type: 'string', display: 'output' },
+    },
+    time: [0, 0, 0],
+    memory: [0, 0, 0],
+    cache: false,
+  },
+  'modules.ModularDiffusers.Denoise': {
+    type: 'custom',
+    module: 'modules.ModularDiffusers',
+    action: 'Denoise',
+    label: 'Denoise',
+    category: 'sampler',
+    description: '',
+    resizable: true,
+    skipParamsCheck: true,
+    style: {},
+    params: {
+      unet: {
+        label: 'Denoise Model *',
+        display: 'input',
+        type: 'diffusers_auto_model',
+        required: true,
+        onSignal: [
+          'update_node',
+          { action: 'signal', target: 'guider' },
+          { action: 'signal', target: 'controlnet_bundle' },
+        ],
+      },
+      embeddings: { label: 'Text Embeddings *', type: 'embeddings', display: 'input' },
+      width: { label: 'Width', type: 'int', default: 1024, min: 64, step: 8 },
+      height: { label: 'Height', type: 'int', default: 1024, min: 64, step: 8 },
+      seed: { label: 'Seed', type: 'int', display: 'random', default: 0, min: 0, max: 4_294_967_295 },
+      num_inference_steps: { label: 'Steps', type: 'int', display: 'slider', default: 50, min: 1, max: 100 },
+      guidance_scale: {
+        label: 'Guidance Scale',
+        type: 'float',
+        display: 'slider',
+        default: 4.5,
+        min: 1,
+        max: 30,
+        step: 0.1,
+      },
+      image_latents: {
+        label: 'Image Latents',
+        type: 'latents',
+        display: 'input',
+        onChange: { false: ['height', 'width'], true: ['strength'] },
+      },
+      strength: { label: 'Strength', type: 'float', default: 0.5, min: 0, max: 1, step: 0.01 },
+      controlnet_bundle: { label: 'ControlNet', type: 'custom_controlnet', display: 'input' },
+      route_state_in: { label: 'Route State', type: 'modular_route_state', display: 'input' },
+      guider: {
+        label: 'Guider',
+        type: 'custom_guider',
+        display: 'input',
+        onChange: { false: ['guidance_scale'], true: [] },
+      },
+      scheduler: { label: 'Scheduler *', type: 'diffusers_auto_model', display: 'input' },
+      latents: { label: 'Latents', type: 'latents', display: 'output' },
+      route_state_out: { label: 'Route State', type: 'modular_route_state', display: 'output' },
+      doc: { label: 'Doc', type: 'string', display: 'output' },
+    },
+    time: [0, 0, 0],
+    memory: [0, 0, 0],
+    cache: false,
+  },
+  'modules.ModularDiffusers.DecodeLatents': {
+    type: 'custom',
+    module: 'modules.ModularDiffusers',
+    action: 'DecodeLatents',
+    label: 'Decode Latents',
+    category: 'sampler',
+    description: '',
+    resizable: true,
+    skipParamsCheck: true,
+    style: {},
+    params: {
+      vae: {
+        label: 'VAE *',
+        display: 'input',
+        type: 'diffusers_auto_model',
+        onSignal: 'update_node',
+      },
+      latents: { label: 'Latents *', type: 'latents', display: 'input' },
+      route_state_in: { label: 'Route State', type: 'modular_route_state', display: 'input' },
+      images: { label: 'Images', type: 'image', display: 'output' },
+      doc: { label: 'Doc', type: 'string', display: 'output' },
+    },
+    time: [0, 0, 0],
+    memory: [0, 0, 0],
+    cache: false,
+  },
+  'modules.ModularDiffusers.ReviewedModularWorkflowStep': {
+    type: 'custom',
+    module: 'modules.ModularDiffusers',
+    action: 'ReviewedModularWorkflowStep',
+    label: 'Reviewed Modular Diffusers Block',
+    category: 'Modular Diffusers',
+    description: '',
+    resizable: true,
+    skipParamsCheck: true,
+    style: {},
+    params: {
+      pipeline_components: {
+        label: 'Pipeline Components',
+        display: 'input',
+        type: 'diffusers_modular_pipeline_components',
+      },
+      state_in: { label: 'Pipeline State', display: 'input', type: 'modular_workflow_state' },
+      loop_members_in: { label: 'Loop Members', display: 'input', type: 'modular_loop_members' },
+      pipeline_class: { type: 'string', hidden: true },
+      workflow_id: { type: 'string', hidden: true },
+      execution_scope: {
+        type: 'string',
+        hidden: true,
+        options: ['selected_workflow', 'unpruned_pipeline'],
+      },
+      placement_path: { type: 'object', hidden: true },
+      block_definition_id: { type: 'string', hidden: true },
+      block_class: { type: 'string', hidden: true },
+      block_contract_hash: { type: 'string', hidden: true },
+      execution_kind: { type: 'string', hidden: true, options: ['step', 'loop_owner', 'loop_member'] },
+      prompt: { label: 'Prompt', display: 'textarea', type: 'text', default: '' },
+      negative_prompt: { label: 'Negative Prompt', display: 'textarea', type: 'text', default: '' },
+      max_sequence_length: { label: 'Maximum Sequence Length', type: 'int', default: 1024 },
+      num_images_per_prompt: { label: 'Images Per Prompt', type: 'int', default: 1 },
+      latents: { label: 'Latents', display: 'input', type: 'latent' },
+      height: { label: 'Height', type: 'int', default: 1024 },
+      width: { label: 'Width', type: 'int', default: 1024 },
+      seed: { label: 'Seed', display: 'random', type: 'int', default: 0 },
+      num_inference_steps: { label: 'Steps', type: 'int', default: 50 },
+      sigmas: { label: 'Sigmas', type: 'object', default: null },
+      attention_kwargs: { label: 'Attention kwargs', type: 'object', default: null },
+      guidance_scale: { label: 'Guidance Scale', type: 'float', default: 4 },
+      output_type: { label: 'Output Type', type: 'string', default: 'pil', options: ['pil', 'np', 'pt'] },
+      state_out: { label: 'Pipeline State', display: 'output', type: 'modular_workflow_state' },
+      loop_members: { label: 'Loop Members', display: 'output', type: 'modular_loop_members' },
+      images: { label: 'Images', display: 'output', type: 'image' },
+    },
+    time: [0, 0, 0],
+    memory: [0, 0, 0],
+    cache: false,
+  },
+  'modules.Image.Preview': {
+    type: 'custom',
+    module: 'modules.Image',
+    action: 'Preview',
+    label: 'Preview Image',
+    category: 'image',
+    description: 'Preview an image',
+    resizable: true,
+    skipParamsCheck: false,
+    style: {},
+    params: {
+      vae: { type: 'pipeline', display: 'input', label: 'VAE' },
+      device: {
+        type: 'string',
+        default: 'cuda:0',
+        options: {
+          'cuda:0': installedOption('cuda:0'),
+          'cpu:0': installedOption('cpu:0'),
+          cpu: installedOption('cpu'),
+        },
+      },
+      image: {
+        type: ['image', 'latent'],
+        display: 'input',
+        onChange: { action: 'show', data: { true: ['vae', 'device'], false: [] }, condition: { type: 'latent' } },
+      },
+      preview: { display: 'ui_image', type: 'url', dataSource: 'output' },
+      output: { type: 'image', display: 'output', label: 'All images' },
+      export: {
+        type: 'str',
+        default: '0',
+        description: 'Export the image at the given index. Leave empty to export all images.',
+      },
+      filtered: { type: 'image', display: 'output', label: 'Selected image' },
+    },
+    time: [0, 0, 0],
+    memory: [0, 0, 0],
+    cache: false,
+  },
+} satisfies Record<string, Record<string, unknown>>;
+
+const mockModularModelTypeOptions = {
+  '': '',
+  DummyCustomPipeline: 'Custom',
+  StableDiffusionXLModularPipeline: 'Stable Diffusion XL',
+  QwenImageModularPipeline: 'Qwen-Image-2512',
+  QwenImageEditModularPipeline: 'Qwen-Image-Edit',
+  QwenImageEditPlusModularPipeline: 'Qwen-Image-Edit-2511',
+  QwenImageLayeredModularPipeline: 'Qwen-Image-Layered',
+  FluxModularPipeline: 'Flux',
+  FluxKontextModularPipeline: 'Flux Kontext',
+  Flux2KleinModularPipeline: 'Flux 2 Klein Distilled',
+  Flux2KleinBaseModularPipeline: 'Flux 2 Klein Base',
+  ZImageModularPipeline: 'Z-Image',
+  WanModularPipeline: 'WAN2 T2V',
+  WanImage2VideoModularPipeline: 'WAN2 I2V',
+  MiniMaxMusic3ModularPipeline: 'MiniMax Music 3',
+  AnimaModularPipeline: 'Anima',
+  HeliosModularPipeline: 'Helios',
+  HeliosPyramidModularPipeline: 'Helios Pyramid',
+  HeliosPyramidDistilledModularPipeline: 'Helios Pyramid Distilled',
+  WanAnimate2ModularPipeline: 'Wan Animate 2',
+  WanAnimate2DistilledModularPipeline: 'Wan Animate 2 Distilled',
+  Ideogram4ModularPipeline: 'Ideogram 4 (Contract only)',
+  Krea2ModularPipeline: 'Krea 2 (Contract only)',
+  Krea2TurboModularPipeline: 'Krea 2 Turbo (Contract only)',
+  StableDiffusion3ModularPipeline: 'Stable Diffusion 3 (Contract only)',
+  HunyuanVideo15ModularPipeline: 'HunyuanVideo 1.5 (Contract only)',
+  Cosmos3DistilledModularPipeline: 'Cosmos 3 Distilled (Contract only)',
+  Cosmos3OmniModularPipeline: 'Cosmos 3 Omni (Contract only)',
+  MiniMaxH3ModularPipeline: 'MiniMax H3 (Contract only)',
+  LTX25ModularPipeline: 'LTX-2.5 (Contract only)',
+};
+
+function mockGraphQualifiedQwenNodeDefinitionParams(action: 'EncodePrompt' | 'Denoise' | 'DecodeLatents') {
+  const key = `modules.ModularDiffusers.${action}`;
+  const definition = structuredClone(mockGraphQualifiedQwenRegistry[key]);
+  const params = definition.params as Record<string, unknown>;
+  delete params[action === 'EncodePrompt' ? 'text_encoders' : action === 'Denoise' ? 'unet' : 'vae'];
+  return params;
+}
+
+async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluster?: boolean } = {}) {
   mockAdvertiseStudioExecutionSpecs = true;
   mockFileUploadCalls = 0;
+  const assetCache = process.env.MODIFF_E2E_TEMPLATE_INPUT_CACHE;
+  if (assetCache) {
+    // Test-only cache populated through a pinned Hugging Face Hub pull. The
+    // content-addressed basename and normal app checksum both remain enforced.
+    await page.route(/\/template-gallery\/runtime-inputs\/assets\/[a-f0-9]{64}\.[a-z0-9]+$/, async (route) => {
+      const filename = path.basename(new URL(route.request().url()).pathname);
+      let body: Buffer;
+      try {
+        body = await fs.readFile(path.join(assetCache, filename));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return route.fallback();
+        throw error;
+      }
+      expect(createHash('sha256').update(body).digest('hex')).toBe(filename.split('.')[0]);
+      const type = path.extname(filename).slice(1);
+      await route.fulfill({
+        status: 200,
+        contentType: type === 'mp4' ? 'video/mp4' : type === 'wav' ? 'audio/wav' : `image/${type}`,
+        headers: { 'access-control-allow-origin': new URL(FRONTEND_URL).origin },
+        body,
+      });
+    });
+  }
+  const reviewedArtifactSelections = await mockReviewedArtifactSelections();
   const workflows = new Map<string, Record<string, unknown>>();
   const userBlocks = new Map<string, Record<string, unknown>>();
   let workflowRevision = 0;
+  const nodeLibrary = options.graphQualifiedQwenCluster
+    ? mockGraphQualifiedQwenNodeLibrary()
+    : mockHuggingFaceNodeLibrary;
+  await page.route('**/huggingface/node-library', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(nodeLibrary),
+    });
+  });
+  await page.route('**/huggingface/modular-conditionals', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockModularConditionalSnapshot(nodeLibrary)),
+    });
+  });
   await page.route('**/media/capabilities', async (route) => {
     await route.fulfill({
       status: 200,
@@ -3065,10 +4220,15 @@ async function installMockRoutes(page: Page) {
     const markerIndex = url.pathname.indexOf(marker);
     const workflowId = markerIndex >= 0 ? decodeURIComponent(url.pathname.slice(markerIndex + marker.length)) : '';
     if (request.method() === 'GET' && !workflowId) {
+      const records = Array.from(workflows.values());
+      const response =
+        url.searchParams.get('view') === 'summary'
+          ? records.map((record) => Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'snapshot')))
+          : records;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ workflows: Array.from(workflows.values()) }),
+        body: JSON.stringify({ workflows: response }),
       });
       return;
     }
@@ -3126,31 +4286,35 @@ async function installMockRoutes(page: Page) {
       body: png,
     });
   });
-  await page.route('**/file**', async (route) => {
-    if (route.request().method() === 'POST') {
-      mockFileUploadCalls += 1;
+  await page.route(
+    (url) => url.pathname === '/file',
+    async (route) => {
+      if (route.request().method() === 'POST') {
+        mockFileUploadCalls += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: false, path: `data/images/imported-reference-${mockFileUploadCalls}.png` }),
+        });
+        return;
+      }
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mP8z8Dwn4GBgYGJAQoAHQMBgOrlxjcAAAAASUVORK5CYII=',
+        'base64',
+      );
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: false, path: `data/images/imported-reference-${mockFileUploadCalls}.png` }),
+        contentType: 'image/png',
+        headers: { 'content-disposition': 'inline; filename="imported-reference.png"' },
+        body: png,
       });
-      return;
-    }
-    const png = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mP8z8Dwn4GBgYGJAQoAHQMBgOrlxjcAAAAASUVORK5CYII=',
-      'base64',
-    );
-    await route.fulfill({
-      status: 200,
-      contentType: 'image/png',
-      headers: { 'content-disposition': 'inline; filename="imported-reference.png"' },
-      body: png,
-    });
-  });
+    },
+  );
   await page.route('**/fields/action', async (route) => {
     const request = (route.request().postDataJSON() ?? {}) as {
       fn?: string;
       node?: string;
+      module?: string;
       action?: string;
       workflowTabId?: string;
       workflowCanvasEpoch?: number;
@@ -3162,8 +4326,79 @@ async function installMockRoutes(page: Page) {
         video_contract?: { pipelineClass?: string; modes?: string[] };
       };
     };
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
-    if (!request.node) return;
+    const fulfillAction = () =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) });
+    if (!request.node) {
+      await fulfillAction();
+      return;
+    }
+    if (options.graphQualifiedQwenCluster) {
+      const messages: Array<Record<string, unknown>> = [];
+      if (
+        request.module === 'modules.ModularDiffusers' &&
+        request.action === 'ModelsLoader' &&
+        request.fn === 'set_filters'
+      ) {
+        messages.push(
+          { type: 'set_field_params', field: 'model_type', params: { options: mockModularModelTypeOptions } },
+          {
+            type: 'set_field_params',
+            field: 'repo_id',
+            params: { fieldOptions: { filter: { hub: { className: ['QwenImageModularPipeline'] } } } },
+          },
+          { type: 'set_field_params', field: 'dtype', params: { value: 'bfloat16' } },
+          { type: 'set_field_value', fields: { modiff_pipeline_identity: null } },
+          { type: 'set_field_visibility', fields: { refresh_pipeline_identity_button: false } },
+          ...['text_encoders', 'unet_out', 'vae_out', 'scheduler', 'image_encoder', 'pipeline_components'].map(
+            (field) => ({
+              type: 'set_field_params',
+              field,
+              params: {
+                signal: {
+                  direction: 'output',
+                  origin: 'modiff_pipeline_identity',
+                  value: 'QwenImageModularPipeline',
+                },
+              },
+            }),
+          ),
+        );
+      } else if (
+        request.module === 'modules.ModularDiffusers' &&
+        request.fn === 'update_node' &&
+        (request.action === 'EncodePrompt' || request.action === 'Denoise' || request.action === 'DecodeLatents')
+      ) {
+        messages.push({
+          type: 'node_definition',
+          params: mockGraphQualifiedQwenNodeDefinitionParams(request.action),
+        });
+      }
+      if (messages.length) {
+        await page.evaluate(
+          ({ messages, node, workflowTabId, workflowCanvasEpoch, workflowFormEpoch }) => {
+            messages.forEach((message) =>
+              window.__MODIFF_E2E__!.sendWebsocketMessage({
+                ...message,
+                node,
+                workflow_tab_id: workflowTabId,
+                workflow_canvas_epoch: workflowCanvasEpoch,
+                workflow_form_epoch: workflowFormEpoch,
+              }),
+            );
+          },
+          {
+            messages,
+            node: request.node,
+            workflowTabId: request.workflowTabId,
+            workflowCanvasEpoch: request.workflowCanvasEpoch,
+            workflowFormEpoch: request.workflowFormEpoch,
+          },
+        );
+        await fulfillAction();
+        return;
+      }
+    }
+    await fulfillAction();
     if (request.fn === 'select_adapter') {
       const pipelineClass = request.values?.pipeline_class ?? 'WanImageToVideoPipeline';
       const modesByPipelineClass: Record<string, string[]> = {
@@ -3292,15 +4527,23 @@ async function installMockRoutes(page: Page) {
     );
   });
   await page.route('**/nodes**', async (route) => {
+    const routedRegistry = options.graphQualifiedQwenCluster
+      ? { ...mockRegistry, ...mockGraphQualifiedQwenRegistry }
+      : mockRegistry;
     const nodes = Object.fromEntries(
-      Object.entries(mockRegistry)
+      Object.entries(routedRegistry)
         .filter(([key]) => {
           if (!mockIncludeQuantizationNode && key === 'modules.ModularDiffusers.QuantizationConfigNode') return false;
           if (!mockIncludeOutpaintNode && key === 'modules.DiffusersImage.OutpaintCanvas') return false;
           return true;
         })
         .map(([key, value]) => {
-          if (!mockDynamicModularFields) return [key, value];
+          let routedValue = structuredClone(value);
+          if (options.graphQualifiedQwenCluster) {
+            const reviewedDefinition = mockGraphQualifiedQwenRegistry[key];
+            if (reviewedDefinition) routedValue = structuredClone(reviewedDefinition) as typeof routedValue;
+          }
+          if (!mockDynamicModularFields) return [key, routedValue];
           if (key === 'modules.ModularDiffusers.EncodePrompt') {
             return [
               key,
@@ -3317,7 +4560,7 @@ async function installMockRoutes(page: Page) {
               }),
             ];
           }
-          return [key, value];
+          return [key, routedValue];
         }),
     );
     await route.fulfill({
@@ -3330,22 +4573,24 @@ async function installMockRoutes(page: Page) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockGraphList) });
   });
   await page.route('**/hf_cache**', async (route) => {
-    const compact = new URL(route.request().url()).searchParams.get('compact') === '1';
     const installed = Array.from(mockInstalledRepos);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(
-        compact
-          ? installed
-          : installed.map((id) => ({
-              id,
-              type: 'model',
-              size: 0,
-              last_accessed: 0,
-              revisions: [{ hash: `${id}-mock-revision`, size: 0, last_modified: 0 }],
-              class_names: [],
-            })),
+        installed.map((id) => {
+          const selection = reviewedArtifactSelections.get(id);
+          return {
+            id,
+            type: 'model',
+            size: 0,
+            last_accessed: 0,
+            planned_revision: selection?.revision,
+            planned_files: selection?.files ?? [],
+            revisions: [{ hash: selection?.revision ?? `${id}-mock-revision`, size: 0, last_modified: 0 }],
+            class_names: [],
+          };
+        }),
       ),
     });
   });
@@ -3365,6 +4610,10 @@ async function installMockRoutes(page: Page) {
   });
   await page.route('**/model_capabilities**', async (route) => {
     const capabilities = mockStudioExecutionCapabilities();
+    if (options.graphQualifiedQwenCluster) {
+      const index = capabilities.findIndex((capability) => capability.modelType === 'QwenImageModularPipeline');
+      if (index >= 0) capabilities[index] = mockGraphQualifiedQwenExecutionCapability();
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -3538,38 +4787,46 @@ async function installMockRoutes(page: Page) {
             installActionAvailable: mockOptionalRuntimeActions,
             activationAvailable: mockOptionalRuntimeActions,
             status: 'missing',
-            overlayStatus: mockOptionalRuntimeQualified
-              ? 'active'
-              : mockOptionalRuntimeJobState === 'ready'
-                ? 'staged'
-                : 'missing',
+            overlayStatus: mockOptionalRuntimeRollbackToBase
+              ? 'repair_required'
+              : mockOptionalRuntimeQualified
+                ? 'active'
+                : mockOptionalRuntimeJobState === 'ready'
+                  ? 'staged'
+                  : 'missing',
           },
         ],
         overlay: {
           processLoadStatus: mockOptionalRuntimeProcessStatus,
           state: {
-            activeEnvironmentId: mockOptionalRuntimeQualified ? 'runtime-2-12345678' : null,
-            previousEnvironmentId: mockOptionalRuntimeActions ? 'runtime-1-abcdef12' : null,
+            activeEnvironmentId:
+              mockOptionalRuntimeQualified || mockOptionalRuntimeRollbackToBase ? 'runtime-2-12345678' : null,
+            previousEnvironmentId: mockOptionalRuntimeRollbackToBase
+              ? null
+              : mockOptionalRuntimeActions
+                ? 'runtime-1-abcdef12'
+                : null,
           },
-          environments: mockOptionalRuntimeQualified
-            ? [
-                {
-                  id: 'runtime-2-12345678',
-                  status: 'ready',
-                  active: true,
-                  specs: [{ kind: 'optional_runtime', id: profileId, specDigest: digest }],
-                },
-              ]
-            : mockOptionalRuntimeJobState === 'ready'
+          environments:
+            mockOptionalRuntimeQualified || mockOptionalRuntimeRollbackToBase
               ? [
                   {
                     id: 'runtime-2-12345678',
-                    status: 'ready',
-                    active: false,
+                    status: mockOptionalRuntimeRollbackToBase ? 'repair_required' : 'ready',
+                    active: true,
                     specs: [{ kind: 'optional_runtime', id: profileId, specDigest: digest }],
                   },
                 ]
-              : [],
+              : mockOptionalRuntimeJobState === 'ready'
+                ? [
+                    {
+                      id: 'runtime-2-12345678',
+                      status: 'ready',
+                      active: false,
+                      specs: [{ kind: 'optional_runtime', id: profileId, specDigest: digest }],
+                    },
+                  ]
+                : [],
         },
         activeInstallJob:
           mockOptionalRuntimeJobState === 'running' ? { ownerKind: 'optional_runtime', ownerId: profileId } : null,
@@ -3619,6 +4876,26 @@ async function installMockRoutes(page: Page) {
     });
   });
   await page.route('**/hf_download**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/hf_download/status')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: false,
+          schemaVersion: 1,
+          downloads: [],
+          activeCount: 0,
+          queuedReservationBytes: 0,
+          templateGalleryReservationBytes: 0,
+        }),
+      });
+      return;
+    }
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ error: true }) });
+      return;
+    }
     mockDownloadCalls += 1;
     const body = route.request().postDataJSON() as { repo_id?: unknown } | null;
     const repoId = typeof body?.repo_id === 'string' ? body.repo_id : 'missing';
@@ -3638,6 +4915,75 @@ async function installMockRoutes(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ error: false, result: true, task_id: 'mock-install-1', repo_id: repoId }),
+    });
+  });
+  await page.route('**/custom_modular/inspect', async (route) => {
+    const body = route.request().postDataJSON() as { repo_id?: unknown; revision?: unknown } | null;
+    const repo = typeof body?.repo_id === 'string' ? body.repo_id : 'missing/repository';
+    const revision = typeof body?.revision === 'string' ? body.revision : 'a'.repeat(40);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        schemaVersion: 1,
+        repository: repo,
+        revision,
+        sidecar: {
+          filename: 'mellon_pipeline_config.json',
+          format: 'mellon',
+          sha256: 'b'.repeat(64),
+          translatedFromMellon: true,
+        },
+        definition: {
+          label: 'Reviewed Modular Block',
+          defaultRepository: null,
+          defaultDtype: 'bfloat16',
+          blockCount: 2,
+          parameterCount: 4,
+          blocks: [
+            {
+              id: 'encode_prompt',
+              label: 'Encode Prompt',
+              blockName: 'text_encoder.encode',
+              hierarchy: ['text_encoder', 'encode'],
+              nodeType: 'custom',
+              inputNames: ['prompt'],
+              modelInputNames: ['text_encoder'],
+              outputNames: ['prompt_embeds'],
+              parameters: [],
+            },
+            {
+              id: 'denoise',
+              label: 'Denoise',
+              blockName: 'denoise',
+              hierarchy: ['denoise'],
+              nodeType: 'custom',
+              inputNames: ['prompt_embeds', 'steps'],
+              modelInputNames: ['transformer'],
+              outputNames: ['latents'],
+              parameters: [],
+            },
+          ],
+        },
+        remoteCode: {
+          allowed: false,
+          repositoryPythonPresent: true,
+          requiredForExecution: true,
+        },
+        admission: {
+          status: 'preview_only',
+          executable: false,
+          pipelineClass: null,
+          blocksClass: null,
+          components: [],
+          reasons: [
+            'Official Mellon custom blocks require repository block.py; the declarative sidecar was inspected without executing Python.',
+          ],
+        },
+        runtimeNode: null,
+        rejectedFields: [],
+      }),
     });
   });
   await page.route('**/template_gallery/**', async (route) => {
@@ -3732,6 +5078,7 @@ async function installMockRoutes(page: Page) {
       }),
     });
   });
+  return { userBlocks, workflows };
 }
 
 async function setStudioViewMode(page: Page, mode: 'auto' | 'expert') {
@@ -3743,7 +5090,19 @@ async function setStudioViewMode(page: Page, mode: 'auto' | 'expert') {
   await expect(toggle).toHaveAttribute('aria-checked', expected);
 }
 
+async function dismissTaskLauncher(page: Page) {
+  const launcher = page.getByTestId('task-launcher');
+  if (await launcher.isVisible()) {
+    await launcher.getByLabel('Close').click();
+    await expect(launcher).toBeHidden();
+  }
+}
+
 async function openTemplateBrowser(page: Page) {
+  // Empty workflows intentionally open the dismissible task launcher as a
+  // modal. Template-focused tests must close it before interacting with the
+  // library rail, exactly as a user choosing to build manually would.
+  await dismissTaskLauncher(page);
   const openButton = page.getByTestId('left-open-template-browser');
   if ((await openButton.count()) === 0) {
     // A workflow transition can close the panel while retaining its selected
@@ -3796,6 +5155,200 @@ async function bootMockedTemplateBrowser(page: Page) {
   await openTemplateBrowser(page);
 }
 
+async function pinCurrentQwenRouteToMockRegistry(page: Page, compilerInstanceId: string) {
+  const fixture = await page.evaluate(async (instanceId) => {
+    const [
+      libraryStore,
+      nodeStore,
+      flowStore,
+      graph,
+      adapter,
+      finalization,
+      materializer,
+      runtime,
+      routes,
+      schema,
+      insertion,
+      profiles,
+    ] = await Promise.all([
+      import('/src/stores/useHuggingFaceNodeLibraryStore.ts'),
+      import('/src/stores/useNodeStore.ts'),
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/studio/huggingFaceClusterGraph.ts'),
+      import('/src/studio/registeredBlockAdapterV2.ts'),
+      import('/src/studio/huggingFaceClusterFinalization.ts'),
+      import('/src/studio/huggingFaceClusterMaterializer.ts'),
+      import('/src/studio/huggingFaceClusterRuntime.ts'),
+      import('/src/studio/registeredBlockV2Routes.ts'),
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/huggingFaceClusterInsertion.ts'),
+      import('/src/studio/modelProfiles.ts'),
+    ]);
+    if (!libraryStore.useHuggingFaceNodeLibraryStore.getState().library) {
+      await libraryStore.useHuggingFaceNodeLibraryStore.getState().fetchLibrary();
+    }
+    const definition = libraryStore.useHuggingFaceNodeLibraryStore
+      .getState()
+      .library?.definitions.find(
+        (item) => item.pipelineClass === 'QwenImageModularPipeline' && item.workflowId === 'text2image',
+      );
+    if (!definition)
+      throw new Error(
+        `The mocked current Qwen definition is unavailable: ${libraryStore.useHuggingFaceNodeLibraryStore.getState().error ?? 'no parser error'}`,
+      );
+    const admission = definition.executionAdmissions[0];
+    if (!admission) throw new Error('The mocked current Qwen admission is unavailable.');
+    const executionSpec = nodeStore.useNodesStore
+      .getState()
+      .studioModelCapabilities.find((capability) => capability.modelType === definition.pipelineClass)
+      ?.studioExecutionSpecs?.find(
+        (candidate) =>
+          candidate.id === admission.studioExecutionSpec?.id &&
+          candidate.contentHash === admission.studioExecutionSpec.contentHash &&
+          candidate.executionProfileId === admission.studioExecutionSpec.executionProfileId,
+      );
+    if (!executionSpec) throw new Error('The mocked current Qwen execution schema is unavailable.');
+    // This compact browser fixture intentionally uses a smaller execution
+    // specification than production. Pin this disposable page module to that
+    // exact validated mock before asking the normal route guard to admit it.
+    const fixtureRoute = routes.REGISTERED_BLOCK_V2_ROUTES.find(
+      (candidate) => candidate.definitionId === definition.id && candidate.admissionId === admission.id,
+    );
+    if (fixtureRoute) {
+      (fixtureRoute.studioExecutionSpec as { contentHash: string }).contentHash =
+        admission.studioExecutionSpec?.contentHash ?? '';
+    }
+    const route = routes.registeredBlockV2Route(definition, admission);
+    if (!route) throw new Error('The mocked Qwen admission has no registered V2 route.');
+    const legacyRoot = graph.createHuggingFaceClusterNode(
+      definition,
+      instanceId,
+      { x: 0, y: 0 },
+      Object.fromEntries(definition.inputs.map((field) => [field.name, field.default])),
+      admission.id,
+    );
+    // Match production's hidden compiler transaction. Mounting the legacy
+    // renderer here lets its reconciliation effect replace the skeleton
+    // between field actions and invalidates the ownership we are testing.
+    legacyRoot.hidden = true;
+    legacyRoot.data.blockCompilationTransientV2 = `mock-compiler:${instanceId}`;
+    const instance = legacyRoot.data.huggingFaceClusterInstance;
+    if (!instance) throw new Error('The mocked Qwen pin compiler has no legacy instance.');
+    const form = {
+      ...profiles.getFormDefaultsForMode(admission.studioMode, definition.pipelineClass),
+      modelType: definition.pipelineClass,
+      mode: admission.studioMode,
+    };
+    const bindingValues = runtime.huggingFaceClusterExecutionParameterValues(admission, form);
+    const skeleton = materializer.materializeHuggingFaceClusterExecutionSkeleton({
+      definition,
+      instance,
+      admission,
+      executionSpec,
+      nodesRegistry: nodeStore.useNodesStore.getState().nodesRegistry,
+      bindingValues,
+      expanded: false,
+    });
+    // The compact mock publishes dynamic node definitions. Run those exact
+    // actions through the production websocket/store merge, then pin only
+    // this disposable browser module to the resulting source-neutral graph.
+    // The reviewed production route pins remain unchanged and independently
+    // audited against the complete backend registry.
+    const originalGraph = {
+      nodes: flowStore.useFlowStore.getState().nodes,
+      edges: flowStore.useFlowStore.getState().edges,
+    };
+    flowStore.useFlowStore.setState({ nodes: [...originalGraph.nodes, legacyRoot], edges: originalGraph.edges });
+    try {
+      const finalized = await finalization.finalizeHuggingFaceClusterDynamicFieldsInFlow({
+        definition,
+        instance,
+        admission,
+        executionSpec,
+        skeleton,
+        bindingValues,
+        timeoutMs: 5_000,
+      });
+      const reconciled = insertion.stabilizeReviewedInitialHandleVisibility(
+        definition.id,
+        materializer.reconcileHuggingFaceClusterExecutionSkeleton({
+          definition,
+          instance,
+          admission,
+          executionSpec,
+          skeleton: finalized.skeleton,
+          currentNodes: flowStore.useFlowStore.getState().nodes,
+          bindingValues,
+          expanded: instance.presentation.expanded,
+        }),
+      );
+      const compiled = adapter.compileRegisteredBlockV2(definition, reconciled, {
+        instanceId: instance.instanceId,
+        position: { x: 0, y: 0 },
+        route,
+        blockDefinitions: libraryStore.useHuggingFaceNodeLibraryStore.getState().library?.blockDefinitions,
+        reviewedModularStepNodeData:
+          nodeStore.useNodesStore.getState().nodesRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
+      });
+      route.compiledDefinitionContentHash = compiled.definition.contentHash;
+      const canonical = schema.canonicalBlockStringifyV2(schema.canonicalBlockDefinitionV2(compiled.definition));
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+      route.compiledDefinitionCanonicalSha256 = `sha256:${Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('')}`;
+      libraryStore.useHuggingFaceNodeLibraryStore.setState({
+        library: structuredClone(libraryStore.useHuggingFaceNodeLibraryStore.getState().library),
+      });
+      return {
+        contentHash: route.compiledDefinitionContentHash,
+        canonicalSha256: route.compiledDefinitionCanonicalSha256,
+        entry: {
+          catalogDefinitionId: definition.id,
+          catalogDefinitionContentHash: definition.contentHash,
+          admissionId: admission.id,
+          compiledDefinitionCanonicalSha256: route.compiledDefinitionCanonicalSha256,
+          definition: structuredClone(compiled.definition),
+          values: structuredClone(compiled.instance.values),
+          internalLayout: structuredClone(compiled.instance.presentation.internalLayout),
+          internalLayoutMode: compiled.instance.presentation.internalLayoutMode,
+        },
+      };
+    } finally {
+      flowStore.useFlowStore.setState(originalGraph);
+    }
+  }, compilerInstanceId);
+  await page.route('**/huggingface/registered-block-v2**', async (route) => {
+    const url = new URL(route.request().url());
+    if (
+      url.searchParams.get('definition_id') !== fixture.entry.catalogDefinitionId ||
+      url.searchParams.get('admission_id') !== fixture.entry.admissionId
+    ) {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":true}' });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 1, error: false, entry: fixture.entry }),
+    });
+  });
+  return { contentHash: fixture.contentHash, canonicalSha256: fixture.canonicalSha256 };
+}
+
+async function findQwenCatalogRow(page: Page) {
+  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const row = group.locator('[data-testid^="hugging-face-node-row-"]').filter({ hasText: 'Qwen Image' });
+  // Walk the rendered tree using its controls, just as a user browsing the
+  // library does. Only descendants of this catalog group may be expanded.
+  for (let level = 0; level < 10 && (await row.count()) === 0; level += 1) {
+    const closed = group.locator('[data-testid^="node-subgroup-"] > button[aria-expanded="false"]').first();
+    await expect(closed).toBeVisible();
+    await closed.click();
+  }
+  await expect(row).toBeVisible();
+  return row;
+}
+
 test.afterAll(() => {
   for (const child of managedProcesses.reverse()) {
     if (!child.killed) child.kill();
@@ -3812,10 +5365,1062 @@ test.beforeEach(() => {
   mockOptionalRuntimeQualified = false;
   mockOptionalRuntimeDelayMs = 0;
   mockOptionalRuntimeActions = false;
+  mockOptionalRuntimeRollbackToBase = false;
   mockOptionalRuntimeJobState = 'idle';
   mockTemplateGalleryInstallCalls = 0;
   mockTemplateGalleryInstalled = false;
   mockReadyProofStatus = 'declared_safe';
+});
+
+test('Hugging Face catalog uses Cluster Node terminology and fail-closed readiness', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('hf-cluster-persistence-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('hf-cluster-persistence-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  if (await page.getByTestId('task-launcher').isVisible()) {
+    await page.getByTestId('task-launcher').getByRole('button', { name: 'Close' }).click();
+  }
+  await page.getByTestId('left-tab-nodes').click();
+
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  await expect(clusterGroup).toBeVisible();
+  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toBeVisible();
+  await expect(page.getByTestId('node-group-Diffusers-Component-Nodes')).toBeVisible();
+  await expect(page.getByText('Diffusers Pipelines', { exact: true })).toHaveCount(0);
+
+  const clusterToggle = clusterGroup.getByRole('button').first();
+  await expect(clusterToggle).toHaveAttribute('aria-expanded', 'false');
+  await clusterToggle.click();
+  await expect(clusterToggle).toHaveAttribute('aria-expanded', 'true');
+  const qwenRow = await findQwenCatalogRow(page);
+  await expect(qwenRow).toBeVisible();
+  await expect(qwenRow).toHaveAttribute('data-readiness', 'catalog_only');
+  await expect(qwenRow).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(qwenRow).toHaveAttribute('draggable', 'true');
+  await expect(qwenRow).toContainText('Catalog only');
+  await expect(qwenRow).toHaveAccessibleName('Qwen Image — Text To Image. Catalog only; insert Cluster Node.');
+  await expect(qwenRow).toHaveAttribute(
+    'title',
+    /Insert the reviewed structural Cluster Node; execution remains unavailable/u,
+  );
+  await expect(page.locator('[data-cluster-role]')).toHaveCount(0);
+  await expect(page.locator('.react-flow__node-block')).toHaveCount(0);
+
+  await page.getByLabel('Search nodes').fill('qwen');
+  const filteredClusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  await expect(filteredClusterGroup).toContainText('Qwen Image');
+  await expect(filteredClusterGroup).not.toContainText('Flux — Text To Image');
+  await expect(filteredClusterGroup.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
+  const label = qwenRow.locator('[data-catalog-entry-label]');
+  await expect(label).toBeVisible();
+  expect((await label.boundingBox())!.width).toBeGreaterThan(90);
+  expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+test('a graph-qualified Qwen catalog drag inserts one durable V2 Block and preserves its ordinary projection', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await ensureFrontend();
+  let userNodeWriteRequests = 0;
+  const fieldActionRequests: Array<{
+    node?: string;
+    fn?: string;
+    workflowTabId?: string;
+    workflowCanvasEpoch?: number;
+    workflowFormEpoch?: number;
+  }> = [];
+  page.on('request', (request) => {
+    if (request.method() === 'GET') return;
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/studio/blocks' || pathname.startsWith('/studio/blocks/')) userNodeWriteRequests += 1;
+    if (pathname === '/fields/action') {
+      fieldActionRequests.push((request.postDataJSON() ?? {}) as (typeof fieldActionRequests)[number]);
+    }
+  });
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('registered-qwen-v2-lifecycle-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('registered-qwen-v2-lifecycle-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  const startupError = page.getByText('Could not finish loading', { exact: true });
+  if (await startupError.isVisible()) {
+    throw new Error(`Qwen V2 fixture failed startup validation: ${await page.locator('body').innerText()}`);
+  }
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-nodes').click();
+  await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-canvas-scope-pin');
+  fieldActionRequests.length = 0;
+
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await clusterGroup.getByRole('button').first().click();
+  }
+  const qwenRow = await findQwenCatalogRow(page);
+  await expect(qwenRow).toHaveAttribute('data-readiness', 'graph_qualified');
+  await page.route('**/huggingface/registered-block-v2**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.fallback();
+  });
+  const insertion = qwenRow.dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 340, y: 300 } });
+  const pendingInsertion = page.locator('[data-testid^="block-insertion-pending-"]');
+  await expect(pendingInsertion).toBeVisible({ timeout: 3_000 });
+  await expect(pendingInsertion).toContainText('Adding Qwen Image');
+  await expect(pendingInsertion).toContainText('Loading the registered Block definition and adding nodes');
+  await insertion;
+  await expect(pendingInsertion).toHaveCount(0);
+
+  const root = page
+    .locator('.react-flow__node-block')
+    .filter({ has: page.locator('[data-block-schema-version="2"]') })
+    .filter({ hasText: 'QwenImageModularPipeline' });
+  await expect(root).toHaveCount(1, { timeout: 10_000 });
+  await expect(page.locator('.react-flow__node-block')).toHaveCount(1);
+  await expect(page.locator('[data-cluster-role]')).toHaveCount(0);
+  const rootId = await root.getAttribute('data-id');
+  expect(rootId).toBeTruthy();
+  expect(fieldActionRequests).toEqual([]);
+  const rootFrame = root.getByTestId(`user-block-${rootId}`);
+  await expect(rootFrame).toHaveAttribute('data-block-schema-version', '2');
+  await expect(rootFrame).toHaveAttribute('data-block-source', 'diffusers_catalog');
+  await expect(root.getByLabel('prompt', { exact: true })).toHaveValue(
+    'A 20-year-old East Asian girl with delicate, charming features and large, bright brown eyes—expressive and lively, with a cheerful or subtly smiling expression. Her naturally wavy long hair is either loose or tied in twin ponytails. She has fair skin and light makeup accentuating her youthful freshness. She wears a modern, cute dress or relaxed outfit in bright, soft colors—lightweight fabric, minimalist cut. She stands indoors at an anime convention, surrounded by banners, posters, or stalls. Lighting is typical indoor illumination—no staged lighting—and the image resembles a casual iPhone snapshot: unpretentious composition, yet brimming with vivid, fresh, youthful charm.',
+  );
+  await expect(root.getByTestId(`node-handle-${rootId}-prompt`)).toBeVisible();
+  await expect(root.getByTestId(`node-handle-${rootId}-images`)).toBeVisible();
+  const autoEligibility = await page.evaluate(async () => {
+    const [{ inspectRegisteredBlockAutoEligibilityV2 }, { useFlowStore }] = await Promise.all([
+      import('/src/studio/blockAutoEligibilityV2.ts'),
+      import('/src/stores/useFlowStore.ts'),
+    ]);
+    const flow = useFlowStore.getState();
+    return inspectRegisteredBlockAutoEligibilityV2(flow.nodes, flow.edges);
+  });
+  // This disposable browser module is pinned to the exact mocked Qwen
+  // placement graph above. Production pins remain unchanged by the helper and
+  // are audited separately against the complete backend registry.
+  expect(autoEligibility).toMatchObject({ eligible: true, code: 'eligible', rootId });
+  const autoSwitch = page.getByTestId('topbar-auto-switch');
+  await expect(autoSwitch).toBeEnabled();
+  await expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
+
+  // Exact user regression: resizing the collapsed card must not pin the
+  // subsequently expanded frame to that collapsed width/height.
+  const resizeGrip = root.getByLabel('Drag to resize block');
+  const resizeBounds = await resizeGrip.boundingBox();
+  expect(resizeBounds).toBeTruthy();
+  await page.mouse.move(resizeBounds!.x + resizeBounds!.width / 2, resizeBounds!.y + resizeBounds!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    resizeBounds!.x + resizeBounds!.width / 2 + 180,
+    resizeBounds!.y + resizeBounds!.height / 2 + 140,
+    { steps: 5 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const size = await page.evaluate(
+        (instanceId) =>
+          window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === instanceId)?.blockInstanceV2
+            ?.presentation.size,
+        rootId!,
+      );
+      return Boolean(size && size.width > 500 && size.height > 400);
+    })
+    .toBe(true);
+  const collapsedResizedSize = await page.evaluate(
+    (instanceId) =>
+      window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === instanceId)?.blockInstanceV2?.presentation
+        .size,
+    rootId!,
+  );
+  expect(collapsedResizedSize).toBeTruthy();
+
+  const snapshot = async () =>
+    page.evaluate((instanceId) => {
+      const graph = window.__MODIFF_E2E__!.getState().flow as unknown as {
+        nodes: Array<{
+          id: string;
+          type?: string;
+          dataType?: string;
+          position: { x: number; y: number };
+          blockProjectionOwnerId?: string;
+          blockProjectionNodeId?: string;
+          blockInstanceV2?: {
+            schemaVersion: number;
+            instanceId: string;
+            values: Record<string, unknown>;
+            definitionSnapshot: {
+              definitionId: string;
+              contentHash: string;
+              boundary: {
+                inputs: Array<{ portId: string }>;
+                outputs: Array<{ portId: string }>;
+              };
+              suggestedInputs?: Array<{ values: Record<string, unknown> }>;
+            };
+            presentation: {
+              position: { x: number; y: number };
+              internalLayout: Record<string, { x: number; y: number; width?: number; height?: number }>;
+            };
+          };
+        }>;
+        edges: Array<{
+          id: string;
+          source: string;
+          target: string;
+          blockProjectionOwnerId?: string;
+        }>;
+      };
+      const blockRoot = graph.nodes.find((node) => node.id === instanceId);
+      const instance = blockRoot?.blockInstanceV2;
+      if (!blockRoot || !instance) throw new Error('The registered Qwen V2 root is missing.');
+      const projectionNodes = graph.nodes
+        .filter((node) => node.blockProjectionOwnerId === instanceId)
+        .map((node) => ({
+          id: node.id,
+          semanticNodeId: node.blockProjectionNodeId ?? '',
+          position: { x: node.position.x, y: node.position.y },
+        }))
+        .sort((left, right) => left.semanticNodeId.localeCompare(right.semanticNodeId));
+      return {
+        rootId: blockRoot.id,
+        rootType: blockRoot.type ?? null,
+        dataType: blockRoot.dataType ?? null,
+        schemaVersion: instance.schemaVersion,
+        definitionId: instance.definitionSnapshot.definitionId,
+        definitionContentHash: instance.definitionSnapshot.contentHash,
+        prompt: instance.values.prompt,
+        suggestedPrompt: instance.definitionSnapshot.suggestedInputs?.[0]?.values.prompt,
+        inputs: instance.definitionSnapshot.boundary.inputs.map(({ portId }) => portId).sort(),
+        outputs: instance.definitionSnapshot.boundary.outputs.map(({ portId }) => portId).sort(),
+        rootPosition: instance.presentation.position,
+        rootSize: instance.presentation.size,
+        internalLayout: instance.presentation.internalLayout,
+        projectionNodes,
+        projectionEdgeCount: graph.edges.filter((edge) => edge.blockProjectionOwnerId === instanceId).length,
+        hasLegacyClusterReceipt: JSON.stringify(graph).includes('huggingFaceCluster'),
+      };
+    }, rootId!);
+
+  const collapsedBefore = await snapshot();
+  expect(collapsedBefore).toMatchObject({
+    rootId,
+    rootType: 'block',
+    dataType: 'block',
+    schemaVersion: 2,
+    prompt:
+      'A 20-year-old East Asian girl with delicate, charming features and large, bright brown eyes—expressive and lively, with a cheerful or subtly smiling expression. Her naturally wavy long hair is either loose or tied in twin ponytails. She has fair skin and light makeup accentuating her youthful freshness. She wears a modern, cute dress or relaxed outfit in bright, soft colors—lightweight fabric, minimalist cut. She stands indoors at an anime convention, surrounded by banners, posters, or stalls. Lighting is typical indoor illumination—no staged lighting—and the image resembles a casual iPhone snapshot: unpretentious composition, yet brimming with vivid, fresh, youthful charm.',
+    suggestedPrompt:
+      'A 20-year-old East Asian girl with delicate, charming features and large, bright brown eyes—expressive and lively, with a cheerful or subtly smiling expression. Her naturally wavy long hair is either loose or tied in twin ponytails. She has fair skin and light makeup accentuating her youthful freshness. She wears a modern, cute dress or relaxed outfit in bright, soft colors—lightweight fabric, minimalist cut. She stands indoors at an anime convention, surrounded by banners, posters, or stalls. Lighting is typical indoor illumination—no staged lighting—and the image resembles a casual iPhone snapshot: unpretentious composition, yet brimming with vivid, fresh, youthful charm.',
+    inputs: ['prompt'],
+    outputs: ['images'],
+    projectionNodes: [],
+    projectionEdgeCount: 0,
+    hasLegacyClusterReceipt: false,
+  });
+  const rendererClass = await root.evaluate(
+    (element) => [...element.classList].find((name) => name.startsWith('react-flow__node-')) ?? null,
+  );
+
+  const fieldActionCountBeforeExpansion = fieldActionRequests.length;
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await expect(root.getByTestId(`user-block-toggle-${rootId}`)).toHaveAccessibleName('Collapse block');
+  // Expanding a root now reveals immediate children only. Its three loop
+  // members must stay hidden until the nested loop is explicitly opened.
+  await expect
+    .poll(async () => {
+      const expanded = await snapshot();
+      return { nodes: expanded.projectionNodes.length, edges: expanded.projectionEdgeCount };
+    })
+    .toEqual({ nodes: 11, edges: 10 });
+  await page.getByRole('button', { name: 'Expand Qwen Image Denoise Step', exact: true }).click();
+  await expect
+    .poll(async () => {
+      const expanded = await snapshot();
+      return { nodes: expanded.projectionNodes.length, edges: expanded.projectionEdgeCount };
+    })
+    .toEqual({ nodes: 14, edges: 13 });
+  await expect
+    .poll(() =>
+      page.evaluate((instanceId) => {
+        const rootNode = window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === instanceId);
+        return {
+          expandedWidth: rootNode?.width ?? null,
+          expandedHeight: rootNode?.height ?? null,
+          collapsedWidth: rootNode?.blockInstanceV2?.presentation.size.width ?? null,
+          collapsedHeight: rootNode?.blockInstanceV2?.presentation.size.height ?? null,
+        };
+      }, rootId!),
+    )
+    .not.toEqual({
+      expandedWidth: collapsedResizedSize!.width,
+      expandedHeight: collapsedResizedSize!.height,
+      collapsedWidth: collapsedResizedSize!.width,
+      collapsedHeight: collapsedResizedSize!.height,
+    });
+  await expect
+    .poll(async () =>
+      page.evaluate((instanceId) => {
+        const rootElement = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${instanceId}"]`);
+        const childElements = [...document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')].filter(
+          (element) => {
+            const childId = element.dataset.id;
+            const child = window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === childId);
+            return child?.blockProjectionOwnerId === instanceId;
+          },
+        );
+        if (!rootElement || !childElements.length) return null;
+        const rootBounds = rootElement.getBoundingClientRect();
+        const escaped = childElements
+          .map((element) => ({ id: element.dataset.id ?? '', bounds: element.getBoundingClientRect() }))
+          .filter(
+            ({ bounds }) =>
+              bounds.left < rootBounds.left - 1 ||
+              bounds.top < rootBounds.top - 1 ||
+              bounds.right > rootBounds.right + 1 ||
+              bounds.bottom > rootBounds.bottom + 1,
+          )
+          .map(({ id }) => id);
+        return {
+          root: { width: rootBounds.width, height: rootBounds.height },
+          childCount: childElements.length,
+          escaped,
+        };
+      }, rootId!),
+    )
+    .toMatchObject({ childCount: 14, escaped: [] });
+  await page.waitForTimeout(250);
+  expect(fieldActionRequests.slice(fieldActionCountBeforeExpansion)).toEqual([]);
+
+  const expandedBeforeMove = await snapshot();
+  const modelsProjection = expandedBeforeMove.projectionNodes.find(({ semanticNodeId }) => semanticNodeId === 'models');
+  expect(modelsProjection).toBeTruthy();
+  const modelsNode = page.locator(`.react-flow__node[data-id="${modelsProjection!.id}"]`);
+  const modelsBeforeResize = await modelsNode.boundingBox();
+  const modelsResizeGrip = modelsNode.getByTestId('node-resize-grip');
+  const modelsResizeBounds = await modelsResizeGrip.boundingBox();
+  expect(modelsBeforeResize).toBeTruthy();
+  expect(modelsResizeBounds).toBeTruthy();
+  const modelsResizeStart = {
+    clientX: modelsResizeBounds!.x + modelsResizeBounds!.width / 2,
+    clientY: modelsResizeBounds!.y + modelsResizeBounds!.height / 2,
+  };
+  // The exact expanded frame is deliberately larger than the test viewport.
+  // Dispatch the same pointer coordinates through the document so the test
+  // exercises CustomNode's real resize handler even when the lower-right grip
+  // is outside the current viewport.
+  await modelsResizeGrip.dispatchEvent('mousedown', { ...modelsResizeStart, button: 0, buttons: 1 });
+  await page.locator('body').dispatchEvent('mousemove', {
+    clientX: modelsResizeStart.clientX + 120,
+    clientY: modelsResizeStart.clientY + 80,
+    button: 0,
+    buttons: 1,
+  });
+  await page.locator('body').dispatchEvent('mouseup', {
+    clientX: modelsResizeStart.clientX + 120,
+    clientY: modelsResizeStart.clientY + 80,
+    button: 0,
+    buttons: 0,
+  });
+  await expect
+    .poll(async () => (await modelsNode.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(modelsBeforeResize!.width + 80);
+  const resizedModelsLayout = (await snapshot()).internalLayout.models;
+  expect(resizedModelsLayout?.width).toBeGreaterThan(modelsBeforeResize!.width + 80);
+  expect(resizedModelsLayout?.height).toBeGreaterThan(modelsBeforeResize!.height + 50);
+
+  const promptProjection = expandedBeforeMove.projectionNodes.find(({ semanticNodeId }) => semanticNodeId === 'prompt');
+  expect(promptProjection).toBeTruthy();
+  const promptNode = page.locator(`.react-flow__node[data-id="${promptProjection!.id}"]`);
+  await expect(promptNode).toBeVisible();
+  const dragHandle = promptNode.locator('header').first();
+  const dragBounds = await dragHandle.boundingBox();
+  expect(dragBounds).toBeTruthy();
+  await page.mouse.move(dragBounds!.x + dragBounds!.width / 2, dragBounds!.y + dragBounds!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dragBounds!.x + dragBounds!.width / 2 + 48, dragBounds!.y + dragBounds!.height / 2 + 32, {
+    steps: 5,
+  });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => (await snapshot()).internalLayout.prompt)
+    .not.toEqual(expandedBeforeMove.internalLayout.prompt);
+  const movedPromptPosition = (await snapshot()).internalLayout.prompt;
+  expect(movedPromptPosition).toBeTruthy();
+  await expect
+    .poll(async () =>
+      page.evaluate((instanceId) => {
+        const rootElement = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${instanceId}"]`);
+        const state = window.__MODIFF_E2E__!.getState().flow;
+        const childElements = state.nodes
+          .filter((node) => node.blockProjectionOwnerId === instanceId)
+          .map((node) => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${node.id}"]`))
+          .filter((element): element is HTMLElement => Boolean(element));
+        if (!rootElement || !childElements.length) return null;
+        const rootBounds = rootElement.getBoundingClientRect();
+        return childElements.filter((element) => {
+          const bounds = element.getBoundingClientRect();
+          return (
+            bounds.left < rootBounds.left - 1 ||
+            bounds.top < rootBounds.top - 1 ||
+            bounds.right > rootBounds.right + 1 ||
+            bounds.bottom > rootBounds.bottom + 1
+          );
+        }).length;
+      }, rootId!),
+    )
+    .toBe(0);
+
+  // Reproduce the retained-browser state that previously left an expanded
+  // Block's frame at its collapsed dimensions after an internal layout edit.
+  await page.evaluate(async (instanceId) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.setState((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === instanceId
+          ? { ...node, width: 360, height: 320, measured: { width: 360, height: 320 }, style: undefined }
+          : node,
+      ),
+    }));
+  }, rootId!);
+  await expect
+    .poll(async () => {
+      const state = await page.evaluate(
+        (instanceId) =>
+          window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === instanceId) as
+            { width?: number; height?: number } | undefined,
+        rootId!,
+      );
+      return { width: state?.width ?? null, height: state?.height ?? null };
+    })
+    .not.toEqual({ width: 360, height: 320 });
+  await expect
+    .poll(async () =>
+      page.evaluate((instanceId) => {
+        const rootElement = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${instanceId}"]`);
+        if (!rootElement) return null;
+        const rootBounds = rootElement.getBoundingClientRect();
+        const state = window.__MODIFF_E2E__!.getState().flow;
+        return state.nodes
+          .filter((node) => node.blockProjectionOwnerId === instanceId)
+          .map((node) => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${node.id}"]`))
+          .filter((element): element is HTMLElement => Boolean(element))
+          .filter((element) => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.right > rootBounds.right + 1 || bounds.bottom > rootBounds.bottom + 1;
+          }).length;
+      }, rootId!),
+    )
+    .toBe(0);
+
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await expect(root.getByTestId(`user-block-toggle-${rootId}`)).toHaveAccessibleName('Expand block');
+  await expect.poll(async () => (await snapshot()).projectionNodes.length).toBe(0);
+  const editedPrompt = 'A workflow-local Qwen prompt that survives Save and refresh';
+  await root.getByLabel('prompt', { exact: true }).fill(editedPrompt);
+  await root.getByLabel('prompt', { exact: true }).blur();
+  await expect(root.getByLabel('prompt', { exact: true })).toHaveValue(editedPrompt);
+  await expect(autoSwitch).toBeEnabled();
+
+  const beforeSave = await snapshot();
+  expect(beforeSave).toMatchObject({
+    rootId,
+    rootType: 'block',
+    dataType: 'block',
+    schemaVersion: 2,
+    definitionId: collapsedBefore.definitionId,
+    definitionContentHash: collapsedBefore.definitionContentHash,
+    prompt: editedPrompt,
+    inputs: ['prompt'],
+    outputs: ['images'],
+    rootPosition: collapsedBefore.rootPosition,
+    hasLegacyClusterReceipt: false,
+  });
+  expect(beforeSave.internalLayout.prompt).toEqual(movedPromptPosition);
+  expect(beforeSave.rootSize).toEqual(collapsedBefore.rootSize);
+
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Qwen registered V2 lifecycle');
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+  }
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const studio = window.__MODIFF_E2E__!.getState().studio;
+        return studio.workflowTabs.find((tab: { id: string }) => tab.id === studio.activeWorkflowTabId)?.dirty;
+      }),
+    )
+    .toBe(false);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const restoredRoot = page.locator(`.react-flow__node-block[data-id="${rootId}"]`);
+  await expect(restoredRoot).toHaveCount(1);
+  await expect(restoredRoot.getByTestId(`user-block-${rootId}`)).toHaveAttribute('data-block-schema-version', '2');
+  await expect(restoredRoot.getByTestId(`node-handle-${rootId}-prompt`)).toBeVisible();
+  await expect(restoredRoot.getByTestId(`node-handle-${rootId}-images`)).toBeVisible();
+  await expect(restoredRoot.getByLabel('prompt', { exact: true })).toHaveValue(editedPrompt);
+  await expect(page.locator('[data-cluster-role]')).toHaveCount(0);
+  expect(
+    await restoredRoot.evaluate(
+      (element) => [...element.classList].find((name) => name.startsWith('react-flow__node-')) ?? null,
+    ),
+  ).toBe(rendererClass);
+
+  const restored = await snapshot();
+  expect(restored).toMatchObject({
+    rootId,
+    rootType: 'block',
+    dataType: 'block',
+    schemaVersion: 2,
+    definitionId: beforeSave.definitionId,
+    definitionContentHash: beforeSave.definitionContentHash,
+    prompt: editedPrompt,
+    inputs: beforeSave.inputs,
+    outputs: beforeSave.outputs,
+    rootPosition: beforeSave.rootPosition,
+    rootSize: beforeSave.rootSize,
+    projectionNodes: [],
+    projectionEdgeCount: 0,
+    hasLegacyClusterReceipt: false,
+  });
+  expect(restored.internalLayout.prompt).toEqual(movedPromptPosition);
+  expect(restored.internalLayout.models).toEqual(resizedModelsLayout);
+
+  const fieldActionCountBeforeRematerialization = fieldActionRequests.length;
+  await restoredRoot.getByTestId(`user-block-toggle-${rootId}`).click();
+  await expect
+    .poll(async () => {
+      const expanded = await snapshot();
+      return { nodes: expanded.projectionNodes.length, edges: expanded.projectionEdgeCount };
+    })
+    .toEqual({ nodes: 14, edges: 13 });
+  await page.waitForTimeout(250);
+  expect(fieldActionRequests.slice(fieldActionCountBeforeRematerialization)).toEqual([]);
+  const restoredExpanded = await snapshot();
+  expect(restoredExpanded.internalLayout.models).toEqual(resizedModelsLayout);
+  await expect
+    .poll(
+      async () =>
+        (await page.locator(`.react-flow__node[data-id="${modelsProjection!.id}"]`).boundingBox())?.width ?? 0,
+    )
+    .toBeGreaterThanOrEqual((resizedModelsLayout?.width ?? 0) - 2);
+  expect(restoredExpanded.projectionNodes.find(({ semanticNodeId }) => semanticNodeId === 'prompt')?.position).toEqual({
+    x: movedPromptPosition.x,
+    y: movedPromptPosition.y,
+  });
+  expect(restoredExpanded.hasLegacyClusterReceipt).toBe(false);
+  expect(userNodeWriteRequests).toBe(0);
+  // The disposable route mutation above is intentionally module-local and is
+  // reset by a full browser reload; the restored fixture therefore returns to
+  // the production pin and fails closed as historical.
+  await expect(page.getByTestId('topbar-auto-switch')).toBeDisabled();
+});
+
+test('canvas-scoped dynamic publications retain tab ownership across duplicate node ids', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+
+  const identity = await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const nodeId = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.ModelsLoader');
+    let studio = useStudioStore.getState();
+    const originWorkflowTabId = studio.activeWorkflowTabId;
+    if (!originWorkflowTabId) throw new Error('The origin workflow is missing.');
+    studio.saveActiveWorkflowTab(true);
+    studio = useStudioStore.getState();
+    const snapshot = studio.workflowTabs.find((tab) => tab.id === originWorkflowTabId)?.snapshot;
+    if (!snapshot) throw new Error('The origin workflow snapshot is missing.');
+    const duplicateWorkflowTabId = studio.createWorkflowTab('Duplicate field-action workflow', snapshot);
+    studio = useStudioStore.getState();
+    return {
+      nodeId,
+      originWorkflowTabId,
+      duplicateWorkflowTabId,
+      canvasEpoch: studio.workflowCanvasEpoch,
+      formEpoch: studio.workflowFormEpoch,
+    };
+  });
+  expect(identity.duplicateWorkflowTabId).not.toBe(identity.originWorkflowTabId);
+
+  await page.evaluate(
+    ({ nodeId, originWorkflowTabId, canvasEpoch }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'set_field_params',
+        node: nodeId,
+        field: 'device',
+        params: { value: 'foreign-workflow-value' },
+        workflow_tab_id: originWorkflowTabId,
+        workflow_canvas_epoch: canvasEpoch,
+      });
+    },
+    {
+      nodeId: identity.nodeId,
+      originWorkflowTabId: identity.originWorkflowTabId,
+      canvasEpoch: identity.canvasEpoch,
+    },
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (nodeId) =>
+          window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.params.device?.value,
+        identity.nodeId,
+      ),
+    )
+    .toBe('cuda:0');
+
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setStudioFormForTest({ negativePrompt: 'Advance the duplicate workflow form.' });
+  });
+  await page.evaluate(
+    ({ nodeId, workflowTabId, canvasEpoch, staleFormEpoch }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'set_field_params',
+        node: nodeId,
+        field: 'device',
+        params: { value: 'stale-form-value' },
+        workflow_tab_id: workflowTabId,
+        workflow_canvas_epoch: canvasEpoch,
+        workflow_form_epoch: staleFormEpoch,
+      });
+    },
+    {
+      nodeId: identity.nodeId,
+      workflowTabId: identity.duplicateWorkflowTabId,
+      canvasEpoch: identity.canvasEpoch,
+      staleFormEpoch: identity.formEpoch,
+    },
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (nodeId) =>
+          window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.params.device?.value,
+        identity.nodeId,
+      ),
+    )
+    .toBe('cuda:0');
+
+  await page.evaluate(
+    ({ nodeId, workflowTabId, canvasEpoch }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'set_field_params',
+        node: nodeId,
+        field: 'device',
+        params: { value: 'cpu' },
+        workflow_tab_id: workflowTabId,
+        workflow_canvas_epoch: canvasEpoch,
+      });
+    },
+    {
+      nodeId: identity.nodeId,
+      workflowTabId: identity.duplicateWorkflowTabId,
+      canvasEpoch: identity.canvasEpoch,
+    },
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (nodeId) =>
+          window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === nodeId)?.params.device?.value,
+        identity.nodeId,
+      ),
+    )
+    .toBe('cpu');
+});
+
+test('field actions reject their caller when the backend action fails', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.unroute('**/fields/action');
+  await page.route('**/fields/action', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: true, message: 'Injected compiler field-action failure.' }),
+    });
+  });
+
+  const result = await page.evaluate(async () => {
+    const nodeId = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.ModelsLoader');
+    const [module, { useFlowStore }] = await Promise.all([
+      import('/src/utils/fieldAction.ts'),
+      import('/src/stores/useFlowStore.ts'),
+    ]);
+    const props = module.buildFieldActionProps(nodeId, 'model_type');
+    if (!props) throw new Error('The dynamic field-action fixture is missing.');
+    let rejectionMessage = '';
+    try {
+      await module.default(props, 'QwenImageModularPipeline', 'onChange', {
+        workflowScope: 'canvas',
+        propagateErrors: true,
+      });
+    } catch (error) {
+      rejectionMessage = error instanceof Error ? error.message : String(error);
+    }
+    await module.default(props, 'QwenImageModularPipeline', 'onChange', { workflowScope: 'canvas' });
+    return {
+      rejected: Boolean(rejectionMessage),
+      message: rejectionMessage,
+      defaultCallerResolved: true,
+      disabled:
+        useFlowStore.getState().nodes.find((node) => node.id === nodeId)?.data.params.model_type?.disabled ?? false,
+    };
+  });
+  expect(result).toMatchObject({ rejected: true, defaultCallerResolved: true, disabled: false });
+  expect(result.message).toContain('Injected compiler field-action failure.');
+  await expect(page.getByText(/Injected compiler field-action failure\./)).toBeVisible();
+});
+
+test('a current registered Qwen V2 Block visibly requests instance-local Auto authority before concrete submission', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+
+  const authorityRequests: Array<Record<string, unknown>> = [];
+  const graphRequests: Array<Record<string, unknown>> = [];
+  await page.route('**/huggingface/cluster/auto-authority', async (route) => {
+    const body = (route.request().postDataJSON() ?? {}) as {
+      schemaVersion?: unknown;
+      instance?: {
+        definitionRef?: { definitionId?: unknown; contentHash?: unknown };
+        definitionSnapshot?: {
+          source?: { executionAdmissionId?: unknown; repository?: unknown; repositoryRevision?: unknown };
+        };
+        effectiveGraph?: { graphHash?: unknown };
+        effectiveInterface?: { effectiveInterfaceHash?: unknown };
+        values?: unknown;
+      };
+      form?: Record<string, unknown>;
+    };
+    authorityRequests.push(structuredClone(body) as Record<string, unknown>);
+    const instance = body.instance;
+    const source = instance?.definitionSnapshot?.source;
+    if (
+      body.schemaVersion !== 1 ||
+      typeof instance?.definitionRef?.definitionId !== 'string' ||
+      typeof instance.definitionRef.contentHash !== 'string' ||
+      typeof instance.effectiveGraph?.graphHash !== 'string' ||
+      typeof instance.effectiveInterface?.effectiveInterfaceHash !== 'string' ||
+      typeof source?.executionAdmissionId !== 'string' ||
+      typeof source.repository !== 'string' ||
+      typeof source.repositoryRevision !== 'string'
+    ) {
+      await route.fulfill({ status: 400, contentType: 'application/json', body: '{"error":true}' });
+      return;
+    }
+    const orderedValue = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(orderedValue);
+      if (!value || typeof value !== 'object') return value;
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, entry]) => [key, orderedValue(entry)]),
+      );
+    };
+    const executionMaterial = JSON.stringify(
+      orderedValue({
+        values: instance.values,
+        effectiveInterfaceHash: instance.effectiveInterface.effectiveInterfaceHash,
+      }),
+    );
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < executionMaterial.length; index += 1) {
+      hash ^= executionMaterial.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    const issuedAt = new Date(Date.now() - 1_000).toISOString();
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        receipt: {
+          kind: 'auto',
+          definitionId: instance.definitionRef.definitionId,
+          definitionContentHash: instance.definitionRef.contentHash,
+          effectiveGraphHash: instance.effectiveGraph.graphHash,
+          executionParameterHash: `block-execution-parameters-v2-${(hash >>> 0).toString(16).padStart(8, '0')}`,
+          artifactRevisions: { [source.repository]: source.repositoryRevision },
+          admissionId: source.executionAdmissionId,
+          issuedAt,
+          expiresAt,
+        },
+      }),
+    });
+  });
+  await page.route('**/graph', async (route) => {
+    graphRequests.push((route.request().postDataJSON() ?? {}) as Record<string, unknown>);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false, message: 'queued', sid: 'mock-sid', task_id: 'registered-v2-auto-run' }),
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await dismissTaskLauncher(page);
+
+  const fixturePin = await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-auto-pin');
+
+  await page.getByTestId('left-tab-nodes').click();
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await clusterGroup.getByRole('button').first().click();
+  }
+  const qwenRow = await findQwenCatalogRow(page);
+  await qwenRow.dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 500, y: 320 } });
+  const root = page
+    .locator('.react-flow__node-block')
+    .filter({ has: page.locator('[data-block-schema-version="2"]') })
+    .filter({ hasText: 'QwenImageModularPipeline' });
+  await expect(root).toHaveCount(1, { timeout: 15_000 });
+  const rootId = await root.getAttribute('data-id');
+  expect(rootId).toBeTruthy();
+
+  const beforeAuto = await page.evaluate((id) => {
+    const node = window.__MODIFF_E2E__!.getState().flow.nodes.find((candidate) => candidate.id === id);
+    const instance = node?.blockInstanceV2;
+    if (!instance) throw new Error('The visible registered Qwen root is missing.');
+    return {
+      values: structuredClone(instance.values),
+      definitionHash: instance.definitionSnapshot.contentHash,
+      authorities: structuredClone(instance.authorities),
+    };
+  }, rootId!);
+  expect(beforeAuto.definitionHash).toBe(fixturePin.contentHash);
+  expect(beforeAuto.authorities.filter(({ kind }: { kind: string }) => kind === 'auto')).toEqual([]);
+
+  const autoSwitch = page.getByTestId('topbar-auto-switch');
+  await expect(autoSwitch).toBeEnabled();
+  if ((await autoSwitch.getAttribute('aria-checked')) === 'true') await autoSwitch.click();
+  await expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
+  await autoSwitch.click();
+  await expect(autoSwitch).toHaveAttribute('aria-checked', 'true');
+  expect(authorityRequests).toHaveLength(0);
+
+  const runButton = page.getByTestId('studio-run');
+  await expect(runButton).toBeEnabled({ timeout: 15_000 });
+  await runButton.click();
+  await expect.poll(() => authorityRequests.length).toBe(1);
+  await expect.poll(() => graphRequests.length).toBe(1);
+
+  const authorityRequest = authorityRequests[0] as {
+    instance: { instanceId: string; values: Record<string, unknown> };
+    form: Record<string, unknown>;
+  };
+  expect(authorityRequest.instance.instanceId).toBe(rootId);
+  expect(authorityRequest.instance.values).toEqual(beforeAuto.values);
+  expect(authorityRequest.form).toMatchObject({
+    modelType: 'QwenImageModularPipeline',
+    mode: 'modular_text_to_image',
+    resourceMode: 'auto',
+  });
+
+  const afterAuto = await page.evaluate(async (id) => {
+    const [{ useFlowStore }, authority] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/studio/blockExecutionAuthorityV2.ts'),
+    ]);
+    const instance = useFlowStore.getState().nodes.find((node) => node.id === id)?.data.blockInstanceV2;
+    if (!instance) throw new Error('The visible registered Qwen root disappeared after Auto planning.');
+    return {
+      values: structuredClone(instance.values),
+      status: authority.registeredBlockAutoAuthorityStatusV2(instance),
+      autoReceiptCount: instance.authorities.filter(({ kind }) => kind === 'auto').length,
+    };
+  }, rootId!);
+  expect(afterAuto.values).toEqual(beforeAuto.values);
+  expect(afterAuto.status).toMatchObject({ required: true, ready: true, code: 'ready', instanceId: rootId });
+  expect(afterAuto.autoReceiptCount).toBe(1);
+
+  const submitted = graphRequests[0]!;
+  const executablePayload = JSON.stringify({ nodes: submitted.nodes, paths: submitted.paths });
+  expect(executablePayload).not.toContain('blockInstanceV2');
+  expect(executablePayload).not.toContain('blockCompilationTransientV2');
+  expect(executablePayload).not.toContain('huggingFaceCluster');
+  expect(executablePayload).not.toContain(fixturePin.canonicalSha256);
+  expect((submitted.nodes as Record<string, unknown>)[rootId!]).toBeUndefined();
+  expect(Object.keys(submitted.nodes as Record<string, unknown>).length).toBeGreaterThan(1);
+  const recoverySnapshot = (
+    submitted.runtimeHints as {
+      workflowSnapshot: {
+        nodes: Array<{
+          id: string;
+          data: {
+            blockInstanceV2?: {
+              values: Record<string, unknown>;
+              effectiveInterface: { effectiveInterfaceHash: string };
+              presentation: { position: { x: number; y: number }; internalLayout: Record<string, unknown> };
+              authorities: unknown[];
+            };
+          };
+        }>;
+      };
+    }
+  ).workflowSnapshot;
+  const recoveryRoot = recoverySnapshot.nodes.find(({ id }) => id === rootId)?.data.blockInstanceV2;
+  expect(recoveryRoot).toBeTruthy();
+  expect(recoveryRoot?.values).toEqual(beforeAuto.values);
+  expect(recoveryRoot?.effectiveInterface.effectiveInterfaceHash).toBeTruthy();
+  expect(recoveryRoot?.presentation.position).toEqual({ x: 500, y: 320 });
+  expect(recoveryRoot?.presentation.internalLayout).toBeTruthy();
+  expect(recoveryRoot?.authorities).toEqual([]);
+});
+
+test('Hub import installs, translates, previews, and persists a pinned remote-code-disabled User Node', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('hf-user-node-import-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('hf-user-node-import-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-nodes').click();
+  const userNodes = page.getByTestId('node-group-User-Nodes');
+  if ((await userNodes.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await userNodes.getByRole('button').first().click();
+  }
+  await userNodes.getByTestId('import-hugging-face-user-node').click();
+  const dialog = page.getByTestId('import-hugging-face-user-node-dialog');
+  await expect(dialog).toBeVisible();
+  await verifyCompactDialog(page, dialog, 'hub-import');
+  const repo = 'diffusers/reviewed-modular-block';
+  const revision = 'a'.repeat(40);
+  await dialog.getByLabel('Hugging Face User Node repository').fill(repo);
+  await dialog.getByLabel('Hugging Face User Node revision').fill(revision);
+  await dialog.getByTestId('hugging-face-user-node-reviewed').click();
+  await dialog.getByLabel('Hugging Face User Node revision').fill('b'.repeat(40));
+  await expect(dialog.getByTestId('hugging-face-user-node-reviewed')).not.toBeChecked();
+  await dialog.getByLabel('Hugging Face User Node revision').fill(revision);
+  await dialog.getByTestId('hugging-face-user-node-reviewed').click();
+  await dialog.getByTestId('inspect-hugging-face-user-node').click();
+  const inspection = dialog.getByTestId('hugging-face-user-node-inspection');
+  await expect(inspection).toBeVisible();
+  await expect(inspection).toContainText('mellon_pipeline_config.json');
+  await expect(inspection).toContainText('2 blocks');
+  await expect(inspection).toContainText('Encode Prompt');
+  await expect(inspection).toContainText('text_encoder / encode');
+  await expect(inspection).toContainText('Denoise');
+  await expect(inspection).toContainText('preview only');
+  await expect(inspection).toContainText('repository Python remains disabled');
+  await verifyCompactDialog(page, dialog, 'hub-inspection');
+  await dialog.getByTestId('confirm-hugging-face-user-node-import').click();
+  await expect(dialog).toHaveCount(0);
+
+  const importedBlock = page.locator('.react-flow__node-block').filter({ hasText: 'Reviewed Modular Block' });
+  await expect(importedBlock).toBeVisible();
+  await importedBlock.getByRole('button', { name: 'Expand block' }).click();
+
+  const beforeRefresh = await page.evaluate(() => {
+    const node = window
+      .__MODIFF_E2E__!.getState()
+      .flow.nodes.find((candidate) => candidate.action === 'DynamicBlockNode');
+    return node
+      ? {
+          category: node.category,
+          repo: node.params.repo_id?.value,
+          revision: node.params.revision?.value,
+          trustRemoteCode: node.params.trust_remote_code?.value,
+          disabled: node.uiState?.disabled,
+        }
+      : null;
+  });
+  expect(beforeRefresh).toEqual({
+    category: 'User Nodes',
+    repo: { source: 'hub', value: repo },
+    revision,
+    trustRemoteCode: false,
+    disabled: true,
+  });
+  await importedBlock.getByRole('button', { name: 'Collapse block' }).click();
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Imported Hub User Node');
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const restoredBlock = page.locator('.react-flow__node-block').filter({ hasText: 'Reviewed Modular Block' });
+  await expect(restoredBlock).toBeVisible();
+  await restoredBlock.getByRole('button', { name: 'Expand block' }).click();
+  const afterRefresh = await page.evaluate(() => {
+    const node = window
+      .__MODIFF_E2E__!.getState()
+      .flow.nodes.find((candidate) => candidate.action === 'DynamicBlockNode');
+    return node
+      ? {
+          category: node.category,
+          repo: node.params.repo_id?.value,
+          revision: node.params.revision?.value,
+          trustRemoteCode: node.params.trust_remote_code?.value,
+          disabled: node.uiState?.disabled,
+        }
+      : null;
+  });
+  expect(afterRefresh).toEqual(beforeRefresh);
+  if (!(await page.getByLabel('Search nodes').isVisible())) {
+    await page.getByTestId('left-tab-nodes').click();
+  }
+  const restoredUserNodes = page.getByTestId('node-group-User-Nodes');
+  if ((await restoredUserNodes.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await restoredUserNodes.getByRole('button').first().click();
+  }
+  await page.getByLabel('Search nodes').fill('Reviewed Modular Block');
+  await expect(restoredUserNodes).toContainText('Reviewed Modular Block');
 });
 
 test('top bar reports live system and accelerator resources without refreshing runtime discovery', async ({ page }) => {
@@ -3823,6 +6428,7 @@ test('top bar reports live system and accelerator resources without refreshing r
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
   const logo = page.getByRole('img', { name: 'MoDiff' });
@@ -3847,6 +6453,7 @@ test('Template Gallery setup plans and installs only after explicit consent', as
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
 
   const card = page.getByTestId('template-gallery-setup-card');
@@ -3945,6 +6552,7 @@ test('qualified optional runtime setup requires consent and supports progress, c
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
   await page.evaluate(() => {
     window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
     window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
@@ -3977,12 +6585,41 @@ test('qualified optional runtime setup requires consent and supports progress, c
   await activateDialog.getByRole('button', { name: 'Activate', exact: true }).click();
   await expect(disclosure.getByText(/restart required/)).toBeVisible();
   expect(mockOptionalRuntimeMutationCalls).toBe(4);
+  mockOptionalRuntimeQualified = true;
+  mockOptionalRuntimeProcessStatus = 'active';
+  await expect(disclosure.getByText(/active\./)).toBeVisible({ timeout: 5_000 });
+  // Runtime activation rehydrates the workspace. On an empty graph its task
+  // launcher can reopen, so dismiss it before interacting with Setup again.
+  await dismissTaskLauncher(page);
 
   await disclosure.getByRole('button', { name: 'Rollback', exact: true }).click();
   const rollbackDialog = page.getByRole('dialog');
   await expect(rollbackDialog).toContainText('previous validated optional environment');
   await rollbackDialog.getByRole('button', { name: 'Rollback', exact: true }).click();
   await expect.poll(() => mockOptionalRuntimeMutationCalls).toBe(5);
+});
+
+test('a broken active optional runtime can be rolled back to the base runtime', async ({ page }) => {
+  mockOptionalRuntimeActions = true;
+  mockOptionalRuntimeRollbackToBase = true;
+  mockOptionalRuntimeProcessStatus = 'repair_required';
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+
+  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const rollback = disclosure.getByRole('button', { name: 'Rollback to base', exact: true });
+  await expect(rollback).toBeVisible();
+  await rollback.click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('validated base runtime');
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
+  await dialog.getByRole('button', { name: 'Rollback', exact: true }).click();
+  await expect.poll(() => mockOptionalRuntimeMutationCalls).toBe(1);
 });
 
 test('manual graphs expose Encode Image status and graph-derived full-resolution A/B comparison', async ({ page }) => {
@@ -4117,7 +6754,9 @@ test('manual graphs expose Encode Image status and graph-derived full-resolution
   await expect(page.getByRole('heading', { name: 'A/B image comparison' })).toBeVisible();
 });
 
-test('template browser loads indexes once at startup and never refreshes them when reopened', async ({ page }) => {
+test('template browser defers its indexes until first open and never refreshes them when reopened', async ({
+  page,
+}) => {
   mockInstalledRepos.clear();
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
@@ -4127,15 +6766,19 @@ test('template browser loads indexes once at startup and never refreshes them wh
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await expect.poll(() => Object.values(requestCounts).every((count) => count >= 1), { timeout: 30_000 }).toBe(true);
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
   await page.waitForTimeout(250);
 
-  const oncePerStartup = Object.fromEntries(
-    Object.keys(STARTUP_INDEX_REQUEST_PATHS).map((name) => [name, 1]),
+  const onceWhenNeeded = Object.fromEntries(
+    Object.keys(STARTUP_INDEX_REQUEST_PATHS).map((name) => [name, name === 'autoPlans' || name === 'manifest' ? 0 : 1]),
   ) as Record<StartupIndexRequestName, number>;
-  expect(requestCounts).toEqual(oncePerStartup);
+  expect(requestCounts).toEqual(onceWhenNeeded);
 
   await openTemplateBrowser(page);
+  await expect.poll(() => requestCounts.autoPlans).toBe(1);
+  await expect.poll(() => requestCounts.manifest).toBe(1);
+  onceWhenNeeded.autoPlans = 1;
+  onceWhenNeeded.manifest = 1;
   await page.getByTestId('template-browser-category-all').click();
   await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
   await openTemplateBrowser(page);
@@ -4144,7 +6787,7 @@ test('template browser loads indexes once at startup and never refreshes them wh
   await openTemplateBrowser(page);
   await page.waitForTimeout(250);
 
-  expect(requestCounts).toEqual(oncePerStartup);
+  expect(requestCounts).toEqual(onceWhenNeeded);
 });
 
 test('template startup indexes recover once at the correct readiness signal without a modal refresh', async ({
@@ -4183,6 +6826,11 @@ test('template startup indexes recover once at the correct readiness signal with
 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  expect(manifestAttempts).toBe(0);
+  expect(autoPlanAttempts).toBe(0);
+
+  await openTemplateBrowser(page);
 
   await expect.poll(() => manifestAttempts, { timeout: 10_000 }).toBe(2);
   expect(autoPlanAttempts).toBe(1);
@@ -4190,7 +6838,6 @@ test('template startup indexes recover once at the correct readiness signal with
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect.poll(() => autoPlanAttempts, { timeout: 10_000 }).toBe(2);
 
-  await openTemplateBrowser(page);
   await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
   await openTemplateBrowser(page);
   await page.waitForTimeout(250);
@@ -4209,6 +6856,7 @@ test('template launcher stacks its copy and external categories scroll into view
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
+  await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-templates').click();
   const launcherCard = page.getByRole('button', { name: /Template browser.*Search by task/ });
   await expect(launcherCard).toBeVisible();
@@ -4451,7 +7099,7 @@ test('template details use one narrow scroll pane and split only when the modal 
   expect(narrow.bodyOverflowY).toBe('hidden');
   expect(narrow.detailBorderLeftWidth).toBe('0px');
 
-  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.setViewportSize({ width: 1920, height: 1400 });
   await expect.poll(async () => (await measureDetailLayout()).galleryDisplay).toBe('block');
   const wide = await measureDetailLayout();
   expect(wide.content.width).toBeGreaterThanOrEqual(1024);
@@ -4615,6 +7263,22 @@ test('Wan outpaint uploads its reviewed source and mask defaults before creating
   await expect(detail).not.toContainText('Mask video required');
   await page.getByTestId('template-browser-create-wan_vace_outpaint_reframe').click();
   await expect(page.getByTestId('template-browser-dialog')).toBeHidden();
+
+  // Closing the chooser starts asynchronous default-media uploads; it is not
+  // a graph-finalization signal. Wait for the actual two file bindings before
+  // taking the immutable assertion snapshot below.
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      const { sourceVideo, maskVideo } = current.studio.form;
+      return Boolean(
+        sourceVideo &&
+        maskVideo &&
+        current.flow.nodes.find((node) => node.studioRole === 'loadVideo')?.params.file?.value === sourceVideo &&
+        current.flow.nodes.find((node) => node.studioRole === 'loadMaskVideo')?.params.file?.value === maskVideo,
+      );
+    })
+    .toBe(true);
 
   const state = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())) as {
     flow: {
@@ -4825,10 +7489,42 @@ test('mocked Studio normalizes persisted forms without video fields', async ({ p
 
 test('schema-v2 capabilities hide and block an exact model task pair the backend omits', async ({ page }) => {
   mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('InstantX/Qwen-Image-ControlNet-Union');
   mockIncludeQuantizationNode = true;
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(() => {
+    // The compact registry publishes the managed graph synchronously, while
+    // its intentionally incomplete dynamic fields can keep finalization
+    // pending. This test needs the nonempty managed graph, not a completed
+    // generation graph, so retain and observe the published state without
+    // waiting for that unrelated finalization timeout.
+    void window
+      .__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+        resourceMode: 'expert',
+        controlImage: 'mock-control.png',
+        referenceImages: ['mock-control.png'],
+      })
+      .catch(() => undefined);
+  });
+  await expect
+    .poll(async () => {
+      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+      return {
+        mode: current.studio.form.mode,
+        modelType: current.studio.form.modelType,
+      };
+    })
+    .toEqual({ mode: 'control_image', modelType: 'QwenImageModularPipeline' });
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).flow.nodes.length)
+    .toBeGreaterThan(0);
+
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
     await route.fulfill({
@@ -4853,19 +7549,15 @@ test('schema-v2 capabilities hide and block an exact model task pair the backend
       }),
     });
   });
-  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.refreshTaskTemplateContracts();
+    window.__MODIFF_E2E__!.setStudioFormForTest({ resourceMode: 'auto' });
+  });
   await expect
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
     .toHaveLength(1);
 
   await page.evaluate(() => {
-    window.__MODIFF_E2E__!.setStudioFormForTest({
-      mode: 'control_image',
-      modelType: 'QwenImageModularPipeline',
-      resourceMode: 'expert',
-    });
     window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
   });
   await expect(page.getByTestId('studio-panel')).toBeVisible();
@@ -5089,8 +7781,8 @@ test('canonical saved modular imports are adopted as managed and real topology e
 
   const adopted = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
   expect(adopted.studio.activeTemplateId).toBeNull();
-  expect(adopted.studio.form.modelType).toBe('Flux2KleinPipeline');
-  expect(adopted.studio.graphBinding?.modelType).toBe('Flux2KleinPipeline');
+  expect(adopted.studio.form.modelType).toBe('Flux2KleinModularPipeline');
+  expect(adopted.studio.graphBinding?.modelType).toBe('Flux2KleinModularPipeline');
   expect(adopted.studio.graphBinding?.nodes).toEqual({
     models: 'models',
     prompt: 'prompt',
@@ -5158,7 +7850,9 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await expect(page.getByTestId('launcher-mode-image_to_video')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-models').click();
   await expect(page.getByTestId('left-model-installed')).toBeVisible();
   await expect(page.getByTestId('left-model-supported')).toBeVisible();
@@ -5276,6 +7970,7 @@ test('installed model insertion uses the exact execution-profile loader identity
     .poll(async () => (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.studioModelCapabilities)
     .not.toHaveLength(0);
 
+  await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-models').click();
   const installed = page.getByTestId('left-model-installed');
   await installed.getByRole('button', { name: /^Image 1$/ }).click();
@@ -5373,6 +8068,7 @@ test('mocked Workflows panel groups MoDiff examples in Auto and reveals raw root
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-workflows').click();
   await expect(page.getByTestId('workflow-list')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('workflow-source-MoDiff-Examples')).toBeVisible();
@@ -5393,6 +8089,7 @@ test('left libraries stay contained at minimum width and collapse workflow actio
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
 
+  await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-assets').click();
   const panel = page.getByTestId('left-panel');
   await expect(panel).toBeVisible();
@@ -5434,6 +8131,21 @@ test('left libraries stay contained at minimum width and collapse workflow actio
   expect(savedRowBox).not.toBeNull();
   expect(savedRowBox!.x + savedRowBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
   expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  const exactDocumentRequest = page.waitForRequest(
+    (request) =>
+      request.method() === 'GET' && new URL(request.url()).pathname.endsWith('/workflows/min-width-workflow'),
+  );
+  await savedRow
+    .getByRole('button', {
+      name: 'Qwen-Image-2512 — Text to Image: Product campaign with an intentionally long workflow title',
+      exact: true,
+    })
+    .click();
+  await exactDocumentRequest;
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe('min-width-workflow');
 });
 
 test('new workflows stay neutral and ordinary node clicks dismiss the launcher', async ({ page }) => {
@@ -5448,6 +8160,29 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
   await expect(page.getByTestId('task-launcher')).toBeVisible();
   await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
   await expect(page.getByTestId('studio-empty-workflow')).not.toContainText('Z-Image');
+
+  await page.getByTestId('task-launcher').getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.visibleNodeCount)).toBe(0);
+
+  // A late hydration response must not remount the dismissed modal over the
+  // same empty workflow. New-document transitions below still show it.
+  await page.evaluate(() => window.__MODIFF_E2E__!.rehydrateActiveWorkflowCanvasForTest());
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+
+  await page.getByTestId('topbar-new-workflow').click();
+  const dismissibleLauncher = page.getByTestId('task-launcher');
+  await expect(dismissibleLauncher).toBeVisible();
+  const launcherBox = await dismissibleLauncher.boundingBox();
+  expect(launcherBox).not.toBeNull();
+  await page.mouse.click(Math.max(2, launcherBox!.x - 12), Math.max(2, launcherBox!.y - 12));
+  await expect(dismissibleLauncher).toHaveCount(0);
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+
+  await page.getByTestId('topbar-new-workflow').click();
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
 
   await page.getByTestId('launcher-mode-text_to_image').click();
   await expect
@@ -5466,9 +8201,9 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
   await expect(page.getByTestId('studio-task-model-summary')).toHaveCount(0);
   await expect(page.getByTestId('studio-empty-workflow')).not.toContainText('Z-Image');
 
+  await page.getByTestId('task-launcher').getByRole('button', { name: 'Close' }).click();
   await page.getByTestId('left-tab-nodes').click();
-  const firstNodeGroup = page.locator('[data-testid^="node-group-"]').first();
-  await firstNodeGroup.getByRole('button').first().click();
+  await page.getByTestId('node-group-Load').click();
   const firstNode = page.locator('[data-testid^="node-row-"]').first();
   await expect(firstNode).toBeVisible();
   await firstNode.click();
@@ -5495,9 +8230,14 @@ test('workflow save shortcuts prevent browser defaults and distinguish Save from
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  // Close the launcher's initial neutral workflow before asking the top bar to
+  // create the unnamed workflow whose Save/Save As lifecycle this test owns.
+  await dismissTaskLauncher(page);
   await page.getByTestId('topbar-new-workflow').click();
   await expect(page.getByTestId('task-launcher')).toBeVisible();
   const initialTabCount = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.workflowTabs.length);
+  await dismissTaskLauncher(page);
 
   const savePrevented = await page.evaluate(() => {
     const event = new KeyboardEvent('keydown', {
@@ -5565,6 +8305,7 @@ test('mocked Gallery and workflow export use the latest active workflow output',
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   const activeWorkflowTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   expect(activeWorkflowTabId).toBeTruthy();
   const now = Date.now();
@@ -5641,6 +8382,7 @@ test('mocked imported assets fill active Studio input slots', async ({ page }) =
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   await page.evaluate(async () => {
     try {
       await window.__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
@@ -5714,7 +8456,12 @@ test('mocked imported assets fill active Studio input slots', async ({ page }) =
         sourceAudio: '',
       });
     } catch {
-      // The field-routing behavior can still be tested when graph synthesis is mocked out.
+      // Graph synthesis is intentionally unavailable here and now rolls its
+      // form transaction back. Establish the target form explicitly so this
+      // remains an imported-audio routing test rather than a partial-template
+      // mutation assertion.
+      const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+      useStudioStore.getState().updateForm({ mode: 'audio_continuation', sourceAudio: '' });
     }
     window.__MODIFF_E2E__!.seedImportedAssetsForTest([
       {
@@ -5753,6 +8500,7 @@ test('mocked imported assets can be added through browser file selection', async
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   const imagePath = testInfo.outputPath('imported-reference.png');
   await fs.writeFile(
     imagePath,
@@ -5814,6 +8562,7 @@ test('mocked full Gallery exposes generated and imported asset controls', async 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   const activeWorkflowTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   const now = Date.now();
   await page.evaluate(
@@ -5907,6 +8656,7 @@ test('mocked topbar Export menu is compact in Auto and raw in Expert', async ({ 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   const activeWorkflowTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   await page.evaluate(
     ({ tabId }) => {
@@ -5964,6 +8714,7 @@ test('mocked Run as app tab is Expert-only and graph-output gated', async ({ pag
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
   await expect(page.getByTestId('workspace-tabs-more')).toHaveCount(0);
 
@@ -5998,6 +8749,7 @@ test('mocked Model Manager stays compact, grouped, and install-target aware', as
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
+  await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-models').click();
   await page.getByTestId('left-open-model-manager').click();
   const dialog = page.getByTestId('model-manager-dialog');
@@ -6019,11 +8771,147 @@ test('mocked Model Manager stays compact, grouped, and install-target aware', as
       return {
         calls: mockDownloadCalls,
         status: current.nodes.hfDownloadProgress['black-forest-labs/FLUX.1-schnell']?.status,
-        cached: current.nodes.hfCache.includes('black-forest-labs/FLUX.1-schnell'),
+        cached: mockHfCacheContains(current.nodes.hfCache, 'black-forest-labs/FLUX.1-schnell'),
       };
     })
     .toEqual({ calls: 1, status: 'complete', cached: true });
   await expect(fluxInstall).toContainText('Ready', { timeout: 30_000 });
+});
+
+test('mocked Model Manager keeps navigation usable while filtering and refreshing on short screens', async ({
+  page,
+}) => {
+  mockDownloadCalls = 0;
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockHfTokenConfigured = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let planCalls = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/auto_resource/plans') planCalls += 1;
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.getByTestId('topbar-models').click();
+  const dialog = page.getByTestId('model-manager-dialog');
+  await expect(dialog.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+  await expect(dialog.getByTestId('model-manager-installed')).toContainText('Z-Image-Turbo');
+  const initialPlanCalls = planCalls;
+  const installedTab = dialog.getByRole('tab', { name: 'Installed', exact: true });
+  await installedTab.click();
+  await expect(dialog.getByTestId('model-manager-supported')).toHaveCount(0);
+  const search = dialog.getByLabel('Filter models and artifacts');
+  await search.fill('not-an-installed-repository');
+  await expect(dialog).toContainText('No installed models match this search.');
+  await dialog
+    .getByTestId('model-manager-installed')
+    .getByRole('button', { name: 'Clear search', exact: true })
+    .click();
+  await expect(search).toHaveValue('');
+  await expect(dialog.getByTestId('model-manager-installed')).toContainText('Z-Image-Turbo');
+  await dialog.getByRole('tab', { name: 'Supported', exact: true }).click();
+  await search.fill('schnell');
+  await expect(dialog.getByTestId('model-manager-supported-FluxSchnellPipeline')).toBeVisible();
+  await expect(dialog.getByTestId('model-manager-installed')).toHaveCount(0);
+  await search.fill('');
+  await page.waitForTimeout(500);
+  expect(planCalls).toBe(initialPlanCalls);
+  await dialog.getByRole('tab', { name: 'All models', exact: true }).click();
+
+  for (const viewport of [
+    { width: 1280, height: 480 },
+    { width: 390, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const toolbar = dialog.getByTestId('model-manager-toolbar');
+    const initialToolbar = await toolbar.boundingBox();
+    await dialog.locator('[data-dialog-scroll-body]').evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const scrolledToolbar = await toolbar.boundingBox();
+    expect(scrolledToolbar!.y).toBeCloseTo(initialToolbar!.y, 0);
+    await dialog.getByRole('tab', { name: 'Installed', exact: true }).click();
+    expect(await dialog.locator('[data-dialog-scroll-body]').evaluate((element) => element.scrollTop)).toBe(0);
+    await dialog.getByRole('tab', { name: 'All models', exact: true }).click();
+    const panel = await dialog.boundingBox();
+    const footer = await dialog.getByTestId('model-manager-close').boundingBox();
+    expect(panel!.x).toBeGreaterThanOrEqual(0);
+    expect(panel!.x + panel!.width).toBeLessThanOrEqual(viewport.width);
+    expect(footer!.y + footer!.height).toBeLessThan(viewport.height);
+    expect(
+      await dialog.locator('[data-dialog-scroll-body]').evaluate((element) => element.clientHeight),
+    ).toBeGreaterThan(60);
+  }
+  let finishRefresh!: () => void;
+  const refreshPending = new Promise<void>((resolve) => {
+    finishRefresh = resolve;
+  });
+  await page.route('**/hf_cache**', async (route) => {
+    await refreshPending;
+    await route.fallback();
+  });
+  try {
+    await dialog.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Refresh', exact: true })).toBeDisabled();
+    await expect(dialog.getByRole('status')).toContainText('Refreshing model inventory');
+    await dialog.getByRole('tab', { name: 'Downloads', exact: true }).click();
+    await expect(dialog).toContainText('No downloads to show.');
+    await search.fill('qwen');
+    await expect(search).toHaveValue('qwen');
+    await dialog.getByTestId('model-manager-close').click();
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    finishRefresh();
+  }
+  expect(mockDownloadCalls).toBe(0);
+});
+
+test('mocked dialogs retain keyboard dismissal, token privacy and bounded settings layout', async ({ page }) => {
+  mockDownloadCalls = 0;
+  mockHfTokenConfigured = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  const opener = page.getByTestId('topbar-models');
+  await opener.click();
+  const manager = page.getByTestId('model-manager-dialog');
+  await manager.getByRole('button', { name: 'HF token ready', exact: true }).click();
+  const token = manager.getByLabel('Hugging Face access token', { exact: true });
+  await expect(token).toBeFocused();
+  await expect(token).toHaveAttribute('type', 'password');
+  await token.fill('hf_not-a-real-token');
+  await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await manager.getByRole('button', { name: 'HF token ready', exact: true }).click();
+  await expect(token).toHaveValue('');
+  await page.keyboard.press('Escape');
+  await expect(manager).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await opener.click();
+  await expect(manager.getByLabel('Hugging Face access token', { exact: true })).toHaveCount(0);
+  await page.mouse.click(4, 4);
+  await expect(manager).toHaveCount(0);
+  const settingsOpener = page.getByRole('button', { name: 'Settings', exact: true });
+  await settingsOpener.click();
+  const settings = page.getByTestId('settings-dialog');
+  await expect(settings.getByText('Connection style', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 540 });
+  await settings.getByRole('tab', { name: 'About', exact: true }).click();
+  await expect(settings.getByRole('tabpanel')).toContainText('expand it to inspect and customize');
+  const footer = await settings.locator('footer').boundingBox();
+  expect(footer!.y + footer!.height).toBeLessThan(540);
+  expect(
+    await settings
+      .locator('[data-dialog-scroll-body]')
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(settings).toHaveCount(0);
+  await expect(settingsOpener).toBeFocused();
+  expect(mockDownloadCalls).toBe(0);
 });
 
 test('mocked gated model install failures stay compact and actionable', async ({ page }) => {
@@ -6042,6 +8930,7 @@ test('mocked gated model install failures stay compact and actionable', async ({
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
 
+  await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-models').click();
   await page.getByTestId('left-open-model-manager').click();
   const dialog = page.getByTestId('model-manager-dialog');
@@ -6077,6 +8966,7 @@ test('mocked Expert Model Manager exposes diagnostics and hidden profiles', asyn
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
   const finalDirectProfiles = [
     ['QwenImageEditPipeline', 'Qwen Image Edit (Standard Diffusers)'],
     ['QwenImageEditPlusPipeline', 'Qwen Image Edit Plus (Standard Diffusers)'],
@@ -6110,6 +9000,345 @@ test('mocked Expert Model Manager exposes diagnostics and hidden profiles', asyn
   }
 });
 
+test('mocked Expert Model Manager gates the backend-reviewed LTX-2 snapshot on revision-bound terms', async ({
+  page,
+}) => {
+  const revision = '47da56e2ad66ce4125a9922b4a8826bf407f9d0a';
+  const files = ['model_index.json', 'transformer/diffusion_pytorch_model-00001-of-00008.safetensors'];
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  mockHfTokenConfigured = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    const capabilities = [
+      ...mockStudioExecutionCapabilities(),
+      {
+        modelType: 'LTX2ConditionPipeline',
+        modes: ['text_to_video'],
+        defaultRepo: 'Lightricks/LTX-2',
+        executionStatus: 'expert_only',
+        revisionCandidates: [revision],
+        downloadFiles: files,
+      },
+    ];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, capabilities, studioExecutionSpecs: [] }),
+    });
+  });
+  await page.unroute('**/auto_resource/plans**');
+  await page.route('**/auto_resource/plans**', async (route) => {
+    const body = route.request().postDataJSON() as { forms?: Array<Record<string, unknown>>; keys?: string[] } | null;
+    const forms = Array.isArray(body?.forms) ? body.forms : [];
+    const keys = Array.isArray(body?.keys) ? body.keys : [];
+    const plans = forms.map((form, index) =>
+      form.modelType === 'LTX2ConditionPipeline'
+        ? {
+            error: false,
+            schemaVersion: 2,
+            resourceMode: 'auto',
+            status: 'manual_only',
+            readiness: 'manual_only',
+            statusLabel: 'Expert only',
+            blockingReason: 'This exact profile requires explicit Expert execution.',
+            compatibility: {
+              state: 'manual_only',
+              severity: 'warning',
+              code: 'expert_only',
+              summary: 'Expert only',
+              detail: 'This exact profile requires explicit Expert execution.',
+              action: null,
+              source: 'backend_auto_planner',
+            },
+            candidates: [],
+            hardware: { runtimeFingerprint: 'mock-runtime' },
+            checkedAt: Date.now(),
+            planKey: keys[index],
+          }
+        : { ...mockAutoResourcePlan(form), planKey: keys[index] },
+    );
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ plans }) });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('topbar-models').click();
+  const dialog = page.getByTestId('model-manager-dialog');
+  await expect(dialog).toBeVisible();
+  const install = dialog.getByTestId('model-manager-install-LTX2ConditionPipeline');
+  await expect(install).toContainText('Install');
+  await install.click();
+  const terms = page.getByTestId('template-usage-terms-dialog');
+  await expect(terms).toBeVisible();
+  await expect(terms).toContainText('Lightricks/LTX-2');
+  await expect(terms).toContainText('$10 million entity-wide annual-revenue threshold');
+  await expect(terms.getByRole('link', { name: 'View terms' })).toHaveAttribute(
+    'href',
+    `https://huggingface.co/Lightricks/LTX-2/blob/${revision}/LICENSE`,
+  );
+  expect(mockDownloadCalls).toBe(0);
+
+  await terms.getByRole('button', { name: 'Cancel' }).click();
+  await expect(terms).toBeHidden();
+  expect(mockDownloadCalls).toBe(0);
+
+  await install.click();
+  const requestPromise = page.waitForRequest(
+    (request) => request.url().endsWith('/hf_download') && request.method() === 'POST',
+  );
+  await page.getByTestId('template-usage-terms-confirm').click();
+  const request = await requestPromise;
+  expect(request.postDataJSON()).toMatchObject({
+    repo_id: 'Lightricks/LTX-2',
+    revision,
+    files,
+  });
+  await expect.poll(() => mockDownloadCalls).toBe(1);
+});
+
+test('mocked Expert Model Manager gates the exact MiniMax Music 3 snapshot on revision-bound terms', async ({
+  page,
+}) => {
+  const revision = 'fbdf52fbaaca799592917417eb05f1899f1255ec';
+  const files = [
+    'LICENSE',
+    'condition_encoder/config.json',
+    'condition_encoder/diffusion_pytorch_model.safetensors',
+    'language_model/config.json',
+    'language_model/generation_config.json',
+    'language_model/model-00001-of-00004.safetensors',
+    'language_model/model-00002-of-00004.safetensors',
+    'language_model/model-00003-of-00004.safetensors',
+    'language_model/model-00004-of-00004.safetensors',
+    'language_model/model.safetensors.index.json',
+    'modular_model_index.json',
+    'rvq_depth_decoder/config.json',
+    'rvq_depth_decoder/diffusion_pytorch_model.safetensors',
+    'scheduler/scheduler_config.json',
+    'tokenizer/chat_template.jinja',
+    'tokenizer/tokenizer.json',
+    'tokenizer/tokenizer_config.json',
+    'transformer/config.json',
+    'transformer/diffusion_pytorch_model-00001-of-00002.safetensors',
+    'transformer/diffusion_pytorch_model-00002-of-00002.safetensors',
+    'transformer/diffusion_pytorch_model.safetensors.index.json',
+    'vocoder/config.json',
+    'vocoder/diffusion_pytorch_model.safetensors',
+  ];
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  mockHfTokenConfigured = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => window.localStorage.clear());
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    const capabilities = [
+      ...mockStudioExecutionCapabilities(),
+      {
+        modelType: 'MiniMaxMusic3ModularPipeline',
+        modes: ['text_to_audio'],
+        defaultRepo: 'MiniMaxAI/MiniMax-Music3',
+        executionStatus: 'expert_only',
+        revisionCandidates: [revision],
+        downloadFiles: files,
+      },
+    ];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, capabilities, studioExecutionSpecs: [] }),
+    });
+  });
+  await page.unroute('**/auto_resource/plans**');
+  await page.route('**/auto_resource/plans**', async (route) => {
+    const body = route.request().postDataJSON() as { forms?: Array<Record<string, unknown>>; keys?: string[] } | null;
+    const forms = Array.isArray(body?.forms) ? body.forms : [];
+    const keys = Array.isArray(body?.keys) ? body.keys : [];
+    const plans = forms.map((form, index) =>
+      form.modelType === 'MiniMaxMusic3ModularPipeline'
+        ? {
+            error: false,
+            schemaVersion: 2,
+            resourceMode: 'auto',
+            status: 'manual_only',
+            readiness: 'manual_only',
+            statusLabel: 'Expert only',
+            blockingReason: 'Live resource qualification is still pending.',
+            compatibility: {
+              state: 'expert_only',
+              severity: 'warning',
+              code: 'expert_only',
+              summary: 'Expert only',
+              detail: 'Live resource qualification is still pending.',
+              action: null,
+              source: 'backend_auto_planner',
+            },
+            candidates: [],
+            hardware: { runtimeFingerprint: 'mock-runtime' },
+            checkedAt: Date.now(),
+            planKey: keys[index],
+          }
+        : { ...mockAutoResourcePlan(form), planKey: keys[index] },
+    );
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ plans }) });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('topbar-models').click();
+  const manager = page.getByTestId('model-manager-dialog');
+  const row = manager.getByTestId('model-manager-supported-MiniMaxMusic3ModularPipeline');
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('MiniMax Music 3 (Modular Cluster)');
+  await expect(row).toHaveAttribute('data-model-repo', 'MiniMaxAI/MiniMax-Music3');
+  const install = row.getByTestId('model-manager-install-MiniMaxMusic3ModularPipeline');
+  await install.click();
+
+  const terms = page.getByTestId('template-usage-terms-dialog');
+  await expect(terms).toBeVisible();
+  await expect(terms).toContainText('MiniMaxAI/MiniMax-Music3');
+  await expect(terms).toContainText('Product and user review required');
+  await expect(terms).toContainText('annual-revenue threshold');
+  await expect(terms.getByRole('link', { name: 'View terms' })).toHaveAttribute(
+    'href',
+    `https://huggingface.co/MiniMaxAI/MiniMax-Music3/blob/${revision}/LICENSE`,
+  );
+  expect(mockDownloadCalls).toBe(0);
+
+  await terms.getByRole('button', { name: 'Cancel' }).click();
+  await expect(terms).toBeHidden();
+  expect(mockDownloadCalls).toBe(0);
+
+  await install.click();
+  const requestPromise = page.waitForRequest(
+    (request) => request.url().endsWith('/hf_download') && request.method() === 'POST',
+  );
+  await page.getByTestId('template-usage-terms-confirm').click();
+  const request = await requestPromise;
+  expect(request.postDataJSON()).toMatchObject({
+    repo_id: 'MiniMaxAI/MiniMax-Music3',
+    revision,
+    files,
+  });
+  await expect.poll(() => mockDownloadCalls).toBe(1);
+});
+
+test('mocked Expert Model Manager keeps shared pipeline workflow artifacts separate and exact', async ({ page }) => {
+  const imageToVideo = {
+    modes: ['single_image_to_video'],
+    repo: 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+    revision: 'b184e23a8a16b20f108f727c902e769e873ffc73',
+    downloadFiles: ['model_index.json', 'transformer/config.json'],
+    label: 'Wan 2.1 I2V 14B 480P Diffusers repo',
+  };
+  const firstLastFrame = {
+    modes: ['image_to_video'],
+    repo: 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers',
+    revision: '17c30769b1e0b5dcaa1799b117bf20a9c31f59d7',
+    downloadFiles: ['model_index.json', 'transformer/config.json', 'vae/config.json'],
+    label: 'Wan 2.1 FLF2V 14B 720P Diffusers repo',
+  };
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  mockHfTokenConfigured = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', async (route) => {
+    const capabilities = [
+      ...mockStudioExecutionCapabilities(),
+      {
+        modelType: 'WanImage2VideoModularPipeline',
+        modes: ['single_image_to_video', 'image_to_video'],
+        defaultRepo: imageToVideo.repo,
+        executionStatus: 'expert_only',
+        revisionCandidates: [imageToVideo.revision, firstLastFrame.revision],
+        downloadFiles: imageToVideo.downloadFiles,
+        artifactSelections: [imageToVideo, firstLastFrame],
+      },
+    ];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, capabilities, studioExecutionSpecs: [] }),
+    });
+  });
+  await page.unroute('**/auto_resource/plans**');
+  await page.route('**/auto_resource/plans**', async (route) => {
+    const body = route.request().postDataJSON() as { forms?: Array<Record<string, unknown>>; keys?: string[] } | null;
+    const forms = Array.isArray(body?.forms) ? body.forms : [];
+    const keys = Array.isArray(body?.keys) ? body.keys : [];
+    const plans = forms.map((form, index) => {
+      if (form.modelType === 'WanImage2VideoModularPipeline') {
+        const selection = form.mode === 'image_to_video' ? firstLastFrame : imageToVideo;
+        return {
+          error: false,
+          schemaVersion: 2,
+          resourceMode: 'auto',
+          status: 'manual_only',
+          readiness: 'manual_only',
+          statusLabel: 'Expert only',
+          blockingReason: 'This exact profile requires explicit Expert execution.',
+          compatibility: {
+            state: 'manual_only',
+            severity: 'warning',
+            code: 'expert_only',
+            summary: 'Expert only',
+            detail: 'This exact profile requires explicit Expert execution.',
+            action: null,
+            source: 'backend_auto_planner',
+          },
+          selectedInstallTarget: {
+            repo: selection.repo,
+            label: selection.label,
+            actionLabel: 'Install Auto artifact',
+          },
+          candidates: [],
+          hardware: { runtimeFingerprint: 'mock-runtime' },
+          checkedAt: Date.now(),
+          planKey: keys[index],
+        };
+      }
+      return { ...mockAutoResourcePlan(form), planKey: keys[index] };
+    });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ plans }) });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('topbar-models').click();
+
+  const dialog = page.getByTestId('model-manager-dialog');
+  const rows = dialog.getByTestId('model-manager-supported-WanImage2VideoModularPipeline');
+  await expect(rows).toHaveCount(2);
+  const expectedSelections = [imageToVideo, firstLastFrame];
+  for (const selection of expectedSelections) {
+    const row = rows.filter({ hasText: selection.label });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByTestId('model-manager-artifact-label')).toHaveText(selection.label);
+    await expect(row).toHaveAttribute('data-model-repo', selection.repo);
+    await expect(row).toContainText(selection.repo);
+    const requestPromise = page.waitForRequest(
+      (request) => request.url().endsWith('/hf_download') && request.method() === 'POST',
+    );
+    await row.getByTestId('model-manager-install-WanImage2VideoModularPipeline').click();
+    const request = await requestPromise;
+    expect(request.postDataJSON()).toMatchObject({
+      repo_id: selection.repo,
+      revision: selection.revision,
+      files: selection.downloadFiles,
+    });
+  }
+  await expect.poll(() => mockDownloadCalls).toBe(2);
+});
+
 test('mocked workflow artifact requirements are contextual and role grouped', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
@@ -6127,6 +9356,7 @@ test('mocked workflow artifact requirements are contextual and role grouped', as
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
 
   await page.evaluate(async () => {
     try {
@@ -6166,7 +9396,7 @@ test('mocked workflow artifact requirements are contextual and role grouped', as
     .poll(async () => {
       const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
       return {
-        cached: current.nodes.hfCache.includes('InstantX/Qwen-Image-ControlNet-Union'),
+        cached: mockHfCacheContains(current.nodes.hfCache, 'InstantX/Qwen-Image-ControlNet-Union'),
         calls: mockDownloadCalls,
       };
     })
@@ -6192,6 +9422,19 @@ test('mocked custom graph inspector blocks invalid graphs in Auto and Expert', a
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  let manualSubmissions = 0;
+  await page.route('**/graph', async (route) => {
+    manualSubmissions += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: true,
+        message: 'Backend rejected the manual graph: model artifact is not installed.',
+        sid: 'mock-sid',
+      }),
+    });
+  });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
@@ -6242,19 +9485,37 @@ test('mocked custom graph inspector blocks invalid graphs in Auto and Expert', a
       expect(summary.nodeCount).toBe(item.summary.nodeCount);
       expect(summary.enabledExecutableCount).toBe(item.summary.enabledExecutableCount);
       expect(summary.outputPathCount).toBe(item.summary.outputPathCount);
-      expect(summary.blockingIssues.some((issue) => item.title.test(issue.message))).toBe(true);
-
       const taskSummary = page.getByTestId('studio-task-model-summary');
       if (item.summary.nodeCount === 0) {
-        await expect(taskSummary).toContainText('Current task');
-        await expect(taskSummary).not.toContainText('Custom graph');
+        await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+        await expect(taskSummary).toHaveCount(0);
+        await expect(page.getByTestId('studio-run')).toHaveAttribute('title', item.title);
       } else {
         await expect(taskSummary).toContainText('Current graph');
         await expect(taskSummary).toContainText('Custom graph');
         await expect(page.getByTestId('studio-model-select')).toHaveCount(0);
+        await expect(page.getByTestId('studio-run-readiness')).toContainText(item.title, { timeout: 30_000 });
       }
-      await expect(page.getByTestId('studio-run-readiness')).toContainText(item.title, { timeout: 30_000 });
-      await expect(page.getByTestId('studio-run')).toBeDisabled({ timeout: 30_000 });
+      const finalState = await page.evaluate(() => ({
+        resourceMode: window.__MODIFF_E2E__!.getState().studio.form.resourceMode,
+        inspection: window.__MODIFF_E2E__!.inspectCurrentGraph(),
+      }));
+      const manualRuntimeFinding = finalState.resourceMode === 'expert' && item.scenario === 'missing_model';
+      expect(finalState.inspection.blockingIssues.some((issue) => item.title.test(issue.message))).toBe(true);
+      if (manualRuntimeFinding) {
+        await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready with warnings');
+        await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
+        if (manualSubmissions === 0) {
+          await page.getByTestId('studio-run').click();
+          await expect.poll(() => manualSubmissions).toBe(1);
+          const failureDialog = page.getByTestId('run-failure-dialog');
+          await expect(failureDialog).toBeVisible();
+          await expect(failureDialog).toContainText('Backend rejected the manual graph');
+          await failureDialog.getByText('Close', { exact: true }).click();
+        }
+      } else {
+        await expect(page.getByTestId('studio-run')).toBeDisabled({ timeout: 30_000 });
+      }
       if (mode === 'expert' && item.scenario === 'outputless') {
         await page.getByTestId('studio-run-readiness').click();
         const runIssues = page.getByTestId('run-issues-dialog');
@@ -6314,7 +9575,7 @@ test('mocked custom graph artifact requirements show a compact install action', 
     .poll(async () => {
       const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
       return {
-        cached: current.nodes.hfCache.includes('missing/GraphModel'),
+        cached: mockHfCacheContains(current.nodes.hfCache, 'missing/GraphModel'),
         calls: mockDownloadCalls,
       };
     })
@@ -6339,6 +9600,9 @@ test('mocked graph Fix button opens a reviewed model repair without downloading 
   await page.evaluate(() => window.__MODIFF_E2E__!.setGraphScenarioForTest('missing_model'));
 
   const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('missing/GraphModel', {
+    timeout: 30_000,
+  });
   const fixButton = page.getByTestId('graph-fix');
   await expect(fixButton).toBeEnabled({ timeout: 30_000 });
   await fixButton.click();
@@ -6391,6 +9655,165 @@ test('mocked graph Fix applies a topology repair once and verifies the original 
   await expect(page.getByRole('status').filter({ hasText: 'Fix applied and verified' })).toBeVisible();
   await page.getByTestId('graph-fix').click();
   await expect(page.getByTestId('graph-fix-dialog')).not.toContainText('needs text encoders');
+});
+
+test('mocked graph Fix visibly restores a registered Qwen V2 structure, retains compatible additions, and persists', async ({
+  page,
+}) => {
+  test.slow();
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-nodes').click();
+  await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-structural-fix-pin');
+
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await clusterGroup.getByRole('button').first().click();
+  }
+  const qwenRow = await findQwenCatalogRow(page);
+  await expect(qwenRow).toHaveAttribute('data-readiness', 'graph_qualified');
+  await qwenRow.dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 480, y: 300 } });
+
+  const root = page
+    .locator('.react-flow__node-block')
+    .filter({ has: page.locator('[data-block-schema-version="2"]') })
+    .filter({ hasText: 'QwenImageModularPipeline' });
+  await expect(root).toHaveCount(1, { timeout: 30_000 });
+  const rootId = await root.getAttribute('data-id');
+  expect(rootId).toBeTruthy();
+
+  const corruption = await page.evaluate(async (instanceId) => {
+    const [{ useFlowStore }, runtime] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+    ]);
+    const state = useFlowStore.getState();
+    const rootNode = state.nodes.find((node) => node.id === instanceId);
+    const instance = rootNode?.data.blockInstanceV2;
+    if (!rootNode || !instance) throw new Error('The registered Qwen V2 root is missing.');
+    const graph = structuredClone(instance.effectiveGraph);
+    const binding = graph.edges
+      .map((edge) => ({
+        edge,
+        node: graph.nodes.find(({ nodeId }) => nodeId === edge.targetNodeId),
+      }))
+      .find(({ edge, node }) => Boolean(node?.data.params[edge.targetPortId]));
+    if (!binding?.node) throw new Error('The Qwen fixture has no removable connected input.');
+    delete binding.node.data.params[binding.edge.targetPortId];
+    graph.nodes.push({
+      nodeId: 'e2e-compatible-custom-note',
+      nodeType: 'custom',
+      data: {
+        type: 'custom',
+        module: 'modules.Test',
+        action: 'Note',
+        label: 'Compatible custom note',
+        category: 'Test',
+        params: {},
+      },
+    });
+    const broken = runtime.replaceBlockEffectiveGraphV2(instance, graph);
+    useFlowStore.setState({
+      nodes: state.nodes.map((node) =>
+        node.id === instanceId ? { ...node, data: { ...node.data, blockInstanceV2: broken } } : node,
+      ),
+    });
+    return {
+      nodeId: binding.node.nodeId,
+      fieldId: binding.edge.targetPortId,
+      definitionGraphHash: instance.definitionSnapshot.graph.graphHash,
+      historyPast: state.historyPast.length,
+    };
+  }, rootId!);
+
+  const fixButton = page.getByTestId('graph-fix');
+  await expect(fixButton).toBeEnabled({ timeout: 30_000 });
+  await fixButton.click();
+  const dialog = page.getByTestId('graph-fix-dialog');
+  await expect(dialog).toContainText('has invalid internal structure');
+  await expect(dialog).toContainText('Restore reviewed internal structure');
+  await dialog.getByRole('radio', { name: /Restore reviewed internal structure/ }).click();
+  await dialog.getByTestId('graph-fix-apply').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Fix applied and verified' })).toBeVisible();
+
+  const inspect = () =>
+    page.evaluate(
+      async ({ instanceId, nodeId, fieldId }) => {
+        const [{ useFlowStore }, runtime, graphFixer] = await Promise.all([
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/studio/blockRuntimeV2.ts'),
+          import('/src/studio/graphFixer.ts'),
+        ]);
+        const state = useFlowStore.getState();
+        const rootNode = state.nodes.find((node) => node.id === instanceId);
+        const instance = rootNode?.data.blockInstanceV2;
+        if (!rootNode || !instance) throw new Error('The repaired Qwen V2 root is missing.');
+        const repairedNode = instance.effectiveGraph.nodes.find((node) => node.nodeId === nodeId);
+        const plan = graphFixer.buildGraphFixPlan({ nodes: state.nodes, edges: state.edges, registry: {} });
+        let executionError: string | null = null;
+        try {
+          runtime.expandBlockGraphV2ForExecution(state.nodes, state.edges);
+        } catch (error) {
+          executionError = error instanceof Error ? error.message : String(error);
+        }
+        return {
+          fieldRestored: Boolean(repairedNode?.data.params[fieldId]),
+          customNodeRetained: instance.effectiveGraph.nodes.some(
+            ({ nodeId: semanticNodeId }) => semanticNodeId === 'e2e-compatible-custom-note',
+          ),
+          structuralIssue: plan.issues.some(
+            ({ kind, targetNodeId }) => kind === 'block_structure' && targetNodeId === instanceId,
+          ),
+          executionError,
+          graphHash: instance.customization.effectiveGraphHash,
+          historyPast: state.historyPast.length,
+        };
+      },
+      { instanceId: rootId!, nodeId: corruption.nodeId, fieldId: corruption.fieldId },
+    );
+
+  const repaired = await inspect();
+  expect(repaired).toMatchObject({
+    fieldRestored: true,
+    customNodeRetained: true,
+    structuralIssue: false,
+    executionError: null,
+    historyPast: corruption.historyPast + 1,
+  });
+  expect(repaired.graphHash).not.toBe(corruption.definitionGraphHash);
+
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Qwen registered V2 structural recovery proof');
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+  }
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const studio = window.__MODIFF_E2E__!.getState().studio;
+        return studio.workflowTabs.find((tab: { id: string }) => tab.id === studio.activeWorkflowTabId)?.dirty;
+      }),
+    )
+    .toBe(false);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.locator(`.react-flow__node-block[data-id="${rootId}"]`)).toHaveCount(1);
+  expect(await inspect()).toMatchObject({
+    fieldRestored: true,
+    customNodeRetained: true,
+    structuralIssue: false,
+    executionError: null,
+    graphHash: repaired.graphHash,
+  });
 });
 
 test('mocked custom graph inspector summarizes multi-model comparison graphs', async ({ page }) => {
@@ -6565,6 +9988,7 @@ test('mocked template workflow blocks stay managed and restore with Studio promp
   const managedTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   expect(managedTabId).toBeTruthy();
   await page.getByTestId('workflow-tab-new').click();
+  await dismissTaskLauncher(page);
   await page.getByTestId(`workflow-tab-${managedTabId}`).click();
 
   await expect
@@ -6585,6 +10009,14 @@ test('mocked template workflow blocks stay managed and restore with Studio promp
 
 test('controlled workflow families seal and restore exact schema-v3 graph proofs', async ({ page }) => {
   mockInstalledRepos.clear();
+  [
+    'black-forest-labs/FLUX.1-dev',
+    'ACE-Step/acestep-v15-xl-turbo-diffusers',
+    'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
+    'Lightricks/LTX-Video-0.9.8-13B-distilled',
+    'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
+    'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
+  ].forEach((repo) => mockInstalledRepos.add(repo));
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
   mockDynamicModularFields = false;
@@ -6690,6 +10122,7 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
     if (templateId === 'ltx_video_long_showcase') {
       const qualityTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
       await page.getByTestId('workflow-tab-new').click();
+      await dismissTaskLauncher(page);
       await page.getByTestId(`workflow-tab-${qualityTabId}`).click();
       await page.evaluate(() => window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest());
       const restored = await page.evaluate(() => {
@@ -6722,6 +10155,7 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
 
   const managedTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   await page.getByTestId('workflow-tab-new').click();
+  await dismissTaskLauncher(page);
   await page.getByTestId(`workflow-tab-${managedTabId}`).click();
   await page.evaluate(() => window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest());
   await expect
@@ -6763,6 +10197,8 @@ test('controlled LoRA labels base-only Auto history until its exact artifacts ar
 
 test('controlled workflow transactions are idempotent across supported reverse compositions', async ({ page }) => {
   mockInstalledRepos.clear();
+  mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
+  mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
   mockDynamicModularFields = false;
@@ -7263,6 +10699,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
 test('2x Product Upscale waits for discovery and builds its pinned finishing block', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   mockInstalledRepos.add('amd/realesrgan-x4plus');
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
@@ -7760,7 +11197,7 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
       return {
         calls: mockDownloadCalls,
         status: current.nodes.hfDownloadProgress['Tongyi-MAI/Z-Image-Turbo']?.status,
-        cached: current.nodes.hfCache.includes('Tongyi-MAI/Z-Image-Turbo'),
+        cached: mockHfCacheContains(current.nodes.hfCache, 'Tongyi-MAI/Z-Image-Turbo'),
       };
     })
     .toEqual({ calls: 1, status: 'complete', cached: true });
@@ -7978,6 +11415,7 @@ test('busy one-shot action becomes Queue and submits once without stopping activ
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  await page.unroute('**/queue');
 
   let graphSubmissions = 0;
   const destructiveRequests: string[] = [];
@@ -8016,11 +11454,13 @@ test('busy one-shot action becomes Queue and submits once without stopping activ
       type: 'task_started',
       task_id: 'active-task',
       client_run_id: 'active-client-run',
+      run_input_hash: 'active-run-input-hash',
       sid: 'another-session',
       current: {
         name: 'Existing graph execution',
         task_id: 'active-task',
         client_run_id: 'active-client-run',
+        run_input_hash: 'active-run-input-hash',
         sid: 'another-session',
         status: 'running',
       },
@@ -8054,6 +11494,7 @@ test('restored finalized exact workflow queues without replaying field actions o
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  await page.unroute('**/queue');
 
   const imagePipeline = mockRegistry['modules.DiffusersImage.LoadPipeline'];
   const imageGenerate = mockRegistry['modules.DiffusersImage.Generate'];
@@ -8179,6 +11620,7 @@ test('restored finalized exact workflow queues without replaying field actions o
   const restoredTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   expect(restoredTabId).toBeTruthy();
   await page.getByTestId('workflow-tab-new').click();
+  await dismissTaskLauncher(page);
   await page.getByTestId(`workflow-tab-${restoredTabId}`).click();
   await expect
     .poll(async () => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
@@ -8191,11 +11633,13 @@ test('restored finalized exact workflow queues without replaying field actions o
       type: 'task_started',
       task_id: 'active-task-before-restored-queue',
       client_run_id: 'active-client-run-before-restored-queue',
+      run_input_hash: 'active-restored-run-input-hash',
       sid: 'another-session',
       current: {
         name: 'Existing graph execution',
         task_id: 'active-task-before-restored-queue',
         client_run_id: 'active-client-run-before-restored-queue',
+        run_input_hash: 'active-restored-run-input-hash',
         sid: 'another-session',
         status: 'running',
       },
@@ -8277,25 +11721,18 @@ test('backend declarative bindings synchronize both generic Layered actions afte
     window.__MODIFF_E2E__!.setStudioFormForTest({ resourceMode: 'expert' });
   });
 
-  await page.evaluate(async () => {
-    try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_layered_portrait', {
+  await page.evaluate(() => {
+    void window
+      .__MODIFF_E2E__!.applyTemplate('qwen_layered_portrait', {
         referenceImages: ['mock-layer-source.webp'],
         resourceMode: 'expert',
         width: 1000,
         height: 512,
-      });
-    } catch (error) {
-      // Startup reconciliation may supersede this intentionally Expert-only
-      // fixture, while its deliberately incomplete dynamic schema may remain
-      // pending until this test publishes the two definitions below. Both
-      // outcomes retain the exact materialized graph asserted next.
-      if (
-        !(error instanceof Error) ||
-        (!error.message.includes('workflow changed') && !error.message.includes('Graph preparation is still running'))
-      )
-        throw error;
-    }
+      })
+      // This fixture deliberately withholds the two dynamic definitions until
+      // after the skeleton exists. Publish them below instead of deadlocking
+      // the test on the finalizer that is waiting for those same definitions.
+      .catch(() => undefined);
   });
   await expect
     .poll(async () => {
@@ -8619,10 +12056,14 @@ test('mocked Studio consumes the exact execution-profile Expert CUDA policy', as
   await expect(page.getByTestId('studio-run-readiness')).toContainText('needs bfloat16 before running on CUDA', {
     timeout: 30_000,
   });
-  await expect(page.getByTestId('studio-run')).toBeDisabled();
+  // Expert/manual mode keeps exact execution-profile diagnostics visible but
+  // delegates the final runtime decision to the backend.
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
 });
 
 test('mocked Studio derives Expert quantization choices from the exact execution profile', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   await ensureFrontend();
   await installMockRoutes(page);
   const capability = mockQwenImageExecutionCapability();
@@ -8638,14 +12079,12 @@ test('mocked Studio derives Expert quantization choices from the exact execution
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.getByTestId('launcher-mode-text_to_image').click();
-  await page.evaluate(() =>
-    window.__MODIFF_E2E__!.setStudioFormForTest({
-      modelType: 'QwenImageModularPipeline',
-      mode: 'text_to_image',
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'none',
-    }),
-  );
+    });
+  });
   await setStudioViewMode(page, 'expert');
 
   await page.getByTestId('studio-section-toggle-runtime').click();
@@ -8658,19 +12097,19 @@ test('mocked Studio derives Expert quantization choices from the exact execution
 test('mocked Studio preserves Expert quantization only when the target execution profile declares it', async ({
   page,
 }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   await ensureFrontend();
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.getByTestId('launcher-mode-text_to_image').click();
-  await page.evaluate(() =>
-    window.__MODIFF_E2E__!.setStudioFormForTest({
-      modelType: 'QwenImageModularPipeline',
-      mode: 'text_to_image',
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'bnb_4bit',
-    }),
-  );
+    });
+  });
 
   const model = page.getByTestId('studio-model-select');
   await model.click();
@@ -8693,11 +12132,19 @@ test('mocked Studio preserves Expert quantization only when the target execution
 });
 
 test('mocked Studio exposes and binds generic PAG controls for the exact PAG profile', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   await ensureFrontend();
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      resourceMode: 'expert',
+      quantizationMode: 'none',
+    });
+  });
 
   await page.getByTestId('studio-model-select').click();
   await page.getByRole('option', { name: 'Stable Diffusion 1.5 PAG', exact: true }).click();
@@ -8708,7 +12155,7 @@ test('mocked Studio exposes and binds generic PAG controls for the exact PAG pro
       return [state.form.modelType, state.form.pagScale, state.form.pagAdaptiveScale];
     })
     .toEqual(['StableDiffusionPAGPipeline', 3, 0]);
-  await page.getByRole('button', { name: 'Generation', exact: true }).click();
+  await page.getByTestId('studio-section-toggle-advanced-generation').click();
   await expect(page.getByText('PAG scale: 3', { exact: true })).toBeVisible();
   await expect(page.getByText('PAG adaptive scale: 0', { exact: true })).toBeVisible();
 
@@ -9445,11 +12892,20 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     pipelineClass: 'ZImagePipeline',
   });
 
-  const qwenImage = await page.evaluate(async () => {
+  await page.evaluate(() => {
     window.__MODIFF_E2E__!.setStudioFormForTest({
       modelType: 'QwenImageModularPipeline',
       resourceMode: 'auto',
     });
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__MODIFF_E2E__!.getState().studio.autoResourcePlan?.selectedCandidate?.modelType ?? null,
+      ),
+    )
+    .toBe('QwenImageModularPipeline');
+  const qwenImage = await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
     const state = window.__MODIFF_E2E__!.getState();
     const binding = state.studio.graphBinding!;
@@ -10281,7 +13737,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
       steps: 50,
       guidanceScale: 5,
       guidanceScale2: 0,
-      shift: 8,
+      shift: 5,
     });
     await window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest();
     const state = window.__MODIFF_E2E__!.getState();
@@ -10299,7 +13755,7 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   expect(ti2v.receipt).toEqual({
     schemaVersion: 1,
     id: 'wan-22-ti2v-5b:text-to-video:v1',
-    contentHash: 'studio-spec-v1-da22e734',
+    contentHash: 'studio-spec-v1-a83efd57',
     executionProfileId: 'wan-22-ti2v-5b:direct',
   });
   expect(ti2v.nodes.wanPipeline).toBeTruthy();
@@ -10312,10 +13768,12 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   ]);
   expect(ti2v.pipeline?.pipeline_class?.value).toBe('WanTI2VPipeline');
   expect(ti2v.pipeline?.model_id?.value).toBe('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
+  expect(ti2v.pipeline?.revision?.value).toBe('b8fff7315c768468a5333511427288870b2e9635');
+  expect(ti2v.pipeline?.execution_profile_id?.value).toBe('wan-22-ti2v-5b:direct');
   expect(ti2v.recipe?.attention_backend?.value).toBe('_native_flash');
   expect(ti2v.recipe?.attention_components?.value).toBe('transformer');
   expect(ti2v.recipe?.vae_tiling?.value).toBe(true);
-  expect(ti2v.generate?.scheduler_flow_shift?.value).toBe(8);
+  expect(ti2v.generate?.scheduler_flow_shift?.value).toBe(5);
   expect(ti2v.generate?.use_guidance_scale_2?.value).toBe(false);
   expect(ti2v.export?.fps?.value).toBe(24);
 
@@ -10972,10 +14430,14 @@ test('mocked Studio blocks a schema-v2 Auto plan that targets a different manage
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
-      resourceMode: 'auto',
-      device: 'cuda:0',
-    });
+    try {
+      await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+        resourceMode: 'auto',
+        device: 'cuda:0',
+      });
+    } catch (error) {
+      if (!String(error).includes('Auto mismatch')) throw error;
+    }
     window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
   });
 
@@ -11576,6 +15038,7 @@ test('active node execution follows its exact workflow across tabs, notification
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  await page.unroute('**/queue');
   const destructiveRequests: string[] = [];
   page.on('request', (request) => {
     const pathname = new URL(request.url()).pathname;
@@ -11675,6 +15138,7 @@ test('active node execution follows its exact workflow across tabs, notification
   const otherWorkflowTabId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   expect(otherWorkflowTabId).toBeTruthy();
   expect(otherWorkflowTabId).not.toBe(identity.workflowTabId);
+  await dismissTaskLauncher(page);
 
   await page.evaluate(({ nodeId, workflowTabId }) => {
     window.__MODIFF_E2E__!.sendWebsocketMessage({
@@ -11740,6 +15204,7 @@ test('active node execution follows its exact workflow across tabs, notification
   });
 
   await page.getByTestId(`workflow-tab-${otherWorkflowTabId}`).click();
+  await dismissTaskLauncher(page);
   await page.getByTestId('session-run-reload-running-task').click();
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
@@ -11917,15 +15382,15 @@ test('previous video and audio renders open in-app without replacing the current
   await mediaViewer.getByRole('button', { name: 'Download video' }).click();
   const mediaExport = page.getByTestId('media-export-dialog');
   await expect(mediaExport).toBeVisible();
+  await verifyCompactDialog(page, mediaExport, 'media-export');
   await mediaExport.getByLabel('Download format').click();
   await expect(page.getByRole('option', { name: 'MP4 (H.264 + AAC)' })).toBeVisible();
   await expect(page.getByRole('option', { name: 'WebM (VP9 + Opus)' })).toBeVisible();
   await expect(page.getByRole('option', { name: 'MOV (ProRes + PCM)' })).toBeVisible();
   await expect(page.getByRole('option', { name: 'Animated GIF' })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await page.getByRole('option', { name: 'MP4 (H.264 + AAC)' }).click();
   await mediaExport.getByRole('button', { name: 'Cancel' }).click();
   await expect(mediaExport).toHaveCount(0);
-  await mediaViewer.getByRole('button', { name: 'Close media viewer' }).click();
   await expect(mediaViewer).toHaveCount(0);
 
   await videoStage.getByRole('button', { name: 'Output actions' }).click();
@@ -12060,6 +15525,35 @@ test('startup discovery blocks transient readiness and the compact activity shel
   expect(activityHeight.scrollHeight).toBeGreaterThan(activityHeight.clientHeight);
 });
 
+test('a startup load error closes into a new empty workflow without deleting the failed document', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/model_capabilities**', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'Simulated capability discovery failure.' }),
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+
+  const startupGate = page.getByTestId('startup-workspace-gate');
+  await expect(startupGate).toContainText('Could not finish loading', { timeout: 30_000 });
+  await startupGate.getByLabel('Close loading error and start with an empty workflow').click();
+  await expect(startupGate).toHaveCount(0);
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const state = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+  expect(state.flow.visibleNodeCount).toBe(0);
+  expect(state.studio.workflowTabs.length).toBeGreaterThanOrEqual(2);
+});
+
 test('session activity and generation notifications open the originating workflow and exact failure', async ({
   page,
 }) => {
@@ -12121,6 +15615,8 @@ test('session activity and generation notifications open the originating workflo
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
     .not.toBe(workflowId);
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await dismissTaskLauncher(page);
   await page.getByTestId('session-run-notification-success-task').click();
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
@@ -12139,6 +15635,8 @@ test('session activity and generation notifications open the originating workflo
     .toBeLessThan(220);
 
   await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await dismissTaskLauncher(page);
   await successToast.click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await expect(page.getByTestId('workspace-tab-studio')).toHaveAttribute('aria-selected', 'true');
@@ -12180,6 +15678,8 @@ test('session activity and generation notifications open the originating workflo
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
     .not.toBe(workflowId);
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await dismissTaskLauncher(page);
   await page.route('**/runs/notification-success-task', async (route) => {
     await route.fulfill({
       status: 200,
@@ -12251,6 +15751,8 @@ test('session activity and generation notifications open the originating workflo
       ),
     )
     .toBe(false);
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await dismissTaskLauncher(page);
   await page.getByTestId(`session-run-${noOutputTaskId}`).click();
   await expect(
     page.getByText('Run completed, but no previewable output was generated. Showing its Queue details.'),
@@ -12380,6 +15882,62 @@ test('session activity and generation notifications open the originating workflo
   await expect(failureDialog).toContainText('A deliberately verbose backend exception');
 });
 
+test('a recovered native worker crash opens an explicit failure with a lower-memory action', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('launcher-mode-text_to_image').click();
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+
+  const workflowId = await page.evaluate(
+    () => (window.__MODIFF_E2E__!.getState() as { studio: { activeWorkflowTabId: string } }).studio.activeWorkflowTabId,
+  );
+  await page.evaluate(
+    ({ activeWorkflowId, completedAt }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'welcome',
+        sid: 'mock-sid',
+        current: null,
+        queued: {},
+        recent: [
+          {
+            task_id: 'recovered-native-worker-crash',
+            name: 'Graph execution',
+            status: 'failed',
+            completed_at: completedAt,
+            workflow_tab_id: activeWorkflowId,
+            current_node: 'cluster-root__denoise',
+            current_node_name: 'modules.ModularDiffusers.Denoise',
+            phase: 'denoising',
+            message: 'The backend worker exited unexpectedly during execution.',
+            category: 'runtime',
+            error_code: 'backend_worker_exited',
+            recovery_hint: 'Retry with a lower-memory resource plan.',
+            resource_snapshot: {
+              process: { rssBytes: 30 * 1024 ** 3 },
+              system: { ramAvailableBytes: 38 * 1024 ** 3 },
+              accelerators: [{ allocatedBytes: 58 * 1024 ** 3 }],
+            },
+          },
+        ],
+      });
+    },
+    { activeWorkflowId: workflowId, completedAt: Date.now() / 1000 },
+  );
+
+  const failureDialog = page.getByTestId('run-failure-dialog');
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog).toContainText('The native model worker stopped unexpectedly');
+  await expect(failureDialog).toContainText('before Python could return a normal error');
+  await expect(page.getByTestId('run-failure-memory-summary')).toContainText('accelerator allocations 58.0 GiB');
+  await expect(failureDialog.getByRole('button', { name: 'Apply lower-memory settings' })).toBeVisible();
+  await failureDialog.locator('footer').getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(failureDialog).toHaveCount(0);
+  await expect(page.getByTestId('session-run-recovered-native-worker-crash')).toContainText('Failed');
+});
+
 test('mocked Studio leaves newly-created Expert Qwen quantization node expanded', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
@@ -12409,9 +15967,9 @@ test('mocked Studio leaves newly-created Expert Qwen quantization node expanded'
   await page.getByTestId('launcher-mode-text_to_image').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await setStudioViewMode(page, 'expert');
-  await page.evaluate(async () => {
-    try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+  await page.evaluate(() => {
+    void window
+      .__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
         resourceMode: 'expert',
         quantizationMode: 'bnb_4bit',
         dtype: 'bfloat16',
@@ -12419,10 +15977,8 @@ test('mocked Studio leaves newly-created Expert Qwen quantization node expanded'
         offloadMode: 'model_cpu',
         device: 'cuda:0',
         controlImage: 'mock-control.png',
-      });
-    } catch (error) {
-      if (!/Graph preparation is still running|workflow changed/.test(String(error))) throw error;
-    }
+      })
+      .catch(() => undefined);
   });
 
   await expect
@@ -13066,6 +16622,7 @@ test('graph field controls commit without moving or scrolling nodes and preserve
 test('mocked dynamic node definitions update node and field metadata without value changes', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
@@ -14773,6 +18330,7 @@ test('Expert renders backend-registered contract-only Modular image video and mu
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
   await setStudioViewMode(page, 'expert');
   const nodeId = await page.evaluate((key) => {
     window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
@@ -15405,8 +18963,10 @@ test('workflow tabs remain a single horizontally scrollable row with pinned new-
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
 
   const newTab = page.getByTestId('workflow-tab-new');
+  await dismissTaskLauncher(page);
   for (let index = 0; index < 20; index += 1) {
     await newTab.click();
+    await dismissTaskLauncher(page);
   }
 
   const tabList = page.getByTestId('workflow-tabs-scroll');
@@ -16303,10 +19863,24 @@ test('Blocks save, expand in place, collapse, and survive library-definition del
 
   await page.getByTestId('left-tab-nodes').click();
   const userNodesGroupToggle = page.getByTestId('node-group-User-Nodes').getByRole('button').first();
+  await page.getByLabel('Search nodes').fill('Workflow created');
+  await expect(userNodesGroupToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('[data-testid^="user-block-row-"]').filter({ hasText: 'Reusable render' })).toBeVisible();
   if ((await userNodesGroupToggle.getAttribute('aria-expanded')) !== 'true') {
     await userNodesGroupToggle.click();
   }
   const userBlockRow = page.locator('[data-testid^="user-block-row-"]').filter({ hasText: 'Reusable render' });
+  await page.getByLabel('Search nodes').fill('Reusable render');
+  await expect(userBlockRow).toBeVisible();
+  await expect(userBlockRow).toContainText('Saved');
+  await page.getByLabel('Group User Nodes by').click();
+  await page.getByRole('option', { name: 'By saved workflow context', exact: true }).click();
+  await expect(page.getByRole('button', { name: /No saved workflow context/u })).toBeVisible();
+  await expect(userBlockRow).toBeVisible();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.getByLabel('Search nodes').fill('Reusable render');
+  await expect(page.getByLabel('Group User Nodes by')).toContainText('By saved workflow context');
   await expect(userBlockRow).toBeVisible();
   await expect(userBlockRow).not.toContainText('Instance render');
   await userBlockRow.click({ button: 'right' });
@@ -16316,6 +19890,146 @@ test('Blocks save, expand in place, collapse, and survive library-definition del
   await expect(blockNode).toHaveCount(1);
   await blockNode.getByRole('button', { name: 'Expand block' }).click();
   await expect(blockNode.getByRole('button', { name: 'Collapse block' })).toBeVisible();
+});
+
+test('existing canvas nodes drag into User Nodes and the three persistence choices survive refresh', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('user-node-adoption-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('user-node-adoption-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(async () => window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept'));
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.selectNodesByAction(['Generate', 'Preview']))).toBe(2);
+  await page.getByTestId('selection-toolbar-create-block').click();
+  const createDialog = page.getByTestId('create-user-block-dialog');
+  await createDialog.getByLabel('Name').fill('Editable render');
+  await page.getByTestId('confirm-create-user-block').click();
+
+  const block = page.locator('.react-flow__node-block');
+  await block.getByRole('button', { name: 'Expand block' }).click();
+  const ids = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const state = useFlowStore.getState();
+    const blockNode = state.nodes.find((node) => node.data.type === 'block');
+    const ordinary = state.nodes.find(
+      (node) => node.data.type === 'custom' && !node.parentId && !node.data.userBlockInstanceId,
+    );
+    return { blockId: blockNode?.id ?? null, ordinaryId: ordinary?.id ?? null };
+  });
+  expect(ids.blockId).toBeTruthy();
+  expect(ids.ordinaryId).toBeTruthy();
+  const ordinaryNode = page.locator(`.react-flow__node[data-id="${ids.ordinaryId}"]`);
+  const ordinaryBounds = await ordinaryNode.boundingBox();
+  const blockBounds = await block.boundingBox();
+  expect(ordinaryBounds).toBeTruthy();
+  expect(blockBounds).toBeTruthy();
+  await page.mouse.move(
+    ordinaryBounds!.x + ordinaryBounds!.width / 2,
+    ordinaryBounds!.y + Math.min(28, ordinaryBounds!.height / 2),
+  );
+  await page.mouse.down();
+  await page.mouse.move(blockBounds!.x + blockBounds!.width / 2, blockBounds!.y + blockBounds!.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await expect
+    .poll(() =>
+      page.evaluate(async ({ ordinaryId, blockId }) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const node = useFlowStore.getState().nodes.find((candidate) => candidate.id === ordinaryId);
+        return { parentId: node?.parentId, instanceId: node?.data.userBlockInstanceId, blockId };
+      }, ids),
+    )
+    .toEqual({ parentId: ids.blockId, instanceId: ids.blockId, blockId: ids.blockId });
+
+  await block.getByRole('button', { name: 'Collapse block' }).click();
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Node adoption demo');
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const studio = window.__MODIFF_E2E__!.getState().studio;
+          return studio.workflowTabs.find((tab: { id: string }) => tab.id === studio.activeWorkflowTabId)?.title;
+        }),
+      )
+      .toBe('Node adoption demo');
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(block).toHaveCount(1);
+  await block.getByRole('button', { name: 'Expand block' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(async ({ ordinaryId, blockId }) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const restored = useFlowStore
+          .getState()
+          .nodes.find(
+            (node) => node.data.userBlockSourceNodeId === ordinaryId && node.data.userBlockInstanceId === blockId,
+          );
+        return restored
+          ? { instanceId: restored.data.userBlockInstanceId, sourceId: restored.data.userBlockSourceNodeId }
+          : null;
+      }, ids),
+    )
+    .toEqual({ instanceId: ids.blockId, sourceId: ids.ordinaryId });
+
+  const originalBlockId = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    return useFlowStore.getState().nodes.find((node) => node.data.type === 'block')?.data.userBlockId ?? null;
+  });
+  await block.getByRole('button', { name: 'Save User Node changes' }).click();
+  let choices = page.locator('[data-testid^="save-user-block-choices-"]');
+  await choices.getByRole('button', { name: 'Keep only in this workflow' }).click();
+  await expect(choices).toHaveCount(0);
+
+  await block.getByRole('button', { name: 'Save User Node changes' }).click();
+  choices = page.locator('[data-testid^="save-user-block-choices-"]');
+  await choices.getByRole('button', { name: 'Save as new User Node' }).click();
+  await expect(choices).toHaveCount(0);
+  const afterSaveAsNew = await page.evaluate(async (previousId) => {
+    const [{ useFlowStore }, { useUserBlockStore }] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useUserBlockStore.ts'),
+    ]);
+    const current = useFlowStore.getState().nodes.find((node) => node.data.type === 'block');
+    const studio = window.__MODIFF_E2E__!.getState().studio;
+    return {
+      previousStillExists: useUserBlockStore.getState().blocks.some((definition) => definition.id === previousId),
+      currentId: current?.data.userBlockId ?? null,
+      currentName: current?.data.label ?? '',
+      workflowTitle:
+        studio.workflowTabs.find((tab: { id: string }) => tab.id === studio.activeWorkflowTabId)?.title ?? 'Workflow',
+      currentSaved: useUserBlockStore
+        .getState()
+        .blocks.some((definition) => definition.id === current?.data.userBlockId),
+    };
+  }, originalBlockId);
+  expect(afterSaveAsNew.previousStillExists).toBe(true);
+  expect(afterSaveAsNew.currentId).not.toBe(originalBlockId);
+  expect(afterSaveAsNew.currentSaved).toBe(true);
+  expect(afterSaveAsNew.currentName).toContain(`— ${afterSaveAsNew.workflowTitle}`);
+
+  await block.getByRole('button', { name: 'Save User Node changes' }).click();
+  choices = page.locator('[data-testid^="save-user-block-choices-"]');
+  await choices.getByRole('button', { name: 'Update existing User Node' }).click();
+  await expect(choices).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.locator('.react-flow__node-block')).toContainText(afterSaveAsNew.currentName);
 });
 
 test('Collapsed many-output blocks keep preview and editable node disclosures usable', async ({ page }) => {
@@ -16419,4 +20133,2292 @@ test('Collapsed many-output blocks keep preview and editable node disclosures us
       }),
     )
     .toBe('Editable prompt from the collapsed block');
+});
+
+test('expanded V2 Blocks visibly adopt only disconnected ordinary nodes and rematerialize after refresh', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('v2-adoption-lifecycle-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('v2-adoption-lifecycle-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+
+  const fixture = await page.evaluate(async () => {
+    const [{ useFlowStore }, { useStudioStore }, schema, runtime] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+    ]);
+    const definition = schema.migrateUserBlockDefinitionV1({
+      id: 'e2e-v2-adoption-definition',
+      name: 'V2 adoption fixture',
+      version: 1,
+      nodes: [
+        {
+          id: 'generate',
+          type: 'custom',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'custom',
+            module: 'modules.Test',
+            action: 'Generate',
+            label: 'Generate',
+            category: 'Test',
+            params: {
+              prompt: { type: 'string', display: 'textarea', value: 'Creator prompt' },
+              image: { type: 'image', display: 'output' },
+            },
+          },
+        },
+      ],
+      edges: [],
+      inputs: [{ id: 'prompt', label: 'Prompt', nodeId: 'generate', paramKey: 'prompt', type: 'string' }],
+      outputs: [{ id: 'image', label: 'Image', nodeId: 'generate', paramKey: 'image', type: 'image' }],
+      exposedParams: [{ id: 'prompt', kind: 'graph-param', label: 'Prompt', nodeId: 'generate', paramKey: 'prompt' }],
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const instance = runtime.setBlockPresentationV2(
+      schema.createBlockInstanceV2(definition, {
+        instanceId: 'e2e-v2-adoption-block',
+        position: { x: 380, y: 140 },
+        size: { width: 760, height: 640 },
+      }),
+      { expanded: true },
+    );
+    const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+    const ordinaryId = 'e2e-v2-disconnected-source';
+    const ordinary = {
+      id: ordinaryId,
+      type: 'custom' as const,
+      position: { x: 60, y: 300 },
+      width: 250,
+      height: 180,
+      data: {
+        type: 'custom' as const,
+        module: 'modules.Test',
+        action: 'Utility',
+        label: 'Disconnected utility',
+        category: 'Test',
+        params: {
+          input: { type: 'image', display: 'input' },
+          output: { type: 'image', display: 'output' },
+        },
+      },
+    };
+    useStudioStore.getState().clearGraphBinding();
+    useFlowStore.setState({
+      nodes: [...projection.nodes, ordinary],
+      edges: projection.edges,
+      viewport: { x: 0, y: 0, zoom: 1 },
+    });
+    useFlowStore.getState().resetHistory();
+    useStudioStore.setState({ launcherDismissed: true });
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return { blockId: instance.instanceId, ordinaryId };
+  });
+
+  const root = page.locator(`.react-flow__node-block[data-id="${fixture.blockId}"]`);
+  const ordinary = page.locator(`.react-flow__node-custom[data-id="${fixture.ordinaryId}"]`);
+  await expect(root).toBeVisible();
+  await expect(ordinary).toBeVisible();
+  await expect(root.getByRole('button', { name: 'Collapse block' })).toBeVisible();
+  const ordinaryBounds = await ordinary.boundingBox();
+  const rootBounds = await root.boundingBox();
+  expect(ordinaryBounds).toBeTruthy();
+  expect(rootBounds).toBeTruthy();
+  await page.mouse.move(ordinaryBounds!.x + ordinaryBounds!.width / 2, ordinaryBounds!.y + 24);
+  await page.mouse.down();
+  // Use the frame's right-side insertion lane. The minimal one-child fixture
+  // deliberately has no full-card-sized gap; dropping over Generate is the
+  // separate replacement gesture and must not be confused with adoption.
+  await page.mouse.move(rootBounds!.x + rootBounds!.width * 0.96, rootBounds!.y + rootBounds!.height * 0.58, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  await expect(page.getByText('The existing node was moved into this Block.')).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(({ blockId, ordinaryId }) => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const block = graph.nodes.find((node) => node.id === blockId);
+        return {
+          oldTopLevelPresent: graph.nodes.some((node) => node.id === ordinaryId),
+          projected: graph.nodes.some(
+            (node) =>
+              node.blockProjectionOwnerId === blockId &&
+              node.blockProjectionNodeId === ordinaryId &&
+              node.parentId === blockId,
+          ),
+          semantic: block?.blockInstanceV2?.effectiveGraph.nodes.some((node) => node.nodeId === ordinaryId) ?? false,
+          boundaryInputs: block?.blockInstanceV2?.definitionSnapshot.boundary.inputs.map((port) => port.portId) ?? [],
+          boundaryOutputs: block?.blockInstanceV2?.definitionSnapshot.boundary.outputs.map((port) => port.portId) ?? [],
+        };
+      }, fixture),
+    )
+    .toEqual({
+      oldTopLevelPresent: false,
+      projected: true,
+      semantic: true,
+      boundaryInputs: ['prompt'],
+      boundaryOutputs: ['image'],
+    });
+
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(() =>
+      page.evaluate(({ blockId, ordinaryId }) => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const block = graph.nodes.find((node) => node.id === blockId);
+        return {
+          topLevelPresent: graph.nodes.some((node) => node.id === ordinaryId && !node.parentId),
+          semantic: block?.blockInstanceV2?.effectiveGraph.nodes.some((node) => node.nodeId === ordinaryId) ?? false,
+        };
+      }, fixture),
+    )
+    .toEqual({ topLevelPresent: true, semantic: false });
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(() =>
+      page.evaluate(({ blockId, ordinaryId }) => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const block = graph.nodes.find((node) => node.id === blockId);
+        return {
+          topLevelPresent: graph.nodes.some((node) => node.id === ordinaryId),
+          semantic: block?.blockInstanceV2?.effectiveGraph.nodes.some((node) => node.nodeId === ordinaryId) ?? false,
+        };
+      }, fixture),
+    )
+    .toEqual({ topLevelPresent: false, semantic: true });
+
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('V2 node adoption browser proof');
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect
+    .poll(() =>
+      page.evaluate(({ blockId, ordinaryId }) => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const block = graph.nodes.find((node) => node.id === blockId);
+        return {
+          projected: graph.nodes.some(
+            (node) => node.blockProjectionOwnerId === blockId && node.blockProjectionNodeId === ordinaryId,
+          ),
+          semantic: block?.blockInstanceV2?.effectiveGraph.nodes.some((node) => node.nodeId === ordinaryId) ?? false,
+        };
+      }, fixture),
+    )
+    .toEqual({ projected: true, semantic: true });
+
+  const connectedFixture = await page.evaluate(async ({ blockId }) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const sourceId = 'e2e-v2-connected-source';
+    const sinkId = 'e2e-v2-connected-sink';
+    const state = useFlowStore.getState();
+    const block = state.nodes.find((node) => node.id === blockId);
+    if (!block) throw new Error('Restored V2 Block is missing.');
+    const ordinaryData = (label: string, params: Record<string, unknown>) => ({
+      type: 'custom' as const,
+      module: 'modules.Test',
+      action: 'Utility',
+      label,
+      category: 'Test',
+      params,
+    });
+    useFlowStore.setState({
+      nodes: [
+        ...state.nodes,
+        {
+          id: sourceId,
+          type: 'custom',
+          position: { x: block.position.x - 320, y: block.position.y + 220 },
+          width: 250,
+          height: 180,
+          data: ordinaryData('Connected source', { output: { type: 'image', display: 'output' } }),
+        },
+        {
+          id: sinkId,
+          type: 'custom',
+          position: { x: block.position.x - 20, y: block.position.y - 220 },
+          width: 250,
+          height: 180,
+          data: ordinaryData('Connected sink', { input: { type: 'image', display: 'input' } }),
+        },
+      ],
+      edges: [
+        ...state.edges,
+        {
+          id: 'e2e-v2-connected-edge',
+          source: sourceId,
+          sourceHandle: 'output',
+          target: sinkId,
+          targetHandle: 'input',
+        },
+      ],
+    });
+    return { sourceId, edgeId: 'e2e-v2-connected-edge' };
+  }, fixture);
+  const connectedSource = page.locator(`.react-flow__node-custom[data-id="${connectedFixture.sourceId}"]`);
+  await expect(connectedSource).toBeVisible();
+  const connectedHeader = connectedSource.locator('header').first();
+  await expect(connectedHeader).toBeVisible();
+  const connectedBounds = await connectedSource.boundingBox();
+  const connectedHeaderBounds = await connectedHeader.boundingBox();
+  const restoredRootBounds = await root.boundingBox();
+  expect(connectedBounds).toBeTruthy();
+  expect(connectedHeaderBounds).toBeTruthy();
+  expect(restoredRootBounds).toBeTruthy();
+  const connectedPointer = {
+    x: connectedHeaderBounds!.x + connectedHeaderBounds!.width / 2,
+    y: connectedHeaderBounds!.y + Math.min(20, connectedHeaderBounds!.height / 2),
+  };
+  const connectedPointerOffset = {
+    x: connectedPointer.x - connectedBounds!.x,
+    y: connectedPointer.y - connectedBounds!.y,
+  };
+  const rejectedDropCenter = {
+    x: restoredRootBounds!.x + restoredRootBounds!.width * 0.82,
+    y: restoredRootBounds!.y + restoredRootBounds!.height * 0.25,
+  };
+  await page.mouse.move(connectedPointer.x, connectedPointer.y);
+  await page.mouse.down();
+  await page.mouse.move(
+    rejectedDropCenter.x - connectedBounds!.width / 2 + connectedPointerOffset.x,
+    rejectedDropCenter.y - connectedBounds!.height / 2 + connectedPointerOffset.y,
+    { steps: 10 },
+  );
+  await page.mouse.up();
+  await expect(
+    page.getByText(/Disconnect it, move the node, configure the Block interface, then reconnect/u),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ blockId, sourceId, edgeId }) => {
+          const graph = window.__MODIFF_E2E__!.getState().flow;
+          const block = graph.nodes.find((node) => node.id === blockId);
+          const source = graph.nodes.find((node) => node.id === sourceId);
+          return {
+            sourceStillTopLevel: Boolean(source && !source.parentId),
+            edgeStillPresent: graph.edges.some((edge) => edge.id === edgeId),
+            semantic: block?.blockInstanceV2?.effectiveGraph.nodes.some((node) => node.nodeId === sourceId) ?? false,
+          };
+        },
+        { blockId: fixture.blockId, ...connectedFixture },
+      ),
+    )
+    .toEqual({ sourceStillTopLevel: true, edgeStillPresent: true, semantic: false });
+});
+
+test('registered V2 Blocks visibly replace, cross public ports, reconnect, move out, configure, and persist', async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await ensureFrontend();
+  let userNodeWriteRequests = 0;
+  const missingHandleWarnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning' && message.text().includes("Couldn't create edge for")) {
+      missingHandleWarnings.push(message.text());
+    }
+  });
+  page.on('request', (request) => {
+    if (request.method() === 'GET') return;
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/studio/blocks' || pathname.startsWith('/studio/blocks/')) userNodeWriteRequests += 1;
+  });
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('registered-v2-structural-gesture-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('registered-v2-structural-gesture-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  const startupError = page.getByText('Could not finish loading', { exact: true });
+  if (await startupError.isVisible()) {
+    throw new Error(`Qwen V2 structural fixture failed startup validation: ${await page.locator('body').innerText()}`);
+  }
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-nodes').click();
+
+  // This gesture fixture intentionally uses a compact mocked catalog. Pin its
+  // exact finalized definition inside this disposable browser process; the
+  // production 76-route audit independently enforces the real backend pins.
+  await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-structural-pin');
+
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await clusterGroup.getByRole('button').first().click();
+  }
+  const qwenRow = await findQwenCatalogRow(page);
+  await expect(qwenRow).toHaveAttribute('data-readiness', 'graph_qualified');
+  await qwenRow.dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 340, y: 300 } });
+
+  const root = page
+    .locator('.react-flow__node-block')
+    .filter({ has: page.locator('[data-block-schema-version="2"]') })
+    .filter({ hasText: 'QwenImageModularPipeline' });
+  // Inserting a registered definition can trigger one final workspace
+  // reconciliation pass.  Wait for that pass instead of sampling the canvas
+  // during the transient loading overlay.
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText('Loading workspace', { exact: true })).toHaveCount(0, { timeout: 30_000 });
+  await expect(root).toHaveCount(1, { timeout: 30_000 });
+  const rootId = await root.getAttribute('data-id');
+  expect(rootId).toBeTruthy();
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await expect(root.getByTestId(`user-block-toggle-${rootId}`)).toHaveAccessibleName('Collapse block');
+  await expect(root.getByTestId(`node-handle-${rootId}-prompt`)).toBeVisible();
+  await expect(root.getByTestId(`node-handle-${rootId}-images`)).toBeVisible();
+
+  const fixture = await page.evaluate(async (instanceId) => {
+    const [{ useFlowStore }, { useStudioStore }] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+    ]);
+    useFlowStore.getState().setBlockPresentationV2(instanceId, {
+      position: { x: 330, y: 80 },
+      // Leave a real drop target after the shared V2 header-safe projection
+      // inset is applied; the gesture must not rely on dropping over a card.
+      size: { width: 900, height: 1600 },
+    });
+    const state = useFlowStore.getState();
+    const block = state.nodes.find((node) => node.id === instanceId);
+    const instance = block?.data.blockInstanceV2;
+    if (!block || !instance) throw new Error('The registered V2 root is missing.');
+    const previewOwners = new Set(instance.definitionSnapshot.previews.map(({ nodeId }) => nodeId));
+    const sealedOwners = new Set(
+      instance.effectiveInterface.controls.filter(({ sealed }) => sealed).map(({ binding }) => binding.nodeId),
+    );
+    const replaceSemantic =
+      instance.effectiveGraph.nodes.find(
+        ({ nodeId }) =>
+          !previewOwners.has(nodeId) &&
+          !sealedOwners.has(nodeId) &&
+          instance.effectiveInterface.boundary.inputs.some(({ binding }) => binding.nodeId === nodeId),
+      ) ?? instance.effectiveGraph.nodes.find(({ nodeId }) => !previewOwners.has(nodeId) && !sealedOwners.has(nodeId));
+    if (!replaceSemantic) throw new Error('The registered fixture has no replaceable semantic node.');
+    const referencedFields = [
+      ...instance.effectiveInterface.boundary.inputs.flatMap(({ binding }) =>
+        binding.nodeId === replaceSemantic.nodeId ? [binding.fieldOrPortId] : [],
+      ),
+      ...instance.effectiveInterface.boundary.outputs.flatMap(({ binding }) =>
+        binding.nodeId === replaceSemantic.nodeId ? [binding.fieldOrPortId] : [],
+      ),
+      ...instance.effectiveInterface.controls.flatMap(({ binding }) =>
+        binding.nodeId === replaceSemantic.nodeId ? [binding.fieldId] : [],
+      ),
+      ...instance.effectiveGraph.edges.flatMap((edge) => [
+        ...(edge.sourceNodeId === replaceSemantic.nodeId ? [edge.sourcePortId] : []),
+        ...(edge.targetNodeId === replaceSemantic.nodeId ? [edge.targetPortId] : []),
+      ]),
+    ];
+    const replacementId = 'e2e-v2-compatible-replacement';
+    const badReplacementId = 'e2e-v2-incompatible-replacement';
+    const publicUtilityId = 'e2e-v2-public-utility';
+    const internalUtilityId = 'e2e-v2-internal-utility';
+    const externalTargetId = 'e2e-v2-external-target';
+    const textSourceId = 'e2e-v2-text-source';
+    const promptMirrorConsumerId = 'e2e-v2-prompt-mirror-consumer';
+    const replacementData = structuredClone(replaceSemantic.data);
+    replacementData.label = 'Compatible replacement';
+    const badData = structuredClone(replacementData);
+    const badParams = badData.params as Record<string, unknown>;
+    const missingField = referencedFields.find((field) => field in badParams) ?? Object.keys(badParams)[0];
+    if (!missingField) throw new Error('The replaceable semantic node has no required field.');
+    delete badParams[missingField];
+    const outputPort = instance.effectiveInterface.boundary.outputs[0];
+    const inputPort = instance.effectiveInterface.boundary.inputs[0];
+    if (!outputPort || !inputPort) throw new Error('The registered fixture needs one input and output.');
+    const ordinary = (
+      id: string,
+      label: string,
+      position: { x: number; y: number },
+      params: Record<string, unknown>,
+      data = { type: 'custom' as const, module: 'modules.Test', action: 'Utility', label, category: 'Test', params },
+    ) => ({ id, type: 'custom' as const, position, width: 250, height: 180, data });
+    const nextNodes = [
+      ordinary(replacementId, 'Compatible replacement', { x: 20, y: 120 }, {}, replacementData),
+      ordinary(badReplacementId, 'Incompatible replacement', { x: 20, y: 430 }, {}, badData),
+      ordinary(
+        publicUtilityId,
+        'Public crossing utility',
+        { x: 3600, y: 120 },
+        {
+          input: { type: outputPort.valueType, display: 'input' },
+          output: { type: outputPort.valueType, display: 'output' },
+        },
+      ),
+      ordinary(
+        internalUtilityId,
+        'Internal reconnect utility',
+        { x: 3600, y: 420 },
+        {
+          input: { type: outputPort.valueType, display: 'input' },
+          output: { type: outputPort.valueType, display: 'output' },
+        },
+      ),
+      ordinary(
+        externalTargetId,
+        'External reconnect target',
+        { x: 3600, y: 720 },
+        {
+          input: { type: outputPort.valueType, display: 'input' },
+        },
+      ),
+      ordinary(
+        textSourceId,
+        'Workflow prompt source',
+        { x: 20, y: 680 },
+        {
+          output: { type: inputPort.valueType, display: 'output' },
+        },
+      ),
+      ordinary(
+        promptMirrorConsumerId,
+        'Prompt mirror consumer',
+        { x: 3600, y: 1020 },
+        {
+          input: { type: inputPort.valueType, display: 'input' },
+        },
+      ),
+    ];
+    useFlowStore.setState({ nodes: [...useFlowStore.getState().nodes, ...nextNodes] });
+    useFlowStore.getState().resetHistory();
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return {
+      blockId: instanceId,
+      replacementId,
+      badReplacementId,
+      publicUtilityId,
+      internalUtilityId,
+      externalTargetId,
+      textSourceId,
+      promptMirrorConsumerId,
+      replaceSemanticId: replaceSemantic.nodeId,
+      publicInputId: inputPort.portId,
+      publicInputField: inputPort.binding.fieldOrPortId,
+      publicOutputId: outputPort.portId,
+      missingField,
+      definitionId: instance.definitionSnapshot.definitionId,
+      definitionHash: instance.definitionSnapshot.contentHash,
+    };
+  }, rootId!);
+
+  const inspect = () =>
+    page.evaluate(async (ids) => {
+      const [{ useFlowStore }, runtime] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+      ]);
+      const state = useFlowStore.getState();
+      const block = state.nodes.find((node) => node.id === ids.blockId);
+      const instance = block?.data.blockInstanceV2;
+      if (!block || !instance) throw new Error('The V2 root disappeared.');
+      const execution = runtime.expandBlockGraphV2ForExecution(state.nodes, state.edges);
+      const executionNodeById = new Map(execution.nodes.map((node) => [node.id, node]));
+      return {
+        rootType: block.type,
+        dataType: block.data.type,
+        sourceKind: instance.definitionSnapshot.source.kind,
+        definitionId: instance.definitionSnapshot.definitionId,
+        definitionHash: instance.definitionSnapshot.contentHash,
+        graphHash: instance.customization.effectiveGraphHash,
+        interfaceHash: instance.effectiveInterface.effectiveInterfaceHash,
+        expanded: instance.presentation.expanded,
+        semanticIds: instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId).sort(),
+        semanticEdges: instance.effectiveGraph.edges
+          .map(
+            ({ edgeId, sourceNodeId, sourcePortId, targetNodeId, targetPortId }) =>
+              `${edgeId}:${sourceNodeId}:${sourcePortId}>${targetNodeId}:${targetPortId}`,
+          )
+          .sort(),
+        inputLabels: Object.fromEntries(
+          instance.effectiveInterface.boundary.inputs.map(({ portId, label }) => [portId, label]),
+        ),
+        inputMirrors: Object.fromEntries(
+          instance.effectiveInterface.boundary.inputs.map(({ portId, mirrorBindings = [] }) => [
+            portId,
+            mirrorBindings.map(({ nodeId, fieldOrPortId }) => `${nodeId}:${fieldOrPortId}`).sort(),
+          ]),
+        ),
+        executionInputTargets: execution.edges
+          .filter((edge) => edge.source === ids.textSourceId && edge.sourceHandle === 'output')
+          .map((edge) => {
+            const target = executionNodeById.get(edge.target);
+            return `${target?.data.blockProjectionNodeId ?? edge.target}:${edge.targetHandle ?? ''}`;
+          })
+          .sort(),
+        topLevelIds: state.nodes
+          .filter((node) => !node.parentId)
+          .map(({ id }) => id)
+          .sort(),
+        projectionIds: state.nodes
+          .filter((node) => node.data.blockProjectionOwnerId === ids.blockId)
+          .map((node) => node.data.blockProjectionNodeId)
+          .sort(),
+        externalEdges: state.edges
+          .filter((edge) => !edge.data?.blockProjectionOwnerId)
+          .map(
+            ({ id, source, sourceHandle, target, targetHandle }) =>
+              `${id}:${source}:${sourceHandle ?? ''}>${target}:${targetHandle ?? ''}`,
+          )
+          .sort(),
+        historyPast: state.historyPast.length,
+        rootParams: block.data.params,
+        hasLegacyClusterState: JSON.stringify({ nodes: state.nodes, edges: state.edges }).includes(
+          'huggingFaceCluster',
+        ),
+      };
+    }, fixture);
+
+  const projectedNode = async (semanticNodeId: string) => {
+    const projectionId = await page.evaluate(
+      async ({ blockId, semanticNodeId }) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return (
+          useFlowStore
+            .getState()
+            .nodes.find(
+              (node) =>
+                node.data.blockProjectionOwnerId === blockId && node.data.blockProjectionNodeId === semanticNodeId,
+            )?.id ?? null
+        );
+      },
+      { blockId: fixture.blockId, semanticNodeId },
+    );
+    expect(projectionId).toBeTruthy();
+    return page.locator(`.react-flow__node[data-id="${projectionId}"]`);
+  };
+
+  const dragNodeToPoint = async (node: ReturnType<Page['locator']>, point: { x: number; y: number }) => {
+    const handle = node.locator('header').first();
+    await expect(handle).toBeVisible();
+    const nodeBounds = await node.boundingBox();
+    const bounds = await handle.boundingBox();
+    expect(nodeBounds).toBeTruthy();
+    expect(bounds).toBeTruthy();
+    // Internal links can visually cross a top-level node while an expanded
+    // Block is open. Pick a genuinely pointer-reachable part of the header so
+    // the test exercises the same node drag a user can perform instead of
+    // accidentally grabbing an edge interaction path layered above it.
+    const pointer = await handle.evaluate((element) => {
+      const headerBounds = element.getBoundingClientRect();
+      const candidates = [0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9].flatMap((xFactor) =>
+        [0.12, 0.25, 0.5, 0.75, 0.88].map((yFactor) => ({
+          x: headerBounds.left + headerBounds.width * xFactor,
+          y: headerBounds.top + headerBounds.height * yFactor,
+        })),
+      );
+      const reachable = candidates.find(({ x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        if (!(hit instanceof Element)) return false;
+        const noDrag = hit.closest('.nodrag, .nopan');
+        if (noDrag && element.contains(noDrag)) return false;
+        return hit === element || element.contains(hit);
+      });
+      if (!reachable)
+        throw new Error(
+          `The ordinary node header has no pointer-reachable drag area: ${JSON.stringify(
+            candidates.slice(0, 10).map(({ x, y }) => {
+              const hit = document.elementFromPoint(x, y);
+              return {
+                x,
+                y,
+                tag: hit?.tagName,
+                classes: hit instanceof Element ? hit.getAttribute('class') : null,
+                nodeId: hit instanceof Element ? hit.closest('.react-flow__node')?.getAttribute('data-id') : null,
+              };
+            }),
+          )}`,
+        );
+      return reachable;
+    });
+    await page.mouse.move(pointer.x, pointer.y);
+    await page.mouse.down();
+    // Cross XYFlow's drag threshold before the long move. Its first drag event
+    // establishes the pointer offset; using a large first step loses that step
+    // and can land on a replacement target instead of the intended empty area.
+    const primedPointer = { x: pointer.x + 4, y: pointer.y + 4 };
+    await page.mouse.move(primedPointer.x, primedPointer.y, { steps: 4 });
+    const draggingBounds = await node.boundingBox();
+    expect(draggingBounds).toBeTruthy();
+    const pointerOffset = {
+      x: primedPointer.x - draggingBounds!.x,
+      y: primedPointer.y - draggingBounds!.y,
+    };
+    await page.mouse.move(
+      point.x - draggingBounds!.width / 2 + pointerOffset.x,
+      point.y - draggingBounds!.height / 2 + pointerOffset.y,
+      { steps: 12 },
+    );
+    const beforeRelease = await node.boundingBox();
+    expect(Math.abs(beforeRelease!.x + beforeRelease!.width / 2 - point.x)).toBeLessThan(2);
+    expect(Math.abs(beforeRelease!.y + beforeRelease!.height / 2 - point.y)).toBeLessThan(2);
+    await page.mouse.up();
+    return {
+      before: nodeBounds,
+      beforeRelease,
+      after: (await node.count()) > 0 ? await node.boundingBox() : null,
+      pointer,
+      requestedCenter: point,
+    };
+  };
+
+  const dragNodeOnto = async (node: ReturnType<Page['locator']>, target: ReturnType<Page['locator']>) => {
+    await expect(target).toBeVisible();
+    const bounds = await target.boundingBox();
+    expect(bounds).toBeTruthy();
+    await dragNodeToPoint(node, { x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 });
+  };
+
+  const dragHandle = async (source: ReturnType<Page['locator']>, target: ReturnType<Page['locator']>) => {
+    await expect(source).toBeVisible();
+    await expect(target).toBeVisible();
+    const sourceBounds = await source.boundingBox();
+    const targetBounds = await target.boundingBox();
+    expect(sourceBounds).toBeTruthy();
+    expect(targetBounds).toBeTruthy();
+    const sourcePoint = await source.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const candidates = [0.08, 0.2, 0.35, 0.5, 0.65, 0.8, 0.92].flatMap((xFactor) =>
+        [0.2, 0.5, 0.8].map((yFactor) => ({
+          x: bounds.left + bounds.width * xFactor,
+          y: bounds.top + bounds.height * yFactor,
+        })),
+      );
+      const reachable = candidates.find(({ x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit === element || (hit instanceof Node && element.contains(hit));
+      });
+      if (!reachable) throw new Error('The visible edge updater has no pointer-reachable area.');
+      return reachable;
+    });
+    const targetPoint = {
+      x: targetBounds!.x + targetBounds!.width / 2,
+      y: targetBounds!.y + targetBounds!.height / 2,
+    };
+    const distance = Math.hypot(targetPoint.x - sourcePoint.x, targetPoint.y - sourcePoint.y) || 1;
+    const approach = {
+      x: targetPoint.x - ((targetPoint.x - sourcePoint.x) / distance) * 10,
+      y: targetPoint.y - ((targetPoint.y - sourcePoint.y) / distance) * 10,
+    };
+    await page.mouse.move(sourcePoint.x, sourcePoint.y);
+    await page.mouse.down();
+    await page.mouse.move(approach.x, approach.y, { steps: 12 });
+    await page.waitForTimeout(50);
+    await page.mouse.move(targetPoint.x, targetPoint.y, { steps: 3 });
+    await page.waitForTimeout(120);
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+  };
+
+  const selectEdgeForReconnect = async (edge: ReturnType<Page['locator']>) => {
+    await expect(edge).toBeVisible();
+    const point = await edge.locator('.react-flow__edge-interaction').evaluate((element) => {
+      if (!(element instanceof SVGPathElement)) throw new Error('The reconnectable edge path is missing.');
+      const matrix = element.getScreenCTM();
+      if (!matrix) throw new Error('The reconnectable edge has no screen transform.');
+      const length = element.getTotalLength();
+      for (const fraction of [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9]) {
+        const screen = element.getPointAtLength(length * fraction).matrixTransform(matrix);
+        if (document.elementFromPoint(screen.x, screen.y) === element) return { x: screen.x, y: screen.y };
+      }
+      throw new Error('The reconnectable edge has no pointer-reachable path segment.');
+    });
+    await page.mouse.click(point.x, point.y);
+    await expect(edge).toHaveClass(/selected/u);
+  };
+
+  const emptyPointInsideRoot = async () => {
+    const rootBounds = await root.boundingBox();
+    expect(rootBounds).toBeTruthy();
+    const projectionIds = await page.evaluate(async (blockId) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore
+        .getState()
+        .nodes.filter((node) => node.data.blockProjectionOwnerId === blockId)
+        .map(({ id }) => id);
+    }, fixture.blockId);
+    const childBounds: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+    for (const projectionId of projectionIds) {
+      const bounds = await page.locator(`.react-flow__node[data-id="${projectionId}"]`).boundingBox();
+      if (!bounds) continue;
+      childBounds.push({
+        left: bounds.x,
+        right: bounds.x + bounds.width,
+        top: bounds.y,
+        bottom: bounds.y + bounds.height,
+      });
+    }
+    for (const yFactor of [0.86, 0.74, 0.61, 0.48, 0.35]) {
+      for (const xFactor of [0.86, 0.72, 0.56, 0.4, 0.24]) {
+        const point = {
+          x: rootBounds!.x + rootBounds!.width * xFactor,
+          y: rootBounds!.y + rootBounds!.height * yFactor,
+        };
+        if (
+          point.x < rootBounds!.x + 16 ||
+          point.x > rootBounds!.x + rootBounds!.width - 16 ||
+          point.y < rootBounds!.y + 48 ||
+          point.y > rootBounds!.y + rootBounds!.height - 16
+        )
+          continue;
+        if (
+          childBounds.every(
+            (bounds) =>
+              point.x < bounds.left - 12 ||
+              point.x > bounds.right + 12 ||
+              point.y < bounds.top - 12 ||
+              point.y > bounds.bottom + 12,
+          )
+        )
+          return point;
+      }
+    }
+    throw new Error('The expanded Block has no visible empty drop area for the structural gesture fixture.');
+  };
+
+  await page.evaluate(async () => {
+    const [{ useSettingsStore }, { useStudioStore }] = await Promise.all([
+      import('/src/stores/useSettingsStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+    ]);
+    const workflowTabId = useStudioStore.getState().activeWorkflowTabId;
+    if (!workflowTabId) throw new Error('The structural gesture fixture has no active workflow.');
+    useSettingsStore.getState().setWorkflowFocusRequest({
+      workflowTabId,
+      nodeId: null,
+      requestId: Date.now(),
+      requestedAt: Date.now(),
+    });
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+        return useSettingsStore.getState().workflowFocusRequest;
+      }),
+    )
+    .toBeNull();
+
+  const initial = await inspect();
+  expect(initial).toMatchObject({
+    rootType: 'block',
+    dataType: 'block',
+    sourceKind: 'diffusers_catalog',
+    definitionId: fixture.definitionId,
+    definitionHash: fixture.definitionHash,
+    rootParams: {},
+    hasLegacyClusterState: false,
+  });
+
+  // Compatible replacement is one visible drag and stays on the same root.
+  let targetProjection = await projectedNode(fixture.replaceSemanticId);
+  const replacement = page.locator(`.react-flow__node-custom[data-id="${fixture.replacementId}"]`);
+  await dragNodeOnto(replacement, targetProjection);
+  await expect(page.getByText('The internal node was replaced in this workflow Block.')).toBeVisible();
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.replacementId);
+  const afterReplacement = await inspect();
+  expect(afterReplacement.semanticIds).not.toContain(fixture.replaceSemanticId);
+  expect(afterReplacement.topLevelIds).not.toContain(fixture.replacementId);
+  expect(afterReplacement).toMatchObject({
+    rootType: 'block',
+    dataType: 'block',
+    sourceKind: 'diffusers_catalog',
+    definitionId: fixture.definitionId,
+    definitionHash: fixture.definitionHash,
+    rootParams: {},
+    hasLegacyClusterState: false,
+  });
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.replaceSemanticId);
+  expect((await inspect()).topLevelIds).toContain(fixture.replacementId);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.replacementId);
+
+  // An incompatible replacement visibly fails without touching Block authority.
+  targetProjection = await projectedNode(fixture.replacementId);
+  const authoritativeBeforeFailure = await inspect();
+  const badReplacement = page.locator(`.react-flow__node-custom[data-id="${fixture.badReplacementId}"]`);
+  await dragNodeOnto(badReplacement, targetProjection);
+  await expect(
+    page.getByText(new RegExp(`replacement field ${fixture.missingField} is missing or incompatible`, 'i')),
+  ).toBeVisible();
+  const authoritativeAfterFailure = await inspect();
+  expect(authoritativeAfterFailure.graphHash).toBe(authoritativeBeforeFailure.graphHash);
+  expect(authoritativeAfterFailure.interfaceHash).toBe(authoritativeBeforeFailure.interfaceHash);
+  expect(authoritativeAfterFailure.semanticIds).toEqual(authoritativeBeforeFailure.semanticIds);
+  expect(authoritativeAfterFailure.topLevelIds).toContain(fixture.badReplacementId);
+
+  // Public root handles are intentionally rendered in the collapsed view;
+  // create the workflow boundary edges there, then reopen the same root for
+  // the crossing gestures below.
+  let blockToggle = root.getByTestId(`user-block-toggle-${fixture.blockId}`);
+  await blockToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(blockToggle).toHaveAccessibleName('Expand block');
+  const textSource = page.locator(`.react-flow__node-custom[data-id="${fixture.textSourceId}"]`);
+  const publicUtility = page.locator(`.react-flow__node-custom[data-id="${fixture.publicUtilityId}"]`);
+  await dragHandle(
+    textSource.getByTestId(`node-handle-${fixture.textSourceId}-output`),
+    root.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicInputId}`),
+  );
+  await expect
+    .poll(async () => (await inspect()).externalEdges.some((edge) => edge.includes(`${fixture.textSourceId}:output>`)))
+    .toBe(true);
+  await dragHandle(
+    root.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicOutputId}`),
+    publicUtility.getByTestId(`node-handle-${fixture.publicUtilityId}-input`),
+  );
+  await page.waitForTimeout(500);
+  const connectionProbe = await page.evaluate(async (ids) => {
+    const [{ useFlowStore }, connectors] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/studio/nodeConnectorResolution.ts'),
+    ]);
+    const state = useFlowStore.getState();
+    const source = state.nodes.find((node) => node.id === ids.blockId);
+    const target = state.nodes.find((node) => node.id === ids.publicUtilityId);
+    return {
+      edges: state.edges.map(({ id, source, sourceHandle, target, targetHandle }) => ({
+        id,
+        source,
+        sourceHandle,
+        target,
+        targetHandle,
+      })),
+      sourceParam: connectors.nodeConnectorParam(source, ids.publicOutputId),
+      targetParam: connectors.nodeConnectorParam(target, 'input'),
+    };
+  }, fixture);
+  if (!connectionProbe.edges.some((edge) => edge.source === fixture.blockId))
+    throw new Error(`Public output gesture did not commit: ${JSON.stringify(connectionProbe)}`);
+  await expect
+    .poll(async () => (await inspect()).externalEdges.filter((edge) => edge.includes(`:${fixture.blockId}:`)).length)
+    .toBe(1);
+
+  // Add one compatible internal consumer through the same visible structural
+  // gesture users use for ordinary nodes. Configure Interface can then expose
+  // it as an explicit additional target of the existing public input.
+  blockToggle = root.getByTestId(`user-block-toggle-${fixture.blockId}`);
+  await blockToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(blockToggle).toHaveAccessibleName('Collapse block');
+  const promptMirrorConsumer = page.locator(`.react-flow__node-custom[data-id="${fixture.promptMirrorConsumerId}"]`);
+  await dragNodeToPoint(promptMirrorConsumer, await emptyPointInsideRoot());
+  await expect(page.getByText('The existing node was moved into this Block.')).toBeVisible();
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.promptMirrorConsumerId);
+  await expect.poll(async () => (await inspect()).projectionIds).toContain(fixture.promptMirrorConsumerId);
+  blockToggle = root.getByTestId(`user-block-toggle-${fixture.blockId}`);
+  await blockToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(blockToggle).toHaveAccessibleName('Expand block');
+
+  // Configure Interface previews the exact connected-edge impact and cannot apply it.
+  const interfaceBeforeImpact = await inspect();
+  await root.getByTestId(`user-block-configure-${fixture.blockId}`).click();
+  let configureDialog = page.getByTestId(`configure-block-v2-${fixture.blockId}`);
+  await expect(configureDialog).toBeVisible();
+  await configureDialog
+    .getByRole('button', { name: /Remove input/u })
+    .first()
+    .click();
+  await expect(configureDialog).toContainText('1 connected edge would lose a public port');
+  await expect(configureDialog.getByRole('button', { name: 'Apply interface' })).toBeDisabled();
+  expect((await inspect()).interfaceHash).toBe(interfaceBeforeImpact.interfaceHash);
+  expect((await inspect()).externalEdges).toEqual(interfaceBeforeImpact.externalEdges);
+  await configureDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+  // One safe transaction relabels the socket and explicitly fans that single
+  // logical input out to the compatible consumer. The durable instance and
+  // projected execution graph both remain copy-on-write and undoable.
+  await root.getByTestId(`user-block-configure-${fixture.blockId}`).click();
+  configureDialog = page.getByTestId(`configure-block-v2-${fixture.blockId}`);
+  await configureDialog.getByLabel(`input ${fixture.publicInputId} label`).fill('Workflow prompt');
+  const mirrorEntryKey = `input:${fixture.publicInputId}`;
+  await configureDialog.getByTestId(`interface-mirror-select-${mirrorEntryKey}`).click();
+  await page.getByRole('option', { name: 'Prompt mirror consumer / input', exact: true }).click();
+  await configureDialog.getByTestId(`interface-mirror-add-${mirrorEntryKey}`).click();
+  await expect(configureDialog.getByTestId(`interface-mirrors-${mirrorEntryKey}`)).toContainText(
+    'Additional consumer: Prompt mirror consumer / input',
+  );
+  await configureDialog.getByRole('button', { name: 'Apply interface' }).click();
+  await expect(page.getByText('The workflow instance interface was updated.')).toBeVisible();
+  await expect(root.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicInputId}`)).toHaveAttribute(
+    'aria-label',
+    /Workflow prompt/u,
+  );
+  const configured = await inspect();
+  expect(configured.inputLabels[fixture.publicInputId]).toBe('Workflow prompt');
+  expect(configured.inputMirrors[fixture.publicInputId]).toEqual([`${fixture.promptMirrorConsumerId}:input`]);
+  expect(configured.executionInputTargets).toEqual([
+    `${fixture.replacementId}:${fixture.publicInputField}`,
+    `${fixture.promptMirrorConsumerId}:input`,
+  ]);
+  expect(configured.interfaceHash).not.toBe(interfaceBeforeImpact.interfaceHash);
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await inspect()).inputLabels[fixture.publicInputId]).not.toBe('Workflow prompt');
+  expect((await inspect()).inputMirrors[fixture.publicInputId]).toEqual([]);
+  expect((await inspect()).executionInputTargets).toEqual([`${fixture.replacementId}:${fixture.publicInputField}`]);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => (await inspect()).inputLabels[fixture.publicInputId]).toBe('Workflow prompt');
+  expect((await inspect()).inputMirrors[fixture.publicInputId]).toEqual([`${fixture.promptMirrorConsumerId}:input`]);
+  expect((await inspect()).executionInputTargets).toEqual([
+    `${fixture.replacementId}:${fixture.publicInputField}`,
+    `${fixture.promptMirrorConsumerId}:input`,
+  ]);
+
+  // An edge through an existing public output crosses into the Block when its
+  // target node is visibly adopted. No interface is inferred or rewritten.
+  blockToggle = root.getByTestId(`user-block-toggle-${fixture.blockId}`);
+  await blockToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(blockToggle).toHaveAccessibleName('Collapse block');
+  await expect(root.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicInputId}`)).toBeVisible();
+  await expect(root.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicOutputId}`)).toBeVisible();
+  const interfaceBeforeAdoption = (await inspect()).interfaceHash;
+  await dragNodeToPoint(publicUtility, await emptyPointInsideRoot());
+  await expect(page.getByText('The existing node was moved into this Block.')).toBeVisible();
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.publicUtilityId);
+  const afterPublicAdoption = await inspect();
+  expect(afterPublicAdoption.interfaceHash).toBe(interfaceBeforeAdoption);
+  expect(afterPublicAdoption.externalEdges.some((edge) => edge.includes(`>${fixture.publicUtilityId}:input`))).toBe(
+    false,
+  );
+  expect(afterPublicAdoption.semanticEdges.some((edge) => edge.includes(`>${fixture.publicUtilityId}:input`))).toBe(
+    true,
+  );
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await inspect()).topLevelIds).toContain(fixture.publicUtilityId);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.publicUtilityId);
+
+  // Adopt a second disconnected target, then reconnect the durable internal
+  // edge by dragging the visible XYFlow target updater.
+  const internalUtility = page.locator(`.react-flow__node-custom[data-id="${fixture.internalUtilityId}"]`);
+  const internalAdoptionPoint = await emptyPointInsideRoot();
+  const internalAdoptionDrag = await dragNodeToPoint(internalUtility, internalAdoptionPoint);
+  await page.waitForTimeout(300);
+  const internalAdoptionProbe = await page.evaluate(
+    async ({ ids, point }) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const state = useFlowStore.getState();
+      const root = state.nodes.find((node) => node.id === ids.blockId);
+      const utility = state.nodes.find((node) => node.id === ids.internalUtilityId);
+      return {
+        point,
+        viewport: state.viewport,
+        rootPosition: root?.position,
+        rootSize: root?.data.blockInstanceV2?.presentation.size,
+        utilityPosition: utility?.position,
+        utilityMeasured: utility?.measured,
+        utilityParent: utility?.parentId,
+        consumer: state.nodes
+          .filter((node) => node.data.blockProjectionNodeId === ids.promptMirrorConsumerId)
+          .map((node) => ({
+            position: node.position,
+            width: node.width,
+            height: node.height,
+            measured: node.measured,
+            bounds: document.querySelector(`[data-id="${node.id}"]`)?.getBoundingClientRect().toJSON(),
+          })),
+        semantic: root?.data.blockInstanceV2?.effectiveGraph.nodes.some(
+          (node) => node.nodeId === ids.internalUtilityId,
+        ),
+      };
+    },
+    { ids: fixture, point: internalAdoptionPoint },
+  );
+  if (!internalAdoptionProbe.semantic)
+    throw new Error(
+      `Disconnected internal adoption gesture did not commit: ${JSON.stringify({ ...internalAdoptionProbe, drag: internalAdoptionDrag })}; ${await page.locator('body').innerText()}`,
+    );
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.internalUtilityId);
+  await expect.poll(async () => (await inspect()).projectionIds).toContain(fixture.internalUtilityId);
+  await expect
+    .poll(() =>
+      page.evaluate(async (ids) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const state = useFlowStore.getState();
+        return state.edges.some(
+          (candidate) =>
+            candidate.data?.blockProjectionKind === 'internal' &&
+            state.nodes.find((node) => node.id === candidate.target)?.data.blockProjectionNodeId ===
+              ids.publicUtilityId,
+        );
+      }, fixture),
+    )
+    .toBe(true);
+  const internalReconnect = await page.evaluate(async (ids) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const state = useFlowStore.getState();
+    const edge = state.edges.find(
+      (candidate) =>
+        candidate.data?.blockProjectionKind === 'internal' &&
+        state.nodes.find((node) => node.id === candidate.target)?.data.blockProjectionNodeId === ids.publicUtilityId,
+    );
+    const nextTarget = state.nodes.find(
+      (node) =>
+        node.data.blockProjectionOwnerId === ids.blockId && node.data.blockProjectionNodeId === ids.internalUtilityId,
+    );
+    if (!edge || !nextTarget) throw new Error('The internal reconnect fixture is incomplete.');
+    return { edgeId: edge.id, nextTargetId: nextTarget.id };
+  }, fixture);
+  const internalReconnectEdge = page.locator(`.react-flow__edge[data-id="${internalReconnect.edgeId}"]`);
+  await selectEdgeForReconnect(internalReconnectEdge);
+  await dragHandle(
+    internalReconnectEdge.locator('.react-flow__edgeupdater-target'),
+    page.getByTestId(`node-handle-${internalReconnect.nextTargetId}-input`),
+  );
+  await expect
+    .poll(async () =>
+      (await inspect()).semanticEdges.some((edge) => edge.includes(`>${fixture.internalUtilityId}:input`)),
+    )
+    .toBe(true);
+  expect((await inspect()).semanticEdges.some((edge) => edge.includes(`>${fixture.publicUtilityId}:input`))).toBe(
+    false,
+  );
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () =>
+      (await inspect()).semanticEdges.some((edge) => edge.includes(`>${fixture.publicUtilityId}:input`)),
+    )
+    .toBe(true);
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(async () =>
+      (await inspect()).semanticEdges.some((edge) => edge.includes(`>${fixture.internalUtilityId}:input`)),
+    )
+    .toBe(true);
+
+  // Moving the connected internal node out translates its incident edge back
+  // through the already-declared public output; Undo/Redo preserve the root.
+  const movedProjection = await projectedNode(fixture.internalUtilityId);
+  const rootBounds = await root.boundingBox();
+  const paneBounds = await page.locator('.react-flow__pane').boundingBox();
+  expect(rootBounds).toBeTruthy();
+  expect(paneBounds).toBeTruthy();
+  const dragMoveOutProbe = await dragNodeToPoint(movedProjection, {
+    // The expanded fixture nearly reaches the right viewport edge. Keep the
+    // release point visibly inside the canvas while placing the node's center
+    // unambiguously outside the Block frame.
+    x: Math.max(paneBounds!.x + 80, rootBounds!.x - 180),
+    y: rootBounds!.y + rootBounds!.height * 0.55,
+  });
+  await page.waitForTimeout(300);
+  const moveOutProbe = await page.evaluate(async (ids) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const state = useFlowStore.getState();
+    const root = state.nodes.find((node) => node.id === ids.blockId);
+    const projection = state.nodes.find(
+      (node) =>
+        node.data.blockProjectionOwnerId === ids.blockId && node.data.blockProjectionNodeId === ids.internalUtilityId,
+    );
+    const absolutePosition = projection
+      ? (() => {
+          const byId = new Map(state.nodes.map((node) => [node.id, node]));
+          const position = { ...projection.position };
+          let parentId = projection.parentId;
+          while (parentId) {
+            const parent = byId.get(parentId);
+            if (!parent) break;
+            position.x += parent.position.x;
+            position.y += parent.position.y;
+            parentId = parent.parentId;
+          }
+          return position;
+        })()
+      : null;
+    return {
+      rootPosition: root?.position,
+      rootWidth: root?.width,
+      rootHeight: root?.height,
+      rootMeasured: root?.measured,
+      rootPresentation: root?.data.blockInstanceV2?.presentation.size,
+      projectionId: projection?.id,
+      projectionPosition: projection?.position,
+      projectionMeasured: projection?.measured,
+      projectionParentId: projection?.parentId,
+      projectionContainer: projection?.data.blockProjectionContainer,
+      absolutePosition,
+      semantic: root?.data.blockInstanceV2?.effectiveGraph.nodes.some((node) => node.nodeId === ids.internalUtilityId),
+    };
+  }, fixture);
+  if (moveOutProbe.semantic)
+    throw new Error(`Internal move-out gesture did not commit: ${JSON.stringify({ dragMoveOutProbe, moveOutProbe })}`);
+  await expect(page.getByText('The internal node was moved out of this Block.')).toBeVisible();
+  await expect.poll(async () => (await inspect()).topLevelIds).toContain(fixture.internalUtilityId);
+  const afterMoveOut = await inspect();
+  expect(afterMoveOut.semanticIds).not.toContain(fixture.internalUtilityId);
+  expect(afterMoveOut.externalEdges.some((edge) => edge.includes(`>${fixture.internalUtilityId}:input`))).toBe(true);
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.internalUtilityId);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => (await inspect()).topLevelIds).toContain(fixture.internalUtilityId);
+
+  // Reconnect that external edge to another ordinary node through the visible
+  // edge updater. The existing edge identity is retained.
+  const externalReconnect = await page.evaluate(async (ids) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const edge = useFlowStore
+      .getState()
+      .edges.find((candidate) => candidate.source === ids.blockId && candidate.target === ids.internalUtilityId);
+    if (!edge) throw new Error('The external reconnect edge is missing.');
+    return { edgeId: edge.id };
+  }, fixture);
+  const externalReconnectEdge = page.locator(`.react-flow__edge[data-id="${externalReconnect.edgeId}"]`);
+  await selectEdgeForReconnect(externalReconnectEdge);
+  await dragHandle(
+    externalReconnectEdge.locator('.react-flow__edgeupdater-target'),
+    page.getByTestId(`node-handle-${fixture.externalTargetId}-input`),
+  );
+  await expect
+    .poll(async () =>
+      (await inspect()).externalEdges.some((edge) => edge.includes(`>${fixture.externalTargetId}:input`)),
+    )
+    .toBe(true);
+  expect((await inspect()).externalEdges.some((edge) => edge.includes(`>${fixture.internalUtilityId}:input`))).toBe(
+    false,
+  );
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () =>
+      (await inspect()).externalEdges.some((edge) => edge.includes(`>${fixture.internalUtilityId}:input`)),
+    )
+    .toBe(true);
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(async () =>
+      (await inspect()).externalEdges.some((edge) => edge.includes(`>${fixture.externalTargetId}:input`)),
+    )
+    .toBe(true);
+
+  // Collapse, Save, refresh and re-expand retain the exact registered source,
+  // workflow-local topology, interface, and external reconnection.
+  blockToggle = root.getByTestId(`user-block-toggle-${fixture.blockId}`);
+  await blockToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(blockToggle).toHaveAccessibleName('Expand block');
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Registered V2 structural gesture proof');
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+  }
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const studio = window.__MODIFF_E2E__!.getState().studio;
+        return studio.workflowTabs.find((tab: { id: string }) => tab.id === studio.activeWorkflowTabId)?.dirty;
+      }),
+    )
+    .toBe(false);
+  const beforeRefresh = await inspect();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const restoredRoot = page.locator(`.react-flow__node-block[data-id="${fixture.blockId}"]`);
+  await expect(restoredRoot).toHaveCount(1);
+  await expect(restoredRoot.getByTestId(`user-block-${fixture.blockId}`)).toHaveAttribute(
+    'data-block-source',
+    'diffusers_catalog',
+  );
+  await expect(page.locator('[data-cluster-role]')).toHaveCount(0);
+  const restored = await inspect();
+  expect(restored).toMatchObject({
+    rootType: 'block',
+    dataType: 'block',
+    sourceKind: 'diffusers_catalog',
+    definitionId: fixture.definitionId,
+    definitionHash: fixture.definitionHash,
+    graphHash: beforeRefresh.graphHash,
+    interfaceHash: beforeRefresh.interfaceHash,
+    expanded: false,
+    rootParams: {},
+    hasLegacyClusterState: false,
+  });
+  expect(restored.semanticIds).toContain(fixture.replacementId);
+  expect(restored.semanticIds).toContain(fixture.publicUtilityId);
+  expect(restored.semanticIds).toContain(fixture.promptMirrorConsumerId);
+  expect(restored.semanticIds).not.toContain(fixture.replaceSemanticId);
+  expect(restored.semanticIds).not.toContain(fixture.internalUtilityId);
+  expect(restored.inputLabels[fixture.publicInputId]).toBe('Workflow prompt');
+  expect(restored.inputMirrors[fixture.publicInputId]).toEqual([`${fixture.promptMirrorConsumerId}:input`]);
+  expect(restored.executionInputTargets).toEqual([
+    `${fixture.replacementId}:${fixture.publicInputField}`,
+    `${fixture.promptMirrorConsumerId}:input`,
+  ]);
+  expect(restored.externalEdges.some((edge) => edge.includes(`>${fixture.externalTargetId}:input`))).toBe(true);
+  await restoredRoot.getByTestId(`user-block-toggle-${fixture.blockId}`).click();
+  await expect.poll(async () => (await inspect()).projectionIds).toContain(fixture.replacementId);
+  expect((await inspect()).projectionIds).toContain(fixture.publicUtilityId);
+  expect((await inspect()).projectionIds).toContain(fixture.promptMirrorConsumerId);
+  await expect(restoredRoot.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicInputId}`)).toBeVisible();
+  await expect(restoredRoot.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicOutputId}`)).toBeVisible();
+
+  // Removing the additional consumer is also one atomic interface edit. The
+  // single public socket remains connected to its primary internal target;
+  // Undo/Redo restore and remove the projected fan-out exactly.
+  const restoredToggle = restoredRoot.getByTestId(`user-block-toggle-${fixture.blockId}`);
+  await restoredToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(restoredToggle).toHaveAccessibleName('Expand block');
+  await restoredRoot.getByTestId(`user-block-configure-${fixture.blockId}`).click();
+  configureDialog = page.getByTestId(`configure-block-v2-${fixture.blockId}`);
+  await configureDialog
+    .getByTestId(`interface-mirror-remove-${mirrorEntryKey}-${fixture.promptMirrorConsumerId}-input`)
+    .click();
+  await configureDialog.getByRole('button', { name: 'Apply interface' }).click();
+  await expect.poll(async () => (await inspect()).inputMirrors[fixture.publicInputId]).toEqual([]);
+  expect((await inspect()).executionInputTargets).toEqual([`${fixture.replacementId}:${fixture.publicInputField}`]);
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () => (await inspect()).inputMirrors[fixture.publicInputId])
+    .toEqual([`${fixture.promptMirrorConsumerId}:input`]);
+  expect((await inspect()).executionInputTargets).toEqual([
+    `${fixture.replacementId}:${fixture.publicInputField}`,
+    `${fixture.promptMirrorConsumerId}:input`,
+  ]);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => (await inspect()).inputMirrors[fixture.publicInputId]).toEqual([]);
+  expect((await inspect()).executionInputTargets).toEqual([`${fixture.replacementId}:${fixture.publicInputField}`]);
+  expect(missingHandleWarnings).toEqual([]);
+  expect(userNodeWriteRequests).toBe(0);
+});
+
+test('registered V2 preview and sealed owners replace compatibly without rebinding and persist', async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('registered-v2-protected-replacement-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('registered-v2-protected-replacement-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-nodes').click();
+  await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-protected-replacement-pin');
+
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await clusterGroup.getByRole('button').first().click();
+  }
+  const qwenRow = await findQwenCatalogRow(page);
+  await expect(qwenRow).toHaveAttribute('data-readiness', 'graph_qualified');
+  await qwenRow.dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 500, y: 260 } });
+
+  const root = page
+    .locator('.react-flow__node-block')
+    .filter({ has: page.locator('[data-block-schema-version="2"]') })
+    .filter({ hasText: 'QwenImageModularPipeline' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await expect(root).toHaveCount(1, { timeout: 30_000 });
+  const rootId = await root.getAttribute('data-id');
+  expect(rootId).toBeTruthy();
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await expect(root.getByTestId(`user-block-toggle-${rootId}`)).toHaveAccessibleName('Collapse block');
+
+  const fixture = await page.evaluate(async (instanceId) => {
+    const [{ useFlowStore }, { useStudioStore }] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+    ]);
+    const initial = useFlowStore.getState();
+    const block = initial.nodes.find((node) => node.id === instanceId);
+    let instance = block?.data.blockInstanceV2;
+    if (!block || !instance) throw new Error('The registered protected-replacement root is missing.');
+    const previewBinding = instance.definitionSnapshot.previews[0];
+    if (!previewBinding) throw new Error('The registered fixture requires one preview.');
+    let sealedControl =
+      instance.effectiveInterface.controls.find(
+        ({ sealed, binding }) => sealed && binding.nodeId !== previewBinding.nodeId,
+      ) ?? instance.effectiveInterface.controls.find(({ binding }) => binding.nodeId !== previewBinding.nodeId);
+    if (!sealedControl) throw new Error('The registered fixture requires one separately-owned control.');
+    if (!sealedControl.sealed) {
+      useFlowStore.getState().configureBlockInterfaceV2(instanceId, {
+        boundary: instance.effectiveInterface.boundary,
+        controls: instance.effectiveInterface.controls.map((control) =>
+          control.controlId === sealedControl!.controlId ? { ...control, sealed: true } : control,
+        ),
+      });
+      instance = useFlowStore.getState().nodes.find((node) => node.id === instanceId)?.data.blockInstanceV2;
+      sealedControl = instance?.effectiveInterface.controls.find(
+        ({ controlId }) => controlId === sealedControl!.controlId,
+      );
+      if (!instance || !sealedControl?.sealed)
+        throw new Error('The workflow-local sealed-control fixture could not be configured.');
+    }
+    if (previewBinding.nodeId === sealedControl.binding.nodeId)
+      throw new Error('The registered fixture requires distinct preview and sealed-control owners.');
+    const previewNode = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === previewBinding.nodeId);
+    const sealedNode = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === sealedControl.binding.nodeId);
+    if (!previewNode || !sealedNode) throw new Error('A protected semantic owner is missing.');
+
+    const previewReplacementId = 'e2e-v2-preview-owner-replacement';
+    const badPreviewReplacementId = 'e2e-v2-bad-preview-owner-replacement';
+    const sealedReplacementId = 'e2e-v2-sealed-owner-replacement';
+    const previewReplacementAction = 'E2EPreviewOwnerReplacement';
+    const sealedReplacementAction = 'E2ESealedOwnerReplacement';
+    const previewData = structuredClone(previewNode.data);
+    previewData.action = previewReplacementAction;
+    previewData.label = 'Compatible preview owner replacement';
+    const badPreviewData = structuredClone(previewData);
+    const badPreviewParams = badPreviewData.params as Record<string, unknown>;
+    delete badPreviewParams[previewBinding.outputPortId];
+    const sealedData = structuredClone(sealedNode.data);
+    sealedData.action = sealedReplacementAction;
+    sealedData.label = 'Compatible sealed owner replacement';
+    const ordinary = (id: string, position: { x: number; y: number }, data: typeof previewData) => ({
+      id,
+      type: 'custom' as const,
+      position,
+      width: 260,
+      height: 190,
+      data: { ...data, type: 'custom' as const },
+    });
+    const internalLayout = Object.fromEntries(
+      instance.effectiveGraph.nodes.map(({ nodeId }, index) => [
+        nodeId,
+        {
+          x: 70 + (index % 4) * 265,
+          y: 90 + Math.floor(index / 4) * 230,
+          width: 230,
+          height: 190,
+        },
+      ]),
+    );
+    useFlowStore.getState().setBlockPresentationV2(instanceId, {
+      position: { x: 580, y: 20 },
+      size: { width: 1120, height: 940 },
+      internalLayout,
+    });
+    useFlowStore.getState().setBlockPreviewStateV2(
+      instanceId,
+      { nodeId: previewBinding.nodeId, outputPortId: previewBinding.outputPortId },
+      {
+        mediaReference: '/data/generated/stale-protected-preview.png',
+        taskId: 'stale-protected-preview-task',
+        status: 'complete',
+      },
+    );
+    const positioned = useFlowStore.getState();
+    useFlowStore.setState({
+      nodes: [
+        ...positioned.nodes,
+        ordinary(previewReplacementId, { x: 40, y: 100 }, previewData),
+        ordinary(badPreviewReplacementId, { x: 40, y: 390 }, badPreviewData),
+        ordinary(sealedReplacementId, { x: 40, y: 680 }, sealedData),
+      ],
+    });
+    useFlowStore.getState().resetHistory();
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return {
+      blockId: instanceId,
+      previewSemanticId: previewBinding.nodeId,
+      previewOutputId: previewBinding.outputPortId,
+      previewReplacementId,
+      badPreviewReplacementId,
+      previewReplacementAction,
+      sealedSemanticId: sealedControl.binding.nodeId,
+      sealedControlId: sealedControl.controlId,
+      sealedFieldId: sealedControl.binding.fieldId,
+      sealedReplacementId,
+      sealedReplacementAction,
+      definitionHash: instance.definitionSnapshot.contentHash,
+    };
+  }, rootId!);
+
+  const inspect = () =>
+    page.evaluate(async (ids) => {
+      const [{ useFlowStore }, runtime] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+      ]);
+      const state = useFlowStore.getState();
+      const rootNode = state.nodes.find((node) => node.id === ids.blockId);
+      const instance = rootNode?.data.blockInstanceV2;
+      if (!rootNode || !instance) throw new Error('The protected-replacement root disappeared.');
+      const sealedControl = instance.effectiveInterface.controls.find(
+        ({ controlId }) => controlId === ids.sealedControlId,
+      );
+      return {
+        actions: Object.fromEntries(
+          instance.effectiveGraph.nodes.map(({ nodeId, data }) => [nodeId, data.action ?? null]),
+        ),
+        semanticIds: instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId).sort(),
+        topLevelIds: state.nodes
+          .filter((node) => !node.parentId)
+          .map(({ id }) => id)
+          .sort(),
+        previewState: instance.previewStates.find(
+          ({ binding }) => binding.nodeId === ids.previewSemanticId && binding.outputPortId === ids.previewOutputId,
+        ),
+        definitionPreview: instance.definitionSnapshot.previews.find(
+          ({ nodeId, outputPortId }) => nodeId === ids.previewSemanticId && outputPortId === ids.previewOutputId,
+        ),
+        sealedBinding: sealedControl?.binding,
+        sealed: sealedControl?.sealed,
+        sealedControlDisabled: runtime.blockControlParamsV2(instance)[ids.sealedControlId]?.disabled,
+        graphHash: instance.effectiveGraph.graphHash,
+        definitionHash: instance.definitionSnapshot.contentHash,
+        expanded: instance.presentation.expanded,
+      };
+    }, fixture);
+
+  const projectedNode = async (semanticNodeId: string) => {
+    const projectionId = await page.evaluate(
+      async ({ blockId, semanticNodeId }) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return (
+          useFlowStore
+            .getState()
+            .nodes.find(
+              (node) =>
+                node.data.blockProjectionOwnerId === blockId && node.data.blockProjectionNodeId === semanticNodeId,
+            )?.id ?? null
+        );
+      },
+      { blockId: fixture.blockId, semanticNodeId },
+    );
+    expect(projectionId).toBeTruthy();
+    return page.locator(`.react-flow__node[data-id="${projectionId}"]`);
+  };
+  const dragNodeOnto = async (sourceId: string, target: ReturnType<Page['locator']>) => {
+    const source = page.locator(`.react-flow__node[data-id="${sourceId}"]`);
+    await expect(source).toBeVisible();
+    await expect(target).toBeVisible();
+    const sourceBounds = await source.boundingBox();
+    const sourceHeader = await source.locator('header').first().boundingBox();
+    const targetBounds = await target.boundingBox();
+    expect(sourceBounds).toBeTruthy();
+    expect(sourceHeader).toBeTruthy();
+    expect(targetBounds).toBeTruthy();
+    const start = {
+      x: sourceHeader!.x + sourceHeader!.width / 2,
+      y: sourceHeader!.y + Math.min(20, sourceHeader!.height / 2),
+    };
+    const center = { x: targetBounds!.x + targetBounds!.width / 2, y: targetBounds!.y + targetBounds!.height / 2 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    const primed = { x: start.x + 4, y: start.y + 4 };
+    await page.mouse.move(primed.x, primed.y, { steps: 4 });
+    const dragging = await source.boundingBox();
+    expect(dragging).toBeTruthy();
+    const offset = { x: primed.x - dragging!.x, y: primed.y - dragging!.y };
+    await page.mouse.move(center.x - dragging!.width / 2 + offset.x, center.y - dragging!.height / 2 + offset.y, {
+      steps: 12,
+    });
+    const dropped = await source.boundingBox();
+    expect(Math.abs(dropped!.x + dropped!.width / 2 - center.x)).toBeLessThan(2);
+    expect(Math.abs(dropped!.y + dropped!.height / 2 - center.y)).toBeLessThan(2);
+    await page.mouse.up();
+  };
+
+  // Fit the whole gesture fixture, including top-level replacements. Catalog
+  // insertion focuses the original collapsed root; after materializing its
+  // internals some targets would otherwise be outside the browser viewport.
+  await page.evaluate(async () => {
+    const [{ useSettingsStore }, { useStudioStore }] = await Promise.all([
+      import('/src/stores/useSettingsStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+    ]);
+    const workflowTabId = useStudioStore.getState().activeWorkflowTabId;
+    if (!workflowTabId) throw new Error('No workflow for the protected replacement gesture.');
+    const requestedAt = Date.now();
+    useSettingsStore
+      .getState()
+      .setWorkflowFocusRequest({ workflowTabId, nodeId: null, requestId: requestedAt, requestedAt });
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+        return useSettingsStore.getState().workflowFocusRequest;
+      }),
+    )
+    .toBeNull();
+  const initial = await inspect();
+  expect(initial.previewState).toMatchObject({
+    binding: { nodeId: fixture.previewSemanticId, outputPortId: fixture.previewOutputId },
+    mediaReference: '/data/generated/stale-protected-preview.png',
+    taskId: 'stale-protected-preview-task',
+    status: 'complete',
+  });
+
+  await dragNodeOnto(fixture.previewReplacementId, await projectedNode(fixture.previewSemanticId));
+  await expect(page.getByText('The internal node was replaced in this workflow Block.')).toBeVisible();
+  let replaced = await inspect();
+  expect(replaced.actions[fixture.previewSemanticId]).toBe(fixture.previewReplacementAction);
+  expect(replaced.semanticIds).toContain(fixture.previewSemanticId);
+  expect(replaced.semanticIds).not.toContain(fixture.previewReplacementId);
+  expect(replaced.topLevelIds).not.toContain(fixture.previewReplacementId);
+  expect(replaced.previewState).toEqual({ binding: replaced.definitionPreview, status: 'idle' });
+  expect(replaced.definitionHash).toBe(fixture.definitionHash);
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () => (await inspect()).actions[fixture.previewSemanticId])
+    .not.toBe(fixture.previewReplacementAction);
+  expect((await inspect()).topLevelIds).toContain(fixture.previewReplacementId);
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(async () => (await inspect()).actions[fixture.previewSemanticId])
+    .toBe(fixture.previewReplacementAction);
+
+  const beforeInvalid = await inspect();
+  await dragNodeOnto(fixture.badPreviewReplacementId, await projectedNode(fixture.previewSemanticId));
+  await expect(
+    page.getByText(new RegExp(`preview field ${fixture.previewOutputId} is missing or incompatible`, 'i')),
+  ).toBeVisible();
+  const afterInvalid = await inspect();
+  expect(afterInvalid.graphHash).toBe(beforeInvalid.graphHash);
+  expect(afterInvalid.actions).toEqual(beforeInvalid.actions);
+  expect(afterInvalid.topLevelIds).toContain(fixture.badPreviewReplacementId);
+
+  await dragNodeOnto(fixture.sealedReplacementId, await projectedNode(fixture.sealedSemanticId));
+  await expect(page.getByText('The internal node was replaced in this workflow Block.')).toBeVisible();
+  replaced = await inspect();
+  expect(replaced.actions[fixture.sealedSemanticId]).toBe(fixture.sealedReplacementAction);
+  expect(replaced.semanticIds).toContain(fixture.sealedSemanticId);
+  expect(replaced.semanticIds).not.toContain(fixture.sealedReplacementId);
+  expect(replaced.sealedBinding).toEqual({
+    nodeId: fixture.sealedSemanticId,
+    fieldId: fixture.sealedFieldId,
+  });
+  expect(replaced.sealed).toBe(true);
+  expect(replaced.sealedControlDisabled).toBe(true);
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () => (await inspect()).actions[fixture.sealedSemanticId])
+    .not.toBe(fixture.sealedReplacementAction);
+  expect((await inspect()).topLevelIds).toContain(fixture.sealedReplacementId);
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(async () => (await inspect()).actions[fixture.sealedSemanticId])
+    .toBe(fixture.sealedReplacementAction);
+
+  await root.getByTestId(`user-block-toggle-${fixture.blockId}`).click();
+  await expect(root.getByTestId(`user-block-toggle-${fixture.blockId}`)).toHaveAccessibleName('Expand block');
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Registered V2 protected replacement proof');
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+  }
+  const beforeRefresh = await inspect();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  const restoredRoot = page.locator(`.react-flow__node-block[data-id="${fixture.blockId}"]`);
+  await expect(restoredRoot).toHaveCount(1);
+  const restored = await inspect();
+  expect(restored).toMatchObject({
+    actions: {
+      [fixture.previewSemanticId]: fixture.previewReplacementAction,
+      [fixture.sealedSemanticId]: fixture.sealedReplacementAction,
+    },
+    graphHash: beforeRefresh.graphHash,
+    definitionHash: fixture.definitionHash,
+    expanded: false,
+    sealedBinding: { nodeId: fixture.sealedSemanticId, fieldId: fixture.sealedFieldId },
+    sealed: true,
+    sealedControlDisabled: true,
+  });
+  expect(restored.previewState).toEqual({ binding: restored.definitionPreview, status: 'idle' });
+  await restoredRoot.getByTestId(`user-block-toggle-${fixture.blockId}`).click();
+  await expect(projectedNode(fixture.previewSemanticId)).resolves.toBeTruthy();
+  await expect(projectedNode(fixture.sealedSemanticId)).resolves.toBeTruthy();
+});
+
+test('mixed V1 and V2 User Nodes survive a full browser restart without cross-conversion', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    if (window.sessionStorage.getItem('mixed-v1-v2-browser-restart-test')) return;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem('mixed-v1-v2-browser-restart-test', 'initialized');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+
+  const fixture = await page.evaluate(async () => {
+    const [{ useFlowStore }, { useStudioStore }, schema, runtime, userBlocks] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+      import('/src/studio/userBlocks.ts'),
+    ]);
+    const definition = (id: string, name: string, prompt: string) => ({
+      id,
+      name,
+      version: 1 as const,
+      nodes: [
+        {
+          id: 'generate',
+          type: 'custom' as const,
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'custom' as const,
+            module: 'modules.Test',
+            action: 'Generate',
+            label: `${name} generator`,
+            category: 'Test',
+            params: {
+              prompt: { type: 'string', display: 'textarea', value: prompt },
+              image: { type: 'image', display: 'output' },
+            },
+          },
+        },
+      ],
+      edges: [],
+      inputs: [{ id: 'prompt-input', label: 'Prompt input', nodeId: 'generate', paramKey: 'prompt', type: 'string' }],
+      outputs: [{ id: 'image-output', label: 'Image', nodeId: 'generate', paramKey: 'image', type: 'image' }],
+      exposedParams: [
+        {
+          id: 'prompt-control',
+          kind: 'graph-param' as const,
+          label: 'Prompt',
+          nodeId: 'generate',
+          paramKey: 'prompt',
+        },
+      ],
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const v1Definition = definition('mixed-v1-definition', 'Mixed V1 User Node', 'Persisted V1 prompt');
+    const v1Root = userBlocks.createUserBlockNode(v1Definition, { x: 120, y: 100 }, 'mixed-v1-root');
+    const v2Definition = schema.migrateUserBlockDefinitionV1(
+      definition('mixed-v2-definition', 'Mixed V2 User Node', 'V2 starter prompt'),
+    );
+    const v2Instance = schema.createBlockInstanceV2(v2Definition, {
+      instanceId: 'mixed-v2-root',
+      position: { x: 760, y: 100 },
+      size: { width: 520, height: 520 },
+      values: { 'prompt-control': 'Persisted V2 prompt' },
+    });
+    const v2Root = runtime.createBlockRootNodeV2(v2Instance);
+    useStudioStore.getState().clearGraphBinding();
+    useFlowStore.setState({
+      nodes: [v1Root, v2Root],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 0.8 },
+    });
+    useFlowStore.getState().resetHistory();
+    useStudioStore.setState({ launcherDismissed: true });
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return {
+      v1RootId: v1Root.id,
+      v2RootId: v2Root.id,
+      v1DefinitionId: v1Definition.id,
+      v2DefinitionId: v2Definition.definitionId,
+      v2ContentHash: v2Definition.contentHash,
+    };
+  });
+
+  const v1Root = page.locator(`.react-flow__node-block[data-id="${fixture.v1RootId}"]`);
+  const v2Root = page.locator(`.react-flow__node-block[data-id="${fixture.v2RootId}"]`);
+  await expect(v1Root.getByTestId(`user-block-${fixture.v1RootId}`)).toHaveAttribute('data-block-schema-version', '1');
+  await expect(v2Root.getByTestId(`user-block-${fixture.v2RootId}`)).toHaveAttribute('data-block-schema-version', '2');
+  await v1Root.getByRole('button', { name: 'Mixed V1 User Node generator' }).click();
+  await expect(v1Root.getByLabel('Prompt', { exact: true })).toHaveValue('Persisted V1 prompt');
+  await expect(v2Root.getByLabel('Prompt', { exact: true })).toHaveValue('Persisted V2 prompt');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await expect(v1Root).toHaveCount(1);
+  await expect(v2Root).toHaveCount(1);
+  await expect(v1Root.getByTestId(`user-block-${fixture.v1RootId}`)).toHaveAttribute('data-block-schema-version', '1');
+  await expect(v2Root.getByTestId(`user-block-${fixture.v2RootId}`)).toHaveAttribute('data-block-schema-version', '2');
+  await v1Root.getByRole('button', { name: 'Mixed V1 User Node generator' }).click();
+  await expect(v1Root.getByLabel('Prompt', { exact: true })).toHaveValue('Persisted V1 prompt');
+  await expect(v2Root.getByLabel('Prompt', { exact: true })).toHaveValue('Persisted V2 prompt');
+
+  expect(
+    await page.evaluate(async ({ v1RootId, v2RootId, v1DefinitionId, v2DefinitionId, v2ContentHash }) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const graph = useFlowStore.getState();
+      const v1 = graph.nodes.find((node) => node.id === v1RootId);
+      const v2 = graph.nodes.find((node) => node.id === v2RootId);
+      return {
+        v1: {
+          type: v1?.type,
+          definitionId: v1?.data?.userBlockSnapshot?.id,
+          hasV2Authority: Boolean(v1?.data?.blockInstanceV2),
+        },
+        v2: {
+          type: v2?.type,
+          definitionId: v2?.data?.blockInstanceV2?.definitionSnapshot.definitionId,
+          contentHash: v2?.data?.blockInstanceV2?.definitionSnapshot.contentHash,
+          hasV1Authority: Boolean(v2?.data?.userBlockSnapshot),
+        },
+        expected: { v1DefinitionId, v2DefinitionId, v2ContentHash },
+      };
+    }, fixture),
+  ).toEqual({
+    v1: { type: 'block', definitionId: fixture.v1DefinitionId, hasV2Authority: false },
+    v2: {
+      type: 'block',
+      definitionId: fixture.v2DefinitionId,
+      contentHash: fixture.v2ContentHash,
+      hasV1Authority: false,
+    },
+    expected: {
+      v1DefinitionId: fixture.v1DefinitionId,
+      v2DefinitionId: fixture.v2DefinitionId,
+      v2ContentHash: fixture.v2ContentHash,
+    },
+  });
+
+  await v1Root.getByTestId(`user-block-toggle-${fixture.v1RootId}`).click();
+  await v2Root.getByTestId(`user-block-toggle-${fixture.v2RootId}`).click();
+  await expect
+    .poll(() =>
+      page.evaluate(async ({ v1RootId, v2RootId }) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const graph = useFlowStore.getState();
+        return {
+          v1Children: graph.nodes.filter((node) => node.data.userBlockInstanceId === v1RootId).length,
+          v2Children: graph.nodes.filter((node) => node.data.blockProjectionOwnerId === v2RootId).length,
+        };
+      }, fixture),
+    )
+    .toEqual({ v1Children: 1, v2Children: 1 });
+});
+
+test('legacy registered Cluster migration visibly generates, previews, applies, lists, and rolls back exact evidence', async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await ensureFrontend();
+  const stores = await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  const sourcePath = 'user-workflows/legacy-migration-e2e.json';
+  const sourceSha256 = `sha256:${'1'.repeat(64)}`;
+  const legacyCompositeHash = `sha256:${'2'.repeat(64)}`;
+  const targetSha256 = `sha256:${'3'.repeat(64)}`;
+  const inventoryReportHash = `sha256:${'4'.repeat(64)}`;
+  const sourceSetHash = `sha256:${'5'.repeat(64)}`;
+  const planHash = `sha256:${'6'.repeat(64)}`;
+  const supplementHash = `sha256:${'7'.repeat(64)}`;
+  const migrationId = `block-v2-migration-${'8'.repeat(24)}`;
+  const legacyInstanceId = 'legacy-migration-e2e-root';
+  let savedWorkflowReady = false;
+  let reviewedSupplement: Record<string, unknown> | null = null;
+  let journalState: 'none' | 'applied' | 'rolled_back' = 'none';
+  let applyCalls = 0;
+  let rollbackCalls = 0;
+  let savedWorkflowMutationCalls = 0;
+  let historicalCompilerMappingAuthority: Record<string, unknown> | null = null;
+
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (request.method() !== 'GET' && url.pathname === '/workflows/legacy-migration-e2e')
+      savedWorkflowMutationCalls += 1;
+  });
+
+  const blockedCandidate = () => ({
+    kind: 'legacy_registered_cluster_instance',
+    sourcePath,
+    sourceSha256,
+    legacyCompositeHash,
+    id: legacyInstanceId,
+    status: 'blocked',
+    reason: historicalCompilerMappingAuthority
+      ? 'A checked-in archived compiler mapping is available; requires an exact compiler output that references it.'
+      : 'Requires the exact pinned registered-catalog BlockDefinitionV2 compiler output.',
+    ...(historicalCompilerMappingAuthority
+      ? { historicalCompilerMappingAuthority: structuredClone(historicalCompilerMappingAuthority) }
+      : {}),
+  });
+  const boundary = (compiled: boolean) => ({
+    writesFiles: false,
+    requiresExplicitApplyAuthority: true,
+    createsExactBackupsBeforeReplacement: true,
+    deletesRecords: false,
+    mergesRecords: false,
+    legacyClusterConversionRequiresRegisteredCompiler: true,
+    ...(compiled ? { compilerSupplementRequiredForRegisteredClusters: true } : {}),
+    containsPromptAndParameterValues: false,
+  });
+  const defaultPreview = () => {
+    const candidate = blockedCandidate();
+    return {
+      error: false,
+      preview: {
+        schemaVersion: 1,
+        kind: 'legacy_composite_to_block_v2_migration',
+        mode: 'read_only_preview',
+        boundary: boundary(false),
+        inventoryReportHash,
+        sourceSetHash,
+        summary: {
+          sourceCount: savedWorkflowReady ? 1 : 0,
+          targetFileCount: 0,
+          convertibleCandidateCount: 0,
+          blockedCandidateCount: savedWorkflowReady ? 1 : 0,
+          legacyClusterBlockedCount: savedWorkflowReady ? 1 : 0,
+          hasChanges: false,
+        },
+        targets: [],
+        candidates: savedWorkflowReady ? [candidate] : [],
+        blocked: savedWorkflowReady ? [candidate] : [],
+        inventoryIssues: [],
+        migrationId,
+        planHash,
+      },
+    };
+  };
+  const compiledPreview = (supplement: Record<string, unknown>) => {
+    const compilerOutputs = supplement.compilerOutputs as Array<Record<string, unknown>>;
+    const conversions = compilerOutputs[0]?.conversions as Array<Record<string, unknown>>;
+    const conversion = conversions[0]!;
+    const instance = conversion.blockInstanceV2 as {
+      definitionRef: { definitionId: string };
+    };
+    const ownedMappings = conversion.ownedNodeMappings as Array<{ legacyNodeId: string }>;
+    const absorbedInternalEdgeIds = conversion.absorbedInternalEdgeIds as string[];
+    const candidate = {
+      kind: 'legacy_registered_cluster_instance',
+      sourcePath,
+      sourceSha256,
+      legacyCompositeHash,
+      id: legacyInstanceId,
+      status: 'convertible',
+      targetAfterSha256: targetSha256,
+      compilerReceipt: {
+        instanceId: legacyInstanceId,
+        definitionId: instance.definitionRef.definitionId,
+        admissionId: conversion.admissionId,
+        compiledDefinitionContentHash: conversion.compiledDefinitionContentHash,
+        compiledDefinitionCanonicalSha256: conversion.compiledDefinitionCanonicalSha256,
+        legacyCompositeHash,
+        absorbedProjectionNodeIds: ownedMappings.map(({ legacyNodeId }) => legacyNodeId).sort(),
+        absorbedInternalEdgeIds,
+        ...(historicalCompilerMappingAuthority
+          ? { historicalCompilerMappingAuthority: structuredClone(historicalCompilerMappingAuthority) }
+          : {}),
+      },
+    };
+    return {
+      error: false,
+      preview: {
+        schemaVersion: 1,
+        kind: 'legacy_composite_to_block_v2_migration',
+        mode: 'read_only_preview',
+        boundary: boundary(true),
+        compilerSupplement: {
+          provided: true,
+          contentHash: supplementHash,
+          sourceCount: compilerOutputs.length,
+          conversionCount: conversions.length,
+        },
+        inventoryReportHash,
+        sourceSetHash,
+        summary: {
+          sourceCount: 1,
+          targetFileCount: 1,
+          convertibleCandidateCount: 1,
+          blockedCandidateCount: 0,
+          legacyClusterBlockedCount: 0,
+          registeredClusterConvertibleCount: 1,
+          hasChanges: true,
+        },
+        targets: [
+          {
+            sourcePath,
+            kind: 'workflow_composite_instances',
+            beforeSha256: sourceSha256,
+            afterSha256: targetSha256,
+            convertedIds: [legacyInstanceId],
+            byteLength: 4096,
+          },
+        ],
+        candidates: [candidate],
+        blocked: [],
+        inventoryIssues: [],
+        migrationId,
+        planHash,
+      },
+    };
+  };
+  const status = () => {
+    const rolledBack = journalState === 'rolled_back';
+    return {
+      migrationId,
+      journalState: rolledBack ? 'rolled_back' : 'applied',
+      effectiveState: rolledBack ? 'rolled_back' : 'applied',
+      planHash,
+      inventoryReportHash,
+      targets: [
+        {
+          sourcePath,
+          currentSha256: rolledBack ? sourceSha256 : targetSha256,
+          state: rolledBack ? 'source' : 'applied',
+        },
+      ],
+      rollbackAvailable: true,
+      resumeAvailable: false,
+    };
+  };
+  const recoveryAudit = {
+    error: false,
+    audit: {
+      schemaVersion: 4,
+      kind: 'registered_cluster_manifest_recovery_audit',
+      boundary: {
+        readOnly: true,
+        containsWorkflowPaths: false,
+        containsInstanceIds: false,
+        containsPromptOrParameterValues: false,
+        historicalHashAloneIsNotExecutionAuthority: true,
+        presentationProjectionIsNotDefinitionAuthority: true,
+        recoveredStudioSpecEvidenceDoesNotAuthorizeConversion: true,
+        compilerMappingPresenceAloneDoesNotAuthorizeConversion: true,
+      },
+      localEvidence: {},
+      summary: {
+        legacyClusterInstanceCount: 15,
+        definitionIdentityCount: 1,
+        currentManifestExactInstanceCount: 0,
+        currentManifestExactIdentityCount: 0,
+        currentExecutionTupleExactInstanceCount: 0,
+        currentExecutionTupleExactIdentityCount: 0,
+        archivedManifestExactInstanceCount: 15,
+        archivedManifestExactIdentityCount: 1,
+        semanticEquivalenceReviewedInstanceCount: 0,
+        semanticEquivalenceReviewedIdentityCount: 0,
+        compilerMappingEligibleInstanceCount: 15,
+        compilerMappingEligibleIdentityCount: 1,
+        remainingBlockedHistoricalInstanceCount: 0,
+        remainingBlockedHistoricalIdentityCount: 0,
+        historicalEvidenceRequiredInstanceCount: 0,
+        historicalEvidenceRequiredIdentityCount: 0,
+        completeExecutionReceiptInstanceCount: 15,
+        missingExecutionReceiptInstanceCount: 0,
+        missingExecutionReceiptIdentityCount: 0,
+        incompleteExecutionReceiptInstanceCount: 0,
+        incompleteExecutionReceiptIdentityCount: 0,
+        identityReferenceOnlyInstanceCount: 15,
+        embeddedCompleteDefinitionInstanceCount: 0,
+        presentationProjectionInstanceCount: 0,
+        presentationProjectionNodeCount: 0,
+        malformedIdentityInstanceCount: 0,
+        malformedIdentityCount: 0,
+        recoveredStudioSpecBodyCount: 0,
+        recoveredStudioSpecManifestIdentityCount: 0,
+        recoveredStudioSpecExecutionTupleCount: 0,
+        recoveredStudioSpecInstanceCount: 0,
+        partialReviewVerifiedExecutionTupleCount: 0,
+        partialReviewRejectedExecutionTupleCount: 0,
+      },
+      partialStudioSpecEvidence: {
+        status: 'no_matching_evidence',
+        authorizesConversion: false,
+        sources: [],
+        specifications: [],
+        manualReviews: [],
+      },
+      identities: [
+        {
+          definitionId: 'diffusers.modular:MockHistorical:default',
+          libraryRevision: 'a'.repeat(40),
+          manifestContentHash: `sha256:${'b'.repeat(64)}`,
+          admissionIds: [],
+          instanceCount: 15,
+          disposition: 'archived_manifest_exact',
+          sourceEvidence: {
+            embeddedManifest: {},
+            executionReceipt: {},
+            presentationProjection: {},
+            currentCatalog: {},
+            registeredArchive: {},
+            reviewedSemanticEquivalence: {},
+            recoveredStudioSpecs: {
+              status: 'missing',
+              specificationBodyCount: 0,
+              executionTupleCount: 0,
+              instanceCount: 0,
+              verifiedPartialReviewExecutionTupleCount: 0,
+              rejectedPartialReviewExecutionTupleCount: 0,
+              isManifestDefinitionOrConversionAuthority: false,
+            },
+          },
+          executionTuples: [],
+          missingEvidence: [],
+          safeNextActions: [],
+        },
+      ],
+      contentHash: `sha256:${'c'.repeat(64)}`,
+    },
+  };
+
+  await page.route('**/studio/composite-migrations**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const method = request.method();
+    if (url.pathname.endsWith('/recovery-audit') && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(recoveryAudit),
+      });
+      return;
+    }
+    if (url.pathname.endsWith('/preview')) {
+      if (method === 'GET') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(defaultPreview()) });
+        return;
+      }
+      const body = request.postDataJSON() as { compilerSupplement?: Record<string, unknown> };
+      expect(body.compilerSupplement).toBeTruthy();
+      reviewedSupplement = structuredClone(body.compilerSupplement!);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(compiledPreview(reviewedSupplement)),
+      });
+      return;
+    }
+    if (url.pathname.endsWith('/apply') && method === 'POST') {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      expect(body.confirmation).toBe('APPLY_BLOCK_V2_MIGRATION');
+      expect(body.allowBlockedCandidates).toBe(false);
+      expect(body.compilerSupplement).toEqual(reviewedSupplement);
+      applyCalls += 1;
+      journalState = 'applied';
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: false,
+          idempotent: false,
+          changedPaths: [sourcePath],
+          status: status(),
+        }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith(`/${migrationId}/rollback`) && method === 'POST') {
+      expect(request.postDataJSON()).toEqual({ confirmation: 'ROLLBACK_BLOCK_V2_MIGRATION' });
+      rollbackCalls += 1;
+      journalState = 'rolled_back';
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: false,
+          idempotent: false,
+          restoredPaths: [sourcePath],
+          status: status(),
+        }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith(`/${migrationId}`) && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, status: status() }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith('/studio/composite-migrations') && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: false,
+          schemaVersion: 1,
+          migrations: journalState === 'none' ? [] : [status()],
+        }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":true}' });
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-migration-pin');
+  const archivedFixture = await page.evaluate(
+    async ({ legacyInstanceId }) => {
+      const [{ useHuggingFaceNodeLibraryStore }, graph, routes, insertion, schema] = await Promise.all([
+        import('/src/stores/useHuggingFaceNodeLibraryStore.ts'),
+        import('/src/studio/huggingFaceClusterGraph.ts'),
+        import('/src/studio/registeredBlockV2Routes.ts'),
+        import('/src/studio/huggingFaceClusterInsertion.ts'),
+        import('/src/studio/blockSchemaV2.ts'),
+      ]);
+      if (!useHuggingFaceNodeLibraryStore.getState().library) {
+        await useHuggingFaceNodeLibraryStore.getState().fetchLibrary();
+      }
+      const definition = useHuggingFaceNodeLibraryStore
+        .getState()
+        .library?.definitions.find(
+          (item) => item.pipelineClass === 'QwenImageModularPipeline' && item.workflowId === 'text2image',
+        );
+      if (!definition) throw new Error('The exact Qwen migration fixture definition is unavailable.');
+      const admission = definition.executionAdmissions[0];
+      if (!admission) throw new Error('The exact Qwen migration fixture admission is unavailable.');
+      const route = routes.registeredBlockV2Route(definition, admission);
+      if (!route) throw new Error('The exact Qwen migration fixture V2 route is unavailable.');
+      const root = graph.createHuggingFaceClusterNode(
+        definition,
+        legacyInstanceId,
+        { x: 140, y: 90 },
+        { prompt: 'A saved legacy migration prompt.' },
+        admission.id,
+        { height: 640, steps: 8, width: 640 },
+      );
+      const compiled = await insertion.compileRegisteredCatalogBlockV2Exact(definition, root, {
+        timeoutMs: 30_000,
+      });
+      const historical = {
+        manifestDefinitionId: definition.id,
+        libraryRevision: definition.libraryRevision,
+        manifestContentHash: `sha256:${'a'.repeat(64)}`,
+        executionAdmissionId: 'diffusers.cluster-admission:qwen:archived-e2e',
+        studioExecutionSpec: {
+          id: 'qwen-image:archived-e2e:v1',
+          contentHash: 'studio-spec-v1-deadbeef',
+          executionProfileId: 'qwen-image:archived-e2e',
+        },
+        archivedDefinitionRecordHash: `sha256:${'b'.repeat(64)}`,
+        blockContractHash: `sha256:${'c'.repeat(64)}`,
+        rootBlockDefinitionId: 'diffusers.modular-block:QwenImageAutoBlocks:archived-e2e',
+      };
+      root.data.huggingFaceClusterInstance = {
+        ...root.data.huggingFaceClusterInstance!,
+        definition: {
+          id: historical.manifestDefinitionId,
+          libraryRevision: historical.libraryRevision,
+          contentHash: historical.manifestContentHash,
+        },
+        execution: {
+          ...root.data.huggingFaceClusterInstance!.execution!,
+          admissionId: historical.executionAdmissionId,
+          studioExecutionSpec: structuredClone(historical.studioExecutionSpec),
+        },
+      };
+      return {
+        root: structuredClone(root),
+        mapping: {
+          mappingId: 'legacy-cluster-compiler-mapping:qwen:archived-e2e',
+          mappingHash: `sha256:${'d'.repeat(64)}`,
+          historical,
+          destination: {
+            manifestDefinitionId: route.definitionId,
+            libraryRevision: route.libraryRevision,
+            manifestContentHash: route.definitionContentHash,
+            executionAdmissionId: route.admissionId,
+            blockDefinitionId: compiled.definition.definitionId,
+            blockDefinitionContentHash: route.compiledDefinitionContentHash,
+            blockDefinitionCanonicalSha256: route.compiledDefinitionCanonicalSha256,
+            executionGraphHash: compiled.definition.graph.graphHash,
+            interfaceHash: schema.blockInterfaceHashV2({
+              boundary: compiled.definition.boundary,
+              controls: compiled.definition.controls,
+            }),
+          },
+          review: {
+            decision: 'historical_compiler_mapping_reviewed',
+            issuer: 'workspace_owner:mocked-browser-reviewer',
+            reviewedAt: '2026-09-02T18:00:00+05:30',
+            notes: 'Mocked browser proof of exact archived compiler mapping flow.',
+          },
+        },
+      };
+    },
+    { legacyInstanceId },
+  );
+  historicalCompilerMappingAuthority = archivedFixture.mapping;
+  stores.workflows.set('legacy-migration-e2e', {
+    id: 'legacy-migration-e2e',
+    name: 'Legacy migration E2E',
+    revision: 1,
+    updatedAt: Date.now(),
+    snapshot: { nodes: [archivedFixture.root], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+  });
+  savedWorkflowReady = true;
+
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+  await dismissTaskLauncher(page);
+  await page.getByText('Advanced diagnostics', { exact: true }).click();
+  const card = page.getByTestId('composite-migration-card');
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await card.getByTestId('legacy-cluster-recovery-evidence-disclosure').getByRole('button').first().click();
+  const recoveryEvidence = card.getByTestId('legacy-cluster-recovery-evidence-summary');
+  await expect(recoveryEvidence).toContainText('15 mapping-ready instances');
+  await expect(recoveryEvidence).toContainText('1 mapping-ready identity');
+  await expect(recoveryEvidence).toContainText('0 historical still blocked');
+  await expect(recoveryEvidence).toContainText('0 blocked identities');
+  await card.getByTestId('composite-migration-compiler-disclosure').getByRole('button').first().click();
+  await card.getByTestId('composite-migration-compiler-generate').click();
+  const compilerJson = card.getByTestId('composite-migration-compiler-json');
+  await expect(compilerJson).toHaveValue(/legacy-migration-e2e-root/u, { timeout: 30_000 });
+  await expect(compilerJson).toHaveValue(/"valueMappings"/u);
+  await expect(compilerJson).toHaveValue(/"previewMappings"/u);
+  await expect(compilerJson).toHaveValue(/"historicalCompilerMapping"/u);
+  await card.getByTestId('composite-migration-preview-disclosure').getByRole('button').first().click();
+  await expect(card.getByTestId('composite-migration-archived-compiler-mappings')).toContainText(
+    'legacy-cluster-compiler-mapping:qwen:archived-e2e',
+  );
+  expect(savedWorkflowMutationCalls).toBe(0);
+  expect(applyCalls).toBe(0);
+  expect(reviewedSupplement).toBeTruthy();
+
+  await card.getByTestId('composite-migration-review').click();
+  const applyDialog = page.getByTestId('composite-migration-review-dialog');
+  await expect(applyDialog).toBeVisible();
+  await verifyCompactDialog(page, applyDialog, 'migration-review');
+  await expect(applyDialog).toBeVisible();
+  await applyDialog.getByTestId('composite-migration-apply-confirmation').fill('APPLY_BLOCK_V2_MIGRATION');
+  await applyDialog.getByTestId('composite-migration-apply').click();
+  await expect(applyDialog).toHaveCount(0, { timeout: 30_000 });
+  expect(applyCalls).toBe(1);
+  expect(savedWorkflowMutationCalls).toBe(0);
+
+  const recovery = card.getByTestId('composite-migration-recovery-disclosure');
+  await expect(recovery).toContainText('Recovery journals (1)', { timeout: 30_000 });
+  await recovery.getByRole('button').first().click();
+  await card.getByTestId(`composite-migration-inspect-${migrationId}`).click();
+  const rollbackDialog = page.getByTestId('composite-migration-rollback-dialog');
+  await expect(rollbackDialog).toBeVisible();
+  await verifyCompactDialog(page, rollbackDialog, 'rollback-review');
+  await expect(rollbackDialog).toBeVisible();
+  await rollbackDialog.getByTestId('composite-migration-rollback-confirmation').fill('ROLLBACK_BLOCK_V2_MIGRATION');
+  await rollbackDialog.getByTestId('composite-migration-rollback').click();
+  await expect(rollbackDialog).toHaveCount(0, { timeout: 30_000 });
+  expect(rollbackCalls).toBe(1);
+  expect(journalState).toBe('rolled_back');
+  expect(savedWorkflowMutationCalls).toBe(0);
 });

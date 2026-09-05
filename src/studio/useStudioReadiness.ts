@@ -3,7 +3,7 @@ import type { ModelCacheDiagnostics } from '../stores/useNodeStore';
 import { autoResourceInstallTarget, type StudioAutoResourcePlan } from './autoResource';
 import { getStudioWorkflowArtifactRequirements } from './artifactRequirements';
 import { getStudioModelCacheStatus } from './modelCache';
-import { getCompatibleModelsForMode, getProfileForForm } from './modelProfiles';
+import { getCompatibleModelsForMode, getProfileForArtifactMode, getProfileForForm } from './modelProfiles';
 import type { StudioFormState, StudioModelProfile, StudioModelType } from './types';
 import { advertisedStudioModes } from './modelCapabilities';
 
@@ -29,7 +29,7 @@ export function useStudioReadiness({
   const capability = useMemo(() => {
     const fallback = getProfileForForm(form);
     const backend = backendCapabilities.find((item) => item.modelType === form.modelType);
-    return backend ? { ...fallback, ...backend } : fallback;
+    return getProfileForArtifactMode(backend ? { ...fallback, ...backend } : fallback, form.mode);
   }, [backendCapabilities, form]);
   const compatibleModels = useMemo(() => {
     if (!backendCapabilitiesAuthoritative) {
@@ -65,6 +65,7 @@ export function useStudioReadiness({
   const requiresReferenceImage = modeImageRequirements.includes('referenceImages');
   const requiresMaskImage = modeImageRequirements.includes('maskImage');
   const requiresControlImage = modeImageRequirements.includes('controlImage');
+  const requiresIPAdapterImage = modeImageRequirements.includes('ipAdapterImage');
   const showImageTray =
     requiresReferenceImage ||
     form.mode === 'control_image' ||
@@ -77,10 +78,17 @@ export function useStudioReadiness({
     () => (form.resourceMode === 'auto' ? autoResourceInstallTarget(autoResourcePlan, form) : null),
     [autoResourcePlan, form],
   );
+  const exactCapabilityRevision =
+    capability.revisionCandidates?.length === 1 ? capability.revisionCandidates[0] : undefined;
   const missingInstallTarget =
     autoInstallTarget ??
     (form.resourceMode !== 'auto' && capability.artifactInstallRequired !== false && !modelStatus.runnable
-      ? { repo: capability.defaultRepo, label: capability.label }
+      ? {
+          repo: capability.defaultRepo,
+          label: capability.label,
+          revision: exactCapabilityRevision,
+          files: capability.downloadFiles,
+        }
       : missingModeRequirement
         ? { repo: missingModeRequirement.repo, label: missingModeRequirement.label }
         : null);
@@ -92,6 +100,7 @@ export function useStudioReadiness({
     showImageTray,
     requiresMaskImage,
     requiresControlImage,
+    requiresIPAdapterImage,
     supportsMask,
     inpaintContract,
     missingInstallTarget,

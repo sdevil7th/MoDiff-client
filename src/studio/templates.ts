@@ -2,6 +2,7 @@ import type {
   StudioPreset,
   StudioTemplate,
   StudioTemplateExample,
+  StudioTemplateId,
   StudioTemplateIntentGroup,
   StudioTemplateLockedSettings,
   StudioTemplateMediaSlot,
@@ -1122,7 +1123,7 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
     '',
   ],
   [
-    'cinematic_octane, 3D Portrait, 3d render of one original near-future deep-sea salvage engineer standing inside a compact pressure-dock airlock. Show a weathered woman in her late thirties wearing a graphite diving suit with an oxidized-brass pressure collar, one transparent helmet carried under her left arm, a small scar through the right eyebrow, damp short black hair, and no logo or lettering. Frame a vertical waist-up 50 mm portrait from slightly below eye level. Place the engineer on the right third, with a circular steel hatch, wet cable conduits, one amber maintenance lamp and a glimpse of dark ocean through a thick round window behind her. Use cinematic Octane-style physically based materials, ray-traced reflections, restrained volumetric haze, crisp suit microtexture, realistic skin, a cool cyan environment key, warm amber rim light and deep but readable contrast. Keep the low-strength 3D appearance subtle: premium cinematic character visualization rather than plastic toy styling. No extra person, duplicate limb, deformed hand, helmet on the head, floating equipment, readable text, watermark or franchise character.',
+    'cinematic_octane, 3D Portrait, 3d render. One adult female deep-sea engineer in a centered chest-up portrait, with her complete head, both shoulders, and the full broad pressure collar visible inside the frame. Sharp focus on both symmetrical eyes. Damp short black hair with individual strands, natural skin pores, and one thin healed scar crossing only her right eyebrow; intact skin, no blood, bruise, swelling, or open wound. Plain graphite diving suit with crisp woven fabric and one broad oxidized-brass pressure collar with fine brushed-metal microtexture. Controlled cinematic CG depth, cool cyan key light, restrained warm amber rim light, realistic material response, no text, logo, watermark, or extra person.',
     '',
   ],
   [
@@ -3969,6 +3970,10 @@ export const PLANNING_STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEM
 export const STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEMPLATES.filter(
   (template) => template.example?.status !== 'blocked',
 );
+
+export function getStudioTemplateLoraBaseModel(templateId: StudioTemplateId | null | undefined) {
+  return STUDIO_TEMPLATES.find((template) => template.id === templateId)?.workflowBlockSettings?.lora?.baseModel;
+}
 
 export function getPreset(id: string | undefined) {
   return STUDIO_PRESETS.find((preset) => preset.id === id);

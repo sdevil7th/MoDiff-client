@@ -1,4 +1,4 @@
-import { useFlowStore } from '../stores/useFlowStore';
+import { useFlowStore, withoutBlockCompilationTransientsV2 } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
 import { currentAutoResourcePlanTarget, useStudioStore } from '../stores/useStudioStore';
@@ -43,6 +43,14 @@ import type { RuntimeResourceSnapshot } from './runtimeResources';
 import { getStudioGraphRunBlockingMessage } from './graphBridge';
 import { optionalRuntimeBlockState } from './optionalRuntimes';
 import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm, REPO_ID } from './executionSpecs';
+import { getStudioTemplateLoraBaseModel } from './templates';
+import { useHuggingFaceClusterRuntimeStore } from '../stores/useHuggingFaceClusterRuntimeStore';
+import { useUserBlockStore } from '../stores/useUserBlockStore';
+import { expandUserBlockGraph, inspectUserBlockCompositions } from './userBlocks';
+import { expandHuggingFaceClusterBoundaryEdges } from './huggingFaceClusterGraph';
+import { blockProjectionNodeIdV2, expandBlockGraphV2ForExecution } from './blockRuntimeV2';
+import { registeredBlockAutoAuthorityIssuesV2 } from './blockExecutionAuthorityV2';
+import { inspectRegisteredBlockAutoEligibilityV2 } from './blockAutoEligibilityV2';
 
 const GIB = 1024 ** 3;
 const MODEL_PARAM_HINTS = [
@@ -124,6 +132,33 @@ function repoValueFromParam(value: unknown) {
   return String(value);
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function dynamicModularComponentReferences(
+  node: ReturnType<typeof useFlowStore.getState>['nodes'][number],
+): Array<{ kind: 'repo'; value: string; paramKey: string; revision: string }> | null {
+  if (node.data.module !== 'modules.ModularDiffusers' || node.data.action !== 'DynamicBlockNode') return null;
+  const identity = recordValue(node.data.params?.modiff_pipeline_identity?.value);
+  const revisions = recordValue(identity?.component_revisions);
+  if (identity?.schema !== 'modiff.custom-pipeline-identity.v3' || !revisions) return null;
+  const references = Object.entries(revisions)
+    .filter(
+      (entry): entry is [string, string] =>
+        isHfRepoId(entry[0]) && typeof entry[1] === 'string' && /^[a-f0-9]{40}$/u.test(entry[1]),
+    )
+    .map(([repo, revision]) => ({
+      kind: 'repo' as const,
+      value: repo,
+      paramKey: `modiff_pipeline_identity.component_revisions.${repo}`,
+      revision,
+    }));
+  return references.length > 0 ? references : null;
+}
+
 function compactModelString(value: string) {
   return value.trim().replace(/^['"]|['"]$/g, '');
 }
@@ -155,11 +190,25 @@ function isModelFilePath(value: string) {
   return MODEL_FILE_PATTERN.test(value) || /[\\/](models|checkpoints|loras|vae|controlnet)[\\/]/i.test(value);
 }
 
-function collectNodeModelReferences(node: ReturnType<typeof useFlowStore.getState>['nodes'][number]) {
-  const references: Array<{ kind: 'repo' | 'path'; value: string; paramKey: string }> = [];
+export function collectNodeModelReferences(node: ReturnType<typeof useFlowStore.getState>['nodes'][number]) {
+  const references: Array<{ kind: 'repo' | 'path'; value: string; paramKey: string; revision?: string }> = [];
   const params = node.data.params || {};
+  const selectedReviewedVariant = compactModelString(
+    repoValueFromParam(params.reviewed_variant?.value ?? params.reviewed_variant?.default),
+  );
+  const dynamicComponentReferences = dynamicModularComponentReferences(node);
+  const hasPairedModelArtifact = ['model', 'adapter_model', 'adapter_path', 'model_id', 'repo_id'].some((key) => {
+    const param = params[key];
+    const value = param ? compactModelString(repoValueFromParam(param.value ?? param.default)) : '';
+    return Boolean(value && value !== 'undefined' && value !== 'null');
+  });
 
   Object.entries(params).forEach(([paramKey, param]) => {
+    // The sealed repository is the registered definition's baseline. Once an
+    // admitted same-family variant is selected, only that effective artifact
+    // should participate in install/readiness checks.
+    if (paramKey === 'repo_id' && selectedReviewedVariant) return;
+    if (dynamicComponentReferences && (paramKey === 'repo_id' || paramKey === 'model_id')) return;
     const rawValue = param.value ?? param.default;
     const value = compactModelString(repoValueFromParam(rawValue));
     if (!value || value === 'undefined' || value === 'null') return;
@@ -172,6 +221,12 @@ function collectNodeModelReferences(node: ReturnType<typeof useFlowStore.getStat
       source === 'hub' && MODEL_FILE_PATTERN.test(value) && value.split('/').length >= 3
         ? value.split('/').slice(0, 2).join('/')
         : '';
+    if ((paramKey === 'weight_name' || paramKey.endsWith('_weight_name')) && hasPairedModelArtifact) {
+      // Diffusers uses weight_name as a member filename inside the adapter
+      // repository/path supplied by the same node. It is not a second local
+      // artifact and must not be resolved against MoDiff's model-file index.
+      return;
+    }
     if (hubFileRepo && modelRelated) {
       // A modelselect Hub value may pin a single file as
       // owner/repo/path/to/model.pth. Its readiness is governed by the
@@ -184,9 +239,11 @@ function collectNodeModelReferences(node: ReturnType<typeof useFlowStore.getStat
     }
   });
 
-  const unique = new Map<string, { kind: 'repo' | 'path'; value: string; paramKey: string }>();
+  if (dynamicComponentReferences) references.push(...dynamicComponentReferences);
+
+  const unique = new Map<string, { kind: 'repo' | 'path'; value: string; paramKey: string; revision?: string }>();
   references.forEach((reference) => {
-    unique.set(`${reference.kind}:${reference.value}`, reference);
+    unique.set(`${reference.kind}:${reference.value}:${reference.revision ?? ''}`, reference);
   });
   return Array.from(unique.values());
 }
@@ -681,17 +738,15 @@ export function getStudioMpsCompatibilityIssue(form: StudioFormState) {
   } satisfies Omit<RunReadinessIssue, 'id'>;
 }
 
-function getModelRepoFromNode(nodeId: string) {
-  const node = useFlowStore.getState().nodes.find((item) => item.id === nodeId);
-  if (!node) return '';
+function getModelRepoFromNode(node: ReturnType<typeof useFlowStore.getState>['nodes'][number]) {
   const params = node.data.params || {};
-  const repoParam = params.repo_id ?? params.model_id;
+  const repoParam = params.reviewed_variant ?? params.repo_id ?? params.model_id;
   const value = repoParam?.value ?? repoParam?.default;
   return repoValueFromParam(value);
 }
 
-function collectGraphModelIssues(): RunReadinessIssue[] {
-  const { nodes } = useFlowStore.getState();
+function collectGraphModelIssues(graph = executableFlowGraph()): RunReadinessIssue[] {
+  const { nodes } = graph;
   const { hfCache, localModels, modelCacheDiagnostics, discoveryRequests } = useNodesStore.getState();
   const modelDiscoveryStarted =
     discoveryRequests.hfCache.status !== 'idle' || discoveryRequests.localModels.status !== 'idle';
@@ -708,7 +763,7 @@ function collectGraphModelIssues(): RunReadinessIssue[] {
     const isModelLoader =
       node.data.module === 'modules.ModularDiffusers' && ['ModelsLoader', 'AutoModelLoader'].includes(node.data.action);
     const nodeReferences = collectNodeModelReferences(node);
-    const loaderRepo = isModelLoader ? getModelRepoFromNode(node.id) : '';
+    const loaderRepo = isModelLoader ? getModelRepoFromNode(node) : '';
     if (
       loaderRepo &&
       loaderRepo !== 'undefined' &&
@@ -719,7 +774,7 @@ function collectGraphModelIssues(): RunReadinessIssue[] {
         nodeId: node.id,
         nodeLabel: node.data.label || node.data.action,
         value: loaderRepo,
-        paramKey: 'repo_id',
+        paramKey: node.data.params?.reviewed_variant ? 'reviewed_variant' : 'repo_id',
       });
     }
 
@@ -745,6 +800,13 @@ function collectGraphModelIssues(): RunReadinessIssue[] {
         severity: 'error',
         nodeId: requirement.nodeId,
         repoId: requirement.modelPath ? undefined : requirement.repo,
+        installOptions: requirement.installTarget
+          ? {
+              ...(requirement.installTarget.revision ? { revision: requirement.installTarget.revision } : {}),
+              ...(requirement.installTarget.files?.length ? { files: [...requirement.installTarget.files] } : {}),
+              ...(requirement.installTarget.repair ? { repair: true } : {}),
+            }
+          : undefined,
         modelPath: requirement.modelPath,
         blocking: true,
         action:
@@ -764,8 +826,8 @@ function nodeParamValue(node: ReturnType<typeof enabledExecutableNodes>[number],
   return param?.value ?? param?.default;
 }
 
-export function collectGraphDeviceOffloadIssues(): RunReadinessIssue[] {
-  return enabledExecutableNodes().flatMap((node) => {
+export function collectGraphDeviceOffloadIssues(graph = executableFlowGraph()): RunReadinessIssue[] {
+  return enabledExecutableNodes(graph).flatMap((node) => {
     const device = nodeParamValue(node, 'device');
     if (typeof device !== 'string' || !device.trim()) return [];
     const autoOffload = nodeParamValue(node, 'auto_offload');
@@ -796,36 +858,108 @@ export function collectGraphDeviceOffloadIssues(): RunReadinessIssue[] {
   });
 }
 
-function enabledExecutableNodes() {
-  return useFlowStore
-    .getState()
-    .nodes.filter(
-      (node) =>
-        node.data.type !== 'group' &&
-        node.data.type !== 'loop' &&
-        !node.data.uiState?.disabled &&
-        Boolean(node.data.module) &&
-        Boolean(node.data.action),
+function executableFlowGraph() {
+  const { nodes, edges } = useFlowStore.getState();
+  const durable = withoutBlockCompilationTransientsV2(nodes, edges);
+  const userBlocks = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
+  const legacyClusters = expandHuggingFaceClusterBoundaryEdges(userBlocks);
+  return expandBlockGraphV2ForExecution(legacyClusters.nodes, legacyClusters.edges);
+}
+
+function invalidCompositeExecutionGraphIssue(error: unknown) {
+  const flow = useFlowStore.getState();
+  const details = error instanceof Error ? error.message : 'Rebuild or repair the Block Node before running.';
+  const referencedProjection = flow.nodes.find((node) => {
+    const semanticNodeId = node.data.blockProjectionNodeId;
+    if (typeof semanticNodeId !== 'string' || !semanticNodeId) return false;
+    return (
+      details.includes(node.id) ||
+      details.includes(`"${semanticNodeId}"`) ||
+      details.includes(`'${semanticNodeId}'`) ||
+      details.includes(` ${semanticNodeId}:`) ||
+      details.includes(` ${semanticNodeId}.`) ||
+      details.endsWith(` ${semanticNodeId}`)
     );
+  });
+  const referencedSemanticNode = flow.nodes.flatMap((node) => {
+    const instance = node.data.blockInstanceV2;
+    if (!instance) return [];
+    const semantic = [...instance.effectiveGraph.nodes]
+      .sort((left, right) => right.nodeId.length - left.nodeId.length)
+      .find(({ nodeId }) => details.includes(nodeId));
+    return semantic ? [blockProjectionNodeIdV2(instance.instanceId, semantic.nodeId)] : [];
+  })[0];
+  const candidate = flow.nodes.find(
+    (node) =>
+      node.data.blockInstanceV2 !== undefined ||
+      node.data.blockProjectionOwnerId !== undefined ||
+      node.data.blockProjectionNodeId !== undefined ||
+      node.data.blockProjectionKind !== undefined,
+  );
+  return issue({
+    code: 'composite_execution_graph_invalid',
+    category: 'graph',
+    severity: 'error',
+    blocking: true,
+    action: 'inspect_node',
+    nodeId:
+      referencedProjection?.id ??
+      referencedSemanticNode ??
+      (candidate?.data.blockProjectionOwnerId && typeof candidate.data.blockProjectionOwnerId === 'string'
+        ? candidate.data.blockProjectionOwnerId
+        : candidate?.id),
+    message: 'This Block Node cannot run because its execution graph is invalid.',
+    details,
+  });
+}
+
+function enabledExecutableNodes(graph = executableFlowGraph()) {
+  return graph.nodes.filter(
+    (node) =>
+      node.data.type !== 'group' &&
+      node.data.type !== 'loop' &&
+      !node.data.uiState?.disabled &&
+      Boolean(node.data.module) &&
+      Boolean(node.data.action),
+  );
 }
 
 function isOutputLikeNode(node: ReturnType<typeof enabledExecutableNodes>[number]) {
   const text = `${node.data.module} ${node.data.action} ${node.data.label} ${node.data.category}`.toLowerCase();
   return (
-    /\b(preview|export|save|display|output|gallery)\b/.test(text) ||
+    /\b(preview|export|save|display|output|gallery)\b|viewer\b/.test(text) ||
     /\.preview\b/i.test(`${node.data.module}.${node.data.action}`) ||
     /\.export\b/i.test(`${node.data.module}.${node.data.action}`)
   );
 }
 
-function collectGraphStructureIssues(): RunReadinessIssue[] {
-  const { edges } = useFlowStore.getState();
-  const executableNodes = enabledExecutableNodes();
+function preparableHuggingFaceClusterRoots() {
+  return useFlowStore
+    .getState()
+    .nodes.filter(
+      (node) =>
+        node.data.huggingFaceClusterRole === 'root' &&
+        !node.data.blockCompilationTransientV2 &&
+        !node.data.uiState?.disabled &&
+        Boolean(node.data.huggingFaceClusterInstance?.execution),
+    );
+}
+
+function collectGraphStructureIssues(graph = executableFlowGraph()): RunReadinessIssue[] {
+  const { edges } = graph;
+  const executableNodes = enabledExecutableNodes(graph);
   const executableNodeIds = new Set(executableNodes.map((node) => node.id));
+  // A collapsed reviewed Cluster is represented by its reusable root card and
+  // a disabled derived graph. The Run action prepares and enables that exact
+  // graph. Treat the selected immutable admission as a pending output path so
+  // the toolbar does not disable Run before its preparation hook can execute.
+  const preparableClusters = preparableHuggingFaceClusterRoots();
 
   if (executableNodes.length === 0) {
+    if (preparableClusters.length > 0) return [];
     return [
       issue({
+        code: 'graph_empty',
         category: 'graph',
         severity: 'error',
         blocking: true,
@@ -838,8 +972,10 @@ function collectGraphStructureIssues(): RunReadinessIssue[] {
 
   const outputNodes = executableNodes.filter(isOutputLikeNode);
   if (outputNodes.length === 0) {
+    if (preparableClusters.length > 0) return [];
     return [
       issue({
+        code: 'graph_output_missing',
         category: 'graph',
         severity: 'error',
         blocking: true,
@@ -854,8 +990,10 @@ function collectGraphStructureIssues(): RunReadinessIssue[] {
     edges.some((edge) => edge.target === node.id && executableNodeIds.has(edge.source)),
   );
   if (!connectedOutput) {
+    if (preparableClusters.length > 0) return [];
     return [
       issue({
+        code: 'graph_output_disconnected',
         category: 'graph',
         severity: 'error',
         blocking: true,
@@ -870,9 +1008,119 @@ function collectGraphStructureIssues(): RunReadinessIssue[] {
   return [];
 }
 
+function collectUserBlockCompositionIssues(): RunReadinessIssue[] {
+  const flow = useFlowStore.getState();
+  const durable = withoutBlockCompilationTransientsV2(flow.nodes, flow.edges);
+  return inspectUserBlockCompositions(
+    {
+      // BlockInstanceV2 embeds and validates its own definition snapshot. A
+      // V2 root is still rendered as type "block", but it is not a V1 User
+      // Node registry reference.
+      nodes: durable.nodes.filter((node) => node.data.blockInstanceV2 === undefined),
+      edges: durable.edges,
+    },
+    useUserBlockStore.getState().blocks,
+  ).flatMap(({ instanceId, label, report }) =>
+    report.issues.map((compositionIssue) =>
+      issue({
+        code: `user_block_${compositionIssue.kind}`,
+        category: 'graph',
+        severity: 'error',
+        blocking: true,
+        action: 'inspect_node',
+        nodeId: instanceId,
+        message: compositionIssue.message,
+        details: `Repair the internal composition of User Node "${label}" before running.`,
+      }),
+    ),
+  );
+}
+
+function collectHuggingFaceClusterAuthorityIssues(): RunReadinessIssue[] {
+  const nodes = useFlowStore.getState().nodes;
+  const runtimeFingerprint = useNodesStore.getState().runtimeStatus?.runtime_fingerprint;
+  const authorities = useHuggingFaceClusterRuntimeStore.getState().authorities;
+  const enabledByInstance = new Map<string, string[]>();
+  nodes.forEach((node) => {
+    const instanceId = node.data.huggingFaceClusterInstanceId;
+    if (node.data.huggingFaceClusterRole !== 'execution' || node.data.uiState?.disabled || !instanceId) return;
+    enabledByInstance.set(instanceId, [...(enabledByInstance.get(instanceId) ?? []), node.id]);
+  });
+  return [...enabledByInstance].flatMap(([instanceId, nodeIds]) => {
+    const authority = authorities[instanceId];
+    const exactNodes =
+      authority && JSON.stringify([...authority.nodeIds].sort()) === JSON.stringify([...nodeIds].sort());
+    if (authority && exactNodes && authority.runtimeFingerprint === runtimeFingerprint) return [];
+    return [
+      issue({
+        code: 'cluster_runtime_authority_stale',
+        category: 'environment',
+        severity: 'error',
+        blocking: true,
+        nodeId: instanceId,
+        action: 'inspect_node',
+        message: 'This Diffusers Cluster Node must be prepared again.',
+        details: 'Its volatile runtime, installed-model, optional-runtime, or resource authority is missing or stale.',
+      }),
+    ];
+  });
+}
+
+function collectRegisteredBlockV2AuthorityIssues(): RunReadinessIssue[] {
+  if (useStudioStore.getState().form.resourceMode !== 'auto') return [];
+  const flow = useFlowStore.getState();
+  const authorities = registeredBlockAutoAuthorityIssuesV2(flow.nodes);
+  if (!authorities.length) return [];
+  const eligibility = inspectRegisteredBlockAutoEligibilityV2(flow.nodes, flow.edges);
+  return authorities.map((authority) => {
+    if (eligibility.eligible && eligibility.rootId === authority.instanceId) {
+      return issue({
+        code: 'block_v2_auto_authority_pending',
+        category: 'environment',
+        severity: 'info',
+        blocking: false,
+        nodeId: authority.instanceId,
+        action: 'inspect_node',
+        message: 'Auto will prepare this registered Block when the run starts.',
+        details:
+          'Run asks the backend planner for one short-lived receipt bound to this exact definition, graph, interface, parameters, and immutable artifact before submitting the concrete graph.',
+      });
+    }
+    return issue({
+      code: authority.code === 'missing' ? 'block_v2_auto_authority_missing' : 'block_v2_auto_authority_stale',
+      category: 'environment',
+      severity: 'error',
+      blocking: true,
+      nodeId: authority.instanceId,
+      action: 'inspect_node',
+      message: 'This registered Block cannot be prepared by Auto.',
+      details:
+        `${eligibility.reason} ${authority.reason ?? 'Its exact planner authority is unavailable.'} ` +
+        'Switch to Expert to submit the concrete graph manually, or restore the exact registered Block contract.',
+    });
+  });
+}
+
 export function inspectCurrentGraph(): GraphInspectionSummary {
-  const { nodes, edges } = useFlowStore.getState();
-  const executableNodes = enabledExecutableNodes();
+  const flow = useFlowStore.getState();
+  const visibleGraph = withoutBlockCompilationTransientsV2(flow.nodes, flow.edges);
+  let executionGraph: ReturnType<typeof executableFlowGraph>;
+  try {
+    executionGraph = executableFlowGraph();
+  } catch (error) {
+    return {
+      nodeCount: visibleGraph.nodes.length,
+      enabledExecutableCount: 0,
+      outputNodeIds: [],
+      connectedOutputNodeIds: [],
+      outputPathCount: 0,
+      outputRefs: [],
+      modelRefs: [],
+      blockingIssues: [invalidCompositeExecutionGraphIssue(error)],
+    };
+  }
+  const { nodes, edges } = executionGraph;
+  const executableNodes = enabledExecutableNodes({ nodes, edges });
   const executableNodeIds = new Set(executableNodes.map((node) => node.id));
   const outputNodes = executableNodes.filter(isOutputLikeNode);
   const connectedOutputNodes = outputNodes.filter((node) =>
@@ -883,7 +1131,7 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
     const references = collectNodeModelReferences(node);
     const isModelLoader =
       node.data.module === 'modules.ModularDiffusers' && ['ModelsLoader', 'AutoModelLoader'].includes(node.data.action);
-    const loaderRepo = isModelLoader ? getModelRepoFromNode(node.id) : '';
+    const loaderRepo = isModelLoader ? getModelRepoFromNode(node) : '';
     if (
       loaderRepo &&
       loaderRepo !== 'undefined' &&
@@ -897,10 +1145,15 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
       ...reference,
     }));
   });
-  const issues = [...collectGraphStructureIssues(), ...collectGraphModelIssues(), ...collectGraphDeviceOffloadIssues()];
+  const issues = [
+    ...collectUserBlockCompositionIssues(),
+    ...collectGraphStructureIssues(executionGraph),
+    ...collectGraphModelIssues(executionGraph),
+    ...collectGraphDeviceOffloadIssues(executionGraph),
+  ];
 
   return {
-    nodeCount: nodes.length,
+    nodeCount: visibleGraph.nodes.length,
     enabledExecutableCount: executableNodes.length,
     outputNodeIds: outputNodes.map((node) => node.id),
     connectedOutputNodeIds: Array.from(connectedOutputNodeIds),
@@ -952,8 +1205,14 @@ function blockingOptionalRuntimeState(
         .getState()
         .studioModelCapabilities.flatMap((item) => item.executionProfiles ?? [])
         .filter((item) => item.backend_path === initial.backend_path);
-      const key = initial.loader_action === 'ModelsLoader' ? 'model_type' : 'pipeline_class';
-      const sameIdentity = profiles.filter((item) => item[key] === loader.data.params[key]?.value);
+      const identityKey = (['pipeline_class', 'model_type'] as const).find(
+        (key) => loader.data.params[key]?.value !== undefined,
+      );
+      const sameIdentity = identityKey
+        ? profiles.filter((item) => item[identityKey] === loader.data.params[identityKey]?.value)
+        : profiles.length === 1
+          ? profiles
+          : [];
       const repo = selectedHubRepo(loader);
       const resolved =
         sameIdentity.length === 1
@@ -987,6 +1246,8 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     studioModelCapabilitiesAuthoritative,
   } = useNodesStore.getState();
   const { graphBinding, autoResourcePlan, autoResourceCheck } = useStudioStore.getState();
+  const templateBaseModel = getStudioTemplateLoraBaseModel(useStudioStore.getState().activeTemplateId);
+  const expectedAutoRepo = templateBaseModel?.source === 'hub' ? templateBaseModel.value : true;
   const auto = form.resourceMode === 'auto';
   const profile = getProfileForForm(form);
   const modelStatus = getStudioModelCacheStatus(profile, hfCache, localModels, modelCacheDiagnostics);
@@ -994,7 +1255,7 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   const autoInstallTarget = auto ? autoResourceInstallTarget(autoResourcePlan, form) : null;
   const autoCompatibility = autoResourceCompatibility(autoResourcePlan, form);
   const autoTarget =
-    auto && graphBinding ? currentAutoResourcePlanTarget(autoResourcePlan, form, graphBinding, true) : null;
+    auto && graphBinding ? currentAutoResourcePlanTarget(autoResourcePlan, form, graphBinding, expectedAutoRepo) : null;
   const exactCapability = exactStudioCapabilitySupport(
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
@@ -1184,6 +1445,13 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         severity: 'error',
         nodeId: graphBinding?.nodes.controlnetModel,
         repoId: requirement.repo,
+        installOptions: requirement.installTarget
+          ? {
+              ...(requirement.installTarget.revision ? { revision: requirement.installTarget.revision } : {}),
+              ...(requirement.installTarget.files?.length ? { files: [...requirement.installTarget.files] } : {}),
+              ...(requirement.installTarget.repair ? { repair: true } : {}),
+            }
+          : undefined,
         blocking: true,
         action: 'install_model',
         message: `${requirement.label} is required for ${STUDIO_MODE_LABELS[form.mode]} and is missing.`,
@@ -1193,9 +1461,15 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   });
 
   const requirements = profile.modeRequirements?.[form.mode]?.requiredImages ?? [];
-  const minimumReferenceImages = profile.modeRequirements?.[form.mode]?.minimumCounts?.referenceImages ?? 1;
+  const declaredMinimumReferenceImages = profile.modeRequirements?.[form.mode]?.minimumCounts?.referenceImages ?? 1;
+  const minimumReferenceImages = requirements.includes('lastImage')
+    ? Math.max(2, declaredMinimumReferenceImages)
+    : declaredMinimumReferenceImages;
   const selectedReferenceImages = form.referenceImages.filter((image) => image.trim()).length;
-  if (requirements.includes('referenceImages') && selectedReferenceImages < minimumReferenceImages) {
+  if (
+    (requirements.includes('referenceImages') || requirements.includes('lastImage')) &&
+    selectedReferenceImages < minimumReferenceImages
+  ) {
     issues.push(
       issue({
         category: 'asset',
@@ -1205,7 +1479,9 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         message:
           minimumReferenceImages === 1
             ? 'A source image is required before this workflow can run.'
-            : `${minimumReferenceImages} source images are required before this workflow can run.`,
+            : requirements.includes('lastImage')
+              ? 'Select both a first-frame image and a last-frame image before this workflow can run.'
+              : `${minimumReferenceImages} source images are required before this workflow can run.`,
       }),
     );
   }
@@ -1228,6 +1504,30 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         blocking: true,
         action: 'select_image',
         message: 'A control image is required before this workflow can run.',
+      }),
+    );
+  }
+  if (requirements.includes('ipAdapterImage') && !form.ipAdapterImage.trim()) {
+    issues.push(
+      issue({
+        category: 'asset',
+        severity: 'error',
+        blocking: true,
+        action: 'select_image',
+        message: 'An IP-Adapter reference image is required before this workflow can run.',
+      }),
+    );
+  }
+  if (
+    form.mode.includes('control_union') &&
+    (!Number.isInteger(form.controlMode) || form.controlMode < 0 || form.controlMode > 5)
+  ) {
+    issues.push(
+      issue({
+        category: 'user_input',
+        severity: 'error',
+        blocking: true,
+        message: 'ControlNet Union mode must be an integer from 0 through 5 for the reviewed basic SDXL artifact.',
       }),
     );
   }
@@ -1401,6 +1701,7 @@ export function collectRunReadinessIssues(options: {
     return [
       issue({
         id: 'template-graph-preparing',
+        code: 'template_graph_preparing',
         category: 'graph',
         severity: 'info',
         blocking: true,
@@ -1410,10 +1711,13 @@ export function collectRunReadinessIssues(options: {
       }),
     ];
   }
-  const customGraphContext = !studioState.graphBinding && useFlowStore.getState().nodes.length > 0;
+  const flow = useFlowStore.getState();
+  const customGraphContext =
+    !studioState.graphBinding && withoutBlockCompilationTransientsV2(flow.nodes, flow.edges).nodes.length > 0;
   if (!options.sid || !options.isConnected) {
     issues.push(
       issue({
+        code: 'backend_disconnected',
         category: 'backend',
         severity: 'error',
         blocking: true,
@@ -1457,15 +1761,53 @@ export function collectRunReadinessIssues(options: {
     }
   }
 
-  issues.push(...collectGraphStructureIssues());
-  issues.push(...collectGraphModelIssues());
-  issues.push(...collectGraphDeviceOffloadIssues());
+  let executionGraph: ReturnType<typeof executableFlowGraph> | null = null;
+  try {
+    executionGraph = executableFlowGraph();
+  } catch (error) {
+    issues.push(invalidCompositeExecutionGraphIssue(error));
+  }
+  if (executionGraph) {
+    issues.push(...collectGraphStructureIssues(executionGraph));
+    issues.push(...collectGraphModelIssues(executionGraph));
+    issues.push(...collectGraphDeviceOffloadIssues(executionGraph));
+  }
+  issues.push(...collectUserBlockCompositionIssues());
+  issues.push(...collectHuggingFaceClusterAuthorityIssues());
+  issues.push(...collectRegisteredBlockV2AuthorityIssues());
   const unique = new Map<string, RunReadinessIssue>();
   issues.forEach((item) => {
     const key = `${item.nodeId ?? ''}:${item.repoId ?? ''}:${item.modelPath ?? ''}:${item.message}`;
     if (!unique.has(key)) unique.set(key, item);
   });
-  return Array.from(unique.values());
+  const collected = Array.from(unique.values());
+  if (studioState.form.resourceMode !== 'expert') return collected;
+
+  // Expert/manual mode is intentionally diagnostic: policy, artifact,
+  // capacity, and managed-receipt findings remain visible, but the backend is
+  // allowed to evaluate the actual graph. Only conditions that make a graph
+  // submission mechanically impossible remain client-side blockers.
+  const hardSubmissionBlocks = new Set([
+    'backend_disconnected',
+    'template_graph_preparing',
+    'graph_empty',
+    'graph_output_missing',
+    'graph_output_disconnected',
+    'composite_execution_graph_invalid',
+  ]);
+  return collected.map((item) => {
+    if (!item.blocking || hardSubmissionBlocks.has(item.code ?? '') || item.code?.startsWith('user_block_')) {
+      return item;
+    }
+    const manualModeDetails =
+      'Manual mode will submit this graph without managed Auto authority and report the backend/runtime result.';
+    return {
+      ...item,
+      severity: 'warning' as const,
+      blocking: false,
+      details: item.details ? `${item.details} ${manualModeDetails}` : manualModeDetails,
+    };
+  });
 }
 
 export function applyRunReadinessToGraph(issues: RunReadinessIssue[]) {

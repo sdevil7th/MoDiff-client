@@ -1311,6 +1311,40 @@
       ]
     },
     {
+      "id": "source-ltx-wan-glass-orbit-v2",
+      "description": "Generate and stage the centered, locked-camera square-glass orbit source for the VACE inpaint contract.",
+      "priority": 907,
+      "maxAttempts": 1,
+      "timeoutMs": 7200000,
+      "command": ["node", "scripts/template-gallery-source-runner.mjs", "--asset", "ltx-wan-glass-orbit-source-v2"]
+    },
+    {
+      "id": "prepare-wan-glass-orbit-mask-v2",
+      "description": "Derive a deterministic white-generate mask around the centered vessel while retaining a narrow temporal boundary margin.",
+      "priority": 908,
+      "maxAttempts": 1,
+      "dependsOn": ["source-ltx-wan-glass-orbit-v2"],
+      "command": [
+        "node",
+        "scripts/template-gallery-input-tools.mjs",
+        "rect-mask-video",
+        "--input",
+        "artifacts/template-gallery/source-assets/wan-glass-orbit-source-v2.mp4",
+        "--output",
+        "artifacts/template-gallery/source-assets/wan-glass-orbit-mask-v2.mp4",
+        "--left",
+        "0.27",
+        "--top",
+        "0.13",
+        "--right",
+        "0.73",
+        "--bottom",
+        "0.87",
+        "--feather",
+        "4"
+      ]
+    },
+    {
       "id": "source-qwen-wan-amber-vessel-reference",
       "description": "Generate and stage the missing amber square-vessel identity reference required by the current VACE inpaint contract.",
       "priority": 909,
@@ -1324,7 +1358,11 @@
       "priority": 910,
       "maxAttempts": 1,
       "timeoutMs": 30000000,
-      "dependsOn": ["source-qwen-wan-amber-vessel-reference"],
+      "dependsOn": [
+        "source-ltx-wan-glass-orbit-v2",
+        "prepare-wan-glass-orbit-mask-v2",
+        "source-qwen-wan-amber-vessel-reference"
+      ],
       "runner": "gallery",
       "templates": ["wan_vace_masked_object_replace"],
       "args": [

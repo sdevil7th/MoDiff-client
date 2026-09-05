@@ -79,6 +79,38 @@ Workflow tabs sit above the canvas and are local-first:
 Browser local storage is not a backup. Save important workflows to **My workflows** or export a JSON/package before
 clearing site data or switching browser profiles.
 
+### Save A Block Or An Internal Modular Block
+
+Use the Block header's Save button, or select an internal Modular Block and
+use Save in its selection toolbar. Both open **Save block changes**:
+
+- **Keep only in this workflow** retains the current local workflow snapshot;
+  it does not create or update a User Node. Use the top-bar Save as well when
+  you want a named backend workflow file.
+- **Save as new User Node** copies the selected Block with its current prompts
+  and settings. For an internal Block it copies only that subtree; connections
+  crossing the subtree become public input/output sockets. Its parent and
+  other workflow instances are unchanged.
+- **Update existing User Node** appears on a user-owned reusable Block root.
+  Internal projections do not have independent library definitions to overwrite.
+  Insert a saved subtree from User Nodes to edit/update that definition independently.
+
+Collapsed internal Blocks show their declared descendant controls. Editing the
+same prompt or parameter at the root, an intermediate Block, or its internal
+node changes one workflow value; it does not rebuild the graph or reset defaults.
+
+Use the settings icon on a Block header to configure exposed inputs, outputs and
+controls. On an internal Block, the dialog edits that subtree's exposure through
+the owning Block interface and preserves other branches. Consumers shared across
+branches must be edited from the root. Internal connection sockets are derived
+from the actual links, not independently stored nested interfaces. Disconnect a
+public port before removing it. If the Block changes while the dialog is open,
+cancel and reopen it to avoid overwriting newer edits. Apply is undoable; Cancel
+does not change the workflow.
+
+Cancel makes no library write. A workflow or canvas switch invalidates an open
+save operation rather than allowing it to save a different instance.
+
 ### Right Workspace
 
 - **Studio** contains guided task/model/form controls and graph-aware readiness.

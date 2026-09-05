@@ -124,9 +124,19 @@ Unsupported backend style keys are ignored in development with a console warning
 
 - Icon-only buttons need an `aria-label`, `title`, or primitive prop that supplies both.
 - Dialogs need a title, close path, bounded scroll area, and escape/backdrop behavior.
+- `ModiffDialog` owns a viewport-bounded flex column. Its header, optional `toolbar`, and footer stay visible;
+  the `data-dialog-scroll-body` region shrinks and scrolls. Put inventory search and section tabs in `toolbar`,
+  not inside the scrolling content. Optional `description` supplies the accessible dialog description.
+  Test short desktop and narrow viewports as well as the default desktop size. Do not add a second fixed-height
+  body that competes with the shared frame or a loading overlay that prevents dismissal and navigation.
 - Menus and tabs need keyboard/focus behavior when they are not simple static controls.
 - Text must fit inside compact controls across supported viewport widths.
 - Essential actions must not be hover-only.
+
+Nested library trees indent once: `TreeChildrenPanel` supplies the ancestry offset, and contained `TreeButtonRow`
+or `TreeStaticRow` uses only local row padding. Do not add depth-sized padding again inside a nested panel.
+Catalog entry names wrap at narrow library widths; metadata/readiness belongs below the name, not in a fixed-width
+column that can squeeze the name to zero. Test actual label width and overflow, not just DOM presence.
 
 ## Enforcement
 

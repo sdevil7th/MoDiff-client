@@ -216,6 +216,7 @@ export default function GraphFixDialog() {
       open={dialogOpen}
       onClose={closeDialog}
       title="Fix graph"
+      description="Review proposed repairs before applying them. Graph changes can be undone."
       testId="graph-fix-dialog"
       panelClassName="max-w-2xl"
       footer={
