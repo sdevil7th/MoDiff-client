@@ -123,7 +123,10 @@ test('image upscaling uses its detailed provenance-tracked low-resolution fixtur
     { field: 'referenceImages', minimumCount: 1 },
   ]);
   assert.equal(overrides.referenceImages.length, 1);
-  assert.match(portablePath(overrides.referenceImages[0]), /input-fixtures\/upscaling\/aura-rain-stop-lowres-q72\.jpg$/);
+  assert.match(
+    portablePath(overrides.referenceImages[0]),
+    /input-fixtures\/upscaling\/aura-rain-stop-lowres-q72\.jpg$/,
+  );
 });
 
 test('Sana Sprint editing uses the reviewed full-resolution AuraFlow source', () => {
