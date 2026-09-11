@@ -1091,7 +1091,7 @@ export async function loadTemplateRuntime(root = ROOT, { includePlanning = false
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
 

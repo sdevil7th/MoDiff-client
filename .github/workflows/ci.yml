@@ -15,17 +15,46 @@ jobs:
   quality:
     name: Client quality
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: MoDiff-client
     env:
       CI: true
+      MODIFF_PYTHON: ${{ github.workspace }}/MoDiff/.venv/bin/python
+      MODIFF_BACKEND_PYTHON: ${{ github.workspace }}/MoDiff/.venv/bin/python
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: MoDiff-client
+      - name: Check out the matching backend contract
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: sdevil7th/MoDiff
+          ref: d395b6878031308d8388153ebecc8700b6193d7c
+          path: MoDiff
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version-file: .nvmrc
+          node-version-file: MoDiff-client/.nvmrc
           cache: npm
+          cache-dependency-path: MoDiff-client/package-lock.json
       - run: npm ci
       - run: npm audit --audit-level=high
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.11.26'
+      - name: Install the reviewed CPU backend and test dependencies
+        working-directory: MoDiff
+        run: |
+          python -m modiff.install --accelerator cpu --backend-only --non-interactive --json
+          uv pip install --python .venv/bin/python -r requirements/test.txt
+          uv pip check --python .venv/bin/python
+          .venv/bin/python -m modiff.preflight --json --fail-on-error
       - run: npx playwright install --with-deps chromium
       - run: npm run check
       - run: npm run check:ui
@@ -35,8 +64,8 @@ jobs:
         with:
           name: playwright-failure-${{ github.run_id }}
           path: |
-            playwright-report/
-            test-results/
+            MoDiff-client/playwright-report/
+            MoDiff-client/test-results/
           if-no-files-found: ignore
           retention-days: 7
 

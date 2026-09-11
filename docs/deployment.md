@@ -48,6 +48,74 @@ requirements file named by that manifest. The backend intentionally declares
 environment, so there is no repository `uv.lock` and the client release contract
 must not require or synthesize one.
 
+Before starting the long-running template qualification campaign on a clean
+host, refresh its plan and verify every selected template's exact immutable
+model and LoRA receipt against the running app's cache. Also verify every
+byte-pinned default image, video, and audio input from the installed Template
+Gallery payload:
+
+Restart the backend worker after the final backend-source edit and before the
+first qualification run. Confirm that `/health` includes a non-null
+`backend_source` process-start claim. Do not edit `main.py`, `pyproject.toml`,
+or files below `modiff/`, `modules/`, or `utils/` while a qualification run is
+active. The capture runner compares the worker's startup claim with complete
+before/after inventories and will reject a missing or stale worker claim;
+restarting only the frontend is insufficient. Historical V2 receipts without
+this worker attestation require a fresh run and cannot be upgraded from the
+current checkout.
+
+```bash
+npm run release:qualification:run -- \
+  --dry-run \
+  --check-app-readiness \
+  --check-download-idle \
+  --check-input-readiness \
+  --batch-by-model-family \
+  --server http://127.0.0.1:8088
+```
+
+The app readiness check is read-only, accepts only an uncredentialed loopback
+origin, and fails if a required repository or revision is absent, incomplete,
+not installed, or marked for repair. The download-idle check uses the app's
+bounded status receipt and blocks while any model transfer or Template Gallery
+installation is active or reserved. The three readiness flags opt a dry run
+into their respective checks. A real campaign requires all three checks even
+when the flags are omitted, repeats exact model-cache, download-idle, and input
+readiness for every model-family group before submitting its first graph, and
+the Gallery runner repeats download-idle immediately before every selected
+template. The input readiness check reads only the selected templates' local
+defaults and rejects absent files, links, size or SHA-256 mismatches, unpinned
+bindings, and inconsistent asset-manifest records.
+A real campaign also acquires one process-owned lock before refreshing or
+writing evidence. A concurrent campaign fails before it can replace the first
+campaign's state, stale locks are recovered after their owning process exits,
+and every state update is atomically replaced on disk. Dry runs do not claim
+the lock or write campaign state.
+A source-release checkout without the installer-managed Gallery payload is
+expected to fail the input check. On an already running source-release app,
+open **Setup → Template Gallery assets** and use its app-owned plan/install
+action rather than bypassing the app or substituting unverified media. The app
+rechecks exact space immediately before downloading, accounts for active model
+reservations, and does not delete cached models. Restart after active downloads
+finish so the local static route is registered, then rerun the input check. A
+successful result proves cache and source-input readiness only; it does not run
+a graph, qualify output, approve rights, or publish Gallery media. Remove
+`--dry-run` only on the approved qualification host when the campaign's
+long-running model execution is intentional.
+
+When resolving a template's byte-pinned default inputs, the Gallery runner
+prefers the selected backend's `web/template-gallery` installation. A restored
+`public/template-gallery` copy in the client checkout is only an offline
+fallback; it must not shadow the backend under qualification. The existing
+byte/hash and download-readiness checks still apply.
+
+The all-94 catalog inventory uses discovery schema version 2. Its
+`relatedEvidencePaths` and `workflowsWithRelatedEvidenceCount` fields locate
+JSON files containing exact workflow/admission identities, including failed or
+historical files. They do **not** establish current execution, model, resource,
+output-quality or publication qualification. Supply `--hierarchy-audit` to use
+the compiled hierarchy depth instead of the shallower catalog source paths.
+
 ## Inspect The Build
 
 For a static client-only inspection:
@@ -63,6 +131,24 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 ```bash
 npm run bundle:check
 ```
+
+That gate also checks emitted module identity: static imports, dynamic imports
+(including minified backtick strings), and preloads must use one versioned URL
+per module. Duplicate URLs create independent workflow stores and can break
+portable export. Shared Lucide dependencies initialize in `graph-vendor` so
+lazy panels cannot capture undefined icons through an entry-chunk cycle. The
+startup graph ceiling is 600 KiB gzip. The connected Block sockets, explicit
+ownership moves, and isolated Block execution add approximately 4 KiB to the
+previous 589.1 KiB startup graph. Their synchronous graph validation stays with
+the editor; the right-panel forms remain lazy. No dependency was added and
+individual/deferred chunk ceilings are unchanged. Test cold panel startup,
+native portable import/Save/export, and browser resource URLs on the built app.
+
+When updating selected loader field metadata, regenerate the paired
+`BlockDefinitionV2` catalog and frontend identity pins together. This metadata
+must not rewrite saved instance values, prompts, wiring, or layout. Deploy only
+after active runs finish, restart the worker, and compare the served bundle's
+hash with the tested build.
 
 ## Copy The Build Into The Backend
 

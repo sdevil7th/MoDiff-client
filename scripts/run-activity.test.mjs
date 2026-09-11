@@ -37,7 +37,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   activityModule = await server.ssrLoadModule('/src/studio/runActivity.ts');
@@ -256,6 +256,23 @@ test('same-text run notifications remain individually actionable by task', () =>
   );
 });
 
+test('the browser crash checkpoint remains bounded and always retains the active workflow', () => {
+  const tabs = Array.from({ length: 40 }, (_, index) => ({
+    id: `workflow-${index}`,
+    title: `Workflow ${index}`,
+    createdAt: index,
+    updatedAt: index,
+    dirty: index % 3 === 0,
+    source: 'manual',
+    snapshot: { nodes: [], edges: [] },
+  }));
+  const checkpoint = studioStoreModule.workflowTabsForLocalCheckpoint(tabs, 'workflow-2');
+
+  assert.equal(checkpoint.length, 12);
+  assert.equal(checkpoint[0].id, 'workflow-2');
+  assert.equal(new Set(checkpoint.map((tab) => tab.id)).size, checkpoint.length);
+});
+
 test('an open originating workflow is selected and its run node is requested for focus', async () => {
   const studio = studioStoreModule.useStudioStore.getState();
   studio.ensureWorkflowTabs();
@@ -279,6 +296,34 @@ test('an open originating workflow is selected and its run node is requested for
     requestId: settingsStoreModule.useSettingsStore.getState().workflowFocusRequest.requestId,
     requestedAt: settingsStoreModule.useSettingsStore.getState().workflowFocusRequest.requestedAt,
   });
+});
+
+test('a workflow restoration error is contained and reveals the exact Queue task instead of rejecting', async () => {
+  const studio = studioStoreModule.useStudioStore.getState();
+  studio.ensureWorkflowTabs();
+  const originId = studioStoreModule.useStudioStore.getState().activeWorkflowTabId;
+  const switchWorkflowTab = studioStoreModule.useStudioStore.getState().switchWorkflowTab;
+  studioStoreModule.useStudioStore.setState({
+    switchWorkflowTab: () => {
+      throw new DOMException('Browser storage quota exceeded.', 'QuotaExceededError');
+    },
+  });
+
+  try {
+    const result = await activityModule.openRunActivity({
+      taskId: 'quota-failure-task',
+      workflowTabId: originId,
+      status: 'running',
+    });
+
+    assert.equal(result, 'queue');
+    assert.equal(taskStoreModule.useTaskStore.getState().focusedTaskId, 'quota-failure-task');
+    assert.equal(settingsStoreModule.useSettingsStore.getState().rightPanelTab, 'queue');
+    assert.equal(settingsStoreModule.useSettingsStore.getState().runActivityPendingTaskId, null);
+    assert.match(String(snackbarModule.getToastItems().at(-1)?.message), /Could not restore that workflow/);
+  } finally {
+    studioStoreModule.useStudioStore.setState({ switchWorkflowTab });
+  }
 });
 
 test('a completed closed workflow opens exact run output without recreating its tab', async () => {

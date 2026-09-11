@@ -1,10 +1,14 @@
 import { nanoid } from 'nanoid';
+import { createDurableNodesSelector } from '../stores/flowDurableReferences';
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import type { AppModeInput, UserBlockDefinition, UserBlockPort, WorkflowBlueprint } from './types';
 import { classifyManagedControl } from './managedControlPolicy';
 import { arrangeGraphNodes } from '../workflow/graphLayout';
+import { compositeChildNodeId, compositeInstanceChildren } from './compositeNodes';
+import { connectionTypes, connectionTypesAreCompatible } from '../theme/connectionTypes';
+import { blockProjectionNodeIdV2, isBlockRootV2 } from './blockRuntimeV2';
 
 type FlowGraph = {
   nodes: CustomNodeType[];
@@ -27,6 +31,34 @@ const USER_BLOCK_PREVIEW_DISPLAYS = new Set(['ui_image', 'ui_video', 'ui_audio',
 export type BlockSelectionResult =
   | { ok: true; block: UserBlockDefinition; blockNode: CustomNodeType; nodes: CustomNodeType[]; edges: Edge[] }
   | { ok: false; reason: string };
+
+export type UserBlockCompositionIssue = {
+  id: string;
+  kind: 'nested_container' | 'broken_link' | 'invalid_direction' | 'type_mismatch' | 'state_identity_mismatch';
+  message: string;
+  nodeId?: string;
+  edgeId?: string;
+};
+
+export type UserBlockInsertionSuggestion = {
+  id: string;
+  nodeId: string;
+  edgeId: string;
+  sourceNodeId: string;
+  sourceHandle: string;
+  inputHandle: string;
+  outputHandle: string;
+  targetNodeId: string;
+  targetHandle: string;
+  label: string;
+  score: number;
+};
+
+export type UserBlockCompositionReport = {
+  valid: boolean;
+  issues: UserBlockCompositionIssue[];
+  insertionSuggestions: UserBlockInsertionSuggestion[];
+};
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -131,6 +163,274 @@ function dedupePorts(ports: UserBlockPort[]) {
 function paramDirection(param: NodeParams): 'input' | 'output' | null {
   const display = param.isInput ? 'input' : param.display;
   return display === 'input' || display === 'output' ? display : null;
+}
+
+function parameterValue(node: CustomNodeType, key: string) {
+  const parameter = node.data.params?.[key];
+  return parameter?.value ?? parameter?.default;
+}
+
+function exactTypeMatch(left: unknown, right: unknown) {
+  const leftTypes = connectionTypes(left).filter((item) => item !== 'any');
+  const rightTypes = connectionTypes(right).filter((item) => item !== 'any');
+  return leftTypes.some((item) => rightTypes.includes(item));
+}
+
+function internalUserBlockEdges(graph: FlowGraph, instanceId: string) {
+  const children = new Set(
+    graph.nodes.filter((node) => node.data.userBlockInstanceId === instanceId).map((node) => node.id),
+  );
+  return graph.edges.filter((edge) => children.has(edge.source) && children.has(edge.target));
+}
+
+function modularWorkflowIdentity(node: CustomNodeType) {
+  const pipelineClass = parameterValue(node, 'pipeline_class');
+  const workflowId = parameterValue(node, 'workflow_id');
+  return {
+    pipelineClass: typeof pipelineClass === 'string' && pipelineClass ? pipelineClass : null,
+    workflowId: typeof workflowId === 'string' && workflowId ? workflowId : null,
+  };
+}
+
+function modularWorkflowStateConnection(source: NodeParams | undefined, target: NodeParams | undefined) {
+  const types = new Set([...connectionTypes(source?.type), ...connectionTypes(target?.type)]);
+  return types.has('modular_workflow_state');
+}
+
+function compatibleInsertionSuggestions(
+  graph: FlowGraph,
+  instanceId: string,
+  children: CustomNodeType[],
+  issuesByEdge: Set<string>,
+) {
+  const nodesById = new Map(children.map((node) => [node.id, node]));
+  const internalEdges = internalUserBlockEdges(graph, instanceId).filter((edge) => !issuesByEdge.has(edge.id));
+  const connectedNodeIds = new Set(internalEdges.flatMap((edge) => [edge.source, edge.target]));
+  return children
+    .filter((node) => !connectedNodeIds.has(node.id))
+    .flatMap((candidate) => {
+      const inputs = Object.entries(candidate.data.params ?? {}).filter(
+        ([, param]) => !param.hidden && paramDirection(param) === 'input',
+      );
+      const outputs = Object.entries(candidate.data.params ?? {}).filter(
+        ([, param]) => !param.hidden && paramDirection(param) === 'output',
+      );
+      if (!inputs.length || !outputs.length) return [];
+      return internalEdges.flatMap((edge) => {
+        const source = nodesById.get(edge.source);
+        const target = nodesById.get(edge.target);
+        const sourceHandle = edge.sourceHandle ?? '';
+        const targetHandle = edge.targetHandle ?? '';
+        const sourceParam = source?.data.params?.[sourceHandle];
+        const targetParam = target?.data.params?.[targetHandle];
+        if (!source || !target || !sourceParam || !targetParam) return [];
+        return inputs.flatMap(([inputHandle, inputParam]) =>
+          outputs.flatMap(([outputHandle, outputParam]) => {
+            if (
+              !connectionTypesAreCompatible(sourceParam.type, inputParam.type) ||
+              !connectionTypesAreCompatible(outputParam.type, targetParam.type)
+            )
+              return [];
+            const score =
+              (exactTypeMatch(sourceParam.type, inputParam.type) ? 2 : 0) +
+              (exactTypeMatch(outputParam.type, targetParam.type) ? 2 : 0);
+            return [
+              {
+                id: `${candidate.id}\u0000${edge.id}\u0000${inputHandle}\u0000${outputHandle}`,
+                nodeId: candidate.id,
+                edgeId: edge.id,
+                sourceNodeId: source.id,
+                sourceHandle,
+                inputHandle,
+                outputHandle,
+                targetNodeId: target.id,
+                targetHandle,
+                label: `Insert ${nodeLabel(candidate)} between ${nodeLabel(source)} and ${nodeLabel(target)}`,
+                score,
+              } satisfies UserBlockInsertionSuggestion,
+            ];
+          }),
+        );
+      });
+    })
+    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+}
+
+/**
+ * Validate the graph that an expanded User Node will persist and execute.
+ *
+ * This is the MoDiff graph composition boundary. It validates concrete node
+ * sockets and the sealed process-local Modular workflow-state identity. It does
+ * not claim that an arbitrary MoDiff node is an upstream
+ * `ModularPipelineBlocks` object; reviewed upstream block-tree edits use their
+ * separate pinned composition receipt and `init_pipeline()` validation.
+ */
+export function inspectUserBlockComposition(graph: FlowGraph, instanceId: string): UserBlockCompositionReport {
+  const root = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!root) {
+    return {
+      valid: false,
+      issues: [{ id: `missing-root:${instanceId}`, kind: 'broken_link', message: 'The User Node root is missing.' }],
+      insertionSuggestions: [],
+    };
+  }
+  const children = graph.nodes.filter((node) => node.data.userBlockInstanceId === instanceId);
+  const nodesById = new Map(children.map((node) => [node.id, node]));
+  const issues: UserBlockCompositionIssue[] = [];
+  const issuesByEdge = new Set<string>();
+
+  children.forEach((node) => {
+    if (node.data.type !== 'block' && node.data.type !== 'cluster') return;
+    issues.push({
+      id: `nested:${node.id}`,
+      kind: 'nested_container',
+      nodeId: node.id,
+      message: `${nodeLabel(node)} cannot be nested inside a User Node. Add its ordinary internal nodes instead.`,
+    });
+  });
+
+  internalUserBlockEdges(graph, instanceId).forEach((edge) => {
+    const source = nodesById.get(edge.source);
+    const target = nodesById.get(edge.target);
+    const sourceHandle = edge.sourceHandle ?? '';
+    const targetHandle = edge.targetHandle ?? '';
+    const sourceParam = source?.data.params?.[sourceHandle];
+    const targetParam = target?.data.params?.[targetHandle];
+    if (!source || !target || !sourceHandle || !targetHandle || !sourceParam || !targetParam) {
+      issuesByEdge.add(edge.id);
+      issues.push({
+        id: `broken:${edge.id}`,
+        kind: 'broken_link',
+        edgeId: edge.id,
+        message: 'A User Node connection points to a node or socket that no longer exists.',
+      });
+      return;
+    }
+    if (paramDirection(sourceParam) !== 'output' || paramDirection(targetParam) !== 'input') {
+      issuesByEdge.add(edge.id);
+      issues.push({
+        id: `direction:${edge.id}`,
+        kind: 'invalid_direction',
+        edgeId: edge.id,
+        nodeId: target.id,
+        message: `${nodeLabel(source)}.${sourceHandle} must connect from an output to an input socket.`,
+      });
+      return;
+    }
+    if (!connectionTypesAreCompatible(sourceParam.type, targetParam.type)) {
+      issuesByEdge.add(edge.id);
+      const sourceTypes = connectionTypes(sourceParam.type).join(' or ') || 'untyped';
+      const targetTypes = connectionTypes(targetParam.type).join(' or ') || 'untyped';
+      issues.push({
+        id: `type:${edge.id}`,
+        kind: 'type_mismatch',
+        edgeId: edge.id,
+        nodeId: target.id,
+        message: `${nodeLabel(source)}.${sourceHandle} (${sourceTypes}) cannot connect to ${nodeLabel(target)}.${targetHandle} (${targetTypes}).`,
+      });
+      return;
+    }
+    if (modularWorkflowStateConnection(sourceParam, targetParam)) {
+      const sourceIdentity = modularWorkflowIdentity(source);
+      const targetIdentity = modularWorkflowIdentity(target);
+      if (
+        (sourceIdentity.pipelineClass &&
+          targetIdentity.pipelineClass &&
+          sourceIdentity.pipelineClass !== targetIdentity.pipelineClass) ||
+        (sourceIdentity.workflowId &&
+          targetIdentity.workflowId &&
+          sourceIdentity.workflowId !== targetIdentity.workflowId)
+      ) {
+        issuesByEdge.add(edge.id);
+        issues.push({
+          id: `state-identity:${edge.id}`,
+          kind: 'state_identity_mismatch',
+          edgeId: edge.id,
+          nodeId: target.id,
+          message: `The Modular workflow state from ${nodeLabel(source)} belongs to ${sourceIdentity.pipelineClass ?? 'another pipeline'}/${sourceIdentity.workflowId ?? 'another workflow'}, not ${targetIdentity.pipelineClass ?? 'this pipeline'}/${targetIdentity.workflowId ?? 'this workflow'}.`,
+        });
+      }
+    }
+  });
+
+  return {
+    valid: issues.length === 0,
+    issues,
+    insertionSuggestions: compatibleInsertionSuggestions(graph, instanceId, children, issuesByEdge),
+  };
+}
+
+export function inspectUserBlockCompositions(
+  graph: FlowGraph,
+  blocks: UserBlockDefinition[] = [],
+): Array<{ instanceId: string; label: string; report: UserBlockCompositionReport }> {
+  const blockMap = new Map(blocks.map((block) => [block.id, block]));
+  return graph.nodes
+    .filter((node) => node.data.type === 'block')
+    .map((root) => {
+      const definition = blockDefinitionForNode(root, blockMap);
+      if (!definition) {
+        return {
+          instanceId: root.id,
+          label: nodeLabel(root),
+          report: {
+            valid: false,
+            issues: [
+              {
+                id: `missing-definition:${root.id}`,
+                kind: 'broken_link' as const,
+                message: `${nodeLabel(root)} has no embedded or reusable User Node definition.`,
+              },
+            ],
+            insertionSuggestions: [],
+          },
+        };
+      }
+      const children = materializedBlockChildren(graph, root, definition);
+      const edges = materializedBlockInternalEdges(graph, root, definition, children);
+      return {
+        instanceId: root.id,
+        label: nodeLabel(root),
+        report: inspectUserBlockComposition({ nodes: [root, ...children], edges }, root.id),
+      };
+    });
+}
+
+export function insertNodeAtUserBlockSuggestion(
+  graph: FlowGraph,
+  instanceId: string,
+  suggestion: UserBlockInsertionSuggestion,
+): FlowGraph {
+  const report = inspectUserBlockComposition(graph, instanceId);
+  const current = report.insertionSuggestions.find((item) => item.id === suggestion.id);
+  if (!current) throw new Error('That compatible User Node insertion point is no longer available.');
+  const replaced = graph.edges.find((edge) => edge.id === current.edgeId);
+  if (!replaced) throw new Error('The User Node connection selected for insertion no longer exists.');
+  const internalData = {
+    ...(isRecord(replaced.data) ? replaced.data : {}),
+    userBlockInstanceId: instanceId,
+    userBlockInternal: true,
+  };
+  return {
+    nodes: graph.nodes,
+    edges: [
+      ...graph.edges.filter((edge) => edge.id !== replaced.id),
+      {
+        ...cloneJson(replaced),
+        id: nanoid(),
+        target: current.nodeId,
+        targetHandle: current.inputHandle,
+        data: internalData,
+      },
+      {
+        ...cloneJson(replaced),
+        id: nanoid(),
+        source: current.nodeId,
+        sourceHandle: current.outputHandle,
+        data: internalData,
+      },
+    ],
+  };
 }
 
 function portIdentity(port: Pick<UserBlockPort, 'nodeId' | 'paramKey'>) {
@@ -295,8 +595,86 @@ export function collapsedUserBlockPreviewTarget(
   return null;
 }
 
+export type BlockPreviewTargetV2 = {
+  rootId: string;
+  nodeId: string;
+  outputPortId: string;
+  mediaType: 'image' | 'video' | 'audio' | 'text' | 'file';
+};
+
+/**
+ * Resolve a concrete runtime output back to its declared Block V2 preview.
+ * Runtime node ids are deterministic projections; preview state remains on
+ * the owning BlockInstanceV2 whether its canvas projection is open or closed.
+ */
+export function blockPreviewTargetV2(
+  nodes: CustomNodeType[],
+  runtimeNodeId: string,
+  outputPortId: string,
+): BlockPreviewTargetV2 | null {
+  const matches = nodes.flatMap((node): BlockPreviewTargetV2[] => {
+    if (!isBlockRootV2(node)) return [];
+    const instance = node.data.blockInstanceV2;
+    if (!instance) return [];
+    const preview = instance.previewStates.find(
+      (candidate) =>
+        blockProjectionNodeIdV2(instance.instanceId, candidate.binding.nodeId) === runtimeNodeId &&
+        candidate.binding.outputPortId === outputPortId,
+    );
+    return preview
+      ? [
+          {
+            rootId: node.id,
+            nodeId: preview.binding.nodeId,
+            outputPortId: preview.binding.outputPortId,
+            mediaType: preview.binding.mediaType,
+          },
+        ]
+      : [];
+  });
+  // Duplicate canvas ids or ambiguous preview ownership is invalid state. Do
+  // not let a runtime message guess which durable instance it may mutate.
+  return matches.length === 1 ? matches[0]! : null;
+}
+
+const selectProgressNodes = createDurableNodesSelector();
+let progressNodes: CustomNodeType[] | undefined;
+const progressTargets = new Map<string, string | null>();
 export function runtimeProgressTarget(nodes: CustomNodeType[], runtimeNodeId: string, currentNodeName?: string | null) {
-  if (nodes.some((node) => node.id === runtimeNodeId)) return runtimeNodeId;
+  const selected = selectProgressNodes(nodes);
+  if (selected !== progressNodes) {
+    progressNodes = selected;
+    progressTargets.clear();
+  }
+  const key = JSON.stringify([runtimeNodeId, currentNodeName]);
+  if (progressTargets.has(key)) return progressTargets.get(key)!;
+  const target = resolveRuntimeProgressTarget(nodes, runtimeNodeId, currentNodeName);
+  if (progressTargets.size >= 128) progressTargets.clear();
+  progressTargets.set(key, target);
+  return target;
+}
+
+function resolveRuntimeProgressTarget(nodes: CustomNodeType[], runtimeNodeId: string, currentNodeName?: string | null) {
+  const directNode = nodes.find((node) => node.id === runtimeNodeId);
+  if (directNode?.data.huggingFaceClusterRole === 'execution') {
+    const root = nodes.find(
+      (node) => node.id === directNode.data.huggingFaceClusterInstanceId && node.data.huggingFaceClusterRole === 'root',
+    );
+    if (root && !root.data.huggingFaceClusterInstance?.presentation.expanded) return root.id;
+  }
+  if (directNode) return runtimeNodeId;
+
+  for (const blockNode of nodes) {
+    if (!isBlockRootV2(blockNode)) continue;
+    const instance = blockNode.data.blockInstanceV2;
+    if (!instance || instance.presentation.expanded) continue;
+    if (
+      instance.effectiveGraph.nodes.some(
+        ({ nodeId }) => blockProjectionNodeIdV2(instance.instanceId, nodeId) === runtimeNodeId,
+      )
+    )
+      return blockNode.id;
+  }
 
   for (const blockNode of nodes) {
     if (blockNode.data.type !== 'block' || blockNode.data.uiState?.blockExpanded) continue;
@@ -599,7 +977,7 @@ function sourceNodeId(node: CustomNodeType) {
 }
 
 function instanceChildId(instanceId: string, definitionNodeId: string) {
-  return remapId(instanceId, definitionNodeId);
+  return compositeChildNodeId(instanceId, definitionNodeId);
 }
 
 function materializedBlockChildren(
@@ -911,13 +1289,127 @@ export function blockOutputBridgeHandle(portId: string) {
 }
 
 function blockInstanceChildren(graph: FlowGraph, instanceId: string) {
-  return graph.nodes.filter((node) => node.data.userBlockInstanceId === instanceId);
+  return compositeInstanceChildren(graph.nodes, instanceId, (node) => node.data.userBlockInstanceId);
 }
 
 export function isUserBlockExpandedInstance(graph: FlowGraph, instanceId: string) {
   const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
   if (!blockNode) return false;
   return Boolean(blockNode.data.uiState?.blockExpanded || blockInstanceChildren(graph, instanceId).length > 0);
+}
+
+export function expandedUserBlockAtPosition(
+  nodes: CustomNodeType[],
+  position: CustomNodeType['position'],
+): CustomNodeType | null {
+  const candidates = nodes
+    .filter(
+      (node) =>
+        node.data.type === 'block' &&
+        !node.data.blockInstanceV2 &&
+        !node.parentId &&
+        isUserBlockExpandedInstance({ nodes, edges: [] }, node.id),
+    )
+    .filter((node) => {
+      const width = node.measured?.width ?? node.width ?? USER_BLOCK_COLLAPSED_WIDTH;
+      const height = node.measured?.height ?? node.height ?? USER_BLOCK_COLLAPSED_HEIGHT;
+      return (
+        position.x >= node.position.x &&
+        position.x <= node.position.x + width &&
+        position.y >= node.position.y &&
+        position.y <= node.position.y + height
+      );
+    })
+    .sort((left, right) => {
+      const leftArea =
+        (left.measured?.width ?? left.width ?? USER_BLOCK_COLLAPSED_WIDTH) *
+        (left.measured?.height ?? left.height ?? USER_BLOCK_COLLAPSED_HEIGHT);
+      const rightArea =
+        (right.measured?.width ?? right.width ?? USER_BLOCK_COLLAPSED_WIDTH) *
+        (right.measured?.height ?? right.height ?? USER_BLOCK_COLLAPSED_HEIGHT);
+      return leftArea - rightArea;
+    });
+  return candidates[0] ?? null;
+}
+
+export function placeNodeInsideExpandedUserBlock(
+  node: CustomNodeType,
+  blockNode: CustomNodeType,
+  absolutePosition: CustomNodeType['position'] = node.position,
+): CustomNodeType {
+  if (blockNode.data.type !== 'block') throw new Error('The target is not a User Node.');
+  if (node.data.type === 'block') throw new Error('Nested User Nodes are not supported.');
+  return {
+    ...node,
+    parentId: blockNode.id,
+    extent: undefined,
+    expandParent: true,
+    position: {
+      x: Math.max(USER_BLOCK_CHILD_LEFT, absolutePosition.x - blockNode.position.x),
+      y: Math.max(USER_BLOCK_CHILD_TOP, absolutePosition.y - blockNode.position.y),
+    },
+    data: {
+      ...node.data,
+      userBlockInstanceId: blockNode.id,
+      userBlockSourceNodeId: node.id,
+    },
+  };
+}
+
+function absoluteNodePosition(nodes: CustomNodeType[], node: CustomNodeType) {
+  let position = { ...node.position };
+  let parentId = node.parentId;
+  const visited = new Set<string>();
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = nodes.find((candidate) => candidate.id === parentId);
+    if (!parent) break;
+    position = {
+      x: position.x + parent.position.x,
+      y: position.y + parent.position.y,
+    };
+    parentId = parent.parentId;
+  }
+  return position;
+}
+
+export function placeExistingNodeInsideExpandedUserBlock(graph: FlowGraph, nodeId: string, blockId: string): FlowGraph {
+  const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+  const blockNode = graph.nodes.find((candidate) => candidate.id === blockId);
+  if (!node || !blockNode || blockNode.data.type !== 'block') return graph;
+  if (!isUserBlockExpandedInstance(graph, blockId)) return graph;
+  if (node.id === blockId || node.data.type === 'block' || node.data.type === 'cluster') return graph;
+  if (node.data.huggingFaceClusterInstanceId || node.data.huggingFaceClusterRole) return graph;
+  const currentParent = node.parentId ? graph.nodes.find((candidate) => candidate.id === node.parentId) : undefined;
+  if (currentParent && currentParent.data.type !== 'block') return graph;
+  if (currentParent?.id === blockId && node.data.userBlockInstanceId === blockId) return graph;
+
+  const absolute = absoluteNodePosition(graph.nodes, node);
+  const adopted = placeNodeInsideExpandedUserBlock(
+    {
+      ...node,
+      parentId: undefined,
+      data: {
+        ...node.data,
+        userBlockSourceNodeId: node.id,
+      },
+    },
+    blockNode,
+    absolute,
+  );
+  const previousBlockId = node.data.userBlockInstanceId;
+  const withoutAdopted = graph.nodes.filter((candidate) => candidate.id !== nodeId);
+  const blockIndex = withoutAdopted.findIndex((candidate) => candidate.id === blockId);
+  const orderedNodes = [...withoutAdopted];
+  orderedNodes.splice(blockIndex + 1, 0, adopted);
+  let next: FlowGraph = {
+    nodes: orderedNodes,
+    edges: graph.edges,
+  };
+  if (previousBlockId && previousBlockId !== blockId) {
+    next = fitUserBlockInstance(next, previousBlockId);
+  }
+  return fitUserBlockInstance(next, blockId);
 }
 
 function blockExpandedSize(children: CustomNodeType[]) {
@@ -1126,6 +1618,9 @@ export function collapseUserBlockInstance(
   });
   const parent = {
     ...blockNode,
+    // Collapse replaces the child sockets with a different public handle set.
+    // Clear the old React Flow bounds until the new DOM ports are measured.
+    measured: undefined,
     width: blockNode.data.uiState?.blockCollapsedWidth ?? USER_BLOCK_COLLAPSED_WIDTH,
     height: blockNode.data.uiState?.blockCollapsedHeight ?? USER_BLOCK_COLLAPSED_HEIGHT,
     data: {
@@ -1187,6 +1682,42 @@ export function connectionCrossesUserBlockBoundary(nodes: CustomNodeType[], sour
   return Boolean(sourceInstanceId || targetInstanceId) && sourceInstanceId !== targetInstanceId;
 }
 
+/**
+ * Permit ordinary connections inside one User Node, outside all User Nodes, or
+ * through an explicitly exposed boundary socket. Direct links between two
+ * different User Node instances are rejected; they must connect through the
+ * two wrapper nodes so each instance retains an independent persisted graph.
+ */
+export function userBlockConnectionIsAllowed(
+  nodes: CustomNodeType[],
+  sourceId: string,
+  sourceHandle: string | null | undefined,
+  targetId: string,
+  targetHandle: string | null | undefined,
+) {
+  const source = nodes.find((node) => node.id === sourceId);
+  const target = nodes.find((node) => node.id === targetId);
+  const sourceInstanceId = source?.data.userBlockInstanceId ?? null;
+  const targetInstanceId = target?.data.userBlockInstanceId ?? null;
+  if (sourceInstanceId === targetInstanceId) return true;
+  if (!sourceInstanceId && !targetInstanceId) return true;
+  if (sourceInstanceId && targetInstanceId) return false;
+
+  if (sourceInstanceId && sourceHandle && source) {
+    const root = nodes.find((node) => node.id === sourceInstanceId && node.data.type === 'block');
+    const definition = root?.data.userBlockSnapshot;
+    const sourceNodeId = source.data.userBlockSourceNodeId ?? source.id;
+    return Boolean(definition?.outputs.some((port) => port.nodeId === sourceNodeId && port.paramKey === sourceHandle));
+  }
+  if (targetInstanceId && targetHandle && target) {
+    const root = nodes.find((node) => node.id === targetInstanceId && node.data.type === 'block');
+    const definition = root?.data.userBlockSnapshot;
+    const targetNodeId = target.data.userBlockSourceNodeId ?? target.id;
+    return Boolean(definition?.inputs.some((port) => port.nodeId === targetNodeId && port.paramKey === targetHandle));
+  }
+  return false;
+}
+
 export function configureUserBlockInstance(
   graph: FlowGraph,
   instanceId: string,
@@ -1236,6 +1767,72 @@ export function configureUserBlockInstance(
   };
   replacement.width = blockNode.width;
   replacement.height = blockNode.height;
+  // This remains the same mounted instance; keep its last known geometry
+  // until the observer reports the new layout after interface changes.
+  replacement.measured = blockNode.measured;
+  replacement.selected = blockNode.selected;
+  replacement.parentId = blockNode.parentId;
+  replacement.extent = blockNode.extent;
+  return {
+    nodes: graph.nodes.map((node) => (node.id === instanceId ? replacement : node)),
+    edges: graph.edges,
+  };
+}
+
+export function snapshotUserBlockInstance(
+  graph: FlowGraph,
+  instanceId: string,
+  blocks: UserBlockDefinition[],
+): UserBlockDefinition | null {
+  const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!blockNode) return null;
+  const definition = blockDefinitionForNode(blockNode, new Map(blocks.map((block) => [block.id, block])));
+  if (!definition) return null;
+  const children = blockInstanceChildren(graph, instanceId);
+  if (children.length === 0) return normalizeUserBlockDefinition(definition);
+  return snapshotExpandedBlock(blockNode, definition, children, graph.edges).definition;
+}
+
+export function copyUserBlockDefinition(
+  definition: UserBlockDefinition,
+  name: string,
+  id = nanoid(),
+): UserBlockDefinition {
+  const now = Date.now();
+  return normalizeUserBlockDefinition({
+    ...cloneJson(definition),
+    id,
+    name: name.trim() || definition.name,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export function applyUserBlockDefinitionToInstance(
+  graph: FlowGraph,
+  instanceId: string,
+  definition: UserBlockDefinition,
+): FlowGraph {
+  const blockNode = graph.nodes.find((node) => node.id === instanceId && node.data.type === 'block');
+  if (!blockNode) return graph;
+  const normalized = normalizeUserBlockDefinition(definition);
+  const replacement = createUserBlockNode(normalized, blockNode.position, instanceId);
+  replacement.data.params = Object.fromEntries(
+    Object.entries(replacement.data.params).map(([key, param]) => [
+      key,
+      blockNode.data.params[key]
+        ? {
+            ...param,
+            value: blockNode.data.params[key].value,
+            artifacts: blockNode.data.params[key].artifacts,
+          }
+        : param,
+    ]),
+  );
+  replacement.data.uiState = { ...blockNode.data.uiState };
+  replacement.width = blockNode.width;
+  replacement.height = blockNode.height;
+  replacement.measured = blockNode.measured;
   replacement.selected = blockNode.selected;
   replacement.parentId = blockNode.parentId;
   replacement.extent = blockNode.extent;
@@ -1271,10 +1868,6 @@ export function workflowBlueprintToUserBlock(blueprint: WorkflowBlueprint): User
     createdAt,
     updatedAt: blueprint.updatedAt || createdAt,
   };
-}
-
-function remapId(blockNodeId: string, id: string) {
-  return `${blockNodeId}__${id}`;
 }
 
 function expandOnePass(graph: FlowGraph, blocks: Map<string, UserBlockDefinition>): FlowGraph {

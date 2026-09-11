@@ -33,6 +33,7 @@ export type ApiGraphLoopExport = {
   iterationMode: 'count' | 'collection';
   carry: boolean;
   collect: boolean;
+  durable: boolean;
   maxRetries: number;
   parentLoopId?: string;
 };
@@ -42,7 +43,7 @@ export type ApiGraphRuntimeHints = {
    * Correlation and workflow fields are attached to every graph submission.
    * Studio-managed runs additionally provide the resource/model fields below.
    */
-  source?: 'studio';
+  source?: 'studio' | 'diffusers-cluster' | 'hugging-face-cluster';
   device?: string;
   cudaIndex?: number;
   cudaMemoryFreeBytes?: number;
@@ -55,6 +56,7 @@ export type ApiGraphRuntimeHints = {
   resolvedArtifact?: string;
   modelDependencies?: JsonObject[];
   studioExecutionSpec?: JsonObject;
+  controlledGraphContracts?: string[];
   loaderModule?: string;
   loaderAction?: string;
   executionPath?: string;
@@ -75,7 +77,9 @@ export type ApiGraphRuntimeHints = {
   supportedOffloadModes?: string[];
   offloadDiskPath?: string;
   resourcePlan?: JsonObject;
+  clusterRuntimeQualification?: JsonObject;
   autoResourcePlan?: JsonObject;
+  workflowAutoPlan?: { schemaVersion: number; graphHash: string };
   autoResourceCandidates?: JsonObject[];
   autoResourceProofStatus?: string;
   autoResourceCandidateId?: string;
@@ -137,6 +141,7 @@ export type WelcomeWebsocketMessage = BaseWebsocketMessage<'welcome'> & {
   current?: TaskSnapshot | null;
   queued?: Record<string, TaskSnapshot>;
   recent?: TaskSnapshot[];
+  downloads?: HfDownloadProgress[];
 };
 
 export type NodeWebsocketMessage = BaseWebsocketMessage<
@@ -168,6 +173,7 @@ export type NodeWebsocketMessage = BaseWebsocketMessage<
   workflow_canvas_epoch?: number;
   node_id?: string;
   output_id?: string;
+  resolved_execution_inputs?: unknown;
   backend_persisted?: boolean;
   preview_slot?: StudioPreviewSlot;
   preview_state_revision?: number;
@@ -255,6 +261,7 @@ export type FieldWebsocketMessage = BaseWebsocketMessage<
   run_input_hash?: string;
   workflow_tab_id?: string;
   workflow_canvas_epoch?: number;
+  workflow_form_epoch?: number;
   attempt_index?: number;
 };
 
@@ -290,6 +297,7 @@ export type GraphCompletedWebsocketMessage = BaseWebsocketMessage<'graph_complet
   deterministicMode?: unknown;
   runtimeHints?: unknown;
   runtimeBudget?: unknown;
+  runtimePreparation?: unknown;
 };
 
 export type DeterministicExecutionWebsocketMessage = BaseWebsocketMessage<'deterministic_execution'> & {
@@ -310,7 +318,7 @@ export type ResourceRetryWebsocketMessage = BaseWebsocketMessage<'resource_retry
 };
 
 export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
-  'auto_resource_plan_applied' | 'auto_resource_cleanup' | 'auto_retry_requires_approval'
+  'auto_resource_plan_applied' | 'auto_resource_cleanup' | 'runtime_resource_cleanup' | 'auto_retry_requires_approval'
 > & {
   task_id?: string | null;
   client_run_id?: string;
@@ -324,9 +332,16 @@ export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
   candidateId?: string;
   message?: string;
   updatedNodes?: string[];
+  resourceUpdates?: {
+    nodeId: string;
+    field: 'offload_mode' | 'auto_offload';
+    value: string | boolean;
+    previousValue?: string | boolean | null;
+  }[];
   retryPlans?: JsonObject[];
   performed?: boolean;
   reasons?: string[];
+  resourceMode?: 'auto' | 'expert';
   incomingModelFamily?: string | null;
   previousModelFamily?: string | null;
   residentRecipeReusable?: boolean;
@@ -401,6 +416,7 @@ const websocketMessageTypes = new Set<WebsocketMessage['type']>([
   'resource_retry_cleanup',
   'auto_resource_plan_applied',
   'auto_resource_cleanup',
+  'runtime_resource_cleanup',
   'auto_retry_requires_approval',
   'runtime_loader_reused',
   'error',
@@ -450,6 +466,22 @@ function isTaskRecord(value: unknown) {
 
 function isTaskRecordMap(value: unknown) {
   return isRecord(value) && Object.values(value).every(isTaskRecord);
+}
+
+function isHfDownloadProgressArray(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.length <= 256 &&
+    value.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item.repo_id === 'string' &&
+        item.repo_id.length > 0 &&
+        item.repo_id.length <= 256 &&
+        optionalField(item, 'status', (field) => typeof field === 'string') &&
+        optionalField(item, 'progress', isFiniteNumber, true),
+    )
+  );
 }
 
 function isNumericRecord(value: unknown) {
@@ -570,7 +602,10 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
 
   switch (type) {
     case 'welcome':
-      return optionalField(value, 'instance', (field) => typeof field === 'string');
+      return (
+        optionalField(value, 'instance', (field) => typeof field === 'string') &&
+        optionalField(value, 'downloads', isHfDownloadProgressArray)
+      );
     case 'executed':
     case 'node_error':
     case 'progress':
@@ -637,7 +672,27 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
     case 'workflow_deleted':
       return typeof value.workflow_id === 'string';
     case 'auto_resource_plan_applied':
-      return optionalField(value, 'candidateId', (field) => typeof field === 'string');
+      return (
+        optionalField(value, 'candidateId', (field) => typeof field === 'string') &&
+        optionalField(
+          value,
+          'resourceUpdates',
+          (field) =>
+            Array.isArray(field) &&
+            field.length <= 4096 &&
+            field.every(
+              (item) =>
+                isRecord(item) &&
+                typeof item.nodeId === 'string' &&
+                ((item.field === 'offload_mode' && typeof item.value === 'string') ||
+                  (item.field === 'auto_offload' && typeof item.value === 'boolean')) &&
+                (item.previousValue == null ||
+                  typeof item.previousValue === 'string' ||
+                  typeof item.previousValue === 'boolean'),
+            ),
+        )
+      );
+
     case 'auto_retry_requires_approval':
       return typeof value.message === 'string' && isRecordArray(value.retryPlans);
     case 'runtime_loader_reused':
@@ -648,6 +703,7 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
         typeof value.action === 'string'
       );
     case 'auto_resource_cleanup':
+    case 'runtime_resource_cleanup':
       return (
         ['residentRecipeReusable', 'resourceRecipeChanged'].every((key) =>
           optionalField(value, key, (field) => typeof field === 'boolean'),
@@ -656,6 +712,7 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
         ['incomingModelFamily', 'previousModelFamily'].every((key) =>
           optionalField(value, key, (field) => typeof field === 'string', true),
         ) &&
+        optionalField(value, 'resourceMode', (field) => field === 'auto' || field === 'expert') &&
         optionalField(value, 'cleanup', isRecord, true)
       );
     case 'graph_completed':

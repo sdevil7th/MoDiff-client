@@ -15,19 +15,31 @@ const FIELD_ID = /^[A-Za-z_][A-Za-z\d_]{0,63}$/;
 const NODE_KEY = /^modules\.[A-Za-z\d_]+\.[A-Za-z\d_]+$/;
 const PIPELINE_CLASS = /^[A-Za-z_][A-Za-z\d_.]{0,255}$/;
 export const REPO_ID = /^[A-Za-z\d_.-]+\/[A-Za-z\d_.-]+$/;
+export const BUILTIN_ARTIFACT_ID = /^builtin:\/\/[a-z\d][a-z\d._-]*(?:\/[a-z\d][a-z\d._-]*)+$/;
+export function isStudioArtifactId(value: string) {
+  return REPO_ID.test(value) || BUILTIN_ARTIFACT_ID.test(value);
+}
 const SPEC_KEYS =
+  'actions,autoFields,auxiliaryTerminalRoles,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
+// `auxiliaryTerminalRoles` is a hash-covered schema-v1 extension. Specs that
+// predate it remain valid and retain the exact original meaning: no auxiliary
+// execution sinks were declared.
+const LEGACY_SPEC_KEYS =
   'actions,autoFields,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
 function listed<T extends string>(value: string) {
   return new Set(value.split('|') as T[]);
 }
 const SPEC_ROLES = listed<StudioGraphRole>(
-  'models|prompt|imageEncode|controlnetModel|controlnet|denoise|decode|diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|loadImage|loadMask|qwenOutpaintCanvas|diffusersImageControl|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|loadControlVideo|loadMaskVideo|normalizeVideo|alignMaskVideo|audioPipeline|audioGenerate|audioExport|loadAudio|audioLoudnessMatch|audioJoin',
+  'models|prompt|beforeEncode|textEncode|duration|conditionEncode|referenceEncode|imageEmbeddings|imageEncode|videoEncode|loadLastImage|controlnetModel|controlnet|loadIPAdapterImage|guider|ipAdapter|denoise|decode|afterDecode|diffusersQuantization|diffusersRecipe|diffusersImagePipeline|diffusersImageGenerate|diffusersUnconditionalGenerate|diffusersPredictMap|diffusersThreeDPipeline|diffusersThreeDGenerate|loadImage|loadControlImage|controlPreprocessor|loadMask|qwenOutpaintCanvas|outpaintCanvas|diffusersImageControl|diffusersImageControlEdit|diffusersImageControlInpaint|diffusersImageLayerDecompose|diffusersImageEdit|diffusersImageInpaint|preview|wanPipeline|wanGenerate|videoExport|loadVideo|loadReferenceVideo|loadControlVideo|loadMaskVideo|loadPoseVideo|loadFaceVideo|loadBackgroundVideo|normalizeVideo|normalizeReferenceVideo|normalizeControlVideo|referencePreprocessor|alignMaskVideo|audioPipeline|audioGenerate|audioExport|loadAudio|loadReferenceAudio|audioLoudnessMatch|audioJoin|audioOperation|dataOperation|dataPreview|dataExport|speechModel|transcribeAudio|transcriptPreview|transformersTextModel|transformersTextGenerate|transformersImageTextModel|transformersImageTextGenerate|transformersAnyToAnyModel|transformersAnyToAnyGenerate|transformersTextPreview|imageOperation|imageUpscaler|videoOperation|videoUpscaler',
 );
 const BINDING_SOURCES = listed(
-  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|nativeMath|empty|true|false|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|pipelineClass|kind|repo|revision|wanVaceRevision|mode|autoOffload|prompt|negativePrompt|width|height|seed|steps|guidanceScale|strength|layers|outputType|maxSequenceLength|controlImage|referenceImages|maskImage|outpaintLeft|outpaintRight|outpaintTop|outpaintBottom|outpaintOverlap|outpaintFeather|outpaintFillColor|sourceVideo|controlVideo|maskVideo|maskThreshold127|inpaintMaskGrow96|outpaintMaskGrow0|conditioningScale|alphaMode|addAlpha|removeAlpha|numFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson|text2music|cover|continuation|repaint|sourceAudio|lyrics|audioDuration|extensionDuration|vocalLanguage|bpmNormalized|keyscale|timesignature|repaintingStart|repaintingEnd|audioCoverStrength|sampleRate48000|referenceWindow15|targetPeakMinus1|maxAdjustment12|boundaryFade001',
+  'quantizationMode|quantizedComponents|dualQuantizedComponents|pipelineQuantizedComponents|dtype|deviceMapNone|offloadMode|device|attentionBackend|nativeFlashAttention|nativeMath|empty|true|false|ordinary|fp16|transformer|dualTransformer|videoVaeTiling|regionalCompile|denoiserCache|layerwiseCasting|channelsLast|artifact|defaultRevision|modelVariant|pipelineClass|executionProfileId|defaultWorkflow|workflowId|semanticGeneratorBlock|workflowBeforeEncodeBlock|workflowTextEncoderBlock|workflowImageEncoderBlock|workflowVaeEncoderBlock|workflowImageEmbeddingsBlock|workflowDenoiseBlock|workflowDecodeBlock|workflowAfterDecodeBlock|kind|repo|revision|adapterWeightName|controlnetKind|controlnetRepo|controlnetRevision|controlnetWeightVariant|controlnetRouteVariant|controlnetLoadClass|ipAdapterRepo|ipAdapterRevision|ipAdapterWeightName|classifierFreeGuidance|motionAdapterRepo|motionAdapterRevision|wanVaceRevision|mode|autoOffload|prompt|negativePrompt|promptRef|width|height|optionalWidth|optionalHeight|seed|steps|distilledSteps4|guidanceScale|distilledGuidance1|pagScale|pagAdaptiveScale|processingResolution|matchInputResolution|depth|batchSize|eta|classLabel|strength|layers|resolution|cfgNormalize|useEnglishPrompt|outputType|maxSequenceLength|controlImage|controlMode|ipAdapterImage|ipAdapterScale|references|referenceImages|conditionImages|lastImage|maskImage|paddingMaskCrop|outpaintLeft|outpaintRight|outpaintTop|outpaintBottom|outpaintOverlap|outpaintFeather|outpaintFillColor|sourceVideo|referenceVideos|controlVideo|maskVideo|poseVideo|faceVideo|backgroundVideo|maskThreshold127|inpaintMaskGrow96|outpaintMaskGrow0|conditioningScale|controlGuidanceStart|controlGuidanceEnd|cannyLowThreshold|cannyHighThreshold|videoCannyLowThreshold100|videoCannyHighThreshold200|alphaMode|addAlpha|removeAlpha|oneFrame|numFrames|requiredNumFrames|shift|fps|guidanceScale2|useGuidanceScale2|attentionKwargsJson|oneVideo|segmentFrameLength|previousConditioningFrames|segmentFrameLength77|previousConditioningFrames1|motionEncodeBatchSize1|temporalTileSize80|temporalOverlap24|temporalOverlapConditionStrength05|adainFactor025|framepackSampling|latentWindowSize9|trueCfgScale1|text2music|text2audio|cover|continuation|repaint|transcribe|translate|anyToAnyText|anyToAnyImage|sourceAudio|referenceAudio|speechLanguage|speechTimestamps|speechChunkSeconds|speechStrideSeconds|maxNewTokens|minNewTokens|doSample|temperature|topP|topK|numBeams|repetitionPenalty|useChatTemplate|lyrics|audioDuration|extensionDuration|vocalLanguage|bpmNormalized|keyscale|timesignature|repaintingStart|repaintingEnd|audioCoverStrength|sampleRate16000|sampleRate24000|sampleRate44100|sampleRate48000|numWaveforms1|numWaveforms3|referenceWindow15|targetPeakMinus1|maxAdjustment12|boundaryFade001',
 );
 const AUTO_FIELDS = listed(
   'resolvedArtifact|artifact|installTarget.repo|modelRepo|pipelineClass|dtype|offloadMode|quantizedComponents|attentionBackend|regionalCompile|denoiserCache|layerwiseCasting|channelsLast',
+);
+const MEDIA_OUTPUT_NODE_KEYS = listed(
+  'modules.Image.Preview|modules.Video.Export|modules.Video.ExportWithAudio|modules.Audio.Export',
 );
 function invalid(): never {
   throw new Error('Invalid Studio execution specification.');
@@ -76,10 +88,11 @@ export function parseStudioExecutionSpecs(
   modes: readonly StudioMode[],
   profiles: readonly StudioExecutionProfile[] | undefined,
 ): StudioExecutionSpec[] {
-  if (!Array.isArray(value) || value.length > 16) invalid();
+  if (!Array.isArray(value) || value.length > 32) invalid();
   const specs = value.map((raw) => {
     if (!record(raw)) invalid();
-    if (Object.keys(raw).sort().join() !== SPEC_KEYS) invalid();
+    const keys = Object.keys(raw).sort().join();
+    if (keys !== SPEC_KEYS && keys !== LEGACY_SPEC_KEYS) invalid();
     const profile = profiles?.find((item) => item.id === raw.executionProfileId);
     if (
       raw.schemaVersion !== 1 ||
@@ -101,7 +114,7 @@ export function parseStudioExecutionSpecs(
       !PIPELINE_CLASS.test(raw.pipelineClass) ||
       typeof raw.defaultRepo !== 'string' ||
       raw.defaultRepo.length > 512 ||
-      !REPO_ID.test(raw.defaultRepo)
+      !isStudioArtifactId(raw.defaultRepo)
     )
       invalid();
 
@@ -162,6 +175,26 @@ export function parseStudioExecutionSpecs(
       }
     }
     if (connected.size !== roleSet.size) invalid();
+
+    const auxiliaryTerminalRoles = raw.auxiliaryTerminalRoles;
+    if (auxiliaryTerminalRoles !== undefined) {
+      const outgoingRoles = new Set(edges.map(([sourceRole]) => sourceRole));
+      const roleNodeKeys = new Map(typedRoles.map(([role, nodeKey]) => [role, nodeKey]));
+      if (
+        !Array.isArray(auxiliaryTerminalRoles) ||
+        auxiliaryTerminalRoles.length > 16 ||
+        auxiliaryTerminalRoles.some(
+          (role) =>
+            typeof role !== 'string' ||
+            !SPEC_ROLES.has(role as StudioGraphRole) ||
+            !roleSet.has(role as StudioGraphRole) ||
+            outgoingRoles.has(role as StudioGraphRole) ||
+            MEDIA_OUTPUT_NODE_KEYS.has(roleNodeKeys.get(role as StudioGraphRole) ?? ''),
+        ) ||
+        !unique(auxiliaryTerminalRoles)
+      )
+        invalid();
+    }
 
     const bindingList = raw.bindings;
     if (

@@ -20,7 +20,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   actionsModule = await server.ssrLoadModule('/src/utils/serverActions.ts');
@@ -78,6 +78,7 @@ test('the real Vite config derives the supervisor from the backend rather than t
       loaded.config.define['import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS'],
       JSON.stringify('http://127.0.0.1:65531'),
     );
+    assert.equal(loaded.config.server.proxy['/huggingface'].target, 'http://127.0.0.1:65530');
   } finally {
     if (priorBackend === undefined) delete process.env.VITE_BACKEND_PROXY_TARGET;
     else process.env.VITE_BACKEND_PROXY_TARGET = priorBackend;
@@ -155,17 +156,96 @@ test('empty cache deletion is a no-op and does not contact the backend', async (
   assert.deepEqual(result.nodes, []);
 });
 
-test('GPU cleanup and Hugging Face deletion use their typed mutation methods', async () => {
+test('GPU cleanup and Hugging Face deletion use hash-bound planning and mutation methods', async () => {
   const requests = [];
   globalThis.fetch = async (url, init) => {
     requests.push({ url: String(url), init });
+    if (String(url).endsWith('/incomplete-cleanup-plan')) {
+      return jsonResponse({
+        error: false,
+        schemaVersion: 1,
+        kind: 'hf_incomplete_cleanup_plan',
+        files: [],
+        eligibleFileCount: 0,
+        eligibleBytes: 0,
+        blockers: [],
+        canCleanup: false,
+        planHash: 'sha256:partial-plan',
+      });
+    }
+    if (String(url).includes('/deletion-plan')) {
+      return jsonResponse({
+        error: false,
+        schemaVersion: 1,
+        kind: 'hf_cache_deletion_plan',
+        revisionHashes: ['a'.repeat(40)],
+        targets: [],
+        canonicalDependencies: [],
+        savedWorkflowDependencies: [],
+        dependencyPolicy: 'protect_dependencies',
+        warnings: [],
+        blockers: [],
+        canDelete: true,
+        planHash: 'sha256:plan',
+      });
+    }
+    if (init?.method === 'DELETE' && /\/hf_cache\/[0-9a-f]{40}$/.test(String(url))) {
+      return jsonResponse({
+        error: false,
+        deleted: true,
+        plan: { planHash: 'sha256:plan' },
+        runtimeRelease: {
+          released: { nodes: 1, models: 1, diffusers_components: 0, offload_files: 0 },
+          allocatorTrimmed: true,
+          errors: [],
+        },
+      });
+    }
     return jsonResponse({ error: false, message: 'Done.' });
   };
 
   await actionsModule.cleanupGpuMemory();
-  await actionsModule.deleteHfCacheEntry('repo/hash with spaces');
+  await actionsModule.fetchHfCacheDeletionPlan('a'.repeat(40));
+  await actionsModule.deleteHfCacheEntry('a'.repeat(40), 'sha256:plan');
+  await actionsModule.fetchHfCacheDeletionPlan('a'.repeat(40), true);
+  await actionsModule.deleteHfCacheEntry('a'.repeat(40), 'sha256:plan', true);
+  await actionsModule.fetchHfIncompleteCleanupPlan();
+  await actionsModule.cleanupHfIncompleteFiles('sha256:partial-plan');
   assert.match(requests[0].url, /\/runtime\/gpu_cleanup$/);
   assert.equal(requests[0].init.method, 'POST');
-  assert.match(requests[1].url, /\/hf_cache\/repo%2Fhash%20with%20spaces$/);
-  assert.equal(requests[1].init.method, 'DELETE');
+  assert.match(requests[1].url, new RegExp(`/hf_cache/${'a'.repeat(40)}/deletion-plan$`));
+  assert.equal(requests[1].init.method, undefined);
+  assert.match(requests[2].url, new RegExp(`/hf_cache/${'a'.repeat(40)}$`));
+  assert.equal(requests[2].init.method, 'DELETE');
+  assert.deepEqual(JSON.parse(requests[2].init.body), { planHash: 'sha256:plan' });
+  assert.match(requests[3].url, new RegExp(`/hf_cache/${'a'.repeat(40)}/deletion-plan\\?allow_redownload=true$`));
+  assert.equal(requests[3].init.method, undefined);
+  assert.match(requests[4].url, new RegExp(`/hf_cache/${'a'.repeat(40)}$`));
+  assert.equal(requests[4].init.method, 'DELETE');
+  assert.deepEqual(JSON.parse(requests[4].init.body), { planHash: 'sha256:plan', allowRedownload: true });
+  assert.match(requests[5].url, /\/hf_cache\/incomplete-cleanup-plan$/);
+  assert.equal(requests[5].init.method, undefined);
+  assert.match(requests[6].url, /\/hf_cache\/incomplete-cleanup$/);
+  assert.equal(requests[6].init.method, 'DELETE');
+  assert.deepEqual(JSON.parse(requests[6].init.body), { planHash: 'sha256:partial-plan' });
+});
+
+test('Hugging Face deletion rejects malformed runtime-release receipts', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      error: false,
+      deleted: true,
+      plan: { planHash: 'sha256:plan' },
+      runtimeRelease: {
+        released: { nodes: -1, models: 0, diffusers_components: 0, offload_files: 0 },
+        allocatorTrimmed: 'yes',
+        errors: [],
+      },
+    });
+
+  await assert.rejects(actionsModule.deleteHfCacheEntry('a'.repeat(40), 'sha256:plan'), (error) => {
+    assert.equal(error.kind, 'invalid_payload');
+    assert.match(error.message, /deletion receipt is invalid/);
+    return true;
+  });
 });

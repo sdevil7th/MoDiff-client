@@ -14,15 +14,20 @@ import {
   resolveLiveProofConfig,
 } from './live-qwen-proof.mjs';
 import {
+  backendSourceEvidence,
   canonicalGraphIdentity,
   compareRunProvenance,
   createRunProvenance,
+  executionReceiptIdentity,
   executionPlanIdentity,
   modelSetIdentity,
   normalizeBackendRuntime,
   resolvedModelRepoFromOutput,
   resolvedModelReposFromOutput,
+  selectBackendRuntimeFingerprintEvidence,
   selectInstalledModelIdentity,
+  sha256Value,
+  validateRunProvenance,
 } from './live-proof-provenance.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -46,6 +51,40 @@ test('execution identity ignores admission-proof status while locking the actual
 
   assert.equal(before.hash, after.hash);
   assert.equal(before.plan.autoResourceProofStatus, undefined);
+});
+
+test('retained Expert execution identity is recovered only from agreeing executed Diffusers resource nodes', () => {
+  const graph = retainedExpertGraph();
+  const recovered = executionPlanIdentity(graph).plan;
+
+  assert.equal(recovered.source, 'executed-expert-diffusers-graph-v1');
+  assert.equal(recovered.modelType, 'QwenImageModularPipeline');
+  assert.equal(recovered.modelRepo, 'Qwen/Qwen-Image-2512');
+  assert.equal(recovered.pipelineClass, 'QwenImagePipeline');
+  assert.equal(recovered.dtype, 'bfloat16');
+  assert.equal(recovered.resourceMode, 'expert');
+  assert.equal(recovered.quantizationMode, 'none');
+  assert.equal(recovered.offloadMode, 'none');
+  assert.equal(
+    executionReceiptIdentity(
+      { runtimeMeasurement: { elapsedSeconds: 444.7, peakAllocatedBytes: 58_395_649_536 } },
+      recovered,
+    ).resourceCandidateId,
+    'manual-resource-v1:QwenImageModularPipeline|bfloat16|none|none',
+  );
+
+  const mismatchedForm = structuredClone(graph);
+  mismatchedForm.runtimeHints.workflowSnapshot.studioForm.dtype = 'float16';
+  assert.deepEqual(executionPlanIdentity(mismatchedForm).plan, {});
+
+  const disconnectedRecipe = structuredClone(graph);
+  disconnectedRecipe.nodes.loader.params.execution_recipe.sourceId = 'missing';
+  assert.deepEqual(executionPlanIdentity(disconnectedRecipe).plan, {});
+
+  const ambiguous = structuredClone(graph);
+  ambiguous.nodes.loaderTwo = structuredClone(ambiguous.nodes.loader);
+  ambiguous.paths[0].push('loaderTwo');
+  assert.deepEqual(executionPlanIdentity(ambiguous).plan, {});
 });
 
 test('default live Qwen proof requests the locked template without diagnostic overrides', () => {
@@ -108,6 +147,57 @@ test('live proof rejects missing or changing backend source identity', () => {
     /changed while the live proof was running/,
   );
   assert.match(backendSourceDriftBlocker(stable, null), /could not be captured/);
+});
+
+test('source evidence binds both filesystem snapshots to the executing worker startup claim', () => {
+  const sourceFiles = [{ path: 'main.py', sha256: 'c'.repeat(64) }];
+  const source = {
+    gitCommit: 'a'.repeat(40),
+    fingerprint: sha256Value('backend-source-v1', { gitCommit: 'a'.repeat(40), files: sourceFiles }),
+    files: sourceFiles,
+  };
+  const runtimeFingerprint = {
+    backendSource: {
+      schemaVersion: 1,
+      claim: 'process_start_backend_source_identity',
+      gitCommit: source.gitCommit,
+      fingerprint: source.fingerprint,
+      fileCount: 1,
+      capturedAt: '2026-09-02T10:00:00Z',
+    },
+  };
+
+  const exact = backendSourceEvidence({ before: source, after: structuredClone(source), runtimeFingerprint });
+  assert.deepEqual(exact.identity, source);
+  assert.deepEqual(exact.blockers, []);
+
+  const staleWorker = structuredClone(runtimeFingerprint);
+  staleWorker.backendSource.fingerprint = `sha256:backend-source-v1:${'d'.repeat(64)}`;
+  const stale = backendSourceEvidence({
+    before: source,
+    after: structuredClone(source),
+    runtimeFingerprint: staleWorker,
+  });
+  assert.equal(stale.identity, null);
+  assert.match(stale.blockers.join(' '), /worker loaded a different backend source identity/u);
+
+  const changedAfter = structuredClone(source);
+  changedAfter.fingerprint = `sha256:backend-source-v1:${'e'.repeat(64)}`;
+  assert.match(
+    backendSourceEvidence({ before: source, after: changedAfter, runtimeFingerprint }).blockers.join(' '),
+    /source files changed/u,
+  );
+  assert.match(
+    backendSourceEvidence({ before: source, after: source, runtimeFingerprint: null }).blockers.join(' '),
+    /did not emit a valid process-start/u,
+  );
+
+  const corruptedInventory = structuredClone(source);
+  corruptedInventory.files[0].sha256 = 'f'.repeat(64);
+  assert.match(
+    backendSourceEvidence({ before: corruptedInventory, after: source, runtimeFingerprint }).blockers.join(' '),
+    /fingerprint does not match its retained file inventory/u,
+  );
 });
 
 test('live proof waits for attributed media or graph completion after task completion', () => {
@@ -244,9 +334,27 @@ function syntheticApiGraph(ids = ['loader-a', 'generate-a', 'preview-a']) {
   };
 }
 
+const syntheticBackendSourceFiles = [{ path: 'main.py', sha256: 'c'.repeat(64) }];
+const syntheticBackendSource = {
+  gitCommit: 'a'.repeat(40),
+  fingerprint: sha256Value('backend-source-v1', {
+    gitCommit: 'a'.repeat(40),
+    files: syntheticBackendSourceFiles,
+  }),
+  files: syntheticBackendSourceFiles,
+};
+
 function syntheticRuntime(freeBytes = 12) {
   return {
     fingerprint: `sha256:volatile-${freeBytes}`,
+    backendSource: {
+      schemaVersion: 1,
+      claim: 'process_start_backend_source_identity',
+      gitCommit: syntheticBackendSource.gitCommit,
+      fingerprint: syntheticBackendSource.fingerprint,
+      fileCount: syntheticBackendSource.files.length,
+      capturedAt: '2026-09-02T10:00:00Z',
+    },
     packages: {
       python: '3.12.11',
       diffusers: '0.39.0.dev0',
@@ -264,6 +372,72 @@ function syntheticRuntime(freeBytes = 12) {
     },
     work_dir: 'C:/MoDiff/data',
     data_dir: 'C:/MoDiff/data',
+  };
+}
+
+function retainedExpertGraph() {
+  const quant = 'quant';
+  const recipe = 'recipe';
+  const loader = 'loader';
+  return {
+    nodes: {
+      [quant]: {
+        module: 'modules.DiffusersRuntime',
+        action: 'PipelineQuantizationConfigV2',
+        params: {
+          backend: { value: 'none' },
+          components: { value: ['transformer'] },
+          dtype: { value: 'bfloat16' },
+        },
+      },
+      [recipe]: {
+        module: 'modules.DiffusersRuntime',
+        action: 'DiffusersExecutionRecipe',
+        params: {
+          quantization_config: { sourceId: quant, sourceKey: 'quantization_config' },
+          device: { value: 'cuda:0' },
+          device_map: { value: 'none' },
+          offload_mode: { value: 'none' },
+          attention_backend: { value: 'auto' },
+          regional_compile: { value: false },
+          denoiser_cache: { value: 'none' },
+          channels_last: { value: false },
+          layerwise_casting: { value: false },
+        },
+      },
+      [loader]: {
+        module: 'modules.DiffusersImage',
+        action: 'LoadPipeline',
+        params: {
+          model_id: { value: { source: 'hub', value: 'Qwen/Qwen-Image-2512' } },
+          pipeline_class: { value: 'QwenImagePipeline' },
+          dtype: { value: 'bfloat16' },
+          device: { value: 'cuda:0' },
+          quantization_mode: { value: 'none' },
+          quantized_components: { value: [] },
+          execution_recipe: { sourceId: recipe, sourceKey: 'execution_recipe' },
+          device_map: { value: 'none' },
+          auto_offload: { value: false },
+          offload_mode: { value: 'none' },
+        },
+      },
+    },
+    paths: [[quant, recipe, loader]],
+    runtimeHints: {
+      clientRunId: 'retained-run',
+      workflowSnapshot: {
+        studioForm: {
+          modelType: 'QwenImageModularPipeline',
+          resourceMode: 'expert',
+          dtype: 'bfloat16',
+          quantizationMode: 'none',
+          offloadMode: 'none',
+          autoOffload: false,
+          device: 'cuda:0',
+        },
+        studioGraphBinding: { modelType: 'QwenImageModularPipeline' },
+      },
+    },
   };
 }
 
@@ -323,7 +497,7 @@ function syntheticProvenance(overrides = {}) {
     inputArtifacts: overrides.inputArtifacts ?? [],
     runtimeFingerprint: overrides.runtimeFingerprint ?? syntheticRuntime(),
     deterministicMode: graph.deterministicMode,
-    backendSource: { gitCommit: 'backend-commit', fingerprint: 'sha256:backend-source', files: [] },
+    backendSource: syntheticBackendSource,
     outputAnalysis: {
       analyses: [
         {
@@ -411,6 +585,21 @@ test('stable runtime lock uses applied deterministic settings over a stale hardw
   );
 });
 
+test('runtime evidence keeps the complete graph-completion payload over compact queue fingerprints', () => {
+  const completion = syntheticRuntime(9_999_999);
+  const earlier = syntheticRuntime(12);
+  const selected = selectBackendRuntimeFingerprintEvidence([completion, earlier, completion.fingerprint]);
+
+  assert.equal(selected, completion);
+  assert.equal(normalizeBackendRuntime(selected).lockFingerprint, normalizeBackendRuntime(earlier).lockFingerprint);
+  assert.equal(selectBackendRuntimeFingerprintEvidence([completion.fingerprint]), null);
+  assert.equal(selectBackendRuntimeFingerprintEvidence([completion, 'sha256:unrelated']), null);
+
+  const changedRuntime = syntheticRuntime(12);
+  changedRuntime.packages.diffusers = '0.40.0.dev0';
+  assert.equal(selectBackendRuntimeFingerprintEvidence([completion, changedRuntime]), null);
+});
+
 test('resolved model identity follows the graph artifact actually executed', () => {
   const output = { apiGraphSnapshot: syntheticApiGraph() };
   assert.equal(resolvedModelRepoFromOutput(output), 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
@@ -475,6 +664,10 @@ test('duplicate provenance compares graph, runtime, model, template, and decoded
   assert.equal(comparison.candidateExact, true);
   assert.equal(comparison.comparedFields, 25);
 
+  const missingWorkerAttestation = structuredClone(baseline);
+  delete missingWorkerAttestation.runtime.backendSourceAttestation;
+  assert.match(validateRunProvenance(missingWorkerAttestation).join(' '), /backendSourceAttestation/u);
+
   const changedOutput = compareRunProvenance(
     baseline,
     syntheticProvenance({ decodedSha256: 'sha256:decoded-rgba:different', width: 768 }),
@@ -501,7 +694,7 @@ test('audio provenance validates sample-domain identity without fake image dimen
       modelIdentity: syntheticModel,
       runtimeFingerprint: syntheticRuntime(),
       deterministicMode: graph.deterministicMode,
-      backendSource: { gitCommit: 'backend-commit', fingerprint: 'sha256:backend-source', files: [] },
+      backendSource: syntheticBackendSource,
       outputAnalysis: {
         analyses: [
           {

@@ -2,6 +2,7 @@ import type {
   StudioPreset,
   StudioTemplate,
   StudioTemplateExample,
+  StudioTemplateId,
   StudioTemplateIntentGroup,
   StudioTemplateLockedSettings,
   StudioTemplateMediaSlot,
@@ -11,6 +12,7 @@ import type {
 } from './types';
 import {
   DEFAULT_STUDIO_FORM,
+  MINIMAX_MUSIC3_REVISION,
   QWEN_CONTROLNET_REQUIREMENT,
   QWEN_IMAGE_EDIT_INPAINT_CONTRACT,
   QWEN_LOW_VRAM_OFFLOAD_MODE,
@@ -1122,7 +1124,7 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
     '',
   ],
   [
-    'cinematic_octane, 3D Portrait, 3d render of one original near-future deep-sea salvage engineer standing inside a compact pressure-dock airlock. Show a weathered woman in her late thirties wearing a graphite diving suit with an oxidized-brass pressure collar, one transparent helmet carried under her left arm, a small scar through the right eyebrow, damp short black hair, and no logo or lettering. Frame a vertical waist-up 50 mm portrait from slightly below eye level. Place the engineer on the right third, with a circular steel hatch, wet cable conduits, one amber maintenance lamp and a glimpse of dark ocean through a thick round window behind her. Use cinematic Octane-style physically based materials, ray-traced reflections, restrained volumetric haze, crisp suit microtexture, realistic skin, a cool cyan environment key, warm amber rim light and deep but readable contrast. Keep the low-strength 3D appearance subtle: premium cinematic character visualization rather than plastic toy styling. No extra person, duplicate limb, deformed hand, helmet on the head, floating equipment, readable text, watermark or franchise character.',
+    'cinematic_octane, 3D Portrait, 3d render. One adult female deep-sea engineer in a centered chest-up portrait, with her complete head, both shoulders, and the full broad pressure collar visible inside the frame. Sharp focus on both symmetrical eyes. Damp short black hair with individual strands, natural skin pores, and one thin healed scar crossing only her right eyebrow; intact skin, no blood, bruise, swelling, or open wound. Plain graphite diving suit with crisp woven fabric and one broad oxidized-brass pressure collar with fine brushed-metal microtexture. Controlled cinematic CG depth, cool cyan key light, restrained warm amber rim light, realistic material response, no text, logo, watermark, or extra person.',
     '',
   ],
   [
@@ -1236,6 +1238,14 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
   [
     'Source contract: preserve the photographed product identity, silhouette, proportions, controls, logo spelling, camera angle, crop, background geometry, and depth of field. Change only the tabletop setting into a quiet rain-lit hotel desk with dark walnut, one folded linen napkin, and a soft window reflection; keep the product fixed in place. Match source perspective, key-light direction, exposure, contact shadow, reflections, texture scale, grain, and occlusion so the edit reads as one photograph. Do not redesign the product, add controls, move branding, duplicate objects, change the lens, create halos, or alter unrelated details.',
     'identity drift, changed product geometry, misspelled branding, moved controls, duplicate product, changed camera angle, pasted edge, halo, mismatched light, floating base, clutter, blur',
+  ],
+  [
+    "Documentary still life on a field botanist's worn oak workbench beside a north-facing greenhouse window. Arrange an open linen specimen journal, three pressed ferns, brass magnifier, cotton gloves, and an unbranded amber bottle with accurate contact shadows. Eye-level 50 mm composition; soft overcast light from camera left; restrained timber bounce, paper fibers, leaf veins, glass reflections, and negative space. Keep it photographic and grounded, without people, labels, logos, or readable text.",
+    'illustration, CGI, plastic materials, floating objects, duplicate tools, malformed leaves, illegible writing, logo, watermark, harsh glow, excessive blur',
+  ],
+  [
+    'Relight the source workbench photo to blue hour. Preserve composition, camera, objects and scale; match reflections and contact shadows.',
+    'moved objects, duplicates, warped journal, floating bottle, wrong shadows, CGI',
   ],
 ];
 
@@ -3949,7 +3959,65 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
   };
 }
 
-const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow);
+const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
+  ...BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow),
+  // Keep new authored recipes independent of the legacy positional input/poster
+  // indexes. This recipe has no source media and no published example yet.
+  withTemplateRecipeDefaults(
+    {
+      id: 'minimax_music3_chamber_pop',
+      label: 'MiniMax Music 3 (Modular Cluster) — Text to Audio: Leave a Little Light',
+      mode: 'text_to_audio',
+      modelType: 'MiniMaxMusic3ModularPipeline',
+      category: 'audio_generation',
+      tags: ['audio', 'music', 'minimax', 'lyrics', 'chamber-pop'],
+      difficulty: 'intermediate',
+      requiredBackendCapabilities: [
+        'modules.ModularDiffusers.ModelsLoader',
+        'modules.ModularDiffusers.WorkflowSemanticGeneration',
+        'modules.ModularDiffusers.WorkflowDenoise',
+        'modules.ModularDiffusers.WorkflowDecodeAudio',
+        'modules.Audio.Export',
+      ],
+      vramEstimate: '27 GB weights plus execution memory; offload support is hardware-dependent',
+      runtimeEstimate: 'About 9–12 min for the tested 60-second recipe on the development ROCm host',
+      description:
+        'An original verse/chorus song with clear lead vocals, acoustic instruments and a quiet resolving outro.',
+      userGoal:
+        'Compose an original lyric song, then edit its semantic-generation and denoising stages in the visible graph.',
+      presetId: 'audio_balanced',
+      example: {
+        mediaType: 'audio',
+        status: 'unverified',
+        lockedSeed: 20260908,
+        modelRevision: MINIMAX_MUSIC3_REVISION,
+        thumbnailPath: '/assets/minimax-chamber-pop.card-poster.png',
+        lockedSettings: {
+          randomSeed: false,
+          audioDuration: 60,
+          steps: 30,
+          guidanceScale: 1,
+          dtype: 'bfloat16',
+          quantizationMode: 'none',
+          resourceMode: 'expert',
+          autoOffload: true,
+          offloadMode: 'model_cpu',
+          lyrics:
+            '[verse]\nSilver rails beneath the rain\nEvery window holds a flame\nI have carried maps of home\nThrough the miles I walked alone\n[chorus]\nLeave a little light for me\nWhere the river meets the sea\nThrough the dark the wheels will sing\nMorning waits on folded wings\n[outro]\nLeave a little light for me\nI am closer than I seem',
+        },
+        expectedOutput: { durationSeconds: 60, sampleRate: 44100 },
+        runtimeEstimate: 'About 9–12 min on the tested ROCm host',
+        notes:
+          'Duration is an upper bound; semantic generation may finish earlier. Local testing is not listening or publication approval.',
+      },
+    },
+    [
+      'An original English chamber-pop song, 96 BPM in D major, intimate clear female lead vocal. Begin with fingerpicked acoustic guitar and soft felt piano; add warm upright bass and brushed drums during the verse. The chorus opens into close three-part vocal harmonies, a lyrical cello countermelody and restrained tambourine. A brief instrumental answer follows the chorus, then the final line resolves gently with piano and cello. Hopeful late-night train journey atmosphere, natural breathing, intelligible lyrics, spacious stereo acoustic production, balanced dynamics, no audience or spoken introduction.',
+      '',
+    ],
+    -1,
+  ),
+];
 
 // Failed qualification contracts stay available to planning/reporting code, but
 // never appear as runnable browser templates. A template returns to the browser
@@ -3961,6 +4029,10 @@ export const PLANNING_STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEM
 export const STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEMPLATES.filter(
   (template) => template.example?.status !== 'blocked',
 );
+
+export function getStudioTemplateLoraBaseModel(templateId: StudioTemplateId | null | undefined) {
+  return STUDIO_TEMPLATES.find((template) => template.id === templateId)?.workflowBlockSettings?.lora?.baseModel;
+}
 
 export function getPreset(id: string | undefined) {
   return STUDIO_PRESETS.find((preset) => preset.id === id);

@@ -6,6 +6,8 @@ function scopeLabel(policy: ResolvedModelUsagePolicy) {
   if (policy.useScope === 'personal_noncommercial') return 'Personal / non-commercial';
   if (policy.useScope === 'research_academic_only') return 'Research / academic only';
   if (policy.useScope === 'noncommercial_only') return 'Restricted model license';
+  if (policy.useScope === 'license_review_required') return 'Product and user review required';
+  if (policy.useScope === 'rights_undetermined') return 'No weight license declared';
   return 'Usage terms';
 }
 
@@ -18,15 +20,17 @@ export function TemplateUsageTermsDialog({
 }: {
   open: boolean;
   policies: readonly ResolvedModelUsagePolicy[];
-  action: 'create' | 'install';
+  action: 'create' | 'install' | 'run';
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const isModelRun = action === 'run';
+  const hasUndeterminedRights = policies.some((policy) => policy.useScope === 'rights_undetermined');
   return (
     <ModiffDialog
       open={open}
       onClose={onCancel}
-      testId="template-usage-terms-dialog"
+      testId={isModelRun ? 'model-usage-terms-dialog' : 'template-usage-terms-dialog'}
       title={
         <span className="inline-flex items-center gap-2">
           <AlertTriangle aria-hidden="true" className="text-hf-yellow" size={18} />
@@ -37,17 +41,28 @@ export function TemplateUsageTermsDialog({
       footer={
         <>
           <ModiffButton onClick={onCancel}>Cancel</ModiffButton>
-          <ModiffButton tone="primary" onClick={onConfirm} data-testid="template-usage-terms-confirm">
-            I have reviewed and agree — {action === 'install' ? 'Install' : 'Create graph'}
+          <ModiffButton
+            tone="primary"
+            onClick={onConfirm}
+            data-testid={isModelRun ? 'model-usage-terms-confirm' : 'template-usage-terms-confirm'}
+          >
+            {isModelRun ? 'I acknowledge' : hasUndeterminedRights ? 'I understand' : 'I have reviewed and agree'} —{' '}
+            {action === 'install' ? 'Install' : action === 'run' ? 'Run' : 'Create graph'}
           </ModiffButton>
         </>
       }
     >
       <div className="grid gap-3">
         <p className="text-sm leading-5 text-modiff-subtle-text">
-          This template uses {policies.length} model {policies.length === 1 ? 'dependency' : 'dependencies'} with usage
-          restrictions. Review the original terms before{' '}
-          {action === 'install' ? 'installing its models' : 'creating the graph'}.
+          This {isModelRun ? 'model run' : 'template'} uses {policies.length} model{' '}
+          {policies.length === 1 ? 'dependency' : 'dependencies'} with usage restrictions. Review the original terms
+          before{' '}
+          {action === 'install'
+            ? 'installing its models'
+            : action === 'run'
+              ? 'running the workflow'
+              : 'creating the graph'}
+          .
         </p>
         <div className="grid gap-2">
           {policies.map((policy) => (

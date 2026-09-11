@@ -8,6 +8,7 @@ const liveBackendUrl =
   process.env.MODIFF_LIVE_BACKEND_URL ||
   process.env.MODIFF_SERVER ||
   (isLiveBackendRun ? 'http://127.0.0.1:8088' : 'http://127.0.0.1:65530');
+const isLongRunningQualification = process.env.MODIFF_LONG_RUNNING_QUALIFICATION === '1';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -22,18 +23,26 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --host 127.0.0.1 --port ${mockFrontendPort}`,
     url: `http://127.0.0.1:${mockFrontendPort}`,
-    reuseExistingServer: false,
+    // Local/manual regressions can target the exact long-lived frontend that a
+    // developer is viewing instead of silently starting a second Vite process.
+    reuseExistingServer: process.env.MODIFF_REUSE_FRONTEND_SERVER === '1',
     timeout: 120 * 1000,
     env: {
       VITE_BACKEND_PROXY_TARGET: liveBackendUrl,
+      MODIFF_VITE_CACHE_DIR: `node_modules/.vite-playwright-${mockFrontendPort}`,
+      MODIFF_GALLERY_STABLE: '1',
     },
   },
   use: {
     ...devices['Desktop Chrome'],
     baseURL: `http://127.0.0.1:${mockFrontendPort}`,
     channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
-    trace: process.env.CI ? 'retain-on-first-failure' : 'retain-on-failure',
+    // Model qualification can keep a page open for tens of minutes. Capturing
+    // every frame and network resource during that time creates gigabytes of
+    // disposable files; the tests already stage compact screenshots, receipts,
+    // and generated media in MODIFF_REVIEW_OUTPUT_DIR.
+    trace: isLongRunningQualification ? 'off' : process.env.CI ? 'retain-on-first-failure' : 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: process.env.CI ? 'retain-on-first-failure' : 'retain-on-failure',
+    video: isLongRunningQualification ? 'off' : process.env.CI ? 'retain-on-first-failure' : 'retain-on-failure',
   },
 });

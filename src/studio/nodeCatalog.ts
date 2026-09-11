@@ -1,3 +1,4 @@
+import { runtimeNodeIdentityV2 } from './nodeLibraryAuditV2';
 import type { NodeData } from '../stores/useNodeStore';
 
 export type NodeCatalogVisibility = 'essential' | 'advanced' | 'experimental' | 'internal';
@@ -30,6 +31,8 @@ export type NodeCatalogEntry = {
   acceleratorStrategy?: string;
   specializedReason?: string;
   node: NodeData;
+  groupPath: string[];
+  aliases?: string[];
 };
 
 const SURFACE_CATEGORY_ORDER: NodeSurfaceCategory[] = [
@@ -53,6 +56,7 @@ const ESSENTIAL_NODE_KEYS = new Set([
   'modules.DiffusersImage.LoadPipeline',
   'modules.DiffusersAudio.LoadPipeline',
   'modules.DiffusersImage.Generate',
+  'modules.DiffusersImage.UnconditionalGenerate',
   'modules.DiffusersImage.Edit',
   'modules.DiffusersImage.Inpaint',
   'modules.DiffusersImage.ControlGenerate',
@@ -65,6 +69,8 @@ const ESSENTIAL_NODE_KEYS = new Set([
   'modules.DiffusersVideo.Generate',
   'modules.DiffusersVideo.GenerateVideoAudio',
   'modules.DiffusersVideo.GenerateSequence',
+  'modules.DiffusersThreeD.LoadPipeline',
+  'modules.DiffusersThreeD.GenerateRenderedArtifact',
   'modules.VideoConditioning.ReferenceImages',
   'modules.Audio.Load',
   'modules.Audio.FitDuration',
@@ -83,6 +89,7 @@ const FACADE_LABELS: Record<string, string> = {
   'modules.DiffusersImage.LoadPipeline': 'Load pipeline',
   'modules.DiffusersAudio.LoadPipeline': 'Load pipeline',
   'modules.DiffusersImage.Generate': 'Generate image',
+  'modules.DiffusersImage.UnconditionalGenerate': 'Sample image',
   'modules.DiffusersImage.Edit': 'Edit image',
   'modules.DiffusersImage.Inpaint': 'Inpaint',
   'modules.DiffusersImage.ControlGenerate': 'Generate image',
@@ -90,6 +97,8 @@ const FACADE_LABELS: Record<string, string> = {
   'modules.DiffusersAudio.Generate': 'Generate audio',
   'modules.DiffusersVideo.GenerateVideoAudio': 'Generate video + audio',
   'modules.DiffusersVideo.GenerateSequence': 'Generate video sequence',
+  'modules.DiffusersThreeD.LoadPipeline': 'Load 3D pipeline',
+  'modules.DiffusersThreeD.GenerateRenderedArtifact': 'Render 3D orbit',
   'modules.VideoConditioning.ReferenceImages': 'Reference images',
   'modules.Audio.Load': 'Load audio',
   'modules.Audio.FitDuration': 'Fit audio duration',
@@ -116,14 +125,14 @@ function textIncludesAny(text: string, values: string[]) {
 
 function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
   const text = `${key} ${node.category} ${node.label}`.toLowerCase();
+  if (textIncludesAny(text, ['adapter', 'lora'])) return 'Adapters';
   if (textIncludesAny(text, ['export', 'save'])) return 'Export';
   if (textIncludesAny(text, ['preview', 'display'])) return 'Preview';
   if (textIncludesAny(text, ['loadpipeline', 'modelsloader', 'loader', 'load model', 'load'])) return 'Load';
   if (textIncludesAny(text, ['generate', 'sampler', 'denoise', 'decode', 'pipeline'])) return 'Generate';
   if (textIncludesAny(text, ['inpaint', 'outpaint', 'edit', 'mask', 'color'])) return 'Edit';
   if (textIncludesAny(text, ['control', 'conditioning', 'encode', 'embedding', 'prompt'])) return 'Condition';
-  if (textIncludesAny(text, ['adapter', 'lora'])) return 'Adapters';
-  if (textIncludesAny(text, ['audio', 'ace'])) return 'Audio';
+  if (text.includes('audio') || /\bace(?:[-_ ]?step)?\b/u.test(text)) return 'Audio';
   if (textIncludesAny(text, ['video', 'wan'])) return 'Video';
   if (textIncludesAny(text, ['image', 'preview'])) return 'Image';
   if (textIncludesAny(text, ['text'])) return 'Text';
@@ -150,6 +159,7 @@ function runtimeKindForNode(node: NodeData, key: string): NodeRuntimeKind {
 
 function normalizeCatalogLabel(node: NodeData, key: string) {
   if (FACADE_LABELS[key]) return FACADE_LABELS[key];
+  if (node.module === 'modules.HuggingFaceTransformers') return node.label || node.action;
   const text = `${key} ${node.category} ${node.label}`.toLowerCase();
   if (textIncludesAny(text, ['loadpipeline'])) return 'Load pipeline';
   if (textIncludesAny(text, ['export', 'save'])) return 'Export';
@@ -157,7 +167,7 @@ function normalizeCatalogLabel(node: NodeData, key: string) {
     return textIncludesAny(text, ['text']) ? 'Preview text' : 'Preview';
   if (textIncludesAny(text, ['inpaint', 'outpaint', 'edit'])) return 'Edit image';
   if (textIncludesAny(text, ['generate'])) {
-    if (textIncludesAny(text, ['audio', 'ace'])) return 'Generate audio';
+    if (text.includes('audio') || /\bace(?:[-_ ]?step)?\b/u.test(text)) return 'Generate audio';
     if (textIncludesAny(text, ['video', 'wan'])) return 'Generate video';
     return 'Generate image';
   }
@@ -188,22 +198,58 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
     acceleratorStrategy: runtimeKind === 'diffusers_accelerated' ? 'accelerated Diffusers strategy' : undefined,
     specializedReason,
     node,
+    groupPath: nodeBrowsePath(node, categoryFromNode(node, key)),
   };
 }
 
 export function nodeCatalogEntries(nodes: Record<string, NodeData>) {
-  const entries = Object.entries(nodes).map(([key, node]) => getNodeCatalogEntry(node, key));
-  const seenFacadeIds = new Set<string>();
-
-  return entries.filter((entry) => {
-    if (entry.visibility !== 'essential') return true;
-    const facadeId = entry.key;
-    if (seenFacadeIds.has(facadeId)) return false;
-    seenFacadeIds.add(facadeId);
-    return true;
-  });
+  const unique = new Map<string, NodeCatalogEntry>();
+  for (const [key, node] of Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))) {
+    const identity = runtimeNodeIdentityV2(node);
+    const previous = unique.get(identity);
+    if (previous) previous.aliases = [...(previous.aliases ?? []), key, node.label ?? ''];
+    else unique.set(identity, getNodeCatalogEntry(node, key));
+  }
+  return [...unique.values()];
 }
 
 export function compareNodeSurfaceCategories(left: NodeSurfaceCategory, right: NodeSurfaceCategory) {
   return SURFACE_CATEGORY_ORDER.indexOf(left) - SURFACE_CATEGORY_ORDER.indexOf(right) || left.localeCompare(right);
+}
+
+function nodeBrowsePath(node: NodeData, operation: NodeSurfaceCategory) {
+  const module = node.module.toLowerCase();
+  const category = (node.category ?? '').toLowerCase();
+  let modality = 'Data & Utilities';
+  if (/threed|three_d|3d/u.test(`${module} ${category}`)) modality = '3D';
+  else if (/audio|speech/u.test(`${module} ${category}`)) modality = 'Audio';
+  else if (/video/u.test(`${module} ${category}`)) modality = 'Video';
+  else if (/image|color/u.test(`${module} ${category}`)) modality = 'Image';
+  else if (/text|token|embedding/u.test(`${module} ${category}`)) modality = 'Text';
+  else if (/diffusers|model|loader|adapter|sampler/u.test(`${module} ${category}`)) modality = 'Models & Components';
+  else if (/transformers/u.test(module)) modality = 'Transformers';
+  const label = `${node.action} ${node.label}`.toLowerCase();
+  const role = /quantiz/u.test(label)
+    ? 'Quantization'
+    : /schedul|timestep/u.test(label)
+      ? 'Schedulers & Timesteps'
+      : /offload|device|memory|cache/u.test(label)
+        ? 'Memory & Execution'
+        : /resize|crop|pad|scale/u.test(label)
+          ? 'Resize & Crop'
+          : /filter|blur|sharpen/u.test(`${label} ${category}`)
+            ? 'Filters'
+            : /color|contrast|brightness/u.test(label)
+              ? 'Color'
+              : /mask/u.test(label)
+                ? 'Masks'
+                : operation === 'Utility' || operation === modality
+                  ? 'Operations'
+                  : operation;
+  return [modality, role];
+}
+
+export function nodeGroupForCatalogEntry(entry: NodeCatalogEntry, _expertMode: boolean) {
+  void _expertMode;
+  return entry.groupPath[0] ?? 'Data & Utilities';
 }

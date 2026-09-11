@@ -1,6 +1,7 @@
-import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
+import { Description, Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
 import { LoaderCircle, X } from 'lucide-react';
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { cx } from '../utils/classNames';
 import { modiffActionToneClasses, type ModiffActionTone } from './actionStyles';
 import { ModiffInput, type ModiffInputProps } from './controls';
@@ -160,47 +161,99 @@ export function ModiffProgress({
   );
 }
 
+export function ModiffStatusOverlay({
+  title,
+  children,
+  testId,
+}: {
+  title: ReactNode;
+  children: ReactNode;
+  testId?: string;
+}) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-modiff-dialog-backdrop/70 p-4"
+      data-testid={testId}
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <section className="w-full max-w-sm overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-surface shadow-modiff-node">
+        <h2 className="border-b border-modiff-border px-4 py-3 text-modiff-modal-title font-semibold text-modiff-text">
+          {title}
+        </h2>
+        <div className="p-4">{children}</div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 export function ModiffDialog({
   open,
   onClose,
   title,
+  description,
+  toolbar,
   children,
   footer,
   panelClassName,
   bodyClassName,
   testId,
+  dismissible = true,
+  closeLabel = 'Close',
 }: {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
+  description?: ReactNode;
+  toolbar?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   panelClassName?: string;
   bodyClassName?: string;
   testId?: string;
+  dismissible?: boolean;
+  closeLabel?: string;
 }) {
+  // Headless UI Dialog requires typeof open === 'boolean'. Keep this runtime
+  // coercion even when Terser represents boolean literals as integers.
+  const dialogOpen = Boolean(open);
+  const hasPanelWidth = /(?:^|\s)!?max-w-/u.test(panelClassName ?? '');
   return (
-    <Dialog open={open} onClose={onClose} className="relative z-50">
+    <Dialog open={dialogOpen} onClose={dismissible ? onClose : () => undefined} className="relative z-50">
       <DialogBackdrop className="fixed inset-0 bg-modiff-dialog-backdrop/70" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
           data-testid={testId}
+          tabIndex={dismissible ? undefined : 0}
           className={cx(
-            'max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-surface shadow-modiff-node',
+            'flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-surface shadow-modiff-node',
+            !hasPanelWidth && 'max-w-3xl',
             panelClassName,
           )}
         >
-          <header className="flex items-center justify-between gap-3 border-b border-modiff-border px-4 py-3">
-            <DialogTitle className="min-w-0 truncate text-modiff-modal-title font-semibold text-modiff-text">
-              {title}
-            </DialogTitle>
-            <ModiffIconButton label="Close" onClick={onClose}>
-              <X size={16} />
-            </ModiffIconButton>
+          <header className="flex shrink-0 items-start justify-between gap-3 border-b border-modiff-border bg-modiff-panel px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-modiff-modal-title font-semibold text-modiff-text">{title}</DialogTitle>
+              {description ? (
+                <Description className="mt-1 text-sm text-modiff-subtle-text">{description}</Description>
+              ) : null}
+            </div>
+            {dismissible ? (
+              <ModiffIconButton label={closeLabel} onClick={onClose}>
+                <X size={16} />
+              </ModiffIconButton>
+            ) : null}
           </header>
-          <div className={cx('max-h-[70vh] overflow-auto p-4', bodyClassName)}>{children}</div>
+          {toolbar ? <div className="shrink-0 border-b border-modiff-border bg-modiff-panel">{toolbar}</div> : null}
+          <div className={cx('min-h-0 overflow-auto overscroll-contain p-4', bodyClassName)} data-dialog-scroll-body>
+            {children}
+          </div>
           {footer ? (
-            <footer className="flex justify-end gap-2 border-t border-modiff-border px-4 py-3">{footer}</footer>
+            <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-modiff-border bg-modiff-panel px-4 py-3">
+              {footer}
+            </footer>
           ) : null}
         </DialogPanel>
       </div>

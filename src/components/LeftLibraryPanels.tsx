@@ -833,7 +833,11 @@ export function ModelsLibraryPanel() {
 
   const handleInstall = async (target: StudioAutoResourceInstallTarget) => {
     try {
-      await installHfModel(target.repo, sid, { repair: target.repair });
+      await installHfModel(target.repo, sid, {
+        repair: target.repair,
+        revision: target.revision,
+        files: target.files,
+      });
     } catch (error) {
       console.error(error);
     }

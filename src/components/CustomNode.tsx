@@ -24,6 +24,7 @@ import {
   Play,
   Power,
   RefreshCcw,
+  Save,
   Trash2,
   TriangleAlert,
 } from 'lucide-react';
@@ -62,6 +63,7 @@ import {
 } from '../ui/GraphMenuAction';
 import { executionProgressDetail } from '../studio/executionProgress';
 import type { ExecutionProgress } from '../studio/types';
+import BlockSaveDialogV2 from './BlockSaveDialogV2';
 
 const MAX_NODE_WIDTH = modiffLayout.maxNodeWidth;
 
@@ -123,6 +125,13 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const duplicateNode = useFlowStore((state) => state.duplicateNode);
   const toggleNodeCollapsed = useFlowStore((state) => state.toggleNodeCollapsed);
   const resetNodeSize = useFlowStore((state) => state.resetNodeSize);
+  // NodeProps.height is React Flow's latest measurement, not necessarily a
+  // user-authored size. Feeding it back into textarea minima changed natural
+  // content height inside React Flow's ResizeObserver delivery (110 -> 160),
+  // causing undelivered notifications. Only explicit canvas sizing opts in.
+  const hasTallExplicitSize = useFlowStore(
+    (state) => (state.nodes.find((candidate) => candidate.id === node.id)?.height ?? 0) > 360,
+  );
   const setNodeUiState = useFlowStore((state) => state.setNodeUiState);
   const [helpAnchor, setHelpAnchor] = useState<PanelAnchor | null>(null);
   const [issueAnchor, setIssueAnchor] = useState<PanelAnchor | null>(null);
@@ -140,12 +149,23 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const reactFlowStore = useStoreApi();
   const scheduleNodeLayoutSync = useNodeLayoutSync(node.id, nodeRef);
-  const validationSeverity = node.data.uiState?.validationSeverity;
-  const validationMessage = node.data.uiState?.validationMessage || node.data.uiState?.errorMessage;
+  const isClusterGraphProjection = node.data.huggingFaceClusterRole === 'execution';
+  const isBlockProjection = useFlowStore((state) => {
+    const ownerId = node.data.blockProjectionOwnerId;
+    const semanticNodeId = node.data.blockProjectionNodeId;
+    if (!ownerId || !semanticNodeId) return false;
+    const owner = state.nodes.find((candidate) => candidate.id === ownerId);
+    return Boolean(owner?.data.blockInstanceV2?.effectiveGraph.nodes.some(({ nodeId }) => nodeId === semanticNodeId));
+  });
+  const validationSeverity = isClusterGraphProjection ? undefined : node.data.uiState?.validationSeverity;
+  const validationMessage = isClusterGraphProjection
+    ? undefined
+    : node.data.uiState?.validationMessage || node.data.uiState?.errorMessage;
   const recentChangeLabel = node.data.uiState?.recentChangeLabel;
   const isError = validationSeverity === 'error';
   const isCollapsed = Boolean(node.data.uiState?.collapsed || node.data.minimized);
   const isDisabledForRun = Boolean(node.data.uiState?.disabled);
+  const showDisabledForRun = isDisabledForRun && !isClusterGraphProjection;
 
   const handleUpdateStore = useCallback(
     (param: string, value: unknown, key?: keyof NodeParams) => {
@@ -196,13 +216,19 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
 
   const handleRunFromNode = useCallback(async () => {
     closeContextMenu();
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false });
+    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false, targetNodeId: node.id });
     if (!validation.canRun || !sid) return;
     await coordinateGraphRun({ sid, targetNodeId: node.id });
   }, [closeContextMenu, isConnected, node.id, sid]);
 
   const handlePreviewBranch = useCallback(() => {
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false, showDialog: false });
+    const validation = validateCurrentRun({
+      sid,
+      isConnected,
+      includeStudio: false,
+      showDialog: false,
+      targetNodeId: node.id,
+    });
     if (!validation.canRun || !sid || !contextMenu) return;
     const apiGraph = useFlowStore.getState().exportGraph(sid, node.id);
     const nodeIds = Object.keys(apiGraph.nodes);
@@ -223,6 +249,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     void navigator.clipboard.writeText(`${node.id}\n${node.data.module}.${node.data.action}`);
     enqueueSnackbar('Node info copied', { variant: 'success', autoHideDuration: 1600 });
   }, [closeContextMenu, node.data.action, node.data.module, node.id]);
+
+  const [saveChoicesOpen, setSaveChoicesOpen] = useState(false);
 
   const onResizeStart = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -278,12 +306,13 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     <CustomNodeFrame
       ref={nodeRef}
       id={node.id}
+      parentNodeId={node.parentId}
       testId={`graph-node-action-${node.data.action}`}
       className={cx(
         normalizeDataType(`${node.data.module}_${node.data.action}`),
         normalizeDataType(node.data.module),
         dataTypeClass(node.data.category),
-        isDisabledForRun && 'opacity-60',
+        showDisabledForRun && 'opacity-60',
         recentChangeLabel && 'outline-hf-yellow border-hf-yellow shadow-modiff-panel',
       )}
       nodeStyle={style}
@@ -295,7 +324,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       <CustomNodeHeaderFrame headerColor={node.data.headerColor}>
         <div className="min-w-0 flex-1">
           <span className="block truncate text-sm font-bold">{label}</span>
-          {isDisabledForRun && <span className="block truncate text-xs text-hf-orange">Disabled for run export</span>}
+          {showDisabledForRun && <span className="block truncate text-xs text-hf-orange">Disabled for run export</span>}
           {recentChangeLabel && <span className="block truncate text-xs text-hf-yellow">{recentChangeLabel}</span>}
         </div>
         <div className="nodrag flex items-center gap-1">
@@ -359,9 +388,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           <div
             className={cx(
               'nowheel flex min-h-0 w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto bg-modiff-surface p-3 pb-2 text-modiff-text',
-              node.height && node.height > 360
-                ? '[&_.modiff-textarea-field]:min-h-40'
-                : '[&_.modiff-textarea-field]:min-h-[110px]',
+              hasTallExplicitSize ? '[&_.modiff-textarea-field]:min-h-40' : '[&_.modiff-textarea-field]:min-h-[110px]',
             )}
             data-testid={`node-scroll-body-${node.id}`}
           >
@@ -495,6 +522,18 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           >
             Duplicate
           </ContextMenuItem>
+          {isBlockProjection ? (
+            <ContextMenuItem
+              data-testid="node-menu-save-modular-subtree"
+              icon={<Save size={15} />}
+              onClick={() => {
+                closeContextMenu();
+                setSaveChoicesOpen(true);
+              }}
+            >
+              Save Block changes
+            </ContextMenuItem>
+          ) : null}
           <ContextMenuItem
             data-testid="node-menu-collapse-toggle"
             icon={isCollapsed ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
@@ -607,6 +646,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           </ModiffButton>
         </NodePopover>
       )}
+      {saveChoicesOpen ? <BlockSaveDialogV2 nodeId={node.id} onClose={() => setSaveChoicesOpen(false)} /> : null}
     </CustomNodeFrame>
   );
 });

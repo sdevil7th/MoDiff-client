@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,23 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Position, ReactFlowProvider } from '@xyflow/react';
 import { createServer } from 'vite';
+import {
+  closeWorkflowBrowser,
+  createWorkflowBrowserSessionGuard,
+  launchWorkflowBrowser,
+  parseWorkflowBrowserBatchSize,
+  shouldRecycleWorkflowBrowser,
+} from './workflow-library-browser-session.mjs';
+import {
+  createEphemeralWorkflowRouteHandler,
+  installEphemeralWorkflowStorage,
+} from './workflow-library-ephemeral-storage.mjs';
+import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
+import {
+  normalizePortableWorkflowDataReference,
+  normalizePortableWorkflowFieldState,
+} from './workflow-library-contract.mjs';
+import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -55,14 +73,17 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   connectionTypes = await server.ssrLoadModule('/src/theme/connectionTypes.ts');
   graphConnectionSurface = await server.ssrLoadModule('/src/ui/GraphConnectionSurface.tsx');
   graphBridge = await server.ssrLoadModule('/src/studio/graphBridge.ts');
   graphFinalization = await server.ssrLoadModule('/src/studio/graphFinalization.ts');
-  graphFixerModule = await server.ssrLoadModule('/src/studio/graphFixer.ts');
+  graphFixerModule = {
+    ...(await server.ssrLoadModule('/src/studio/graphFixer.ts')),
+    ...(await server.ssrLoadModule('/src/studio/graphFixMaterialization.ts')),
+  };
   graphControls = await server.ssrLoadModule('/src/ui/GraphControls.tsx');
   graphLayout = await server.ssrLoadModule('/src/workflow/graphLayout.ts');
   graphTypedHandle = await server.ssrLoadModule('/src/ui/GraphTypedHandle.tsx');
@@ -1214,6 +1235,35 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     'black-forest-labs/FLUX.1-schnell',
     'studio-spec-v1-9cd1abb5',
   );
+  const sdxlRevision = '462165984030d82259a11f4367a4eed129e94a7b';
+  const sdxlSpec = {
+    ...makeSpec(
+      'StableDiffusionXLPipeline',
+      'sdxl-base:direct',
+      'stabilityai/stable-diffusion-xl-base-1.0',
+      'studio-spec-v1-27ba61cf',
+    ),
+    id: 'sdxl-base:text-to-image:v1',
+    pipelineClass: 'StableDiffusionXLPipeline',
+    bindings: [...bindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+  };
+  const zRevision = 'f332072aa78be7aecdf3ee76d5c247082da564a6';
+  const zSpec = {
+    ...makeSpec('ZImageModularPipeline', 'z-image:auto', 'Tongyi-MAI/Z-Image-Turbo', 'studio-spec-v1-zimage'),
+    id: 'z-image:text-to-image:v1',
+    pipelineClass: 'ZImagePipeline',
+  };
+  const qwenImageRevision = '25468b98e3276ca6700de15c6628e51b7de54a26';
+  const qwenImageSpec = {
+    ...makeSpec(
+      'QwenImageModularPipeline',
+      'qwen-image:t2i-direct',
+      'Qwen/Qwen-Image-2512',
+      'studio-spec-v1-qwenimage',
+    ),
+    id: 'qwen-image-2512:text-to-image:v1',
+    pipelineClass: 'QwenImagePipeline',
+  };
   const devSpec = makeSpec(
     'FluxDevPipeline',
     'flux-dev:direct',
@@ -1325,6 +1375,44 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     edges: editEdgeRows,
     bindings: editBindingRows,
   };
+  const sdxlEditSpec = {
+    ...reduxSpec,
+    id: 'sdxl-base:edit-image:v1',
+    modelType: 'StableDiffusionXLPipeline',
+    executionProfileId: 'sdxl-base:img2img-direct',
+    pipelineClass: 'StableDiffusionXLImg2ImgPipeline',
+    defaultRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
+    bindings: [...editBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-sdxledit',
+  };
+  const devEditSpec = {
+    ...sdxlEditSpec,
+    id: 'flux-dev:edit-image:v1',
+    modelType: 'FluxDevPipeline',
+    executionProfileId: 'flux-dev:img2img-direct',
+    pipelineClass: 'FluxImg2ImgPipeline',
+    defaultRepo: devSpec.defaultRepo,
+    bindings: [...editBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-fluxdevedit',
+  };
+  const zEditSpec = {
+    ...devEditSpec,
+    id: 'z-image:edit-image:v1',
+    modelType: 'ZImageModularPipeline',
+    executionProfileId: 'z-image:img2img-direct',
+    pipelineClass: 'ZImageImg2ImgPipeline',
+    defaultRepo: zSpec.defaultRepo,
+    contentHash: 'studio-spec-v1-zimageedit',
+  };
+  const qwenImageEditSpec = {
+    ...devEditSpec,
+    id: 'qwen-image-2512:edit-image:v1',
+    modelType: 'QwenImageModularPipeline',
+    executionProfileId: 'qwen-image:img2img-direct',
+    pipelineClass: 'QwenImageImg2ImgPipeline',
+    defaultRepo: qwenImageSpec.defaultRepo,
+    contentHash: 'studio-spec-v1-qwenimageedit',
+  };
   const kontextSpec = {
     ...reduxSpec,
     id: 'flux-kontext:edit-image:v1',
@@ -1364,6 +1452,36 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['diffusersImageInpaint', 'reference_strength', 'conditioningScale'],
     ...bindingRows.slice(31).map(([, param, source]) => ['diffusersImageInpaint', param, source]),
   ];
+  const sdxlInpaintSpec = {
+    ...sdxlEditSpec,
+    id: 'sdxl-base:inpaint:v1',
+    mode: 'inpaint',
+    executionProfileId: 'sdxl-base:inpaint-direct',
+    pipelineClass: 'StableDiffusionXLInpaintPipeline',
+    roles: inpaintRoleRows,
+    edges: inpaintEdgeRows,
+    bindings: [...inpaintBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-sdxlinpaint',
+  };
+  const devInpaintSpec = {
+    ...sdxlInpaintSpec,
+    id: 'flux-dev:inpaint:v1',
+    modelType: 'FluxDevPipeline',
+    executionProfileId: 'flux-dev:inpaint-direct',
+    pipelineClass: 'FluxInpaintPipeline',
+    defaultRepo: devSpec.defaultRepo,
+    bindings: [...inpaintBindingRows, ['diffusersImagePipeline', 'revision', 'defaultRevision']],
+    contentHash: 'studio-spec-v1-fluxdevinpaint',
+  };
+  const qwenImageInpaintSpec = {
+    ...devInpaintSpec,
+    id: 'qwen-image-2512:inpaint:v1',
+    modelType: 'QwenImageModularPipeline',
+    executionProfileId: 'qwen-image:inpaint-direct',
+    pipelineClass: 'QwenImageInpaintPipeline',
+    defaultRepo: qwenImageSpec.defaultRepo,
+    contentHash: 'studio-spec-v1-qwenimageinpaint',
+  };
   const fillSpec = {
     ...makeSpec('FluxFillPipeline', 'flux-fill:direct', 'black-forest-labs/FLUX.1-Fill-dev', 'studio-spec-v1-ba8c8dd1'),
     id: 'flux-fill:inpaint:v1',
@@ -1638,7 +1756,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'WanTI2VPipeline',
       'wan-22-ti2v-5b:direct',
       'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
-      'studio-spec-v1-da22e734',
+      'studio-spec-v1-a83efd57',
     ),
     id: 'wan-22-ti2v-5b:text-to-video:v1',
     mode: 'text_to_video',
@@ -1647,7 +1765,14 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     pipelineClass: 'WanTI2VPipeline',
     roles: videoRoleRows,
     edges: videoEdgeRows,
-    bindings: videoBindingRows,
+    bindings: [
+      ...videoBindingRows.map(([role, param, source]) => [
+        role,
+        param,
+        role === 'wanPipeline' && param === 'revision' ? 'defaultRevision' : source,
+      ]),
+      ['wanPipeline', 'execution_profile_id', 'executionProfileId'],
+    ],
   };
   const wanT2vSpec = {
     ...ti2vSpec,
@@ -1657,6 +1782,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     pipelineClass: 'WanPipeline',
     defaultRepo: 'Wan-AI/Wan2.1-T2V-1.3B-Diffusers',
     contentHash: 'studio-spec-v1-10c9a3f2',
+    bindings: videoBindingRows,
   };
   const wanVaceT2vSpec = {
     ...wanT2vSpec,
@@ -2016,6 +2142,60 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     bindings: audioRepaintBindingRows,
     contentHash: 'studio-spec-v1-8f5c37c7',
   };
+  const threeDRoleRows = [
+    ['diffusersQuantization', 'modules.DiffusersRuntime.PipelineQuantizationConfigV2', -1280, -80],
+    ['diffusersRecipe', 'modules.DiffusersRuntime.DiffusersExecutionRecipe', -900, -80],
+    ['diffusersThreeDPipeline', 'modules.DiffusersThreeD.LoadPipeline', -520, -80],
+    ['diffusersThreeDGenerate', 'modules.DiffusersThreeD.GenerateRenderedArtifact', -120, -80],
+    ['videoExport', 'modules.Video.Export', 420, -80],
+  ];
+  const threeDEdgeRows = [
+    ['diffusersQuantization', 'quantization_config', 'diffusersRecipe', 'quantization_config'],
+    ['diffusersRecipe', 'execution_recipe', 'diffusersThreeDPipeline', 'execution_recipe'],
+    ['diffusersThreeDPipeline', 'pipeline', 'diffusersThreeDGenerate', 'pipeline'],
+    ['diffusersThreeDGenerate', 'video', 'videoExport', 'video'],
+  ];
+  const threeDBindingRows = [
+    ['diffusersQuantization', 'backend', 'quantizationMode'],
+    ['diffusersQuantization', 'components', 'empty'],
+    ['diffusersQuantization', 'dtype', 'dtype'],
+    ['diffusersRecipe', 'device_map', 'deviceMapNone'],
+    ['diffusersRecipe', 'offload_mode', 'offloadMode'],
+    ['diffusersRecipe', 'device', 'device'],
+    ['diffusersRecipe', 'attention_backend', 'attentionBackend'],
+    ['diffusersRecipe', 'attention_components', 'empty'],
+    ['diffusersRecipe', 'vae_slicing', 'false'],
+    ['diffusersRecipe', 'vae_tiling', 'false'],
+    ['diffusersRecipe', 'regional_compile', 'false'],
+    ['diffusersRecipe', 'denoiser_cache', 'false'],
+    ['diffusersRecipe', 'layerwise_casting', 'false'],
+    ['diffusersRecipe', 'channels_last', 'false'],
+    ['diffusersThreeDPipeline', 'model_id', 'artifact'],
+    ['diffusersThreeDPipeline', 'pipeline_class', 'pipelineClass'],
+    ['diffusersThreeDPipeline', 'mode', 'mode'],
+    ['diffusersThreeDPipeline', 'revision', 'defaultRevision'],
+    ['diffusersThreeDPipeline', 'dtype', 'dtype'],
+    ['diffusersThreeDPipeline', 'device', 'device'],
+    ['diffusersThreeDPipeline', 'auto_offload', 'autoOffload'],
+    ['diffusersThreeDPipeline', 'offload_mode', 'offloadMode'],
+    ['diffusersThreeDGenerate', 'prompt', 'prompt'],
+    ['diffusersThreeDGenerate', 'seed', 'seed'],
+    ['diffusersThreeDGenerate', 'num_inference_steps', 'steps'],
+    ['diffusersThreeDGenerate', 'guidance_scale', 'guidanceScale'],
+    ['diffusersThreeDGenerate', 'frame_size', 'width'],
+    ['videoExport', 'fps', 'fps'],
+  ];
+  const threeDSpec = {
+    ...makeSpec('ShapEPipeline', 'shap-e:direct', 'openai/shap-e', 'studio-spec-v1-7aad1a8e'),
+    id: 'shap-e:text-to-3d:v1',
+    mode: 'text_to_3d',
+    loaderModule: 'modules.DiffusersThreeD',
+    executionPath: 'direct-diffusers-three-d',
+    pipelineClass: 'ShapEPipeline',
+    roles: threeDRoleRows,
+    edges: threeDEdgeRows,
+    bindings: threeDBindingRows,
+  };
   const profile = (spec) => ({
     id: spec.executionProfileId,
     model_type: spec.modelType,
@@ -2042,6 +2222,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: [spec.mode],
     studioExecutionSpecs: [spec],
   });
+  const ti2vCapability = {
+    ...capability(ti2vSpec),
+    revisionCandidates: ['b8fff7315c768468a5333511427288870b2e9635'],
+  };
   const kontextCapability = {
     ...capability(kontextSpec),
     modes: ['edit_image', 'multi_image_reference_edit'],
@@ -2114,15 +2298,46 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     studioExecutionSpecModes: [qwenLayeredSpec.mode],
     studioExecutionSpecs: [qwenLayeredSpec],
   };
-  const qwenControlCapability = {
-    ...capability(qwenControlSpec),
+  const qwenImageCapability = {
+    ...capability(qwenImageSpec),
+    modes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
+    runnableModes: ['text_to_image', 'edit_image', 'inpaint', 'control_image'],
     executionProfiles: [
+      {
+        ...profile(qwenImageSpec),
+        quantizable_components: ['transformer', 'text_encoder'],
+      },
+      {
+        ...profile(qwenImageEditSpec),
+        quantizable_components: ['transformer', 'text_encoder'],
+      },
+      {
+        ...profile(qwenImageInpaintSpec),
+        quantizable_components: ['transformer', 'text_encoder'],
+      },
       {
         ...profile(qwenControlSpec),
         quantizable_components: ['transformer', 'text_encoder'],
         default_quantized_components: ['transformer', 'text_encoder'],
       },
     ],
+    studioExecutionSpecModes: ['control_image', 'edit_image', 'inpaint', 'text_to_image'],
+    studioExecutionSpecs: [qwenImageSpec, qwenImageEditSpec, qwenImageInpaintSpec, qwenControlSpec],
+    revisionCandidates: [qwenImageRevision],
+    modeRequirements: {
+      control_image: {
+        modelRequirements: [
+          {
+            id: 'qwen-controlnet-union',
+            label: 'Qwen ControlNet Union',
+            repo: 'InstantX/Qwen-Image-ControlNet-Union',
+            revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+            kind: 'controlnet',
+          },
+        ],
+        requiredImages: ['controlImage'],
+      },
+    },
   };
   const kleinCapability = {
     ...capability(kleinSpec),
@@ -2194,6 +2409,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['loadAudio', 'modules.Audio.Load', -900, 300],
     ['audioLoudnessMatch', 'modules.Audio.MatchLoudness', 300, -80],
     ['audioJoin', 'modules.Audio.Join', 680, -80],
+    ['diffusersThreeDPipeline', 'modules.DiffusersThreeD.LoadPipeline', -520, -80],
+    ['diffusersThreeDGenerate', 'modules.DiffusersThreeD.GenerateRenderedArtifact', -120, -80],
   ];
   const paramsByRole = Object.fromEntries(registryRoleRows.map(([role]) => [role, {}]));
   for (const [role, param] of [
@@ -2201,7 +2418,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...depthBindingRows,
     ...editBindingRows,
     ...inpaintBindingRows,
-    ...videoBindingRows,
+    ...ti2vSpec.bindings,
     ...i2vBindingRows,
     ...wanVaceInpaintBindingRows,
     ...wanVaceControlBindingRows,
@@ -2212,6 +2429,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...ltxBindingRows,
     ...audioBindingRows,
     ...audioContinuationBindingRows,
+    ...threeDBindingRows,
+    ...sdxlSpec.bindings,
   ])
     paramsByRole[role][param] = scalar();
   for (const [sourceRole, sourceHandle, targetRole, targetHandle] of [
@@ -2228,11 +2447,15 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ...qwenControlEdgeRows,
     ...audioEdgeRows,
     ...audioContinuationEdgeRows,
+    ...threeDEdgeRows,
   ]) {
     const type = sourceHandle;
     paramsByRole[sourceRole][sourceHandle] = { type, display: 'output' };
     paramsByRole[targetRole][targetHandle] = { type, display: 'input' };
   }
+  paramsByRole.wanGenerate.video_out = { type: 'video', display: 'output' };
+  paramsByRole.diffusersThreeDGenerate.video = { type: 'video', display: 'output' };
+  paramsByRole.videoExport.video = { type: 'video', display: 'input' };
   paramsByRole.controlnet.route_state_in = { type: 'route_state_out', display: 'input' };
   paramsByRole.qwenOutpaintCanvas.image = { type: 'image', display: 'input' };
   paramsByRole.qwenOutpaintCanvas.canvas = { type: 'image', display: 'output' };
@@ -2255,7 +2478,30 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   paramsByRole.audioJoin.continuation = { type: 'audio', display: 'input' };
   paramsByRole.audioJoin.output = { type: 'audio', display: 'output' };
   paramsByRole.audioExport.audio = { type: 'audio', display: 'input' };
+  paramsByRole.audioPipeline.pipeline_class.onChange = 'update_audio_contract';
+  paramsByRole.audioGenerate.pipeline.onSignal = 'update_audio_contract';
+  paramsByRole.audioGenerate.audio_contract = scalar();
+  paramsByRole.wanPipeline.pipeline_class.onChange = 'update_video_contract';
+  paramsByRole.wanGenerate.pipeline.onSignal = 'update_video_contract';
+  paramsByRole.wanGenerate.mode.onChange = 'update_video_contract';
+  paramsByRole.wanGenerate.video_contract = scalar();
   paramsByRole.diffusersImagePipeline.pipeline_class.value = 'FluxPipeline';
+  paramsByRole.diffusersImagePipeline.pipeline_class.onChange = 'update_pipeline_contract';
+  paramsByRole.diffusersImagePipeline.conditioning_kind = { ...scalar(), value: 'none' };
+  paramsByRole.diffusersImagePipeline.conditioning_model_id = {
+    ...scalar(),
+    value: { source: 'hub', value: 'lllyasviel/control_v11p_sd15_canny' },
+  };
+  paramsByRole.diffusersImagePipeline.conditioning_revision = { ...scalar(), value: 'stale-auxiliary-pin' };
+  for (const role of [
+    'diffusersImageGenerate',
+    'diffusersImageEdit',
+    'diffusersImageInpaint',
+    'diffusersImageControl',
+  ]) {
+    paramsByRole[role].pipeline.onSignal = 'update_image_contract';
+    paramsByRole[role].image_contract = scalar();
+  }
   const registry = Object.fromEntries(
     registryRoleRows.map(([role, nodeKey]) => {
       const [module, action] = nodeKey.split(/\.(?=[^.]+$)/);
@@ -2287,17 +2533,118 @@ test('backend execution specs materialize exact image, video, and audio recipes 
   const nativeWebSocket = globalThis.WebSocket;
   const nativeFetch = globalThis.fetch;
   globalThis.WebSocket = undefined;
-  globalThis.fetch = async () =>
-    new Response(JSON.stringify({ error: false, nodes: [] }), {
+  globalThis.fetch = async (_input, init) => {
+    const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    if (payload?.fn === 'update_pipeline_contract' && payload.action === 'LoadPipeline') {
+      const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === payload.node);
+      const pipelineClass = node?.data.params.pipeline_class.value;
+      const mode = node?.data.params.mode.value;
+      flowStoreModule.useFlowStore
+        .getState()
+        .setParam(payload.node, 'pipeline', { direction: 'output', value: { pipelineClass, mode } }, 'signal');
+    }
+    if (payload?.fn === 'update_audio_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === payload.node);
+        const pipelineClass = node?.data.params.pipeline_class.value;
+        const mode = node?.data.params.mode.value;
+        const taskType =
+          mode === 'audio_variation'
+            ? 'cover'
+            : mode === 'audio_continuation'
+              ? 'continuation'
+              : mode === 'audio_repaint'
+                ? 'repaint'
+                : 'text2music';
+        flowStoreModule.useFlowStore
+          .getState()
+          .setParam(
+            payload.node,
+            'pipeline',
+            { direction: 'output', value: { pipelineClass, mode, taskType } },
+            'signal',
+          );
+      } else if (payload.action === 'Generate') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        const contract = signal?.value;
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'task_type', contract?.taskType);
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'audio_contract', contract);
+      }
+    }
+    if (payload?.fn === 'update_video_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const node = flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === payload.node);
+        const pipelineClass = node?.data.params.pipeline_class.value;
+        flowStoreModule.useFlowStore.getState().setParam(
+          payload.node,
+          'pipeline',
+          {
+            direction: 'output',
+            value: {
+              pipelineClass,
+              modes: [
+                'text_to_video',
+                'image_to_video',
+                'video_to_video',
+                'reference_to_video',
+                'video_color_edit',
+                'video_inpaint',
+                'video_outpaint',
+                'control_to_video',
+                'character_animate',
+                'character_replace',
+              ],
+            },
+          },
+          'signal',
+        );
+      } else if (payload.action === 'Generate') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        const contract = signal?.value;
+        const currentMode = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'mode', 'value');
+        flowStoreModule.useFlowStore
+          .getState()
+          .setParam(payload.node, 'mode', contract?.modes?.includes(currentMode) ? currentMode : contract?.modes?.[0]);
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'video_contract', contract);
+      }
+    }
+    return new Response(JSON.stringify({ error: false, nodes: [] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+  };
   try {
     nodesStoreModule.useNodesStore.setState({
       nodesRegistry: registry,
       studioModelCapabilities: [
         capability(schnellSpec),
-        capability(devSpec),
+        {
+          ...capability(zSpec),
+          modes: ['text_to_image', 'edit_image'],
+          runnableModes: ['text_to_image', 'edit_image'],
+          executionProfiles: [profile(zSpec), profile(zEditSpec)],
+          studioExecutionSpecModes: ['edit_image', 'text_to_image'],
+          studioExecutionSpecs: [zSpec, zEditSpec],
+          revisionCandidates: [zRevision],
+        },
+        {
+          ...capability(sdxlSpec),
+          modes: ['text_to_image', 'edit_image', 'inpaint'],
+          runnableModes: ['text_to_image', 'edit_image', 'inpaint'],
+          executionProfiles: [profile(sdxlSpec), profile(sdxlEditSpec), profile(sdxlInpaintSpec)],
+          studioExecutionSpecModes: ['edit_image', 'inpaint', 'text_to_image'],
+          studioExecutionSpecs: [sdxlSpec, sdxlEditSpec, sdxlInpaintSpec],
+          revisionCandidates: [sdxlRevision],
+        },
+        {
+          ...capability(devSpec),
+          modes: ['text_to_image', 'edit_image', 'inpaint'],
+          runnableModes: ['text_to_image', 'edit_image', 'inpaint'],
+          executionProfiles: [profile(devSpec), profile(devEditSpec), profile(devInpaintSpec)],
+          studioExecutionSpecModes: ['edit_image', 'inpaint', 'text_to_image'],
+          studioExecutionSpecs: [devSpec, devEditSpec, devInpaintSpec],
+          revisionCandidates: ['3de623fc3c33e44ffbe2bad470d0f45bccf2eb21'],
+        },
         capability(kreaSpec),
         kleinCapability,
         capability(depthSpec),
@@ -2308,9 +2655,9 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         qwenInpaintCapability,
         qwenEditPlusCapability,
         qwenLayeredCapability,
-        qwenControlCapability,
+        qwenImageCapability,
         capability(i2vSpec),
-        capability(ti2vSpec),
+        ti2vCapability,
         {
           ...capability(wanT2vSpec),
           modes: ['text_to_video', 'video_to_video', 'video_color_edit'],
@@ -2354,6 +2701,10 @@ test('backend execution specs materialize exact image, video, and audio recipes 
           studioExecutionSpecs: [ltxSpec, ltxImageSpec, ltxVideoSpec, ltxReferenceSpec],
         },
         aceCapability,
+        {
+          ...capability(threeDSpec),
+          revisionCandidates: ['7bd337afdea1c17842e1c3cc45c4e268356dba40'],
+        },
       ],
       studioModelCapabilitiesAuthoritative: true,
       studioExecutionSpecInvalid: false,
@@ -2379,6 +2730,42 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       .nodes.find((item) => item.id === schnellBinding.nodes.diffusersImagePipeline);
     assert.equal(schnellPipeline.data.params.model_id.value.value, schnellSpec.defaultRepo);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(baseForm), null);
+
+    const sdxlForm = {
+      ...baseForm,
+      modelType: 'StableDiffusionXLPipeline',
+      steps: 30,
+      guidanceScale: 5,
+    };
+    studioStoreModule.useStudioStore.setState({ form: sdxlForm });
+    await graphBridge.createOrUpdateStudioGraph(sdxlForm);
+    const sdxlBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const sdxlPipeline = flowStoreModule.useFlowStore
+      .getState()
+      .nodes.find((item) => item.id === sdxlBinding.nodes.diffusersImagePipeline);
+    assert.equal(sdxlPipeline.data.params.model_id.value.value, sdxlSpec.defaultRepo);
+    assert.equal(sdxlPipeline.data.params.pipeline_class.value, sdxlSpec.pipelineClass);
+    assert.equal(sdxlPipeline.data.params.revision.value, sdxlRevision);
+    assert.equal(sdxlPipeline.data.params.conditioning_kind.value, 'none');
+    assert.equal(sdxlPipeline.data.params.conditioning_model_id.value, '');
+    assert.equal(sdxlPipeline.data.params.conditioning_revision.value, '');
+    const sdxlGenerate = flowStoreModule.useFlowStore
+      .getState()
+      .nodes.find((item) => item.id === sdxlBinding.nodes.diffusersImageGenerate);
+    assert.equal(sdxlGenerate.data.params.image_contract.value.pipelineClass, sdxlSpec.pipelineClass);
+    assert.equal(sdxlGenerate.data.params.image_contract.value.mode, sdxlSpec.mode);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), null);
+    flowStoreModule.useFlowStore
+      .getState()
+      .setParam(sdxlPipeline.id, 'revision', { noValidation: true }, 'fieldOptions');
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), /graph changed/i);
+    assert.equal(graphBridge.syncStudioGraphDefinition(sdxlForm), true);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), null);
+    flowStoreModule.useFlowStore.getState().setParam(sdxlPipeline.id, 'revision', 'tampered', 'type');
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(sdxlForm), /graph changed/i);
+    assert.equal(graphBridge.syncStudioGraphDefinition(sdxlForm), false, 'static proofs only reseal reviewed schemas');
+    flowStoreModule.useFlowStore.getState().setParam(sdxlPipeline.id, 'revision', 'string', 'type');
+    assert.equal(graphBridge.syncStudioGraphDefinition(sdxlForm), true);
 
     const kreaForm = { ...baseForm, modelType: 'FluxKreaPipeline', steps: 24, guidanceScale: 3.5 };
     studioStoreModule.useStudioStore.setState({ form: kreaForm });
@@ -2439,6 +2826,19 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       nodes: Object.fromEntries(devSpec.roles.map(([role]) => [role, devBinding.nodes[role]])),
     });
 
+    const controlledBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    studioStoreModule.useStudioStore.setState({
+      graphBinding: {
+        ...controlledBinding,
+        controlled: { schemaVersion: 1, contractRevision: 1, contractIds: ['upscale.video.v1'] },
+      },
+    });
+    assert.deepEqual(
+      runPreparationModule.applyStudioRuntimeHints({ nodes: {}, paths: [] }).runtimeHints.controlledGraphContracts,
+      ['upscale.video.v1'],
+    );
+    studioStoreModule.useStudioStore.setState({ graphBinding: controlledBinding });
+
     const candidate = {
       id: 'flux-dev-ready',
       executionProfileId: devSpec.executionProfileId,
@@ -2481,6 +2881,180 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       'undeclared candidate generation data cannot override form input',
     );
     assert.equal(autoGenerate.width.value, autoForm.width);
+
+    const zEditForm = {
+      ...baseForm,
+      modelType: 'ZImageModularPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/z-image-source.png'],
+      steps: 8,
+      guidanceScale: 1,
+      strength: 0.65,
+    };
+    studioStoreModule.useStudioStore.setState({ form: zEditForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(zEditForm);
+    const zEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const zEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const zEditPipeline = zEditNodes.find((item) => item.id === zEditBinding.nodes.diffusersImagePipeline);
+    assert.equal(zEditBinding.executionSpec.id, zEditSpec.id);
+    assert.equal(zEditPipeline.data.params.pipeline_class.value, zEditSpec.pipelineClass);
+    assert.equal(zEditPipeline.data.params.revision.value, zRevision);
+    assert.deepEqual(
+      zEditNodes.find((item) => item.id === zEditBinding.nodes.loadImage).data.params.file.value,
+      zEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(zEditForm), null);
+
+    const qwenImageEditForm = {
+      ...baseForm,
+      modelType: 'QwenImageModularPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/qwen-image-source.png'],
+      steps: 50,
+      guidanceScale: 4,
+      strength: 0.65,
+    };
+    studioStoreModule.useStudioStore.setState({ form: qwenImageEditForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(qwenImageEditForm);
+    const qwenImageEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenImageEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const qwenImageEditPipeline = qwenImageEditNodes.find(
+      (item) => item.id === qwenImageEditBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(qwenImageEditBinding.executionSpec.id, qwenImageEditSpec.id);
+    assert.equal(qwenImageEditPipeline.data.params.pipeline_class.value, qwenImageEditSpec.pipelineClass);
+    assert.equal(qwenImageEditPipeline.data.params.revision.value, qwenImageRevision);
+    assert.deepEqual(
+      qwenImageEditNodes.find((item) => item.id === qwenImageEditBinding.nodes.loadImage).data.params.file.value,
+      qwenImageEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenImageEditForm), null);
+
+    const qwenImageInpaintForm = {
+      ...qwenImageEditForm,
+      mode: 'inpaint',
+      maskImage: '@data/images/qwen-image-mask.png',
+    };
+    studioStoreModule.useStudioStore.setState({ form: qwenImageInpaintForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(qwenImageInpaintForm);
+    const qwenImageInpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const qwenImageInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const qwenImageInpaintPipeline = qwenImageInpaintNodes.find(
+      (item) => item.id === qwenImageInpaintBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(qwenImageInpaintBinding.executionSpec.id, qwenImageInpaintSpec.id);
+    assert.equal(qwenImageInpaintPipeline.data.params.pipeline_class.value, qwenImageInpaintSpec.pipelineClass);
+    assert.equal(qwenImageInpaintPipeline.data.params.revision.value, qwenImageRevision);
+    assert.deepEqual(
+      qwenImageInpaintNodes.find((item) => item.id === qwenImageInpaintBinding.nodes.loadImage).data.params.file.value,
+      qwenImageInpaintForm.referenceImages,
+    );
+    assert.equal(
+      qwenImageInpaintNodes.find((item) => item.id === qwenImageInpaintBinding.nodes.loadMask).data.params.file.value,
+      qwenImageInpaintForm.maskImage,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenImageInpaintForm), null);
+
+    const devEditForm = {
+      ...devForm,
+      mode: 'edit_image',
+      referenceImages: ['@data/images/flux-dev-source.png'],
+      resourceMode: 'expert',
+      strength: 0.7,
+    };
+    studioStoreModule.useStudioStore.setState({ form: devEditForm, autoResourcePlan: null });
+    assert.ok(devEditSpec.bindings.some(([, param, source]) => param === 'revision' && source === 'defaultRevision'));
+    assert.deepEqual(
+      nodesStoreModule.useNodesStore
+        .getState()
+        .studioModelCapabilities.find((item) => item.modelType === devEditForm.modelType).revisionCandidates,
+      ['3de623fc3c33e44ffbe2bad470d0f45bccf2eb21'],
+    );
+    await graphBridge.createOrUpdateStudioGraph(devEditForm);
+    const devEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const devEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const devEditPipeline = devEditNodes.find((item) => item.id === devEditBinding.nodes.diffusersImagePipeline);
+    assert.equal(devEditBinding.executionSpec.id, devEditSpec.id);
+    assert.equal(devEditPipeline.data.params.pipeline_class.value, devEditSpec.pipelineClass);
+    assert.equal(devEditPipeline.data.params.revision.value, '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21');
+    assert.deepEqual(
+      devEditNodes.find((item) => item.id === devEditBinding.nodes.loadImage).data.params.file.value,
+      devEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(devEditForm), null);
+
+    const devInpaintForm = {
+      ...devEditForm,
+      mode: 'inpaint',
+      maskImage: '@data/images/flux-dev-mask.png',
+    };
+    studioStoreModule.useStudioStore.setState({ form: devInpaintForm, autoResourcePlan: null });
+    await graphBridge.createOrUpdateStudioGraph(devInpaintForm);
+    const devInpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const devInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const devInpaintPipeline = devInpaintNodes.find(
+      (item) => item.id === devInpaintBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(devInpaintBinding.executionSpec.id, devInpaintSpec.id);
+    assert.equal(devInpaintPipeline.data.params.pipeline_class.value, devInpaintSpec.pipelineClass);
+    assert.equal(devInpaintPipeline.data.params.revision.value, '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21');
+    assert.deepEqual(
+      devInpaintNodes.find((item) => item.id === devInpaintBinding.nodes.loadImage).data.params.file.value,
+      devInpaintForm.referenceImages,
+    );
+    assert.equal(
+      devInpaintNodes.find((item) => item.id === devInpaintBinding.nodes.loadMask).data.params.file.value,
+      devInpaintForm.maskImage,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(devInpaintForm), null);
+
+    const sdxlEditForm = {
+      ...baseForm,
+      modelType: 'StableDiffusionXLPipeline',
+      mode: 'edit_image',
+      referenceImages: ['@data/images/sdxl-source.png'],
+      steps: 30,
+      guidanceScale: 5,
+      strength: 0.65,
+    };
+    studioStoreModule.useStudioStore.setState({ form: sdxlEditForm });
+    await graphBridge.createOrUpdateStudioGraph(sdxlEditForm);
+    const sdxlEditBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const sdxlEditNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const sdxlEditPipeline = sdxlEditNodes.find((item) => item.id === sdxlEditBinding.nodes.diffusersImagePipeline);
+    assert.equal(sdxlEditBinding.executionSpec.id, sdxlEditSpec.id);
+    assert.equal(sdxlEditPipeline.data.params.pipeline_class.value, sdxlEditSpec.pipelineClass);
+    assert.equal(sdxlEditPipeline.data.params.revision.value, sdxlRevision);
+    assert.deepEqual(
+      sdxlEditNodes.find((item) => item.id === sdxlEditBinding.nodes.loadImage).data.params.file.value,
+      sdxlEditForm.referenceImages,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlEditForm), null);
+
+    const sdxlInpaintForm = {
+      ...sdxlEditForm,
+      mode: 'inpaint',
+      maskImage: '@data/images/sdxl-mask.png',
+    };
+    studioStoreModule.useStudioStore.setState({ form: sdxlInpaintForm });
+    await graphBridge.createOrUpdateStudioGraph(sdxlInpaintForm);
+    const sdxlInpaintBinding = structuredClone(studioStoreModule.useStudioStore.getState().graphBinding);
+    const sdxlInpaintNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const sdxlInpaintPipeline = sdxlInpaintNodes.find(
+      (item) => item.id === sdxlInpaintBinding.nodes.diffusersImagePipeline,
+    );
+    assert.equal(sdxlInpaintBinding.executionSpec.id, sdxlInpaintSpec.id);
+    assert.equal(sdxlInpaintPipeline.data.params.pipeline_class.value, sdxlInpaintSpec.pipelineClass);
+    assert.equal(sdxlInpaintPipeline.data.params.revision.value, sdxlRevision);
+    assert.deepEqual(
+      sdxlInpaintNodes.find((item) => item.id === sdxlInpaintBinding.nodes.loadImage).data.params.file.value,
+      sdxlInpaintForm.referenceImages,
+    );
+    assert.equal(
+      sdxlInpaintNodes.find((item) => item.id === sdxlInpaintBinding.nodes.loadMask).data.params.file.value,
+      sdxlInpaintForm.maskImage,
+    );
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(sdxlInpaintForm), null);
 
     const kleinEditForm = {
       ...kleinForm,
@@ -2775,6 +3349,27 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenModularForm), null);
 
+    // A partial dynamic definition must not erase the component connections
+    // needed to finish loading it. Missing declared fields still block Run.
+    const completeFlow = flowStoreModule.useFlowStore.getState();
+    const completeStudio = studioStoreModule.useStudioStore.getState();
+    flowStoreModule.useFlowStore.setState({
+      nodes: completeFlow.nodes.map((node) => {
+        if (node.id !== qwenModularBinding.nodes.prompt) return node;
+        const params = { ...node.data.params };
+        delete params.negative_prompt;
+        return { ...node, data: { ...node.data, params } };
+      }),
+    });
+    assert.equal(graphBridge.syncStudioGraphDefinition(qwenModularForm), false);
+    assert.deepEqual(flowStoreModule.useFlowStore.getState().edges, completeFlow.edges);
+    assert.notEqual(graphBridge.getStudioGraphRunBlockingMessage(qwenModularForm), null);
+    flowStoreModule.useFlowStore.setState({ nodes: completeFlow.nodes, edges: completeFlow.edges });
+    studioStoreModule.useStudioStore.setState({
+      graphBinding: completeStudio.graphBinding,
+      graphFinalization: completeStudio.graphFinalization,
+    });
+
     for (const spec of [qwenEditPlusSpec, qwenEditPlusMultiSpec]) {
       const qwenEditPlusForm = {
         ...qwenModularForm,
@@ -2957,6 +3552,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     });
     assert.deepEqual(i2vImage.file.value, ['opening.png']);
     assert.equal(i2vImage.alpha_channel.value, 'remove alpha');
+    assert.equal(i2vGenerate.mode.value, 'image_to_video');
     assert.equal(i2vGenerate.guidance_scale_2.value, 3.5);
     assert.equal(i2vGenerate.use_guidance_scale_2.value, true);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(i2vForm), null);
@@ -2974,7 +3570,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       steps: 50,
       guidanceScale: 5,
       guidanceScale2: 0,
-      shift: 8,
+      shift: 5,
       conditioningScale: 1,
       attentionKwargsJson: '',
     };
@@ -2990,16 +3586,16 @@ test('backend execution specs materialize exact image, video, and audio recipes 
         .sort(),
     );
     const ti2vNodes = flowStoreModule.useFlowStore.getState().nodes;
-    assert.equal(
-      ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanPipeline).data.params.pipeline_class.value,
-      'WanTI2VPipeline',
-    );
+    const ti2vPipeline = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanPipeline).data.params;
+    assert.equal(ti2vPipeline.pipeline_class.value, 'WanTI2VPipeline');
+    assert.equal(ti2vPipeline.revision.value, 'b8fff7315c768468a5333511427288870b2e9635');
+    assert.equal(ti2vPipeline.execution_profile_id.value, 'wan-22-ti2v-5b:direct');
     const ti2vRecipe = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.diffusersRecipe).data.params;
     assert.equal(ti2vRecipe.attention_backend.value, '_native_flash');
     assert.equal(ti2vRecipe.attention_components.value, 'transformer');
     assert.equal(ti2vRecipe.vae_tiling.value, true);
     const ti2vGenerate = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanGenerate).data.params;
-    assert.equal(ti2vGenerate.scheduler_flow_shift.value, 8);
+    assert.equal(ti2vGenerate.scheduler_flow_shift.value, 5);
     assert.equal(ti2vGenerate.use_guidance_scale_2.value, false);
     assert.equal(ti2vNodes.find((item) => item.id === ti2vBinding.nodes.videoExport).data.params.fps.value, 24);
     assert.deepEqual(ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanGenerate).position, { x: 220, y: -80 });
@@ -3348,6 +3944,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(aceBinding.executionSpec.id, aceSpec.id);
     assert.equal(aceBinding.executionSpec.contentHash, aceSpec.contentHash);
     assert.deepEqual(topology(aceBinding), audioEdgeRows.map((row) => [...row]).sort());
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceForm), null);
+    // An exact non-image recipe uses its declared ports, but still requires
+    // the complete live edge/schema proof. Never bypass missing audio wires.
+    const validAudioEdges = flowStoreModule.useFlowStore.getState().edges;
+    flowStoreModule.useFlowStore.setState({ edges: validAudioEdges.slice(1) });
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(aceForm), /graph changed/i);
+    flowStoreModule.useFlowStore.setState({ edges: validAudioEdges });
+    studioStoreModule.useStudioStore.setState({ graphBinding: { ...aceBinding, finalizationProof: undefined } });
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(aceForm), /route pending/i);
+    studioStoreModule.useStudioStore.setState({ graphBinding: aceBinding });
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceForm), null);
     assert.equal(
       aceNodes.find((item) => item.id === aceBinding.nodes.audioPipeline).data.params.pipeline_class.value,
       'AceStepPipeline',
@@ -3406,6 +4013,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(aceContinuationBinding.executionSpec.contentHash, aceContinuationSpec.contentHash);
     assert.deepEqual(topology(aceContinuationBinding), audioContinuationEdgeRows.map((row) => [...row]).sort());
     assert.equal(continuationGenerate.task_type.value, 'continuation');
+    assert.equal(continuationGenerate.audio_contract.value.mode, 'audio_continuation');
     assert.equal(continuationGenerate.return_continuation_tail.value, true);
     assert.equal(continuationMatch.reference_window_seconds.value, 15);
     assert.equal(continuationMatch.target_peak_dbfs.value, -1);
@@ -3427,6 +4035,39 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(repaintGenerate.repainting_start.value, 2);
     assert.equal(repaintGenerate.repainting_end.value, 8);
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceRepaintForm), null);
+
+    const threeDForm = {
+      ...baseForm,
+      mode: 'text_to_3d',
+      modelType: 'ShapEPipeline',
+      prompt: 'A small wooden toy sailboat',
+      width: 256,
+      height: 256,
+      steps: 64,
+      guidanceScale: 15,
+      fps: 12,
+      dtype: 'float16',
+      offloadMode: 'sequential_cpu',
+    };
+    studioStoreModule.useStudioStore.setState({ form: threeDForm });
+    await graphBridge.createOrUpdateStudioGraph(threeDForm);
+    const threeDBinding = studioStoreModule.useStudioStore.getState().graphBinding;
+    const threeDNodes = flowStoreModule.useFlowStore.getState().nodes;
+    const threeDPipeline = threeDNodes.find((item) => item.id === threeDBinding.nodes.diffusersThreeDPipeline).data
+      .params;
+    const threeDGenerate = threeDNodes.find((item) => item.id === threeDBinding.nodes.diffusersThreeDGenerate).data
+      .params;
+    assert.equal(threeDBinding.executionSpec.id, threeDSpec.id);
+    assert.equal(threeDBinding.executionSpec.contentHash, threeDSpec.contentHash);
+    assert.deepEqual(topology(threeDBinding), threeDEdgeRows.map((row) => [...row]).sort());
+    assert.equal(threeDPipeline.model_id.value.value, 'openai/shap-e');
+    assert.equal(threeDPipeline.revision.value, '7bd337afdea1c17842e1c3cc45c4e268356dba40');
+    assert.equal(threeDGenerate.prompt.value, threeDForm.prompt);
+    assert.equal(threeDGenerate.frame_size.value, 256);
+    assert.equal(threeDGenerate.num_inference_steps.value, 64);
+    assert.equal(threeDGenerate.guidance_scale.value, 15);
+    assert.equal(threeDNodes.find((item) => item.id === threeDBinding.nodes.videoExport).data.params.fps.value, 12);
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(threeDForm), null);
 
     studioStoreModule.useStudioStore.setState({ form: baseForm, autoResourcePlan: null });
     for (const mutate of [
@@ -3503,6 +4144,1155 @@ test('backend execution specs materialize exact image, video, and audio recipes 
       studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
     });
     studioStoreModule.useStudioStore.setState({ form: previousForm, autoResourcePlan: null });
+  }
+});
+
+test('Janus any-to-any execution specs materialize exact text, vision, and image graphs', async () => {
+  const modelType = 'HuggingFaceAnyToAnyModel';
+  const repo = 'deepseek-community/Janus-Pro-1B';
+  const revision = '1655280bb75959cc1cb85529a2a8b26e7016072e';
+  const modes = ['text_generation', 'image_to_text', 'text_to_image'];
+  const profile = {
+    id: 'janus-pro-1b:direct',
+    model_type: modelType,
+    modes,
+    loader_module: 'modules.HuggingFaceTransformers',
+    loader_action: 'LoadAnyToAnyModel',
+    execution_path: 'direct-huggingface-transformers-any-to-any',
+    pipeline_class: 'JanusForConditionalGeneration',
+    default_repo: repo,
+    supported_offload_modes: ['none'],
+    retry_offload_modes: [],
+  };
+  const cases = {
+    text_generation: {
+      generationSource: 'anyToAnyText',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['transformersAnyToAnyGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+    },
+    image_to_text: {
+      generationSource: 'anyToAnyText',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['loadImage', 'modules.Image.Load', -720, 280],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['transformersTextPreview', 'modules.Primitive.DataViewer', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['loadImage', 'image', 'transformersAnyToAnyGenerate', 'images'],
+        ['transformersAnyToAnyGenerate', 'result', 'transformersTextPreview', 'value'],
+      ],
+    },
+    text_to_image: {
+      generationSource: 'anyToAnyImage',
+      roles: [
+        ['transformersAnyToAnyModel', 'modules.HuggingFaceTransformers.LoadAnyToAnyModel', -720, -80],
+        ['transformersAnyToAnyGenerate', 'modules.HuggingFaceTransformers.GenerateAnyToAny', -240, -80],
+        ['preview', 'modules.Image.Preview', 240, -80],
+      ],
+      edges: [
+        ['transformersAnyToAnyModel', 'model', 'transformersAnyToAnyGenerate', 'model'],
+        ['transformersAnyToAnyGenerate', 'image', 'preview', 'image'],
+      ],
+    },
+  };
+  const specs = modes.map((mode, index) => {
+    const item = cases[mode];
+    return {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: `janus-pro-1b:${mode.replaceAll('_', '-')}:v1`,
+      modelType,
+      mode,
+      executionProfileId: profile.id,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: profile.pipeline_class,
+      defaultRepo: repo,
+      roles: item.roles,
+      edges: item.edges,
+      bindings: [
+        ['transformersAnyToAnyModel', 'model_id', 'artifact'],
+        ['transformersAnyToAnyModel', 'revision', 'defaultRevision'],
+        ['transformersAnyToAnyModel', 'dtype', 'dtype'],
+        ['transformersAnyToAnyModel', 'device', 'device'],
+        ...(mode === 'image_to_text'
+          ? [
+              ['loadImage', 'file', 'referenceImages'],
+              ['loadImage', 'alpha_channel', 'alphaMode'],
+            ]
+          : []),
+        ['transformersAnyToAnyGenerate', 'prompt', 'prompt'],
+        ['transformersAnyToAnyGenerate', 'generation_mode', item.generationSource],
+      ],
+      autoFields: [],
+      actions: [],
+      contentHash: `studio-spec-v1-janus00${index}`,
+    };
+  });
+  const scalar = (value = null) => ({ type: 'string', display: 'text', value });
+  const registry = {
+    'modules.HuggingFaceTransformers.LoadAnyToAnyModel': {
+      type: 'custom',
+      module: 'modules.HuggingFaceTransformers',
+      action: 'LoadAnyToAnyModel',
+      label: 'Load Any-to-Any Model',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        dtype: scalar(),
+        device: scalar(),
+        model: { type: 'model', display: 'output' },
+      },
+    },
+    'modules.HuggingFaceTransformers.GenerateAnyToAny': {
+      type: 'custom',
+      module: 'modules.HuggingFaceTransformers',
+      action: 'GenerateAnyToAny',
+      label: 'Generate Any-to-Any',
+      category: 'Test',
+      params: {
+        model: { type: 'model', display: 'input' },
+        images: { type: 'image', display: 'input' },
+        prompt: scalar(),
+        generation_mode: scalar(),
+        result: { type: 'data', display: 'output' },
+        image: { type: 'image', display: 'output' },
+      },
+    },
+    'modules.Image.Load': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Load',
+      label: 'Load Image',
+      category: 'Test',
+      params: {
+        file: scalar(),
+        alpha_channel: scalar(),
+        image: { type: 'image', display: 'output' },
+      },
+    },
+    'modules.Primitive.DataViewer': {
+      type: 'custom',
+      module: 'modules.Primitive',
+      action: 'DataViewer',
+      label: 'Data Viewer',
+      category: 'Test',
+      params: { value: { type: 'data', display: 'input' } },
+    },
+    'modules.Image.Preview': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      category: 'Test',
+      params: { image: { type: 'image', display: 'input' } },
+    },
+  };
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: registry,
+      studioModelCapabilities: [
+        {
+          modelType,
+          modes,
+          runnableModes: modes,
+          executionProfiles: [profile],
+          studioExecutionSpecSchemaVersion: 1,
+          studioExecutionSpecModes: modes,
+          studioExecutionSpecs: specs,
+          revisionCandidates: [revision],
+        },
+      ],
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    for (const mode of modes) {
+      const form = {
+        ...previousForm,
+        modelType,
+        mode,
+        resourceMode: 'expert',
+        dtype: 'bfloat16',
+        prompt: 'A small red fox',
+        referenceImages: mode === 'image_to_text' ? ['source.png'] : [],
+      };
+      studioStoreModule.useStudioStore.setState({ form, autoResourcePlan: null });
+      await graphBridge.createOrUpdateStudioGraph(form);
+      const binding = studioStoreModule.useStudioStore.getState().graphBinding;
+      const nodes = flowStoreModule.useFlowStore.getState().nodes;
+      const loader = nodes.find((item) => item.id === binding.nodes.transformersAnyToAnyModel);
+      const generate = nodes.find((item) => item.id === binding.nodes.transformersAnyToAnyGenerate);
+      assert.equal(binding.executionSpec.id, `janus-pro-1b:${mode.replaceAll('_', '-')}:v1`);
+      assert.equal(loader.data.params.model_id.value.value, repo);
+      assert.equal(loader.data.params.revision.value, revision);
+      assert.equal(generate.data.params.prompt.value, form.prompt);
+      assert.equal(generate.data.params.generation_mode.value, mode === 'text_to_image' ? 'image' : 'text');
+      if (mode === 'image_to_text') {
+        const loadImage = nodes.find((item) => item.id === binding.nodes.loadImage);
+        assert.deepEqual(loadImage.data.params.file.value, form.referenceImages);
+      }
+      assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+    }
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: previousNodesState.nodesRegistry,
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm, autoResourcePlan: null });
+  }
+});
+
+test('direct Qwen and extended video specs materialize their exact generic routes', async () => {
+  const scalar = (value = null, type = 'string') => ({ type, display: 'text', value });
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const registry = {
+    'modules.DiffusersImage.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'LoadPipeline',
+      label: 'Load Image Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        pipeline_class: scalar(),
+        conditioning_kind: scalar(),
+        conditioning_model_id: scalar(),
+        conditioning_revision: scalar(),
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersImage.ControlGenerate': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'ControlGenerate',
+      label: 'Control Generate',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        control_image: input('image'),
+        prompt: scalar(),
+        conditioning_scale: scalar(1, 'number'),
+        control_guidance_start: scalar(0, 'number'),
+        control_guidance_end: scalar(1, 'number'),
+        images: output('image'),
+      },
+    },
+    'modules.DiffusersImage.LayerDecompose': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'LayerDecompose',
+      label: 'Layer Decompose',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        image: input('image'),
+        prompt: scalar(),
+        layers: scalar(4, 'number'),
+        resolution: scalar(1024, 'number'),
+        cfg_normalize: scalar(false, 'boolean'),
+        use_en_prompt: scalar(false, 'boolean'),
+        images: output('image'),
+      },
+    },
+    'modules.Image.Load': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Load',
+      label: 'Load Image',
+      category: 'Test',
+      params: { file: scalar(), alpha_channel: scalar(), image: output('image') },
+    },
+    'modules.Image.Preview': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      category: 'Test',
+      params: { image: input('image') },
+    },
+    'modules.DiffusersVideo.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'LoadPipeline',
+      label: 'Load Video Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        execution_profile_id: scalar(),
+        pipeline_class: { ...scalar(), onChange: 'update_video_contract' },
+        motion_adapter_id: scalar(),
+        motion_adapter_revision: scalar(),
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersVideo.Generate': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'Generate',
+      label: 'Generate Video',
+      category: 'Test',
+      params: {
+        pipeline: { ...input('pipeline'), onSignal: 'update_video_contract' },
+        video: input('video'),
+        control_video: input('video'),
+        prompt: scalar(),
+        mode: { ...scalar(), onChange: 'update_video_contract' },
+        video_contract: scalar(),
+        conditioning_scale: scalar(1, 'number'),
+        pag_scale: scalar(0, 'number'),
+        pag_adaptive_scale: scalar(0, 'number'),
+        video_out: output('video'),
+      },
+    },
+    'modules.Video.Load': {
+      type: 'custom',
+      module: 'modules.Video',
+      action: 'Load',
+      label: 'Load Video',
+      category: 'Test',
+      params: { file: scalar(), video: output('video') },
+    },
+    'modules.VideoConditioning.Normalize': {
+      type: 'custom',
+      module: 'modules.VideoConditioning',
+      action: 'Normalize',
+      label: 'Normalize Video',
+      category: 'Test',
+      params: {
+        video: input('video'),
+        width: scalar(512, 'number'),
+        height: scalar(512, 'number'),
+        num_frames: scalar(16, 'number'),
+        output: output('video'),
+      },
+    },
+    'modules.VideoConditioning.EdgePreprocessor': {
+      type: 'custom',
+      module: 'modules.VideoConditioning',
+      action: 'EdgePreprocessor',
+      label: 'Video Edge Preprocessor',
+      category: 'Test',
+      params: {
+        video: input('video'),
+        low_threshold: scalar(100, 'number'),
+        high_threshold: scalar(200, 'number'),
+        output: output('video'),
+      },
+    },
+    'modules.Video.Export': {
+      type: 'custom',
+      module: 'modules.Video',
+      action: 'Export',
+      label: 'Export Video',
+      category: 'Test',
+      params: { video: input('video'), fps: scalar(8, 'number') },
+    },
+  };
+  const cases = [
+    {
+      modelType: 'QwenImageControlNetPipeline',
+      mode: 'control_image',
+      id: 'qwen-image-controlnet-direct:control-image:v1',
+      hash: 'studio-spec-v1-40e18b12',
+      profileId: 'qwen-image-controlnet:direct',
+      repo: 'Qwen/Qwen-Image-2512',
+      revision: '25468b98e3276ca6700de15c6628e51b7de54a26',
+      imageKind: 'control',
+    },
+    {
+      modelType: 'QwenImageLayeredPipeline',
+      mode: 'layer_decomposition',
+      id: 'qwen-image-layered-direct:layer-decomposition:v1',
+      hash: 'studio-spec-v1-2d3b60ff',
+      profileId: 'qwen-image-layered:direct',
+      repo: 'Qwen/Qwen-Image-Layered',
+      revision: '8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf',
+      imageKind: 'layers',
+    },
+    {
+      modelType: 'AnimateDiffPAGPipeline',
+      mode: 'text_to_video',
+      id: 'animatediff-pag:text-to-video:v1',
+      hash: 'studio-spec-v1-a3238501',
+      profileId: 'animatediff-sd15-v2-pag:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      pag: true,
+    },
+    {
+      modelType: 'AnimateDiffVideoToVideoPipeline',
+      mode: 'video_to_video',
+      id: 'animatediff-video-to-video:video-to-video:v1',
+      hash: 'studio-spec-v1-b1ae3ddd',
+      profileId: 'animatediff-sd15-v2-video-to-video:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      sourceVideo: true,
+    },
+    {
+      modelType: 'AnimateDiffControlNetPipeline',
+      mode: 'control_to_video',
+      id: 'animatediff-controlnet:control-to-video:v1',
+      hash: 'studio-spec-v1-cf67f340',
+      profileId: 'animatediff-sd15-v2-controlnet:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      controlVideo: true,
+    },
+    {
+      modelType: 'AnimateDiffVideoToVideoControlNetPipeline',
+      mode: 'control_video_to_video',
+      id: 'animatediff-controlnet-video-to-video:control-video-to-video:v1',
+      hash: 'studio-spec-v1-4bec5f54',
+      profileId: 'animatediff-sd15-v2-controlnet-video-to-video:direct',
+      repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      sourceVideo: true,
+      controlVideo: true,
+    },
+    {
+      modelType: 'CogVideoXVideoToVideoPipeline',
+      mode: 'video_to_video',
+      id: 'cogvideox-2b-video-to-video:video-to-video:v1',
+      hash: 'studio-spec-v1-de592d47',
+      profileId: 'cogvideox-2b-video-to-video:direct',
+      repo: 'zai-org/CogVideoX-2b',
+      revision: '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01',
+      sourceVideo: true,
+      cog: true,
+    },
+  ];
+  const motionAdapter = {
+    id: 'animatediff-motion-adapter-v1-5-2',
+    label: 'AnimateDiff SD1.5 v2 MotionAdapter',
+    repo: 'guoyww/animatediff-motion-adapter-v1-5-2',
+    revision: '6167b88ffe39b4441fdf2113e77b99a6f56b7906',
+    kind: 'adapter',
+  };
+  const controlnet = {
+    id: 'sd15-controlnet-canny',
+    label: 'Stable Diffusion 1.5 Canny ControlNet',
+    repo: 'lllyasviel/control_v11p_sd15_canny',
+    revision: '115a470d547982438f70198e353a921996e2e819',
+    kind: 'controlnet',
+  };
+  const qwenControlnet = {
+    id: 'qwen-controlnet-union',
+    label: 'Qwen ControlNet Union',
+    repo: 'InstantX/Qwen-Image-ControlNet-Union',
+    revision: 'b13036f066d6dee7c20513e263d3d673055e9de8',
+    kind: 'controlnet',
+  };
+  const capabilities = cases.map((item) => {
+    const qwen = Boolean(item.imageKind);
+    const layered = item.imageKind === 'layers';
+    const loaderRole = qwen ? 'diffusersImagePipeline' : 'wanPipeline';
+    const actionRole = layered ? 'diffusersImageLayerDecompose' : qwen ? 'diffusersImageControl' : 'wanGenerate';
+    const roles = qwen
+      ? [
+          [loaderRole, 'modules.DiffusersImage.LoadPipeline', -520, -80],
+          ['loadImage', 'modules.Image.Load', -520, 300],
+          [
+            actionRole,
+            layered ? 'modules.DiffusersImage.LayerDecompose' : 'modules.DiffusersImage.ControlGenerate',
+            -120,
+            -80,
+          ],
+          ['preview', 'modules.Image.Preview', 980, -80],
+        ]
+      : [
+          [loaderRole, 'modules.DiffusersVideo.LoadPipeline', -520, -80],
+          [actionRole, 'modules.DiffusersVideo.Generate', 220, -80],
+          ['videoExport', 'modules.Video.Export', 640, -80],
+          ...(item.sourceVideo
+            ? [
+                ['loadVideo', 'modules.Video.Load', -520, 260],
+                ['normalizeVideo', 'modules.VideoConditioning.Normalize', -160, 260],
+              ]
+            : []),
+          ...(item.controlVideo
+            ? [
+                ['loadControlVideo', 'modules.Video.Load', -520, item.sourceVideo ? 520 : 260],
+                ['normalizeControlVideo', 'modules.VideoConditioning.Normalize', -160, item.sourceVideo ? 520 : 260],
+                [
+                  'controlPreprocessor',
+                  'modules.VideoConditioning.EdgePreprocessor',
+                  220,
+                  item.sourceVideo ? 520 : 260,
+                ],
+              ]
+            : []),
+        ];
+    const edges = qwen
+      ? [
+          [loaderRole, 'pipeline', actionRole, 'pipeline'],
+          ['loadImage', 'image', actionRole, layered ? 'image' : 'control_image'],
+          [actionRole, 'images', 'preview', 'image'],
+        ]
+      : [
+          [loaderRole, 'pipeline', actionRole, 'pipeline'],
+          [actionRole, 'video_out', 'videoExport', 'video'],
+          ...(item.sourceVideo
+            ? [
+                ['loadVideo', 'video', 'normalizeVideo', 'video'],
+                ['normalizeVideo', 'output', actionRole, 'video'],
+              ]
+            : []),
+          ...(item.controlVideo
+            ? [
+                ['loadControlVideo', 'video', 'normalizeControlVideo', 'video'],
+                ['normalizeControlVideo', 'output', 'controlPreprocessor', 'video'],
+                ['controlPreprocessor', 'output', actionRole, 'control_video'],
+              ]
+            : []),
+        ];
+    const bindings = [
+      [loaderRole, 'model_id', 'artifact'],
+      [loaderRole, 'revision', 'defaultRevision'],
+      [loaderRole, 'pipeline_class', 'pipelineClass'],
+      ...(qwen
+        ? [
+            ['loadImage', 'file', layered ? 'referenceImages' : 'controlImage'],
+            ...(layered
+              ? [
+                  [actionRole, 'layers', 'layers'],
+                  [actionRole, 'resolution', 'resolution'],
+                  [actionRole, 'cfg_normalize', 'cfgNormalize'],
+                  [actionRole, 'use_en_prompt', 'useEnglishPrompt'],
+                ]
+              : [
+                  [loaderRole, 'conditioning_kind', 'kind'],
+                  [loaderRole, 'conditioning_model_id', 'repo'],
+                  [loaderRole, 'conditioning_revision', 'revision'],
+                  [actionRole, 'conditioning_scale', 'conditioningScale'],
+                  [actionRole, 'control_guidance_start', 'controlGuidanceStart'],
+                  [actionRole, 'control_guidance_end', 'controlGuidanceEnd'],
+                ]),
+          ]
+        : [
+            ...(item.cog
+              ? []
+              : [
+                  [loaderRole, 'motion_adapter_id', 'motionAdapterRepo'],
+                  [loaderRole, 'motion_adapter_revision', 'motionAdapterRevision'],
+                ]),
+            ...(item.sourceVideo
+              ? [
+                  ['loadVideo', 'file', 'sourceVideo'],
+                  ['normalizeVideo', 'width', 'width'],
+                  ['normalizeVideo', 'height', 'height'],
+                  ['normalizeVideo', 'num_frames', 'numFrames'],
+                ]
+              : []),
+            ...(item.controlVideo
+              ? [
+                  ['loadControlVideo', 'file', 'controlVideo'],
+                  ['normalizeControlVideo', 'width', 'width'],
+                  ['normalizeControlVideo', 'height', 'height'],
+                  ['normalizeControlVideo', 'num_frames', 'numFrames'],
+                  ['controlPreprocessor', 'low_threshold', 'videoCannyLowThreshold100'],
+                  ['controlPreprocessor', 'high_threshold', 'videoCannyHighThreshold200'],
+                  [actionRole, 'conditioning_scale', 'conditioningScale'],
+                ]
+              : []),
+            ...(item.pag
+              ? [
+                  [actionRole, 'pag_scale', 'pagScale'],
+                  [actionRole, 'pag_adaptive_scale', 'pagAdaptiveScale'],
+                ]
+              : []),
+          ]),
+    ];
+    const profile = {
+      id: item.profileId,
+      model_type: item.modelType,
+      modes: [item.mode],
+      loader_module: qwen ? 'modules.DiffusersImage' : 'modules.DiffusersVideo',
+      loader_action: 'LoadPipeline',
+      execution_path: qwen ? 'direct-diffusers-image' : 'direct-diffusers-video',
+      pipeline_class: item.modelType,
+      default_repo: item.repo,
+      supported_offload_modes: ['none', 'model_cpu', 'sequential_cpu'],
+      retry_offload_modes: ['model_cpu', 'sequential_cpu'],
+    };
+    const requirements = item.imageKind === 'control' ? [qwenControlnet] : item.cog || layered ? [] : [motionAdapter];
+    if (item.controlVideo) requirements.push(controlnet);
+    const spec = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: item.id,
+      modelType: item.modelType,
+      mode: item.mode,
+      executionProfileId: item.profileId,
+      loaderModule: profile.loader_module,
+      loaderAction: profile.loader_action,
+      executionPath: profile.execution_path,
+      pipelineClass: item.modelType,
+      defaultRepo: item.repo,
+      roles,
+      edges,
+      bindings,
+      autoFields: [],
+      actions: [],
+      contentHash: item.hash,
+    };
+    return {
+      modelType: item.modelType,
+      modes: [item.mode],
+      runnableModes: [item.mode],
+      modeRequirements: {
+        [item.mode]: {
+          modelRequirements: requirements,
+          requiredImages: item.imageKind ? [item.imageKind === 'layers' ? 'referenceImages' : 'controlImage'] : [],
+          requiredVideos: [
+            ...(item.sourceVideo ? ['sourceVideo'] : []),
+            ...(item.controlVideo ? ['controlVideo'] : []),
+          ],
+        },
+      },
+      revisionCandidates: [item.revision],
+      executionProfiles: [profile],
+      studioExecutionSpecSchemaVersion: 1,
+      studioExecutionSpecModes: [item.mode],
+      studioExecutionSpecs: [spec],
+    };
+  });
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const nativeWebSocket = globalThis.WebSocket;
+  const nativeFetch = globalThis.fetch;
+  globalThis.WebSocket = undefined;
+  globalThis.fetch = async (_input, init) => {
+    const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    if (payload?.fn === 'update_video_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const pipelineNode = flowStoreModule.useFlowStore
+          .getState()
+          .nodes.find((nodeItem) => nodeItem.id === payload.node);
+        flowStoreModule.useFlowStore.getState().setParam(
+          payload.node,
+          'pipeline',
+          {
+            direction: 'output',
+            value: {
+              pipelineClass: pipelineNode?.data.params.pipeline_class.value,
+              modes: ['text_to_video', 'video_to_video', 'control_to_video', 'control_video_to_video'],
+            },
+          },
+          'signal',
+        );
+      } else if (payload.action === 'Generate') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        const contract = signal?.value;
+        const selectedMode = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'mode', 'value');
+        flowStoreModule.useFlowStore
+          .getState()
+          .setParam(
+            payload.node,
+            'mode',
+            contract?.modes?.includes(selectedMode) ? selectedMode : contract?.modes?.[0],
+          );
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'video_contract', contract);
+      }
+    }
+    return new Response(JSON.stringify({ error: false, nodes: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: registry,
+      studioModelCapabilities: capabilities,
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    for (const item of cases) {
+      flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+      const form = {
+        ...previousForm,
+        modelType: item.modelType,
+        mode: item.mode,
+        resourceMode: 'expert',
+        quantizationMode: 'none',
+        prompt: 'Preserve the exact reviewed contract',
+        width: item.imageKind === 'layers' ? 640 : 512,
+        height: item.imageKind === 'layers' ? 640 : 512,
+        layers: 6,
+        sourceVideo: item.sourceVideo ? 'source.mp4' : '',
+        controlVideo: item.controlVideo ? 'control.mp4' : '',
+        controlImage: item.imageKind === 'control' ? 'edges.png' : '',
+        referenceImages: item.imageKind === 'layers' ? ['portrait.png'] : [],
+        conditioningScale: 0.75,
+        pagScale: 3,
+        pagAdaptiveScale: 0,
+      };
+      studioStoreModule.useStudioStore.setState({ form, graphBinding: null, autoResourcePlan: null });
+      await graphBridge.createOrUpdateStudioGraph(form);
+      const binding = studioStoreModule.useStudioStore.getState().graphBinding;
+      const nodes = flowStoreModule.useFlowStore.getState().nodes;
+      const byRole = (role) => nodes.find((nodeItem) => nodeItem.id === binding.nodes[role]);
+      const capability = capabilities.find(({ modelType }) => modelType === item.modelType);
+      const spec = capability.studioExecutionSpecs[0];
+      const actualTopology = flowStoreModule.useFlowStore
+        .getState()
+        .edges.map((itemEdge) => [
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.source)?.[0],
+          itemEdge.sourceHandle,
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.target)?.[0],
+          itemEdge.targetHandle,
+        ])
+        .sort();
+      assert.equal(binding.executionSpec.id, item.id);
+      assert.equal(binding.executionSpec.contentHash, item.hash);
+      assert.deepEqual(actualTopology, spec.edges.map((edgeRow) => [...edgeRow]).sort());
+      assert.equal(
+        byRole(item.imageKind ? 'diffusersImagePipeline' : 'wanPipeline').data.params.revision.value,
+        item.revision,
+      );
+      if (item.imageKind === 'control') {
+        assert.equal(byRole('loadImage').data.params.file.value, 'edges.png');
+        assert.equal(
+          byRole('diffusersImagePipeline').data.params.conditioning_model_id.value.value,
+          qwenControlnet.repo,
+        );
+        assert.equal(byRole('diffusersImageControl').data.params.control_guidance_start.value, 0);
+        assert.equal(byRole('diffusersImageControl').data.params.control_guidance_end.value, 1);
+      } else if (item.imageKind === 'layers') {
+        assert.deepEqual(byRole('loadImage').data.params.file.value, ['portrait.png']);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.layers.value, 6);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.resolution.value, 640);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.cfg_normalize.value, false);
+        assert.equal(byRole('diffusersImageLayerDecompose').data.params.use_en_prompt.value, false);
+      } else {
+        if (!item.cog) {
+          assert.equal(byRole('wanPipeline').data.params.motion_adapter_id.value.value, motionAdapter.repo);
+          assert.equal(byRole('wanPipeline').data.params.motion_adapter_revision.value, motionAdapter.revision);
+        }
+        if (item.sourceVideo) assert.equal(byRole('loadVideo').data.params.file.value, 'source.mp4');
+        if (item.controlVideo) {
+          assert.equal(byRole('loadControlVideo').data.params.file.value, 'control.mp4');
+          assert.equal(byRole('controlPreprocessor').data.params.low_threshold.value, 100);
+          assert.equal(byRole('controlPreprocessor').data.params.high_threshold.value, 200);
+        }
+        if (item.pag) assert.equal(byRole('wanGenerate').data.params.pag_scale.value, 3);
+      }
+      assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+    }
+  } finally {
+    globalThis.WebSocket = nativeWebSocket;
+    globalThis.fetch = nativeFetch;
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: previousNodesState.nodesRegistry,
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm, graphBinding: null, autoResourcePlan: null });
+  }
+});
+
+test('final direct routes materialize generic edit, outpaint, and synchronized video-audio graphs', async () => {
+  const scalar = (value = null, type = 'string') => ({ type, display: 'text', value });
+  const input = (type) => ({ type, display: 'input' });
+  const output = (type) => ({ type, display: 'output' });
+  const registry = {
+    'modules.DiffusersImage.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'LoadPipeline',
+      label: 'Load Image Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        pipeline_class: scalar(),
+        mode: scalar(),
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersImage.Edit': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'Edit',
+      label: 'Edit Image',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        image: input('image'),
+        prompt: scalar(),
+        strength: scalar(0.75, 'number'),
+        images: output('image'),
+      },
+    },
+    'modules.DiffusersImage.Inpaint': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'Inpaint',
+      label: 'Inpaint Image',
+      category: 'Test',
+      params: {
+        pipeline: input('pipeline'),
+        image: input('image'),
+        mask_image: input('image'),
+        prompt: scalar(),
+        strength: scalar(0.75, 'number'),
+        images: output('image'),
+      },
+    },
+    'modules.DiffusersImage.OutpaintCanvas': {
+      type: 'custom',
+      module: 'modules.DiffusersImage',
+      action: 'OutpaintCanvas',
+      label: 'Outpaint Canvas',
+      category: 'Test',
+      params: {
+        image: input('image'),
+        width: scalar(1024, 'number'),
+        height: scalar(1024, 'number'),
+        left: scalar(0, 'number'),
+        right: scalar(0, 'number'),
+        top: scalar(0, 'number'),
+        bottom: scalar(0, 'number'),
+        overlap: scalar(32, 'number'),
+        feather: scalar(8, 'number'),
+        fill_color: scalar('black'),
+        canvas: output('image'),
+        mask_image: output('image'),
+      },
+    },
+    'modules.Image.Load': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Load',
+      label: 'Load Image',
+      category: 'Test',
+      params: { file: scalar(), alpha_channel: scalar(), image: output('image') },
+    },
+    'modules.Image.Preview': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      category: 'Test',
+      params: { image: input('image') },
+    },
+    'modules.DiffusersVideo.LoadPipeline': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'LoadPipeline',
+      label: 'Load Video Pipeline',
+      category: 'Test',
+      params: {
+        model_id: scalar(),
+        revision: scalar(),
+        pipeline_class: { ...scalar(), onChange: 'update_video_contract' },
+        pipeline: output('pipeline'),
+      },
+    },
+    'modules.DiffusersVideo.GenerateVideoAudio': {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'GenerateVideoAudio',
+      label: 'Generate Video + Audio',
+      category: 'Test',
+      params: {
+        pipeline: { ...input('pipeline'), onSignal: 'update_video_contract' },
+        prompt: scalar(),
+        mode: { ...scalar(), onChange: 'update_video_contract' },
+        video_contract: scalar(),
+        num_frames: scalar(121, 'number'),
+        frame_rate: scalar(24, 'number'),
+        video_out: output('video'),
+        audio: output('audio'),
+      },
+    },
+    'modules.Video.ExportWithAudio': {
+      type: 'custom',
+      module: 'modules.Video',
+      action: 'ExportWithAudio',
+      label: 'Export Video + Audio',
+      category: 'Test',
+      params: { video: input('video'), audio: input('audio'), fps: scalar(24, 'number') },
+    },
+  };
+  const cases = [
+    {
+      modelType: 'QwenImageEditPipeline',
+      mode: 'edit_image',
+      id: 'qwen-image-edit-direct:edit-image:v1',
+      hash: 'studio-spec-v1-e2d95865',
+      profileId: 'qwen-image-edit:direct',
+      repo: 'Qwen/Qwen-Image-Edit',
+      revision: 'ac7f9318f633fc4b5778c59367c8128225f1e3de',
+      roles: [
+        ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+        ['loadImage', 'modules.Image.Load', -520, 300],
+        ['diffusersImageEdit', 'modules.DiffusersImage.Edit', -120, -80],
+        ['preview', 'modules.Image.Preview', 980, -80],
+      ],
+      edges: [
+        ['diffusersImagePipeline', 'pipeline', 'diffusersImageEdit', 'pipeline'],
+        ['loadImage', 'image', 'diffusersImageEdit', 'image'],
+        ['diffusersImageEdit', 'images', 'preview', 'image'],
+      ],
+      bindings: [
+        ['diffusersImagePipeline', 'model_id', 'artifact'],
+        ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+        ['diffusersImagePipeline', 'revision', 'defaultRevision'],
+        ['loadImage', 'file', 'referenceImages'],
+        ['diffusersImageEdit', 'prompt', 'prompt'],
+        ['diffusersImageEdit', 'strength', 'strength'],
+      ],
+    },
+    {
+      modelType: 'ChromaInpaintPipeline',
+      mode: 'outpaint',
+      id: 'chroma1-hd-inpaint:outpaint:v1',
+      hash: 'studio-spec-v1-048def62',
+      profileId: 'chroma1-hd-inpaint:direct',
+      repo: 'lodestones/Chroma1-HD',
+      revision: '0e0c60ece1e82b17cb7f77342d765ba5024c40c0',
+      roles: [
+        ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', -520, -80],
+        ['loadImage', 'modules.Image.Load', -520, 300],
+        ['outpaintCanvas', 'modules.DiffusersImage.OutpaintCanvas', -520, 300],
+        ['diffusersImageInpaint', 'modules.DiffusersImage.Inpaint', -120, -80],
+        ['preview', 'modules.Image.Preview', 980, -80],
+      ],
+      edges: [
+        ['diffusersImagePipeline', 'pipeline', 'diffusersImageInpaint', 'pipeline'],
+        ['loadImage', 'image', 'outpaintCanvas', 'image'],
+        ['outpaintCanvas', 'canvas', 'diffusersImageInpaint', 'image'],
+        ['outpaintCanvas', 'mask_image', 'diffusersImageInpaint', 'mask_image'],
+        ['diffusersImageInpaint', 'images', 'preview', 'image'],
+      ],
+      bindings: [
+        ['diffusersImagePipeline', 'model_id', 'artifact'],
+        ['diffusersImagePipeline', 'pipeline_class', 'pipelineClass'],
+        ['diffusersImagePipeline', 'revision', 'defaultRevision'],
+        ['loadImage', 'file', 'referenceImages'],
+        ['outpaintCanvas', 'width', 'width'],
+        ['outpaintCanvas', 'height', 'height'],
+        ['outpaintCanvas', 'left', 'outpaintLeft'],
+        ['outpaintCanvas', 'right', 'outpaintRight'],
+        ['outpaintCanvas', 'top', 'outpaintTop'],
+        ['outpaintCanvas', 'bottom', 'outpaintBottom'],
+        ['outpaintCanvas', 'overlap', 'outpaintOverlap'],
+        ['outpaintCanvas', 'feather', 'outpaintFeather'],
+        ['outpaintCanvas', 'fill_color', 'outpaintFillColor'],
+        ['diffusersImageInpaint', 'prompt', 'prompt'],
+        ['diffusersImageInpaint', 'strength', 'strength'],
+      ],
+    },
+    {
+      modelType: 'LTX2Pipeline',
+      mode: 'text_to_video',
+      id: 'ltx2-standard:text-to-video:v1',
+      hash: 'studio-spec-v1-b3b8990c',
+      profileId: 'ltx2-standard:direct',
+      repo: 'Lightricks/LTX-2',
+      revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a',
+      roles: [
+        ['wanPipeline', 'modules.DiffusersVideo.LoadPipeline', -520, -80],
+        ['wanGenerate', 'modules.DiffusersVideo.GenerateVideoAudio', 220, -80],
+        ['videoExport', 'modules.Video.ExportWithAudio', 640, -80],
+      ],
+      edges: [
+        ['wanPipeline', 'pipeline', 'wanGenerate', 'pipeline'],
+        ['wanGenerate', 'video_out', 'videoExport', 'video'],
+        ['wanGenerate', 'audio', 'videoExport', 'audio'],
+      ],
+      bindings: [
+        ['wanPipeline', 'model_id', 'artifact'],
+        ['wanPipeline', 'pipeline_class', 'pipelineClass'],
+        ['wanPipeline', 'revision', 'defaultRevision'],
+        ['wanGenerate', 'prompt', 'prompt'],
+        ['wanGenerate', 'mode', 'mode'],
+        ['wanGenerate', 'num_frames', 'numFrames'],
+        ['wanGenerate', 'frame_rate', 'fps'],
+        ['videoExport', 'fps', 'fps'],
+      ],
+    },
+  ];
+  const capabilities = cases.map((item) => {
+    const video = item.modelType === 'LTX2Pipeline';
+    const profile = {
+      id: item.profileId,
+      model_type: item.modelType,
+      modes: [item.mode],
+      loader_module: video ? 'modules.DiffusersVideo' : 'modules.DiffusersImage',
+      loader_action: 'LoadPipeline',
+      execution_path: video ? 'direct-diffusers-video' : 'direct-diffusers-image',
+      pipeline_class: item.modelType,
+      default_repo: item.repo,
+      supported_offload_modes: ['none', 'model_cpu', 'sequential_cpu'],
+      retry_offload_modes: ['model_cpu', 'sequential_cpu'],
+    };
+    return {
+      modelType: item.modelType,
+      modes: [item.mode],
+      runnableModes: [item.mode],
+      modeRequirements: {
+        [item.mode]: {
+          requiredImages: video ? [] : ['referenceImages'],
+        },
+      },
+      revisionCandidates: [item.revision],
+      executionProfiles: [profile],
+      studioExecutionSpecSchemaVersion: 1,
+      studioExecutionSpecModes: [item.mode],
+      studioExecutionSpecs: [
+        {
+          schemaVersion: 1,
+          canonicalizationVersion: 1,
+          id: item.id,
+          modelType: item.modelType,
+          mode: item.mode,
+          executionProfileId: item.profileId,
+          loaderModule: profile.loader_module,
+          loaderAction: profile.loader_action,
+          executionPath: profile.execution_path,
+          pipelineClass: item.modelType,
+          defaultRepo: item.repo,
+          roles: item.roles,
+          edges: item.edges,
+          bindings: item.bindings,
+          autoFields: [],
+          actions: [],
+          contentHash: item.hash,
+        },
+      ],
+    };
+  });
+  const previousNodesState = nodesStoreModule.useNodesStore.getState();
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const nativeWebSocket = globalThis.WebSocket;
+  const nativeFetch = globalThis.fetch;
+  globalThis.WebSocket = undefined;
+  globalThis.fetch = async (_input, init) => {
+    const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    if (payload?.fn === 'update_video_contract') {
+      if (payload.action === 'LoadPipeline') {
+        const pipelineNode = flowStoreModule.useFlowStore
+          .getState()
+          .nodes.find((nodeItem) => nodeItem.id === payload.node);
+        flowStoreModule.useFlowStore.getState().setParam(
+          payload.node,
+          'pipeline',
+          {
+            direction: 'output',
+            value: {
+              pipelineClass: pipelineNode?.data.params.pipeline_class.value,
+              modes: ['text_to_video'],
+            },
+          },
+          'signal',
+        );
+      } else if (payload.action === 'GenerateVideoAudio') {
+        const signal = flowStoreModule.useFlowStore.getState().getParam(payload.node, 'pipeline', 'signal');
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'mode', signal?.value?.modes?.[0]);
+        flowStoreModule.useFlowStore.getState().setParam(payload.node, 'video_contract', signal?.value);
+      }
+    }
+    return new Response(JSON.stringify({ error: false, nodes: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: registry,
+      studioModelCapabilities: capabilities,
+      studioModelCapabilitiesAuthoritative: true,
+      studioExecutionSpecInvalid: false,
+    });
+    for (const item of cases) {
+      flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+      const video = item.modelType === 'LTX2Pipeline';
+      const outpaint = item.mode === 'outpaint';
+      const form = {
+        ...previousForm,
+        modelType: item.modelType,
+        mode: item.mode,
+        resourceMode: 'expert',
+        quantizationMode: 'none',
+        prompt: 'Preserve the sealed generic route',
+        referenceImages: video ? [] : ['source.png'],
+        width: video ? 768 : 1024,
+        height: video ? 512 : 1024,
+        numFrames: 121,
+        fps: 24,
+        outpaintLeft: 128,
+        outpaintRight: 256,
+        outpaintTop: 32,
+        outpaintBottom: 64,
+        outpaintOverlap: 24,
+        outpaintFeather: 8,
+        outpaintFillColor: 'black',
+      };
+      studioStoreModule.useStudioStore.setState({ form, graphBinding: null, autoResourcePlan: null });
+      await graphBridge.createOrUpdateStudioGraph(form);
+      const binding = studioStoreModule.useStudioStore.getState().graphBinding;
+      const nodes = flowStoreModule.useFlowStore.getState().nodes;
+      const byRole = (role) => nodes.find((nodeItem) => nodeItem.id === binding.nodes[role]);
+      const actualTopology = flowStoreModule.useFlowStore
+        .getState()
+        .edges.map((itemEdge) => [
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.source)?.[0],
+          itemEdge.sourceHandle,
+          Object.entries(binding.nodes).find(([, id]) => id === itemEdge.target)?.[0],
+          itemEdge.targetHandle,
+        ])
+        .sort();
+      assert.equal(binding.executionSpec.id, item.id);
+      assert.equal(binding.executionSpec.contentHash, item.hash);
+      assert.deepEqual(actualTopology, item.edges.map((edgeRow) => [...edgeRow]).sort());
+      assert.equal(byRole(video ? 'wanPipeline' : 'diffusersImagePipeline').data.params.revision.value, item.revision);
+      if (outpaint) {
+        assert.equal(byRole('outpaintCanvas').data.params.left.value, 128);
+        assert.equal(byRole('outpaintCanvas').data.params.right.value, 256);
+        assert.equal(byRole('outpaintCanvas').data.params.feather.value, 8);
+      }
+      if (video) {
+        assert.equal(byRole('wanGenerate').data.action, 'GenerateVideoAudio');
+        assert.equal(byRole('videoExport').data.action, 'ExportWithAudio');
+        assert.ok(
+          item.edges.some(
+            ([source, handle, target]) => source === 'wanGenerate' && handle === 'audio' && target === 'videoExport',
+          ),
+        );
+      }
+      assert.equal(graphBridge.getStudioGraphRunBlockingMessage(form), null);
+    }
+  } finally {
+    globalThis.WebSocket = nativeWebSocket;
+    globalThis.fetch = nativeFetch;
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: previousNodesState.nodesRegistry,
+      studioModelCapabilities: previousNodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodesState.studioModelCapabilitiesAuthoritative,
+      studioExecutionSpecInvalid: previousNodesState.studioExecutionSpecInvalid,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm, graphBinding: null, autoResourcePlan: null });
   }
 });
 
@@ -3912,12 +5702,11 @@ test('schema-v3 controlled commits roll back partial routes and seal extension e
     studioStoreModule.useStudioStore.getState().graphBinding.finalizationProof,
     binding.finalizationProof,
   );
-  assert.equal(
-    runReadinessModule
-      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
-      .find((issue) => issue.action === 'detach_graph')?.blocking,
-    true,
-  );
+  const invalidReceiptIssue = runReadinessModule
+    .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+    .find((issue) => issue.action === 'detach_graph');
+  assert.equal(invalidReceiptIssue?.blocking, false);
+  assert.equal(invalidReceiptIssue?.severity, 'warning');
   await assert.rejects(() => graphBridge.createOrUpdateStudioGraph(form), /saved Studio graph proof is invalid/i);
 });
 
@@ -4189,6 +5978,20 @@ test('Closed blocks derive possible frontier sockets and route collapsed preview
       ['preview', 'selected'],
     ],
   );
+  flowStoreModule.useFlowStore.setState({ nodes: [created.blockNode], edges: [] });
+  const collapsedReadiness = runReadinessModule.collectRunReadinessIssues({
+    sid: 'test-session',
+    isConnected: true,
+  });
+  assert.equal(
+    collapsedReadiness.find((item) => /connected output|connect the graph to an output/i.test(item.message)),
+    undefined,
+    'a collapsed User Node must be validated through the same expanded graph that will execute',
+  );
+  const collapsedInspection = runReadinessModule.inspectCurrentGraph();
+  assert.equal(collapsedInspection.nodeCount, 1, 'inspection preserves the visible wrapper count');
+  assert.equal(collapsedInspection.enabledExecutableCount, 3, 'inspection validates the three internal nodes');
+  assert.equal(collapsedInspection.outputPathCount, 1, 'the internal preview remains a connected execution output');
   const runtimePreviewNodeId = `${created.blockNode.id}__preview`;
   const previewTarget = userBlocksModule.collapsedUserBlockPreviewTarget(
     created.nodes,
@@ -4208,6 +6011,261 @@ test('Closed blocks derive possible frontier sockets and route collapsed preview
     userBlocksModule.runtimeProgressTarget(created.nodes, 'unknown-runtime-id', 'Closed render block'),
     created.blockNode.id,
     'a unique visible label can restore progress after a durable queue snapshot',
+  );
+});
+
+test('existing canvas nodes move into expanded User Nodes while Cluster and User Node nesting stays rejected', () => {
+  const loader = node('adopt-loader', 0, 0, {
+    params: { output: { display: 'output', type: 'image' } },
+  });
+  const preview = node('adopt-preview', 360, 0, {
+    params: {
+      input: { display: 'input', type: 'image' },
+      preview: { display: 'ui_image', type: 'url', value: null },
+    },
+  });
+  loader.selected = true;
+  preview.selected = true;
+  const created = userBlocksModule.createUserBlockFromSelection(
+    { nodes: [loader, preview], edges: [edge('adopt-internal', loader.id, preview.id)] },
+    'Adoption target',
+  );
+  assert.equal(created.ok, true);
+  const expanded = userBlocksModule.expandUserBlockInstance(
+    { nodes: created.nodes, edges: created.edges },
+    created.blockNode.id,
+    [],
+  );
+  const root = expanded.nodes.find((item) => item.id === created.blockNode.id);
+  const ordinary = node('existing-canvas-node', root.position.x + 140, root.position.y + 180, {
+    params: {
+      input: { display: 'input', type: 'image' },
+      output: { display: 'output', type: 'image' },
+    },
+  });
+  const adoptedGraph = userBlocksModule.placeExistingNodeInsideExpandedUserBlock(
+    { nodes: [...expanded.nodes, ordinary], edges: expanded.edges },
+    ordinary.id,
+    root.id,
+  );
+  const adopted = adoptedGraph.nodes.find((item) => item.id === ordinary.id);
+  assert.equal(adopted.parentId, root.id);
+  assert.equal(adopted.data.userBlockInstanceId, root.id);
+  assert.equal(adopted.data.userBlockSourceNodeId, ordinary.id);
+  assert.equal(adopted.position.x, 140);
+  assert.equal(adopted.position.y, 180);
+  assert.ok(adoptedGraph.nodes.findIndex((item) => item.id === root.id) < adoptedGraph.nodes.indexOf(adopted));
+
+  const rejectedUserNesting = userBlocksModule.placeExistingNodeInsideExpandedUserBlock(adoptedGraph, root.id, root.id);
+  assert.equal(rejectedUserNesting, adoptedGraph);
+  const cluster = {
+    ...node('cluster-container', root.position.x + 180, root.position.y + 220),
+    type: 'cluster',
+    data: { ...node('cluster-container').data, type: 'cluster' },
+  };
+  const withCluster = { nodes: [...adoptedGraph.nodes, cluster], edges: adoptedGraph.edges };
+  assert.equal(
+    userBlocksModule.placeExistingNodeInsideExpandedUserBlock(withCluster, cluster.id, root.id),
+    withCluster,
+  );
+
+  adoptedGraph.nodes.find((item) => item.id === root.id).measured = { width: 1200, height: 850 };
+  const collapsed = userBlocksModule.collapseUserBlockInstance(adoptedGraph, root.id, []);
+  const collapsedRoot = collapsed.nodes.find((item) => item.id === root.id);
+  assert.equal(collapsedRoot.measured, undefined, 'changed public handles must not reuse expanded handle bounds');
+  assert.equal(collapsedRoot.data.userBlockSnapshot.nodes.length, 3);
+  const restored = userBlocksModule.expandUserBlockGraph(collapsed.nodes, collapsed.edges, []);
+  assert.ok(restored.nodes.some((item) => item.id.endsWith(ordinary.id)));
+
+  const captured = userBlocksModule.snapshotUserBlockInstance(adoptedGraph, root.id, []);
+  assert.equal(captured.nodes.length, 3);
+  const copied = userBlocksModule.copyUserBlockDefinition(
+    captured,
+    `${captured.name} — Workflow Demo`,
+    'new-user-node-definition',
+  );
+  assert.equal(copied.id, 'new-user-node-definition');
+  assert.equal(copied.name, 'Adoption target — Workflow Demo');
+  const otherInstance = userBlocksModule.createUserBlockNode(created.block, { x: 1800, y: 0 }, 'other-instance');
+  adoptedGraph.nodes.find((item) => item.id === root.id).measured = { width: 790, height: 992 };
+  const applied = userBlocksModule.applyUserBlockDefinitionToInstance(
+    { nodes: [...adoptedGraph.nodes, otherInstance], edges: adoptedGraph.edges },
+    root.id,
+    copied,
+  );
+  const updatedInstance = applied.nodes.find((item) => item.id === root.id);
+  const unchangedInstance = applied.nodes.find((item) => item.id === otherInstance.id);
+  assert.equal(updatedInstance.data.userBlockId, copied.id);
+  assert.equal(updatedInstance.data.label, copied.name);
+  assert.equal(updatedInstance.data.userBlockSnapshot.nodes.length, 3);
+  assert.deepEqual(updatedInstance.measured, { width: 790, height: 992 });
+  assert.equal(unchangedInstance.data.userBlockId, created.block.id);
+  assert.equal(unchangedInstance.data.userBlockSnapshot.nodes.length, 2);
+});
+
+test('User Node composition guides typed insertion, validates Modular state identity, and keeps the splice undoable', () => {
+  const source = node('composition-source', 0, 0, {
+    params: { image: { display: 'output', type: 'image' } },
+  });
+  const target = node('composition-target', 720, 0, {
+    params: { image: { display: 'input', type: 'image', required: true } },
+  });
+  source.selected = true;
+  target.selected = true;
+  const created = userBlocksModule.createUserBlockFromSelection(
+    {
+      nodes: [source, target],
+      edges: [edge('composition-edge', source.id, target.id, 'image', 'image')],
+    },
+    'Semantic composition',
+  );
+  assert.equal(created.ok, true);
+  const expanded = userBlocksModule.expandUserBlockInstance(
+    { nodes: created.nodes, edges: created.edges },
+    created.blockNode.id,
+    [],
+  );
+  const root = expanded.nodes.find((item) => item.id === created.blockNode.id);
+  const relay = userBlocksModule.placeNodeInsideExpandedUserBlock(
+    node('composition-relay', root.position.x + 360, root.position.y + 180, {
+      params: {
+        image_in: { display: 'input', type: 'image' },
+        image_out: { display: 'output', type: 'image' },
+      },
+    }),
+    root,
+  );
+  const withRelay = { nodes: [...expanded.nodes, relay], edges: expanded.edges };
+  const report = userBlocksModule.inspectUserBlockComposition(withRelay, root.id);
+  assert.equal(report.valid, true);
+  assert.equal(report.insertionSuggestions.length, 1);
+  assert.match(
+    report.insertionSuggestions[0].label,
+    /Insert composition-relay between composition-source and composition-target/,
+  );
+  const replacedEdgeId = report.insertionSuggestions[0].edgeId;
+
+  flowStoreModule.useFlowStore.setState({
+    ...withRelay,
+    historyPast: [],
+    historyFuture: [],
+  });
+  flowStoreModule.useFlowStore.getState().insertNodeInUserBlock(root.id, report.insertionSuggestions[0]);
+  let current = flowStoreModule.useFlowStore.getState();
+  assert.equal(
+    current.edges.some((item) => item.id === replacedEdgeId),
+    false,
+  );
+  assert.equal(current.edges.filter((item) => item.source === relay.id || item.target === relay.id).length, 2);
+  assert.equal(userBlocksModule.inspectUserBlockComposition(current, root.id).valid, true);
+  current.undo();
+  current = flowStoreModule.useFlowStore.getState();
+  assert.equal(
+    current.edges.some((item) => item.id === replacedEdgeId),
+    true,
+  );
+  assert.equal(current.edges.filter((item) => item.source === relay.id || item.target === relay.id).length, 0);
+  current.redo();
+  current = flowStoreModule.useFlowStore.getState();
+  assert.equal(current.edges.filter((item) => item.source === relay.id || item.target === relay.id).length, 2);
+
+  const firstState = node('state-first', 0, 0, {
+    params: {
+      pipeline_class: { type: 'string', value: 'MiniMaxMusic3ModularPipeline', hidden: true },
+      workflow_id: { type: 'string', value: 'default', hidden: true },
+      state: { display: 'output', type: 'modular_workflow_state' },
+    },
+  });
+  const wrongState = node('state-wrong', 360, 0, {
+    params: {
+      pipeline_class: { type: 'string', value: 'FutureMusicModularPipeline', hidden: true },
+      workflow_id: { type: 'string', value: 'default', hidden: true },
+      state: { display: 'input', type: 'modular_workflow_state' },
+    },
+  });
+  firstState.selected = true;
+  wrongState.selected = true;
+  const stateBlock = userBlocksModule.createUserBlockFromSelection(
+    {
+      nodes: [firstState, wrongState],
+      edges: [edge('state-edge', firstState.id, wrongState.id, 'state', 'state')],
+    },
+    'State identity',
+  );
+  assert.equal(stateBlock.ok, true);
+  const expandedState = userBlocksModule.expandUserBlockInstance(
+    { nodes: stateBlock.nodes, edges: stateBlock.edges },
+    stateBlock.blockNode.id,
+    [],
+  );
+  const stateReport = userBlocksModule.inspectUserBlockComposition(expandedState, stateBlock.blockNode.id);
+  assert.equal(stateReport.valid, false);
+  assert.equal(stateReport.issues[0].kind, 'state_identity_mismatch');
+  assert.match(stateReport.issues[0].message, /MiniMaxMusic3ModularPipeline\/default/);
+  assert.match(stateReport.issues[0].message, /FutureMusicModularPipeline\/default/);
+});
+
+test('User Node connection scope permits exposed boundaries but rejects private and cross-instance links', () => {
+  const source = node('boundary-source', 0, 0, {
+    params: {
+      public_image: { display: 'output', type: 'image' },
+      private_image: { display: 'output', type: 'image' },
+    },
+  });
+  source.selected = true;
+  const created = userBlocksModule.createUserBlockFromSelection({ nodes: [source], edges: [] }, 'Boundary block');
+  assert.equal(created.ok, true);
+  const expanded = userBlocksModule.expandUserBlockInstance(
+    { nodes: created.nodes, edges: created.edges },
+    created.blockNode.id,
+    [],
+  );
+  const child = expanded.nodes.find((item) => item.data.userBlockInstanceId === created.blockNode.id);
+  const outside = node('boundary-outside', 900, 0, {
+    params: { image: { display: 'input', type: 'image' } },
+  });
+  assert.equal(
+    userBlocksModule.userBlockConnectionIsAllowed(
+      [...expanded.nodes, outside],
+      child.id,
+      'public_image',
+      outside.id,
+      'image',
+    ),
+    true,
+  );
+
+  const restrictedDefinition = structuredClone(created.block);
+  restrictedDefinition.outputs = restrictedDefinition.outputs.filter((port) => port.paramKey === 'public_image');
+  const restrictedRoot = expanded.nodes.find((item) => item.id === created.blockNode.id);
+  restrictedRoot.data.userBlockSnapshot = restrictedDefinition;
+  assert.equal(
+    userBlocksModule.userBlockConnectionIsAllowed(
+      [...expanded.nodes, outside],
+      child.id,
+      'private_image',
+      outside.id,
+      'image',
+    ),
+    false,
+  );
+
+  const second = userBlocksModule.createUserBlockNode(created.block, { x: 1200, y: 0 }, 'second-boundary-block');
+  const expandedSecond = userBlocksModule.expandUserBlockInstance(
+    { nodes: [...expanded.nodes, second], edges: expanded.edges },
+    second.id,
+    [],
+  );
+  const secondChild = expandedSecond.nodes.find((item) => item.data.userBlockInstanceId === second.id);
+  assert.equal(
+    userBlocksModule.userBlockConnectionIsAllowed(
+      expandedSecond.nodes,
+      child.id,
+      'public_image',
+      secondChild.id,
+      'public_image',
+    ),
+    false,
   );
 });
 
@@ -4307,7 +6365,7 @@ test('Block edits, expansion, deletion, and resize participate in graph undo and
 });
 
 test('collapsed blocks contain their connector rows and node height has no arbitrary upper cap', () => {
-  const blockSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'BlockNode.tsx'), 'utf8');
+  const blockSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'LegacyUserBlockNode.tsx'), 'utf8');
   const nodeSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'CustomNode.tsx'), 'utf8');
   const frameSource = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'CustomNodeFrame.tsx'), 'utf8');
 
@@ -4327,6 +6385,16 @@ test('Auto canvas renders the exact workflow graph instead of a projected facade
   assert.doesNotMatch(workflowSource, /buildManagedWorkflowPresentation|managedAutoCanvas|ManagedWorkflowStageNode/);
   assert.match(workflowSource, /nodes=\{exactVisibleNodes\}/);
   assert.match(workflowSource, /edges=\{exactVisibleEdges\}/);
+  assert.match(
+    workflowSource,
+    /onlyRenderVisibleElements=\{\s*nodes.length > 100 && !canvasSuspended && !workflowFocusRequest && !requiresCompleteCompositeMount\s*\}/,
+  );
+  assert.match(workflowSource, /isUserBlockExpandedInstance\(\{ nodes, edges \}, node\.id\)/);
+  assert.match(workflowSource, /huggingFaceClusterInstance\?\.presentation\.expanded === true/);
+  assert.equal(
+    [...workflowSource.matchAll(/fitView\([\s\S]*?\.finally\(\(\) => \{\s*setWorkflowFocusRequest\(null\);/g)].length,
+    2,
+  );
   assert.match(workflowSource, /nodesDraggable[\s\S]*nodesConnectable[\s\S]*elementsSelectable/);
   assert.ok(runPreparation);
   assert.doesNotMatch(runPreparation, /createOrUpdateStudioGraph/);
@@ -6028,6 +8096,7 @@ test('restored modular video groups require exact typed I2V and first-last-frame
   assert.match(graphBridge.getStudioGraphRunBlockingMessage(missingCoreMap.form), /route pending/i);
 
   const flf = buildFixture({ flf: true, omit: { role: 'imageEncode', field: 'last_image' } });
+  flf.form.referenceImages = ['opening-from-form.png', 'ending-from-form.png'];
   graphBridge.markStudioGraphDefinitionPending();
   assert.equal(graphBridge.syncStudioGraphDefinition(flf.form), false);
   assert.equal(studioStoreModule.useStudioStore.getState().graphFinalization.status, 'pending');
@@ -6042,10 +8111,16 @@ test('restored modular video groups require exact typed I2V and first-last-frame
   assert.ok(ledger().includes(`${flf.roles.loadLastImage}:image->${flf.roles.imageEmbeddings}:last_image`));
   assert.ok(ledger().includes(`${flf.roles.loadLastImage}:image->${flf.roles.imageEncode}:last_image`));
   assert.deepEqual(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === flf.roles.loadImage).data.params.file
+      .value,
+    ['opening-from-form.png'],
+    'the first-frame loader receives exactly the first selected image',
+  );
+  assert.equal(
     flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === flf.roles.loadLastImage).data.params.file
       .value,
-    ['ending.png'],
-    'form synchronization never aliases the opening image into the ending-image loader',
+    'ending-from-form.png',
+    'the last-frame loader receives exactly the second selected image',
   );
 
   const flfNodeIds = new Set([flf.roles.loadLastImage]);
@@ -6182,8 +8257,12 @@ test('restored modular video groups require exact typed I2V and first-last-frame
 
 test('managed graph entry points wait for finalization and Auto only rebuilds when graph shape changes', () => {
   const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+  const e2eHooksSource = fs.readFileSync(path.join(ROOT, 'src', 'utils', 'e2eHooks.ts'), 'utf8');
   const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
   const studioPanelSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'StudioPanel.tsx'), 'utf8');
+  const topBarSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'TopBar.tsx'), 'utf8');
+  const handleFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'HandleField.tsx'), 'utf8');
+  const numberFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'NumberField.tsx'), 'utf8');
   const issuesDialogSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'RunIssuesDialog.tsx'), 'utf8');
   const createGraph = bridgeSource.match(
     /export async function createOrUpdateStudioGraph[\s\S]*?\n\}\n\nexport async function waitForStudioGraphFinalization/,
@@ -6194,11 +8273,46 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   const autoRunPreparation = runActionsSource.match(
     /export async function ensureStudioAutoPlanReadyForRun[\s\S]*?\n\}\n\ntype MissingInstallTarget/,
   )?.[0];
+  const resourceModeChange = runActionsSource.match(
+    /const handleResourceModeChange = useCallback\([\s\S]*?\n  \);/,
+  )?.[0];
+  const topBarResourceModeChange = topBarSource.match(
+    /const handleStudioViewModeChange = \(mode: StudioViewMode\) => \{[\s\S]*?\n  \};/,
+  )?.[0];
 
   assert.ok(createGraph);
   assert.ok(waitForFinalization);
   assert.ok(autoRunPreparation);
+  assert.ok(resourceModeChange);
+  assert.ok(topBarResourceModeChange);
   assert.equal((createGraph.match(/await waitForStudioGraphFinalization/g) ?? []).length, 1);
+  assert.match(createGraph, /finalizationTimeout = 15_000/);
+  assert.match(createGraph, /waitForStudioGraphFinalization\(finalizationTimeout, context\)/);
+  const galleryApplyTemplate = e2eHooksSource.slice(
+    e2eHooksSource.indexOf('async function applyTemplate('),
+    e2eHooksSource.indexOf('async function applyControlledWorkflowBlockForTest('),
+  );
+  const galleryApplySkeleton = e2eHooksSource.slice(
+    e2eHooksSource.indexOf('async function applyTaskTemplateSkeleton('),
+    e2eHooksSource.indexOf('async function applyTemplate('),
+  );
+  assert.ok(galleryApplyTemplate);
+  assert.ok(galleryApplySkeleton);
+  assert.match(galleryApplySkeleton, /ensureStudioAutoPlanReadyForRun\(context\)/);
+  assert.match(galleryApplySkeleton, /GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS/);
+  assert.match(galleryApplyTemplate, /ensureStudioAutoPlanReadyForRun\(context\)/);
+  assert.match(galleryApplyTemplate, /GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS/);
+  assert.ok(
+    galleryApplyTemplate.indexOf('createOrUpdateStudioGraph') <
+      galleryApplyTemplate.indexOf('ensureStudioAutoPlanReadyForRun'),
+    'Gallery Auto target validation must run only after the initial loader graph exists.',
+  );
+  assert.match(
+    galleryApplyTemplate,
+    /waitForStudioGraphFinalization\(GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS, context\)/,
+  );
+  assert.match(galleryApplyTemplate, /workflowContext: context/);
+  assert.doesNotMatch(galleryApplyTemplate, /Graph preparation is still running/);
   assert.match(waitForFinalization, /status === 'pending'[\s\S]*scheduleStudioGraphFinalization/);
   assert.match(
     autoRunPreparation,
@@ -6212,12 +8326,36 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
     studioPanelSource,
     /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*createOrUpdateStudioGraph\(nextForm, context\)/,
   );
+  assert.match(resourceModeChange, /updateAndSync\(\{ resourceMode \}\)/);
+  assert.doesNotMatch(resourceModeChange, /syncStudioGraphValues/);
+  assert.match(topBarResourceModeChange, /previousShapeKey = getStudioGraphShapeKey/);
+  assert.match(
+    topBarResourceModeChange,
+    /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*createOrUpdateStudioGraph\(nextForm, context\)/,
+  );
+  assert.match(handleFieldSource, /consumeAutomaticSignalFieldActionSuppression\(nodeId, fieldKey, signal\)/);
+  assert.match(numberFieldSource, /<GraphControlInput[\s\S]*?id=\{inputId\}/);
   assert.match(issuesDialogSource, /setWorkflowFocusRequest\(\{[\s\S]*nodeId: null/);
   assert.match(
     issuesDialogSource,
     /item\.action === 'detach_graph'[\s\S]*detachManagedGraph\(\)[\s\S]*Detach invalid receipt/,
     'an invalid persisted proof has an explicit operator recovery action',
   );
+});
+
+test('Studio exposes a distinct visible install action for its exact missing model', () => {
+  const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
+  const studioReadinessSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioReadiness.ts'), 'utf8');
+  const studioPanelSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'StudioPanel.tsx'), 'utf8');
+
+  assert.match(runActionsSource, /const \[isInstallingMissingModel, setIsInstallingMissingModel\] = useState\(false\)/);
+  assert.match(runActionsSource, /await installHfModel\(missingInstallTarget\.repo, sid/);
+  assert.match(studioReadinessSource, /revision: exactCapabilityRevision/);
+  assert.match(studioReadinessSource, /files: capability\.downloadFiles/);
+  assert.match(runActionsSource, /handleInstallMissingModel,[\s\S]*isInstallingMissingModel,/);
+  assert.match(studioPanelSource, /data-testid="studio-install-missing-model"/);
+  assert.match(studioPanelSource, /disabled=\{isWorking \|\| isInstallingMissingModel\}/);
+  assert.match(studioPanelSource, /\{isInstallingMissingModel[\s\S]*'Installing model\.\.\.'/);
 });
 
 test('model selector applies only backend class and id filters to opaque installed models', () => {
@@ -6561,6 +8699,74 @@ test('managed Qwen ControlNet sync pins AutoModelLoader to the controlnet compon
   assert.equal(params.model.signal.value, 'controlnet');
 });
 
+test('modular image finalization adopts the definitions published by its own field actions', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
+  const branch = source.match(
+    /else if \(!isVideoMode\(form\.mode\)\) \{[\s\S]*?\n    \} else \{\n      await finalizeVideoGraph/,
+  )?.[0];
+  assert.ok(branch);
+  assert.match(
+    branch,
+    /await finalizeModularGraph\(binding, form, timedOutGroups, token\);\s*definitionRevision = graphDefinitionRevision;/,
+  );
+});
+
+test('LoRA template construction reuses the core graph that its caller just finalized', () => {
+  const controlled = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'controlledWorkflows.ts'), 'utf8');
+  const templates = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'templateWorkflow.ts'), 'utf8');
+  const e2e = fs.readFileSync(path.join(ROOT, 'src', 'utils', 'e2eHooks.ts'), 'utf8');
+  const addLora = controlled.match(
+    /export async function addLoraWorkflowBlock[\s\S]*?export async function addUpscaleWorkflowBlock/,
+  )?.[0];
+
+  assert.ok(addLora);
+  assert.match(addLora, /if \(!options\.graphPrepared\) await createOrUpdateStudioGraph\(form, context\)/);
+  assert.match(addLora, /await waitForStudioGraphDefinitionStability\(750, 5000, context\)/);
+  assert.match(
+    templates,
+    /applyWorkflowBlock\(block, after, template, \{ graphPrepared: true, workflowContext: context \}\)/,
+  );
+  assert.match(
+    e2e,
+    /addLoraWorkflowBlock\(useStudioStore\.getState\(\)\.form, template\.workflowBlockSettings\?\.lora, \{\s*graphPrepared: true,/,
+  );
+  for (const call of [
+    'addUpscaleWorkflowBlock',
+    'addVideoSequenceWorkflowBlock',
+    'addQualityVideoSequenceWorkflowBlock',
+    'addSoundtrackWorkflowBlock',
+    'addLyricVideoWorkflowBlock',
+  ]) {
+    assert.match(
+      e2e,
+      new RegExp(`${call}\\([\\s\\S]*?graphPrepared: true,`),
+      `${call} must receive the prepared graph owned by the template bridge`,
+    );
+  }
+});
+
+test('every template workflow block reuses a caller-prepared core graph', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'controlledWorkflows.ts'), 'utf8');
+  for (const [name, formExpression] of [
+    ['addLoraWorkflowBlock', 'form'],
+    ['addUpscaleWorkflowBlock', 'form'],
+    ['addVideoSequenceWorkflowBlock', 'form'],
+    ['addQualityVideoSequenceWorkflowBlock', 'executionForm'],
+    ['addSoundtrackWorkflowBlock', 'executionForm'],
+    ['addLyricVideoWorkflowBlock', 'executionForm'],
+  ]) {
+    const start = source.indexOf(`export async function ${name}`);
+    assert.notEqual(start, -1, `${name} must exist`);
+    const next = source.indexOf('\nexport async function ', start + 1);
+    const body = source.slice(start, next === -1 ? undefined : next);
+    assert.match(
+      body,
+      new RegExp(`if \\(!options\\.graphPrepared\\) await createOrUpdateStudioGraph\\(${formExpression}, context\\)`),
+      `${name} must not rebuild a graph its template caller already finalized`,
+    );
+  }
+});
+
 test('managed graph reconciliation preserves pinned Auto sample-rate overrides', () => {
   const audioGenerate = managedNode('audio-generate', 'audioGenerate', {
     params: {
@@ -6788,19 +8994,214 @@ test('template creation arranges exactly once after finalization and measurement
   assert.ok(arrangeIndex < revealIndex);
 });
 
+test('canonical workflow browser guards reject terminal renderer failures and bounded stalls', async () => {
+  const session = () => {
+    const page = new EventEmitter();
+    const browser = new EventEmitter();
+    browser.connected = true;
+    browser.isConnected = () => browser.connected;
+    browser.close = async () => {
+      browser.connected = false;
+      browser.emit('disconnected');
+    };
+    return { browser, page };
+  };
+
+  for (const [target, event, code] of [
+    ['page', 'crash', 'page_crashed'],
+    ['page', 'close', 'page_closed'],
+    ['browser', 'disconnected', 'browser_disconnected'],
+  ]) {
+    const current = session();
+    const guard = createWorkflowBrowserSessionGuard({ ...current, operationTimeoutMs: 1_000 });
+    const pending = guard.run('building a test graph', () => new Promise(() => {}));
+    current[target].emit(event);
+    await assert.rejects(
+      pending,
+      (error) => error?.code === code && /canonical workflow/i.test(error.message),
+      `${event} must reject the pending browser operation`,
+    );
+    assert.equal(guard.terminalError?.code, code);
+    guard.dispose();
+  }
+
+  const stalled = session();
+  const stalledGuard = createWorkflowBrowserSessionGuard({ ...stalled, operationTimeoutMs: 5 });
+  await assert.rejects(
+    stalledGuard.run('building a stalled graph', () => new Promise(() => {})),
+    (error) => error?.code === 'operation_timeout' && /5 ms/.test(error.message),
+  );
+  stalledGuard.dispose();
+
+  const intentional = session();
+  const intentionalGuard = createWorkflowBrowserSessionGuard({ ...intentional });
+  intentionalGuard.dispose();
+  intentional.page.emit('close');
+  intentional.browser.emit('disconnected');
+  assert.equal(intentionalGuard.terminalError, null);
+  await assert.rejects(
+    intentionalGuard.run('using a disposed browser', async () => null),
+    (error) => error?.code === 'session_disposed',
+  );
+});
+
+test('canonical workflow browser launch retries stay finite and classify exhaustion', async () => {
+  let attempts = 0;
+  const browser = await launchWorkflowBrowser(
+    async () => {
+      attempts += 1;
+      if (attempts < 3) throw new Error('transient SIGTRAP');
+      return { id: 'browser' };
+    },
+    { attempts: 3, retryDelayMs: 0 },
+  );
+  assert.deepEqual(browser, { id: 'browser' });
+  assert.equal(attempts, 3);
+
+  await assert.rejects(
+    launchWorkflowBrowser(
+      async () => {
+        throw new Error('persistent SIGTRAP');
+      },
+      { attempts: 2, retryDelayMs: 0 },
+    ),
+    (error) =>
+      error?.code === 'browser_launch_failed' &&
+      /after 2 attempts/.test(error.message) &&
+      /persistent SIGTRAP/.test(error.message),
+  );
+});
+
+test('canonical workflow data references remove only backend collision suffixes', () => {
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/audio/source_audio_9B6X5J.wav'),
+    '@data/audio/source_audio.wav',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/images/reference_image_1__r8TJ-.webp'),
+    '@data/images/reference_image_1.webp',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/videos/source_video_cM-tcU.mp4'),
+    '@data/videos/source_video.mp4',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('@data/images/already_portable.png'),
+    '@data/images/already_portable.png',
+  );
+  assert.equal(
+    normalizePortableWorkflowDataReference('https://example.test/image_A1b2C3.png'),
+    'https://example.test/image_A1b2C3.png',
+  );
+});
+
+test('canonical workflow connected fields have one stable disabled state', () => {
+  assert.deepEqual(normalizePortableWorkflowFieldState({ type: 'image', isConnected: true, disabled: false }), {
+    type: 'image',
+    isConnected: true,
+    disabled: true,
+  });
+  assert.deepEqual(normalizePortableWorkflowFieldState({ type: 'image', isConnected: false, disabled: false }), {
+    type: 'image',
+    isConnected: false,
+    disabled: false,
+  });
+});
+
+test('canonical workflow browser batches and closure stay bounded', async () => {
+  assert.equal(parseWorkflowBrowserBatchSize(undefined), 20);
+  assert.equal(parseWorkflowBrowserBatchSize('1'), 1);
+  assert.equal(parseWorkflowBrowserBatchSize('100'), 100);
+  for (const invalid of ['0', '101', '1.5', 'unbounded']) {
+    assert.throws(() => parseWorkflowBrowserBatchSize(invalid), /integer from 1 through 100/);
+  }
+
+  const completedBatches = [];
+  let completedInSession = 0;
+  for (let workflow = 0; workflow < 41; workflow += 1) {
+    if (shouldRecycleWorkflowBrowser(completedInSession, 20)) {
+      completedBatches.push(completedInSession);
+      completedInSession = 0;
+    }
+    completedInSession += 1;
+  }
+  completedBatches.push(completedInSession);
+  assert.deepEqual(completedBatches, [20, 20, 1]);
+
+  const closed = {
+    connected: true,
+    isConnected() {
+      return this.connected;
+    },
+    async close() {
+      this.connected = false;
+    },
+  };
+  await closeWorkflowBrowser(closed, 50);
+  assert.equal(closed.connected, false);
+  await assert.rejects(
+    closeWorkflowBrowser({ close: () => new Promise(() => {}), isConnected: () => true }, 5),
+    (error) => error?.code === 'browser_close_timeout',
+  );
+  await assert.rejects(
+    closeWorkflowBrowser({ close: async () => undefined, isConnected: () => true }, 50),
+    (error) => error?.code === 'browser_close_incomplete',
+  );
+});
+
+test('targeted generation drops stale pairs and retains only current unselected workflows', () => {
+  const capabilities = [
+    {
+      modelType: 'BuiltinImageOperation',
+      runnableModes: ['image_adjustment', 'image_upscale'],
+    },
+    {
+      modelType: 'FluxDevPipeline',
+      runnableModes: ['text_to_image'],
+    },
+  ];
+  const records = [
+    { id: 'stale', modelType: 'BuiltinImageOperation', mode: 'image_resize' },
+    { id: 'selected', modelType: 'BuiltinImageOperation', mode: 'image_upscale' },
+    { id: 'current', modelType: 'BuiltinImageOperation', mode: 'image_adjustment' },
+    { id: 'variant', modelType: 'FluxDevPipeline', mode: 'text_to_image', variant: 'fast_lora' },
+    { id: 'removed', modelType: 'RemovedPipeline', mode: 'text_to_image' },
+  ];
+
+  assert.deepEqual(
+    retainUnselectedCurrentWorkflowRecords(records, capabilities, 'BuiltinImageOperation|image_upscale').map(
+      (record) => record.id,
+    ),
+    ['current', 'variant'],
+  );
+  assert.deepEqual(retainUnselectedCurrentWorkflowRecords(records, capabilities, null), []);
+});
+
 test('canonical workflow generation persists the final layout and library open does not rearrange it', () => {
   const generator = fs.readFileSync(path.join(ROOT, 'scripts', 'workflow-library-generator.mjs'), 'utf8');
   const graphList = fs.readFileSync(path.join(ROOT, 'src', 'components', 'GraphList.tsx'), 'utf8');
   const verifier = fs.readFileSync(path.join(ROOT, 'scripts', 'workflow-library-verify.mjs'), 'utf8');
 
-  const ephemeralStorageIndex = generator.indexOf('await installEphemeralWorkflowStorage(page)');
-  const navigationIndex = generator.indexOf("await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' })");
+  const ephemeralStorageIndex = generator.indexOf('installEphemeralWorkflowStorage(currentPage)');
+  const navigationIndex = generator.indexOf("currentPage.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' })");
   const prepareIndex = generator.indexOf('prepareWorkflowGraphForExport');
   const preCanonicalArrangeIndex = generator.indexOf('const arrangedBeforeCanonicalIds = await arrangeSnapshot(graph)');
   const canonicalizeIndex = generator.indexOf('canonicalizeGraphIds(arrangedBeforeCanonicalIds)');
   const metadataIndex = generator.indexOf('addLayoutMetadata(repeated)');
-  assert.match(generator, /new Set\(\['modiff\.studio', 'modiff\.flow'\]\)/);
-  assert.match(generator, /this === localStorage && generatedGraphKeys\.has\(String\(key\)\)/);
+  assert.match(generator, /installEphemeralWorkflowStorage/);
+  assert.match(generator, /listTaskTemplateSkeletons/);
+  assert.match(generator, /refreshTaskTemplateContracts/);
+  assert.match(generator, /applyTaskTemplateSkeleton/);
+  assert.match(generator, /applyTemplate\(templateId, \{ resourceMode: 'expert' \}\)/);
+  assert.match(generator, /if \(!byPair\.has\(pair\)\)/);
+  assert.match(generator, /shouldRecycleWorkflowBrowser\(completedWorkflowsInSession, WORKFLOW_BROWSER_BATCH_SIZE\)/);
+  assert.match(generator, /launchWorkflowBrowser\(\(\) => chromium\.launch\(browserLaunchOptions\)\)/);
+  assert.match(generator, /if \(isWorkflowBrowserSessionError\(error\)\) throw error/);
+  assert.match(generator, /completedWorkflowsInSession \+= 1/);
+  assert.match(generator, /browserSession\?\.guard\.assertHealthy\('publishing the canonical workflow manifest'\)/);
+  assert.match(generator, /capability\.modeOutputKinds\?\.\[mode\] \?\? capability\.mediaKind/);
+  assert.match(generator, /capability\.modeOutputKinds\?\.\[template\.mode\] \?\? capability\.mediaKind/);
+  assert.equal((generator.match(/buildTemplateGraphWithRecovery\(/g) ?? []).length, 2);
   assert.ok(ephemeralStorageIndex >= 0 && ephemeralStorageIndex < navigationIndex);
   assert.ok(prepareIndex >= 0);
   assert.ok(preCanonicalArrangeIndex >= 0 && canonicalizeIndex > preCanonicalArrangeIndex);
@@ -6810,4 +9211,136 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(verifier, /does not equal a deterministic re-layout/);
   assert.match(verifier, /LAYOUT_HORIZONTAL_GAP = 140/);
   assert.match(verifier, /LAYOUT_VERTICAL_GAP = 72/);
+  assert.match(verifier, /modules\.Video.*UpscaleVideo/);
+  assert.match(verifier, /nateraw\/real-esrgan\/RealESRGAN_x2plus\.pth/);
+  assert.match(verifier, /video-upscale graph is missing its exact reviewed artifact or route/);
+});
+
+test('canonical generation isolates browser and backend workflow persistence', async () => {
+  const initScripts = [];
+  const routes = [];
+  await installEphemeralWorkflowStorage({
+    addInitScript: async (script) => initScripts.push(script),
+    route: async (pattern, handler) => routes.push({ pattern, handler }),
+  });
+
+  assert.equal(initScripts.length, 1);
+  assert.deepEqual(
+    routes.map(({ pattern }) => pattern),
+    ['**/workflows**'],
+  );
+
+  const handler = createEphemeralWorkflowRouteHandler();
+  const request = async (method, url, payload) => {
+    let response;
+    await handler({
+      request: () => ({
+        method: () => method,
+        postDataJSON: () => payload,
+        url: () => url,
+      }),
+      fulfill: async (result) => {
+        response = { ...result, json: JSON.parse(result.body) };
+      },
+    });
+    return response;
+  };
+
+  const baseUrl = 'http://127.0.0.1:8088/workflows';
+  assert.deepEqual((await request('GET', baseUrl)).json, { workflows: [] });
+  const first = await request('PUT', `${baseUrl}/generated%20workflow`, {
+    title: 'Generated workflow',
+    snapshot: { nodes: [], edges: [] },
+    source: 'template',
+    createdAt: 42,
+  });
+  assert.equal(first.status, 200);
+  assert.equal(first.json.id, 'generated workflow');
+  assert.equal(first.json.createdAt, 42);
+  assert.equal(first.json.revision, 1);
+  assert.deepEqual((await request('GET', baseUrl)).json.workflows, [first.json]);
+  assert.deepEqual((await request('GET', `${baseUrl}/generated%20workflow`)).json, first.json);
+  assert.equal((await request('DELETE', `${baseUrl}/generated%20workflow`)).status, 200);
+  assert.deepEqual((await request('GET', baseUrl)).json, { workflows: [] });
+});
+
+test('workflow verification permits only the exact disabled soundtrack export fallback', () => {
+  const managedNode = (id, studioRole, module, action, disabled = false) => ({
+    id,
+    data: {
+      module,
+      action,
+      studioRole,
+      studioOwned: true,
+      ...(disabled ? { uiState: { disabled: true } } : {}),
+    },
+  });
+  const nodes = [
+    managedNode('video', 'wanGenerate', 'modules.DiffusersVideo', 'Generate'),
+    managedNode('base-export', 'videoExport', 'modules.Video', 'Export', true),
+    managedNode(
+      'soundtrack-quantization',
+      'soundtrackQuantization',
+      'modules.DiffusersRuntime',
+      'PipelineQuantizationConfigV2',
+    ),
+    managedNode('soundtrack-recipe', 'soundtrackRecipe', 'modules.DiffusersRuntime', 'DiffusersExecutionRecipe'),
+    managedNode('soundtrack-pipeline', 'soundtrackPipeline', 'modules.DiffusersAudio', 'LoadPipeline'),
+    managedNode('soundtrack-generate', 'soundtrackGenerate', 'modules.DiffusersAudio', 'Generate'),
+    managedNode('soundtrack-fit', 'soundtrackAudioFit', 'modules.Audio', 'FitDuration'),
+    managedNode('mux-export', 'exportWithAudio', 'modules.Video', 'ExportWithAudio'),
+  ];
+  const edge = (source, sourceHandle, target, targetHandle) => ({ source, sourceHandle, target, targetHandle });
+  const edges = [
+    edge('soundtrack-quantization', 'quantization_config', 'soundtrack-recipe', 'quantization_config'),
+    edge('soundtrack-recipe', 'execution_recipe', 'soundtrack-pipeline', 'execution_recipe'),
+    edge('soundtrack-pipeline', 'pipeline', 'soundtrack-generate', 'pipeline'),
+    edge('soundtrack-generate', 'audio', 'soundtrack-fit', 'audio'),
+    edge('soundtrack-fit', 'output', 'mux-export', 'audio'),
+    edge('video', 'video_out', 'mux-export', 'video'),
+  ];
+  const workflow = { id: 'soundtrack-contract' };
+  const graph = { nodes, edges };
+
+  assert.doesNotThrow(() => verifyNoDeadWorkflowNodes(workflow, graph));
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes: [...nodes, managedNode('arbitrary-disabled', 'other', 'modules.Image', 'Preview', true)],
+        edges,
+      }),
+    /disabled nodes.*arbitrary-disabled/,
+  );
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes: nodes.map((node) =>
+          node.id === 'base-export' ? { ...node, data: { ...node.data, studioOwned: false } } : node,
+        ),
+        edges,
+      }),
+    /disabled nodes.*base-export/,
+  );
+  assert.throws(
+    () => verifyNoDeadWorkflowNodes(workflow, { nodes, edges: edges.filter((item) => item.targetHandle !== 'audio') }),
+    /disabled nodes.*base-export/,
+  );
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes,
+        edges: [...edges, edge('video', 'video_out', 'base-export', 'video')],
+      }),
+    /disabled nodes.*base-export/,
+  );
+  assert.throws(
+    () =>
+      verifyNoDeadWorkflowNodes(workflow, {
+        nodes: nodes.map((node) =>
+          node.id === 'video' ? { ...node, data: { ...node.data, action: 'UnreviewedVideoSource' } } : node,
+        ),
+        edges,
+      }),
+    /disabled nodes.*base-export/,
+  );
 });

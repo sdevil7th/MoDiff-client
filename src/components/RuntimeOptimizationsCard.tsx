@@ -51,6 +51,12 @@ function optionalRuntimeStatus(
   return `${state.replace(/_/g, ' ')}${state === 'unavailable' ? ` (${profile.contractState})` : ''}.`;
 }
 
+function optionalRuntimeTarget(profile: OptionalRuntimeProfileStatus) {
+  const platform = profile.platform === 'macos' ? 'macOS' : profile.platform === 'windows' ? 'Windows' : 'Linux';
+  const machine = profile.machine === 'arm64' ? 'ARM64' : 'x86-64';
+  return `${platform} ${machine}`;
+}
+
 export default function RuntimeOptimizationsCard() {
   const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
   const optionalRuntimeRequest = useNodesStore((state) => state.discoveryRequests.optionalRuntimes);
@@ -65,6 +71,7 @@ export default function RuntimeOptimizationsCard() {
   const refreshRevision = useRef(0);
   const mutationInFlight = useRef(false);
   const runtimePolls = useRef(0);
+  const cutoverPollRevision = useRef(0);
 
   const refresh = useCallback(async () => {
     const revision = ++refreshRevision.current;
@@ -97,6 +104,42 @@ export default function RuntimeOptimizationsCard() {
   useEffect(() => {
     void refresh().catch(() => undefined);
   }, [refresh]);
+
+  useEffect(
+    () => () => {
+      cutoverPollRevision.current += 1;
+    },
+    [],
+  );
+
+  const refreshOptionalRuntimeAfterCutover = useCallback(
+    async (profileId: string, specDigest: string) => {
+      const revision = ++cutoverPollRevision.current;
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (revision === cutoverPollRevision.current && Date.now() < deadline) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
+        if (revision !== cutoverPollRevision.current) return;
+        await fetchOptionalRuntimes();
+        const nextCatalog = useNodesStore.getState().optionalRuntimeCatalog;
+        const nextProfile = nextCatalog?.profiles.find((candidate) => candidate.id === profileId);
+        if (
+          nextCatalog?.processLoadStatus === 'active' &&
+          nextProfile?.specDigest === specDigest &&
+          nextProfile.overlayStatus === 'active'
+        ) {
+          const nodes = useNodesStore.getState();
+          await Promise.all([nodes.fetchRuntimeStatus(), nodes.fetchStudioModelCapabilities()]);
+          return;
+        }
+      }
+      if (revision === cutoverPollRevision.current) {
+        enqueueSnackbar('Runtime activation is still restarting. Refresh Setup before running this workflow.', {
+          variant: 'warning',
+        });
+      }
+    },
+    [fetchOptionalRuntimes],
+  );
 
   useEffect(() => {
     if (!runtimeJob || ['cancelled', 'failed', 'ready'].includes(runtimeJob.status)) return;
@@ -166,7 +209,11 @@ export default function RuntimeOptimizationsCard() {
     });
 
   const changeRuntime = (profile: OptionalRuntimeProfileStatus, environmentId?: string) => {
-    const label = environmentId ? 'Activate' : profile.overlayStatus === 'repair_required' ? 'Repair' : 'Install';
+    const label = environmentId
+      ? 'Activate'
+      : profile.overlayStatus === 'repair_required' || profile.overlayStatus === 'staged_unchecked'
+        ? 'Repair'
+        : 'Install';
     consent(
       `${label} optional runtime?`,
       environmentId
@@ -183,6 +230,7 @@ export default function RuntimeOptimizationsCard() {
             enqueueSnackbar(result.message ?? 'Activation selected.', { variant: 'success' });
             setRuntimeJob(null);
             await fetchOptionalRuntimes();
+            void refreshOptionalRuntimeAfterCutover(profile.id, profile.specDigest);
           }
         : async () => {
             const job = await post(
@@ -214,6 +262,12 @@ export default function RuntimeOptimizationsCard() {
   };
 
   const observedReceipts = receipts.filter((receipt) => receipt.kind === 'workload' && receipt.status === 'observed');
+  const rollbackToBase = Boolean(
+    optionalRuntimeCatalog?.activeEnvironmentId &&
+    !optionalRuntimeCatalog.previousEnvironmentId &&
+    optionalRuntimeCatalog.processLoadStatus === 'repair_required',
+  );
+  const rollbackAvailable = Boolean(optionalRuntimeCatalog?.previousEnvironmentId || rollbackToBase);
 
   return (
     <section className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3">
@@ -234,7 +288,7 @@ export default function RuntimeOptimizationsCard() {
             const environmentId = completedEnvironment ?? staged;
             const action = environmentId
               ? 'Activate'
-              : profile.overlayStatus === 'repair_required'
+              : profile.overlayStatus === 'repair_required' || profile.overlayStatus === 'staged_unchecked'
                 ? 'Repair'
                 : 'Install';
             const actionable =
@@ -243,9 +297,14 @@ export default function RuntimeOptimizationsCard() {
                 ? profile.activationAvailable
                 : profile.installActionAvailable && profile.overlayStatus !== 'active');
             return (
-              <div key={profile.id} className="grid gap-1 text-xs text-modiff-text">
+              <div
+                key={profile.id}
+                className="grid gap-1 text-xs text-modiff-text"
+                data-testid={`optional-runtime-${profile.id}`}
+              >
                 <span>
-                  {profile.label}: {optionalRuntimeStatus(profile, optionalRuntimeCatalog.processLoadStatus)}
+                  {profile.label} ({optionalRuntimeTarget(profile)}):{' '}
+                  {optionalRuntimeStatus(profile, optionalRuntimeCatalog.processLoadStatus)}
                 </span>
                 {runtimeJob?.profileId === profile.id ? (
                   <div className="flex items-center gap-2" data-testid="optional-runtime-progress">
@@ -275,7 +334,8 @@ export default function RuntimeOptimizationsCard() {
         ) : (
           <p className="text-xs text-modiff-subtle-text">No optional runtimes.</p>
         )}
-        {optionalRuntimeCatalog?.previousEnvironmentId &&
+        {optionalRuntimeCatalog &&
+        rollbackAvailable &&
         optionalRuntimeCatalog.profiles.some(
           (profile) => profile.activationAvailable && profile.cutoverReady && profile.contractState === 'qualified',
         ) ? (
@@ -285,8 +345,10 @@ export default function RuntimeOptimizationsCard() {
             loading={busyId === 'rollback'}
             onClick={() =>
               consent(
-                'Roll back optional runtime?',
-                'Select the previous validated optional environment and restart MoDiff. Active and queued runs must be stopped first.',
+                rollbackToBase ? 'Roll back optional runtime to base?' : 'Roll back optional runtime?',
+                rollbackToBase
+                  ? 'Remove the broken active optional environment and restart MoDiff with the validated base runtime. Active and queued runs must be stopped first.'
+                  : 'Select the previous validated optional environment and restart MoDiff. Active and queued runs must be stopped first.',
                 'Rollback',
                 async () => {
                   const result = await post(
@@ -300,7 +362,7 @@ export default function RuntimeOptimizationsCard() {
               )
             }
           >
-            Rollback
+            {rollbackToBase ? 'Rollback to base' : 'Rollback'}
           </ModiffButton>
         ) : null}
       </div>

@@ -89,6 +89,7 @@ const VIDEO_MODES = new Set<StudioMode>([
   'video_outpaint',
   'reference_to_video',
   'control_to_video',
+  'control_video_to_video',
   'video_color_edit',
 ]);
 
@@ -264,6 +265,12 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
     maxGuidanceScale: 1,
     reason:
       'The ACE-Step v1.5 Turbo backend has no negative-prompt input and uses guidance-distilled CFG 1; exclusions belong in the production brief.',
+  },
+  {
+    id: 'minimax-music3-no-negative-input',
+    modelTypes: ['MiniMaxMusic3ModularPipeline'],
+    reason:
+      'The reviewed MiniMax Music3 semantic-generation contract accepts prompt and lyrics, not a negative prompt; exclusions belong in the production brief.',
   },
   {
     id: 'ltx-distilled-no-cfg',

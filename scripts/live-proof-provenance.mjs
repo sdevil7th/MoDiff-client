@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
+
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
 export const LIVE_PROOF_PROVENANCE_FORMAT = 'modiff.live-proof.provenance.v2';
 export const CANONICAL_GRAPH_SCHEMA_VERSION = 1;
@@ -96,6 +98,27 @@ function outputCollectionItemIdentity(item) {
   };
 }
 
+export function liveProofLockHash(provenance) {
+  const proofLock = {
+    format: provenance?.format,
+    templateRevisionHash: provenance?.template?.revisionHash,
+    resolvedTemplateLockHash: provenance?.template?.resolvedTemplateLockHash,
+    graphHash: provenance?.graph?.hash,
+    executionPlanHash: provenance?.graph?.executionPlanHash,
+    modelRevision: provenance?.model?.modelRevision,
+    modelFingerprint: provenance?.model?.fingerprint,
+    modelSetHash: provenance?.models?.hash,
+    inputArtifactsHash: provenance?.inputArtifactsHash,
+    runtimeFingerprint: provenance?.runtime?.lockFingerprint,
+    backendSourceFingerprint: provenance?.runtime?.backendSource?.fingerprint,
+    backendContractFingerprint: provenance?.runtime?.backendContract?.fingerprint,
+    deterministicFingerprint: provenance?.runtime?.deterministic?.fingerprint,
+    outputCollectionHash: provenance?.output?.collectionHash,
+    ...(provenance?.routeBindingHash ? { routeBindingHash: provenance.routeBindingHash } : {}),
+  };
+  return sha256Value('live-proof-lock-v1', proofLock);
+}
+
 export function repairDuplicateOutputItems(provenance, executedOutput) {
   const backendItems = executedOutput?.backendProvenance?.mediaItems ?? executedOutput?.mediaItems ?? [];
   const uniqueItems = [];
@@ -123,27 +146,11 @@ export function repairDuplicateOutputItems(provenance, executedOutput) {
     backendCollectionHash: executedOutput?.mediaCollectionHash ?? null,
     items,
   };
-  const proofLock = {
-    format: provenance.format,
-    templateRevisionHash: provenance.template?.revisionHash,
-    resolvedTemplateLockHash: provenance.template?.resolvedTemplateLockHash,
-    graphHash: provenance.graph?.hash,
-    executionPlanHash: provenance.graph?.executionPlanHash,
-    modelRevision: provenance.model?.modelRevision,
-    modelFingerprint: provenance.model?.fingerprint,
-    modelSetHash: provenance.models?.hash,
-    inputArtifactsHash: provenance.inputArtifactsHash,
-    runtimeFingerprint: provenance.runtime?.lockFingerprint,
-    backendSourceFingerprint: provenance.runtime?.backendSource?.fingerprint,
-    backendContractFingerprint: provenance.runtime?.backendContract?.fingerprint,
-    deterministicFingerprint: provenance.runtime?.deterministic?.fingerprint,
-    outputCollectionHash: output.collectionHash,
-  };
-  return {
+  const repaired = {
     ...provenance,
-    proofLockHash: sha256Value('live-proof-lock-v1', proofLock),
     output,
   };
+  return { ...repaired, proofLockHash: liveProofLockHash(repaired) };
 }
 
 function nodeEntries(apiGraph) {
@@ -254,21 +261,191 @@ export function canonicalGraphIdentity(apiGraph) {
   };
 }
 
+function apiParamValue(node, key) {
+  const param = node?.params?.[key];
+  if (!param || typeof param !== 'object' || Array.isArray(param)) return undefined;
+  return Object.hasOwn(param, 'value') ? param.value : undefined;
+}
+
+function hubRepository(value) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    value.source === 'hub' &&
+    typeof value.value === 'string' &&
+    value.value.trim()
+  ) {
+    return value.value.trim();
+  }
+  return null;
+}
+
+function connectedParamSource(node, key) {
+  const param = node?.params?.[key];
+  if (
+    !param ||
+    typeof param !== 'object' ||
+    Array.isArray(param) ||
+    typeof param.sourceId !== 'string' ||
+    !param.sourceId ||
+    typeof param.sourceKey !== 'string' ||
+    !param.sourceKey
+  ) {
+    return null;
+  }
+  return { nodeId: param.sourceId, field: param.sourceKey };
+}
+
+/**
+ * Recover the minimal manual resource identity for a retained Expert Studio
+ * execution whose old submission omitted Studio runtime hints. This is not a
+ * generic form fallback: every claimed resource value must agree across the
+ * durable Studio snapshot and the concrete loader/recipe/quantization nodes on
+ * an executed API path. Any ambiguity or mismatch returns null.
+ */
+export function executedExpertPlanFromGraph(apiGraph) {
+  const runtimeHints = apiGraph?.runtimeHints;
+  const snapshot = runtimeHints?.workflowSnapshot;
+  const form = snapshot?.studioForm;
+  const binding = snapshot?.studioGraphBinding;
+  if (
+    !form ||
+    typeof form !== 'object' ||
+    Array.isArray(form) ||
+    !binding ||
+    typeof binding !== 'object' ||
+    Array.isArray(binding) ||
+    form.resourceMode !== 'expert' ||
+    typeof form.modelType !== 'string' ||
+    !form.modelType ||
+    binding.modelType !== form.modelType ||
+    typeof form.dtype !== 'string' ||
+    typeof form.quantizationMode !== 'string' ||
+    typeof form.offloadMode !== 'string' ||
+    typeof form.autoOffload !== 'boolean' ||
+    typeof form.device !== 'string'
+  ) {
+    return null;
+  }
+
+  const entries = nodeEntries(apiGraph);
+  const byId = new Map(entries);
+  const executedIds = new Set((apiGraph?.paths ?? []).flat().map(String));
+  const executedLoaders = entries.filter(([id, node]) => {
+    if (!executedIds.has(id)) return false;
+    const repo = hubRepository(apiParamValue(node, 'model_id') ?? apiParamValue(node, 'repo_id'));
+    return (
+      repo &&
+      String(node?.action ?? '')
+        .toLowerCase()
+        .includes('load') &&
+      typeof apiParamValue(node, 'dtype') === 'string' &&
+      typeof apiParamValue(node, 'quantization_mode') === 'string' &&
+      typeof apiParamValue(node, 'offload_mode') === 'string' &&
+      typeof apiParamValue(node, 'auto_offload') === 'boolean' &&
+      typeof apiParamValue(node, 'device') === 'string' &&
+      connectedParamSource(node, 'execution_recipe')?.field === 'execution_recipe'
+    );
+  });
+  if (executedLoaders.length !== 1) return null;
+  const [, loader] = executedLoaders[0];
+  const recipeSource = connectedParamSource(loader, 'execution_recipe');
+  const recipe = recipeSource ? byId.get(recipeSource.nodeId) : null;
+  if (
+    !recipe ||
+    !executedIds.has(recipeSource.nodeId) ||
+    recipe.module !== 'modules.DiffusersRuntime' ||
+    recipe.action !== 'DiffusersExecutionRecipe'
+  ) {
+    return null;
+  }
+  const quantSource = connectedParamSource(recipe, 'quantization_config');
+  const quant = quantSource ? byId.get(quantSource.nodeId) : null;
+  if (
+    !quant ||
+    quantSource.field !== 'quantization_config' ||
+    !executedIds.has(quantSource.nodeId) ||
+    quant.module !== 'modules.DiffusersRuntime' ||
+    quant.action !== 'PipelineQuantizationConfigV2'
+  ) {
+    return null;
+  }
+
+  const dtype = apiParamValue(loader, 'dtype');
+  const quantizationMode = apiParamValue(loader, 'quantization_mode');
+  const offloadMode = apiParamValue(loader, 'offload_mode');
+  const autoOffload = apiParamValue(loader, 'auto_offload');
+  const device = apiParamValue(loader, 'device');
+  const deviceMap = apiParamValue(loader, 'device_map');
+  const quantizedComponents = apiParamValue(loader, 'quantized_components');
+  if (
+    dtype !== form.dtype ||
+    dtype !== apiParamValue(quant, 'dtype') ||
+    quantizationMode !== form.quantizationMode ||
+    quantizationMode !== apiParamValue(quant, 'backend') ||
+    offloadMode !== form.offloadMode ||
+    offloadMode !== apiParamValue(recipe, 'offload_mode') ||
+    autoOffload !== form.autoOffload ||
+    device !== form.device ||
+    device !== apiParamValue(recipe, 'device') ||
+    deviceMap !== apiParamValue(recipe, 'device_map') ||
+    !Array.isArray(quantizedComponents) ||
+    (quantizationMode === 'none' && quantizedComponents.length !== 0)
+  ) {
+    return null;
+  }
+  if (
+    quantizationMode !== 'none' &&
+    stableStringify(quantizedComponents) !== stableStringify(apiParamValue(quant, 'components'))
+  ) {
+    return null;
+  }
+
+  const modelRepo = hubRepository(apiParamValue(loader, 'model_id') ?? apiParamValue(loader, 'repo_id'));
+  const pipelineClass = apiParamValue(loader, 'pipeline_class');
+  if (!modelRepo || typeof pipelineClass !== 'string' || !pipelineClass) return null;
+  return orderedValue({
+    source: 'executed-expert-diffusers-graph-v1',
+    device,
+    modelType: form.modelType,
+    modelRepo,
+    resolvedModelRepo: modelRepo,
+    resolvedArtifact: modelRepo,
+    pipelineClass,
+    dtype,
+    resourceMode: 'expert',
+    resolvedResourceMode: 'expert',
+    quantizationMode,
+    quantizedComponents,
+    autoOffload,
+    offloadMode,
+    deviceMap,
+    attentionBackend: apiParamValue(recipe, 'attention_backend'),
+    regionalCompile: apiParamValue(recipe, 'regional_compile'),
+    denoiserCache: apiParamValue(recipe, 'denoiser_cache'),
+    channelsLast: apiParamValue(recipe, 'channels_last'),
+    layerwiseCasting: apiParamValue(recipe, 'layerwise_casting'),
+  });
+}
+
 export function executionPlanIdentity(apiGraph) {
   const runtimeHints = apiGraph?.runtimeHints ?? {};
-  const plan = Object.fromEntries(
+  const declaredPlan = Object.fromEntries(
     EXECUTION_PLAN_FIELDS.filter((field) => runtimeHints[field] !== undefined).map((field) => [
       field,
       runtimeHints[field],
     ]),
   );
+  const plan = Object.keys(declaredPlan).length > 0 ? declaredPlan : (executedExpertPlanFromGraph(apiGraph) ?? {});
   return {
     hash: sha256Value('execution-plan-v1', plan),
     plan: orderedValue(plan),
   };
 }
 
-function executionReceiptIdentity(executionReceipt, executionPlan) {
+export function executionReceiptIdentity(executionReceipt, executionPlan) {
   const measurement = executionReceipt?.runtimeMeasurement;
   const hints = executionReceipt?.runtimeHints;
   const peakMemoryBytes =
@@ -431,6 +608,49 @@ export function normalizeBackendRuntime(runtimeFingerprint, deterministicMode = 
   };
 }
 
+function completeRuntimeFingerprintObject(value) {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof value.fingerprint === 'string' &&
+    value.fingerprint.startsWith('sha256:') &&
+    value.packages &&
+    typeof value.packages === 'object' &&
+    !Array.isArray(value.packages) &&
+    Object.keys(value.packages).length > 0 &&
+    value.torch &&
+    typeof value.torch === 'object' &&
+    !Array.isArray(value.torch) &&
+    Object.keys(value.torch).length > 0 &&
+    typeof value.work_dir === 'string' &&
+    value.work_dir.length > 0 &&
+    typeof value.data_dir === 'string' &&
+    value.data_dir.length > 0,
+  );
+}
+
+/**
+ * Select a complete backend runtime receipt without letting a compact queue
+ * fingerprint replace the richer graph-completion payload. Multiple complete
+ * receipts may differ in volatile memory observations, but their normalized
+ * locks must agree. Scalar fingerprints are corroborating claims only and
+ * must match one of those complete receipts.
+ */
+export function selectBackendRuntimeFingerprintEvidence(values, deterministicMode = null) {
+  const candidates = values.filter(completeRuntimeFingerprintObject);
+  if (candidates.length === 0) return null;
+  const locks = new Set(
+    candidates.map((candidate) => normalizeBackendRuntime(candidate, deterministicMode).lockFingerprint),
+  );
+  if (locks.size !== 1 || locks.has(null)) return null;
+
+  const objectFingerprints = new Set(candidates.map((candidate) => candidate.fingerprint));
+  const scalarClaims = values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+  if (scalarClaims.some((claim) => !objectFingerprints.has(claim))) return null;
+  return candidates[0];
+}
+
 export function runtimeLockFromProvenance(provenance) {
   const deterministic = provenance?.runtime?.deterministic?.settings;
   return normalizeBackendRuntime(
@@ -507,7 +727,10 @@ export function backendSourceIdentity(backendRoot) {
     path.join(backendRoot, 'utils'),
   ];
   const files = [...new Set(targets.flatMap(sourceFilesUnder))]
-    .sort((left, right) => left.localeCompare(right))
+    // This identity is also captured by the Python worker before imports.
+    // Use language-independent Unicode/code-point ordering rather than the
+    // host locale so both processes hash the same ordered file inventory.
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
     .map((file) => ({
       path: path.relative(backendRoot, file).replaceAll('\\', '/'),
       sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
@@ -520,6 +743,117 @@ export function backendSourceIdentity(backendRoot) {
     gitCommit: payload.gitCommit,
     fingerprint: sha256Value('backend-source-v1', payload),
     files,
+  };
+}
+
+function processBackendSourceAttestation(runtimeFingerprint) {
+  const value = runtimeFingerprint?.backendSource;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    value.schemaVersion !== 1 ||
+    value.claim !== 'process_start_backend_source_identity' ||
+    !/^sha256:backend-source-v1:[a-f0-9]{64}$/u.test(String(value.fingerprint ?? '')) ||
+    !(value.gitCommit === null || /^[a-f0-9]{40}$/u.test(String(value.gitCommit ?? ''))) ||
+    !Number.isInteger(value.fileCount) ||
+    value.fileCount <= 0 ||
+    typeof value.capturedAt !== 'string' ||
+    !value.capturedAt
+  ) {
+    return null;
+  }
+  return orderedValue({
+    schemaVersion: 1,
+    claim: value.claim,
+    gitCommit: value.gitCommit,
+    fingerprint: value.fingerprint,
+    fileCount: value.fileCount,
+    capturedAt: value.capturedAt,
+  });
+}
+
+function backendSourceInventoryBlockers(identity, label) {
+  const blockers = [];
+  if (!identity || typeof identity !== 'object' || Array.isArray(identity)) {
+    return [`${label} is missing or malformed.`];
+  }
+  const gitCommit = identity.gitCommit;
+  if (!(gitCommit === null || /^[a-f0-9]{40}$/u.test(String(gitCommit ?? '')))) {
+    blockers.push(`${label} Git commit is malformed.`);
+  }
+  const files = identity.files;
+  if (!Array.isArray(files) || files.length === 0) {
+    blockers.push(`${label} file inventory is missing or empty.`);
+    return blockers;
+  }
+  const paths = [];
+  for (const [index, file] of files.entries()) {
+    if (
+      !file ||
+      typeof file !== 'object' ||
+      Array.isArray(file) ||
+      typeof file.path !== 'string' ||
+      !file.path ||
+      !/^[a-f0-9]{64}$/u.test(String(file.sha256 ?? ''))
+    ) {
+      blockers.push(`${label} file inventory entry ${index} is malformed.`);
+      continue;
+    }
+    paths.push(file.path);
+  }
+  if (new Set(paths).size !== paths.length) blockers.push(`${label} file inventory contains duplicate paths.`);
+  if (blockers.length === 0) {
+    const expectedFingerprint = sha256Value('backend-source-v1', { gitCommit, files });
+    if (identity.fingerprint !== expectedFingerprint) {
+      blockers.push(`${label} fingerprint does not match its retained file inventory.`);
+    }
+  }
+  return blockers;
+}
+
+/**
+ * Bind a filesystem before/after inventory to the identity captured by the
+ * actual worker before it imported executable backend modules. A reused
+ * worker is acceptable only while that process-start claim still matches both
+ * inventories; old or stale workers fail closed.
+ */
+export function backendSourceEvidence({ before, after, runtimeFingerprint }) {
+  const blockers = [];
+  const attestation = processBackendSourceAttestation(runtimeFingerprint);
+  blockers.push(...backendSourceInventoryBlockers(before, 'pre-run backend source identity'));
+  blockers.push(...backendSourceInventoryBlockers(after, 'post-run backend source identity'));
+  if (!attestation) {
+    blockers.push('the executing worker did not emit a valid process-start backend source attestation.');
+  }
+  if (before?.fingerprint && after?.fingerprint && before.fingerprint !== after.fingerprint) {
+    blockers.push('backend source files changed while the proof was running.');
+  }
+  if (attestation && before?.fingerprint && attestation.fingerprint !== before.fingerprint) {
+    blockers.push('the executing worker loaded a different backend source identity than the pre-run snapshot.');
+  }
+  if (attestation && after?.fingerprint && attestation.fingerprint !== after.fingerprint) {
+    blockers.push('the executing worker backend source identity does not match the post-run snapshot.');
+  }
+  if (
+    attestation &&
+    before?.gitCommit !== undefined &&
+    (attestation.gitCommit !== before.gitCommit || attestation.gitCommit !== after?.gitCommit)
+  ) {
+    blockers.push('the executing worker Git commit does not match both source snapshots.');
+  }
+  if (
+    attestation &&
+    Array.isArray(before?.files) &&
+    Array.isArray(after?.files) &&
+    (attestation.fileCount !== before.files.length || attestation.fileCount !== after.files.length)
+  ) {
+    blockers.push('the executing worker source-file count does not match both source snapshots.');
+  }
+  return {
+    identity: blockers.length === 0 ? before : null,
+    attestation,
+    blockers,
   };
 }
 
@@ -609,7 +943,47 @@ export function validateRunProvenance(provenance) {
       blockers.push(`${field} is not pinned.`);
     }
   }
+  if (provenance?.proofLockHash !== liveProofLockHash(provenance)) {
+    blockers.push('proofLockHash does not match the immutable provenance identity.');
+  }
+  const modelItems = provenance?.models?.items;
+  if (
+    !Array.isArray(modelItems) ||
+    provenance?.models?.count !== modelItems.length ||
+    provenance?.models?.hash !== sha256Value('model-set-v1', modelItems)
+  ) {
+    blockers.push('models.hash does not match the complete executed model set.');
+  } else {
+    const revisionLock = modelItems.map((item) => item.modelRevision).join(' | ');
+    const commitLock = modelItems.map((item) => `${item.repoId}@${item.selectedRevision}`).join(' | ');
+    if (provenance.models.revisionLock !== undefined && provenance.models.revisionLock !== revisionLock) {
+      blockers.push('models.revisionLock does not match the complete executed model set.');
+    }
+    if (provenance.models.commitLock !== undefined && provenance.models.commitLock !== commitLock) {
+      blockers.push('models.commitLock does not match the complete executed model set.');
+    }
+  }
   if (Number(provenance?.schemaVersion) >= 2) {
+    const sourceIdentity = provenance?.runtime?.backendSource;
+    const sourceAttestation = provenance?.runtime?.backendSourceAttestation;
+    blockers.push(...backendSourceInventoryBlockers(sourceIdentity, 'runtime.backendSource'));
+    const normalizedSourceAttestation = processBackendSourceAttestation({ backendSource: sourceAttestation });
+    if (!normalizedSourceAttestation) {
+      blockers.push('runtime.backendSourceAttestation is missing or invalid.');
+    } else {
+      if (normalizedSourceAttestation.fingerprint !== sourceIdentity?.fingerprint) {
+        blockers.push('runtime.backendSourceAttestation does not match the retained backend source identity.');
+      }
+      if (normalizedSourceAttestation.gitCommit !== sourceIdentity?.gitCommit) {
+        blockers.push('runtime.backendSourceAttestation Git commit does not match the retained source identity.');
+      }
+      if (
+        !Array.isArray(sourceIdentity?.files) ||
+        normalizedSourceAttestation.fileCount !== sourceIdentity.files.length
+      ) {
+        blockers.push('runtime.backendSourceAttestation file count does not match the retained source inventory.');
+      }
+    }
     if (!provenance?.execution?.resourceCandidateId) {
       blockers.push('execution.resourceCandidateId is missing.');
     }
@@ -670,6 +1044,21 @@ export function validateRunProvenance(provenance) {
       blockers.push(`inputs.items.${index}.byteSize is invalid.`);
     }
   }
+  const hasRouteBinding = provenance?.routeBinding !== undefined && provenance?.routeBinding !== null;
+  const hasRouteBindingHash = provenance?.routeBindingHash !== undefined && provenance?.routeBindingHash !== null;
+  if (hasRouteBinding !== hasRouteBindingHash) {
+    blockers.push('routeBinding and routeBindingHash must either both be present or both be absent.');
+  } else if (hasRouteBinding) {
+    try {
+      const routeBinding = normalizeResourceRouteBinding(provenance.routeBinding);
+      const expectedHash = resourceRouteBindingHash(routeBinding);
+      if (provenance.routeBindingHash !== expectedHash) {
+        blockers.push('routeBindingHash does not match the exact registered route binding.');
+      }
+    } catch (error) {
+      blockers.push(error instanceof Error ? error.message : 'routeBinding is malformed.');
+    }
+  }
   return blockers;
 }
 
@@ -694,10 +1083,15 @@ export function createRunProvenance({
   expectedOutput,
   capturedAt = new Date().toISOString(),
 }) {
+  const rawRouteBinding = apiGraph?.provenance?.registeredBlockV2RouteBinding;
+  const routeBinding =
+    rawRouteBinding === undefined || rawRouteBinding === null ? null : normalizeResourceRouteBinding(rawRouteBinding);
+  const routeBindingHash = routeBinding ? resourceRouteBindingHash(routeBinding) : null;
   const graph = canonicalGraphIdentity(apiGraph);
   const executionPlan = executionPlanIdentity(apiGraph);
   const execution = executionReceiptIdentity(executionReceipt, executionPlan.plan);
   const runtime = normalizeBackendRuntime(runtimeFingerprint, deterministicMode);
+  const backendSourceAttestation = processBackendSourceAttestation(runtimeFingerprint);
   const backendContract = backendContractIdentity(nodesPayload, graph.canonicalGraph);
   const deterministic = deterministicIdentity(deterministicMode);
   const modelSet = modelSetIdentity(modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean));
@@ -736,6 +1130,7 @@ export function createRunProvenance({
     backendContractFingerprint: backendContract.fingerprint,
     deterministicFingerprint: deterministic.fingerprint,
     outputCollectionHash: output.collectionHash,
+    ...(routeBindingHash ? { routeBindingHash } : {}),
   };
   const firstOutput = output.items[0] ?? {};
   const provenance = {
@@ -764,6 +1159,7 @@ export function createRunProvenance({
     durationSeconds: firstOutput.durationSeconds ?? null,
     sampleRate: firstOutput.sampleRate ?? null,
     channels: firstOutput.channels ?? null,
+    ...(routeBinding ? { routeBinding, routeBindingHash } : {}),
     template: {
       ...template,
       expectedOutput:
@@ -788,6 +1184,7 @@ export function createRunProvenance({
     runtime: {
       ...runtime,
       backendSource: backendSource ?? null,
+      backendSourceAttestation,
       backendContract,
       deterministic,
     },
@@ -827,6 +1224,7 @@ export function compareRunProvenance(baseline, candidate) {
     'output.count',
     'output.collectionHash',
   ];
+  if (baseline?.routeBindingHash || candidate?.routeBindingHash) fields.push('routeBindingHash');
   const maxOutputs = Math.max(baseline?.output?.items?.length ?? 0, candidate?.output?.items?.length ?? 0);
   for (let index = 0; index < maxOutputs; index += 1) {
     const mediaType =

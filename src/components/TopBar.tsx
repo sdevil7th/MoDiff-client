@@ -1,7 +1,8 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
+import { createDurableNodesSelector } from '../stores/flowDurableReferences';
 import {
   Boxes,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
   FilePlus2,
   GalleryVerticalEnd,
   Image,
+  Info,
   ListPlus,
   LoaderCircle,
   Package,
@@ -31,6 +33,7 @@ import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import {
+  assertWorkflowOperationContext,
   captureWorkflowOperationContext,
   isWorkflowOperationCancelled,
   latestOutputForWorkflow,
@@ -41,11 +44,14 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { useRunReadinessIssues } from '../studio/useRunReadinessIssues';
 import {
+  createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
+  getStudioGraphShapeKey,
   inspectStudioGraphBindingDivergence,
   syncStudioGraphValues,
 } from '../studio/graphBridge';
 import { coordinateGraphRun } from '../studio/runCoordinator';
+import { prepareHuggingFaceClustersForRun } from '../studio/huggingFaceClusterPreparation';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { getDownloadPercent, hasHfDownloadFailed, isHfDownloadActive } from '../studio/modelInstall';
@@ -54,7 +60,8 @@ import { cx } from '../utils/classNames';
 import type { StudioViewMode } from '../studio/types';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
-import { buildGraphFixPlan } from '../studio/graphFixer';
+import { useGraphFixModule } from '../studio/useGraphFixModule';
+import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
 import { useGraphFixStore } from '../stores/useGraphFixStore';
 import {
   ModiffButton,
@@ -67,9 +74,12 @@ import {
   ModiffSwitch,
 } from '../ui';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
-import WorkflowSaveDialog, { type WorkflowSaveDestination } from './WorkflowSaveDialog';
+import type { WorkflowSaveDestination } from './WorkflowSaveDialog';
+
+const WorkflowSaveDialog = lazy(() => import('./WorkflowSaveDialog'));
 import { saveWorkflowNow } from '../studio/useWorkflowBackendSync';
 import { saveWorkflowSnapshotFile } from '../studio/workflowFileSave';
+import { resolveTopBarAutoPolicyV2 } from '../studio/topBarAutoPolicyV2';
 
 type ExecuteOption = {
   id: 'run' | 'auto' | 'loop';
@@ -135,10 +145,12 @@ function TopBarButton({
 type AutoModeSwitchProps = {
   checked: boolean;
   disabled?: boolean;
+  unavailableReason?: string;
   onCheckedChange: (checked: boolean) => void;
 };
 
-function AutoModeSwitch({ checked, disabled, onCheckedChange }: AutoModeSwitchProps) {
+function AutoModeSwitch({ checked, disabled, unavailableReason, onCheckedChange }: AutoModeSwitchProps) {
+  const disabledLabel = unavailableReason || 'Auto is unavailable for this custom graph.';
   return (
     <ModiffSwitch
       checked={checked}
@@ -146,8 +158,8 @@ function AutoModeSwitch({ checked, disabled, onCheckedChange }: AutoModeSwitchPr
       onCheckedChange={onCheckedChange}
       label={<span className="text-xs font-bold text-modiff-text">Auto</span>}
       className="h-9 flex-row-reverse px-1"
-      aria-label={disabled ? 'Auto is unavailable for custom graphs' : checked ? 'Turn Auto off' : 'Turn Auto on'}
-      title={disabled ? 'Custom graphs use Expert view' : checked ? 'Auto is on' : 'Auto is off'}
+      aria-label={disabled ? disabledLabel : checked ? 'Turn Auto off' : 'Turn Auto on'}
+      title={disabled ? disabledLabel : checked ? 'Auto is on' : 'Auto is off'}
       data-testid="topbar-auto-switch"
     />
   );
@@ -220,6 +232,8 @@ function aggregateDownloadPercent(downloads: ReturnType<typeof useNodesStore.get
   return Math.round(percents.reduce((sum, value) => sum + value, 0) / percents.length);
 }
 
+const selectPolicyNodes = createDurableNodesSelector();
+
 function TopBar() {
   const {
     executeButtonIndex,
@@ -240,7 +254,8 @@ function TopBar() {
 
   const { setViewport } = useReactFlow();
   const clearWorkflow = useFlowStore((state) => state.clearWorkflow);
-  const graphFixNodes = useFlowStore((state) => state.nodes);
+  const graphFixNodes = useFlowStore((state) => selectPolicyNodes(state.nodes));
+  const modularBlockDefinitions = useHuggingFaceNodeLibraryStore((state) => state.library?.blockDefinitions);
   const graphFixEdges = useFlowStore((state) => state.edges);
   const exportGraph = useFlowStore((state) => state.exportGraph);
   const resetStudioWorkflowSession = useStudioStore((state) => state.resetWorkflowSession);
@@ -282,15 +297,17 @@ function TopBar() {
     isConnected,
     includeStudio: Boolean(graphBinding || graphFinalization),
   });
+  const graphFix = useGraphFixModule(graphFixNodes.length > 0 || runReadiness.issues.length > 0);
   const graphFixPlan = useMemo(
     () =>
-      buildGraphFixPlan({
+      graphFix.module?.buildGraphFixPlan({
         nodes: graphFixNodes,
         edges: graphFixEdges,
         registry: nodesRegistry,
+        modularBlockDefinitions,
         readinessIssues: runReadiness.issues,
-      }),
-    [graphFixEdges, graphFixNodes, nodesRegistry, runReadiness.issues],
+      }) ?? { issues: [], candidateCount: 0, canFix: false },
+    [graphFix.module, graphFixEdges, graphFixNodes, nodesRegistry, runReadiness.issues, modularBlockDefinitions],
   );
   const blockingRunIssue = runReadiness.blockingIssues[0] ?? null;
   // Auto planning happens during startup/template preparation and whenever a
@@ -305,8 +322,22 @@ function TopBar() {
     canvasTransition?.type !== 'template_graph_building'
       ? inspectStudioGraphBindingDivergence(graphBinding)
       : null;
-  const customGraphActive =
-    workflowCanvasHydrated && graphFixNodes.length > 0 && (!graphBinding || Boolean(graphBindingDivergence));
+  const topBarAutoPolicy = useMemo(
+    () =>
+      resolveTopBarAutoPolicyV2({
+        workflowCanvasHydrated,
+        graphBindingPresent: Boolean(graphBinding),
+        graphBindingDiverged: Boolean(graphBindingDivergence),
+        templateGraphBuilding: canvasTransition?.type === 'template_graph_building',
+        nodes: graphFixNodes,
+        edges: graphFixEdges,
+      }),
+    [canvasTransition, graphBinding, graphBindingDivergence, graphFixEdges, graphFixNodes, workflowCanvasHydrated],
+  );
+  const customGraphAutoUnavailable = topBarAutoPolicy.autoUnavailable;
+  const customGraphAutoUnavailableReason = graphBindingDivergence
+    ? 'This managed graph changed. Review it in Expert before using Auto.'
+    : topBarAutoPolicy.registeredBlockEligibility.reason;
   const latestWorkflowOutput = useMemo(
     () => latestOutputForWorkflow(studioOutputs, activeWorkflowTabId, { includeUnscopedFallback: false }),
     [activeWorkflowTabId, studioOutputs],
@@ -417,20 +448,38 @@ function TopBar() {
     [captureActiveWorkflow, createWorkflowTab, renameWorkflowTab, saveActiveWorkflowTab, saveDialog?.renameCurrent],
   );
 
-  const buildTopBarWorkflowPackage = useCallback(
-    () =>
-      buildWorkflowPackage({
-        form: useStudioStore.getState().form,
-        graph: useFlowStore.getState().toObject(),
-        apiGraph: sid ? (graphBinding ? applyStudioRuntimeHints(exportGraph(sid)) : exportGraph(sid)) : null,
-        latestOutput: latestWorkflowOutput,
-        packageType: 'modiff-workflow-share',
-      }),
-    [exportGraph, graphBinding, latestWorkflowOutput, sid],
-  );
+  const buildTopBarWorkflowPackage = useCallback(async () => {
+    const context = captureWorkflowOperationContext();
+    const flow = useFlowStore.getState();
+    let apiGraph = sid ? exportGraph(sid, undefined, { randomizeSeeds: false }) : null;
+    if (apiGraph && graphBinding) apiGraph = applyStudioRuntimeHints(apiGraph);
+    if (
+      apiGraph &&
+      flow.nodes.some((node) =>
+        node.data.blockInstanceV2?.effectiveGraph.nodes.some(
+          (child) => child.modularDiffusers?.kind === 'upstream_block',
+        ),
+      )
+    ) {
+      const lower = await (await import('../studio/modularComposition')).prepareModularCompositionExecutionV2(flow);
+      apiGraph = lower(apiGraph);
+      assertWorkflowOperationContext(context);
+    }
+    return buildWorkflowPackage({
+      form: useStudioStore.getState().form,
+      graph: flow.toObject(),
+      apiGraph,
+      latestOutput: latestWorkflowOutput,
+      packageType: 'modiff-workflow-share',
+    });
+  }, [exportGraph, graphBinding, latestWorkflowOutput, sid]);
 
-  const handleWorkflowPackageExportClick = useCallback(() => {
-    downloadJson('modiff-workflow-package.json', buildTopBarWorkflowPackage());
+  const handleWorkflowPackageExportClick = useCallback(async () => {
+    try {
+      downloadJson('modiff-workflow-package.json', await buildTopBarWorkflowPackage());
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, 'Could not export this workflow.'), { variant: 'error' });
+    }
   }, [buildTopBarWorkflowPackage]);
 
   const handleLatestOutputPackageExportClick = useCallback(() => {
@@ -449,7 +498,7 @@ function TopBar() {
     downloadJson('modiff-workflow-graph.json', useFlowStore.getState().toObject());
   }, []);
 
-  const handleApiExportClick = () => {
+  const handleApiExportClick = async () => {
     if (!sid) {
       enqueueSnackbar('Connect to the MoDiff server before exporting the API graph.', {
         variant: 'error',
@@ -458,15 +507,32 @@ function TopBar() {
       return;
     }
 
-    const apiGraph = graphBinding ? applyStudioRuntimeHints(exportGraph(sid)) : exportGraph(sid);
-    downloadJson('modiff-api-graph.json', apiGraph);
+    try {
+      downloadJson('modiff-api-graph.json', (await buildTopBarWorkflowPackage()).apiGraph);
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, 'Could not export this API graph.'), { variant: 'error' });
+    }
   };
 
   const handleStudioViewModeChange = (mode: StudioViewMode) => {
+    const previousShapeKey = getStudioGraphShapeKey(useStudioStore.getState().form);
     setStudioViewMode(mode);
     updateStudioForm({ resourceMode: mode });
     const nextForm = useStudioStore.getState().form;
     syncStudioGraphValues(nextForm);
+    if (
+      graphBinding &&
+      (previousShapeKey !== getStudioGraphShapeKey(nextForm) ||
+        useStudioStore.getState().graphFinalization?.status === 'pending')
+    ) {
+      const context = captureWorkflowOperationContext();
+      void createOrUpdateStudioGraph(nextForm, context).catch((error) => {
+        if (isWorkflowOperationCancelled(error)) return;
+        const message = String(error);
+        useStudioStore.getState().setLastError(message);
+        enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
+      });
+    }
   };
 
   const handleAutoSwitchChange = (checked: boolean) => {
@@ -494,6 +560,7 @@ function TopBar() {
         }
         await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
       }
+      await prepareHuggingFaceClustersForRun();
       const validation = validateCurrentRun({ sid, isConnected, includeStudio: Boolean(graphBinding) });
       if (!validation.canRun) return;
 
@@ -567,21 +634,21 @@ function TopBar() {
   }, [openSaveAs, persistCurrentWorkflow]);
 
   useEffect(() => {
-    if (customGraphActive) {
+    if (graphBindingDivergence) detachManagedGraph();
+    if (customGraphAutoUnavailable) {
       if (studioViewMode !== 'expert') {
         setStudioViewMode('expert');
       }
       if (formResourceMode !== 'expert') {
         updateStudioForm({ resourceMode: 'expert' });
       }
-      if (graphBindingDivergence) detachManagedGraph();
       return;
     }
-    if (graphBinding && formResourceMode !== studioViewMode) {
+    if (formResourceMode !== studioViewMode) {
       setStudioViewMode(formResourceMode);
     }
   }, [
-    customGraphActive,
+    customGraphAutoUnavailable,
     detachManagedGraph,
     formResourceMode,
     graphBinding,
@@ -723,22 +790,43 @@ function TopBar() {
       </div>
 
       <div className="flex flex-none items-center gap-2">
+        <ModiffIconButton
+          label="Auto mode and workflow resources"
+          title="Explain Auto and assess this workflow’s resources"
+          data-testid="topbar-workflow-resources"
+          onClick={() => {
+            useSettingsStore.getState().setRightPanelTab('compatibility');
+            useSettingsStore.getState().setRightPanelOpen(true);
+          }}
+        >
+          <Info size={15} />
+        </ModiffIconButton>
         <AutoModeSwitch
-          checked={studioViewMode === 'auto'}
-          disabled={customGraphActive}
+          checked={formResourceMode === 'auto'}
+          disabled={customGraphAutoUnavailable}
+          unavailableReason={customGraphAutoUnavailableReason}
           onCheckedChange={handleAutoSwitchChange}
         />
         <TopBarButton
-          disabled={!graphFixPlan.canFix}
-          icon={<WandSparkles size={16} />}
+          disabled={graphFixPlan.issues.length === 0}
+          icon={
+            !graphFix.module && !graphFix.error && graphFixNodes.length > 0 ? (
+              <LoaderCircle size={16} className="animate-spin" />
+            ) : (
+              <WandSparkles size={16} />
+            )
+          }
           onClick={openGraphFixDialog}
           title={
-            graphFixPlan.canFix
-              ? `Fix ${graphFixPlan.issues.length} graph ${graphFixPlan.issues.length === 1 ? 'issue' : 'issues'}`
-              : 'No deterministic graph fixes available'
+            graphFix.error ??
+            (!graphFix.module && graphFixNodes.length > 0
+              ? 'Loading graph fixes…'
+              : graphFixPlan.issues.length > 0
+                ? `Fix ${graphFixPlan.issues.length} graph ${graphFixPlan.issues.length === 1 ? 'issue' : 'issues'}`
+                : 'No deterministic graph fixes available')
           }
           testId="graph-fix"
-          tone={graphFixPlan.canFix ? 'active' : 'quiet'}
+          tone={graphFixPlan.issues.length > 0 ? 'active' : 'quiet'}
         >
           Fix
         </TopBarButton>
@@ -869,16 +957,20 @@ function TopBar() {
         />
       </div>
 
-      <WorkflowSaveDialog
-        open={Boolean(saveDialog)}
-        initialName={activeWorkflowTab?.title ?? 'Workflow'}
-        initialDestination={saveDialog?.destination}
-        loading={savingWorkflow}
-        onClose={() => setSaveDialog(null)}
-        onSave={(name, destination) => {
-          void handleSaveAs(name, destination);
-        }}
-      />
+      <Suspense fallback={null}>
+        {saveDialog && (
+          <WorkflowSaveDialog
+            open
+            initialName={activeWorkflowTab?.title ?? 'Workflow'}
+            initialDestination={saveDialog.destination}
+            loading={savingWorkflow}
+            onClose={() => setSaveDialog(null)}
+            onSave={(name, destination) => {
+              void handleSaveAs(name, destination);
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

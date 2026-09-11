@@ -34,6 +34,7 @@ function outputRequest(
   return requestJson<BackendOutputsResponse>(url, {
     ...init,
     signal,
+    timeoutMs: 120_000,
     parse: (value) => parseOutputsResponse(value, url, fallbackMessage),
   });
 }

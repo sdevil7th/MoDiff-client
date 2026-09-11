@@ -29,6 +29,7 @@ export type RuntimeStorageResource = {
 export type RuntimeAcceleratorResource = {
   active?: boolean;
   allocatedBytes: number | null;
+  allocatorStatsStatus?: 'paused_during_execution' | null;
   backend: string;
   device: string;
   index: number | null;
@@ -101,6 +102,8 @@ export function parseRuntimeResourceSnapshot(value: unknown): RuntimeResourceSna
           {
             active: activeDevice === device,
             allocatedBytes: finite(accelerator.allocatedBytes),
+            allocatorStatsStatus:
+              accelerator.allocatorStatsStatus === 'paused_during_execution' ? 'paused_during_execution' : null,
             backend: text(accelerator.backend) ?? 'unknown',
             device,
             index: finite(accelerator.index),

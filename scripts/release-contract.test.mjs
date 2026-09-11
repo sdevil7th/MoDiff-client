@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
 import { canonicalJsonHash } from './canonical-json.mjs';
@@ -7,10 +8,24 @@ import {
   canonicalWorkflowContract,
   findCanonicalWorkflowRecord,
 } from './release-contract-core.mjs';
+import { galleryEvidenceCandidates } from './release-evidence-paths.mjs';
 
 function graphHash(graph) {
   return canonicalJsonHash(graph);
 }
+
+test('Gallery evidence lookup includes the backend-owned runtime media tree', () => {
+  const clientRoot = resolve('workspace-client-fixture');
+  const backendRoot = resolve('workspace-backend-fixture');
+  assert.deepEqual(galleryEvidenceCandidates(clientRoot, backendRoot, '/template-gallery/reviews/run.json'), [
+    join(clientRoot, 'public', 'template-gallery', 'reviews', 'run.json'),
+    join(backendRoot, 'web', 'template-gallery', 'reviews', 'run.json'),
+  ]);
+  assert.throws(
+    () => galleryEvidenceCandidates(clientRoot, backendRoot, '../../outside.json'),
+    /escapes its managed root/,
+  );
+});
 
 test('canonical workflow identity comes from current graph bytes and historical evidence must match it', () => {
   const graph = {
@@ -67,6 +82,28 @@ test('canonical workflow identity is insensitive to object-key order', () => {
     canonicalWorkflowContract(manifest, reorderedGraph).graphHash,
     `sha256:workflow-graph-v1:${manifest.graphHash}`,
   );
+});
+
+test('historical evidence keeps changed template and prompt locks visible as stale', () => {
+  const graph = {
+    nodes: [{ data: { module: 'modules.DiffusersImage', action: 'Generate' } }],
+    edges: [],
+  };
+  const manifest = { id: 'Current:text_to_image', graphHash: graphHash(graph) };
+  const current = canonicalWorkflowContract(manifest, graph);
+  const assessment = assessHistoricalEvidence(
+    {
+      backendNodes: current.backendNodes,
+      catalogTemplateLockHash: 'tpl_old',
+      promptSettingsHash: 'ps_old',
+    },
+    current,
+    new Set(current.backendNodes),
+    { catalogTemplateLockHash: 'tpl_current', promptSettingsHash: 'ps_current' },
+  );
+  assert.equal(assessment.matches, false);
+  assert.equal(assessment.status, 'stale');
+  assert.deepEqual(assessment.reasons, ['catalog_template_lock_mismatch', 'prompt_settings_hash_mismatch']);
 });
 
 test('base workflow lookup cannot be replaced by a later same-mode variant', () => {

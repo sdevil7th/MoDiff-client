@@ -32,7 +32,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   mediaViewer = await server.ssrLoadModule('/src/utils/mediaViewer.ts');
@@ -113,6 +113,52 @@ test('image artifacts reject executable, SVG data, file, and blob URL schemes', 
   assert.deepEqual(
     normalized.map((item) => item.url),
     ['http://127.0.0.1:5191/cache/image/output', 'https://media.example/render.webp', 'data:image/png;base64,AAAA'],
+  );
+});
+
+test('Gallery and Studio URL previews keep durable file URLs and comparison order', () => {
+  const urls = [
+    '/file?file=%40data/studio/outputs/previous.webp',
+    '/file?file=%40data/studio/outputs/current.webp',
+    'https://media.example/render.png',
+    'data:image/png;base64,AAAA',
+  ];
+  const opener = mediaViewer.imageUrlLightboxOpener(urls, 1);
+  const images = imageArtifacts.normalizeImageArtifacts({
+    value: opener.images,
+    dataType: opener.dataType,
+    mimeType: opener.mimeType || 'image/webp',
+  });
+  assert.equal(opener.currentIndex, 1);
+  assert.deepEqual(
+    images.map((item) => item.url),
+    ['http://127.0.0.1:5191' + urls[0], 'http://127.0.0.1:5191' + urls[1], urls[2], urls[3]],
+  );
+  assert.equal(mediaViewer.imageUrlLightboxOpener([urls[0]]).currentIndex, 0);
+});
+
+test('URL previews retain scheme rejection and raw encoded node images retain base64 handling', () => {
+  const opener = mediaViewer.imageUrlLightboxOpener([
+    'javascript:alert(1)',
+    'data:image/svg+xml,<svg/>',
+    'file:///tmp/render.png',
+    'blob:http://127.0.0.1:5191/untrusted',
+  ]);
+  assert.deepEqual(
+    imageArtifacts.normalizeImageArtifacts({
+      value: opener.images,
+      dataType: opener.dataType,
+      mimeType: 'image/webp',
+    }),
+    [],
+  );
+  assert.equal(
+    imageArtifacts.normalizeImageArtifacts({
+      value: 'AAAA',
+      dataType: 'image',
+      mimeType: 'image/png',
+    })[0].url,
+    'data:image/png;base64,AAAA',
   );
 });
 

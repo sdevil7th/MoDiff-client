@@ -6,7 +6,6 @@ import {
   waitForSettledGraphFinalization,
   type SettledGraphFinalization,
 } from './graphFinalization';
-import type { FieldProps } from '../components/NodeContent';
 import { useFlowStore, type CustomNodeType, type FlowStore } from '../stores/useFlowStore';
 import { type NodeData, type NodeParams, useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -22,7 +21,10 @@ import {
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
-import fieldAction from '../utils/fieldAction';
+import fieldAction, {
+  buildFieldActionProps as buildFieldProps,
+  suppressNextAutomaticSignalFieldAction,
+} from '../utils/fieldAction';
 import { setManagedGraphSchemaMutationHandler } from '../utils/managedGraphSchemaMutation';
 import {
   QWEN_CONTROLNET_REQUIREMENT,
@@ -35,6 +37,7 @@ import {
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
   WAN_VACE_REVISION,
+  getModelRequirementsForMode,
 } from './modelProfiles';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
@@ -134,36 +137,57 @@ const NODE_KEYS = {
   qwenGenerate: QWEN_T2I_GENERATE_NODE_KEY,
   qwenInpaintPipeline: QWEN_INPAINT_PIPELINE_NODE_KEY,
   qwenOutpaintCanvas: QWEN_OUTPAINT_CANVAS_NODE_KEY,
+  outpaintCanvas: QWEN_OUTPAINT_CANVAS_NODE_KEY,
   qwenInpaint: QWEN_INPAINT_GENERATE_NODE_KEY,
   prompt: 'modules.ModularDiffusers.EncodePrompt',
+  beforeEncode: 'modules.ModularDiffusers.WorkflowMiniMaxH3BeforeEncode',
+  textEncode: 'modules.ModularDiffusers.WorkflowIdeogram4TextEncode',
+  duration: 'modules.ModularDiffusers.WorkflowLTX25Duration',
+  conditionEncode: 'modules.ModularDiffusers.WorkflowLTX25ConditionEncode',
+  referenceEncode: 'modules.ModularDiffusers.WorkflowLTX25ReferenceEncode',
   denoise: 'modules.ModularDiffusers.Denoise',
   decode: 'modules.ModularDiffusers.DecodeLatents',
+  afterDecode: 'modules.ModularDiffusers.WorkflowCosmos3OmniAfterDecode',
   preview: 'modules.Image.Preview',
   loadImage: 'modules.Image.Load',
+  controlPreprocessor: 'modules.ImageFilters.Canny',
   loadControlImage: 'modules.Image.Load',
   loadMask: 'modules.Image.Load',
   applyMask: 'modules.Image.ApplyMask',
   imageEmbeddings: 'modules.ModularDiffusers.ImageEmbeddings',
   imageEncode: 'modules.ModularDiffusers.ImageEncode',
+  videoEncode: 'modules.ModularDiffusers.WorkflowVideoEncode',
   loadLastImage: 'modules.Image.Load',
   controlnetModel: 'modules.ModularDiffusers.AutoModelLoader',
   controlnet: 'modules.ModularDiffusers.Controlnet',
+  loadIPAdapterImage: 'modules.Image.Load',
+  guider: 'modules.ModularDiffusers.Guider',
+  ipAdapter: 'modules.ModularDiffusers.IPAdapter',
   diffusersQuantization: 'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
   diffusersRecipe: 'modules.DiffusersRuntime.DiffusersExecutionRecipe',
   wanPipeline: 'modules.DiffusersVideo.LoadPipeline',
   loadVideo: 'modules.Video.Load',
   loadControlVideo: 'modules.Video.Load',
   loadMaskVideo: 'modules.Video.Load',
+  loadPoseVideo: 'modules.Video.Load',
+  loadFaceVideo: 'modules.Video.Load',
+  loadBackgroundVideo: 'modules.Video.Load',
   normalizeVideo: 'modules.VideoConditioning.Normalize',
+  normalizeControlVideo: 'modules.VideoConditioning.Normalize',
   alignMaskVideo: 'modules.VideoConditioning.AlignMask',
   videoColor: 'modules.VideoColor.Adjust',
   wanGenerate: 'modules.DiffusersVideo.Generate',
   videoExport: 'modules.Video.Export',
   diffusersImagePipeline: 'modules.DiffusersImage.LoadPipeline',
   diffusersImageGenerate: 'modules.DiffusersImage.Generate',
+  diffusersUnconditionalGenerate: 'modules.DiffusersImage.UnconditionalGenerate',
+  diffusersPredictMap: 'modules.DiffusersImage.PredictMap',
   diffusersImageEdit: 'modules.DiffusersImage.Edit',
   diffusersImageInpaint: 'modules.DiffusersImage.Inpaint',
   diffusersImageControl: 'modules.DiffusersImage.ControlGenerate',
+  diffusersImageControlEdit: 'modules.DiffusersImage.ControlEdit',
+  diffusersImageControlInpaint: 'modules.DiffusersImage.ControlInpaint',
+  diffusersImageLayerDecompose: 'modules.DiffusersImage.LayerDecompose',
   loadAdapter: 'modules.DiffusersImage.LoadAdapter',
   loadAudio: 'modules.Audio.Load',
   loadReferenceAudio: 'modules.Audio.Load',
@@ -171,7 +195,27 @@ const NODE_KEYS = {
   audioGenerate: 'modules.DiffusersAudio.Generate',
   audioLoudnessMatch: 'modules.Audio.MatchLoudness',
   audioJoin: 'modules.Audio.Join',
+  audioOperation: 'modules.Audio.ProcessAudio',
   audioExport: 'modules.Audio.Export',
+  dataOperation: 'modules.Text.ProcessText',
+  dataPreview: 'modules.Primitive.DataViewer',
+  dataExport: 'modules.Primitive.ExportData',
+  diffusersThreeDPipeline: 'modules.DiffusersThreeD.LoadPipeline',
+  diffusersThreeDGenerate: 'modules.DiffusersThreeD.GenerateRenderedArtifact',
+  speechModel: 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel',
+  transcribeAudio: 'modules.HuggingFaceSpeech.TranscribeAudio',
+  transcriptPreview: 'modules.Primitive.DataViewer',
+  transformersTextModel: 'modules.HuggingFaceTransformers.LoadTextGenerationModel',
+  transformersTextGenerate: 'modules.HuggingFaceTransformers.GenerateText',
+  transformersImageTextModel: 'modules.HuggingFaceTransformers.LoadImageTextToTextModel',
+  transformersImageTextGenerate: 'modules.HuggingFaceTransformers.GenerateImageVideoText',
+  transformersAnyToAnyModel: 'modules.HuggingFaceTransformers.LoadAnyToAnyModel',
+  transformersAnyToAnyGenerate: 'modules.HuggingFaceTransformers.GenerateAnyToAny',
+  transformersTextPreview: 'modules.Primitive.DataViewer',
+  imageOperation: 'modules.ImageOperations.ProcessImage',
+  imageUpscaler: 'modules.Spandrel.Upscaler',
+  videoOperation: 'modules.Video.ProcessVideo',
+  videoUpscaler: 'modules.Video.UpscaleVideo',
 } satisfies Record<StudioGraphRole, string>;
 
 const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
@@ -181,36 +225,57 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   qwenGenerate: { x: -120, y: -80 },
   qwenInpaintPipeline: { x: -520, y: -80 },
   qwenOutpaintCanvas: { x: -520, y: 300 },
+  outpaintCanvas: { x: -520, y: 300 },
   qwenInpaint: { x: -120, y: -80 },
   prompt: { x: -160, y: -160 },
+  beforeEncode: { x: -360, y: 220 },
+  textEncode: { x: 20, y: -160 },
+  duration: { x: 100, y: 220 },
+  conditionEncode: { x: 260, y: 300 },
+  referenceEncode: { x: 420, y: 380 },
   denoise: { x: 220, y: -80 },
   decode: { x: 600, y: -80 },
+  afterDecode: { x: 800, y: 220 },
   preview: { x: 980, y: -80 },
   loadImage: { x: -520, y: 300 },
+  controlPreprocessor: { x: -520, y: 300 },
   loadControlImage: { x: -520, y: 430 },
   loadMask: { x: -520, y: 560 },
   applyMask: { x: -160, y: 430 },
   imageEmbeddings: { x: -160, y: 300 },
   imageEncode: { x: -160, y: 300 },
+  videoEncode: { x: -160, y: 300 },
   loadLastImage: { x: -520, y: 560 },
   controlnetModel: { x: -160, y: 520 },
   controlnet: { x: 220, y: 300 },
+  loadIPAdapterImage: { x: -520, y: 720 },
+  guider: { x: -160, y: 720 },
+  ipAdapter: { x: 220, y: 600 },
   diffusersQuantization: { x: -1280, y: -80 },
   diffusersRecipe: { x: -900, y: -80 },
   wanPipeline: { x: -520, y: -80 },
   loadVideo: { x: -520, y: 260 },
   loadControlVideo: { x: -520, y: 260 },
   loadMaskVideo: { x: -520, y: 520 },
+  loadPoseVideo: { x: -520, y: 520 },
+  loadFaceVideo: { x: -160, y: 520 },
+  loadBackgroundVideo: { x: 220, y: 520 },
   normalizeVideo: { x: -160, y: 260 },
+  normalizeControlVideo: { x: -160, y: 520 },
   alignMaskVideo: { x: -160, y: 520 },
   videoColor: { x: 220, y: 520 },
   wanGenerate: { x: 220, y: -80 },
   videoExport: { x: 640, y: -80 },
   diffusersImagePipeline: { x: -520, y: -80 },
   diffusersImageGenerate: { x: -120, y: -80 },
+  diffusersUnconditionalGenerate: { x: 80, y: -80 },
+  diffusersPredictMap: { x: -120, y: -80 },
   diffusersImageEdit: { x: -120, y: -80 },
   diffusersImageInpaint: { x: -120, y: -80 },
   diffusersImageControl: { x: -120, y: -80 },
+  diffusersImageControlEdit: { x: -120, y: -80 },
+  diffusersImageControlInpaint: { x: -120, y: -80 },
+  diffusersImageLayerDecompose: { x: -120, y: -80 },
   loadAdapter: { x: -520, y: 560 },
   loadAudio: { x: -520, y: 300 },
   loadReferenceAudio: { x: -520, y: 560 },
@@ -218,7 +283,27 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   audioGenerate: { x: -120, y: -80 },
   audioLoudnessMatch: { x: 300, y: -80 },
   audioJoin: { x: 680, y: -80 },
+  audioOperation: { x: -220, y: -80 },
   audioExport: { x: 1060, y: -80 },
+  dataOperation: { x: -300, y: -80 },
+  dataPreview: { x: 100, y: -80 },
+  dataExport: { x: 480, y: -80 },
+  diffusersThreeDPipeline: { x: -520, y: -80 },
+  diffusersThreeDGenerate: { x: -120, y: -80 },
+  speechModel: { x: -720, y: -80 },
+  transcribeAudio: { x: -240, y: -80 },
+  transcriptPreview: { x: 240, y: -80 },
+  transformersTextModel: { x: -720, y: -80 },
+  transformersTextGenerate: { x: -240, y: -80 },
+  transformersImageTextModel: { x: -720, y: -80 },
+  transformersImageTextGenerate: { x: -240, y: -80 },
+  transformersAnyToAnyModel: { x: -720, y: -80 },
+  transformersAnyToAnyGenerate: { x: -240, y: -80 },
+  transformersTextPreview: { x: 240, y: -80 },
+  imageOperation: { x: -160, y: -80 },
+  imageUpscaler: { x: -140, y: -80 },
+  videoOperation: { x: -220, y: -80 },
+  videoUpscaler: { x: -220, y: -80 },
 };
 
 const REQUIRED_BASE_ROLES: StudioGraphRole[] = ['models', 'prompt', 'denoise', 'decode', 'preview'];
@@ -249,6 +334,8 @@ const IMAGE_MODES: StudioMode[] = [
   'multi_image_reference_edit',
   'inpaint',
   'outpaint',
+  'control_edit_image',
+  'control_inpaint',
   'layer_decomposition',
 ];
 
@@ -262,13 +349,6 @@ export type StudioGraphBindingDivergence = {
   message: string;
   details?: string;
 } | null;
-
-type FieldGroupWait = {
-  label: string;
-  nodeId: string | undefined;
-  groups: string[][];
-  timeout?: number;
-};
 
 let graphUpdatePromise: Promise<BridgeResult> | null = null;
 let graphFinalizationPromise: Promise<SettledGraphFinalization<BridgeResult>> | null = null;
@@ -292,6 +372,7 @@ function cloneStudioFormForGraph(form: StudioFormState): StudioFormState {
   return {
     ...form,
     referenceImages: [...form.referenceImages],
+    referenceVideos: [...form.referenceVideos],
   };
 }
 
@@ -314,6 +395,36 @@ function isAudioMode(mode: StudioMode) {
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
   if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
   return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-image';
+}
+
+function diffusersImageActionNode(binding: StudioGraphBinding) {
+  return (
+    binding.nodes.diffusersImageControlInpaint ??
+    binding.nodes.diffusersImageInpaint ??
+    binding.nodes.diffusersImageControlEdit ??
+    binding.nodes.diffusersImageControl ??
+    binding.nodes.diffusersImageLayerDecompose ??
+    binding.nodes.diffusersImageEdit ??
+    binding.nodes.diffusersImageGenerate
+  );
+}
+
+function usesDiffusersThreeDFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
+  if ('nodes' in form && form.nodes.diffusersThreeDPipeline) return true;
+  return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-three-d';
+}
+
+function usesStaticExecutionSpecGraph(
+  form: Pick<StudioFormState, 'modelType' | 'mode'>,
+  binding?: StudioGraphBinding | null,
+) {
+  const executionSpec = binding ? executionSpecForBinding(binding) : executionSpecForForm(form);
+  return (
+    executionSpec?.executionPath.startsWith('direct-huggingface-') ||
+    executionSpec?.executionPath.startsWith('builtin-') ||
+    executionSpec?.executionPath.startsWith('spandrel-') ||
+    false
+  );
 }
 
 function usesExpertProfileQuantization(form: StudioFormState) {
@@ -355,11 +466,23 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
 
   if (isVideoMode(form.mode)) {
     const roles: StudioGraphRole[] = ['diffusersQuantization', ...VIDEO_BASE_ROLES];
-    if (['video_to_video', 'video_inpaint', 'video_outpaint', 'video_color_edit'].includes(form.mode)) {
+    if (
+      ['video_to_video', 'video_inpaint', 'video_outpaint', 'video_color_edit', 'control_video_to_video'].includes(
+        form.mode,
+      )
+    ) {
       roles.push('loadVideo', 'normalizeVideo');
     }
-    if (form.mode === 'control_to_video') {
-      roles.push('loadControlVideo', 'normalizeVideo');
+    if (form.mode === 'control_to_video' || form.mode === 'control_video_to_video') {
+      const preprocessedControl = getModelRequirementsForMode(STUDIO_MODEL_PROFILES[form.modelType], form.mode).some(
+        (requirement) => requirement.kind === 'controlnet',
+      );
+      roles.push(
+        'loadControlVideo',
+        ...(preprocessedControl
+          ? (['normalizeControlVideo', 'controlPreprocessor'] as StudioGraphRole[])
+          : (['normalizeVideo'] as StudioGraphRole[])),
+      );
     }
     if (form.mode === 'video_inpaint' || form.mode === 'video_outpaint') {
       roles.push('loadMaskVideo', 'alignMaskVideo');
@@ -380,6 +503,30 @@ function requiredRolesForForm(form: StudioFormState): StudioGraphRole[] {
     }
     if (form.mode === 'control_image') {
       return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'diffusersImageControl', 'preview'];
+    }
+    if (form.mode === 'control_edit_image') {
+      return [
+        ...runtimeRoles,
+        'diffusersImagePipeline',
+        'loadImage',
+        'loadControlImage',
+        'diffusersImageControlEdit',
+        'preview',
+      ];
+    }
+    if (form.mode === 'control_inpaint') {
+      return [
+        ...runtimeRoles,
+        'diffusersImagePipeline',
+        'loadImage',
+        'loadMask',
+        'loadControlImage',
+        'diffusersImageControlInpaint',
+        'preview',
+      ];
+    }
+    if (form.mode === 'layer_decomposition') {
+      return [...runtimeRoles, 'diffusersImagePipeline', 'loadImage', 'diffusersImageLayerDecompose', 'preview'];
     }
     return [...runtimeRoles, 'diffusersImagePipeline', 'diffusersImageGenerate', 'preview'];
   }
@@ -876,12 +1023,7 @@ function expectedControlledEdgeSpecs(
     const pipeline =
       loraId === 'lora.diffusers-image.v1' ? binding.nodes.diffusersImagePipeline : binding.nodes.audioPipeline;
     const generate =
-      loraId === 'lora.diffusers-image.v1'
-        ? (binding.nodes.diffusersImageInpaint ??
-          binding.nodes.diffusersImageControl ??
-          binding.nodes.diffusersImageEdit ??
-          binding.nodes.diffusersImageGenerate)
-        : binding.nodes.audioGenerate;
+      loraId === 'lora.diffusers-image.v1' ? diffusersImageActionNode(binding) : binding.nodes.audioGenerate;
     remove((spec) => spec.source === pipeline && spec.target === generate);
     add(makeConnectionSpec(pipeline, ['pipeline'], loraNodes[0]?.id, ['pipeline']));
     for (let index = 1; index < loraNodes.length; index += 1) {
@@ -902,12 +1044,7 @@ function expectedControlledEdgeSpecs(
   }
 
   if (contracts.has('upscale.image.v1')) {
-    const source = usesDiffusersImageFacade(binding)
-      ? (binding.nodes.diffusersImageInpaint ??
-        binding.nodes.diffusersImageControl ??
-        binding.nodes.diffusersImageEdit ??
-        binding.nodes.diffusersImageGenerate)
-      : binding.nodes.decode;
+    const source = usesDiffusersImageFacade(binding) ? diffusersImageActionNode(binding) : binding.nodes.decode;
     add(
       makeConnectionSpec(source, ['images', 'image', 'output'], upscaler, IMAGE_HANDLE),
       makeConnectionSpec(upscaler, ['output', 'image'], id('upscalePreview'), IMAGE_HANDLE),
@@ -1038,7 +1175,7 @@ function controlledGraphHash(binding: StudioGraphBinding, contractIds: readonly 
       node.parentId ?? null,
       node.data.uiState?.disabled === true,
       node.data.studioRole === 'qualityVideoLoop'
-        ? ['iteration_mode', 'iterations', 'max_iterations', 'carry', 'collect', 'max_retries'].map(
+        ? ['iteration_mode', 'iterations', 'max_iterations', 'carry', 'collect', 'durable', 'max_retries'].map(
             (key) => node.data.params[key]?.value,
           )
         : null,
@@ -1157,6 +1294,7 @@ function controlledGraphSemanticsAreValid(binding: StudioGraphBinding, form: Stu
       qualityLoop.data.params.max_iterations?.value !== 6 ||
       qualityLoop.data.params.carry?.value !== false ||
       qualityLoop.data.params.collect?.value !== true ||
+      qualityLoop.data.params.durable?.value !== true ||
       qualityLoop.data.params.max_retries?.value !== 1
     ) {
       return false;
@@ -1268,6 +1406,23 @@ function bindingFinalizationSchemaProofMatches(binding: StudioGraphBinding, form
   );
 }
 
+function controlledFinalizationProofMatchesCurrentGraph(binding: StudioGraphBinding) {
+  const proof = binding.finalizationProof;
+  const controlled = binding.controlled;
+  return Boolean(
+    controlled &&
+    !binding.finalizationProofInvalid &&
+    proof?.schemaVersion === 3 &&
+    controlled.schemaVersion === 1 &&
+    controlled.contractRevision === proof.contractRevision &&
+    proof.canonicalizationVersion === 1 &&
+    proof.contractIds.length === controlled.contractIds.length &&
+    proof.contractIds.every((id, index) => id === controlled.contractIds[index]) &&
+    proof.fieldSchemaHash === controlledGraphFieldSchemaHash(binding) &&
+    proof.managedGraphHash === controlledGraphHash(binding, controlled.contractIds),
+  );
+}
+
 function bindingFinalizationProofMatches(binding: StudioGraphBinding, form: StudioFormState) {
   const proof = binding.finalizationProof;
   const plannedForm = resolveGraphResourceForm(form);
@@ -1305,59 +1460,6 @@ function findParamKey(nodeId: string | undefined, candidates: string[]) {
   const node = getNode(nodeId);
   if (!node) return undefined;
   return candidates.find((candidate) => node.data.params[candidate]);
-}
-
-function fieldTypeForParam(param: NodeParams | undefined) {
-  if (!param) return 'text';
-  const display = param.isInput ? 'input' : param.display || '';
-  const type = Array.isArray(param.type) ? (param.type[0] ?? 'string') : (param.type ?? 'string');
-  const dataType = String(type).toLowerCase();
-
-  if (display === 'input' || display === 'output') return display;
-  if (dataType.startsWith('bool')) return display === 'checkbox' || display === 'icontoggle' ? display : 'switch';
-  if (display.startsWith('ui_')) return display;
-  if (dataType === 'text' || display.startsWith('text')) return 'textarea';
-  if (display) return display;
-  if (param.options && typeof param.options === 'object') return 'select';
-  if (dataType.startsWith('int') || dataType === 'float' || dataType === 'number')
-    return display === 'slider' ? 'slider' : 'number';
-  return 'text';
-}
-
-function buildFieldProps(nodeId: string, fieldKey: string): FieldProps | null {
-  const node = getNode(nodeId);
-  const param = getNodeParam(nodeId, fieldKey);
-  if (!node || !param) return null;
-
-  const display = param.isInput ? 'input' : param.display || '';
-  const dataType = String(Array.isArray(param.type) ? (param.type[0] ?? 'string') : (param.type ?? 'string'));
-
-  return {
-    nodeId,
-    fieldKey,
-    label: param.label ?? fieldKey.charAt(0).toUpperCase() + fieldKey.slice(1),
-    display,
-    disabled: param.disabled || false,
-    hidden: param.hidden || false,
-    style: param.style || {},
-    value: param.value ?? param.default,
-    default: param.default,
-    options: param.options || [],
-    optionsSource: param.optionsSource || {},
-    dataType,
-    fieldType: fieldTypeForParam(param),
-    updateStore: (paramKey, value, key) => useFlowStore.getState().setParam(nodeId, paramKey, value, key),
-    module: node.data.module,
-    action: node.data.action,
-    isConnected: display === 'input' || display === 'output' ? param.isConnected || false : undefined,
-    onChange: param.onChange,
-    min: param.min,
-    max: param.max,
-    step: param.step,
-    fieldOptions: param.fieldOptions || {},
-    onSignal: param.onSignal,
-    signal: param.signal,
-  };
 }
 
 function setParamIfPresent(
@@ -1617,8 +1719,10 @@ function exactTypedEdgeSpec(
   const source = binding.nodes[sourceRole];
   const target = binding.nodes[targetRole];
   const sourceType = authoritativeTypedHandle(source, [sourceHandle], true);
-  const targetType = authoritativeTypedHandle(target, [targetHandle]);
-  if (!source || !target || !sourceType || sourceType !== targetType) return null;
+  const targetParam = getNodeParam(target, targetHandle);
+  const targetTypes = Array.isArray(targetParam?.type) ? targetParam.type : [targetParam?.type];
+  if (!source || !target || !sourceType || targetParam?.display !== 'input' || !targetTypes.includes(sourceType))
+    return null;
   return { source, sourceHandle, target, targetHandle } satisfies StudioEdgeSpec;
 }
 
@@ -1794,6 +1898,8 @@ function desiredVideoEdgeSpecs(binding: StudioGraphBinding, includeControlled = 
     loadControlVideo,
     loadMaskVideo,
     normalizeVideo,
+    normalizeControlVideo,
+    controlPreprocessor,
     alignMaskVideo,
     loadImage,
     wanGenerate,
@@ -1834,14 +1940,26 @@ function desiredVideoEdgeSpecs(binding: StudioGraphBinding, includeControlled = 
     specs.push(makeConnectionSpec(loadImage, IMAGE_HANDLE, wanGenerate, ['reference_images']));
   }
 
-  if (binding.mode === 'control_to_video') {
+  if (binding.mode === 'control_to_video' || binding.mode === 'control_video_to_video') {
     specs.push(
-      makeConnectionSpec(loadControlVideo, ['video'], normalizeVideo, ['video']),
-      makeConnectionSpec(normalizeVideo, ['output'], wanGenerate, ['video']),
+      ...(normalizeControlVideo && controlPreprocessor
+        ? [
+            makeConnectionSpec(loadControlVideo, ['video'], normalizeControlVideo, ['video']),
+            makeConnectionSpec(normalizeControlVideo, ['output'], controlPreprocessor, ['video']),
+            makeConnectionSpec(controlPreprocessor, ['output'], wanGenerate, ['control_video']),
+          ]
+        : [
+            makeConnectionSpec(loadControlVideo, ['video'], normalizeVideo, ['video']),
+            makeConnectionSpec(normalizeVideo, ['output'], wanGenerate, ['video']),
+          ]),
     );
   }
 
-  if (binding.mode === 'video_to_video' || binding.mode === 'video_color_edit') {
+  if (
+    binding.mode === 'video_to_video' ||
+    binding.mode === 'video_color_edit' ||
+    binding.mode === 'control_video_to_video'
+  ) {
     specs.push(
       makeConnectionSpec(loadVideo, ['video'], normalizeVideo, ['video']),
       makeConnectionSpec(normalizeVideo, ['output'], wanGenerate, ['video']),
@@ -1866,27 +1984,36 @@ function desiredDiffusersImageEdgeSpecs(binding: StudioGraphBinding) {
     diffusersQuantization,
     diffusersRecipe,
     diffusersImagePipeline,
-    diffusersImageGenerate,
     diffusersImageEdit,
     diffusersImageInpaint,
     diffusersImageControl,
+    diffusersImageControlEdit,
+    diffusersImageControlInpaint,
     loadImage,
+    loadControlImage,
     loadMask,
     qwenOutpaintCanvas,
+    outpaintCanvas,
     preview,
   } = binding.nodes;
-  const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
+  const canvasNode = outpaintCanvas ?? qwenOutpaintCanvas;
+  const targetNode = diffusersImageActionNode(binding);
   return [
     makeConnectionSpec(diffusersQuantization, ['quantization_config'], diffusersRecipe, ['quantization_config']),
     makeConnectionSpec(diffusersRecipe, ['execution_recipe'], diffusersImagePipeline, ['execution_recipe']),
     makeConnectionSpec(diffusersImagePipeline, ['pipeline'], targetNode, ['pipeline']),
     makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageEdit, IMAGE_HANDLE),
-    makeConnectionSpec(loadImage, IMAGE_HANDLE, qwenOutpaintCanvas, IMAGE_HANDLE),
-    makeConnectionSpec(qwenOutpaintCanvas, ['canvas'], diffusersImageInpaint, IMAGE_HANDLE),
-    makeConnectionSpec(qwenOutpaintCanvas, MASK_IMAGE_HANDLE, diffusersImageInpaint, MASK_IMAGE_HANDLE),
-    makeConnectionSpec(qwenOutpaintCanvas ? undefined : loadImage, IMAGE_HANDLE, diffusersImageInpaint, IMAGE_HANDLE),
+    makeConnectionSpec(loadImage, IMAGE_HANDLE, canvasNode, IMAGE_HANDLE),
+    makeConnectionSpec(canvasNode, ['canvas'], diffusersImageInpaint, IMAGE_HANDLE),
+    makeConnectionSpec(canvasNode, MASK_IMAGE_HANDLE, diffusersImageInpaint, MASK_IMAGE_HANDLE),
+    makeConnectionSpec(canvasNode ? undefined : loadImage, IMAGE_HANDLE, diffusersImageInpaint, IMAGE_HANDLE),
     makeConnectionSpec(loadMask, IMAGE_HANDLE, diffusersImageInpaint, MASK_IMAGE_HANDLE),
     makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControl, ['control_image', 'image']),
+    makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControlEdit, IMAGE_HANDLE),
+    makeConnectionSpec(loadControlImage, IMAGE_HANDLE, diffusersImageControlEdit, ['control_image']),
+    makeConnectionSpec(loadImage, IMAGE_HANDLE, diffusersImageControlInpaint, IMAGE_HANDLE),
+    makeConnectionSpec(loadMask, IMAGE_HANDLE, diffusersImageControlInpaint, MASK_IMAGE_HANDLE),
+    makeConnectionSpec(loadControlImage, IMAGE_HANDLE, diffusersImageControlInpaint, ['control_image']),
     makeConnectionSpec(targetNode, ['images', 'image', 'output'], preview, IMAGE_HANDLE),
   ].filter((spec): spec is StudioEdgeSpec => Boolean(spec));
 }
@@ -1898,12 +2025,7 @@ function desiredStillUpscaleEdgeSpecs(binding: StudioGraphBinding) {
     .nodes.find((node) => node.data?.studioRole === 'upscalePreview')?.id;
   if (!controlledUpscaler || !controlledPreview) return [];
 
-  const source = usesDiffusersImageFacade(binding)
-    ? (binding.nodes.diffusersImageInpaint ??
-      binding.nodes.diffusersImageControl ??
-      binding.nodes.diffusersImageEdit ??
-      binding.nodes.diffusersImageGenerate)
-    : binding.nodes.decode;
+  const source = usesDiffusersImageFacade(binding) ? diffusersImageActionNode(binding) : binding.nodes.decode;
 
   return [
     makeConnectionSpec(source, ['images', 'image', 'output'], controlledUpscaler, IMAGE_HANDLE),
@@ -2109,6 +2231,15 @@ function participatingRoleNodesAreValid(binding: StudioGraphBinding, form: Studi
         nodeMatchesRole(binding.nodes[role], role, binding) && binding.managedNodeIds.includes(binding.nodes[role]!),
     )
   );
+}
+
+function participatingNodeSchemasMatchRegistry(binding: StudioGraphBinding, form: StudioFormState) {
+  const registry = useNodesStore.getState().nodesRegistry;
+  return participatingRoles(form, binding).every((role) => {
+    const node = getNode(binding.nodes[role]);
+    if (!node) return false;
+    return managedParamSchemaMatchesRegistry(node.data.params, registry[graphNodeKey(node)]?.params);
+  });
 }
 
 function bindingHasExecutableFinalizationShape(binding: StudioGraphBinding, form: StudioFormState) {
@@ -2362,12 +2493,7 @@ function reconcileManagedGraphBinding(
 }
 
 async function waitForManagedEdges(binding: StudioGraphBinding, timeout = 1500) {
-  const started = Date.now();
-  while (Date.now() - started < timeout) {
-    const specs = desiredEdgeSpecs(binding);
-    if (exactDesiredEdgeIds(binding, specs)) return;
-    await delay(50);
-  }
+  await waitForValue(() => exactDesiredEdgeIds(binding, desiredEdgeSpecs(binding)) || undefined, timeout);
 }
 
 function refreshManagedEdgeBinding(binding: StudioGraphBinding) {
@@ -2580,7 +2706,17 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForValue<T>(read: () => T | undefined, timeout: number, interval = 50) {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const value = read();
+    if (value !== undefined) return value;
+    await delay(interval);
+  }
+}
+
 function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGraphBinding | null) {
+  if (usesStaticExecutionSpecGraph(form, binding) || (binding && usesDiffusersThreeDFacade(binding))) return false;
   return (
     modularVideoGroupObserved(binding) ||
     (!isVideoMode(form.mode) && !isAudioMode(form.mode) && !usesDiffusersImageFacade(form))
@@ -2590,18 +2726,19 @@ function requiresDynamicGraphChannel(form: StudioFormState, binding?: StudioGrap
 async function waitForDynamicGraphChannel(timeout = 20_000) {
   if (typeof WebSocket === 'undefined') return true;
 
-  let websocket = useWebsocketStore.getState();
+  const websocket = useWebsocketStore.getState();
   if (websocket.isConnected && websocket.sid) return true;
   if (!websocket.isConnecting) {
     websocket.connect();
   }
 
-  const started = Date.now();
-  while (Date.now() - started < timeout) {
-    websocket = useWebsocketStore.getState();
-    if (websocket.isConnected && websocket.sid) return true;
-    await delay(50);
-  }
+  if (
+    await waitForValue(() => {
+      const current = useWebsocketStore.getState();
+      return current.isConnected && current.sid ? true : undefined;
+    }, timeout)
+  )
+    return true;
 
   const message = 'The Studio graph could not initialize because the MoDiff connection is not ready.';
   useStudioStore.getState().setLastError(message);
@@ -2610,20 +2747,24 @@ async function waitForDynamicGraphChannel(timeout = 20_000) {
 
 async function waitForFieldGroups(nodeId: string | undefined, groups: string[][], timeout = 4500) {
   if (!nodeId || groups.length === 0) return true;
-  const started = Date.now();
-  while (Date.now() - started < timeout) {
-    const ready = groups.every((group) => Boolean(findParamKey(nodeId, group)));
-    if (ready) return true;
-    await delay(100);
-  }
-  return groups.every((group) => Boolean(findParamKey(nodeId, group)));
+  return Boolean(
+    await waitForValue(
+      () => (groups.every((group) => Boolean(findParamKey(nodeId, group))) ? true : undefined),
+      timeout,
+      100,
+    ),
+  );
 }
 
-async function waitForFieldGroupsTracked(wait: FieldGroupWait, timedOutGroups: string[]) {
-  const ready = await waitForFieldGroups(wait.nodeId, wait.groups, wait.timeout ?? 4500);
-  if (!ready) {
-    timedOutGroups.push(wait.label);
-  }
+async function waitForFieldGroupsTracked(
+  nodeId: string | undefined,
+  groups: string[][],
+  timedOutGroups: string[],
+  label: string,
+  timeout = 4500,
+) {
+  const ready = await waitForFieldGroups(nodeId, groups, timeout);
+  if (!ready) timedOutGroups.push(label);
   return ready;
 }
 
@@ -2829,6 +2970,7 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
       'wanPipeline',
       'diffusersImagePipeline',
       'audioPipeline',
+      'diffusersThreeDPipeline',
     ].includes(role)
   ) {
     return 'Diffusers.LoadPipeline';
@@ -2837,10 +2979,19 @@ function studioFacadeLabelForRole(role: StudioGraphRole) {
     return 'Diffusers.Generate';
   }
   if (role === 'audioGenerate') return 'Diffusers.GenerateAudio';
+  if (role === 'diffusersThreeDGenerate') return 'Diffusers.Generate3D';
   if (role === 'diffusersImageEdit') return 'Diffusers.Edit';
   if (role === 'diffusersImageInpaint' || role === 'qwenInpaint') return 'Diffusers.Inpaint';
   if (role === 'diffusersImageControl') return 'Diffusers.Control';
+  if (role === 'diffusersImageControlEdit') return 'Diffusers.ControlEdit';
+  if (role === 'diffusersImageControlInpaint') return 'Diffusers.ControlInpaint';
   if (role === 'loadAdapter') return 'Diffusers.LoadAdapter';
+  if (role === 'audioOperation') return 'Audio.Process';
+  if (role === 'dataOperation') return 'Data.Process';
+  if (role === 'imageOperation') return 'Image.Process';
+  if (role === 'imageUpscaler') return 'Image.Upscale';
+  if (role === 'videoOperation') return 'Video.Process';
+  if (role === 'videoUpscaler') return 'Video.Upscale';
   return null;
 }
 
@@ -2900,8 +3051,151 @@ async function applyManagedInputSignal(nodeId: string | undefined, candidates: s
   const props = buildFieldProps(nodeId, fieldKey);
   if (!props?.onSignal) return;
 
-  useFlowStore.getState().setParam(nodeId, fieldKey, { direction: 'input', value }, 'signal');
+  const signal = { direction: 'input' as const, value };
+  suppressNextAutomaticSignalFieldAction(nodeId, fieldKey, signal);
+  useFlowStore.getState().setParam(nodeId, fieldKey, signal, 'signal');
   await fieldAction(props, value, 'onSignal');
+}
+
+async function applyAudioPipelineContract(binding: StudioGraphBinding) {
+  const pipelineNode = binding.nodes.audioPipeline;
+  const generateNode = binding.nodes.audioGenerate;
+  const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
+  if (!pipelineNode || !generateNode || !pipelineClassKey) return;
+
+  const props = buildFieldProps(pipelineNode, pipelineClassKey);
+  if (!props?.onChange) throw new Error('Audio loader contract action missing.');
+  // Static recipes can retain a field's declared default without an explicit
+  // value override. Compare the same effective value sent by fieldAction,
+  // otherwise a valid default-selected loader is compared against "".
+  const pipelineClass = props.value;
+  const expectedMode = String(useFlowStore.getState().getNodeParamsValues(pipelineNode).mode ?? '');
+  await fieldAction(props, pipelineClass);
+
+  const expectedPipelineClass = String(pipelineClass ?? '');
+  const exactContract = (value: unknown) =>
+    value &&
+    typeof value === 'object' &&
+    (value as { pipelineClass?: unknown }).pipelineClass === expectedPipelineClass &&
+    (value as { mode?: unknown }).mode === expectedMode
+      ? value
+      : undefined;
+  const value = await waitForValue(() => {
+    const signal = useFlowStore.getState().getParam(pipelineNode, 'pipeline', 'signal');
+    return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
+  }, 5000);
+  if (!value) {
+    throw new Error('Audio loader contract timed out before publishing the selected pipeline and mode.');
+  }
+  // Stage the exact reviewed contract before invoking the input's declarative
+  // value/exec actions. This prevents an older contract from being sampled by
+  // the backend action while a workflow switches between audio modes.
+  setParamIfPresent(generateNode, ['audio_contract'], value);
+  await applyManagedInputSignal(generateNode, ['pipeline'], value);
+
+  const expectedTask = String((value as { taskType?: unknown }).taskType ?? '');
+  const accepted = await waitForValue(
+    () =>
+      useFlowStore.getState().getNodeParamsValues(generateNode).task_type === expectedTask
+        ? exactContract(useFlowStore.getState().getParam(generateNode, 'audio_contract', 'value'))
+        : undefined,
+    5000,
+  );
+  if (!accepted) {
+    const observedTask = useFlowStore.getState().getParam(generateNode, 'task_type', 'value');
+    throw new Error(
+      `Audio generator contract timed out (expected task ${expectedTask}, received ${String(observedTask)}).`,
+    );
+  }
+}
+
+async function applyVideoPipelineContract(binding: StudioGraphBinding, mode: StudioMode) {
+  const pipelineNode = binding.nodes.wanPipeline;
+  const generateNode = binding.nodes.wanGenerate;
+  const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
+  if (!pipelineNode || !generateNode || !pipelineClassKey) return;
+
+  const pipelineClass = useFlowStore.getState().getParam(pipelineNode, pipelineClassKey, 'value');
+  const props = buildFieldProps(pipelineNode, pipelineClassKey);
+  if (!props?.onChange) throw new Error('Video loader contract action missing.');
+  await fieldAction(props, pipelineClass);
+
+  const expectedPipelineClass = String(pipelineClass ?? '');
+  const exactContract = (value: unknown) =>
+    value &&
+    typeof value === 'object' &&
+    (value as { pipelineClass?: unknown }).pipelineClass === expectedPipelineClass &&
+    Array.isArray((value as { modes?: unknown }).modes) &&
+    (value as { modes: unknown[] }).modes.includes(mode)
+      ? value
+      : undefined;
+  const value = await waitForValue(() => {
+    const signal = useFlowStore.getState().getParam(pipelineNode, 'pipeline', 'signal');
+    return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
+  }, 5000);
+  if (!value) throw new Error('Video loader contract timed out.');
+  setParamIfPresent(generateNode, ['video_contract'], value);
+  await applyManagedInputSignal(generateNode, ['pipeline'], value);
+
+  const modeKey = findParamKey(generateNode, ['mode']);
+  const modeProps = modeKey ? buildFieldProps(generateNode, modeKey) : undefined;
+  if (!modeKey || !modeProps?.onChange) throw new Error('Video mode contract action missing.');
+  useFlowStore.getState().setParam(generateNode, modeKey, mode);
+  await fieldAction(modeProps, mode);
+
+  const accepted = await waitForValue(
+    () =>
+      useFlowStore.getState().getParam(generateNode, 'mode', 'value') === mode
+        ? exactContract(useFlowStore.getState().getParam(generateNode, 'video_contract', 'value'))
+        : undefined,
+    5000,
+  );
+  if (!accepted) throw new Error('Video generator contract timed out.');
+}
+
+async function applyImagePipelineContract(binding: StudioGraphBinding, mode: StudioMode) {
+  const pipelineNode = binding.nodes.diffusersImagePipeline;
+  const actionNode = diffusersImageActionNode(binding);
+  const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
+  if (!pipelineNode || !actionNode || !pipelineClassKey) return;
+
+  const pipelineClass = useFlowStore.getState().getParam(pipelineNode, pipelineClassKey, 'value');
+  const props = buildFieldProps(pipelineNode, pipelineClassKey);
+  // Older backends and intentionally minimal mocked registries do not expose
+  // the declarative contract refresh action. Preserve their existing schema;
+  // current backends publish onChange and take the exact path below.
+  if (!props?.onChange) return;
+  await fieldAction(props, pipelineClass);
+
+  const exactContract = (value: unknown) =>
+    value &&
+    typeof value === 'object' &&
+    (value as { pipelineClass?: unknown }).pipelineClass === pipelineClass &&
+    (value as { mode?: unknown }).mode === mode
+      ? value
+      : undefined;
+  const value = await waitForValue(() => {
+    const signal = useFlowStore.getState().getParam(pipelineNode, 'pipeline', 'signal');
+    return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
+  }, 5000);
+  if (!value) throw new Error('Image task contract timed out.');
+  setParamIfPresent(actionNode, ['image_contract'], value);
+  await applyManagedInputSignal(actionNode, ['pipeline'], value);
+  // The backend action replaces the dynamic field schema and may restore the
+  // hidden contract field's class default while doing so. Re-stage the exact
+  // loader signal after that schema mutation settles.
+  setParamIfPresent(actionNode, ['image_contract'], value);
+
+  const accepted = await waitForValue(
+    () => exactContract(useFlowStore.getState().getParam(actionNode, 'image_contract', 'value')),
+    5000,
+  );
+  if (!accepted) {
+    const observed = useFlowStore.getState().getParam(actionNode, 'image_contract', 'value');
+    throw new Error(
+      `Image generator contract timed out for ${String(pipelineClass)}|${mode}; received ${JSON.stringify(observed)}.`,
+    );
+  }
 }
 
 async function applyAutoModelLoaderType(nodeId: string | undefined, loaderType: string) {
@@ -2989,7 +3283,14 @@ function connectBaseGraph(binding: StudioGraphBinding) {
   if (modularTopologyPending(binding)) {
     return collectManagedNodeEdgeIds(binding);
   }
-  return reconcileManagedEdges(binding, desiredEdgeSpecs(binding));
+  const desired = desiredEdgeSpecs(binding);
+  if (desired.length === 0 && requiresDynamicGraphChannel(useStudioStore.getState().form, binding)) {
+    // An exact dynamic specification returns no edges until all declared
+    // fields exist. That means "still loading", not "delete every wire".
+    // Keep component signals connected so consumers can publish those fields.
+    return collectManagedNodeEdgeIds(binding);
+  }
+  return reconcileManagedEdges(binding, desired);
 }
 
 function managedConnectionsAreReady(binding: StudioGraphBinding) {
@@ -3065,16 +3366,57 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   }
   const quantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
   const audioTemplateBaseModel = binding.nodes.audioPipeline ? activeAudioTemplateBaseModel() : null;
+  const capability = useNodesStore.getState().studioModelCapabilities.find((item) => item.modelType === spec.modelType);
+  const bindsDefaultRevision = spec.bindings.some(([, , source]) => source === 'defaultRevision');
+  const defaultRevision = capability?.revisionCandidates ?? [];
+  if (bindsDefaultRevision && defaultRevision.length !== 1) {
+    throw new Error('The Studio execution specification requires one reviewed default model revision.');
+  }
+  const bindsAuxiliaryModel = spec.bindings.some(([, , source]) => ['kind', 'repo', 'revision'].includes(source));
+  const auxiliaryRequirements = capability ? getModelRequirementsForMode(capability, form.mode) : [];
+  if (bindsAuxiliaryModel && auxiliaryRequirements.length !== 1) {
+    throw new Error('The Studio execution specification requires one reviewed auxiliary model.');
+  }
+  const auxiliaryRequirement = auxiliaryRequirements[0];
+  if (bindsAuxiliaryModel && !auxiliaryRequirement?.revision) {
+    throw new Error('The reviewed auxiliary model requires an immutable revision.');
+  }
+  const bindsMotionAdapter = spec.bindings.some(([, , source]) =>
+    ['motionAdapterRepo', 'motionAdapterRevision'].includes(source),
+  );
+  const motionAdapters = auxiliaryRequirements.filter((requirement) => requirement.kind === 'adapter');
+  if (bindsMotionAdapter && motionAdapters.length !== 1) {
+    throw new Error('The Studio execution specification requires one reviewed motion adapter.');
+  }
+  const motionAdapter = motionAdapters[0];
+  if (bindsMotionAdapter && !motionAdapter?.revision) {
+    throw new Error('The reviewed motion adapter requires an immutable revision.');
+  }
+  const controlnetRequirement = auxiliaryRequirements.find((requirement) => requirement.kind === 'controlnet');
+  const ipAdapterRequirement = auxiliaryRequirements.find((requirement) => requirement.id === 'sdxl-ip-adapter');
+  const bindsReviewedControlnet = spec.bindings.some(([, , source]) => source === 'controlnetRepo');
+  const bindsReviewedIPAdapter = spec.bindings.some(([, , source]) => source === 'ipAdapterRepo');
+  if (bindsReviewedControlnet && !controlnetRequirement?.revision) {
+    throw new Error('The reviewed ControlNet component requires one immutable dependency.');
+  }
+  if (bindsReviewedIPAdapter && !ipAdapterRequirement?.revision) {
+    throw new Error('The reviewed IP-Adapter component requires one immutable dependency.');
+  }
+  const unionControlnet = form.mode.includes('control_union');
+  const hasDistinctLastImage = spec.bindings.some(([, , source]) => source === 'lastImage');
   const values: Record<string, unknown> = {
     ...form,
+    referenceImages: hasDistinctLastImage ? form.referenceImages.slice(0, 1) : [...form.referenceImages],
     quantizationMode,
     quantizedComponents: ['transformer'],
     deviceMapNone: 'none',
-    attentionBackend: 'auto',
+    attentionBackend:
+      typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto',
     nativeMath: '_native_math',
     empty: '',
     true: true,
     false: false,
+    depth: 'depth',
     addAlpha: 'add alpha',
     removeAlpha: 'remove alpha',
     regionalCompile: false,
@@ -3082,25 +3424,105 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     layerwiseCasting: false,
     channelsLast: false,
     artifact: audioTemplateBaseModel ?? spec.defaultRepo,
+    defaultRevision: defaultRevision[0],
     pipelineClass: spec.pipelineClass,
-    ...QWEN_CONTROLNET_REQUIREMENT,
-    repo: { source: 'hub', value: QWEN_CONTROLNET_REQUIREMENT.repo },
+    executionProfileId: spec.executionProfileId,
+    defaultWorkflow: 'default',
+    workflowId:
+      (
+        {
+          image_to_image: 'img2img',
+          text_to_video: 'text2video',
+          image_to_video: 'image2video',
+          video_to_video: 'video2video',
+        } as Partial<Record<StudioMode, string>>
+      )[spec.mode] ?? 'text2image',
+    semanticGeneratorBlock: 'semantic_generator',
+    workflowTextEncoderBlock: 'text_encoder',
+    workflowImageEncoderBlock: 'vae_encoder',
+    workflowDenoiseBlock: 'denoise',
+    workflowDecodeBlock: 'decode',
+    kind: auxiliaryRequirement?.kind,
+    repo: auxiliaryRequirement ? { source: 'hub', value: auxiliaryRequirement.repo } : undefined,
+    revision: auxiliaryRequirement?.revision,
+    controlnetKind: controlnetRequirement?.kind,
+    controlnetRepo: controlnetRequirement ? { source: 'hub', value: controlnetRequirement.repo } : undefined,
+    controlnetRevision: controlnetRequirement?.revision,
+    controlnetWeightVariant: unionControlnet ? '' : 'fp16',
+    controlnetRouteVariant: unionControlnet ? 'union' : 'ordinary',
+    controlnetLoadClass: unionControlnet ? 'ControlNetUnionModel' : '',
+    ipAdapterRepo: ipAdapterRequirement ? { source: 'hub', value: ipAdapterRequirement.repo } : undefined,
+    ipAdapterRevision: ipAdapterRequirement?.revision,
+    ipAdapterWeightName: ipAdapterRequirement ? 'sdxl_models/ip-adapter_sdxl.safetensors' : undefined,
+    classifierFreeGuidance: 'ClassifierFreeGuidance',
+    motionAdapterRepo: motionAdapter ? { source: 'hub', value: motionAdapter.repo } : undefined,
+    motionAdapterRevision: motionAdapter?.revision,
     wanVaceRevision: WAN_VACE_REVISION,
+    cannyLowThreshold: 0.1,
+    cannyHighThreshold: 0.2,
+    videoCannyLowThreshold100: 100,
+    videoCannyHighThreshold200: 200,
+    controlGuidanceStart: 0,
+    controlGuidanceEnd: 1,
+    resolution: form.width,
+    cfgNormalize: false,
+    useEnglishPrompt: false,
     maskThreshold127: 127,
     inpaintMaskGrow96: 96,
     outpaintMaskGrow0: 0,
     text2music: 'text2music',
+    text2audio: 'text2audio',
     cover: 'cover',
     continuation: 'continuation',
     repaint: 'repaint',
+    transcribe: 'transcribe',
+    translate: 'translate',
+    anyToAnyText: 'text',
+    anyToAnyImage: 'image',
+    maxNewTokens: 256,
+    minNewTokens: 0,
+    doSample: false,
+    temperature: 1,
+    topP: 1,
+    topK: 50,
+    numBeams: 1,
+    repetitionPenalty: 1,
+    useChatTemplate: true,
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,
+    sampleRate16000: 16000,
+    sampleRate24000: 24000,
+    sampleRate44100: 44100,
     sampleRate48000: 48000,
+    numWaveforms1: 1,
+    numWaveforms3: 3,
     referenceWindow15: 15,
     targetPeakMinus1: -1,
     maxAdjustment12: 12,
     boundaryFade001: 0.01,
+    lastImage: hasDistinctLastImage ? (form.referenceImages[1] ?? '') : '',
+    poseVideo: '',
+    faceVideo: '',
+    backgroundVideo: '',
+    promptRef: '人物动作的参考视频',
+    segmentFrameLength: 81,
+    previousConditioningFrames: 1,
+    segmentFrameLength77: 77,
+    previousConditioningFrames1: 1,
+    motionEncodeBatchSize1: 1,
+    temporalTileSize80: 80,
+    temporalOverlap24: 24,
+    temporalOverlapConditionStrength05: 0.5,
+    adainFactor025: 0.25,
+    framepackSampling: 'inverted_anti_drifting',
+    latentWindowSize9: 9,
+    trueCfgScale1: 1,
     seed: seedValue(form),
   };
+  if (binding.nodes.diffusersImagePipeline && !bindsAuxiliaryModel) {
+    setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_kind'], 'none');
+    setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_model_id'], '');
+    setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_revision'], '');
+  }
   const candidateValues: Record<string, unknown> = {
     ...candidate,
     ...formPatchForAutoCandidate(candidate),
@@ -3155,6 +3577,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     controlnetModel,
     controlnet,
     qwenOutpaintCanvas,
+    outpaintCanvas,
     diffusersQuantization,
     diffusersRecipe,
     wanPipeline,
@@ -3162,14 +3585,12 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     loadControlVideo,
     loadMaskVideo,
     normalizeVideo,
+    normalizeControlVideo,
+    controlPreprocessor,
     alignMaskVideo,
     wanGenerate,
     videoExport,
     diffusersImagePipeline,
-    diffusersImageGenerate,
-    diffusersImageEdit,
-    diffusersImageInpaint,
-    diffusersImageControl,
     audioPipeline,
     loadAudio,
     loadReferenceAudio,
@@ -3178,11 +3599,15 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     audioJoin,
     audioExport,
   } = binding.nodes;
-
   if (modularVideoGroupObserved(binding)) {
+    const executionSpec = executionSpecForBinding(binding);
+    if (executionSpec === null) throw new Error('The Studio execution specification receipt is stale.');
+    if (executionSpec) applyExecutionSpecValues(binding, form, executionSpec);
     setParamIfPresent(prompt, ['prompt'], form.prompt);
     setParamIfPresent(prompt, ['negative_prompt'], form.negativePrompt);
-    setParamIfPresent(loadImage, ['file'], form.referenceImages);
+    const firstFrame = binding.nodes.loadLastImage ? form.referenceImages.slice(0, 1) : form.referenceImages;
+    setParamIfPresent(loadImage, ['file'], firstFrame);
+    setParamIfPresent(binding.nodes.loadLastImage, ['file'], form.referenceImages[1] ?? '');
     setParamIfPresent(loadImage, ['alpha_channel'], form.alphaMode);
     // The ending frame remains workflow-local and distinct from this source.
     for (const nodeId of [imageEmbeddings, imageEncode, denoise]) {
@@ -3229,7 +3654,13 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    setParamIfPresent(diffusersRecipe, ['attention_backend'], autoCandidate?.attentionBackend ?? 'auto');
+    setParamIfPresent(
+      diffusersRecipe,
+      ['attention_backend'],
+      typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
+        ? form.attentionBackend
+        : (autoCandidate?.attentionBackend ?? 'auto'),
+    );
     setParamIfPresent(diffusersRecipe, ['attention_components'], '');
     setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
     setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
@@ -3343,6 +3774,13 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       setParamIfPresent(normalizeVideo, ['height'], form.height);
       setParamIfPresent(normalizeVideo, ['num_frames'], form.numFrames);
     }
+    if (normalizeControlVideo) {
+      setParamIfPresent(normalizeControlVideo, ['width'], form.width);
+      setParamIfPresent(normalizeControlVideo, ['height'], form.height);
+      setParamIfPresent(normalizeControlVideo, ['num_frames'], form.numFrames);
+    }
+    setParamIfPresent(controlPreprocessor, ['low_threshold'], 100);
+    setParamIfPresent(controlPreprocessor, ['high_threshold'], 200);
     if (alignMaskVideo) {
       setParamIfPresent(alignMaskVideo, ['threshold'], 127);
       setParamIfPresent(alignMaskVideo, ['grow_pixels'], form.mode === 'video_inpaint' ? 96 : 0);
@@ -3378,7 +3816,7 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       autoCandidate?.modelRepo;
     const autoOffloadMode = autoPatch.offloadMode ?? form.offloadMode;
     const autoQuantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
-    const targetNode = diffusersImageInpaint ?? diffusersImageControl ?? diffusersImageEdit ?? diffusersImageGenerate;
+    const targetNode = diffusersImageActionNode(binding);
     const pipelineClass = autoCandidate?.pipelineClass ?? executionProfile?.pipeline_class;
     const imageDtype = autoPatch.dtype ?? form.dtype;
 
@@ -3423,16 +3861,21 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
       setParamIfPresent(loadMask, ['file'], form.maskImage);
       setParamIfPresent(loadMask, ['alpha_channel'], 'remove alpha');
     }
-    if (qwenOutpaintCanvas) {
-      setParamIfPresent(qwenOutpaintCanvas, ['width'], form.width);
-      setParamIfPresent(qwenOutpaintCanvas, ['height'], form.height);
-      setParamIfPresent(qwenOutpaintCanvas, ['left'], form.outpaintLeft);
-      setParamIfPresent(qwenOutpaintCanvas, ['right'], form.outpaintRight);
-      setParamIfPresent(qwenOutpaintCanvas, ['top'], form.outpaintTop);
-      setParamIfPresent(qwenOutpaintCanvas, ['bottom'], form.outpaintBottom);
-      setParamIfPresent(qwenOutpaintCanvas, ['overlap'], form.outpaintOverlap);
-      setParamIfPresent(qwenOutpaintCanvas, ['feather'], form.outpaintFeather);
-      setParamIfPresent(qwenOutpaintCanvas, ['fill_color'], form.outpaintFillColor);
+    if (loadControlImage) {
+      setParamIfPresent(loadControlImage, ['file'], form.controlImage);
+      setParamIfPresent(loadControlImage, ['alpha_channel'], form.alphaMode);
+    }
+    const canvasNode = outpaintCanvas ?? qwenOutpaintCanvas;
+    if (canvasNode) {
+      setParamIfPresent(canvasNode, ['width'], form.width);
+      setParamIfPresent(canvasNode, ['height'], form.height);
+      setParamIfPresent(canvasNode, ['left'], form.outpaintLeft);
+      setParamIfPresent(canvasNode, ['right'], form.outpaintRight);
+      setParamIfPresent(canvasNode, ['top'], form.outpaintTop);
+      setParamIfPresent(canvasNode, ['bottom'], form.outpaintBottom);
+      setParamIfPresent(canvasNode, ['overlap'], form.outpaintOverlap);
+      setParamIfPresent(canvasNode, ['feather'], form.outpaintFeather);
+      setParamIfPresent(canvasNode, ['fill_color'], form.outpaintFillColor);
     }
 
     setParamIfPresent(targetNode, ['prompt'], form.prompt);
@@ -3446,8 +3889,11 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(targetNode, ['seed'], seedValue(form));
     setParamIfPresent(targetNode, ['num_inference_steps', 'steps'], form.steps);
     setParamIfPresent(targetNode, ['guidance_scale', 'guidance'], form.guidanceScale);
+    setParamIfPresent(targetNode, ['pag_scale'], form.pagScale);
+    setParamIfPresent(targetNode, ['pag_adaptive_scale'], form.pagAdaptiveScale);
     setParamIfPresent(targetNode, ['strength'], form.strength);
     setParamIfPresent(targetNode, ['reference_strength'], form.conditioningScale);
+    setParamIfPresent(targetNode, ['conditioning_scale'], form.conditioningScale);
     setParamIfPresent(targetNode, ['output_type'], form.outputType);
     setParamIfPresent(targetNode, ['max_sequence_length'], form.maxSequenceLength);
     return;
@@ -3575,18 +4021,34 @@ export function markStudioGraphDefinitionPending(nodeId?: string, paramKeys?: re
 export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore.getState().form) {
   const plannedForm = resolveGraphResourceForm(form);
   const studio = useStudioStore.getState();
-  const binding = studio.graphBinding;
+  let binding = studio.graphBinding;
   if (!binding) return false;
   if (!bindingMatchesForm(binding, plannedForm)) {
-    setStudioGraphDefinitionPending(binding, 'Graph changed.');
-    return false;
+    const canMigrateControlledFingerprint = Boolean(
+      binding.controlled &&
+      binding.mode === plannedForm.mode &&
+      binding.modelType === plannedForm.modelType &&
+      executionSpecForBinding(binding) !== null &&
+      controlledFinalizationProofMatchesCurrentGraph(binding),
+    );
+    if (!canMigrateControlledFingerprint) {
+      setStudioGraphDefinitionPending(binding, 'Graph changed.');
+      return false;
+    }
+    binding = {
+      ...binding,
+      fingerprint: bindingFingerprint(plannedForm),
+      updatedAt: Date.now(),
+    };
+    studio.setGraphBinding(binding);
   }
+  const sealedControlledGraphStillIntact = controlledFinalizationProofMatchesCurrentGraph(binding);
   syncManagedFormControlAliases(plannedForm, binding);
   applyFormValues(binding, plannedForm);
   if (binding.controlled) {
     const context = captureWorkflowOperationContext();
     const pendingHash = controlledDefinitionGraphHashes.get(context.workflowTabId);
-    if (binding.finalizationProofInvalid || !pendingHash) {
+    if (binding.finalizationProofInvalid || (!pendingHash && !sealedControlledGraphStillIntact)) {
       setStudioGraphDefinitionPending(binding, 'Graph pending.');
       return false;
     }
@@ -3596,7 +4058,8 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
       finalizationProofInvalid: undefined,
     });
     if (
-      controlledGraphHash(updatedBinding, updatedBinding.controlled?.contractIds ?? []) !== pendingHash ||
+      (pendingHash &&
+        controlledGraphHash(updatedBinding, updatedBinding.controlled?.contractIds ?? []) !== pendingHash) ||
       !controlledGraphSemanticsAreValid(updatedBinding, plannedForm)
     ) {
       setStudioGraphDefinitionPending(updatedBinding, 'Graph pending.');
@@ -3621,6 +4084,37 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
     return true;
   }
   if (!requiresDynamicGraphChannel(plannedForm, binding)) {
+    // Static execution-spec graphs can still receive a newer reviewed node
+    // schema after registry refresh. Re-seal the unchanged graph against that
+    // schema; otherwise its old proof remains stale even though no node or edge
+    // topology needs rebuilding.
+    if (!participatingNodeSchemasMatchRegistry(binding, plannedForm)) {
+      setStudioGraphDefinitionPending(binding, 'Graph changed.');
+      return false;
+    }
+    const finalizedAt = Date.now();
+    const updatedBinding = reconcileManagedGraphBinding({
+      ...binding,
+      finalizationProof: undefined,
+      finalizationProofInvalid: undefined,
+    });
+    const finalized = bindingWithFinalizationProof(updatedBinding, plannedForm, finalizedAt);
+    if (!finalized.finalizationProof) {
+      setStudioGraphDefinitionPending(updatedBinding, 'Graph changed.');
+      return false;
+    }
+    studio.setGraphBinding(finalized);
+    studio.setGraphFinalization({
+      status: 'complete',
+      bindingFingerprint: finalized.fingerprint,
+      startedAt: studio.graphFinalization?.startedAt ?? finalizedAt,
+      skeletonMs: studio.graphFinalization?.skeletonMs,
+      finalizedAt,
+      finalizationMs: 0,
+      timedOutGroups: [],
+      managedEdgeCount: finalized.managedEdgeIds.length,
+      message: 'Static workflow schema revalidated.',
+    });
     studio.saveActiveWorkflowTab(true);
     return true;
   }
@@ -3705,53 +4199,59 @@ async function finalizeDiffusersImageGraph(
   timedOutGroups: string[],
   token: number,
 ) {
-  const targetNode =
-    binding.nodes.diffusersImageInpaint ??
-    binding.nodes.diffusersImageControl ??
-    binding.nodes.diffusersImageEdit ??
-    binding.nodes.diffusersImageGenerate;
+  const targetNode = diffusersImageActionNode(binding);
   await Promise.all([
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers image pipeline',
-        nodeId: binding.nodes.diffusersImagePipeline,
-        groups: [['pipeline'], ['model_id']],
-        timeout: 5000,
-      },
+      binding.nodes.diffusersImagePipeline,
+      [['pipeline'], ['model_id']],
       timedOutGroups,
+      'diffusers image pipeline',
+      5000,
     ),
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers image generate',
-        nodeId: targetNode,
-        groups: [['pipeline'], ['prompt'], ['images']],
-        timeout: 5000,
-      },
+      targetNode,
+      [['pipeline'], ['prompt'], ['images']],
       timedOutGroups,
+      'diffusers image generate',
+      5000,
     ),
     binding.nodes.loadImage
       ? waitForFieldGroupsTracked(
-          {
-            label: 'source image loader',
-            nodeId: binding.nodes.loadImage,
-            groups: [IMAGE_HANDLE, ['file']],
-            timeout: 3000,
-          },
+          binding.nodes.loadImage,
+          [IMAGE_HANDLE, ['file']],
           timedOutGroups,
+          'source image loader',
+          3000,
         )
       : Promise.resolve(true),
     binding.nodes.loadMask
       ? waitForFieldGroupsTracked(
-          {
-            label: 'mask image loader',
-            nodeId: binding.nodes.loadMask,
-            groups: [IMAGE_HANDLE, ['file']],
-            timeout: 3000,
-          },
+          binding.nodes.loadMask,
+          [IMAGE_HANDLE, ['file']],
           timedOutGroups,
+          'mask image loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadControlImage
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadControlImage,
+          [IMAGE_HANDLE, ['file']],
+          timedOutGroups,
+          'control image loader',
+          3000,
         )
       : Promise.resolve(true),
   ]);
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  await applyImagePipelineContract(binding, form.mode);
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  connectBaseGraph(binding);
+}
+
+async function finalizeStaticExecutionSpecGraph(binding: StudioGraphBinding, form: StudioFormState, token: number) {
   assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);
@@ -3765,66 +4265,116 @@ async function finalizeAudioGraph(
 ) {
   await Promise.all([
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers audio pipeline',
-        nodeId: binding.nodes.audioPipeline,
-        groups: [['pipeline'], ['model_id']],
-        timeout: 5000,
-      },
+      binding.nodes.audioPipeline,
+      [['pipeline'], ['model_id']],
       timedOutGroups,
+      'diffusers audio pipeline',
+      5000,
     ),
     waitForFieldGroupsTracked(
-      {
-        label: 'diffusers audio generate',
-        nodeId: binding.nodes.audioGenerate,
-        groups: [['pipeline'], ['audio']],
-        timeout: 5000,
-      },
+      binding.nodes.audioGenerate,
+      [['pipeline'], ['audio']],
       timedOutGroups,
+      'diffusers audio generate',
+      5000,
     ),
-    waitForFieldGroupsTracked(
-      {
-        label: 'audio export',
-        nodeId: binding.nodes.audioExport,
-        groups: [['audio'], ['file']],
-        timeout: 5000,
-      },
-      timedOutGroups,
-    ),
+    waitForFieldGroupsTracked(binding.nodes.audioExport, [['audio'], ['file']], timedOutGroups, 'audio export', 5000),
     binding.nodes.audioLoudnessMatch
       ? waitForFieldGroupsTracked(
-          {
-            label: 'audio loudness match',
-            nodeId: binding.nodes.audioLoudnessMatch,
-            groups: [['audio'], ['reference'], ['output']],
-            timeout: 5000,
-          },
+          binding.nodes.audioLoudnessMatch,
+          [['audio'], ['reference'], ['output']],
           timedOutGroups,
+          'audio loudness match',
+          5000,
         )
       : Promise.resolve(true),
     binding.nodes.audioJoin
       ? waitForFieldGroupsTracked(
-          {
-            label: 'audio join',
-            nodeId: binding.nodes.audioJoin,
-            groups: [['source'], ['continuation'], ['output']],
-            timeout: 5000,
-          },
+          binding.nodes.audioJoin,
+          [['source'], ['continuation'], ['output']],
           timedOutGroups,
+          'audio join',
+          5000,
         )
       : Promise.resolve(true),
     binding.nodes.loadAudio
       ? waitForFieldGroupsTracked(
-          {
-            label: 'source audio loader',
-            nodeId: binding.nodes.loadAudio,
-            groups: [['audio'], ['file']],
-            timeout: 3000,
-          },
+          binding.nodes.loadAudio,
+          [['audio'], ['file']],
           timedOutGroups,
+          'source audio loader',
+          3000,
         )
       : Promise.resolve(true),
   ]);
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  await applyAudioPipelineContract(binding);
+  assertGraphFinalizationActive(token);
+  connectBaseGraph(binding);
+}
+
+async function finalizeVideoGraph(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  timedOutGroups: string[],
+  token: number,
+) {
+  await Promise.all([
+    waitForFieldGroupsTracked(
+      binding.nodes.wanPipeline,
+      [['pipeline'], ['model_id'], ['pipeline_class']],
+      timedOutGroups,
+      'diffusers video pipeline',
+      5000,
+    ),
+    waitForFieldGroupsTracked(
+      binding.nodes.wanGenerate,
+      [['pipeline'], ['video_out'], ['mode']],
+      timedOutGroups,
+      'diffusers video generate',
+      5000,
+    ),
+    binding.nodes.loadImage
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadImage,
+          [IMAGE_HANDLE, ['file']],
+          timedOutGroups,
+          'source image loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadVideo
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadVideo,
+          [['video'], ['file']],
+          timedOutGroups,
+          'source video loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadControlVideo
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadControlVideo,
+          [['video'], ['file']],
+          timedOutGroups,
+          'control video loader',
+          3000,
+        )
+      : Promise.resolve(true),
+    binding.nodes.loadMaskVideo
+      ? waitForFieldGroupsTracked(
+          binding.nodes.loadMaskVideo,
+          [['video'], ['file']],
+          timedOutGroups,
+          'mask video loader',
+          3000,
+        )
+      : Promise.resolve(true),
+  ]);
+  assertGraphFinalizationActive(token);
+  applyFormValues(binding, form);
+  await applyVideoPipelineContract(binding, form.mode);
   assertGraphFinalizationActive(token);
   applyFormValues(binding, form);
   connectBaseGraph(binding);
@@ -3838,6 +4388,45 @@ async function finalizeModularGraph(
 ) {
   await applyModelType(binding, form.modelType, true);
   assertGraphFinalizationActive(token);
+  const modelTypeKey = findParamKey(binding.nodes.models, ['model_type']);
+  const componentConsumers = [
+    ['text_encoders', binding.nodes.prompt, 'text_encoders'],
+    ['unet_out', binding.nodes.denoise, 'unet'],
+    ['vae_out', binding.nodes.decode, 'vae'],
+    ['vae_out', binding.nodes.imageEncode, 'vae'],
+  ] as const;
+  const dynamicOutputs = componentConsumers
+    .filter(([, nodeId, input]) => nodeId && buildFieldProps(nodeId, input)?.onSignal)
+    .map(([output]) => output);
+  if (
+    binding.nodes.models &&
+    modelTypeKey &&
+    buildFieldProps(binding.nodes.models, modelTypeKey)?.onChange &&
+    dynamicOutputs.length
+  ) {
+    // The HTTP action can finish before its WebSocket publications arrive.
+    // Wait for the loader's authoritative signals: an empty source signal can
+    // otherwise overwrite a staged consumer signal during schema reconciliation.
+    const published = await waitForValue(() => {
+      assertGraphFinalizationActive(token);
+      return dynamicOutputs.every((output) => {
+        const signal = useFlowStore.getState().getParam(binding.nodes.models!, output, 'signal');
+        return signal && typeof signal === 'object' && (signal as { value?: unknown }).value === form.modelType;
+      })
+        ? true
+        : undefined;
+    }, 5000);
+    if (!published) throw new Error('Model loader timed out before publishing the selected pipeline contract.');
+  }
+  assertGraphFinalizationActive(token);
+  // Wire the stable component inputs before requesting dynamic consumer fields.
+  // Schema refreshes clear signals on unconnected inputs; staging a VAE signal
+  // without its real edge can erase the encoder's schema during another action.
+  ensureConnection(binding.nodes.models, ['text_encoders'], binding.nodes.prompt, ['text_encoders']);
+  ensureConnection(binding.nodes.models, ['unet_out'], binding.nodes.denoise, ['unet']);
+  ensureConnection(binding.nodes.models, ['vae_out'], binding.nodes.decode, ['vae']);
+  ensureConnection(binding.nodes.models, ['vae_out'], binding.nodes.imageEncode, ['vae']);
+  ensureConnection(binding.nodes.qwenQuantization, ['quantization_config'], binding.nodes.models, ['quant_config']);
   await Promise.all([
     applyManagedInputSignal(binding.nodes.prompt, ['text_encoders'], form.modelType),
     applyManagedInputSignal(binding.nodes.denoise, ['unet'], form.modelType),
@@ -3850,11 +4439,6 @@ async function finalizeModularGraph(
   await applyControlnetModel(binding, form);
   assertGraphFinalizationActive(token);
 
-  ensureConnection(binding.nodes.models, ['text_encoders'], binding.nodes.prompt, ['text_encoders']);
-  ensureConnection(binding.nodes.models, ['unet_out'], binding.nodes.denoise, ['unet']);
-  ensureConnection(binding.nodes.models, ['vae_out'], binding.nodes.decode, ['vae']);
-  ensureConnection(binding.nodes.qwenQuantization, ['quantization_config'], binding.nodes.models, ['quant_config']);
-
   const denoiseGroups = binding.nodes.controlnet
     ? [['embeddings'], ['latents'], ['controlnet_bundle']]
     : [['embeddings'], ['latents']];
@@ -3862,62 +4446,38 @@ async function finalizeModularGraph(
   await Promise.all([
     binding.nodes.qwenQuantization
       ? waitForFieldGroupsTracked(
-          {
-            label: 'qwen quantization config',
-            nodeId: binding.nodes.qwenQuantization,
-            groups: [['model_id'], ['quantization_config']],
-            timeout: 5000,
-          },
+          binding.nodes.qwenQuantization,
+          [['model_id'], ['quantization_config']],
           timedOutGroups,
+          'qwen quantization config',
+          5000,
         )
       : Promise.resolve(true),
     waitForFieldGroupsTracked(
-      {
-        label: 'prompt embeddings',
-        nodeId: binding.nodes.prompt,
-        groups: [['prompt'], ['embeddings']],
-        timeout: 5000,
-      },
+      binding.nodes.prompt,
+      [['prompt'], ['embeddings']],
       timedOutGroups,
+      'prompt embeddings',
+      5000,
     ),
-    waitForFieldGroupsTracked(
-      {
-        label: 'denoise inputs',
-        nodeId: binding.nodes.denoise,
-        groups: denoiseGroups,
-        timeout: 5000,
-      },
-      timedOutGroups,
-    ),
-    waitForFieldGroupsTracked(
-      {
-        label: 'decode inputs',
-        nodeId: binding.nodes.decode,
-        groups: [['latents'], ['images']],
-        timeout: 5000,
-      },
-      timedOutGroups,
-    ),
+    waitForFieldGroupsTracked(binding.nodes.denoise, denoiseGroups, timedOutGroups, 'denoise inputs', 5000),
+    waitForFieldGroupsTracked(binding.nodes.decode, [['latents'], ['images']], timedOutGroups, 'decode inputs', 5000),
     binding.nodes.imageEncode
       ? waitForFieldGroupsTracked(
-          {
-            label: 'image encoder inputs',
-            nodeId: binding.nodes.imageEncode,
-            groups: [IMAGE_HANDLE, IMAGE_LATENTS_OUT],
-            timeout: 5000,
-          },
+          binding.nodes.imageEncode,
+          [IMAGE_HANDLE, IMAGE_LATENTS_OUT],
           timedOutGroups,
+          'image encoder inputs',
+          5000,
         )
       : Promise.resolve(true),
     binding.nodes.controlnet
       ? waitForFieldGroupsTracked(
-          {
-            label: 'controlnet inputs',
-            nodeId: binding.nodes.controlnet,
-            groups: [['control_image'], ['controlnet'], ['vae'], ['controlnet_bundle']],
-            timeout: 5000,
-          },
+          binding.nodes.controlnet,
+          [['control_image'], ['controlnet'], ['vae'], ['controlnet_bundle']],
           timedOutGroups,
+          'controlnet inputs',
+          5000,
         )
       : Promise.resolve(true),
   ]);
@@ -3950,6 +4510,29 @@ async function finalizeModularGraph(
   pinControlnetLoaderIdentity(binding.nodes.controlnetModel);
 }
 
+async function finalizeModularVideoGraph(
+  binding: StudioGraphBinding,
+  form: StudioFormState,
+  timedOutGroups: string[],
+  token: number,
+) {
+  await applyModelType(binding, form.modelType, true);
+  assertGraphFinalizationActive(token);
+  await applyManagedInputSignal(binding.nodes.prompt, ['text_encoders'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.imageEmbeddings, ['image_encoder'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.imageEncode, ['vae'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.denoise, ['unet'], form.modelType);
+  await applyManagedInputSignal(binding.nodes.decode, ['vae'], form.modelType);
+  assertGraphFinalizationActive(token);
+  const started = Date.now();
+  while (!modularVideoTopology(binding) && Date.now() - started < 5000) await delay(100);
+  if (!modularVideoTopology(binding)) timedOutGroups.push('video route');
+  assertGraphFinalizationActive(token);
+  syncManagedFormControlAliases(form, binding);
+  applyFormValues(binding, form);
+  connectBaseGraph(binding);
+}
+
 async function finalizeStudioGraph(
   binding: StudioGraphBinding,
   form: StudioFormState,
@@ -3957,7 +4540,7 @@ async function finalizeStudioGraph(
   skeletonMs: number,
 ): Promise<BridgeResult> {
   const startedAt = Date.now();
-  const definitionRevision = graphDefinitionRevision;
+  let definitionRevision = graphDefinitionRevision;
   const timedOutGroups: string[] = [];
   const warnings: string[] = [];
   if (binding.finalizationProofInvalid) {
@@ -3976,17 +4559,20 @@ async function finalizeStudioGraph(
     if (isAudioMode(form.mode)) {
       await finalizeAudioGraph(binding, form, timedOutGroups, token);
     } else if (modularVideoGroupObserved(binding)) {
-      syncManagedFormControlAliases(form, binding);
-      applyFormValues(binding, form);
-      connectBaseGraph(binding);
+      await finalizeModularVideoGraph(binding, form, timedOutGroups, token);
+      // Modular signals intentionally publish newer node definitions while
+      // assembling the route. Use their settled schema as this operation's
+      // baseline; static paths retain their starting revision.
+      definitionRevision = graphDefinitionRevision;
     } else if (usesDiffusersImageFacade(form)) {
       await finalizeDiffusersImageGraph(binding, form, timedOutGroups, token);
+    } else if (usesStaticExecutionSpecGraph(form, binding) || usesDiffusersThreeDFacade(binding)) {
+      await finalizeStaticExecutionSpecGraph(binding, form, token);
     } else if (!isVideoMode(form.mode)) {
       await finalizeModularGraph(binding, form, timedOutGroups, token);
+      definitionRevision = graphDefinitionRevision;
     } else {
-      assertGraphFinalizationActive(token);
-      applyFormValues(binding, form);
-      connectBaseGraph(binding);
+      await finalizeVideoGraph(binding, form, timedOutGroups, token);
     }
 
     assertGraphFinalizationActive(token);
@@ -4187,6 +4773,7 @@ async function createOrUpdateStudioGraphInner(
 export async function createOrUpdateStudioGraph(
   form: StudioFormState = useStudioStore.getState().form,
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
+  finalizationTimeout = 15_000,
 ): Promise<BridgeResult> {
   const requestedForm = cloneStudioFormForGraph(form);
   const previousUpdate = graphUpdatePromise;
@@ -4194,7 +4781,7 @@ export async function createOrUpdateStudioGraph(
     if (previousUpdate) await previousUpdate.catch(() => undefined);
     assertWorkflowOperationContext(context);
     const result = await createOrUpdateStudioGraphInner(requestedForm, context);
-    const finalized = await waitForStudioGraphFinalization(15_000, context);
+    const finalized = await waitForStudioGraphFinalization(finalizationTimeout, context);
     if (!finalized) {
       throw new Error(
         useStudioStore.getState().graphFinalization?.message ?? 'Graph preparation timed out before it was finalized.',
@@ -4297,6 +4884,54 @@ export async function waitForStudioGraphFinalization(
   return waitForStudioGraphFinalization(remainingTimeout, context);
 }
 
+export async function waitForStudioGraphDefinitionStability(
+  quietPeriod = 750,
+  timeout = 5000,
+  context: WorkflowOperationContext = captureWorkflowOperationContext(),
+) {
+  const startedAt = Date.now();
+  let observedRevision = graphDefinitionRevision;
+  let stableSince = startedAt;
+
+  while (Date.now() - startedAt <= timeout) {
+    assertWorkflowOperationContext(context);
+    const studio = useStudioStore.getState();
+    const binding = studio.graphBinding;
+    if (!binding) return false;
+    const form = resolveGraphResourceForm(studio.form);
+    if (!requiresDynamicGraphChannel(form, binding)) return true;
+
+    const revisionChanged = observedRevision !== graphDefinitionRevision;
+    const finalized =
+      studio.graphFinalization?.status === 'complete' &&
+      bindingFinalizationProofMatches(binding, form) &&
+      !inspectStudioGraphBindingDivergence(binding);
+    if (revisionChanged || !finalized) {
+      observedRevision = graphDefinitionRevision;
+      stableSince = Date.now();
+      if (
+        !finalized &&
+        !binding.controlled &&
+        bindingMatchesForm(binding, form) &&
+        !inspectStudioGraphBindingDivergence(binding)
+      ) {
+        syncStudioGraphDefinition(form);
+        if (useStudioStore.getState().graphFinalization?.status === 'pending') {
+          // A late schema update invalidates the first receipt. Re-run the
+          // existing finalizer; polling an invalidated proof cannot seal it.
+          const remaining = timeout - (Date.now() - startedAt);
+          if (remaining <= 0 || !(await waitForStudioGraphFinalization(remaining, context))) return false;
+        }
+      }
+    } else if (Date.now() - stableSince >= quietPeriod) {
+      return true;
+    }
+
+    await delay(Math.min(80, Math.max(1, timeout - (Date.now() - startedAt))));
+  }
+  return false;
+}
+
 export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStudioStore.getState().form) {
   const plannedForm = resolveGraphResourceForm(form);
   const binding = useStudioStore.getState().graphBinding;
@@ -4307,6 +4942,14 @@ export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStud
   }
   if (binding && modularVideoGroupObserved(binding)) {
     if (modularVideoTopology(binding) === false || !binding.finalizationProof) return 'Route pending.';
+    if (!participatingRoleNodesAreValid(binding, plannedForm)) return 'Graph changed.';
+    return null;
+  }
+  if (executionSpecForForm(plannedForm)) {
+    // Reviewed recipes declare their own ports and managed edges. Audio passes
+    // pipeline state, not Qwen image embeddings. The finalization proof already
+    // checks the exact recipe, live schemas and every managed connection.
+    if (!binding?.finalizationProof) return 'Route pending.';
     if (!participatingRoleNodesAreValid(binding, plannedForm)) return 'Graph changed.';
     return null;
   }
@@ -4355,6 +4998,13 @@ export async function ensureStudioGraphReadyForRun(
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
 ) {
   assertWorkflowOperationContext(context);
+  if (form.resourceMode === 'expert') {
+    // Manual mode runs the graph exactly as authored. Keep editable field
+    // values synchronized, but do not require a managed Studio finalization
+    // receipt—the backend owns execution validation and error reporting.
+    if (useStudioStore.getState().graphBinding) syncStudioGraphValues(form);
+    return;
+  }
   const validatedAutoPlan = form.resourceMode === 'auto' ? useStudioStore.getState().autoResourcePlan : null;
   if (!useStudioStore.getState().graphBinding) {
     throw new Error('Create or open a managed workflow before running it.');

@@ -46,12 +46,18 @@ function sameNodeContract(left, right) {
   );
 }
 
-export function assessHistoricalEvidence(candidate, canonicalWorkflow, backendRegistry) {
+export function assessHistoricalEvidence(candidate, canonicalWorkflow, backendRegistry, expected = {}) {
   if (!candidate) return { matches: false, status: 'missing', reasons: ['successful_real_run_receipt'] };
   if (!canonicalWorkflow) {
     return { matches: false, status: 'no_canonical_workflow', reasons: ['canonical_workflow'] };
   }
   const reasons = [];
+  if (expected.catalogTemplateLockHash && candidate.catalogTemplateLockHash !== expected.catalogTemplateLockHash) {
+    reasons.push('catalog_template_lock_mismatch');
+  }
+  if (expected.promptSettingsHash && candidate.promptSettingsHash !== expected.promptSettingsHash) {
+    reasons.push('prompt_settings_hash_mismatch');
+  }
   if (candidate.canonicalWorkflowHash) {
     if (candidate.canonicalWorkflowHash !== canonicalWorkflow.graphHash) {
       reasons.push('canonical_workflow_hash_mismatch');

@@ -20,6 +20,7 @@ const LoopNode = memo((node: NodeProps<CustomNodeType>) => {
   const maximum = numericValue(node.data.params.max_iterations?.value, 100);
   const carry = node.data.params.carry?.value !== false;
   const collect = node.data.params.collect?.value !== false;
+  const durable = node.data.params.durable?.value === true;
   const retries = numericValue(node.data.params.max_retries?.value, 1);
   const hasResult = children.some(
     (child) => child.data.module === 'modules.WorkflowControl' && child.data.action === 'LoopResult',
@@ -76,6 +77,11 @@ const LoopNode = memo((node: NodeProps<CustomNodeType>) => {
           checked={collect}
           label="Collect"
           onCheckedChange={(checked) => setParam(node.id, 'collect', checked)}
+        />
+        <ModiffCheckbox
+          checked={durable}
+          label="Resume"
+          onCheckedChange={(checked) => setParam(node.id, 'durable', checked)}
         />
         <span>Limit {maximum}</span>
         <ModiffFieldShell label="Retries" layout="inline" className="gap-1">

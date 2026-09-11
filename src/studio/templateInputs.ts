@@ -31,6 +31,7 @@ const FORM_FIELD_LABELS: Record<StudioTemplateInputFormField, string> = {
   referenceImages: 'Reference image',
   maskImage: 'Mask image',
   controlImage: 'Control image',
+  ipAdapterImage: 'IP-Adapter image',
   sourceVideo: 'Source video',
   maskVideo: 'Mask video',
   controlVideo: 'Control video',

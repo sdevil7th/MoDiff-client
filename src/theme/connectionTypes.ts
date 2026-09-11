@@ -1,7 +1,11 @@
 import { MarkerType, type Edge } from '@xyflow/react';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
-import { dataTypeClass, normalizeDataType } from '../utils/dataTypeCategory';
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
+import { dataTypeClass } from '../utils/dataTypeCategory';
+import { connectionTypes } from './connectionTypeCompatibility';
+
+export { connectionTypes, connectionTypesAreCompatible } from './connectionTypeCompatibility';
 
 export const NEUTRAL_CONNECTION_TYPE = 'default';
 export const NEUTRAL_CONNECTION_COLOR = '#94A3B8';
@@ -62,17 +66,6 @@ type ConnectionEdgeData = Record<string, unknown> & {
   connectionType?: ResolvedConnectionType;
 };
 
-export function connectionTypes(value: unknown): string[] {
-  const values = Array.isArray(value) ? value : [value];
-  return Array.from(
-    new Set(
-      values
-        .map((item) => normalizeDataType(item).toLowerCase())
-        .filter((item) => item && item !== 'default' && item !== 'missing'),
-    ),
-  ).sort();
-}
-
 function concreteConnectionTypes(value: unknown) {
   return connectionTypes(value).filter((item) => item !== 'any');
 }
@@ -87,18 +80,6 @@ function sameConnectionType(left: unknown, right: unknown) {
   const leftTypes = connectionTypes(left);
   const rightTypes = connectionTypes(right);
   return leftTypes.length === rightTypes.length && leftTypes.every((item, index) => item === rightTypes[index]);
-}
-
-export function connectionTypesAreCompatible(sourceType: unknown, targetType: unknown) {
-  const source = connectionTypes(sourceType);
-  const target = connectionTypes(targetType);
-  return (
-    source.length === 0 ||
-    target.length === 0 ||
-    source.includes('any') ||
-    target.includes('any') ||
-    source.some((item) => target.includes(item))
-  );
 }
 
 /**
@@ -168,9 +149,11 @@ export function connectionTypeGradient(type: unknown): string | undefined {
 function edgeParamTypes(edge: Edge, nodes: CustomNodeType[]) {
   const source = nodes.find((node) => node.id === edge.source);
   const target = nodes.find((node) => node.id === edge.target);
+  const sourceHandle = edge.sourceHandle ?? '';
+  const targetHandle = edge.targetHandle ?? '';
   return {
-    sourceType: source?.data.params?.[edge.sourceHandle ?? '']?.type,
-    targetType: target?.data.params?.[edge.targetHandle ?? '']?.type,
+    sourceType: nodeConnectorParam(source, sourceHandle)?.type,
+    targetType: nodeConnectorParam(target, targetHandle)?.type,
   };
 }
 

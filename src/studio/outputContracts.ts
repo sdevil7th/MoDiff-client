@@ -8,8 +8,11 @@ import {
 import { normalizeStudioResourceMode } from './resourcePlanner';
 import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from './templates';
 import { CONTROLLED_GRAPH_CONTRACT_IDS, type ControlledGraphContractId } from './controlledWorkflowContracts';
+import { blockOutputRunFormV2 } from './blockRunFormV2';
+import { applyResolvedExecutionInputs } from './resolvedExecutionInputs';
 import type {
   StudioFormState,
+  StudioEncodedVideoMetadata,
   StudioGraphBinding,
   StudioGraphSnapshot,
   StudioMode,
@@ -56,6 +59,7 @@ const STUDIO_QUANTIZATION_MODES: readonly StudioFormState['quantizationMode'][] 
   'torchao_float8',
 ];
 const STUDIO_ALPHA_MODES: readonly StudioFormState['alphaMode'][] = ['ignore', 'add alpha', 'remove alpha'];
+const STUDIO_SPEECH_TIMESTAMP_MODES: readonly StudioFormState['speechTimestamps'][] = ['none', 'segment', 'word'];
 const STUDIO_OUTPUT_TYPES: readonly StudioFormState['outputType'][] = ['pil', 'np', 'pt'];
 const STUDIO_TEMPLATE_IDS: readonly StudioTemplateId[] = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].map(
   (template) => template.id,
@@ -148,6 +152,13 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     randomSeed: booleanValue(form.randomSeed, DEFAULT_STUDIO_FORM.randomSeed),
     steps: numberValue(form.steps, DEFAULT_STUDIO_FORM.steps),
     guidanceScale: numberValue(form.guidanceScale, DEFAULT_STUDIO_FORM.guidanceScale),
+    pagScale: numberValue(form.pagScale, DEFAULT_STUDIO_FORM.pagScale),
+    pagAdaptiveScale: numberValue(form.pagAdaptiveScale, DEFAULT_STUDIO_FORM.pagAdaptiveScale),
+    processingResolution: numberValue(form.processingResolution, DEFAULT_STUDIO_FORM.processingResolution),
+    matchInputResolution: booleanValue(form.matchInputResolution, DEFAULT_STUDIO_FORM.matchInputResolution),
+    batchSize: numberValue(form.batchSize, DEFAULT_STUDIO_FORM.batchSize),
+    eta: numberValue(form.eta, DEFAULT_STUDIO_FORM.eta),
+    classLabel: numberValue(form.classLabel, DEFAULT_STUDIO_FORM.classLabel),
     resourceMode: normalizeStudioResourceMode(form.resourceMode),
     dtype: stringUnionValue(form.dtype, STUDIO_DTYPES, DEFAULT_STUDIO_FORM.dtype),
     quantizationMode: stringUnionValue(
@@ -172,13 +183,25 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     outpaintFillColor: stringValue(form.outpaintFillColor, DEFAULT_STUDIO_FORM.outpaintFillColor),
     alphaMode: stringUnionValue(form.alphaMode, STUDIO_ALPHA_MODES, DEFAULT_STUDIO_FORM.alphaMode),
     referenceImages: stringArrayValue(form.referenceImages, DEFAULT_STUDIO_FORM.referenceImages),
+    referenceVideos: stringArrayValue(form.referenceVideos, DEFAULT_STUDIO_FORM.referenceVideos),
     maskImage: stringValue(form.maskImage, DEFAULT_STUDIO_FORM.maskImage),
     controlImage: stringValue(form.controlImage, DEFAULT_STUDIO_FORM.controlImage),
+    controlMode: numberValue(form.controlMode, DEFAULT_STUDIO_FORM.controlMode),
+    ipAdapterImage: stringValue(form.ipAdapterImage, DEFAULT_STUDIO_FORM.ipAdapterImage),
+    ipAdapterScale: numberValue(form.ipAdapterScale, DEFAULT_STUDIO_FORM.ipAdapterScale),
     sourceVideo: stringValue(form.sourceVideo, DEFAULT_STUDIO_FORM.sourceVideo),
     maskVideo: stringValue(form.maskVideo, DEFAULT_STUDIO_FORM.maskVideo),
     controlVideo: stringValue(form.controlVideo, DEFAULT_STUDIO_FORM.controlVideo),
     sourceAudio: stringValue(form.sourceAudio, DEFAULT_STUDIO_FORM.sourceAudio),
     referenceAudio: stringValue(form.referenceAudio, DEFAULT_STUDIO_FORM.referenceAudio),
+    speechLanguage: stringValue(form.speechLanguage, DEFAULT_STUDIO_FORM.speechLanguage),
+    speechTimestamps: stringUnionValue(
+      form.speechTimestamps,
+      STUDIO_SPEECH_TIMESTAMP_MODES,
+      DEFAULT_STUDIO_FORM.speechTimestamps,
+    ),
+    speechChunkSeconds: numberValue(form.speechChunkSeconds, DEFAULT_STUDIO_FORM.speechChunkSeconds),
+    speechStrideSeconds: numberValue(form.speechStrideSeconds, DEFAULT_STUDIO_FORM.speechStrideSeconds),
     lyrics: stringValue(form.lyrics, DEFAULT_STUDIO_FORM.lyrics),
     audioDuration: numberValue(form.audioDuration, DEFAULT_STUDIO_FORM.audioDuration),
     extensionDuration: numberValue(form.extensionDuration, DEFAULT_STUDIO_FORM.extensionDuration),
@@ -328,6 +351,20 @@ export function coerceStudioTemplateId(value: unknown): StudioTemplateId | undef
   return optionalStringUnion(value, STUDIO_TEMPLATE_IDS);
 }
 
+function coerceEncodedVideoMetadata(value: unknown): StudioEncodedVideoMetadata | undefined {
+  if (!isRecord(value) || value.source !== 'encoded-file') return undefined;
+  const metadata: StudioEncodedVideoMetadata = { source: 'encoded-file' };
+  for (const key of ['width', 'height', 'frame_count'] as const) {
+    const number = value[key];
+    if (typeof number === 'number' && Number.isSafeInteger(number) && number > 0) metadata[key] = number;
+  }
+  for (const key of ['fps', 'duration_seconds'] as const) {
+    const number = value[key];
+    if (typeof number === 'number' && Number.isFinite(number) && number > 0) metadata[key] = number;
+  }
+  return Object.keys(metadata).length > 1 ? metadata : undefined;
+}
+
 function coerceStudioOutputMediaItem(value: unknown, fallbackIndex: number): StudioOutputMediaItem | undefined {
   if (!isRecord(value)) return undefined;
   const url = stringValue(value.url);
@@ -346,6 +383,7 @@ function coerceStudioOutputMediaItem(value: unknown, fallbackIndex: number): Stu
     width: optionalNumber(value.width),
     height: optionalNumber(value.height),
     durationSeconds: optionalNumber(value.durationSeconds),
+    mediaMetadata: coerceEncodedVideoMetadata(value.mediaMetadata),
     clientRunId: optionalString(value.clientRunId),
     runInputHash: optionalString(value.runInputHash),
     attemptIndex: optionalNumber(value.attemptIndex),
@@ -367,62 +405,74 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
   const url = stringValue(value.url);
   if (!id || !url) return undefined;
 
-  const mode = stringUnionValue(value.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode);
-  const modelType = stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType);
+  const registeredBlockRun = blockOutputRunFormV2(value);
+  const mode = registeredBlockRun?.form.mode ?? stringUnionValue(value.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode);
+  const modelType =
+    registeredBlockRun?.form.modelType ??
+    stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType);
   const profile = STUDIO_MODEL_PROFILES[modelType];
-  const formSnapshot = coerceStudioFormState(value.formSnapshot);
+  const formSnapshot = registeredBlockRun?.form ?? coerceStudioFormState(value.formSnapshot);
 
-  return {
-    id,
-    clientRunId: optionalString(value.clientRunId),
-    runInputHash: optionalString(value.runInputHash),
-    workflowTabId: optionalNullableString(value.workflowTabId),
-    attemptIndex: optionalNumber(value.attemptIndex),
-    nodeId: stringValue(value.nodeId, 'studio-output'),
-    fieldKey: stringValue(value.fieldKey, 'output'),
-    value: safeCloneJson(value.value ?? url),
-    url,
-    mode,
-    modelType,
-    modelLabel: stringValue(value.modelLabel, profile.label),
-    repo: stringValue(value.repo, profile.defaultRepo),
-    templateId: coerceStudioTemplateId(value.templateId),
-    templateLabel: optionalString(value.templateLabel),
-    runId: optionalString(value.runId),
-    taskId: optionalNullableString(value.taskId),
-    sid: optionalNullableString(value.sid),
-    prompt: stringValue(value.prompt, formSnapshot.prompt),
-    negativePrompt: stringValue(value.negativePrompt, formSnapshot.negativePrompt),
-    seed: numberValue(value.seed, formSnapshot.seed),
-    width: numberValue(value.width, formSnapshot.width),
-    height: numberValue(value.height, formSnapshot.height),
-    steps: numberValue(value.steps, formSnapshot.steps),
-    guidanceScale: numberValue(value.guidanceScale, formSnapshot.guidanceScale),
-    referenceImages: stringArrayValue(value.referenceImages, formSnapshot.referenceImages),
-    sourceOutputId: optionalString(value.sourceOutputId),
-    formSnapshot,
-    graphSnapshot: coerceStudioGraphSnapshot(value.graphSnapshot),
-    graphBindingSnapshot: coerceStudioGraphBinding(value.graphBindingSnapshot),
-    apiGraphSnapshot: safeCloneJson(value.apiGraphSnapshot),
-    createdAt: numberValue(value.createdAt, Date.now()),
-    favorite: booleanValue(value.favorite, false),
-    parentId: optionalString(value.parentId),
-    backendImagePath: optionalString(value.backendImagePath),
-    backendMediaPath: optionalString(value.backendMediaPath),
-    backendSyncedAt: optionalNumber(value.backendSyncedAt),
-    displayType: optionalStringUnion(value.displayType, STUDIO_OUTPUT_DISPLAY_TYPES),
-    mediaHash: optionalString(value.mediaHash),
-    mediaCollectionHash: optionalString(value.mediaCollectionHash),
-    mediaItems: coerceStudioOutputMediaItems(value.mediaItems),
-    templateLockHash: optionalString(value.templateLockHash),
-    promptSettingsHash: optionalString(value.promptSettingsHash),
-    exactTemplateCompatible:
-      typeof value.exactTemplateCompatible === 'boolean' ? value.exactTemplateCompatible : undefined,
-    variationGroupId: optionalString(value.variationGroupId),
-    variationLabel: optionalString(value.variationLabel),
-    provenance: safeCloneJson(value.provenance) as StudioOutput['provenance'],
-    backendProvenance: safeCloneJson(value.backendProvenance) as StudioOutput['backendProvenance'],
-  };
+  return applyResolvedExecutionInputs(
+    {
+      id,
+      clientRunId: optionalString(value.clientRunId),
+      runInputHash: optionalString(value.runInputHash),
+      workflowTabId: optionalNullableString(value.workflowTabId),
+      attemptIndex: optionalNumber(value.attemptIndex),
+      nodeId: stringValue(value.nodeId, 'studio-output'),
+      fieldKey: stringValue(value.fieldKey, 'output'),
+      value: safeCloneJson(value.value ?? url),
+      url,
+      mode,
+      modelType,
+      modelLabel: registeredBlockRun ? profile.label : stringValue(value.modelLabel, profile.label),
+      repo: registeredBlockRun?.form.modelRepo ?? stringValue(value.repo, profile.defaultRepo),
+      templateId: coerceStudioTemplateId(value.templateId),
+      templateLabel: optionalString(value.templateLabel),
+      runId: optionalString(value.runId),
+      taskId: optionalNullableString(value.taskId),
+      sid: optionalNullableString(value.sid),
+      prompt: registeredBlockRun ? formSnapshot.prompt : stringValue(value.prompt, formSnapshot.prompt),
+      negativePrompt: registeredBlockRun
+        ? formSnapshot.negativePrompt
+        : stringValue(value.negativePrompt, formSnapshot.negativePrompt),
+      seed: registeredBlockRun ? formSnapshot.seed : numberValue(value.seed, formSnapshot.seed),
+      width: registeredBlockRun ? formSnapshot.width : numberValue(value.width, formSnapshot.width),
+      height: registeredBlockRun ? formSnapshot.height : numberValue(value.height, formSnapshot.height),
+      steps: registeredBlockRun ? formSnapshot.steps : numberValue(value.steps, formSnapshot.steps),
+      guidanceScale: registeredBlockRun
+        ? formSnapshot.guidanceScale
+        : numberValue(value.guidanceScale, formSnapshot.guidanceScale),
+      referenceImages: registeredBlockRun
+        ? formSnapshot.referenceImages
+        : stringArrayValue(value.referenceImages, formSnapshot.referenceImages),
+      sourceOutputId: optionalString(value.sourceOutputId),
+      formSnapshot,
+      graphSnapshot: coerceStudioGraphSnapshot(value.graphSnapshot),
+      graphBindingSnapshot: coerceStudioGraphBinding(value.graphBindingSnapshot),
+      apiGraphSnapshot: safeCloneJson(value.apiGraphSnapshot),
+      createdAt: numberValue(value.createdAt, Date.now()),
+      favorite: booleanValue(value.favorite, false),
+      parentId: optionalString(value.parentId),
+      backendImagePath: optionalString(value.backendImagePath),
+      backendMediaPath: optionalString(value.backendMediaPath),
+      backendSyncedAt: optionalNumber(value.backendSyncedAt),
+      displayType: optionalStringUnion(value.displayType, STUDIO_OUTPUT_DISPLAY_TYPES),
+      mediaHash: optionalString(value.mediaHash),
+      mediaCollectionHash: optionalString(value.mediaCollectionHash),
+      mediaItems: coerceStudioOutputMediaItems(value.mediaItems),
+      templateLockHash: optionalString(value.templateLockHash),
+      promptSettingsHash: optionalString(value.promptSettingsHash),
+      exactTemplateCompatible:
+        typeof value.exactTemplateCompatible === 'boolean' ? value.exactTemplateCompatible : undefined,
+      variationGroupId: optionalString(value.variationGroupId),
+      variationLabel: optionalString(value.variationLabel),
+      provenance: safeCloneJson(value.provenance) as StudioOutput['provenance'],
+      backendProvenance: safeCloneJson(value.backendProvenance) as StudioOutput['backendProvenance'],
+    },
+    value.resolvedExecutionInputs,
+  );
 }
 
 export function parseBackendOutputsResponse(value: unknown): BackendOutputsResponse {

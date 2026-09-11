@@ -21,9 +21,10 @@ License 2.0; the project `LICENSE` contains that license text.
 This revision is an evidence-based pre-import comparison baseline selected
 from repository history and file similarity. It is not asserted to be a proven
 Git ancestor or necessarily the exact snapshot used for MoDiff Client's
-original import. MoDiff Client has modified the adapted files. See the
-[source-provenance map](docs/source-provenance.md) for the affected path
-families and the treatment of formats that cannot carry comments.
+original import. MoDiff Client has modified the adapted files. In-file
+modification comments identify adapted source; retain these project-level
+notices alongside generated and commentless artifacts whose formats cannot
+carry those comments. New MoDiff-only files are not attributed to that baseline.
 
 ## Font software
 
@@ -3779,7 +3780,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-nanoid@3.3.16
+nanoid@3.3.19
 Declared license: MIT
 ================================================================================
 

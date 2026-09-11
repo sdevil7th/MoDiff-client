@@ -167,3 +167,86 @@ If any step is missing, keep the profile visible as Expert-only or blocked with 
 - Are local paths and secrets excluded from public records?
 - Do docs/tests avoid treating visibility or mocked coverage as live support?
 - Does Expert remain usable without weakening Auto's honesty?
+
+## Custom and multiple-Block workflow Auto
+
+The information button beside Auto opens Workflow resources in the right panel.
+The existing source-recipe assessment remains read-only. **Check Auto execution
+plan** also validates the actual executable graph through
+`POST /auto_resource/workflow` (`schemaVersion: 1`, `graph` containing the existing
+API `nodes`, `paths` and optional `loops`). Inspection does not execute nodes,
+install packages, generate media, randomize seeds or change graph fields.
+
+Custom topology, User Nodes and multiple Blocks no longer force Expert. Run
+exports the current execution scope and applies the existing Modular composition
+lowering before planning. Running one Block excludes outside suppliers; running
+the workflow includes them. The existing executor still owns dependency order,
+loops, cache cleanup, progress, cancellation and output history.
+
+The backend resolves real model loaders through the reviewed execution profiles
+and reuses the existing artifact/runtime/resource candidate planner and history.
+It preserves the repository, pinned revision, dtype, quantization and creative
+controls. Only declared offload fields can be changed, visibly and in one Undo
+transaction. A shared loader is counted once; separate loaders are counted
+separately even if their repositories match. Connected pinned Modular LoRAs add a
+conservative budget derived from verified safetensors shapes without loading the
+tensors. Built-in data/media operations do not become model owners.
+
+Auto preserves retained-cache behavior for a single or shared model owner.
+For independent model owners, it uses the lower live-memory envelope: it derives
+lifetimes from dependencies and finishes ready consumers before opening another
+model. Dispatch-time recipe selection cannot discard those release checkpoints. The existing executor releases
+completed owners, retains detached downstream images/arrays/scalars, and checks
+actual free memory before the next loader. Shared references remain live; opaque
+model/device outputs cannot be released. Loops keep their owners for the complete
+loop. The resource panel reports peak live requirements; run receipts record the
+actual release checkpoints. Shared GPU allocations consume system RAM, not an
+additional independent pool. Placement currently covers the default accelerator;
+multi-GPU placement is a required follow-up, not implemented support.
+
+Literal and built-in Text/data operations resolve during read-only inspection.
+Other supported data-only suppliers are marked pending: Run executes their
+required ancestors through the existing executor, invalidates stale cached values,
+then replans using actual outputs before any model is loaded. Unknown/custom or
+model-dependent suppliers need a reviewed data-preparation contract. Resource
+values are checked again when their consumer executes. Deferred offload changes
+use the existing runtime-resource event, update only unchanged matching workflow
+fields and their shared controls, and remain undoable. Newer edits are preserved.
+
+Nested legacy definitions are converted from their current embedded snapshots;
+older Cluster executable metadata is hydrated through the existing preparation
+path. Auto can therefore reach formerly hidden loader fields. Conversion plus
+resource changes or explicit movement form one Undo transaction. Interfaces,
+current values, external connections and preview references survive; the reusable
+library definition is not rewritten. Missing exact source metadata remains an
+explicit diagnostic.
+
+Run checks the graph again after planning and updates only supported visible
+resource controls. A `workflowAutoPlan` receipt binds the resulting API graph by
+hash. At dispatch the backend verifies the hash and re-plans against current
+artifacts and memory before model allocation (after required data-only preparation). Editing a workflow, switching tabs
+or changing mode while planning invalidates the client request. This receipt does
+not grant registered-source, catalog, publication or model qualification authority.
+There is one graph execution attempt; this path adds no automatic whole-graph
+retry or silent reduction of quality.
+
+Switching to Expert preserves the graph and explicit settings. Loader Auto
+Offload and Repeat/Loop remain separate controls. A successful combined plan is
+resource eligibility, not live output proof for every possible composition.
+
+The Auto switch follows the active workflow form on reopen, including custom
+workflows without a Studio binding. A global view preference cannot make an
+Expert workflow appear to be in Auto. App runs that opt out of Studio metadata
+still use the workflow Auto planner when Auto is selected.
+
+Auto accounts for reviewed Modular state-input aliases and constant iteration
+resource inputs. Resource values computed within an iteration need a reviewed
+upper bound; otherwise the planner explains the blocker and preserves Expert
+execution. Larger batches require matching candidate evidence and requirements.
+Historical recipes without a batch size cover only one item.
+
+Deferred plans return a hash for exactly the patches offered to the client; if
+all patches are postponed, the hash describes the unchanged graph. Seeded
+Generator and Attention Arguments are supported data-only actions. Shared graph
+ancestors execute once per attempt, preserving one advancing Generator across
+consumers; later attempts receive a fresh Generator. Explicit loops still iterate.

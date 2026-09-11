@@ -57,6 +57,7 @@ export default function MediaExportDialog() {
     setGifFps(saved.fps || 12);
     setGifWidth(saved.width || 640);
     setError('');
+    setCapabilities(null);
     let alive = true;
     void loadMediaCapabilities()
       .then((value) => {
@@ -72,10 +73,12 @@ export default function MediaExportDialog() {
 
   const formats = useMemo(
     () =>
-      opener && capabilities
+      opener
         ? [
             ORIGINAL_FORMAT,
-            ...(canTranscodeMediaSource(opener.source) ? capabilities.media[opener.kind].exportFormats : []),
+            ...(capabilities && canTranscodeMediaSource(opener.source)
+              ? capabilities.media[opener.kind].exportFormats
+              : []),
           ]
         : [],
     [capabilities, opener],
@@ -86,9 +89,9 @@ export default function MediaExportDialog() {
     null;
 
   useEffect(() => {
-    if (formats.length === 0 || formats.some((candidate) => candidate.value === format)) return;
+    if (!capabilities || formats.length === 0 || formats.some((candidate) => candidate.value === format)) return;
     setFormat(formats[0]?.value ?? 'original');
-  }, [format, formats]);
+  }, [capabilities, format, formats]);
 
   useEffect(() => {
     if (!selected?.sampleRates?.length || selected.sampleRates.includes(sampleRate)) return;
@@ -131,6 +134,8 @@ export default function MediaExportDialog() {
       open
       onClose={close}
       title={opener.title || `Download ${opener.kind}`}
+      description="Download the original unchanged, or convert a copy using the available export formats."
+      dismissible={!loading}
       testId="media-export-dialog"
       panelClassName="max-w-xl"
       footer={
@@ -138,7 +143,7 @@ export default function MediaExportDialog() {
           <ModiffButton tone="secondary" disabled={loading} onClick={close}>
             Cancel
           </ModiffButton>
-          <ModiffButton tone="primary" disabled={!selected || loading} onClick={() => void download()}>
+          <ModiffButton tone="primary" disabled={!selected} loading={loading} onClick={() => void download()}>
             <Download size={16} />
             {loading ? 'Preparing…' : 'Download'}
           </ModiffButton>
@@ -157,7 +162,7 @@ export default function MediaExportDialog() {
               group: descriptor.preset,
             }))}
             placeholder={capabilities ? 'Select format' : 'Loading formats…'}
-            disabled={!capabilities}
+            disabled={loading || !capabilities}
           />
         </ModiffFieldShell>
 
@@ -240,9 +245,18 @@ export default function MediaExportDialog() {
           </div>
         ) : null}
 
-        <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-3 py-2 text-modiff-metadata text-modiff-subtle-text">
+        <div className="break-all rounded-modiff-compact border border-modiff-border bg-modiff-bg px-3 py-2 text-modiff-metadata text-modiff-subtle-text">
           {outputFilename}
         </div>
+        <p role="status" className="text-xs text-modiff-subtle-text">
+          {loading
+            ? 'Preparing your download. The generated source asset is not changed.'
+            : !capabilities && !error
+              ? 'Loading conversion formats… Original download is available.'
+              : selected?.value === 'original'
+                ? 'Original file: no conversion or quality loss.'
+                : 'A converted copy is downloaded; the source asset is kept.'}
+        </p>
         {error ? (
           <div
             role="alert"

@@ -1,37 +1,471 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Linter } from 'eslint';
+import globals from 'globals';
 import {
+  applyGalleryTemplate,
   argsForTemplateInputs,
   acquireRunnerLock,
   clearRuntimeBetweenRuns,
+  createGalleryBrowserSessionGuard,
   executionReceiptForProvenance,
   executionReceiptsForRun,
   ensureFrontend,
+  expectedOutputContractForCapture,
   failureMessageForRun,
   formOverridesForTemplate,
+  galleryCaptureOperationTimeoutMs,
   preferredOutputRoleForTemplate,
+  runtimeFingerprintForProvenance,
   galleryGenerateInvocation,
   galleryRunExitCode,
   installEphemeralGalleryStorage,
+  isGalleryBrowserLifecycleFailure,
   isGalleryInfrastructureFailure,
   orderTemplatesForRuntimeReuse,
   parseArgs,
   prepareRuntimeForTemplate,
+  requireAppDownloadsIdle,
+  runWithGalleryBrowserRecovery,
   shouldPrepareRuntimeForTemplate,
   taskProgressFingerprint,
   waitForQueueIdle,
   waitForTaskTerminal,
 } from './template-gallery-runner.mjs';
+import {
+  copyOutput,
+  destinationStem,
+  expertFallbackResourceOverrides,
+  extensionForCampaignOutput,
+  fixtureOverrides,
+  isCampaignImagePayload,
+  isCampaignSkeletonRunnable,
+  parseCampaignArgs,
+  qualityBlockedWorkflowsFromResearch,
+} from './review-generation-campaign.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const portablePath = (value) => value.split(sep).join('/');
+// Unit tests check fixture selection without requiring local review media.
+const availableFixtureOverrides = (workflowId, media) => fixtureOverrides(workflowId, media, () => true);
+
+test('gallery capture and resume paths have no unresolved variables', () => {
+  const messages = new Linter().verify(readFileSync(resolve(ROOT, 'scripts/template-gallery-runner.mjs'), 'utf8'), {
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: { ...globals.node, ...globals.browser } },
+    rules: { 'no-undef': 'error' },
+  });
+  assert.deepEqual(
+    messages.map(({ line, message }) => ({ line, message })),
+    [],
+  );
+});
+
+test('campaign keeps raw executions out of the human-review shortlist', () => {
+  const destination = destinationStem('AnimateDiffPipeline:text_to_video');
+  assert.match(portablePath(destination), /review-pending\/raw-campaign\/AnimateDiffPipeline__text_to_video\//);
+});
+
+test('campaign excludes workflows whose reviewed research dossier marks quality blocked', () => {
+  const blocked = qualityBlockedWorkflowsFromResearch([
+    {
+      kind: 'generation_recipe_research',
+      workflowId: 'CogView4Pipeline:text_to_image',
+      status: 'quality_blocked_bounded_attempts_exhausted',
+    },
+    {
+      kind: 'generation_recipe_research',
+      workflowId: 'ReadyPipeline:text_to_image',
+      status: 'researched_one_attempt_authorized',
+    },
+    {
+      kind: 'unrelated_document',
+      workflowId: 'IgnoredPipeline:text_to_image',
+      status: 'quality_blocked',
+    },
+  ]);
+
+  assert.deepEqual([...blocked], ['CogView4Pipeline:text_to_image']);
+});
+
+test('campaign refuses generic two-second audio fixtures for showcase workflows', () => {
+  assert.throws(
+    () => fixtureOverrides('ExampleAudioPipeline:audio_variation', [{ field: 'sourceAudio', minimumCount: 1 }]),
+    /reviewed workflow-specific sourceAudio fixture/,
+  );
+  const reviewedFixture = resolve(
+    ROOT,
+    '..',
+    'MoDiff',
+    'web',
+    'template-gallery',
+    'ace_step_text_to_audio.current.wav',
+  );
+  const overrides = availableFixtureOverrides('AceStepAudioPipeline:audio_variation', [
+    { field: 'sourceAudio', minimumCount: 1 },
+  ]);
+  assert.equal(overrides.sourceAudio, reviewedFixture);
+  assert.throws(
+    () =>
+      fixtureOverrides(
+        'AceStepAudioPipeline:audio_variation',
+        [{ field: 'sourceAudio', minimumCount: 1 }],
+        () => false,
+      ),
+    /reviewed workflow-specific sourceAudio fixture/,
+  );
+});
+
+test('image upscaling uses its detailed provenance-tracked low-resolution fixture', () => {
+  const overrides = availableFixtureOverrides('SpandrelImageUpscale:image_upscale', [
+    { field: 'referenceImages', minimumCount: 1 },
+  ]);
+  assert.equal(overrides.referenceImages.length, 1);
+  assert.match(
+    portablePath(overrides.referenceImages[0]),
+    /input-fixtures\/upscaling\/aura-rain-stop-lowres-q72\.jpg$/,
+  );
+});
+
+test('Sana Sprint editing uses the reviewed full-resolution AuraFlow source', () => {
+  const overrides = availableFixtureOverrides('SanaSprintPipeline:edit_image', [
+    { field: 'referenceImages', minimumCount: 1 },
+  ]);
+  assert.equal(overrides.referenceImages.length, 1);
+  assert.match(
+    portablePath(overrides.referenceImages[0]),
+    /AuraFlowPipeline__text_to_image\/campaign-auraflowpipeline__text_to_image-gpu-v1\.png$/,
+  );
+});
+
+test('SmolVLM image understanding uses the user-approved detailed AuraFlow source', () => {
+  const overrides = availableFixtureOverrides('HuggingFaceImageTextToTextModel:image_to_text', [
+    { field: 'referenceImages', minimumCount: 1 },
+  ]);
+  assert.equal(overrides.referenceImages.length, 1);
+  assert.match(
+    portablePath(overrides.referenceImages[0]),
+    /AuraFlowPipeline__text_to_image\/campaign-auraflowpipeline__text_to_image-gpu-v1\.png$/,
+  );
+});
+
+test('JoyAI editing uses the shortlisted native violin workshop source', () => {
+  const overrides = availableFixtureOverrides('JoyImageEditPipeline:edit_image', [
+    { field: 'referenceImages', minimumCount: 1 },
+  ]);
+  assert.equal(overrides.referenceImages.length, 1);
+  assert.match(
+    portablePath(overrides.referenceImages[0]),
+    /JoyImageEditPipeline__text_to_image\/campaign-joyimageeditpipeline__text_to_image-gpu-v1\.webp$/,
+  );
+});
+
+test('OmniGen editing uses the reviewed full-resolution LongCat tram source', () => {
+  const overrides = availableFixtureOverrides('OmniGenPipeline:edit_image', [
+    { field: 'referenceImages', minimumCount: 1 },
+  ]);
+  assert.equal(overrides.referenceImages.length, 1);
+  assert.match(
+    portablePath(overrides.referenceImages[0]),
+    /LongCatImagePipeline__text_to_image\/campaign-longcatimagepipeline__text_to_image-gpu-v1\.png$/,
+  );
+});
+
+test('OmniGen multi-reference generation preserves both reviewed source roles in order', () => {
+  const overrides = availableFixtureOverrides('OmniGenPipeline:multi_image_reference_edit', [
+    { field: 'referenceImages', minimumCount: 2 },
+  ]);
+  assert.equal(overrides.referenceImages.length, 2);
+  assert.match(
+    portablePath(overrides.referenceImages[0]),
+    /QwenImageModularPipeline__text_to_image\/campaign-qwenimagemodularpipeline__text_to_image-gpu-v1\.png$/,
+  );
+  assert.match(
+    portablePath(overrides.referenceImages[1]),
+    /FluxSchnellPipeline__text_to_image__gguf_q4_0\/campaign-fluxschnellpipeline__text_to_image__gguf_q4_0-gpu-v1\.webp$/,
+  );
+});
+
+test('video upscaling uses its motion-rich provenance-tracked low-resolution fixture', () => {
+  const overrides = availableFixtureOverrides('SpandrelVideoUpscale:video_upscale', [
+    { field: 'sourceVideo', minimumCount: 1 },
+  ]);
+  assert.match(portablePath(overrides.sourceVideo), /input-fixtures\/upscaling\/sana-greenhouse-motion-lowres\.mp4$/);
+});
+
+test('reviewed media selection fails closed when a required local source is missing', () => {
+  for (const workflowId of [
+    'SpandrelImageUpscale:image_upscale',
+    'SanaSprintPipeline:edit_image',
+    'HuggingFaceImageTextToTextModel:image_to_text',
+    'JoyImageEditPipeline:edit_image',
+    'OmniGenPipeline:edit_image',
+    'OmniGenPipeline:multi_image_reference_edit',
+    'SpandrelVideoUpscale:video_upscale',
+  ]) {
+    const field = workflowId.startsWith('SpandrelVideo') ? 'sourceVideo' : 'referenceImages';
+    assert.throws(
+      () => fixtureOverrides(workflowId, [{ field, minimumCount: 1 }], () => false),
+      /requires the reviewed workflow-specific/,
+    );
+  }
+  assert.throws(
+    () =>
+      fixtureOverrides(
+        'OmniGenPipeline:multi_image_reference_edit',
+        [{ field: 'referenceImages', minimumCount: 2 }],
+        (path) => path.includes('QwenImageModularPipeline'),
+      ),
+    /requires the reviewed workflow-specific referenceImages fixture/,
+  );
+});
+
+test('gallery runner waits for the same background graph finalizer after a caller timeout', async () => {
+  const calls = [];
+  let evaluateCount = 0;
+  const page = {
+    evaluate: async (_callback, payload) => {
+      evaluateCount += 1;
+      calls.push({ type: 'evaluate', payload });
+      if (evaluateCount === 1) {
+        throw new Error(
+          'Graph preparation is still running after 120000 ms. It will continue in the background; retry Queue when the graph is ready.',
+        );
+      }
+      return { status: 'complete', message: 'Graph ready.' };
+    },
+    waitForFunction: async (_callback, _argument, options) => {
+      calls.push({ type: 'waitForFunction', options });
+    },
+  };
+
+  await applyGalleryTemplate(page, 'ltx_video_text_to_video', { numFrames: 9 }, 240_000);
+
+  assert.deepEqual(calls, [
+    {
+      type: 'evaluate',
+      payload: {
+        selectedTemplateId: 'ltx_video_text_to_video',
+        selectedFormOverrides: { numFrames: 9 },
+      },
+    },
+    { type: 'waitForFunction', options: { timeout: 240_000 } },
+    { type: 'evaluate', payload: undefined },
+  ]);
+});
+
+test('gallery runner does not reinterpret an operation-context cancellation as a graph timeout', async () => {
+  const page = {
+    evaluate: async () => {
+      throw new Error('WorkflowOperationCancelledError: The workflow changed before this operation completed.');
+    },
+    waitForFunction: async () => {
+      throw new Error('unexpected wait');
+    },
+  };
+
+  await assert.rejects(
+    () => applyGalleryTemplate(page, 'qwen_low_vram_product_concept'),
+    /WorkflowOperationCancelledError/,
+  );
+});
 
 test('gallery:run forwards npm arguments directly to the targeted app runner', () => {
   const packageJson = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['gallery:run'], 'node scripts/template-gallery-runner.mjs');
+});
+
+test('review campaign names fetched WebP bytes from the response MIME type', () => {
+  assert.equal(
+    extensionForCampaignOutput(
+      { displayType: 'image' },
+      'http://127.0.0.1:8088/file?file=%40data%2Fstudio%2Foutputs%2Frun-output.webp',
+      'image/webp; charset=binary',
+    ),
+    '.webp',
+  );
+});
+
+test('review campaign writes extensionless Studio image output with its fetched WebP extension', async () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-review-campaign-'));
+  try {
+    const bytes = Buffer.alloc(8_192);
+    bytes.write('RIFF', 0, 'ascii');
+    bytes.write('WEBP', 8, 'ascii');
+    const output = {
+      url: `data:image/webp;base64,${bytes.toString('base64')}`,
+      displayType: 'image',
+      taskId: 'task-webp',
+    };
+    const page = { evaluate: async () => output };
+
+    const filePath = await copyOutput(
+      page,
+      { taskId: 'task-webp', startedAt: Date.now() },
+      'http://127.0.0.1:5192',
+      resolve(root, 'campaign-output'),
+      'image',
+    );
+
+    assert.equal(filePath, resolve(root, 'campaign-output.webp'));
+    assert.deepEqual(readFileSync(filePath), bytes);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('review campaign accepts compact native-resolution images and rejects non-image payloads', () => {
+  const compactWebp = Buffer.alloc(954);
+  compactWebp.write('RIFF', 0, 'ascii');
+  compactWebp.write('WEBP', 8, 'ascii');
+  assert.equal(isCampaignImagePayload(compactWebp), true);
+  assert.equal(isCampaignImagePayload(Buffer.from('backend error: model unavailable')), false);
+});
+
+test('review campaign writes inline text output without treating its payload as a file suffix', async () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-review-campaign-text-'));
+  try {
+    const text = JSON.stringify({ generated_text: 'A bounded local result.' });
+    const output = {
+      url: `data:text/plain,${encodeURIComponent(text)}`,
+      displayType: 'text',
+      taskId: 'task-text',
+    };
+    const page = { evaluate: async () => output };
+
+    const filePath = await copyOutput(
+      page,
+      { taskId: 'task-text', startedAt: Date.now() },
+      'http://127.0.0.1:5192',
+      resolve(root, 'campaign-output'),
+      'json',
+    );
+
+    assert.equal(filePath, resolve(root, 'campaign-output.txt'));
+    assert.equal(readFileSync(filePath, 'utf8'), text);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('review campaign recovers a late Studio output from the authoritative run receipt', async () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-review-campaign-receipt-'));
+  try {
+    const bytes = Buffer.alloc(8_192);
+    bytes.write('RIFF', 0, 'ascii');
+    bytes.write('WEBP', 8, 'ascii');
+    const mediaUrl = `data:image/webp;base64,${bytes.toString('base64')}`;
+    const fetchImpl = async (input) => {
+      if (String(input).includes('/runs/task-late')) {
+        return new Response(
+          JSON.stringify({
+            outputs: [{ url: mediaUrl, displayType: 'image', taskId: 'task-late' }],
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return fetch(input);
+    };
+
+    const filePath = await copyOutput(
+      { evaluate: async () => null },
+      { taskId: 'task-late', startedAt: Date.now() },
+      'http://127.0.0.1:5192',
+      resolve(root, 'campaign-output'),
+      'image',
+      { fetchImpl, outputWaitMs: 0, server: 'http://127.0.0.1:8088' },
+    );
+
+    assert.equal(filePath, resolve(root, 'campaign-output.webp'));
+    assert.deepEqual(readFileSync(filePath), bytes);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('review campaign MIME metadata overrides a conflicting URL suffix', () => {
+  assert.equal(
+    extensionForCampaignOutput({ displayType: 'image' }, 'http://127.0.0.1:8088/cache/node/output/0.png', 'image/webp'),
+    '.webp',
+  );
+});
+
+test('review campaign falls back to URL and media-kind extensions when MIME is unknown', () => {
+  assert.equal(
+    extensionForCampaignOutput({ displayType: 'video' }, 'http://127.0.0.1:8088/output/result.webm', ''),
+    '.webm',
+  );
+  assert.equal(
+    extensionForCampaignOutput({ displayType: 'audio' }, 'http://127.0.0.1:8088/cache/node/output', ''),
+    '.wav',
+  );
+  assert.equal(
+    extensionForCampaignOutput({ displayType: 'text' }, 'data:text/plain,%7B%22version%22%3A%22v1.dev0%22%7D', ''),
+    '.txt',
+  );
+});
+
+test('review campaign never persists or consumes a permanent failure skip set', () => {
+  const source = readFileSync(resolve(ROOT, 'scripts/review-generation-campaign.mjs'), 'utf8');
+  assert.doesNotMatch(source, /generation-campaign-skip|loadSkipSet|rememberFailure|skipFailed/);
+  assert.doesNotMatch(source, /overlayActive|overlayReady/);
+  assert.match(source, /writeRetryLedger/);
+});
+
+test('review campaign does not retry an unchanged optional-runtime gate', () => {
+  const source = readFileSync(resolve(ROOT, 'scripts/review-generation-campaign.mjs'), 'utf8');
+  assert.doesNotMatch(source, /optional runtime gate stale/);
+  assert.doesNotMatch(source, /optional runtime required[\s\S]{0,500}queueRun\(\)/i);
+});
+
+test('review campaign help and invalid options cannot accidentally start a campaign', () => {
+  assert.equal(parseCampaignArgs(['--help']).help, true);
+  assert.throws(() => parseCampaignArgs(['--unknown']), /Unknown campaign option/);
+  assert.throws(() => parseCampaignArgs(['--max-new']), /requires a non-negative number/);
+});
+
+test('review campaign runs built-ins only after an exact opt-in', () => {
+  const imageUpscale = {
+    id: 'task-template:builtin-image-operations:image-upscale:v1',
+    modelType: 'BuiltinImageOperation',
+    mode: 'image_upscale',
+  };
+  assert.equal(isCampaignSkeletonRunnable(imageUpscale), false);
+  assert.equal(isCampaignSkeletonRunnable(imageUpscale, { only: ['BuiltinImageOperation:image_upscale'] }), true);
+  assert.equal(isCampaignSkeletonRunnable(imageUpscale, { only: ['video_upscale'] }), false);
+});
+
+test('review campaign does not invent offload for none-only execution profiles', () => {
+  assert.deepEqual(expertFallbackResourceOverrides({ offloadSupport: { modes: ['none'] } }), {
+    device: 'cuda:0',
+    autoOffload: false,
+    offloadMode: 'none',
+  });
+  assert.deepEqual(expertFallbackResourceOverrides({ offloadSupport: { modes: ['none', 'model_cpu'] } }), {
+    device: 'cuda:0',
+    autoOffload: true,
+  });
+});
+
+test('review campaign clears the idle runtime before every attempted generation', () => {
+  const source = readFileSync(resolve(ROOT, 'scripts/review-generation-campaign.mjs'), 'utf8');
+  assert.match(source, /prepareRuntimeForTemplate/);
+  assert.doesNotMatch(source, /await waitForQueueIdle/);
+});
+
+test('review campaign records a completed result before recycling its page', () => {
+  const source = readFileSync(resolve(ROOT, 'scripts/review-generation-campaign.mjs'), 'utf8');
+  assert.match(
+    source,
+    /console\.log\(`completed \$\{workflowId\}`\);[\s\S]*?writeReport\(results\);[\s\S]*?replacePage\('post-run recycle'\)/,
+  );
+  assert.match(source, /post-run page recycle failed after \$\{workflowId\} was durably recorded/);
 });
 
 test('gallery runner applies per-template media inputs without leaking them to sibling templates', () => {
@@ -57,6 +491,26 @@ test('gallery runner reuses the same byte-pinned default inputs as the product',
   assert.match(outpaint.maskVideo, /runtime-inputs[\\/]assets[\\/][0-9a-f]{64}\.mp4$/);
 });
 
+test('gallery runner resolves installer-managed default inputs from backend web', () => {
+  const backendDir = mkdtempSync(resolve(tmpdir(), 'modiff-runner-backend-'));
+  try {
+    const bindings = JSON.parse(
+      readFileSync(resolve(ROOT, 'public/template-gallery/runtime-inputs/default-input-bindings.json'), 'utf8'),
+    );
+    const runtimePath = bindings.ace_step_audio_variation[0].defaultAssets[0].runtimePath;
+    const installedPath = resolve(backendDir, 'web', runtimePath.replace(/^\/+/, ''));
+    mkdirSync(dirname(installedPath), { recursive: true });
+    writeFileSync(installedPath, 'installed fixture');
+    const resolvedArgs = argsForTemplateInputs(
+      { backendDir, referenceImages: [], templateInputMap: {} },
+      { id: 'ace_step_audio_variation' },
+    );
+    assert.equal(resolvedArgs.sourceAudio, installedPath);
+  } finally {
+    rmSync(backendDir, { recursive: true, force: true });
+  }
+});
+
 test('gallery provenance recovers measurements from a queue-restored completion receipt', () => {
   const terminalTask = {
     task_id: 'task-one',
@@ -76,6 +530,79 @@ test('gallery provenance recovers measurements from a queue-restored completion 
 
   assert.equal(receipt.task_id, 'task-one');
   assert.deepEqual(receipt.runtimeMeasurement, terminalTask.runtimeMeasurement);
+});
+
+test('gallery provenance prefers the complete graph-completion runtime over a compact terminal task claim', () => {
+  const runtimeFingerprint = {
+    fingerprint: 'sha256:runtime-complete',
+    packages: { python: '3.12.13', torch: '2.9.1+rocm7.2' },
+    torch: { cuda_available: true, cuda_device_count: 1 },
+    work_dir: '/srv/modiff/data',
+    data_dir: '/srv/modiff/data',
+  };
+
+  assert.deepEqual(
+    runtimeFingerprintForProvenance({
+      deterministicEvent: null,
+      completionEvent: { runtimeFingerprint },
+      terminalTask: { runtimeFingerprint: runtimeFingerprint.fingerprint },
+      output: { provenance: { runtimeFingerprint: runtimeFingerprint.fingerprint } },
+    }),
+    runtimeFingerprint,
+  );
+  assert.equal(
+    runtimeFingerprintForProvenance({
+      deterministicEvent: null,
+      completionEvent: { runtimeFingerprint },
+      terminalTask: { runtimeFingerprint: 'sha256:different-runtime' },
+      output: {},
+    }),
+    null,
+  );
+});
+
+test('gallery runner performs worker-source preflight before waiting for or submitting graphs', () => {
+  const source = readFileSync(resolve(ROOT, 'scripts/template-gallery-runner.mjs'), 'utf8');
+  const preflight = source.indexOf('Backend source preflight failed before generation.');
+  const queueWait = source.indexOf('await waitForQueueIdle(args.server');
+  assert.ok(preflight > 0);
+  assert.ok(queueWait > preflight);
+});
+
+test('offline evidence repair refuses to substitute current state for a missing original backend source snapshot', () => {
+  const artifactDir = mkdtempSync(resolve(tmpdir(), 'modiff-retained-proof-'));
+  try {
+    const mediaDir = resolve(artifactDir, 'media');
+    const evidenceDir = resolve(mediaDir, 'evidence');
+    mkdirSync(evidenceDir, { recursive: true });
+    for (const fileName of [
+      'high_quality.run1.output.json',
+      'high_quality.run1.websocket-events.json',
+      'high_quality.run1.nodes.json',
+      'high_quality.run1.model-fingerprint.json',
+      'high_quality.run1.backend-source-after.json',
+    ]) {
+      writeFileSync(resolve(evidenceDir, fileName), '{}\n');
+    }
+
+    const repaired = spawnSync(
+      process.execPath,
+      [
+        resolve(ROOT, 'scripts/template-gallery-repair-evidence.mjs'),
+        '--media-dir',
+        mediaDir,
+        '--template',
+        'high_quality',
+      ],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+
+    assert.notEqual(repaired.status, 0);
+    assert.match(repaired.stderr, /backend-source-before\.json/u);
+    assert.equal(existsSync(resolve(evidenceDir, 'high_quality.run1.provenance.json')), false);
+  } finally {
+    rmSync(artifactDir, { recursive: true, force: true });
+  }
 });
 
 test('gallery output waits can distinguish backend progress from an unchanged receipt', () => {
@@ -134,6 +661,16 @@ test('LTX long-showcase inputs preserve the authored arrival then antenna-reveal
 test('gallery runner defaults source-only capture to one run unless explicitly overridden', () => {
   assert.equal(parseArgs(['node', 'runner', '--source-only']).runs, 1);
   assert.equal(parseArgs(['node', 'runner', '--source-only', '--runs', '2']).runs, 2);
+});
+
+test('source-only capture validates decoded media without impersonating the parent release size', () => {
+  const template = { example: { expectedOutput: { width: 1536, height: 1024, frames: 121 } } };
+  assert.deepEqual(expectedOutputContractForCapture(template, { sourceOnly: true }), {});
+  assert.deepEqual(expectedOutputContractForCapture(template, { sourceOnly: false }), {
+    width: 1536,
+    height: 1024,
+    frames: 121,
+  });
 });
 
 test('gallery runner parses fail-fast qualification batches explicitly', () => {
@@ -200,9 +737,73 @@ test('gallery runner disables large persisted graph state before page navigation
   assert.match(source, /modiff\.flow/);
 });
 
+test('gallery runner rejects terminal page and browser events before they poison later templates', async () => {
+  const session = () => {
+    const page = new EventEmitter();
+    const browser = new EventEmitter();
+    return { browser, page };
+  };
+
+  for (const [target, event, code] of [
+    ['page', 'crash', 'page_crashed'],
+    ['page', 'close', 'page_closed'],
+    ['browser', 'disconnected', 'browser_disconnected'],
+  ]) {
+    const current = session();
+    const guard = createGalleryBrowserSessionGuard({ ...current, operationTimeoutMs: 1_000 });
+    const pending = guard.run('capturing a test template', () => new Promise(() => {}));
+    current[target].emit(event);
+    await assert.rejects(
+      pending,
+      (error) =>
+        error?.code === code && /template Gallery/i.test(error.message) && isGalleryBrowserLifecycleFailure(error),
+    );
+    guard.dispose();
+  }
+
+  assert.equal(isGalleryBrowserLifecycleFailure(new Error('Target page, context or browser has been closed')), true);
+});
+
+test('gallery runner retries one terminal browser failure in a clean session but not template failures', async () => {
+  let attempts = 0;
+  const recovered = await runWithGalleryBrowserRecovery(
+    async () => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error('renderer crashed'), { code: 'page_crashed' });
+      return 'captured';
+    },
+    async (error, nextAttempt) => ({ reason: error.message, attempts: nextAttempt }),
+  );
+  assert.deepEqual(recovered, {
+    value: 'captured',
+    recovery: { reason: 'renderer crashed', attempts: 2 },
+  });
+  assert.equal(attempts, 2);
+
+  attempts = 0;
+  await assert.rejects(
+    runWithGalleryBrowserRecovery(
+      async () => {
+        attempts += 1;
+        throw new Error('model contract rejected');
+      },
+      async () => ({ attempts: 2 }),
+    ),
+    /model contract rejected/,
+  );
+  assert.equal(attempts, 1);
+});
+
 test('gallery runner can wait behind a long app-managed generation without bypassing the queue', () => {
   const args = parseArgs(['node', 'runner', '--queue-wait-timeout-ms', '36000000']);
   assert.equal(args.queueWaitTimeoutMs, 36_000_000);
+});
+
+test('gallery runner outer browser guard cannot preempt a healthy long capture', () => {
+  assert.equal(galleryCaptureOperationTimeoutMs(15 * 60 * 1000, 1), 2 * 60 * 60 * 1000);
+  assert.equal(galleryCaptureOperationTimeoutMs(60 * 60 * 1000, 2), 2 * 60 * 60 * 1000 + 180_000);
+  assert.throws(() => galleryCaptureOperationTimeoutMs(0, 1), /positive number/);
+  assert.throws(() => galleryCaptureOperationTimeoutMs(1_000, 0), /positive integer/);
 });
 
 test('gallery runner can retain successful locked runs without publishing gallery media', () => {
@@ -534,6 +1135,51 @@ test('gallery runner tolerates a transient queue request failure while waiting f
   );
   assert.deepEqual(result, { queued: {}, current: null });
   assert.equal(calls, 2);
+});
+
+test('gallery runner fails closed while app downloads or Gallery installation reserve space', async () => {
+  const status = (overrides = {}) => ({
+    error: false,
+    schemaVersion: 1,
+    downloads: [],
+    activeCount: 0,
+    queuedReservationBytes: 0,
+    templateGalleryReservationBytes: 0,
+    ...overrides,
+  });
+  const fetchStatus =
+    (payload, response = {}) =>
+    async () =>
+      new Response(JSON.stringify(payload), {
+        status: response.status ?? 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+  const ready = await requireAppDownloadsIdle('http://127.0.0.1:8088', fetchStatus(status()));
+  assert.equal(ready.activeCount, 0);
+
+  await assert.rejects(
+    requireAppDownloadsIdle(
+      'http://127.0.0.1:8088',
+      fetchStatus(
+        status({
+          downloads: [{ repo_id: 'owner/model', task_id: 'download-task', status: 'downloading' }],
+          activeCount: 1,
+          queuedReservationBytes: 100,
+        }),
+      ),
+    ),
+    /App downloads.*active.*owner\/model/,
+  );
+  await assert.rejects(
+    requireAppDownloadsIdle('http://127.0.0.1:8088', fetchStatus(status({ templateGalleryReservationBytes: 10 }))),
+    /App downloads.*active/,
+  );
+  await assert.rejects(
+    requireAppDownloadsIdle('http://127.0.0.1:8088', fetchStatus({ error: false, downloads: [] })),
+    /malformed/,
+  );
+  assert.equal(isGalleryInfrastructureFailure(new Error('App downloads or Gallery installation are active')), true);
 });
 
 test('gallery runner waits for the attributed task terminal receipt after media appears', async () => {

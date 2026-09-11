@@ -59,9 +59,10 @@ import {
 import { getTemplateReadiness, type TemplateReadinessResult } from '../studio/templateReadiness';
 import { resolveTemplateInputs } from '../studio/templateInputs';
 import { createWorkflowFromTemplate } from '../studio/templateWorkflow';
-import { getPreset, STUDIO_TEMPLATES } from '../studio/templates';
-import { acknowledgementRequiredForTemplate, usagePolicyAcknowledgementKey } from '../studio/modelUsagePolicies';
+import { getPreset, PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
+import { acknowledgementRequiredForTemplate } from '../studio/modelUsagePolicies';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
+import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import {
   createStartupRequestCache,
   shouldRetryStartupRequest,
@@ -92,6 +93,8 @@ const difficultyOptions: Array<TemplateBrowserFilter['difficulty']> = [
   'blocked',
 ];
 
+const BROWSER_CATALOG_TEMPLATES = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES];
+
 const sortOptions: Array<{ value: TemplateBrowserFilter['sort']; label: string }> = [
   { value: 'recommended', label: 'Recommended' },
   { value: 'task', label: 'Task' },
@@ -104,10 +107,6 @@ const templateModeOptions = Array.from(new Set(STUDIO_TEMPLATES.map((template) =
 );
 const TEMPLATE_BATCH_SIZE = 12;
 const STARTUP_INDEX_RETRY_MS = 1_500;
-
-type PendingTemplateTermsAction =
-  | { kind: 'create'; template: StudioTemplate }
-  | { kind: 'install'; template: StudioTemplate; repoId: string; repair: boolean };
 
 function templateAutoForm(template: StudioTemplate) {
   const lockedValues = getTemplateLockedSettings(template);
@@ -130,6 +129,7 @@ const templateAutoPlanEntries = STUDIO_TEMPLATES.map((template) => {
 const templateManifestRequest = createStartupRequestCache<TemplateGalleryManifest>(async () => {
   return requestJson(TEMPLATE_GALLERY_MANIFEST_PATH, {
     credentials: 'omit',
+    timeoutMs: 120_000,
     parse: parseTemplateGalleryManifest,
   });
 });
@@ -309,8 +309,7 @@ export default function TemplateBrowserDialog() {
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
   const setGalleryLibraryOpen = useSettingsStore((state) => state.setGalleryLibraryOpen);
-  const modelTermsAcknowledgements = useSettingsStore((state) => state.modelTermsAcknowledgements);
-  const acknowledgeModelTerms = useSettingsStore((state) => state.acknowledgeModelTerms);
+  const modelUsageTerms = useModelUsageTermsGate();
   const form = useStudioStore((state) => state.form);
   const activeTemplateId = useStudioStore((state) => state.activeTemplateId);
   const autoResourcePlans = useStudioStore((state) => state.autoResourcePlans);
@@ -340,7 +339,6 @@ export default function TemplateBrowserDialog() {
   const [isApplying, setIsApplying] = useState(false);
   const [installingRepo, setInstallingRepo] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [pendingTermsAction, setPendingTermsAction] = useState<PendingTemplateTermsAction | null>(null);
   const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_BATCH_SIZE);
   const categoryButtonRefs = useRef(new Map<TemplateBrowserCategoryId, HTMLButtonElement>());
   const manifestStartupRetryAttempted = useRef(false);
@@ -371,6 +369,7 @@ export default function TemplateBrowserDialog() {
   }, [open]);
 
   useEffect(() => {
+    if (!open) return undefined;
     let cancelled = false;
     void loadTemplateManifest()
       .then((payload) => {
@@ -388,10 +387,11 @@ export default function TemplateBrowserDialog() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     if (
+      !open ||
       !shouldRetryStaticStartupRequest({
         attempted: manifestStartupRetryAttempted.current,
         failed: manifestStartupFailed && templateManifestRequest.hasRejected(),
@@ -417,9 +417,10 @@ export default function TemplateBrowserDialog() {
       globalThis.clearTimeout(timeoutId);
       manifestStartupRetryAttempted.current = false;
     };
-  }, [manifestStartupFailed]);
+  }, [manifestStartupFailed, open]);
 
   useEffect(() => {
+    if (!open) return undefined;
     let cancelled = false;
     void loadTemplateAutoPlans()
       .then((plans) => {
@@ -435,10 +436,11 @@ export default function TemplateBrowserDialog() {
     return () => {
       cancelled = true;
     };
-  }, [setAutoResourcePlans]);
+  }, [open, setAutoResourcePlans]);
 
   useEffect(() => {
     if (
+      !open ||
       !shouldRetryStartupRequest({
         attempted: autoPlanStartupRetryAttempted.current,
         backendReady: Boolean(sid),
@@ -466,10 +468,10 @@ export default function TemplateBrowserDialog() {
       globalThis.clearTimeout(timeoutId);
       autoPlanStartupRetryAttempted.current = false;
     };
-  }, [autoPlansStartupFailed, modelIndexesRefreshing, setAutoResourcePlans, sid]);
+  }, [autoPlansStartupFailed, modelIndexesRefreshing, open, setAutoResourcePlans, sid]);
 
   useEffect(() => {
-    if (!latestCompletedRunAt || latestCompletedRunAt <= runtimePlanHistoryRefreshedAt.current) return;
+    if (!open || !latestCompletedRunAt || latestCompletedRunAt <= runtimePlanHistoryRefreshedAt.current) return;
     runtimePlanHistoryRefreshedAt.current = latestCompletedRunAt;
     let cancelled = false;
     const timeoutId = globalThis.setTimeout(() => {
@@ -483,7 +485,7 @@ export default function TemplateBrowserDialog() {
       cancelled = true;
       globalThis.clearTimeout(timeoutId);
     };
-  }, [latestCompletedRunAt, setAutoResourcePlans]);
+  }, [latestCompletedRunAt, open, setAutoResourcePlans]);
 
   const readinessContext = useMemo(
     () => ({
@@ -513,20 +515,26 @@ export default function TemplateBrowserDialog() {
     (template: StudioTemplate) => localRuntimeEstimate(autoPlanForTemplate(template)),
     [autoPlanForTemplate],
   );
-  const filteredTemplates = useMemo(
-    () =>
-      filterStudioTemplates(
-        STUDIO_TEMPLATES,
-        form,
-        effectiveFilter,
-        (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
-      ),
-    [effectiveFilter, form, runtimeEstimateForTemplate],
+  const isExperimentalTemplate = useCallback(
+    (template: StudioTemplate) => !templateHasPublishedMedia(template, manifest),
+    [manifest],
   );
+  const filteredTemplates = useMemo(() => {
+    const source = filter.category === 'experimental' ? BROWSER_CATALOG_TEMPLATES : STUDIO_TEMPLATES;
+    const category = filter.category === 'experimental' ? 'all' : filter.category;
+    const filtered = filterStudioTemplates(
+      source,
+      form,
+      { ...effectiveFilter, category },
+      (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
+    );
+    if (filter.category !== 'experimental') return filtered;
+    return filtered.filter(isExperimentalTemplate);
+  }, [effectiveFilter, filter.category, form, isExperimentalTemplate, runtimeEstimateForTemplate]);
   const catalogTemplates = useMemo(
     () =>
       filterStudioTemplates(
-        STUDIO_TEMPLATES,
+        BROWSER_CATALOG_TEMPLATES,
         form,
         {
           ...effectiveFilter,
@@ -539,6 +547,10 @@ export default function TemplateBrowserDialog() {
         (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
       ),
     [effectiveFilter, form, runtimeEstimateForTemplate],
+  );
+  const experimentalTemplateCount = useMemo(
+    () => catalogTemplates.filter(isExperimentalTemplate).length,
+    [catalogTemplates, isExperimentalTemplate],
   );
   const publishedTemplateCount = useMemo(
     () => catalogTemplates.filter((template) => templateHasPublishedMedia(template, manifest)).length,
@@ -567,7 +579,7 @@ export default function TemplateBrowserDialog() {
     manifest,
   ]);
   const selectedTemplate = useMemo(
-    () => STUDIO_TEMPLATES.find((template) => template.id === selectedTemplateId) ?? null,
+    () => BROWSER_CATALOG_TEMPLATES.find((template) => template.id === selectedTemplateId) ?? null,
     [selectedTemplateId],
   );
   const categoryCounts = useMemo(
@@ -576,6 +588,9 @@ export default function TemplateBrowserDialog() {
         TEMPLATE_BROWSER_CATEGORIES.map((category) => {
           if (category.id === 'recommended' && publishedTemplateCount > 0) {
             return [category.id, publishedTemplateCount];
+          }
+          if (category.id === 'experimental') {
+            return [category.id, experimentalTemplateCount];
           }
           return [
             category.id,
@@ -590,7 +605,7 @@ export default function TemplateBrowserDialog() {
           ];
         }),
       ),
-    [effectiveFilter, form, publishedTemplateCount],
+    [effectiveFilter, experimentalTemplateCount, form, publishedTemplateCount],
   );
   const visibleCategories = useMemo(
     () =>
@@ -665,10 +680,10 @@ export default function TemplateBrowserDialog() {
         return;
       }
       if (result.warnings.length > 0) {
-        enqueueSnackbar(
-          `${templateDisplayName(template)} template created with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}`,
-          { variant: 'warning', autoHideDuration: 7000 },
-        );
+        enqueueSnackbar(`${templateDisplayName(template)}: ${result.warnings.join(' ')}`, {
+          variant: 'warning',
+          autoHideDuration: 12000,
+        });
         return;
       }
       enqueueSnackbar(`${templateDisplayName(template)} template created`, {
@@ -683,24 +698,14 @@ export default function TemplateBrowserDialog() {
     }
   };
 
-  const templateNeedsTermsReview = useCallback(
-    (template: StudioTemplate) => {
-      const key = usagePolicyAcknowledgementKey(acknowledgementRequiredForTemplate(template));
-      return Boolean(key && !modelTermsAcknowledgements[key]);
-    },
-    [modelTermsAcknowledgements],
-  );
+  const templateNeedsTermsReview = (template: StudioTemplate) =>
+    modelUsageTerms.needsReview(acknowledgementRequiredForTemplate(template));
 
   const requestCreateFromTemplate = (template: StudioTemplate) => {
-    if (templateNeedsTermsReview(template)) {
-      setPendingTermsAction({ kind: 'create', template });
-      return;
-    }
-    void createFromTemplate(template);
+    modelUsageTerms.request('create', acknowledgementRequiredForTemplate(template), () => createFromTemplate(template));
   };
 
-  const pendingTermsTemplate = pendingTermsAction?.template ?? null;
-  const pendingTermsPolicies = pendingTermsTemplate ? acknowledgementRequiredForTemplate(pendingTermsTemplate) : [];
+  const pendingTermsPolicies = modelUsageTerms.pending?.policies ?? [];
 
   const installRepo = async (repoId: string, repair = false) => {
     setInstallingRepo(repoId);
@@ -715,24 +720,7 @@ export default function TemplateBrowserDialog() {
   };
 
   const requestInstallRepo = (template: StudioTemplate, repoId: string, repair = false) => {
-    if (templateNeedsTermsReview(template)) {
-      setPendingTermsAction({ kind: 'install', template, repoId, repair });
-      return;
-    }
-    void installRepo(repoId, repair);
-  };
-
-  const confirmUsageTerms = () => {
-    if (!pendingTermsAction) return;
-    const action = pendingTermsAction;
-    const key = usagePolicyAcknowledgementKey(pendingTermsPolicies);
-    if (key) acknowledgeModelTerms(key);
-    setPendingTermsAction(null);
-    if (action.kind === 'install') {
-      void installRepo(action.repoId, action.repair);
-      return;
-    }
-    void createFromTemplate(action.template);
+    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () => installRepo(repoId, repair));
   };
 
   const openSetup = () => {
@@ -985,11 +973,11 @@ export default function TemplateBrowserDialog() {
         </div>
       </ModiffDialog>
       <TemplateUsageTermsDialog
-        open={Boolean(pendingTermsAction)}
+        open={Boolean(modelUsageTerms.pending)}
         policies={pendingTermsPolicies}
-        action={pendingTermsAction?.kind === 'install' ? 'install' : 'create'}
-        onCancel={() => setPendingTermsAction(null)}
-        onConfirm={confirmUsageTerms}
+        action={modelUsageTerms.pending?.action ?? 'create'}
+        onCancel={modelUsageTerms.cancel}
+        onConfirm={modelUsageTerms.confirm}
       />
     </>
   );

@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
-import { workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import { workflowNodeAttentionBackendError, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -11,6 +12,11 @@ const LAYOUT_ALGORITHM = 'modiff-layered-v1';
 const LAYOUT_HORIZONTAL_GAP = 140;
 const LAYOUT_VERTICAL_GAP = 72;
 const LAYOUT_EPSILON = 0.01;
+const pairArgument = process.argv.find((argument) => argument.startsWith('--pair='));
+const requestedPair = pairArgument?.slice('--pair='.length) ?? null;
+if (requestedPair && !/^[A-Za-z\d_]+\|[a-z\d_]+$/.test(requestedPair)) {
+  throw new Error('The workflow pair must use --pair=ModelType|mode.');
+}
 const manifestPath = join(BACKEND_ROOT, 'data', 'workflow-library-manifest.json');
 if (!existsSync(manifestPath)) throw new Error('Workflow manifest is missing. Run npm run workflows:generate.');
 
@@ -47,65 +53,6 @@ function graphLayoutHash(graph) {
   return createHash('sha256')
     .update(JSON.stringify(graphLayoutSignature(graph)))
     .digest('hex');
-}
-
-const OUTPUT_NODE_KEYS = new Set([
-  'modules.Audio.Export',
-  'modules.Image.Preview',
-  'modules.Primitive.DataViewer',
-  'modules.Video.Export',
-  'modules.Video.ExportWithAudio',
-]);
-
-function verifyNoDeadWorkflowNodes(workflow, graph) {
-  const nodes = graph.nodes ?? [];
-  const edges = graph.edges ?? [];
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const incoming = new Map(nodes.map((node) => [node.id, []]));
-  const incident = new Set();
-  for (const edge of edges) {
-    if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) continue;
-    incoming.get(edge.target)?.push(edge.source);
-    incident.add(edge.source);
-    incident.add(edge.target);
-  }
-
-  const outputNodes = nodes.filter((node) => OUTPUT_NODE_KEYS.has(`${node?.data?.module}.${node?.data?.action}`));
-  if (outputNodes.length === 0) {
-    throw new Error(`${workflow.id} has no preview, export, or data-viewer output node.`);
-  }
-
-  const used = new Set(outputNodes.map((node) => node.id));
-  const pending = [...used];
-  while (pending.length > 0) {
-    const nodeId = pending.pop();
-    for (const sourceId of incoming.get(nodeId) ?? []) {
-      if (used.has(sourceId)) continue;
-      used.add(sourceId);
-      pending.push(sourceId);
-    }
-  }
-
-  const disabled = nodes.filter((node) => node?.data?.uiState?.disabled === true);
-  if (disabled.length > 0) {
-    throw new Error(
-      `${workflow.id} contains disabled nodes that cannot contribute to execution: ${disabled
-        .map((node) => node.id)
-        .join(', ')}.`,
-    );
-  }
-  const isolated = nodes.filter((node) => !incident.has(node.id));
-  if (isolated.length > 0) {
-    throw new Error(`${workflow.id} contains isolated nodes: ${isolated.map((node) => node.id).join(', ')}.`);
-  }
-  const unreachable = nodes.filter((node) => !used.has(node.id));
-  if (unreachable.length > 0) {
-    throw new Error(
-      `${workflow.id} contains nodes outside every output dependency path: ${unreachable
-        .map((node) => node.id)
-        .join(', ')}.`,
-    );
-  }
 }
 
 function verifyCanonicalLayout(workflow, graph, graphLayout) {
@@ -202,6 +149,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
       const params = node.data.params ?? {};
       const attentionBackend = params.attention_backend?.value;
       const device = params.device?.value;
+      const attentionError = workflowNodeAttentionBackendError(node);
+      if (attentionError) throw new Error(`${workflow.id} ${attentionError}.`);
       if (String(attentionBackend ?? '').startsWith('_native_') && String(device ?? '').startsWith('cpu')) {
         throw new Error(`${workflow.id} selects accelerator attention ${attentionBackend} on ${device}.`);
       }
@@ -209,11 +158,171 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
     const offloadError = workflowNodeDeviceOffloadError(node);
     if (offloadError) throw new Error(`${workflow.id} ${offloadError}.`);
   }
+  if (workflow.modelType === 'SpandrelImageUpscale') {
+    const upscalers = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.Spandrel' && node?.data?.action === 'Upscaler',
+    );
+    const upscaler = upscalers[0];
+    const params = upscaler?.data?.params ?? {};
+    const artifact = params.model_id?.value ?? params.model_id?.default;
+    const loadImage = (graph.nodes ?? []).find(
+      (node) => node?.data?.module === 'modules.Image' && node?.data?.action === 'Load',
+    );
+    const preview = (graph.nodes ?? []).find(
+      (node) => node?.data?.module === 'modules.Image' && node?.data?.action === 'Preview',
+    );
+    const hasInputRoute = (graph.edges ?? []).some(
+      (edge) =>
+        edge.source === loadImage?.id &&
+        edge.sourceHandle === 'image' &&
+        edge.target === upscaler?.id &&
+        edge.targetHandle === 'image',
+    );
+    const hasOutputRoute = (graph.edges ?? []).some(
+      (edge) =>
+        edge.source === upscaler?.id &&
+        edge.sourceHandle === 'output' &&
+        edge.target === preview?.id &&
+        edge.targetHandle === 'image',
+    );
+    if (
+      upscalers.length !== 1 ||
+      upscaler?.data?.studioRole !== 'imageUpscaler' ||
+      artifact?.source !== 'hub' ||
+      artifact?.value !== 'nateraw/real-esrgan/RealESRGAN_x2plus.pth' ||
+      artifact?.revision !== '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094' ||
+      artifact?.sha256 !== '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb' ||
+      artifact?.byteSize !== 67_061_725 ||
+      artifact?.license !== 'bsd-3-clause' ||
+      params.downscale?.default !== 1 ||
+      params.tile_size?.default !== 256 ||
+      params.tile_overlap?.default !== 32 ||
+      !workflow.pipelineClasses.includes('SpandrelImageUpscaleV1') ||
+      !workflow.requiredArtifacts.includes('nateraw/real-esrgan') ||
+      !hasInputRoute ||
+      !hasOutputRoute
+    ) {
+      throw new Error(`${workflow.id} image-upscale graph is missing its exact reviewed artifact or route.`);
+    }
+  }
   if (workflow.mediaKind === 'video') {
-    const pipelineNodes = (graph.nodes ?? []).filter(
+    const videoPipelineNodes = (graph.nodes ?? []).filter(
       (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'LoadPipeline',
     );
-    if (pipelineNodes.length === 0) throw new Error(`${workflow.id} video graph has no generic Diffusers pipeline.`);
+    const threeDPipelineNodes = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.DiffusersThreeD' && node?.data?.action === 'LoadPipeline',
+    );
+    const pipelineNodes = [...videoPipelineNodes, ...threeDPipelineNodes];
+    const modularModels = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.ModularDiffusers' && node?.data?.action === 'ModelsLoader',
+    );
+    const builtInVideoOperations = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'ProcessVideo',
+    );
+    const spandrelVideoUpscalers = (graph.nodes ?? []).filter(
+      (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'UpscaleVideo',
+    );
+    if (pipelineNodes.length === 0) {
+      if (builtInVideoOperations.length === 1) {
+        const operation = builtInVideoOperations[0];
+        if (
+          workflow.modelType !== 'BuiltinVideoOperation' ||
+          operation.data?.studioRole !== 'videoOperation' ||
+          operation.data?.params?.pipeline_class?.value !== 'BuiltinVideoOperationV1' ||
+          operation.data?.params?.operation?.value !== workflow.mode ||
+          !workflow.pipelineClasses.includes('BuiltinVideoOperationV1') ||
+          !workflow.requiredArtifacts.includes('builtin://modiff/video-operations/v1') ||
+          modularModels.length !== 0
+        ) {
+          throw new Error(`${workflow.id} built-in video graph is missing its exact bounded operation identity.`);
+        }
+      } else if (spandrelVideoUpscalers.length === 1) {
+        const upscaler = spandrelVideoUpscalers[0];
+        const params = upscaler.data?.params ?? {};
+        const artifact = params.model_id?.value ?? params.model_id?.default;
+        const exportNode = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'Export',
+        );
+        const hasUpscaleRoute = (graph.edges ?? []).some(
+          (edge) =>
+            edge.source === upscaler.id &&
+            edge.sourceHandle === 'video_out' &&
+            edge.target === exportNode?.id &&
+            edge.targetHandle === 'video',
+        );
+        if (
+          workflow.modelType !== 'SpandrelVideoUpscale' ||
+          workflow.mode !== 'video_upscale' ||
+          upscaler.data?.studioRole !== 'videoUpscaler' ||
+          params.pipeline_class?.value !== 'SpandrelVideoUpscaleV1' ||
+          params.operation?.value !== 'video_upscale' ||
+          artifact?.source !== 'hub' ||
+          artifact?.value !== 'nateraw/real-esrgan/RealESRGAN_x2plus.pth' ||
+          artifact?.revision !== '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094' ||
+          artifact?.sha256 !== '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb' ||
+          artifact?.byteSize !== 67_061_725 ||
+          artifact?.license !== 'bsd-3-clause' ||
+          !workflow.pipelineClasses.includes('SpandrelVideoUpscaleV1') ||
+          !workflow.requiredArtifacts.includes('nateraw/real-esrgan') ||
+          modularModels.length !== 0 ||
+          builtInVideoOperations.length !== 0 ||
+          !hasUpscaleRoute
+        ) {
+          throw new Error(`${workflow.id} video-upscale graph is missing its exact reviewed artifact or route.`);
+        }
+      } else {
+        if (modularModels.length !== 1) {
+          throw new Error(`${workflow.id} video graph has no reviewed Diffusers pipeline.`);
+        }
+        const models = modularModels[0];
+        const modelType = models.data.params?.model_type?.value;
+        const repository = models.data.params?.repo_id?.value;
+        const revision = models.data.params?.revision?.value;
+        if (
+          !workflow.pipelineClasses.includes(modelType) ||
+          repository?.source !== 'hub' ||
+          !workflow.requiredArtifacts.includes(repository.value) ||
+          !/^[0-9a-f]{40}$/.test(String(revision ?? ''))
+        ) {
+          throw new Error(`${workflow.id} modular video loader is missing its exact reviewed artifact identity.`);
+        }
+        const roleNodes = new Map((graph.nodes ?? []).map((node) => [node?.data?.studioRole, node.id]));
+        const route = [
+          ['models', 'text_encoders', 'prompt', 'text_encoders'],
+          ['models', 'image_encoder', 'imageEmbeddings', 'image_encoder'],
+          ['models', 'vae_out', 'imageEncode', 'vae'],
+          ['models', 'unet_out', 'denoise', 'unet'],
+          ['models', 'scheduler', 'denoise', 'scheduler'],
+          ['models', 'vae_out', 'denoise', 'vae'],
+          ['models', 'vae_out', 'decode', 'vae'],
+          ['loadImage', 'image', 'imageEmbeddings', 'image'],
+          ['loadImage', 'image', 'imageEncode', 'image'],
+          ['loadLastImage', 'image', 'imageEmbeddings', 'last_image'],
+          ['loadLastImage', 'image', 'imageEncode', 'last_image'],
+          ['prompt', 'embeddings', 'denoise', 'embeddings'],
+          ['imageEmbeddings', 'image_embeds', 'denoise', 'image_embeds'],
+          ['imageEmbeddings', 'route_state_out', 'imageEncode', 'route_state_in'],
+          ['imageEncode', 'image_condition_latents', 'denoise', 'image_condition_latents'],
+          ['imageEncode', 'route_state_out', 'denoise', 'route_state_in'],
+          ['denoise', 'latents', 'decode', 'latents'],
+          ['denoise', 'route_state_out', 'decode', 'route_state_in'],
+          ['decode', 'videos', 'videoExport', 'video'],
+        ];
+        for (const [sourceRole, sourceHandle, targetRole, targetHandle] of route) {
+          if (
+            !(graph.edges ?? []).some(
+              (edge) =>
+                edge.source === roleNodes.get(sourceRole) &&
+                edge.sourceHandle === sourceHandle &&
+                edge.target === roleNodes.get(targetRole) &&
+                edge.targetHandle === targetHandle,
+            )
+          ) {
+            throw new Error(`${workflow.id} modular video route is missing ${sourceRole}.${sourceHandle}.`);
+          }
+        }
+      }
+    }
     for (const pipeline of pipelineNodes) {
       const recipeEdge = (graph.edges ?? []).find(
         (edge) => edge.target === pipeline.id && edge.targetHandle === 'execution_recipe',
@@ -233,11 +342,234 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
       ) {
         throw new Error(`${workflow.id} video execution recipe has no component-selective quantization flow.`);
       }
+      if (pipeline.data.module === 'modules.DiffusersThreeD') {
+        const model = pipeline.data.params?.model_id?.value;
+        const pipelineClass = pipeline.data.params?.pipeline_class?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const generate = (graph.nodes ?? []).find(
+          (node) =>
+            node?.data?.module === 'modules.DiffusersThreeD' && node?.data?.action === 'GenerateRenderedArtifact',
+        );
+        const exportNode = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.Video' && node?.data?.action === 'Export',
+        );
+        const hasPipelineRoute = (graph.edges ?? []).some(
+          (edge) =>
+            edge.source === pipeline.id &&
+            edge.sourceHandle === 'pipeline' &&
+            edge.target === generate?.id &&
+            edge.targetHandle === 'pipeline',
+        );
+        const hasRenderedOrbitRoute = (graph.edges ?? []).some(
+          (edge) =>
+            edge.source === generate?.id &&
+            edge.sourceHandle === 'video' &&
+            edge.target === exportNode?.id &&
+            edge.targetHandle === 'video',
+        );
+        if (
+          !workflow.pipelineClasses.includes(pipelineClass) ||
+          model?.source !== 'hub' ||
+          !workflow.requiredArtifacts.includes(model.value) ||
+          !/^[0-9a-f]{40}$/.test(String(revision ?? '')) ||
+          pipeline.data.params?.mode?.value !== 'text_to_3d' ||
+          !hasPipelineRoute ||
+          !hasRenderedOrbitRoute
+        ) {
+          throw new Error(`${workflow.id} rendered-3D graph is missing its exact reviewed artifact or orbit route.`);
+        }
+        continue;
+      }
       const recipeParams = recipe.data.params ?? {};
       if (recipeParams.vae_slicing?.value !== true || typeof recipeParams.vae_tiling?.value !== 'boolean') {
         throw new Error(`${workflow.id} video execution recipe must enable VAE slicing and explicitly select tiling.`);
       }
       const pipelineClass = pipeline.data.params?.pipeline_class?.value;
+      const animateMotionArtifacts = {
+        AnimateDiffPipeline: {
+          repo: 'guoyww/animatediff-motion-adapter-v1-5-2',
+          revision: '6167b88ffe39b4441fdf2113e77b99a6f56b7906',
+        },
+        AnimateLCMPipeline: {
+          repo: 'wangfuyun/AnimateLCM',
+          revision: '3d4d00fc113225e1040f4d3bec504b6ec750c10c',
+        },
+      };
+      const animateMotion = animateMotionArtifacts[pipelineClass];
+      if (animateMotion) {
+        const base = pipeline.data.params?.model_id?.value;
+        const baseRevision = pipeline.data.params?.revision?.value;
+        const motion = pipeline.data.params?.motion_adapter_id?.value;
+        const motionRevision = pipeline.data.params?.motion_adapter_revision?.value;
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'stable-diffusion-v1-5/stable-diffusion-v1-5' ||
+          baseRevision !== '451f4fe16113bff5a5d2269ed5ad43b0592e9a14' ||
+          motion?.source !== 'hub' ||
+          motion.value !== animateMotion.repo ||
+          motionRevision !== animateMotion.revision ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          !workflow.requiredArtifacts.includes(motion.value) ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_tiling?.value !== false
+        ) {
+          throw new Error(`${workflow.id} AnimateDiff graph is missing its exact base, motion, or scheduler recipe.`);
+        }
+      }
+      if (pipelineClass === 'CogVideoXPipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'zai-org/CogVideoX-2b' ||
+          revision !== '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false
+        ) {
+          throw new Error(`${workflow.id} CogVideoX graph is missing its exact artifact or safe execution recipe.`);
+        }
+      }
+      if (pipelineClass === 'AllegroPipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'rhymes-ai/Allegro' ||
+          revision !== 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 1280 ||
+          generateParams.height?.value !== 720 ||
+          generateParams.num_frames?.value !== 88 ||
+          generateParams.num_inference_steps?.value !== 100 ||
+          generateParams.guidance_scale?.value !== 7.5 ||
+          generateParams.max_sequence_length?.value !== 512
+        ) {
+          throw new Error(`${workflow.id} Allegro graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
+      if (pipelineClass === 'LattePipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'maxin-cn/Latte-1' ||
+          revision !== '0653024365272f061fc44d1078134df22842b687' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 512 ||
+          generateParams.height?.value !== 512 ||
+          generateParams.num_frames?.value !== 16 ||
+          generateParams.num_inference_steps?.value !== 50 ||
+          generateParams.guidance_scale?.value !== 7.5 ||
+          generateParams.max_sequence_length?.value !== 120
+        ) {
+          throw new Error(`${workflow.id} Latte graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
+      if (pipelineClass === 'MochiPipeline') {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'genmo/mochi-1-preview' ||
+          revision !== '14be5fcea23095ed330cb214647916a451e38b6e' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 848 ||
+          generateParams.height?.value !== 480 ||
+          generateParams.num_frames?.value !== 31 ||
+          generateParams.num_inference_steps?.value !== 64 ||
+          generateParams.guidance_scale?.value !== 4.5 ||
+          generateParams.max_sequence_length?.value !== 256
+        ) {
+          throw new Error(`${workflow.id} Mochi graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
+      if (['SanaVideoPipeline', 'SanaImageToVideoPipeline'].includes(pipelineClass)) {
+        const base = pipeline.data.params?.model_id?.value;
+        const revision = pipeline.data.params?.revision?.value;
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        const imageConditioned = pipelineClass === 'SanaImageToVideoPipeline';
+        const loadImage = (graph.nodes ?? []).find((node) => node?.data?.studioRole === 'loadImage');
+        const imageEdge = (graph.edges ?? []).some(
+          (edge) =>
+            edge?.source === loadImage?.id &&
+            edge?.target === generate?.id &&
+            edge?.targetHandle === 'reference_images',
+        );
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'Efficient-Large-Model/SANA-Video_2B_480p_diffusers' ||
+          revision !== 'db5f398b13ca086d09a50ce156c20527773841b1' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          quantizationParams.components?.value !== '' ||
+          recipeParams.offload_mode?.value !== 'sequential_cpu' ||
+          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_components?.value !== '' ||
+          recipeParams.vae_slicing?.value !== true ||
+          recipeParams.vae_tiling?.value !== false ||
+          generateParams.width?.value !== 832 ||
+          generateParams.height?.value !== 480 ||
+          generateParams.num_frames?.value !== 81 ||
+          generateParams.num_inference_steps?.value !== 50 ||
+          generateParams.guidance_scale?.value !== 6 ||
+          generateParams.max_sequence_length?.value !== 300 ||
+          Boolean(loadImage && imageEdge) !== imageConditioned
+        ) {
+          throw new Error(`${workflow.id} SANA-Video graph is missing its exact artifact or bounded native recipe.`);
+        }
+      }
+      const generateNodes = (graph.nodes ?? []).filter(
+        (node) =>
+          node?.data?.module === 'modules.DiffusersVideo' &&
+          ['Generate', 'GenerateVideoAudio'].includes(node?.data?.action),
+      );
+      for (const generate of generateNodes) {
+        if (generate.data.params?.mode?.value !== workflow.mode) {
+          throw new Error(`${workflow.id} video generator ${generate.id} does not preserve mode ${workflow.mode}.`);
+        }
+      }
       if (['WanPipeline', 'Wan22Pipeline', 'WanTI2VPipeline'].includes(pipelineClass)) {
         if (
           recipeParams.attention_backend?.value !== '_native_flash' ||
@@ -271,6 +603,45 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
         throw new Error(
           `${workflow.id} generic Diffusers pipeline is missing its runtime recipe or quantization flow.`,
         );
+      }
+      if (
+        workflow.mediaKind === 'image' &&
+        pipeline.data.params?.pipeline_class?.value === 'HunyuanDiTControlNetPipeline'
+      ) {
+        const pipelineParams = pipeline.data.params ?? {};
+        const recipeParams = recipe.data.params ?? {};
+        const quantizationParams = quantization.data.params ?? {};
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersImage' && node?.data?.action === 'ControlGenerate',
+        );
+        const generateParams = generate?.data?.params ?? {};
+        const preprocessor = (graph.nodes ?? []).find((node) => node?.data?.studioRole === 'controlPreprocessor');
+        const preprocessorParams = preprocessor?.data?.params ?? {};
+        const base = pipelineParams.model_id?.value;
+        const control = pipelineParams.conditioning_model_id?.value;
+        if (
+          base?.source !== 'hub' ||
+          base.value !== 'Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled' ||
+          pipelineParams.revision?.value !== 'ba991d1546d8c50936c4c16398ed0a87b9b99fb1' ||
+          control?.source !== 'hub' ||
+          control.value !== 'Tencent-Hunyuan/HunyuanDiT-v1.2-ControlNet-Diffusers-Canny' ||
+          pipelineParams.conditioning_revision?.value !== 'b2d21391ebcf78939344cfec84891932f9d53aa0' ||
+          pipelineParams.dtype?.value !== 'float16' ||
+          !workflow.requiredArtifacts.includes(base.value) ||
+          !workflow.requiredArtifacts.includes(control.value) ||
+          JSON.stringify(quantizationParams.components?.value) !== '["transformer"]' ||
+          recipeParams.offload_mode?.value !== 'model_cpu' ||
+          generateParams.width?.value !== 1024 ||
+          generateParams.height?.value !== 1024 ||
+          generateParams.num_inference_steps?.value !== 50 ||
+          generateParams.guidance_scale?.value !== 6 ||
+          generateParams.conditioning_scale?.value !== 1 ||
+          generateParams.max_sequence_length?.value !== 256 ||
+          preprocessorParams.low_threshold?.value !== 0.1 ||
+          preprocessorParams.high_threshold?.value !== 0.2
+        ) {
+          throw new Error(`${workflow.id} Hunyuan-DiT ControlNet graph is missing its exact safe assembly or recipe.`);
+        }
       }
     }
   }
@@ -350,12 +721,26 @@ const layoutModuleServer = await createServer({
   configFile: false,
   logLevel: 'silent',
   optimizeDeps: { entries: [], noDiscovery: true },
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
   appType: 'custom',
 });
 try {
   const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
-  for (const workflow of manifest.workflows) verifyWorkflow(workflow, 'supported', graphLayout);
+  const selectedSupported = requestedPair
+    ? manifest.workflows.filter((workflow) => `${workflow.modelType}|${workflow.mode}` === requestedPair)
+    : manifest.workflows;
+  const selectedExperimental = requestedPair
+    ? (manifest.experimentalWorkflows ?? []).filter(
+        (workflow) => `${workflow.modelType}|${workflow.mode}` === requestedPair,
+      )
+    : (manifest.experimentalWorkflows ?? []);
+  const selectedCanonicalCount = [...selectedSupported, ...selectedExperimental].filter(
+    (workflow) => !workflow.variant,
+  ).length;
+  if (requestedPair && selectedCanonicalCount !== 1) {
+    throw new Error(`The requested canonical workflow pair is not unique: ${requestedPair}.`);
+  }
+  for (const workflow of selectedSupported) verifyWorkflow(workflow, 'supported', graphLayout);
 
   const expectedExperimentalCount = Number(manifest.experimentalWorkflowCount ?? 0);
   if (!Number.isInteger(expectedExperimentalCount) || expectedExperimentalCount < 0) {
@@ -369,10 +754,10 @@ try {
       `Expected ${expectedExperimentalCount} qualified experimental workflows, found ${manifest.experimentalWorkflows?.length ?? 0}.`,
     );
   }
-  for (const workflow of manifest.experimentalWorkflows) verifyWorkflow(workflow, 'experimental', graphLayout);
+  for (const workflow of selectedExperimental) verifyWorkflow(workflow, 'experimental', graphLayout);
 
   process.stdout.write(
-    `Verified ${manifest.workflows.length} supported and ${manifest.experimentalWorkflows.length} qualified experimental portable workflows with deterministic canonical layouts.\n`,
+    `Verified ${selectedSupported.length} supported and ${selectedExperimental.length} qualified experimental portable workflows with deterministic canonical layouts.\n`,
   );
 } finally {
   await layoutModuleServer.close();

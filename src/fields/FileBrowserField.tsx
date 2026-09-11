@@ -15,6 +15,7 @@ import { GraphControlInput, GraphIconButton } from '../ui/GraphControls';
 import { bundledPublicAssetUrl } from '../studio/outputUtils';
 import { inferImportedMediaKind, mediaAcceptString } from '../studio/mediaImport';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { MEDIA_PLACEHOLDER_DATA_URL } from '../utils/mediaViewer';
 import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
@@ -30,8 +31,12 @@ export default function FileBrowserField(props: FieldProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setFileBrowserOpener = useSettingsStore((state) => state.setFileBrowserOpener);
   const [isDropActive, setIsDropActive] = useState(false);
+  const [uploadCount, setUploadCount] = useState(0);
+  const uploadInProgress = useRef(false);
   const updateNodeInternals = useUpdateNodeInternals();
   const currentValues = asStringArray(props.value);
+  const currentValuesRef = useRef(currentValues);
+  currentValuesRef.current = currentValues;
   const currentPath = currentValues.length > 0 ? String(currentValues[0]).split(/[/\\]/).slice(0, -1).join('/') : '.';
 
   const fieldTypes = asStringArray(props.fieldOptions?.fileTypes);
@@ -75,9 +80,12 @@ export default function FileBrowserField(props: FieldProps) {
   const displayValue = fieldValue.filter((file: string) => isImage(file) || isVideo(file) || isAudio(file)) || [];
   const isTextFieldEditable = props.fieldOptions?.editable !== false;
 
-  async function uploadFile(file: File) {
+  async function uploadFiles(candidates: File[]) {
+    if (props.disabled || uploadInProgress.current) return;
+    const validFiles = candidates.filter((file) => inferImportedMediaKind(file, allowedMediaKinds));
+    const first = validFiles[0];
+    const mediaKind = first && inferImportedMediaKind(first, allowedMediaKinds);
     const context = captureWorkflowOperationContext();
-    const mediaKind = inferImportedMediaKind(file, allowedMediaKinds);
     if (!mediaKind) {
       enqueueSnackbar('That file is not a supported media type for this input.', {
         variant: 'error',
@@ -85,19 +93,26 @@ export default function FileBrowserField(props: FieldProps) {
       });
       return;
     }
+    // Video/audio inputs remain single. Multiple images form one transaction:
+    // never commit each awaited file against a stale render's currentValues.
+    const append = multiple && mediaKind === 'image';
+    const files = append
+      ? validFiles.filter((file) => inferImportedMediaKind(file, allowedMediaKinds) === 'image')
+      : [first!];
     const fileType = mediaKind === 'image' ? 'images' : mediaKind === 'audio' ? 'audio' : 'videos';
+    uploadInProgress.current = true;
+    setUploadCount(files.length);
     try {
-      const newFiles = await uploadBackendFile(file, fileType);
-      assertWorkflowOperationContext(context, { includeForm: false });
-      let updatedFiles;
-      if (fileType === 'videos' || fileType === 'audio') {
-        // Video and audio inputs are always single.
-        updatedFiles = newFiles;
-      } else {
-        updatedFiles = multiple
-          ? Array.from(new Set([...currentValues.filter((f: string) => f), ...newFiles]))
-          : newFiles;
+      const newFiles: string[] = [];
+      for (const file of files) {
+        assertWorkflowOperationContext(context, { includeForm: false });
+        newFiles.push(...(await uploadBackendFile(file, fileType)));
       }
+      assertWorkflowOperationContext(context, { includeForm: false });
+      const updatedFiles = append
+        ? Array.from(new Set([...currentValuesRef.current.filter(Boolean), ...newFiles]))
+        : newFiles;
+      currentValuesRef.current = updatedFiles;
       props.updateStore(props.fieldKey, updatedFiles);
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
@@ -105,6 +120,9 @@ export default function FileBrowserField(props: FieldProps) {
         variant: 'error',
         autoHideDuration: 6000,
       });
+    } finally {
+      uploadInProgress.current = false;
+      setUploadCount(0);
     }
   }
 
@@ -112,37 +130,14 @@ export default function FileBrowserField(props: FieldProps) {
     e.preventDefault();
     e.stopPropagation();
     setIsDropActive(false);
-    const files = [...e.dataTransfer.files].filter((file) => inferImportedMediaKind(file, allowedMediaKinds));
-    if (files.length > 0) {
-      const firstFile = files[0];
-      if (!firstFile) return;
-      const firstKind = inferImportedMediaKind(firstFile, allowedMediaKinds);
-      if (firstKind === 'video' || firstKind === 'audio') {
-        await uploadFile(firstFile);
-      } else {
-        // Handle multiple image uploads if enabled
-        if (multiple && allowImages) {
-          //const currentImages = props.value?.filter(isImage) || [];
-          const newImages = files.map((f) => f);
-          for (const file of newImages) {
-            await uploadFile(file);
-          }
-        } else {
-          await uploadFile(firstFile);
-        }
-      }
-    }
+    if (e.dataTransfer.files.length) await uploadFiles([...e.dataTransfer.files]);
   }
 
   async function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const file = files.item(0);
-      if (!file) return;
-      if (inferImportedMediaKind(file, allowedMediaKinds)) {
-        await uploadFile(file);
-      }
-    }
+    const files = Array.from(e.currentTarget.files ?? []);
+    // Allow retry/reselection of the same files after success or failure.
+    e.currentTarget.value = '';
+    if (files.length) await uploadFiles(files);
   }
 
   const handleMediaLoad = () => {
@@ -213,7 +208,7 @@ export default function FileBrowserField(props: FieldProps) {
           label="Open file browser"
           size="dense"
           className="ml-1 shrink-0 hover:text-hf-yellow"
-          disabled={props.disabled}
+          disabled={props.disabled || uploadCount > 0}
           onClick={() => {
             const context = captureWorkflowOperationContext();
             setFileBrowserOpener({
@@ -238,6 +233,7 @@ export default function FileBrowserField(props: FieldProps) {
         type="file"
         accept={getAcceptString()}
         hidden
+        disabled={props.disabled || uploadCount > 0}
         onChange={handleFileInputChange}
         multiple={multiple && allowImages}
       />
@@ -245,7 +241,7 @@ export default function FileBrowserField(props: FieldProps) {
       {/** File drop area */}
       <FileDropFrame
         activationLabel="Upload files"
-        disabled={props.disabled}
+        disabled={props.disabled || uploadCount > 0}
         onClick={() => fileInputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -259,6 +255,11 @@ export default function FileBrowserField(props: FieldProps) {
         isActive={isDropActive}
         gridColumns={getGridColumns(displayValue.length)}
       >
+        {uploadCount > 0 ? (
+          <span role="status" className="text-sm text-modiff-subtle-text">
+            Uploading {uploadCount} {uploadCount === 1 ? 'file' : 'files'}…
+          </span>
+        ) : null}
         {displayValue && displayValue.length > 0 ? (
           displayValue.map((file: string, index: number) => (
             <div key={index} className="relative">
@@ -269,8 +270,7 @@ export default function FileBrowserField(props: FieldProps) {
                   alt={file}
                   onLoad={handleMediaLoad}
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src =
-                      "data:image/svg+xml;utf8,<svg width='512' height='512' xmlns='http://www.w3.org/2000/svg'><defs><pattern id='checker' width='32' height='32' patternUnits='userSpaceOnUse'><rect width='32' height='32' fill='%23ffffff11'/><rect x='0' y='0' width='16' height='16' fill='%23ffffff33'/><rect x='16' y='16' width='16' height='16' fill='%23ffffff33'/></pattern></defs><rect width='512' height='512' fill='url(%23checker)'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='24' fill='%23FAFAFA' font-family='IBM Plex Mono, monospace'>Image not found</text></svg>";
+                    (e.currentTarget as HTMLImageElement).src = MEDIA_PLACEHOLDER_DATA_URL;
                   }}
                 />
               ) : isVideo(file) ? (
@@ -287,8 +287,7 @@ export default function FileBrowserField(props: FieldProps) {
                     handleMediaLoad();
                   }}
                   onError={(e) => {
-                    (e.currentTarget as HTMLVideoElement).poster =
-                      "data:image/svg+xml;utf8,<svg width='512' height='512' xmlns='http://www.w3.org/2000/svg'><defs><pattern id='checker' width='32' height='32' patternUnits='userSpaceOnUse'><rect width='32' height='32' fill='%23ffffff11'/><rect x='0' y='0' width='16' height='16' fill='%23ffffff33'/><rect x='16' y='16' width='16' height='16' fill='%23ffffff33'/></pattern></defs><rect width='512' height='512' fill='url(%23checker)'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='24' fill='%23FAFAFA' font-family='IBM Plex Mono, monospace'>Video not found</text></svg>";
+                    (e.currentTarget as HTMLVideoElement).poster = MEDIA_PLACEHOLDER_DATA_URL;
                   }}
                 />
               ) : isAudio(file) ? (

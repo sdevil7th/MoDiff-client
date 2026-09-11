@@ -1,7 +1,8 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
+import { createContext, useContext, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
 import { cx } from '../utils/classNames';
 
 const indentClasses = ['pl-4', 'pl-8', 'pl-12', 'pl-16', 'pl-20', 'pl-24', 'pl-28', 'pl-32'] as const;
+const TreePanelContext = createContext(false);
 
 const treeOpenSurfaceClasses = [
   'bg-modiff-surface-hover/25',
@@ -32,12 +33,13 @@ export function TreeButtonRow({
   type = 'button',
   ...props
 }: TreeButtonRowProps) {
+  const insidePanel = useContext(TreePanelContext);
   return (
     <button
       type={type}
       className={cx(
         'flex min-h-8 min-w-0 w-full items-center gap-2 overflow-hidden rounded-modiff-compact pr-2 text-left text-modiff-control text-modiff-text transition hover:bg-modiff-surface-hover active:bg-modiff-surface-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-modiff-focus',
-        indentClass(level),
+        insidePanel ? 'pl-2' : indentClass(level),
         open && openClass(level),
         className,
       )}
@@ -55,11 +57,12 @@ export type TreeStaticRowProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 export function TreeStaticRow({ children, className, level = 0, open = false, ...props }: TreeStaticRowProps) {
+  const insidePanel = useContext(TreePanelContext);
   return (
     <div
       className={cx(
         'flex min-h-8 min-w-0 w-full items-center gap-2 overflow-hidden rounded-modiff-compact pr-2 text-sm text-modiff-text',
-        indentClass(level),
+        insidePanel ? 'pl-2' : indentClass(level),
         open && openClass(level),
         className,
       )}
@@ -80,14 +83,16 @@ export function TreeChildrenPanel({
   level?: number;
 }) {
   return (
-    <div
-      className={cx(
-        'mb-1 ml-2 mr-1 rounded-modiff-compact border-l border-modiff-border py-1 pl-1',
-        openClass(level),
-        className,
-      )}
-    >
-      {children}
-    </div>
+    <TreePanelContext.Provider value={true}>
+      <div
+        data-tree-children-level={level}
+        className={cx(
+          'mb-1 ml-2 mr-1 rounded-modiff-compact border-l border-dashed border-modiff-border-subtle py-1 pl-2 transition-colors hover:border-modiff-subtle-text focus-within:border-modiff-subtle-text',
+          className,
+        )}
+      >
+        {children}
+      </div>
+    </TreePanelContext.Provider>
   );
 }

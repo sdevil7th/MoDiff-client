@@ -5,9 +5,10 @@ import fieldAction from './fieldAction';
 export function useInitialFieldAction(props: FieldProps, value: unknown = props.value) {
   const latestRef = useRef({ props, value });
   const activeContractRef = useRef('');
-  const contractKey = props.onChange
-    ? `${props.nodeId}\u0000${props.module}\u0000${props.action}\u0000${props.fieldKey}`
-    : '';
+  const contractKey =
+    props.onChange && props.fieldOptions?.suppressInitialFieldAction !== true
+      ? `${props.nodeId}\u0000${props.module}\u0000${props.action}\u0000${props.fieldKey}`
+      : '';
   latestRef.current = { props, value };
 
   useEffect(() => {

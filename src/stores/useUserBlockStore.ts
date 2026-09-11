@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import config from '../../app.config';
+import { normalizeBlockDefinitionV2, type BlockDefinitionV2 } from '../studio/blockSchemaV2';
+import { blockDefinitionIsUserOwnedV2 } from '../studio/blockDefinitionPersistenceV2';
 import type { UserBlockDefinition } from '../studio/types';
 import { normalizeUserBlockDefinition } from '../studio/userBlocks';
 import { enqueueSnackbar } from '../ui/snackbar';
@@ -7,14 +9,18 @@ import { createLatestRequestGate, formatRequestError, requestJson } from '../uti
 
 type UserBlockStore = {
   blocks: UserBlockDefinition[];
+  blockDefinitionsV2: BlockDefinitionV2[];
   loaded: boolean;
   error: string | null;
   revision: number;
   fetchBlocks: () => Promise<void>;
   saveBlock: (block: UserBlockDefinition) => Promise<UserBlockDefinition>;
+  saveBlockDefinitionV2: (definition: BlockDefinitionV2) => Promise<BlockDefinitionV2>;
   upsertLocalBlock: (block: UserBlockDefinition) => void;
+  upsertLocalBlockDefinitionV2: (definition: BlockDefinitionV2) => void;
   deleteBlock: (id: string) => Promise<void>;
   setBlocks: (blocks: UserBlockDefinition[]) => void;
+  setBlockDefinitionsV2: (definitions: BlockDefinitionV2[]) => void;
 };
 
 const blockFetchGate = createLatestRequestGate<'blocks'>();
@@ -54,9 +60,18 @@ function responseRecord(value: unknown, fallbackMessage: string) {
 function parseBlocksResponse(value: unknown) {
   const payload = responseRecord(value, 'Could not load user blocks.');
   if (!Array.isArray(payload.blocks)) throw new Error('The user-block response has no blocks array.');
-  const blocks = safeBlocks(payload.blocks);
-  if (blocks.length !== payload.blocks.length) throw new Error('The user-block response contains an invalid block.');
-  return blocks;
+  const blocks: UserBlockDefinition[] = [];
+  const blockDefinitionsV2: BlockDefinitionV2[] = [];
+  payload.blocks.forEach((item) => {
+    if (isRecord(item) && item.schemaVersion === 2) {
+      blockDefinitionsV2.push(normalizeBlockDefinitionV2(item));
+      return;
+    }
+    const block = safeBlocks([item])[0];
+    if (!block) throw new Error('The user-block response contains an invalid block.');
+    blocks.push(block);
+  });
+  return { blocks, blockDefinitionsV2 };
 }
 
 function parseSavedBlockResponse(value: unknown) {
@@ -64,6 +79,11 @@ function parseSavedBlockResponse(value: unknown) {
   const block = safeBlocks([payload.block])[0];
   if (!block) throw new Error('The save response contains an invalid user block.');
   return block;
+}
+
+function parseSavedBlockDefinitionV2Response(value: unknown) {
+  const payload = responseRecord(value, 'Could not save Block V2 definition.');
+  return normalizeBlockDefinitionV2(payload.block);
 }
 
 function beginBlockMutation(id: string) {
@@ -79,6 +99,7 @@ function beginBlockMutation(id: string) {
 
 export const useUserBlockStore = create<UserBlockStore>()((set, get) => ({
   blocks: [],
+  blockDefinitionsV2: [],
   loaded: false,
   error: null,
   revision: 0,
@@ -86,6 +107,14 @@ export const useUserBlockStore = create<UserBlockStore>()((set, get) => ({
   setBlocks: (blocks) =>
     set((state) => ({
       blocks: blocks.map(normalizeUserBlockDefinition),
+      loaded: true,
+      error: null,
+      revision: state.revision + 1,
+    })),
+
+  setBlockDefinitionsV2: (definitions) =>
+    set((state) => ({
+      blockDefinitionsV2: definitions.map(normalizeBlockDefinitionV2),
       loaded: true,
       error: null,
       revision: state.revision + 1,
@@ -102,16 +131,30 @@ export const useUserBlockStore = create<UserBlockStore>()((set, get) => ({
       };
     }),
 
+  upsertLocalBlockDefinitionV2: (definition) =>
+    set((state) => {
+      const normalized = normalizeBlockDefinitionV2(definition);
+      return {
+        blockDefinitionsV2: [
+          normalized,
+          ...state.blockDefinitionsV2.filter((item) => item.definitionId !== normalized.definitionId),
+        ],
+        loaded: true,
+        error: null,
+        revision: state.revision + 1,
+      };
+    }),
+
   fetchBlocks: async () => {
     const ticket = blockFetchGate.begin('blocks');
     const revision = get().revision;
     try {
-      const blocks = await requestJson(`${config.serverAddress}/studio/blocks`, {
+      const response = await requestJson(`${config.serverAddress}/studio/blocks`, {
         signal: ticket.signal,
         parse: parseBlocksResponse,
       });
       if (!ticket.isLatest() || get().revision !== revision) return;
-      set((state) => ({ blocks, loaded: true, error: null, revision: state.revision + 1 }));
+      set((state) => ({ ...response, loaded: true, error: null, revision: state.revision + 1 }));
     } catch (error) {
       if (!ticket.isLatest()) return;
       set({ loaded: true, error: formatRequestError(error, 'Could not load user blocks.') });
@@ -152,11 +195,48 @@ export const useUserBlockStore = create<UserBlockStore>()((set, get) => ({
     }
   },
 
+  saveBlockDefinitionV2: async (definition) => {
+    const normalizedDefinition = normalizeBlockDefinitionV2(definition);
+    if (!blockDefinitionIsUserOwnedV2(normalizedDefinition)) {
+      throw new Error('Registered catalog definitions cannot be saved or overwritten through User Nodes.');
+    }
+    const id = normalizedDefinition.definitionId;
+    const mutation = beginBlockMutation(id);
+    const previousDefinition = get().blockDefinitionsV2.find((item) => item.definitionId === id);
+    get().upsertLocalBlockDefinitionV2(normalizedDefinition);
+    try {
+      const saved = await requestJson(`${config.serverAddress}/studio/blocks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(normalizedDefinition),
+        parse: parseSavedBlockDefinitionV2Response,
+      });
+      if (mutation.isLatest()) get().upsertLocalBlockDefinitionV2(saved);
+      return saved;
+    } catch (error) {
+      const message = formatRequestError(error, 'Could not save Block V2 definition.');
+      if (mutation.isLatest()) {
+        set((state) => ({
+          blockDefinitionsV2: previousDefinition
+            ? [previousDefinition, ...state.blockDefinitionsV2.filter((item) => item.definitionId !== id)]
+            : state.blockDefinitionsV2.filter((item) => item.definitionId !== id),
+          error: message,
+          revision: state.revision + 1,
+        }));
+      }
+      throw error;
+    } finally {
+      mutation.finish();
+    }
+  },
+
   deleteBlock: async (id) => {
     const mutation = beginBlockMutation(id);
     const previousBlock = get().blocks.find((item) => item.id === id);
+    const previousDefinitionV2 = get().blockDefinitionsV2.find((item) => item.definitionId === id);
     set((state) => ({
       blocks: state.blocks.filter((item) => item.id !== id),
+      blockDefinitionsV2: state.blockDefinitionsV2.filter((item) => item.definitionId !== id),
       revision: state.revision + 1,
     }));
     try {
@@ -173,6 +253,10 @@ export const useUserBlockStore = create<UserBlockStore>()((set, get) => ({
             previousBlock && !state.blocks.some((item) => item.id === id)
               ? [previousBlock, ...state.blocks]
               : state.blocks,
+          blockDefinitionsV2:
+            previousDefinitionV2 && !state.blockDefinitionsV2.some((item) => item.definitionId === id)
+              ? [previousDefinitionV2, ...state.blockDefinitionsV2]
+              : state.blockDefinitionsV2,
           revision: state.revision + 1,
           error: message,
         }));

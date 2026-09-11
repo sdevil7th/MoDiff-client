@@ -171,26 +171,45 @@ export function ModiffPopover({
       gap,
       collisionPadding,
     );
-    setPosition({ ...next, ready: true });
+    setPosition((current) =>
+      current.ready && current.left === next.left && current.top === next.top ? current : { ...next, ready: true },
+    );
   }, [anchor, anchorRef, collisionPadding, gap, open, placement]);
 
   useLayoutEffect(() => {
     if (!open) {
-      setPosition((current) => ({ ...current, ready: false }));
+      setPosition((current) => (current.ready ? { ...current, ready: false } : current));
       return;
     }
     updatePosition();
-    const frame = requestAnimationFrame(updatePosition);
+    let frame: number | null = null;
+    let active = true;
+    const schedulePosition = () => {
+      if (!active || frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (active) updatePosition();
+      });
+    };
+    schedulePosition();
     const observer =
-      typeof ResizeObserver === 'undefined' || !panelRef.current ? null : new ResizeObserver(updatePosition);
-    if (panelRef.current) observer?.observe(panelRef.current);
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
+      typeof ResizeObserver === 'undefined' || !panelRef.current ? null : new ResizeObserver(schedulePosition);
+    // Restoring focus after a node dialog can mount this shallow portal while
+    // React Flow is delivering deeper node measurements. Registering it in
+    // that delivery itself creates undelivered notifications, even when the
+    // observer callback already defers its writes.
+    const observeFrame = requestAnimationFrame(() => {
+      if (active && panelRef.current) observer?.observe(panelRef.current);
+    });
+    window.addEventListener('resize', schedulePosition);
+    window.addEventListener('scroll', schedulePosition, true);
     return () => {
-      cancelAnimationFrame(frame);
+      active = false;
+      cancelAnimationFrame(observeFrame);
+      if (frame !== null) cancelAnimationFrame(frame);
       observer?.disconnect();
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', schedulePosition);
+      window.removeEventListener('scroll', schedulePosition, true);
     };
   }, [open, updatePosition]);
 

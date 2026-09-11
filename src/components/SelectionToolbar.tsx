@@ -1,3 +1,4 @@
+import { moveBlockSelectionPreparedV2, topLevelBlockSelectionV2 } from '../studio/blockSelectionMovesV2';
 import {
   forwardRef,
   useCallback,
@@ -16,12 +17,14 @@ import {
   Copy,
   EllipsisVertical,
   Files,
+  LogOut,
   Maximize2,
   Minimize2,
   Play,
   Power,
   RefreshCcw,
   Repeat2,
+  Save,
   Trash2,
   TriangleAlert,
   Ungroup,
@@ -32,13 +35,16 @@ import { useFlowStore } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { isUserBlockExpandedInstance } from '../studio/userBlocks';
+import { isHuggingFaceClusterExpanded } from '../studio/huggingFaceClusterGraph';
 import { coordinateGraphRun } from '../studio/runCoordinator';
+import { prepareHuggingFaceClustersForRun } from '../studio/huggingFaceClusterPreparation';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { cx } from '../utils/classNames';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { GraphIconButton } from '../ui/GraphControls';
 import { ModiffMenuAction, ModiffMenuRoot, ModiffMenuSurface, ModiffMenuTrigger } from '../ui';
 import { deleteNodeCache } from '../utils/serverActions';
+import BlockSaveDialogV2 from './BlockSaveDialogV2';
 
 const TOOLBAR_MARGIN = 8;
 const TOOLBAR_SELECTION_GAP = 12;
@@ -102,12 +108,15 @@ export function SelectionToolbar({
   const [layoutRevision, setLayoutRevision] = useState(0);
   const viewport = useViewport();
   const { flowToScreenPosition, getNodesBounds } = useReactFlow<CustomNodeType>();
+  const [saveNodeId, setSaveNodeId] = useState<string | null>(null);
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const removeNodes = useFlowStore((state) => state.removeNodes);
   const duplicateNode = useFlowStore((state) => state.duplicateNode);
   const toggleNodeCollapsed = useFlowStore((state) => state.toggleNodeCollapsed);
   const toggleUserBlockExpanded = useFlowStore((state) => state.toggleUserBlockExpanded);
+  const toggleHuggingFaceClusterExpanded = useFlowStore((state) => state.toggleHuggingFaceClusterExpanded);
+  const toggleBlockContainerExpandedV2 = useFlowStore((state) => state.toggleBlockContainerExpandedV2);
   const setNodeUiState = useFlowStore((state) => state.setNodeUiState);
   const resetNodeSize = useFlowStore((state) => state.resetNodeSize);
   const loopNodes = useFlowStore((state) => state.loopNodes);
@@ -120,27 +129,69 @@ export function SelectionToolbar({
     [selectedNodes],
   );
   const singleNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
-  const singleContainer = singleNode?.data.type === 'group' || singleNode?.data.type === 'loop' ? singleNode : null;
-  const singleActionNode = singleNode?.data.type !== 'group' && singleNode?.data.type !== 'loop' ? singleNode : null;
-  const isUserBlock = singleActionNode?.data.type === 'block';
-  const isBlockExpanded = Boolean(
-    isUserBlock && singleActionNode && isUserBlockExpandedInstance({ nodes, edges: [] }, singleActionNode.id),
+  const replacementSource =
+    selectedNodes.length === 2
+      ? selectedNodes.find((node) => node.data.type === 'custom' && !node.parentId && !node.data.blockProjectionOwnerId)
+      : undefined;
+  const replacementTarget = replacementSource
+    ? selectedNodes.find((node) => node.data.blockProjectionKind === 'internal' && !node.data.blockProjectionContainer)
+    : undefined;
+  const moveSelection = topLevelBlockSelectionV2(
+    nodes,
+    selectedNodes.map((node) => node.id),
   );
+  const canMoveOut =
+    moveSelection.length > 0 &&
+    moveSelection.every(
+      (node) =>
+        (node.data.blockProjectionOwnerId && node.data.blockProjectionKind === 'internal') ||
+        node.data.userBlockInstanceId ||
+        (node.data.huggingFaceClusterRole === 'execution' && node.parentId),
+    );
+  const singleContainer = singleNode?.data.type === 'group' || singleNode?.data.type === 'loop' ? singleNode : null;
+  const singleProjectedModular =
+    singleNode?.data.blockProjectionKind === 'internal' &&
+    (singleNode.data.blockProjectionModular === true || singleNode.data.type === 'group') &&
+    singleNode.data.blockProjectionOwnerId &&
+    singleNode.data.blockProjectionNodeId
+      ? singleNode
+      : null;
+  const singleActionNode =
+    !singleProjectedModular && singleNode?.data.type !== 'group' && singleNode?.data.type !== 'loop'
+      ? singleNode
+      : null;
+  const isUserBlock = singleActionNode?.data.type === 'block';
+  const isHuggingFaceCluster = singleActionNode?.data.huggingFaceClusterRole === 'root';
+  const isCompositeNode = Boolean(isUserBlock || isHuggingFaceCluster);
+  const isCompositeExpanded =
+    Boolean(singleActionNode?.data.blockInstanceV2?.presentation.expanded) ||
+    Boolean(
+      isUserBlock && singleActionNode && isUserBlockExpandedInstance({ nodes, edges: [] }, singleActionNode.id),
+    ) ||
+    Boolean(
+      isHuggingFaceCluster &&
+      singleActionNode &&
+      isHuggingFaceClusterExpanded({ nodes, edges: [] }, singleActionNode.id),
+    );
   const isCollapsed = Boolean(singleActionNode?.data.uiState?.collapsed || singleActionNode?.data.minimized);
   const isDisabledForRun = Boolean(singleActionNode?.data.uiState?.disabled);
   const validationMessage =
     singleActionNode?.data.uiState?.validationMessage || singleActionNode?.data.uiState?.errorMessage;
   const showSingleNodeActions = Boolean(singleActionNode);
-  const showCollapseToggle = singleActionNode?.data.type === 'custom' || isUserBlock;
+  const showCollapseToggle = singleActionNode?.data.type === 'custom' || isCompositeNode;
   const showCreateBlock =
     selectedActionNodes.length > 0 &&
-    !(selectedActionNodes.length === 1 && selectedActionNodes[0]?.data.type === 'block');
+    !singleProjectedModular &&
+    !(
+      selectedActionNodes.length === 1 &&
+      (selectedActionNodes[0]?.data.type === 'block' || selectedActionNodes[0]?.data.huggingFaceClusterRole === 'root')
+    );
   const createBlockUnavailable = Boolean(createBlockDisabledReason);
   const visible =
     !canvasSuspended &&
     !selectionDragging &&
     selectedNodes.length > 0 &&
-    (showSingleNodeActions || showCreateBlock || Boolean(singleContainer));
+    (showSingleNodeActions || showCreateBlock || Boolean(singleContainer) || Boolean(singleProjectedModular));
 
   useEffect(() => {
     const handleResize = () => setLayoutRevision((revision) => revision + 1);
@@ -161,17 +212,20 @@ export function SelectionToolbar({
     const bottomAnchor = flowToScreenPosition({ x: selectionCenterX, y: bounds.y + bounds.height });
     const toolbarWidth = toolbar.offsetWidth;
     const toolbarHeight = toolbar.offsetHeight;
-    const maxLeft = window.innerWidth - toolbarWidth - TOOLBAR_MARGIN;
-    const maxTop = window.innerHeight - toolbarHeight - TOOLBAR_MARGIN;
+    const canvasBounds = toolbar.parentElement?.getBoundingClientRect();
+    const minLeft = (canvasBounds?.left ?? 0) + TOOLBAR_MARGIN;
+    const minTop = (canvasBounds?.top ?? 0) + TOOLBAR_MARGIN;
+    const maxLeft = Math.max(minLeft, (canvasBounds?.right ?? window.innerWidth) - toolbarWidth - TOOLBAR_MARGIN);
+    const maxTop = Math.max(minTop, (canvasBounds?.bottom ?? window.innerHeight) - toolbarHeight - TOOLBAR_MARGIN);
     let left = topAnchor.x - toolbarWidth / 2;
     let top = topAnchor.y - toolbarHeight - TOOLBAR_SELECTION_GAP;
 
-    if (top < TOOLBAR_MARGIN) {
+    if (top < minTop) {
       top = bottomAnchor.y + TOOLBAR_SELECTION_GAP;
     }
 
-    left = Math.max(TOOLBAR_MARGIN, Math.min(left, maxLeft));
-    top = Math.max(TOOLBAR_MARGIN, Math.min(top, maxTop));
+    left = Math.max(minLeft, Math.min(left, maxLeft));
+    top = Math.max(minTop, Math.min(top, maxTop));
 
     toolbar.style.setProperty('--modiff-selection-toolbar-x', `${Math.round(left)}px`);
     toolbar.style.setProperty('--modiff-selection-toolbar-y', `${Math.round(top)}px`);
@@ -199,6 +253,20 @@ export function SelectionToolbar({
     if (singleContainer) ungroupNodes(singleContainer.id);
   }, [singleContainer, ungroupNodes]);
 
+  const handleToggleProjectedContainer = useCallback(() => {
+    if (
+      !singleProjectedModular?.data.blockProjectionContainer ||
+      !singleProjectedModular.data.blockProjectionOwnerId ||
+      !singleProjectedModular.data.blockProjectionNodeId
+    )
+      return;
+    toggleBlockContainerExpandedV2(
+      singleProjectedModular.data.blockProjectionOwnerId,
+      singleProjectedModular.data.blockProjectionNodeId,
+    );
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+  }, [singleProjectedModular, toggleBlockContainerExpandedV2]);
+
   const handleDuplicateNode = useCallback(() => {
     if (!singleActionNode) return;
     duplicateNode(singleActionNode.id);
@@ -206,9 +274,22 @@ export function SelectionToolbar({
 
   const handleRunFromNode = useCallback(async () => {
     if (!singleActionNode) return;
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false });
-    if (!validation.canRun || !sid) return;
-    await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id });
+    try {
+      if (singleActionNode.data.huggingFaceClusterRole === 'root' || singleActionNode.data.blockInstanceV2) {
+        await prepareHuggingFaceClustersForRun([singleActionNode.id]);
+      }
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: false,
+        targetNodeId: singleActionNode.id,
+      });
+      if (!validation.canRun || !sid) return;
+      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      enqueueSnackbar(message, { variant: 'error', persist: true });
+    }
   }, [isConnected, sid, singleActionNode]);
 
   const handleToggleCollapse = useCallback(() => {
@@ -216,10 +297,13 @@ export function SelectionToolbar({
     if (singleActionNode.data.type === 'block') {
       toggleUserBlockExpanded(singleActionNode.id);
       useStudioStore.getState().saveActiveWorkflowTab(true);
+    } else if (singleActionNode.data.huggingFaceClusterRole === 'root') {
+      toggleHuggingFaceClusterExpanded(singleActionNode.id);
+      useStudioStore.getState().saveActiveWorkflowTab(true);
     } else {
       toggleNodeCollapsed(singleActionNode.id);
     }
-  }, [singleActionNode, toggleNodeCollapsed, toggleUserBlockExpanded]);
+  }, [singleActionNode, toggleHuggingFaceClusterExpanded, toggleNodeCollapsed, toggleUserBlockExpanded]);
 
   const handleToggleDisabled = useCallback(() => {
     if (!singleActionNode) return;
@@ -281,6 +365,8 @@ export function SelectionToolbar({
     >
       <ToolbarActionButton
         label="Delete selection"
+        title="Delete selection · Delete / Backspace"
+        aria-keyshortcuts="Delete Backspace"
         danger
         onClick={handleDeleteSelection}
         data-testid="selection-toolbar-delete"
@@ -288,7 +374,52 @@ export function SelectionToolbar({
         <Trash2 size={16} />
       </ToolbarActionButton>
 
-      {singleContainer && (
+      {replacementSource && replacementTarget ? (
+        <ToolbarActionButton
+          label="Replace internal node with selected node"
+          data-testid="selection-toolbar-replace-internal"
+          onClick={() => {
+            try {
+              useFlowStore.getState().replaceNodeInBlockV2(replacementSource.id, replacementTarget.id);
+              useStudioStore.getState().saveActiveWorkflowTab(true);
+              enqueueSnackbar('The internal node was replaced in this workflow Block.', { variant: 'success' });
+            } catch (error) {
+              enqueueSnackbar(error instanceof Error ? error.message : 'Could not replace this internal node.', {
+                variant: 'error',
+              });
+            }
+          }}
+        >
+          <RefreshCcw size={16} />
+        </ToolbarActionButton>
+      ) : null}
+
+      {canMoveOut ? (
+        <ToolbarActionButton
+          label="Move out of Block"
+          title="Move out of Block · Ctrl/Cmd + drag to move between Blocks"
+          data-testid="selection-toolbar-move-out"
+          onClick={async () => {
+            try {
+              await moveBlockSelectionPreparedV2(
+                selectedNodes.map((node) => node.id),
+                null,
+                'out',
+              );
+              useStudioStore.getState().saveActiveWorkflowTab(true);
+            } catch (error) {
+              enqueueSnackbar(error instanceof Error ? error.message : 'Could not move this item out of the Block.', {
+                variant: 'error',
+                autoHideDuration: 6000,
+              });
+            }
+          }}
+        >
+          <LogOut size={16} />
+        </ToolbarActionButton>
+      ) : null}
+
+      {singleContainer && !singleProjectedModular && (
         <ToolbarActionButton
           label={singleContainer.data.type === 'loop' ? 'Remove loop container' : 'Ungroup nodes'}
           onClick={handleUngroup}
@@ -296,6 +427,35 @@ export function SelectionToolbar({
         >
           <Ungroup size={16} />
         </ToolbarActionButton>
+      )}
+
+      {singleProjectedModular && (
+        <>
+          <ToolbarActionButton
+            label="Save Block changes"
+            onClick={() => setSaveNodeId(singleProjectedModular.id)}
+            data-testid="selection-toolbar-save-modular-subtree"
+          >
+            <Save size={16} />
+          </ToolbarActionButton>
+          {singleProjectedModular.data.blockProjectionContainer ? (
+            <ToolbarActionButton
+              label={
+                singleProjectedModular.data.blockProjectionContainerExpanded !== false
+                  ? 'Collapse Modular Diffusers block'
+                  : 'Expand Modular Diffusers block'
+              }
+              onClick={handleToggleProjectedContainer}
+              data-testid="selection-toolbar-toggle-modular-block"
+            >
+              {singleProjectedModular.data.blockProjectionContainerExpanded !== false ? (
+                <Minimize2 size={16} />
+              ) : (
+                <Maximize2 size={16} />
+              )}
+            </ToolbarActionButton>
+          ) : null}
+        </>
       )}
 
       {showSingleNodeActions && (
@@ -309,7 +469,7 @@ export function SelectionToolbar({
             <Files size={16} />
           </ToolbarActionButton>
           <ToolbarActionButton
-            label="Run from node"
+            label={singleActionNode?.data.blockInstanceV2 ? 'Run Block' : 'Run from node'}
             onClick={() => {
               void handleRunFromNode();
             }}
@@ -320,10 +480,14 @@ export function SelectionToolbar({
           {showCollapseToggle && (
             <ToolbarActionButton
               label={
-                isUserBlock
-                  ? isBlockExpanded
-                    ? 'Collapse block'
-                    : 'Expand block to edit internal nodes'
+                isCompositeNode
+                  ? isCompositeExpanded
+                    ? isHuggingFaceCluster
+                      ? 'Collapse Cluster Node'
+                      : 'Collapse block'
+                    : isHuggingFaceCluster
+                      ? 'Expand Cluster Node to view internal nodes'
+                      : 'Expand block to edit internal nodes'
                   : isCollapsed
                     ? 'Expand node'
                     : 'Collapse node'
@@ -331,8 +495,8 @@ export function SelectionToolbar({
               onClick={handleToggleCollapse}
               data-testid="selection-toolbar-collapse"
             >
-              {isUserBlock ? (
-                isBlockExpanded ? (
+              {isCompositeNode ? (
+                isCompositeExpanded ? (
                   <Minimize2 size={16} />
                 ) : (
                   <Maximize2 size={16} />
@@ -406,10 +570,14 @@ export function SelectionToolbar({
                   }
                   onClick={handleResetSize}
                 >
-                  {isBlockExpanded
-                    ? 'Fit block to contents'
-                    : isUserBlock
-                      ? 'Reset block size'
+                  {isCompositeExpanded
+                    ? isHuggingFaceCluster
+                      ? 'Fit Cluster Node to contents'
+                      : 'Fit block to contents'
+                    : isCompositeNode
+                      ? isHuggingFaceCluster
+                        ? 'Reset Cluster Node size'
+                        : 'Reset block size'
                       : 'Reset automatic size'}
                 </ModiffMenuAction>
                 <ModiffMenuAction icon={<Copy size={15} />} onClick={handleCopyNodeInfo}>
@@ -423,6 +591,9 @@ export function SelectionToolbar({
           </ModiffMenuRoot>
         </>
       )}
+      {saveNodeId ? (
+        <BlockSaveDialogV2 key={saveNodeId} nodeId={saveNodeId} onClose={() => setSaveNodeId(null)} />
+      ) : null}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { nanoid } from 'nanoid';
 
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
+import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
@@ -15,12 +17,58 @@ type SetParam = <K extends keyof NodeParams = 'value'>(
   key?: K,
 ) => void;
 
-type DropHandle = {
+/**
+ * Resolve the actual canvas connection surface before falling back to the
+ * legacy parameter store. Block V2 roots deliberately keep `data.params`
+ * empty, so connection validation must read their embedded public interface
+ * through `nodeConnectorParam` just like the commit path does.
+ */
+export function workflowConnectionParam<K extends keyof NodeParams>(
+  nodes: CustomNodeType[],
+  fallback: GetParam,
+  nodeId: string,
+  handleId: string,
+  key: K,
+): NodeParams[K] | null {
+  const crossing = parseBlockCrossingHandleV2(handleId);
+  const node = nodes.find((candidate) => candidate.id === nodeId);
+  if (crossing) {
+    const instance =
+      node?.data.blockInstanceV2 ??
+      nodes.find((candidate) => candidate.id === node?.data.blockProjectionOwnerId)?.data.blockInstanceV2;
+    if (instance) return (blockCrossingParamV2(instance, crossing)[key] ?? null) as NodeParams[K] | null;
+  }
+  const param = nodeConnectorParam(
+    nodes.find((node) => node.id === nodeId),
+    handleId,
+  );
+  if (!param) return fallback(nodeId, handleId, key);
+  const value = param[key];
+  return value === undefined ? null : value;
+}
+
+export type DropHandle = {
   nodeId: string;
   handleId: string;
   handleType: 'source' | 'target' | null;
   dataType: string | string[] | null;
 };
+
+export function captureWorkflowDropHandle(
+  node: CustomNodeType | undefined,
+  handleId: string | null | undefined,
+  handleType: 'source' | 'target' | null,
+  dataType?: NodeParams['type'] | null,
+): DropHandle | null {
+  const param = nodeConnectorParam(node, handleId);
+  if (!node || !handleId || (!param && !dataType)) return null;
+  return {
+    nodeId: node.id,
+    handleId,
+    handleType,
+    dataType: dataType ?? param?.type ?? null,
+  };
+}
 
 type UseWorkflowConnectionsOptions = {
   addNode: (node: CustomNodeType) => void;
@@ -30,26 +78,19 @@ type UseWorkflowConnectionsOptions = {
   screenToFlowPosition: ScreenToFlowPosition;
   setParam: SetParam;
   updateNodeInternals: (id: string) => void;
+  connectionScopeIsValid?: (connection: Connection) => boolean;
 };
-
-function toTypeArray(value: unknown) {
-  return Array.isArray(value) ? value : [value];
-}
 
 function matchingHandleForDrop(node: NodeData, dropHandle: DropHandle) {
   return Object.entries(node.params || {}).find(([, param]) => {
-    const paramTypes = toTypeArray(param.type);
-    const dataTypes = toTypeArray(dropHandle.dataType ?? 'any');
-
-    if (paramTypes.includes('any') || dataTypes.includes('any')) {
-      return true;
-    }
-
     if (dropHandle.handleType === 'source') {
-      return param.display === 'input' && paramTypes.some((type) => dataTypes.includes(type ?? 'any'));
+      return (
+        (param.display === 'input' || param.isInput) &&
+        param.display !== 'output' &&
+        connectionTypesAreCompatible(dropHandle.dataType ?? 'any', param.type)
+      );
     }
-
-    return param.display === 'output' && dataTypes.some((type) => paramTypes.includes(type ?? 'any'));
+    return param.display === 'output' && connectionTypesAreCompatible(param.type, dropHandle.dataType ?? 'any');
   });
 }
 
@@ -68,6 +109,7 @@ export function useWorkflowConnections({
   screenToFlowPosition,
   setParam,
   updateNodeInternals,
+  connectionScopeIsValid,
 }: UseWorkflowConnectionsOptions) {
   const [anchorPosition, setAnchorPosition] = useState<{ top: number; left: number } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -100,7 +142,7 @@ export function useWorkflowConnections({
         y: anchorPosition.top,
       });
       const newNode: CustomNodeType = {
-        id: nanoid(),
+        id: `node-${nanoid()}`,
         type: node.type,
         position,
         data: node,
@@ -151,11 +193,15 @@ export function useWorkflowConnections({
         return false;
       }
 
+      if (connectionScopeIsValid && !connectionScopeIsValid(conn)) {
+        return false;
+      }
+
       const sourceType = getParam(conn.source, conn.sourceHandle, 'type') || 'default';
       const targetType = getParam(conn.target, conn.targetHandle, 'type') || 'default';
       return connectionTypesAreCompatible(sourceType, targetType);
     },
-    [getParam],
+    [connectionScopeIsValid, getParam],
   );
 
   const handleMouseMove = useCallback(
@@ -167,7 +213,7 @@ export function useWorkflowConnections({
 
       const target = (event.target as HTMLElement).closest('.modiff-field');
       const fieldKey = target?.getAttribute('data-key');
-      const nodeId = target?.closest('.react-flow__node-custom')?.getAttribute('data-id');
+      const nodeId = target?.closest('.react-flow__node')?.getAttribute('data-id');
       if (!target || !fieldKey || !nodeId) {
         setIsConnectionValid(null);
         return;
@@ -201,29 +247,29 @@ export function useWorkflowConnections({
     [getParam, handleMouseMove],
   );
 
-  const handleDropOnPane = useCallback((event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
-    const target = event.target as HTMLElement;
-    if (!target.classList.contains('react-flow__pane')) {
-      return false;
-    }
-
-    const handleId = conn.fromHandle?.id;
-    if (handleId) {
-      const fromNodeData = conn.fromNode?.data as NodeData;
-      const param = fromNodeData.params?.[handleId as keyof typeof fromNodeData.params];
-      if (param) {
-        dropHandleRef.current = {
-          nodeId: conn.fromNode?.id ?? '',
-          handleId,
-          handleType: conn.fromHandle?.type === 'source' ? 'source' : 'target',
-          dataType: param.type ?? null,
-        };
+  const handleDropOnPane = useCallback(
+    (event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
+      const target = event.target as HTMLElement;
+      if (!target.classList.contains('react-flow__pane')) {
+        return false;
       }
-    }
 
-    setAnchorPosition(pointerPosition(event));
-    return true;
-  }, []);
+      const handleId = conn.fromHandle?.id;
+      if (handleId) {
+        const fromNode = conn.fromNode as unknown as CustomNodeType | undefined;
+        dropHandleRef.current = captureWorkflowDropHandle(
+          fromNode,
+          handleId,
+          conn.fromHandle?.type === 'source' ? 'source' : 'target',
+          fromNode ? getParam(fromNode.id, handleId, 'type') : null,
+        );
+      }
+
+      setAnchorPosition(pointerPosition(event));
+      return true;
+    },
+    [getParam],
+  );
 
   const handleDropOnField = useCallback(
     (event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
@@ -233,7 +279,7 @@ export function useWorkflowConnections({
 
       const target = (event.target as HTMLElement).closest('.modiff-field');
       const fieldKey = target?.getAttribute('data-key');
-      const nodeId = target?.closest('.react-flow__node-custom')?.getAttribute('data-id');
+      const nodeId = target?.closest('.react-flow__node')?.getAttribute('data-id');
       if (!target || !fieldKey || !nodeId) {
         return false;
       }
@@ -249,6 +295,18 @@ export function useWorkflowConnections({
         return false;
       }
 
+      if (
+        connectionScopeIsValid &&
+        !connectionScopeIsValid({
+          source: conn.fromNode.id,
+          sourceHandle: conn.fromHandle.id,
+          target: nodeId,
+          targetHandle: fieldKey,
+        })
+      ) {
+        return false;
+      }
+
       setParam(nodeId, fieldKey, true, 'isInput');
       updateNodeInternals(nodeId);
       onConnect({
@@ -260,7 +318,7 @@ export function useWorkflowConnections({
       });
       return true;
     },
-    [onConnect, edgeType, getParam, setParam, updateNodeInternals],
+    [connectionScopeIsValid, onConnect, edgeType, getParam, setParam, updateNodeInternals],
   );
 
   const handleConnectEnd = useCallback(
@@ -286,12 +344,15 @@ export function useWorkflowConnections({
 
   const handleConnect = useCallback(
     (conn: Connection) => {
+      if (connectionScopeIsValid && !connectionScopeIsValid(conn)) {
+        return;
+      }
       onConnect({
         ...conn,
         edgeType,
       });
     },
-    [onConnect, edgeType],
+    [connectionScopeIsValid, onConnect, edgeType],
   );
 
   const closeNodeSearchDialog = useCallback(() => {

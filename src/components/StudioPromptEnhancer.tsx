@@ -42,6 +42,12 @@ function modeAdditions(form: StudioFormState) {
   if (form.mode === 'control_image') {
     return ['follow the control image structure', 'clean edges', 'stable composition'];
   }
+  if (form.mode === 'control_edit_image') {
+    return ['preserve source identity', 'follow the control image structure', 'stable composition'];
+  }
+  if (form.mode === 'control_inpaint') {
+    return ['edit only inside the mask', 'follow the control image structure', 'preserve unmasked areas'];
+  }
   if (form.mode === 'inpaint') {
     return ['edit only inside the mask', 'preserve unmasked areas', 'consistent texture'];
   }

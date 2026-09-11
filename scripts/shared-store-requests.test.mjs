@@ -23,7 +23,7 @@ before(async () => {
     configFile: false,
     logLevel: 'silent',
     optimizeDeps: { entries: [], noDiscovery: true },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');

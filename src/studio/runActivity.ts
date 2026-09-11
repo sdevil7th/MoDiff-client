@@ -356,7 +356,7 @@ function showWorkflow(
   }
 }
 
-export async function openRunActivity(target: RunActivityTarget): Promise<RunActivityResult> {
+async function openRunActivityUnsafe(target: RunActivityTarget): Promise<RunActivityResult> {
   const requestRevision = (latestRunActivityRequest += 1);
   useSettingsStore.getState().setRunActivityPendingTaskId(target.taskId);
   const complete = (result: Exclude<RunActivityResult, 'superseded'>) => {
@@ -518,4 +518,20 @@ export async function openRunActivity(target: RunActivityTarget): Promise<RunAct
   }
   showQueue(target.taskId);
   return complete('queue');
+}
+
+export async function openRunActivity(target: RunActivityTarget): Promise<RunActivityResult> {
+  try {
+    return await openRunActivityUnsafe(target);
+  } catch (error) {
+    if (useSettingsStore.getState().runActivityPendingTaskId !== target.taskId) return 'superseded';
+    console.error(`Could not open run ${target.taskId}.`, error);
+    enqueueSnackbar('Could not restore that workflow. Showing its Queue details instead.', {
+      variant: 'error',
+      autoHideDuration: 7000,
+    });
+    showQueue(target.taskId);
+    useSettingsStore.getState().setRunActivityPendingTaskId(null);
+    return 'queue';
+  }
 }

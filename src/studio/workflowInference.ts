@@ -2,6 +2,9 @@ import type { Edge, Viewport } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { rebaseGraphDevices } from './deviceRebase';
 import {
+  BUILTIN_AUDIO_OPERATION_MODES,
+  BUILTIN_DATA_OPERATION_MODES,
+  BUILTIN_VIDEO_OPERATION_MODES,
   DEFAULT_STUDIO_FORM,
   QWEN_OUTPAINT_CANVAS_NODE_KEY,
   STUDIO_MODEL_PROFILES,
@@ -291,8 +294,40 @@ export function adoptManagedWorkflowGraph(
 }
 
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
+  if (nodes.some((node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText')) {
+    return 'BuiltinDataOperation';
+  }
+  if (
+    nodes.some((node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio')
+  ) {
+    return 'BuiltinAudioOperation';
+  }
+  if (
+    nodes.some(
+      (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
+    )
+  ) {
+    return 'BuiltinImageOperation';
+  }
+  if (
+    nodes.some((node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo')
+  ) {
+    return 'BuiltinVideoOperation';
+  }
+  if (
+    nodes.some((node) => node.data?.studioRole === 'videoUpscaler' || nodeKey(node) === 'modules.Video.UpscaleVideo')
+  ) {
+    return 'SpandrelVideoUpscale';
+  }
+  if (
+    nodes.some((node) => node.data?.studioRole === 'imageUpscaler' || nodeKey(node) === 'modules.Spandrel.Upscaler')
+  ) {
+    return 'SpandrelImageUpscale';
+  }
   const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
   if (explicit) return explicit;
+  const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
+  if (pipelineClass) return pipelineClass;
 
   const repoText = nodes.map((node) => stringValue(paramValue(node, ['repo_id', 'model_id', 'repo']))).join(' ');
   const matchedProfile = Object.values(STUDIO_MODEL_PROFILES).find((profile) => repoText.includes(profile.defaultRepo));
@@ -302,17 +337,123 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
 function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
+  if (modelType === 'BuiltinDataOperation' || roles.has('dataOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    return BUILTIN_DATA_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'text_select';
+  }
+  if (modelType === 'BuiltinAudioOperation' || roles.has('audioOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    return BUILTIN_AUDIO_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'audio_trim';
+  }
+  if (modelType === 'BuiltinImageOperation' || roles.has('imageOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    if (
+      [
+        'image_adjustment',
+        'image_filter',
+        'image_crop',
+        'image_upscale',
+        'image_stitch',
+        'image_tile',
+        'image_channels',
+        'mask_composite',
+      ].includes(operation)
+    ) {
+      return operation as StudioMode;
+    }
+    return 'image_adjustment';
+  }
+  if (modelType === 'BuiltinVideoOperation' || roles.has('videoOperation')) {
+    const operationNode = findNode(
+      nodes,
+      (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
+    );
+    const operation = stringValue(paramValue(operationNode, ['operation']));
+    if (BUILTIN_VIDEO_OPERATION_MODES.includes(operation as StudioMode)) {
+      return operation as StudioMode;
+    }
+    return 'video_frame_extract';
+  }
+  if (modelType === 'SpandrelVideoUpscale' || roles.has('videoUpscaler')) {
+    return 'video_upscale';
+  }
+  if (modelType === 'SpandrelImageUpscale' || roles.has('imageUpscaler')) {
+    return 'image_upscale';
+  }
+  if (
+    modelType === 'ShapEPipeline' ||
+    roles.has('diffusersThreeDGenerate') ||
+    keys.has('modules.DiffusersThreeD.GenerateRenderedArtifact')
+  ) {
+    return 'text_to_3d';
+  }
   const hasWan = keys.has('modules.DiffusersVideo.LoadPipeline') || keys.has('modules.DiffusersVideo.Generate');
   if (hasWan || modelType === 'WanVACEPipeline') {
     if (roles.has('loadMaskVideo') || roles.has('alignMaskVideo')) return 'video_inpaint';
+    if (roles.has('loadVideo') && roles.has('loadControlVideo')) return 'control_video_to_video';
     if (roles.has('loadControlVideo')) return 'control_to_video';
     if (roles.has('loadVideo')) return 'video_to_video';
     if (roles.has('loadImage')) return 'image_to_video';
     return 'text_to_video';
   }
 
+  if (keys.has('modules.HuggingFaceTransformers.GenerateAnyToAny')) {
+    const generateNode = findNode(
+      nodes,
+      (node) => nodeKey(node) === 'modules.HuggingFaceTransformers.GenerateAnyToAny',
+    );
+    if (stringValue(paramValue(generateNode, ['generation_mode'])) === 'image') return 'text_to_image';
+    return keys.has('modules.Image.Load') ? 'image_to_text' : 'text_generation';
+  }
+
+  if (
+    modelType === 'HuggingFaceImageTextToTextModel' ||
+    roles.has('transformersImageTextGenerate') ||
+    keys.has('modules.HuggingFaceTransformers.GenerateImageVideoText')
+  ) {
+    return 'image_to_text';
+  }
+
+  if (
+    modelType === 'HuggingFaceTextGenerationModel' ||
+    roles.has('transformersTextGenerate') ||
+    keys.has('modules.HuggingFaceTransformers.GenerateText')
+  ) {
+    return 'text_generation';
+  }
+
+  if (
+    modelType === 'HuggingFaceSpeechRecognitionModel' ||
+    modelType === 'HuggingFaceCTCSpeechRecognitionModel' ||
+    roles.has('transcribeAudio') ||
+    keys.has('modules.HuggingFaceSpeech.TranscribeAudio') ||
+    keys.has('modules.HuggingFaceSpeech.TranscribeCTCAudio')
+  ) {
+    const actionNode = findNode(
+      nodes,
+      (node) =>
+        node.data?.studioRole === 'transcribeAudio' ||
+        nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeAudio' ||
+        nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeCTCAudio',
+    );
+    return stringValue(paramValue(actionNode, ['task'])) === 'translate' ? 'speech_translation' : 'speech_to_text';
+  }
+
   if (
     modelType === 'AceStepAudioPipeline' ||
+    modelType === 'StableAudioPipeline' ||
     roles.has('audioGenerate') ||
     keys.has('modules.DiffusersAudio.Generate')
   ) {
@@ -330,8 +471,19 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   }
 
   if (modelType.startsWith('Flux') || keys.has('modules.DiffusersImage.LoadPipeline')) {
+    if (roles.has('diffusersUnconditionalGenerate') || keys.has('modules.DiffusersImage.UnconditionalGenerate'))
+      return 'unconditional_image';
+    if (roles.has('diffusersPredictMap') || keys.has('modules.DiffusersImage.PredictMap')) return 'depth_estimation';
+    if (roles.has('diffusersImageLayerDecompose') || keys.has('modules.DiffusersImage.LayerDecompose'))
+      return 'layer_decomposition';
+    if (roles.has('diffusersImageControlInpaint') || keys.has('modules.DiffusersImage.ControlInpaint'))
+      return 'control_inpaint';
+    if (roles.has('diffusersImageControlEdit') || keys.has('modules.DiffusersImage.ControlEdit'))
+      return 'control_edit_image';
     if (roles.has('diffusersImageControl') || keys.has('modules.DiffusersImage.ControlGenerate'))
       return 'control_image';
+    if (roles.has('outpaintCanvas') || roles.has('qwenOutpaintCanvas') || keys.has(QWEN_OUTPAINT_CANVAS_NODE_KEY))
+      return 'outpaint';
     if (roles.has('diffusersImageInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
     if (roles.has('diffusersImageEdit') || keys.has('modules.DiffusersImage.Edit')) return 'edit_image';
     return 'text_to_image';
@@ -365,12 +517,33 @@ export function inferStudioFormFromWorkflow(
         'qwenGenerate',
         'qwenInpaint',
         'diffusersImageGenerate',
+        'diffusersUnconditionalGenerate',
+        'diffusersPredictMap',
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
+        'diffusersImageControlEdit',
+        'diffusersImageControlInpaint',
+        'diffusersImageLayerDecompose',
         'audioGenerate',
+        'dataOperation',
+        'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
-      ['EncodePrompt', 'Generate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(String(node.data?.action)),
+      [
+        'EncodePrompt',
+        'Generate',
+        'UnconditionalGenerate',
+        'PredictMap',
+        'Inpaint',
+        'Edit',
+        'ControlGenerate',
+        'ControlEdit',
+        'ControlInpaint',
+        'LayerDecompose',
+        'TranscribeAudio',
+        'GenerateAnyToAny',
+        'ProcessText',
+      ].includes(String(node.data?.action)),
   );
   const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
   const modelNode = findNode(
@@ -383,8 +556,19 @@ export function inferStudioFormFromWorkflow(
         'qwenInpaintPipeline',
         'diffusersImagePipeline',
         'audioPipeline',
+        'speechModel',
+        'imageUpscaler',
+        'videoUpscaler',
       ].includes(String(node.data?.studioRole)) ||
-      ['ModelsLoader', 'LoadPipeline', 'LoadInpaintPipeline'].includes(String(node.data?.action)),
+      [
+        'ModelsLoader',
+        'LoadPipeline',
+        'LoadInpaintPipeline',
+        'LoadSpeechRecognitionModel',
+        'LoadAnyToAnyModel',
+        'Upscaler',
+        'UpscaleVideo',
+      ].includes(String(node.data?.action)),
   );
   const quantizationNode = findNode(
     nodes,
@@ -398,16 +582,37 @@ export function inferStudioFormFromWorkflow(
         'qwenGenerate',
         'qwenInpaint',
         'diffusersImageGenerate',
+        'diffusersUnconditionalGenerate',
+        'diffusersPredictMap',
         'diffusersImageEdit',
         'diffusersImageInpaint',
         'diffusersImageControl',
+        'diffusersImageControlEdit',
+        'diffusersImageControlInpaint',
+        'diffusersImageLayerDecompose',
         'audioGenerate',
+        'transcribeAudio',
       ].includes(String(node.data?.studioRole)) ||
-      ['Generate', 'Inpaint', 'Edit', 'ControlGenerate'].includes(String(node.data?.action)),
+      [
+        'Generate',
+        'UnconditionalGenerate',
+        'PredictMap',
+        'Inpaint',
+        'Edit',
+        'ControlGenerate',
+        'ControlEdit',
+        'ControlInpaint',
+        'LayerDecompose',
+        'TranscribeAudio',
+        'GenerateAnyToAny',
+      ].includes(String(node.data?.action)),
   );
   const outpaintNode = findNode(
     nodes,
-    (node) => node.data?.studioRole === 'qwenOutpaintCanvas' || nodeKey(node) === QWEN_OUTPAINT_CANVAS_NODE_KEY,
+    (node) =>
+      node.data?.studioRole === 'outpaintCanvas' ||
+      node.data?.studioRole === 'qwenOutpaintCanvas' ||
+      nodeKey(node) === QWEN_OUTPAINT_CANVAS_NODE_KEY,
   );
   const loadImages = findNodes(
     nodes,
@@ -422,14 +627,26 @@ export function inferStudioFormFromWorkflow(
     (node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Audio.'),
   );
   const sourceVideoNode =
-    loadVideos.find((node) => ['loadVideo'].includes(String(node.data?.studioRole))) ?? loadVideos[0];
+    loadVideos.find((node) => node.data?.studioRole === 'loadVideo') ??
+    loadVideos.find((node) => !['loadControlVideo', 'loadMaskVideo'].includes(String(node.data?.studioRole)));
   const maskVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadMaskVideo');
   const controlVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadControlVideo');
+  const videoOperationNode = findNode(
+    nodes,
+    (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
+  );
+  const videoUpscaleNode = findNode(
+    nodes,
+    (node) => node.data?.studioRole === 'videoUpscaler' || nodeKey(node) === 'modules.Video.UpscaleVideo',
+  );
+  const operationVideos = arrayStringValue(paramValue(videoOperationNode, ['videos']));
   const loadImageNode = loadImages.find((node) => node.data?.studioRole === 'loadImage') ?? loadImages[0];
+  const loadControlImageNode = loadImages.find((node) => node.data?.studioRole === 'loadControlImage');
   const loadMaskNode = loadImages.find((node) => node.data?.studioRole === 'loadMask');
   const loadAudioNode = loadAudios.find((node) => node.data?.studioRole === 'loadAudio') ?? loadAudios[0];
   const loadReferenceAudioNode = loadAudios.find((node) => node.data?.studioRole === 'loadReferenceAudio');
   const sizeNode = generateNode ?? denoiseNode;
+  const squareResolution = numberValue(paramValue(sizeNode, ['resolution']), defaults.width);
   const seed = paramValue(sizeNode, ['seed']);
   const seedObject = seed && typeof seed === 'object' ? (seed as { value?: unknown; isRandom?: unknown }) : null;
   const modelQuantizationMode = stringValue(paramValue(modelNode, ['quantization_mode']));
@@ -452,10 +669,10 @@ export function inferStudioFormFromWorkflow(
     ...defaults,
     mode,
     modelType,
-    prompt: stringValue(paramValue(promptNode, ['prompt'])) || fallback.prompt,
+    prompt: stringValue(paramValue(promptNode, ['prompt', 'source'])) || fallback.prompt,
     negativePrompt: stringValue(paramValue(promptNode, ['negative_prompt'])) || fallback.negativePrompt,
-    width: numberValue(paramValue(sizeNode, ['width']), defaults.width),
-    height: numberValue(paramValue(sizeNode, ['height']), defaults.height),
+    width: numberValue(paramValue(sizeNode, ['width']), squareResolution),
+    height: numberValue(paramValue(sizeNode, ['height']), squareResolution),
     seed: numberValue(seedObject?.value ?? seed, fallback.seed),
     randomSeed: boolValue(seedObject?.isRandom, fallback.randomSeed),
     steps: numberValue(paramValue(sizeNode, ['num_inference_steps', 'steps']), defaults.steps),
@@ -463,6 +680,13 @@ export function inferStudioFormFromWorkflow(
       paramValue(sizeNode, ['true_cfg_scale', 'guidance_scale', 'guidance']),
       defaults.guidanceScale,
     ),
+    pagScale: numberValue(paramValue(sizeNode, ['pag_scale']), defaults.pagScale),
+    pagAdaptiveScale: numberValue(paramValue(sizeNode, ['pag_adaptive_scale']), defaults.pagAdaptiveScale),
+    processingResolution: numberValue(paramValue(sizeNode, ['processing_resolution']), defaults.processingResolution),
+    matchInputResolution: boolValue(paramValue(sizeNode, ['match_input_resolution']), defaults.matchInputResolution),
+    batchSize: numberValue(paramValue(sizeNode, ['batch_size']), defaults.batchSize),
+    eta: numberValue(paramValue(sizeNode, ['eta']), defaults.eta),
+    classLabel: numberValue(paramValue(sizeNode, ['class_label']), defaults.classLabel),
     resourceMode: normalizeStudioResourceMode(undefined),
     dtype: (stringValue(paramValue(modelNode, ['dtype'])) as StudioFormState['dtype']) || defaults.dtype,
     quantizationMode,
@@ -479,13 +703,27 @@ export function inferStudioFormFromWorkflow(
     outpaintFeather: numberValue(paramValue(outpaintNode, ['feather']), defaults.outpaintFeather),
     outpaintFillColor: stringValue(paramValue(outpaintNode, ['fill_color'])) || defaults.outpaintFillColor,
     referenceImages: arrayStringValue(paramValue(loadImageNode, ['file'])),
+    referenceVideos: mode === 'video_stitch' || mode === 'video_tile' ? operationVideos : defaults.referenceVideos,
     maskImage: stringValue(paramValue(loadMaskNode, ['file'])),
-    controlImage: mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : '',
-    sourceVideo: stringValue(paramValue(sourceVideoNode, ['file'])),
+    controlImage:
+      stringValue(paramValue(loadControlImageNode, ['file'])) ||
+      (mode === 'control_image' ? stringValue(paramValue(loadImageNode, ['file'])) : ''),
+    sourceVideo:
+      (['video_frame_extract', 'frame_interpolation', 'video_trim', 'video_reverse'].includes(mode)
+        ? operationVideos[0]
+        : '') ||
+      (mode === 'video_upscale' ? stringValue(paramValue(videoUpscaleNode, ['video'])) : '') ||
+      stringValue(paramValue(sourceVideoNode, ['file'])),
     maskVideo: stringValue(paramValue(maskVideoNode, ['file'])),
     controlVideo: stringValue(paramValue(controlVideoNode, ['file'])),
     sourceAudio: stringValue(paramValue(loadAudioNode, ['file'])),
     referenceAudio: stringValue(paramValue(loadReferenceAudioNode, ['file'])),
+    speechLanguage: stringValue(paramValue(generateNode, ['language'])) || defaults.speechLanguage,
+    speechTimestamps:
+      (stringValue(paramValue(generateNode, ['timestamps'])) as StudioFormState['speechTimestamps']) ||
+      defaults.speechTimestamps,
+    speechChunkSeconds: numberValue(paramValue(generateNode, ['chunk_length_seconds']), defaults.speechChunkSeconds),
+    speechStrideSeconds: numberValue(paramValue(generateNode, ['stride_length_seconds']), defaults.speechStrideSeconds),
     lyrics: stringValue(paramValue(generateNode, ['lyrics'])) || defaults.lyrics,
     audioDuration: numberValue(paramValue(generateNode, ['audio_duration']), defaults.audioDuration),
     extensionDuration: numberValue(paramValue(generateNode, ['extension_duration']), defaults.extensionDuration),
@@ -502,7 +740,7 @@ export function inferStudioFormFromWorkflow(
       paramValue(
         findNode(nodes, (node) => node.data?.studioRole === 'videoExport'),
         ['fps'],
-      ),
+      ) ?? paramValue(videoUpscaleNode, ['fps']),
       defaults.fps,
     ),
     conditioningScale: numberValue(paramValue(generateNode, ['conditioning_scale']), defaults.conditioningScale),

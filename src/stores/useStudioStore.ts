@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
+import { applyResolvedExecutionInputs } from '../studio/resolvedExecutionInputs';
 import {
   DEFAULT_STUDIO_FORM,
   STUDIO_MODEL_PROFILES,
@@ -20,6 +21,7 @@ import {
   safeCloneJson,
 } from '../studio/outputContracts';
 import { deleteStudioOutput, fetchStudioOutputs, setStudioOutputFavorite, syncStudioOutput } from '../studio/outputApi';
+import { withDurableBlockPreviewsV2 } from '../studio/blockPreviewPersistenceV2';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
 import { normalizeStudioDeviceOffloadPlan } from '../studio/deviceOffload';
 import {
@@ -176,7 +178,7 @@ type StudioActions = {
     apiGraph?: unknown,
     variation?: Pick<StudioRunContext, 'variationGroupId' | 'variationLabel'>,
     identity?: { clientRunId: string; runInputHash: string },
-    options?: { activate?: boolean },
+    options?: { activate?: boolean; form?: StudioFormState },
   ) => StudioRunContext;
   activateRunContext: (taskId?: string | null, clientRunId?: string | null) => StudioRunContext | null;
   clearRunContext: () => void;
@@ -207,6 +209,7 @@ type StudioActions = {
       dataType?: string | string[];
       artifacts?: unknown;
       outputId?: string | null;
+      resolvedExecutionInputs?: unknown;
     },
   ) => void;
   attachRunResponse: (response: unknown, clientRunId?: string) => void;
@@ -227,7 +230,7 @@ type StudioActions = {
   switchWorkflowTab: (id: string) => void;
   closeWorkflowTab: (id: string) => void;
   renameWorkflowTab: (id: string, title: string) => void;
-  mergeBackendWorkflow: (tab: WorkflowTab) => void;
+  mergeBackendWorkflow: (tab: WorkflowTab, options?: { acknowledgement?: boolean }) => void;
   removeBackendWorkflow: (id: string) => void;
   createAppModeConfig: (workflowTabId?: string | null) => string | null;
   updateAppModeConfig: (
@@ -326,7 +329,7 @@ function preservePinnedAutoFormValues(
 function currentGraphSnapshot(): StudioGraphSnapshot {
   const flow = useFlowStore.getState().toObject();
   return cloneJson({
-    nodes: flow.nodes,
+    nodes: retainedBlockNodes(flow.nodes, useStudioStore.getState().activeWorkflowTabId),
     edges: flow.edges,
     viewport: flow.viewport,
   });
@@ -577,6 +580,11 @@ function normalizeWorkflowSnapshot(
   const shouldRecoverManagedIdentity =
     allowCanonicalAdoption &&
     !activeTemplateId &&
+    // A V2 Block is a self-contained, workflow-owned exact graph authority.
+    // Legacy template inference must never reinterpret, rebuild, or remove
+    // registered/User Block roots merely because their internal actions look
+    // like one managed task graph.
+    !nodes.some((node) => Boolean(node.data.blockInstanceV2)) &&
     (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
   const inferredManagedForm = shouldRecoverManagedIdentity
     ? resolveStudioResourceForm(inferStudioFormFromWorkflow(nodes, persistedStudioForm))
@@ -669,16 +677,28 @@ function normalizeWorkflowTabs(tabs: unknown[]) {
   return tabs.map(normalizeWorkflowTab).filter((tab): tab is WorkflowTab => Boolean(tab));
 }
 
-function applyWorkflowSnapshot(snapshot: WorkflowTabSnapshot) {
+function applyWorkflowSnapshot(snapshot: WorkflowTabSnapshot, workflowTabId: string) {
   const flow = useFlowStore.getState();
   flow.replaceGraph({
-    nodes: cloneJson(snapshot.nodes) as typeof flow.nodes,
+    nodes: retainedBlockNodes(cloneJson(snapshot.nodes) as typeof flow.nodes, workflowTabId),
     edges: cloneJson(snapshot.edges) as typeof flow.edges,
     viewport: (cloneJson(snapshot.viewport) as typeof flow.viewport) ?? flow.viewport,
   });
   // Undo/redo belongs to the document whose graph produced it. A canvas
   // replacement must never leave another tab's snapshots armed.
   flow.resetHistory();
+}
+
+function retainedBlockNodes(nodes: CustomNodeType[], workflowTabId: string | null) {
+  const studio = useStudioStore.getState();
+  return withDurableBlockPreviewsV2(nodes, studio.outputs, { workflowTabId, previewSlots: studio.previewSlots });
+}
+
+function retainActiveBlockPreviews() {
+  const flow = useFlowStore.getState();
+  const nodes = retainedBlockNodes(flow.nodes, useStudioStore.getState().activeWorkflowTabId);
+  // Media state is backend-owned; updating it must not create an undo entry.
+  if (nodes !== flow.nodes) useFlowStore.setState({ nodes });
 }
 
 function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
@@ -691,9 +711,26 @@ function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
 
 function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
   return (
-    JSON.stringify([left.title, left.source, left.sourceLabel, left.snapshot]) ===
-    JSON.stringify([right.title, right.source, right.sourceLabel, right.snapshot])
+    stableStringify([left.title, left.source, left.sourceLabel, left.snapshot]) ===
+    stableStringify([right.title, right.source, right.sourceLabel, right.snapshot])
   );
+}
+
+const MAX_LOCAL_WORKFLOW_TABS = 12;
+
+/**
+ * Workflow documents are backend-owned. localStorage is only a bounded crash
+ * checkpoint for tabs currently in use; mirroring a large saved-workflow
+ * library here can exceed the browser's per-origin quota.
+ */
+export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkflowTabId: string | null) {
+  const ranked = [...tabs].sort((left, right) => {
+    if (left.id === activeWorkflowTabId) return -1;
+    if (right.id === activeWorkflowTabId) return 1;
+    if (left.dirty !== right.dirty) return left.dirty ? -1 : 1;
+    return right.updatedAt - left.updatedAt;
+  });
+  return ranked.slice(0, MAX_LOCAL_WORKFLOW_TABS);
 }
 
 function normalizePersistedStudioState(
@@ -706,7 +743,10 @@ function normalizePersistedStudioState(
     ...persistedState,
   } as StudioState & StudioVolatileState & StudioActions;
   const workflowTabs = Array.isArray(mergedState.workflowTabs)
-    ? normalizeWorkflowTabs(mergedState.workflowTabs)
+    ? workflowTabsForLocalCheckpoint(
+        normalizeWorkflowTabs(mergedState.workflowTabs),
+        typeof mergedState.activeWorkflowTabId === 'string' ? mergedState.activeWorkflowTabId : null,
+      )
     : currentState.workflowTabs;
   const activeWorkflowTab = workflowTabs.find((tab) => tab.id === mergedState.activeWorkflowTabId);
   const activeSnapshot = activeWorkflowTab?.snapshot;
@@ -808,15 +848,55 @@ function studioFormInputs(): AppModeInput[] {
     { id: 'studio:seed', kind: 'studio-form', label: 'Seed', formKey: 'seed' },
     { id: 'studio:steps', kind: 'studio-form', label: 'Steps', formKey: 'steps' },
     { id: 'studio:guidanceScale', kind: 'studio-form', label: 'Guidance', formKey: 'guidanceScale' },
+    { id: 'studio:pagScale', kind: 'studio-form', label: 'PAG scale', formKey: 'pagScale' },
+    {
+      id: 'studio:pagAdaptiveScale',
+      kind: 'studio-form',
+      label: 'PAG adaptive scale',
+      formKey: 'pagAdaptiveScale',
+    },
+    {
+      id: 'studio:processingResolution',
+      kind: 'studio-form',
+      label: 'Processing resolution',
+      formKey: 'processingResolution',
+    },
+    {
+      id: 'studio:matchInputResolution',
+      kind: 'studio-form',
+      label: 'Match input resolution',
+      formKey: 'matchInputResolution',
+    },
     { id: 'studio:strength', kind: 'studio-form', label: 'Strength', formKey: 'strength' },
     { id: 'studio:width', kind: 'studio-form', label: 'Width', formKey: 'width' },
     { id: 'studio:height', kind: 'studio-form', label: 'Height', formKey: 'height' },
     { id: 'studio:referenceImages', kind: 'studio-form', label: 'Reference images', formKey: 'referenceImages' },
+    { id: 'studio:referenceVideos', kind: 'studio-form', label: 'Reference videos', formKey: 'referenceVideos' },
     { id: 'studio:controlImage', kind: 'studio-form', label: 'Control image', formKey: 'controlImage' },
     { id: 'studio:maskImage', kind: 'studio-form', label: 'Mask image', formKey: 'maskImage' },
     { id: 'studio:sourceVideo', kind: 'studio-form', label: 'Source video', formKey: 'sourceVideo' },
     { id: 'studio:maskVideo', kind: 'studio-form', label: 'Mask video', formKey: 'maskVideo' },
     { id: 'studio:controlVideo', kind: 'studio-form', label: 'Control video', formKey: 'controlVideo' },
+    { id: 'studio:sourceAudio', kind: 'studio-form', label: 'Source audio', formKey: 'sourceAudio' },
+    { id: 'studio:speechLanguage', kind: 'studio-form', label: 'Speech language', formKey: 'speechLanguage' },
+    {
+      id: 'studio:speechTimestamps',
+      kind: 'studio-form',
+      label: 'Speech timestamps',
+      formKey: 'speechTimestamps',
+    },
+    {
+      id: 'studio:speechChunkSeconds',
+      kind: 'studio-form',
+      label: 'Speech chunk length',
+      formKey: 'speechChunkSeconds',
+    },
+    {
+      id: 'studio:speechStrideSeconds',
+      kind: 'studio-form',
+      label: 'Speech chunk stride',
+      formKey: 'speechStrideSeconds',
+    },
   ];
 }
 
@@ -1155,14 +1235,29 @@ function applyImportedImageToForm(form: StudioFormState, image: string): StudioF
   const trimmed = image.trim();
   if (!trimmed) return form;
 
-  if (form.mode === 'control_image') {
-    return form.controlImage.trim() ? withReferenceImage(form, trimmed) : { ...form, controlImage: trimmed };
+  const requiredImages = STUDIO_MODEL_PROFILES[form.modelType].modeRequirements?.[form.mode]?.requiredImages ?? [];
+  const declaredMinimumReferenceImages =
+    STUDIO_MODEL_PROFILES[form.modelType].modeRequirements?.[form.mode]?.minimumCounts?.referenceImages ?? 1;
+  const minimumReferenceImages = requiredImages.includes('lastImage')
+    ? Math.max(2, declaredMinimumReferenceImages)
+    : declaredMinimumReferenceImages;
+  if (
+    requiredImages.includes('referenceImages') &&
+    form.referenceImages.filter((item) => item.trim()).length < minimumReferenceImages
+  ) {
+    return {
+      ...form,
+      referenceImages: [...form.referenceImages.filter((item) => item !== trimmed), trimmed],
+    };
   }
-
-  if (form.mode === 'inpaint' || form.mode === 'outpaint') {
-    if (!form.referenceImages[0]?.trim()) return withReferenceImage(form, trimmed);
-    if (!form.maskImage.trim()) return { ...form, maskImage: trimmed };
-    return withReferenceImage(form, trimmed);
+  if (requiredImages.includes('maskImage') && !form.maskImage.trim()) {
+    return { ...form, maskImage: trimmed };
+  }
+  if (requiredImages.includes('controlImage') && !form.controlImage.trim()) {
+    return { ...form, controlImage: trimmed };
+  }
+  if (requiredImages.includes('ipAdapterImage') && !form.ipAdapterImage.trim()) {
+    return { ...form, ipAdapterImage: trimmed };
   }
 
   return withReferenceImage(form, trimmed);
@@ -1174,7 +1269,14 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
     currentMode === 'video_inpaint' ||
     currentMode === 'video_outpaint' ||
     currentMode === 'control_to_video' ||
-    currentMode === 'video_color_edit'
+    currentMode === 'control_video_to_video' ||
+    currentMode === 'video_color_edit' ||
+    currentMode === 'video_frame_extract' ||
+    currentMode === 'video_stitch' ||
+    currentMode === 'video_trim' ||
+    currentMode === 'video_reverse' ||
+    currentMode === 'video_tile' ||
+    currentMode === 'video_upscale'
   ) {
     return currentMode;
   }
@@ -1182,6 +1284,16 @@ function importedVideoMode(currentMode: StudioMode): StudioMode {
 }
 
 function applyImportedVideoToForm(form: StudioFormState, video: string): StudioFormState {
+  if (form.mode === 'video_stitch' || form.mode === 'video_tile') {
+    return {
+      ...form,
+      referenceVideos: [video, ...form.referenceVideos.filter((item) => item !== video)].slice(0, 16),
+    };
+  }
+  if (form.mode === 'control_video_to_video') {
+    if (!form.sourceVideo.trim()) return { ...form, sourceVideo: video };
+    return form.controlVideo.trim() ? { ...form, sourceVideo: video } : { ...form, controlVideo: video };
+  }
   if (form.mode === 'control_to_video') {
     return form.controlVideo.trim() ? { ...form, sourceVideo: video } : { ...form, controlVideo: video };
   }
@@ -1196,7 +1308,14 @@ function applyImportedVideoToForm(form: StudioFormState, video: string): StudioF
 }
 
 function importedAudioMode(currentMode: StudioMode): StudioMode {
-  if (currentMode === 'audio_variation' || currentMode === 'audio_continuation' || currentMode === 'audio_repaint') {
+  if (
+    currentMode === 'audio_variation' ||
+    currentMode === 'audio_continuation' ||
+    currentMode === 'audio_repaint' ||
+    currentMode === 'audio_trim' ||
+    currentMode === 'audio_join' ||
+    currentMode === 'audio_loudness_match'
+  ) {
     return currentMode;
   }
   return 'audio_variation';
@@ -1364,6 +1483,20 @@ function isNonEmptyPreviewValue(value: unknown) {
 const STUDIO_STORAGE_KEY = 'modiff.studio';
 migrateLocalStorageKey('studio', STUDIO_STORAGE_KEY);
 
+const resilientStudioStorage = {
+  getItem: (name: string) => localStorage.getItem(name),
+  removeItem: (name: string) => localStorage.removeItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch (error) {
+      // The full documents remain on the backend. A failed browser checkpoint
+      // must not break tab switching or a notification click.
+      console.warn('Could not update the local Studio checkpoint; backend workflows remain available.', error);
+    }
+  },
+};
+
 export type WorkflowOperationContext = {
   workflowTabId: string | null;
   canvasEpoch: number;
@@ -1440,6 +1573,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             prompt: current.prompt,
             negativePrompt: current.negativePrompt,
             referenceImages: current.referenceImages,
+            referenceVideos: current.referenceVideos,
             maskImage: current.maskImage,
             controlImage: current.controlImage,
             sourceVideo: current.sourceVideo,
@@ -1473,6 +1607,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               prompt: state.form.prompt,
               negativePrompt: state.form.negativePrompt,
               referenceImages: state.form.referenceImages,
+              referenceVideos: state.form.referenceVideos,
               maskImage: state.form.maskImage,
               controlImage: state.form.controlImage,
               sourceVideo: state.form.sourceVideo,
@@ -1557,7 +1692,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           // The active tab is the document authority. `modiff.flow` is only a
           // fast canvas cache and may belong to another tab if the page exited
           // between its immediate write and the tab snapshot's batched write.
-          applyWorkflowSnapshot(activeTab.snapshot);
+          applyWorkflowSnapshot(activeTab.snapshot, activeTab.id);
         }
         set({
           ...(activeSnapshot && !formIdentityMatchesActiveDocument
@@ -1571,7 +1706,13 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           workflowCanvasHydrated: true,
           workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
           workflowFormEpoch: state.workflowFormEpoch + 1,
-          launcherDismissed: activeTab ? activeTab.snapshot.nodes.length > 0 : state.launcherDismissed,
+          // Hydration may finish after the user has already dismissed the
+          // launcher's empty-workflow modal (for example while Setup is
+          // repairing an optional runtime). Do not resurrect it merely
+          // because the authoritative snapshot is still empty. Explicit
+          // document transitions below continue to reset this flag for a new
+          // empty workflow.
+          launcherDismissed: state.launcherDismissed || (activeTab ? activeTab.snapshot.nodes.length > 0 : false),
         });
       },
       detachManagedGraph: () => {
@@ -1593,7 +1734,15 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const { form, graphBinding } = get();
         const target = currentAutoResourcePlanTarget(plan, form, graphBinding);
         if (target) {
-          set({ lastError: target });
+          const planKey = autoPlanKeyForForm(form);
+          set((state) => ({
+            lastError: target,
+            autoResourcePlan: plan,
+            autoResourcePlans: {
+              ...state.autoResourcePlans,
+              [planKey]: plan,
+            },
+          }));
           throw new Error(target);
         }
         set((state) => {
@@ -1754,6 +1903,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               isVideoOutput || isAudioOutput
                 ? current.referenceImages
                 : [output.url, ...current.referenceImages.filter((image) => image !== output.url)],
+            referenceVideos: current.referenceVideos,
             sourceVideo: isVideoOutput ? output.url : current.sourceVideo,
             sourceAudio: isAudioOutput ? output.url : current.sourceAudio,
             maskImage: current.maskImage,
@@ -1862,7 +2012,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           runInputHash,
           workflowTabId: state.activeWorkflowTabId,
           canvasEpoch: state.workflowCanvasEpoch,
-          form: cloneJson(state.form),
+          form: cloneJson(options?.form ?? state.form),
           graph: currentGraphSnapshot(),
           binding: state.graphBinding ? cloneJson(state.graphBinding) : null,
           apiGraph,
@@ -2136,6 +2286,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               ...galleryRequestPatch(state, 'history', -1, null),
             };
           });
+          retainActiveBlockPreviews();
         } catch (error) {
           if (!ticket.isLatest()) return;
           set((state) =>
@@ -2177,6 +2328,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               : {}),
             ...galleryRequestPatch(state, 'sync', -1, null),
           }));
+          retainActiveBlockPreviews();
         } catch (error) {
           set((state) =>
             galleryRequestPatch(
@@ -2289,106 +2441,109 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               : mediaItems && mediaItems.length > 1
                 ? 'image_collection'
                 : 'image';
-        const output: StudioOutput = {
-          id: outputId || nanoid(),
-          clientRunId: outputClientRunId,
-          runInputHash: outputRunInputHash,
-          workflowTabId: context.workflowTabId,
-          attemptIndex,
-          nodeId,
-          fieldKey,
-          value,
-          url,
-          mode: form.mode,
-          modelType: form.modelType,
-          modelLabel: profile.label,
-          repo: profile.defaultRepo,
-          templateId: context?.templateId,
-          templateLabel: template?.label,
-          runId: context?.run?.runId ?? context?.id,
-          taskId: outputTaskId,
-          sid: context?.run?.sid ?? null,
-          prompt: form.prompt,
-          negativePrompt: form.negativePrompt,
-          seed: form.seed,
-          width: form.width,
-          height: form.height,
-          steps: form.steps,
-          guidanceScale: form.guidanceScale,
-          referenceImages: [...form.referenceImages],
-          sourceOutputId: context?.sourceOutputId,
-          formSnapshot: cloneJson(form),
-          graphSnapshot: context?.graph,
-          graphBindingSnapshot: context?.binding,
-          apiGraphSnapshot: context?.apiGraph,
-          createdAt: Date.now(),
-          favorite: false,
-          parentId: context?.sourceOutputId ?? context?.variationGroupId,
-          displayType,
-          mediaItems,
-          templateLockHash,
-          promptSettingsHash,
-          exactTemplateCompatible,
-          variationGroupId: context?.variationGroupId,
-          variationLabel: context?.variationLabel,
-          provenance: {
-            schemaVersion: 1,
-            source: 'frontend-record',
-            capturedAt: new Date().toISOString(),
-            templateId: context?.templateId,
-            templateLockHash,
-            promptSettingsHash,
-            exactTemplateCompatible,
-            backendExecutionId: outputTaskId,
+        const output: StudioOutput = applyResolvedExecutionInputs(
+          {
+            id: outputId || nanoid(),
             clientRunId: outputClientRunId,
             runInputHash: outputRunInputHash,
             workflowTabId: context.workflowTabId,
             attemptIndex,
             nodeId,
-            graphBindingFingerprint: context?.binding?.fingerprint,
-            modelRevision: template?.example?.modelRevision,
-            runtimeFingerprint:
-              typeof runtimeFingerprint === 'string' ? runtimeFingerprint : template?.example?.runtimeFingerprint,
-            resourcePlan: runtimeHints
-              ? {
-                  resourceMode: runtimeHints.resourceMode,
-                  resolvedResourceMode: runtimeHints.resolvedResourceMode,
-                  executionPath: runtimeHints.executionPath,
-                  resolvedArtifact: runtimeHints.resolvedArtifact,
-                  quantizationMode: runtimeHints.quantizationMode,
-                  quantizedComponents: runtimeHints.quantizedComponents,
-                  offloadMode: runtimeHints.offloadMode,
-                  autoResourceCandidateId: runtimeHints.autoResourceCandidateId,
-                  autoResourceProofStatus: runtimeHints.autoResourceProofStatus,
-                  autoResourcePlan: safeCloneJson(runtimeHints.autoResourcePlan),
-                }
-              : undefined,
+            fieldKey,
+            value,
+            url,
+            mode: form.mode,
+            modelType: form.modelType,
+            modelLabel: profile.label,
+            repo: profile.defaultRepo,
+            templateId: context?.templateId,
+            templateLabel: template?.label,
+            runId: context?.run?.runId ?? context?.id,
+            taskId: outputTaskId,
+            sid: context?.run?.sid ?? null,
+            prompt: form.prompt,
+            negativePrompt: form.negativePrompt,
+            seed: form.seed,
+            width: form.width,
+            height: form.height,
+            steps: form.steps,
+            guidanceScale: form.guidanceScale,
+            referenceImages: [...form.referenceImages],
+            sourceOutputId: context?.sourceOutputId,
+            formSnapshot: cloneJson(form),
+            graphSnapshot: context?.graph,
+            graphBindingSnapshot: context?.binding,
+            apiGraphSnapshot: context?.apiGraph,
+            createdAt: Date.now(),
+            favorite: false,
+            parentId: context?.sourceOutputId ?? context?.variationGroupId,
+            displayType,
             mediaItems,
-            ...(isVideoOutput
-              ? {
-                  video: {
-                    sourceVideo: form.sourceVideo,
-                    maskVideo: form.maskVideo,
-                    controlVideo: form.controlVideo,
-                    numFrames: form.numFrames,
-                    fps: form.fps,
-                    conditioningScale: form.conditioningScale,
-                    guidanceScale2: form.guidanceScale2,
-                    outputType: form.outputType,
-                  },
-                }
-              : {}),
-            ...(isAudioOutput
-              ? {
-                  audio: {
-                    sourceAudio: form.sourceAudio,
-                    referenceAudio: form.referenceAudio,
-                    durationSeconds: form.audioDuration,
-                  },
-                }
-              : {}),
+            templateLockHash,
+            promptSettingsHash,
+            exactTemplateCompatible,
+            variationGroupId: context?.variationGroupId,
+            variationLabel: context?.variationLabel,
+            provenance: {
+              schemaVersion: 1,
+              source: 'frontend-record',
+              capturedAt: new Date().toISOString(),
+              templateId: context?.templateId,
+              templateLockHash,
+              promptSettingsHash,
+              exactTemplateCompatible,
+              backendExecutionId: outputTaskId,
+              clientRunId: outputClientRunId,
+              runInputHash: outputRunInputHash,
+              workflowTabId: context.workflowTabId,
+              attemptIndex,
+              nodeId,
+              graphBindingFingerprint: context?.binding?.fingerprint,
+              modelRevision: template?.example?.modelRevision,
+              runtimeFingerprint:
+                typeof runtimeFingerprint === 'string' ? runtimeFingerprint : template?.example?.runtimeFingerprint,
+              resourcePlan: runtimeHints
+                ? {
+                    resourceMode: runtimeHints.resourceMode,
+                    resolvedResourceMode: runtimeHints.resolvedResourceMode,
+                    executionPath: runtimeHints.executionPath,
+                    resolvedArtifact: runtimeHints.resolvedArtifact,
+                    quantizationMode: runtimeHints.quantizationMode,
+                    quantizedComponents: runtimeHints.quantizedComponents,
+                    offloadMode: runtimeHints.offloadMode,
+                    autoResourceCandidateId: runtimeHints.autoResourceCandidateId,
+                    autoResourceProofStatus: runtimeHints.autoResourceProofStatus,
+                    autoResourcePlan: safeCloneJson(runtimeHints.autoResourcePlan),
+                  }
+                : undefined,
+              mediaItems,
+              ...(isVideoOutput
+                ? {
+                    video: {
+                      sourceVideo: form.sourceVideo,
+                      maskVideo: form.maskVideo,
+                      controlVideo: form.controlVideo,
+                      numFrames: form.numFrames,
+                      fps: form.fps,
+                      conditioningScale: form.conditioningScale,
+                      guidanceScale2: form.guidanceScale2,
+                      outputType: form.outputType,
+                    },
+                  }
+                : {}),
+              ...(isAudioOutput
+                ? {
+                    audio: {
+                      sourceAudio: form.sourceAudio,
+                      referenceAudio: form.referenceAudio,
+                      durationSeconds: form.audioDuration,
+                    },
+                  }
+                : {}),
+            },
           },
-        };
+          metadata.resolvedExecutionInputs,
+        );
 
         set((state) => ({
           outputs: [
@@ -2532,7 +2687,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           sourceLabel,
           snapshot: cloneJson(nextSnapshot),
         };
-        applyWorkflowSnapshot(nextSnapshot);
+        applyWorkflowSnapshot(nextSnapshot, id);
         set({
           workflowTabs: [...savedTabs, tab],
           activeWorkflowTabId: id,
@@ -2567,7 +2722,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const targetSnapshot = normalizeWorkflowSnapshot(target.snapshot);
         const nextCanvasEpoch = state.workflowCanvasEpoch + 1;
         const resumedRunContexts = rebaseRunContextsForRestoredWorkflow(state, id, targetSnapshot, nextCanvasEpoch);
-        applyWorkflowSnapshot(targetSnapshot);
+        applyWorkflowSnapshot(targetSnapshot, id);
         set({
           workflowTabs: savedTabs,
           activeWorkflowTabId: id,
@@ -2602,7 +2757,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         if (tabs.length === 0) {
           const snapshot = normalizeWorkflowSnapshot(blankWorkflowSnapshot());
           const newId = nanoid();
-          applyWorkflowSnapshot(snapshot);
+          applyWorkflowSnapshot(snapshot, newId);
           set({
             workflowTabs: [
               {
@@ -2647,7 +2802,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           nextSnapshot,
           nextCanvasEpoch,
         );
-        applyWorkflowSnapshot(nextSnapshot);
+        applyWorkflowSnapshot(nextSnapshot, nextActive.id);
         set({
           workflowTabs: tabs,
           activeWorkflowTabId: nextActive.id,
@@ -2679,23 +2834,52 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         }));
       },
 
-      mergeBackendWorkflow: (incoming) => {
+      mergeBackendWorkflow: (incoming, options = {}) => {
         const normalized = normalizeWorkflowTab(incoming);
         if (!normalized) return;
         const state = get();
         const existing = state.workflowTabs.find((tab) => tab.id === normalized.id);
-        if (existing && (existing.backendRevision ?? 0) >= (normalized.backendRevision ?? 0)) return;
+        if (existing && (existing.backendRevision ?? 0) > (normalized.backendRevision ?? 0)) return;
         const localDocument =
           existing && state.activeWorkflowTabId === normalized.id
             ? { ...existing, snapshot: currentWorkflowSnapshot(state) }
             : existing;
+        if (existing && (existing.backendRevision ?? 0) === (normalized.backendRevision ?? 0)) {
+          // A websocket broadcast for revision N can arrive before the PUT
+          // response for that same revision. Do not let the duplicate replace
+          // newer local work, but do let an exact acknowledgement clear the
+          // dirty marker left by the in-flight save.
+          if (localDocument && existing.dirty && sameWorkflowDocument(localDocument, normalized)) {
+            set({
+              workflowTabs: state.workflowTabs.map((tab) =>
+                tab.id === normalized.id ? { ...tab, snapshot: localDocument.snapshot, dirty: false } : tab,
+              ),
+            });
+          }
+          return;
+        }
+        if (existing && localDocument && sameWorkflowDocument(localDocument, normalized)) {
+          // An autosave acknowledgement for the document already on screen
+          // only advances backend metadata. Replacing the live canvas here
+          // would cancel in-flight dynamic node-definition work even though
+          // the returned graph is byte-for-byte the same document.
+          set({
+            workflowTabs: state.workflowTabs.map((tab) =>
+              tab.id === normalized.id ? { ...normalized, snapshot: localDocument.snapshot, dirty: false } : tab,
+            ),
+          });
+          return;
+        }
         const hasUnsavedLocalDocument = Boolean(
           existing &&
           localDocument &&
-          (existing.dirty || !sameWorkflowDocument(existing, localDocument)) &&
+          (options.acknowledgement || existing.dirty || !sameWorkflowDocument(existing, localDocument)) &&
           !sameWorkflowDocument(localDocument, normalized),
         );
         if (existing && localDocument && hasUnsavedLocalDocument) {
+          // An own-save acknowledgement is metadata, never a remote edit.
+          // Undo/Redo may restore an already-clean local document while an
+          // older PUT remains in flight, so dirty alone is not sufficient.
           // A websocket broadcast can race the response for an older PUT (or a
           // save from another browser) while this tab has newer local content.
           // Advance the observed backend revision without replacing that
@@ -2735,7 +2919,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           ? state.workflowTabs.map((tab) => (tab.id === normalized.id ? { ...normalized, dirty: false } : tab))
           : [...state.workflowTabs, { ...normalized, dirty: false }];
         if (state.activeWorkflowTabId === normalized.id) {
-          applyWorkflowSnapshot(normalized.snapshot);
+          applyWorkflowSnapshot(normalized.snapshot, normalized.id);
           set({
             workflowTabs: tabs,
             workflowCanvasEpoch: state.workflowCanvasEpoch + 1,
@@ -2918,7 +3102,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
     }),
     {
       name: STUDIO_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => resilientStudioStorage),
       partialize: (state) => ({
         selectedMode: state.selectedMode,
         form: state.form,
@@ -2928,7 +3112,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         activeTemplateId: state.activeTemplateId,
         sourceOutputId: state.sourceOutputId,
         importedAssets: state.importedAssets,
-        workflowTabs: state.workflowTabs,
+        workflowTabs: workflowTabsForLocalCheckpoint(state.workflowTabs, state.activeWorkflowTabId),
         activeWorkflowTabId: state.activeWorkflowTabId,
         appModeConfigs: state.appModeConfigs,
         activeAppModeConfigId: state.activeAppModeConfigId,

@@ -2,6 +2,7 @@ import { type Edge, getIncomers, getOutgoers, type Node } from '@xyflow/react';
 import type { ApiGraphExport, NodeParamValue } from '../types/api';
 import { studioOffloadPlanConflict } from '../studio/deviceOffload';
 import type { NodeData, NodeParams } from './useNodeStore';
+import { lowerReviewedLoopConnectionsV2 } from '../studio/reviewedLoopConnectionsV2';
 
 export type FlowGraphNode = Node<NodeData, NodeData['type']>;
 
@@ -13,10 +14,13 @@ type SetNodeParam = <K extends keyof NodeParams = 'value'>(
 ) => void;
 
 type BuildApiGraphExportOptions = {
+  randomizeSeeds?: boolean;
   nodes: FlowGraphNode[];
   edges: Edge[];
   sid: string;
   targetNodeId?: string;
+  /** Multiple terminal nodes of one selected nested Block, not unrelated workflow branches. */
+  targetNodeIds?: string[];
   setParam: SetNodeParam;
 };
 
@@ -29,6 +33,7 @@ function resolveRandomFieldValue(
   paramName: string,
   paramData: NodeParams,
   setParam: SetNodeParam,
+  sharedRandomValues: Map<string, number>,
 ) {
   const randomValue = isRecord(paramData.value) ? paramData.value : null;
   const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : paramData.value;
@@ -38,7 +43,19 @@ function resolveRandomFieldValue(
     return { isRandom, value: fieldValue };
   }
 
-  const generatedValue = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+  const minimum = Number.isSafeInteger(paramData.min) ? Number(paramData.min) : 0;
+  const maximum = Number.isSafeInteger(paramData.max) ? Number(paramData.max) : 0xffff_ffff;
+  // Studio exposes one seed control for the entire managed workflow. Resolve
+  // that random seed once per export so every route-bound encoder, ControlNet,
+  // and denoiser receives the same concrete value. Manual graph nodes remain
+  // independently random as before.
+  const sharedKey = node.data.studioOwned === true && paramName === 'seed' ? 'managed-studio-seed' : null;
+  const sharedValue = sharedKey ? sharedRandomValues.get(sharedKey) : undefined;
+  if (sharedValue !== undefined && (sharedValue < minimum || sharedValue > maximum)) {
+    throw new Error('Managed Studio seed fields have incompatible random bounds.');
+  }
+  const generatedValue = sharedValue ?? Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
+  if (sharedKey && sharedValue === undefined) sharedRandomValues.set(sharedKey, generatedValue);
   setParam(node.id, paramName, { value: generatedValue, isRandom });
   return { isRandom, value: generatedValue };
 }
@@ -106,12 +123,15 @@ function assertExecutableDeviceOffloadPlan(node: FlowGraphNode) {
 }
 
 export function buildApiGraphExport({
+  randomizeSeeds = true,
   nodes,
   edges,
   sid,
   targetNodeId,
+  targetNodeIds,
   setParam,
 }: BuildApiGraphExportOptions): ApiGraphExport {
+  ({ nodes, edges } = lowerReviewedLoopConnectionsV2(nodes, edges));
   const sessionId = sid || '';
 
   const executableNodes = executableFlowNodes(nodes);
@@ -124,13 +144,11 @@ export function buildApiGraphExport({
     };
   }
 
-  let targetNode: FlowGraphNode | undefined;
-  if (targetNodeId) {
-    targetNode = executableNodes.find((node) => node.id === targetNodeId);
-    if (!targetNode) {
-      throw new Error(`Target node with id ${targetNodeId} not found in executable nodes`);
-    }
-  }
+  const targets = [...new Set(targetNodeIds ?? (targetNodeId ? [targetNodeId] : []))];
+  if (targetNodeIds && !targets.length) throw new Error('The selected Block has no executable output path.');
+  for (const id of targets)
+    if (!executableNodes.some((node) => node.id === id))
+      throw new Error(`Target node with id ${id} not found in executable nodes`);
 
   const getIncomingNodes = (nodeId: string): FlowGraphNode[] => {
     const node = executableNodes.find((n) => n.id === nodeId);
@@ -162,8 +180,8 @@ export function buildApiGraphExport({
 
   let nodesToInclude: string[] = [];
 
-  if (targetNodeId && targetNode) {
-    nodesToInclude = walkBackwards(targetNodeId);
+  if (targets.length) {
+    nodesToInclude = [...new Set(targets.flatMap((id) => walkBackwards(id)))];
   } else {
     const outputNodes = executableNodes.filter((node) => {
       const outgoers = getOutgoingNodes(node.id);
@@ -185,6 +203,7 @@ export function buildApiGraphExport({
   const includedNodeIds = new Set(filteredExecutableNodes.map((node) => node.id));
 
   const nodesExport: ApiGraphExport['nodes'] = {};
+  const sharedRandomValues = new Map<string, number>();
 
   filteredExecutableNodes.forEach((node) => {
     const params: ApiGraphExport['nodes'][string]['params'] = {};
@@ -195,8 +214,20 @@ export function buildApiGraphExport({
       }
 
       const randomField =
-        paramData.display === 'random' ? resolveRandomFieldValue(node, paramName, paramData, setParam) : null;
-      const exportValue = randomField ? randomField.value : paramData.value;
+        paramData.display === 'random'
+          ? randomizeSeeds
+            ? resolveRandomFieldValue(node, paramName, paramData, setParam, sharedRandomValues)
+            : {
+                isRandom: false,
+                value:
+                  isRecord(paramData.value) && 'value' in paramData.value ? paramData.value.value : paramData.value,
+              }
+          : null;
+      // The executable graph contains values, not the full registry schema.
+      // Preserve backend-owned defaults when a field has not been edited;
+      // otherwise JSON serialization drops `undefined` and the worker sees an
+      // empty parameter instead of the exact structured model selection.
+      const exportValue = randomField ? randomField.value : (paramData.value ?? paramData.default);
 
       const param: ApiGraphExport['nodes'][string]['params'][string] = {
         value: exportValue as NodeParamValue,
@@ -231,10 +262,10 @@ export function buildApiGraphExport({
 
   const paths: string[][] = [];
 
-  if (targetNodeId && targetNode) {
-    const path = walkBackwards(targetNodeId);
-    if (path.length > 0) {
-      paths.push(path);
+  if (targets.length) {
+    for (const id of targets) {
+      const path = walkBackwards(id);
+      if (path.length > 0) paths.push(path);
     }
   } else {
     const outputNodes = executableNodes.filter((node) => {
@@ -296,6 +327,7 @@ export function buildApiGraphExport({
         iterationMode,
         carry: paramBoolean(loopNode, 'carry', true),
         collect: paramBoolean(loopNode, 'collect', true),
+        durable: paramBoolean(loopNode, 'durable', false),
         maxRetries: Math.max(0, Math.min(10, paramNumber(loopNode, 'max_retries', 1))),
         ...(loopNode.parentId ? { parentLoopId: loopNode.parentId } : {}),
       };

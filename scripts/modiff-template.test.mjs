@@ -4,7 +4,12 @@ import { after, before, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import { normalizePortableWorkflowNodeOffload, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import { findCanonicalWorkflowRecord } from './release-contract-core.mjs';
+import {
+  normalizePortableWorkflowNodeOffload,
+  workflowNodeAttentionBackendError,
+  workflowNodeDeviceOffloadError,
+} from './workflow-library-contract.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -33,6 +38,44 @@ let deviceRebaseModule;
 let modelUsagePoliciesModule;
 let modelCapabilitiesModule;
 
+test('run readiness ignores progress-only task changes but invalidates task ownership and lifecycle', () => {
+  const fingerprint = runReadinessModule.runReadinessTaskFingerprint;
+  const task = {
+    task_id: 'background-task',
+    status: 'running',
+    workflow_tab_id: 'other-workflow',
+    workflow_title: 'Background generation',
+    name: 'Graph execution',
+    updated_at: 1,
+  };
+  const initial = fingerprint(task);
+  for (let step = 0; step < 500; step += 1) {
+    assert.equal(
+      fingerprint({
+        ...task,
+        updated_at: step + 2,
+        progress: step / 5,
+        current_step: step,
+        last_heartbeat_at: step + 2,
+        message: `Progress ${step}`,
+      }),
+      initial,
+    );
+  }
+  for (const change of [
+    { task_id: 'new-task' },
+    { workflow_tab_id: 'selected-workflow' },
+    { workflow_title: 'Renamed generation' },
+    { name: 'Renamed task' },
+    { status: 'completed' },
+    { status: 'failed' },
+    { status: 'cancelled' },
+  ])
+    assert.notEqual(fingerprint({ ...task, ...change }), initial);
+  assert.notEqual(fingerprint(undefined), initial);
+  assert.equal(fingerprint({ ...task, status: undefined }), initial);
+});
+
 before(async () => {
   globalThis.window = {
     location: {
@@ -47,7 +90,7 @@ before(async () => {
       entries: [],
       noDiscovery: true,
     },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
   templatesModule = await server.ssrLoadModule('/src/studio/templates.ts');
@@ -104,6 +147,43 @@ test('schema-v2 capability modes are exact while legacy mode metadata can fall b
   );
 });
 
+test('an installed Expert-only artifact remains ready in Model Manager without an Auto recipe', () => {
+  const expertOnlyPlan = {
+    error: false,
+    schemaVersion: 2,
+    status: 'needs_setup',
+    compatibility: {
+      state: 'expert_only',
+      severity: 'warning',
+      code: 'expert_configuration_required',
+      summary: 'Expert configuration required',
+      detail: 'No Auto recipe is declared for this exact model and task.',
+      action: { type: 'switch_to_expert', label: 'Review in Expert mode' },
+      source: 'backend_auto_planner',
+    },
+    candidates: [],
+  };
+
+  assert.equal(autoResourceModule.autoPlanIsReady(expertOnlyPlan), false);
+  assert.equal(autoResourceModule.modelInstallIsReady(true, expertOnlyPlan), true);
+  assert.equal(autoResourceModule.modelInstallIsReady(false, expertOnlyPlan), false);
+});
+
+test('every public Studio template resolves an exact canonical workflow contract', async () => {
+  const manifest = JSON.parse(
+    await readFile(path.join(ROOT, '..', 'MoDiff', 'data', 'workflow-library-manifest.json'), 'utf8'),
+  );
+  const workflowRecords = [...manifest.workflows, ...manifest.experimentalWorkflows].map((record) => ({
+    manifest: record,
+  }));
+  for (const template of templatesModule.STUDIO_TEMPLATES) {
+    const workflow = findCanonicalWorkflowRecord(workflowRecords, template);
+    assert.ok(workflow, `${template.id} must resolve an exact canonical workflow`);
+    assert.match(workflow.manifest.graphHash, /^[0-9a-f]{64}$/);
+    assert.match(workflow.manifest.graphPath, /\.json$/);
+  }
+});
+
 test('the managed Qwen ControlNet requirement carries its reviewed immutable commit', () => {
   assert.equal(profilesModule.QWEN_CONTROLNET_REQUIREMENT.repo, 'InstantX/Qwen-Image-ControlNet-Union');
   assert.equal(profilesModule.QWEN_CONTROLNET_REQUIREMENT.revision, 'b13036f066d6dee7c20513e263d3d673055e9de8');
@@ -120,7 +200,1388 @@ test('the managed Qwen ControlNet requirement carries its reviewed immutable com
   );
 });
 
-test('run readiness blocks a model and task pair omitted by authoritative backend capabilities', () => {
+test('unconditional image profiles expose prompt-free native sampling defaults', () => {
+  assert.equal(profilesModule.getDefaultModelForMode('unconditional_image'), 'DDPMPipeline');
+  assert.deepEqual(profilesModule.getCompatibleModelsForMode('unconditional_image', { includeWorkflowOnly: true }), [
+    'DDPMPipeline',
+    'DDIMPipeline',
+    'ConsistencyModelPipeline',
+  ]);
+
+  const expected = {
+    DDPMPipeline: { repo: profilesModule.DDPM_CIFAR10_REPO, side: 32, steps: 1000 },
+    DDIMPipeline: { repo: profilesModule.DDPM_CIFAR10_REPO, side: 32, steps: 50 },
+    ConsistencyModelPipeline: { repo: profilesModule.CONSISTENCY_IMAGENET64_REPO, side: 64, steps: 1 },
+  };
+  for (const [modelType, contract] of Object.entries(expected)) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    const form = profilesModule.getFormDefaultsForMode('unconditional_image', modelType);
+    assert.equal(profile.defaultRepo, contract.repo);
+    assert.equal(profile.supportsNegativePrompt, false);
+    assert.equal(form.width, contract.side);
+    assert.equal(form.height, contract.side);
+    assert.equal(form.steps, contract.steps);
+    assert.equal(form.batchSize, 1);
+    assert.equal(form.eta, 0);
+    assert.equal(form.classLabel, -1);
+  }
+});
+
+test('Stable Diffusion 1.5 exposes generic 512px generation, edit, inpaint, and ControlNet modes', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPipeline;
+  assert.equal(profile.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.deepEqual(profile.modes, [
+    'text_to_image',
+    'edit_image',
+    'inpaint',
+    'control_image',
+    'control_edit_image',
+    'control_inpaint',
+  ]);
+  assert.equal(profile.supportsControlImage, true);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.SD15_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  for (const mode of profile.modes) {
+    const form = profilesModule.getFormDefaultsForMode(mode, 'StableDiffusionPipeline');
+    assert.equal(form.modelType, 'StableDiffusionPipeline');
+    assert.equal(form.width, 512);
+    assert.equal(form.height, 512);
+    assert.equal(form.steps, 30);
+    assert.equal(form.guidanceScale, 7.5);
+  }
+});
+
+test('SDXL Turbo exposes its pinned one-step guidance-zero recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLTurboPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionXLTurboPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_TURBO_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 1);
+  assert.equal(form.guidanceScale, 0);
+});
+
+test('SDXL InstructPix2Pix exposes its pinned 768px instruction-edit recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLInstructPix2PixPipeline;
+  const form = profilesModule.getFormDefaultsForMode('edit_image', 'StableDiffusionXLInstructPix2PixPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_INSTRUCT_PIX2PIX_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['edit_image']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 768);
+  assert.equal(form.height, 768);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 3);
+  assert.equal(form.conditioningScale, 1.5);
+});
+
+test('SDXL ControlNet exposes its pinned 1024px Canny recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLControlNetPipeline;
+  const form = profilesModule.getFormDefaultsForMode('control_image', 'StableDiffusionXLControlNetPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['control_image', 'control_edit_image', 'control_inpaint']);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 5);
+  assert.equal(form.conditioningScale, 0.5);
+});
+
+test('Modular SDXL exposes exact base, ControlNet Union, and IP-Adapter workflow contracts', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLModularPipeline;
+  const form = profilesModule.getFormDefaultsForMode('control_image', 'StableDiffusionXLModularPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.supportsControlImage, true);
+  assert.deepEqual(profile.modes, [
+    'text_to_image',
+    'edit_image',
+    'inpaint',
+    'control_image',
+    'control_edit_image',
+    'control_inpaint',
+    'control_union_image',
+    'control_union_edit_image',
+    'control_union_inpaint',
+    'ip_adapter_image',
+    'ip_adapter_edit_image',
+    'ip_adapter_inpaint',
+    'ip_adapter_control_image',
+    'ip_adapter_control_edit_image',
+    'ip_adapter_control_inpaint',
+    'ip_adapter_control_union_image',
+    'ip_adapter_control_union_edit_image',
+    'ip_adapter_control_union_inpaint',
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_edit_image.requiredImages, ['referenceImages', 'controlImage']);
+  assert.deepEqual(profile.modeRequirements.control_edit_image.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_inpaint.requiredImages, [
+    'referenceImages',
+    'maskImage',
+    'controlImage',
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_inpaint.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_union_image.requiredImages, ['controlImage']);
+  assert.deepEqual(profile.modeRequirements.control_union_image.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_UNION_REQUIREMENT,
+  ]);
+  assert.deepEqual(profilesModule.SDXL_CONTROLNET_UNION_REQUIREMENT.downloadFiles, [
+    'config.json',
+    'diffusion_pytorch_model.safetensors',
+  ]);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_image.requiredImages, ['ipAdapterImage']);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_image.modelRequirements, [
+    profilesModule.SDXL_IP_ADAPTER_REQUIREMENT,
+  ]);
+  assert.deepEqual(profilesModule.SDXL_IP_ADAPTER_REQUIREMENT.downloadFiles, [
+    'sdxl_models/ip-adapter_sdxl.safetensors',
+    'sdxl_models/image_encoder/config.json',
+    'sdxl_models/image_encoder/model.safetensors',
+  ]);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_control_union_inpaint.requiredImages, [
+    'referenceImages',
+    'maskImage',
+    'controlImage',
+    'ipAdapterImage',
+  ]);
+  assert.deepEqual(profile.modeRequirements.ip_adapter_control_union_inpaint.modelRequirements, [
+    profilesModule.SDXL_CONTROLNET_UNION_REQUIREMENT,
+    profilesModule.SDXL_IP_ADAPTER_REQUIREMENT,
+  ]);
+  assert.equal(profile.executionStatus, 'expert_only');
+  assert.equal(profile.autoEligible, true);
+  assert.equal(form.modelType, 'StableDiffusionXLModularPipeline');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 5);
+});
+
+test('Hunyuan-DiT exposes its exact standalone distilled recipe and immutable terms acknowledgement', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanDiTPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'HunyuanDiTPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.HUNYUAN_DIT_DISTILLED_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 25);
+  assert.equal(form.guidanceScale, 5);
+  assert.equal(form.maxSequenceLength, 256);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForTemplate({
+    id: 'hunyuan-dit-distilled-source',
+    modelType: 'HunyuanDiTPipeline',
+    mode: 'text_to_image',
+  });
+  assert.deepEqual(
+    policies.map((policy) => policy.repository),
+    [profilesModule.HUNYUAN_DIT_DISTILLED_REPO],
+  );
+  assert.equal(policies[0].acknowledgementRequired, true);
+  assert.match(policies[0].termsUrl, /b47a590cac7a3e1a973036700e45b3fe457e2239\/LICENSE\.txt$/);
+});
+
+test('Hunyuan-DiT ControlNet exposes its exact Canny recipe and immutable terms acknowledgement', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanDiTControlNetPipeline;
+  const form = profilesModule.getFormDefaultsForMode('control_image', 'HunyuanDiTControlNetPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.HUNYUAN_DIT_DISTILLED_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['control_image']);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.HUNYUAN_DIT_CONTROLNET_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 6);
+  assert.equal(form.conditioningScale, 1);
+  assert.equal(form.maxSequenceLength, 256);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForTemplate({
+    id: 'hunyuan-dit-controlnet-source',
+    modelType: 'HunyuanDiTControlNetPipeline',
+    mode: 'control_image',
+  });
+  assert.deepEqual(
+    policies.map((policy) => policy.repository),
+    [profilesModule.HUNYUAN_DIT_DISTILLED_REPO],
+  );
+  for (const policy of policies) {
+    assert.equal(policy.useScope, 'commercial_allowed');
+    assert.equal(policy.access, 'public');
+    assert.equal(policy.acknowledgementRequired, true);
+    assert.match(policy.shortSummary, /100M-MAU threshold/i);
+    assert.match(policy.shortSummary, /machine-generation disclosure/i);
+    assert.match(policy.termsUrl, /b47a590cac7a3e1a973036700e45b3fe457e2239\/LICENSE\.txt$/);
+  }
+});
+
+test('SDXL T2I Adapter exposes its pinned 1024px Canny recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLAdapterPipeline;
+  const form = profilesModule.getFormDefaultsForMode('control_image', 'StableDiffusionXLAdapterPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['control_image']);
+  assert.deepEqual(profile.modeRequirements.control_image.modelRequirements, [
+    profilesModule.SDXL_T2I_ADAPTER_CANNY_REQUIREMENT,
+  ]);
+  assert.deepEqual(profile.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.conditioningScale, 0.8);
+});
+
+test('SDXL PAG exposes generic perturbed-attention controls over the pinned base', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionXLPAGPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionXLPAGPipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'StableDiffusionXLPAGPipeline');
+  const inpaint = profilesModule.getFormDefaultsForMode('inpaint', 'StableDiffusionXLPAGPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SDXL_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_edit_image']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(profile.modeRequirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 5);
+  assert.equal(form.pagScale, 3);
+  assert.equal(form.pagAdaptiveScale, 0);
+  assert.equal(edit.strength, 0.8);
+  assert.equal(inpaint.strength, 0.8);
+});
+
+test('Sana and Sana Sprint expose their pinned mixed-precision recipes', () => {
+  const sana = profilesModule.STUDIO_MODEL_PROFILES.SanaPipeline;
+  const sanaForm = profilesModule.getFormDefaultsForMode('text_to_image', 'SanaPipeline');
+  assert.equal(sana.defaultRepo, profilesModule.SANA_REPO);
+  assert.equal(sana.defaultDtype, 'float16');
+  assert.deepEqual(sana.modes, ['text_to_image']);
+  assert.equal(sanaForm.steps, 20);
+  assert.equal(sanaForm.guidanceScale, 4.5);
+  assert.equal(sanaForm.maxSequenceLength, 300);
+
+  const sprint = profilesModule.STUDIO_MODEL_PROFILES.SanaSprintPipeline;
+  const sprintText = profilesModule.getFormDefaultsForMode('text_to_image', 'SanaSprintPipeline');
+  const sprintEdit = profilesModule.getFormDefaultsForMode('edit_image', 'SanaSprintPipeline');
+  assert.equal(sprint.defaultRepo, profilesModule.SANA_SPRINT_REPO);
+  assert.equal(sprint.defaultDtype, 'bfloat16');
+  assert.equal(sprint.supportsNegativePrompt, false);
+  assert.deepEqual(sprint.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(sprint.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(sprintText.steps, 2);
+  assert.equal(sprintText.guidanceScale, 4.5);
+  assert.equal(sprintText.maxSequenceLength, 300);
+  assert.equal(sprintEdit.strength, 0.5);
+});
+
+test('PixArt Sigma exposes its reviewed 1024px workflow recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.PixArtSigmaPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'PixArtSigmaPipeline');
+  assert.equal(profile.label, 'PixArt Sigma XL 1024px');
+  assert.equal(profile.defaultRepo, profilesModule.PIXART_SIGMA_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 20);
+  assert.equal(form.guidanceScale, 4.5);
+  assert.equal(form.maxSequenceLength, 300);
+});
+
+test('Kandinsky 3 exposes its reviewed single-stage generation and edit recipes', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.Kandinsky3Pipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_image', 'Kandinsky3Pipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'Kandinsky3Pipeline');
+  assert.equal(profile.label, 'Kandinsky 3');
+  assert.equal(profile.defaultRepo, profilesModule.KANDINSKY3_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(text.width, 1024);
+  assert.equal(text.height, 1024);
+  assert.equal(text.steps, 25);
+  assert.equal(text.guidanceScale, 3);
+  assert.equal(text.maxSequenceLength, 128);
+  assert.equal(edit.strength, 0.75);
+});
+
+test('LongCat Image exposes the reviewed generation and single-image edit profiles', () => {
+  const textProfile = profilesModule.STUDIO_MODEL_PROFILES.LongCatImagePipeline;
+  const editProfile = profilesModule.STUDIO_MODEL_PROFILES.LongCatImageEditPipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_image', 'LongCatImagePipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'LongCatImageEditPipeline');
+  assert.equal(textProfile.defaultRepo, profilesModule.LONGCAT_IMAGE_REPO);
+  assert.equal(editProfile.defaultRepo, profilesModule.LONGCAT_IMAGE_EDIT_REPO);
+  assert.deepEqual(textProfile.modes, ['text_to_image']);
+  assert.deepEqual(editProfile.modes, ['edit_image']);
+  assert.deepEqual(editProfile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(textProfile.catalogVisibility, 'workflowOnly');
+  assert.equal(editProfile.catalogVisibility, 'workflowOnly');
+  assert.equal(text.steps, 50);
+  assert.equal(text.guidanceScale, 4);
+  assert.equal(text.maxSequenceLength, 512);
+  assert.equal(edit.steps, 50);
+  assert.equal(edit.guidanceScale, 4.5);
+});
+
+test('Lumina exposes the reviewed generation profiles', () => {
+  const luminaProfile = profilesModule.STUDIO_MODEL_PROFILES.LuminaPipeline;
+  const lumina2Profile = profilesModule.STUDIO_MODEL_PROFILES.Lumina2Pipeline;
+  const lumina = profilesModule.getFormDefaultsForMode('text_to_image', 'LuminaPipeline');
+  const lumina2 = profilesModule.getFormDefaultsForMode('text_to_image', 'Lumina2Pipeline');
+  assert.equal(luminaProfile.defaultRepo, profilesModule.LUMINA_REPO);
+  assert.equal(lumina2Profile.defaultRepo, profilesModule.LUMINA2_REPO);
+  assert.deepEqual(luminaProfile.modes, ['text_to_image']);
+  assert.deepEqual(lumina2Profile.modes, ['text_to_image']);
+  assert.equal(luminaProfile.catalogVisibility, 'workflowOnly');
+  assert.equal(lumina2Profile.catalogVisibility, 'workflowOnly');
+  assert.equal(lumina.steps, 30);
+  assert.equal(lumina.guidanceScale, 4);
+  assert.equal(lumina.maxSequenceLength, 256);
+  assert.equal(lumina2.steps, 50);
+  assert.equal(lumina2.guidanceScale, 4);
+  assert.equal(lumina2.maxSequenceLength, 256);
+});
+
+test('OmniGen exposes text, single-image, and multi-reference profiles', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.OmniGenPipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_image', 'OmniGenPipeline');
+  const edit = profilesModule.getFormDefaultsForMode('edit_image', 'OmniGenPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.OMNIGEN_REPO);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'multi_image_reference_edit']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(profile.supportsImageInput, true);
+  assert.equal(profile.supportsMultiImage, true);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(profile.modeRequirements.multi_image_reference_edit.requiredImages, ['referenceImages']);
+  assert.equal(text.steps, 50);
+  assert.equal(text.guidanceScale, 2.5);
+  assert.equal(edit.conditioningScale, 1.6);
+});
+
+test('PRX exposes its bounded native 512px SFT recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.PRXPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'PRXPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.PRX_REPO);
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.family, 'PRX');
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 28);
+  assert.equal(form.guidanceScale, 5);
+  assert.equal(form.maxSequenceLength, 256);
+});
+
+test('Nucleus Image exposes its reviewed 1024px MoE recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.NucleusMoEImagePipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'NucleusMoEImagePipeline');
+  assert.equal(profile.defaultRepo, profilesModule.NUCLEUS_IMAGE_REPO);
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.family, 'Nucleus Image');
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 4);
+  assert.equal(form.maxSequenceLength, 1024);
+});
+
+test('AuraFlow v0.3 exposes its reviewed native fp16 recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.AuraFlowPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'AuraFlowPipeline');
+  assert.equal(profile.label, 'AuraFlow v0.3 1536px');
+  assert.equal(profile.defaultRepo, profilesModule.AURAFLOW_V03_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1536);
+  assert.equal(form.height, 768);
+  assert.equal(form.aspectRatio, 'custom');
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 3.5);
+  assert.equal(form.maxSequenceLength, 256);
+});
+
+test('Chroma1-HD exposes its reviewed bounded bfloat16 recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.ChromaPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'ChromaPipeline');
+  assert.equal(profile.label, 'Chroma1-HD 1024px');
+  assert.equal(profile.defaultRepo, profilesModule.CHROMA1_HD_REPO);
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.aspectRatio, '1:1');
+  assert.equal(form.steps, 40);
+  assert.equal(form.guidanceScale, 3);
+  assert.equal(form.maxSequenceLength, 512);
+});
+
+test('CogView3 Plus exposes its reviewed bfloat16 1024px recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.CogView3PlusPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'CogView3PlusPipeline');
+  assert.equal(profile.label, 'CogView3 Plus 3B');
+  assert.equal(profile.defaultRepo, profilesModule.COGVIEW3_PLUS_REPO);
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.aspectRatio, '1:1');
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 7);
+  assert.equal(form.maxSequenceLength, 224);
+});
+
+test('CogView4 exposes its reviewed bounded bfloat16 1024px recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.CogView4Pipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'CogView4Pipeline');
+  assert.equal(profile.label, 'CogView4 6B');
+  assert.equal(profile.defaultRepo, profilesModule.COGVIEW4_6B_REPO);
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.aspectRatio, '1:1');
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 3.5);
+  assert.equal(form.maxSequenceLength, 1024);
+});
+
+test('ERNIE Image Turbo exposes its reviewed fixed 1024px recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.ErnieImagePipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'ErnieImagePipeline');
+  assert.equal(profile.label, 'ERNIE Image Turbo');
+  assert.equal(profile.defaultRepo, profilesModule.ERNIE_IMAGE_TURBO_REPO);
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.aspectRatio, '1:1');
+  assert.equal(form.steps, 8);
+  assert.equal(form.guidanceScale, 1);
+  assert.equal(form.maxSequenceLength, 2048);
+});
+
+test('GLM-Image exposes its reviewed fixed 1024px recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.GlmImagePipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'GlmImagePipeline');
+  assert.equal(profile.label, 'GLM-Image');
+  assert.equal(profile.defaultRepo, profilesModule.GLM_IMAGE_REPO);
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.deepEqual(profile.modes, ['text_to_image']);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 1024);
+  assert.equal(form.aspectRatio, '1:1');
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 1.5);
+  assert.equal(form.maxSequenceLength, 2048);
+});
+
+test('JoyAI Image exposes separate bounded single- and multi-image recipes', () => {
+  const edit = profilesModule.STUDIO_MODEL_PROFILES.JoyImageEditPipeline;
+  const textForm = profilesModule.getFormDefaultsForMode('text_to_image', 'JoyImageEditPipeline');
+  const editForm = profilesModule.getFormDefaultsForMode('edit_image', 'JoyImageEditPipeline');
+  assert.equal(edit.label, 'JoyAI Image Edit');
+  assert.equal(edit.defaultRepo, profilesModule.JOYIMAGE_EDIT_REPO);
+  assert.equal(edit.defaultDtype, 'bfloat16');
+  assert.deepEqual(edit.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(edit.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(edit.supportsImageInput, true);
+  assert.equal(edit.supportsMultiImage, false);
+  assert.equal(textForm.steps, 40);
+  assert.equal(editForm.guidanceScale, 4);
+  assert.equal(editForm.maxSequenceLength, 2048);
+
+  const plus = profilesModule.STUDIO_MODEL_PROFILES.JoyImageEditPlusPipeline;
+  const plusForm = profilesModule.getFormDefaultsForMode('multi_image_reference_edit', 'JoyImageEditPlusPipeline');
+  assert.equal(plus.label, 'JoyAI Image Edit Plus');
+  assert.equal(plus.defaultRepo, profilesModule.JOYIMAGE_EDIT_PLUS_REPO);
+  assert.deepEqual(plus.modes, ['edit_image', 'multi_image_reference_edit']);
+  assert.deepEqual(plus.modeRequirements.multi_image_reference_edit.requiredImages, ['referenceImages']);
+  assert.equal(plus.supportsImageInput, true);
+  assert.equal(plus.supportsMultiImage, true);
+  assert.equal(plusForm.width, 1024);
+  assert.equal(plusForm.height, 1024);
+  assert.equal(plusForm.steps, 30);
+  assert.equal(plusForm.guidanceScale, 4);
+  assert.equal(plusForm.maxSequenceLength, 2048);
+});
+
+test('DreamLite base and mobile expose distinct pinned guidance recipes', () => {
+  const base = profilesModule.STUDIO_MODEL_PROFILES.DreamLitePipeline;
+  const baseText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLitePipeline');
+  const baseEdit = profilesModule.getFormDefaultsForMode('edit_image', 'DreamLitePipeline');
+  assert.equal(base.defaultRepo, profilesModule.DREAMLITE_BASE_REPO);
+  assert.equal(base.defaultDtype, 'bfloat16');
+  assert.deepEqual(base.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(base.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(baseText.steps, 28);
+  assert.equal(baseText.guidanceScale, 3.5);
+  assert.equal(baseText.maxSequenceLength, 200);
+  assert.equal(baseEdit.conditioningScale, 1.5);
+
+  const mobile = profilesModule.STUDIO_MODEL_PROFILES.DreamLiteMobilePipeline;
+  const mobileText = profilesModule.getFormDefaultsForMode('text_to_image', 'DreamLiteMobilePipeline');
+  assert.equal(mobile.defaultRepo, profilesModule.DREAMLITE_MOBILE_REPO);
+  assert.equal(mobile.supportsNegativePrompt, false);
+  assert.deepEqual(mobile.modes, ['text_to_image', 'edit_image']);
+  assert.equal(mobileText.steps, 4);
+  assert.equal(mobileText.guidanceScale, 0);
+  assert.equal(mobileText.maxSequenceLength, 200);
+  assert.equal(mobileText.conditioningScale, 0);
+});
+
+test('LongCat AudioDiT and AudioLDM2 expose their pinned generic audio recipes', () => {
+  const longcat = profilesModule.STUDIO_MODEL_PROFILES.LongCatAudioDiTPipeline;
+  const longcatForm = profilesModule.getFormDefaultsForMode('text_to_audio', 'LongCatAudioDiTPipeline');
+  assert.equal(longcat.defaultRepo, profilesModule.LONGCAT_AUDIO_DIT_REPO);
+  assert.equal(longcat.defaultDtype, 'bfloat16');
+  assert.equal(longcat.recommendedSampleRate, 24000);
+  assert.equal(longcatForm.audioDuration, 5);
+  assert.equal(longcatForm.steps, 16);
+  assert.equal(longcatForm.guidanceScale, 4);
+
+  const audioldm2 = profilesModule.STUDIO_MODEL_PROFILES.AudioLDM2Pipeline;
+  const audioldm2Form = profilesModule.getFormDefaultsForMode('text_to_audio', 'AudioLDM2Pipeline');
+  assert.equal(audioldm2.defaultRepo, profilesModule.AUDIO_LDM2_REPO);
+  assert.equal(audioldm2.defaultDtype, 'float16');
+  assert.equal(audioldm2.recommendedSampleRate, 16000);
+  assert.equal(audioldm2Form.audioDuration, 10);
+  assert.equal(audioldm2Form.steps, 200);
+  assert.equal(audioldm2Form.guidanceScale, 3.5);
+});
+
+test('Shap-E exposes the pinned safe rendered-orbit recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.ShapEPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_3d', 'ShapEPipeline');
+  assert.equal(profilesModule.getDefaultModelForMode('text_to_3d'), 'ShapEPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SHAP_E_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedFrames, 20);
+  assert.equal(form.width, 256);
+  assert.equal(form.height, 256);
+  assert.equal(form.steps, 64);
+  assert.equal(form.guidanceScale, 15);
+  assert.equal(form.fps, 12);
+  assert.ok(
+    resourcePlannerModule.AUTO_RESOURCE_LOADER_TARGETS.includes(
+      'modules.DiffusersThreeD.LoadPipeline.direct-diffusers-three-d',
+    ),
+  );
+  assert.equal(
+    resourcePlannerModule.getStudioResourceExecutionPathLabel({
+      resourceMode: 'auto',
+      executionPath: 'direct-diffusers-three-d',
+    }),
+    'Auto: Diffusers 3D',
+  );
+});
+
+test('Stable Video Diffusion exposes a gated prompt-free short-video recipe', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableVideoDiffusionPipeline;
+  const form = profilesModule.getFormDefaultsForMode('image_to_video', 'StableVideoDiffusionPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.STABLE_VIDEO_DIFFUSION_REPO);
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.supportsPrompt, false);
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedFrames, 25);
+  assert.equal(profile.recommendedFps, 7);
+  assert.deepEqual(profile.modeRequirements.image_to_video.requiredImages, ['referenceImages']);
+  assert.equal(form.width, 1024);
+  assert.equal(form.height, 576);
+  assert.equal(form.steps, 25);
+  assert.equal(form.guidanceScale, 3);
+  assert.equal(form.numFrames, 25);
+  assert.equal(form.fps, 7);
+
+  const policy = modelUsagePoliciesModule.usagePolicyForRepository(profile.defaultRepo);
+  assert.equal(policy.access, 'huggingface_gated');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.reviewedRevision, profilesModule.STABLE_VIDEO_DIFFUSION_REVISION);
+  assert.match(policy.shortSummary, /limited commercial use/i);
+  assert.match(policy.shortSummary, /registration, revenue, attribution, AUP/i);
+  assert.equal(modelUsagePoliciesModule.repositoryRequiresHuggingFaceGate(profile.defaultRepo), true);
+});
+
+test('AnimateDiff and AnimateLCM expose independently pinned motion recipes and undeclared-rights notices', () => {
+  const animatediff = profilesModule.STUDIO_MODEL_PROFILES.AnimateDiffPipeline;
+  const animatelcm = profilesModule.STUDIO_MODEL_PROFILES.AnimateLCMPipeline;
+  assert.equal(animatediff.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(animatelcm.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(animatediff.defaultDtype, 'float16');
+  assert.equal(animatediff.recommendedSteps, 25);
+  assert.equal(animatediff.recommendedGuidance, 7.5);
+  assert.equal(animatelcm.recommendedSteps, 6);
+  assert.equal(animatelcm.recommendedGuidance, 1.5);
+  assert.equal(animatediff.recommendedFrames, 16);
+  assert.equal(animatelcm.recommendedFrames, 16);
+  assert.deepEqual(animatediff.modeRequirements.text_to_video.modelRequirements, [
+    profilesModule.ANIMATEDIFF_MOTION_REQUIREMENT,
+  ]);
+  assert.deepEqual(animatelcm.modeRequirements.text_to_video.modelRequirements, [
+    profilesModule.ANIMATELCM_MOTION_REQUIREMENT,
+  ]);
+
+  const templates = [
+    { id: 'animatediff-source', modelType: 'AnimateDiffPipeline', mode: 'text_to_video' },
+    { id: 'animatelcm-source', modelType: 'AnimateLCMPipeline', mode: 'text_to_video' },
+  ];
+  const policies = templates.map((template) => modelUsagePoliciesModule.acknowledgementRequiredForTemplate(template));
+  assert.deepEqual(
+    policies[0].map((policy) => policy.repository),
+    [profilesModule.ANIMATEDIFF_MOTION_REPO],
+  );
+  assert.deepEqual(
+    policies[1].map((policy) => policy.repository),
+    [profilesModule.ANIMATELCM_MOTION_REPO],
+  );
+  for (const policy of policies.flat()) {
+    assert.equal(policy.useScope, 'rights_undetermined');
+    assert.equal(policy.access, 'public');
+    assert.equal(policy.acknowledgementRequired, true);
+    assert.match(policy.shortSummary, /does not declare a license/i);
+    assert.match(policy.shortSummary, /independently establish authorization/i);
+    assert.match(modelUsagePoliciesModule.usagePolicyAcknowledgementKey([policy]), /^terms-v2:[0-9a-f]{8}$/);
+  }
+});
+
+test('CogVideoX-2B exposes the bounded native short-video source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.CogVideoXPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'CogVideoXPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.COGVIDEOX_2B_REPO);
+  assert.equal(profilesModule.COGVIDEOX_2B_REVISION, '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01');
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 226);
+  assert.equal(form.width, 720);
+  assert.equal(form.height, 480);
+  assert.equal(form.steps, 25);
+  assert.equal(form.guidanceScale, 6);
+  assert.equal(form.numFrames, 25);
+  assert.equal(form.fps, 8);
+});
+
+test('direct Qwen and extended video profiles stay Expert-only with generic media contracts', () => {
+  const qwenControl = profilesModule.STUDIO_MODEL_PROFILES.QwenImageControlNetPipeline;
+  const qwenLayered = profilesModule.STUDIO_MODEL_PROFILES.QwenImageLayeredPipeline;
+  assert.deepEqual(qwenControl.modes, ['control_image']);
+  assert.deepEqual(qwenControl.revisionCandidates, [profilesModule.QWEN_IMAGE_2512_REVISION]);
+  assert.deepEqual(qwenControl.modeRequirements.control_image.requiredImages, ['controlImage']);
+  assert.deepEqual(qwenControl.modeRequirements.control_image.modelRequirements, [
+    profilesModule.QWEN_CONTROLNET_REQUIREMENT,
+  ]);
+  assert.deepEqual(qwenLayered.modes, ['layer_decomposition']);
+  assert.deepEqual(qwenLayered.revisionCandidates, [profilesModule.QWEN_IMAGE_LAYERED_REVISION]);
+  assert.deepEqual(qwenLayered.modeRequirements.layer_decomposition.requiredImages, ['referenceImages']);
+  assert.deepEqual(qwenLayered.layerCount, { default: 4, min: 1, max: 10 });
+  assert.deepEqual(qwenLayered.layerResolutions, [640, 1024]);
+  const layeredForm = profilesModule.getFormDefaultsForMode('layer_decomposition', 'QwenImageLayeredPipeline');
+  assert.equal(layeredForm.layers, 4);
+  assert.equal(layeredForm.width, 1024);
+  assert.equal(layeredForm.height, 1024);
+
+  const videoCases = [
+    ['AnimateDiffPAGPipeline', 'text_to_video', []],
+    ['AnimateDiffVideoToVideoPipeline', 'video_to_video', ['sourceVideo']],
+    ['AnimateDiffControlNetPipeline', 'control_to_video', ['controlVideo']],
+    ['AnimateDiffVideoToVideoControlNetPipeline', 'control_video_to_video', ['sourceVideo', 'controlVideo']],
+    ['CogVideoXVideoToVideoPipeline', 'video_to_video', ['sourceVideo']],
+  ];
+  for (const [modelType, mode, requiredVideos] of videoCases) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    assert.deepEqual(profile.modes, [mode]);
+    assert.deepEqual(profile.modeRequirements[mode].requiredVideos ?? [], requiredVideos);
+    assert.equal(profile.outputKind, 'video');
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profile.executionStatus, 'expert_only');
+    assert.equal(profile.qualificationStatus, 'graph-qualified-execution-pending');
+    assert.deepEqual(profile.qualifiedModes, []);
+    assert.equal(profile.autoEligible, false);
+    assert.equal(profile.galleryEligible, false);
+    assert.equal(profile.liveProof, false);
+    assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].autoStatus, 'manual_only');
+  }
+  assert.deepEqual(
+    profilesModule.STUDIO_MODEL_PROFILES.AnimateDiffControlNetPipeline.modeRequirements.control_to_video.modelRequirements.map(
+      ({ kind }) => kind,
+    ),
+    ['adapter', 'controlnet'],
+  );
+  assert.equal(
+    profilesModule.getDefaultModelForMode('control_video_to_video'),
+    'AnimateDiffVideoToVideoControlNetPipeline',
+  );
+});
+
+test('final direct image and LTX2 routes stay additive, Expert-only, and media truthful', () => {
+  const imageCases = [
+    ['QwenImageEditPipeline', ['edit_image'], profilesModule.QWEN_IMAGE_EDIT_REVISION],
+    [
+      'QwenImageEditPlusPipeline',
+      ['edit_image', 'multi_image_reference_edit'],
+      profilesModule.QWEN_IMAGE_EDIT_PLUS_REVISION,
+    ],
+    ['ZImageInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.Z_IMAGE_REVISION],
+    ['FluxKontextInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.FLUX_KONTEXT_REVISION],
+    ['Flux2KleinInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.FLUX2_KLEIN_REVISION],
+    ['ChromaImg2ImgPipeline', ['edit_image'], profilesModule.CHROMA1_HD_REVISION],
+    ['ChromaInpaintPipeline', ['inpaint', 'outpaint'], profilesModule.CHROMA1_HD_REVISION],
+  ];
+  for (const [modelType, modes, revision] of imageCases) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    assert.deepEqual(profile.modes, modes);
+    assert.deepEqual(profile.revisionCandidates, [revision]);
+    assert.equal(profile.outputKind, 'image');
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profile.executionStatus, 'expert_only');
+    assert.equal(profile.qualificationStatus, 'graph-qualified-execution-pending');
+    assert.deepEqual(profile.qualifiedModes, []);
+    assert.equal(profile.autoEligible, false);
+    assert.equal(profile.templateEligible, true);
+    assert.equal(profile.galleryEligible, false);
+    assert.equal(profile.liveProof, false);
+    assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].autoStatus, 'manual_only');
+  }
+  for (const modelType of [
+    'ZImageInpaintPipeline',
+    'FluxKontextInpaintPipeline',
+    'Flux2KleinInpaintPipeline',
+    'ChromaInpaintPipeline',
+  ]) {
+    const requirements = profilesModule.STUDIO_MODEL_PROFILES[modelType].modeRequirements;
+    assert.deepEqual(requirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
+    assert.deepEqual(requirements.outpaint.requiredImages, ['referenceImages']);
+  }
+
+  const ltx2 = profilesModule.STUDIO_MODEL_PROFILES.LTX2Pipeline;
+  assert.deepEqual(ltx2.modes, ['text_to_video']);
+  assert.deepEqual(ltx2.outputMedia, ['video', 'audio']);
+  assert.equal(ltx2.outputKind, 'video');
+  assert.equal(ltx2.recommendedFrames, 121);
+  assert.equal(ltx2.recommendedFps, 24);
+  assert.equal(ltx2.recommendedSteps, 40);
+  assert.equal(ltx2.recommendedGuidance, 4);
+  assert.deepEqual(ltx2.revisionCandidates, [profilesModule.LTX2_REVISION]);
+  assert.equal(ltx2.catalogVisibility, 'workflowOnly');
+  assert.equal(ltx2.autoEligible, false);
+  assert.equal(ltx2.galleryEligible, false);
+
+  assert.deepEqual(profilesModule.STUDIO_MODEL_PROFILES.QwenImageEditModularPipeline.modes, [
+    'edit_image',
+    'inpaint',
+    'outpaint',
+  ]);
+  assert.deepEqual(profilesModule.STUDIO_MODEL_PROFILES.QwenImageEditPlusModularPipeline.modes, [
+    'edit_image',
+    'multi_image_reference_edit',
+  ]);
+  assert.deepEqual(profilesModule.STUDIO_MODEL_PROFILES.LTX2ConditionPipeline.modes, [
+    'text_to_video',
+    'image_to_video',
+    'video_to_video',
+    'reference_to_video',
+  ]);
+});
+
+test('generic direct outpaint and synchronized LTX2 workflows infer exact modes and fields', () => {
+  const node = (id, module, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module, action, studioRole, studioOwned: true, params },
+  });
+  const outpaint = workflowInferenceModule.inferStudioFormFromWorkflow([
+    node('pipeline', 'modules.DiffusersImage', 'LoadPipeline', 'diffusersImagePipeline', {
+      pipeline_class: { value: 'ChromaInpaintPipeline' },
+    }),
+    node('image', 'modules.Image', 'Load', 'loadImage', { file: { value: ['source.png'] } }),
+    node('canvas', 'modules.DiffusersImage', 'OutpaintCanvas', 'outpaintCanvas', {
+      left: { value: 320 },
+      right: { value: 128 },
+      top: { value: 16 },
+      bottom: { value: 32 },
+      overlap: { value: 20 },
+      feather: { value: 6 },
+      fill_color: { value: 'black' },
+    }),
+    node('inpaint', 'modules.DiffusersImage', 'Inpaint', 'diffusersImageInpaint', {
+      prompt: { value: 'Extend the stone terrace' },
+    }),
+  ]);
+  assert.equal(outpaint.modelType, 'ChromaInpaintPipeline');
+  assert.equal(outpaint.mode, 'outpaint');
+  assert.deepEqual(outpaint.referenceImages, ['source.png']);
+  assert.equal(outpaint.outpaintLeft, 320);
+  assert.equal(outpaint.outpaintRight, 128);
+  assert.equal(outpaint.outpaintOverlap, 20);
+  assert.equal(outpaint.prompt, 'Extend the stone terrace');
+
+  const ltx2 = workflowInferenceModule.inferStudioFormFromWorkflow([
+    node('pipeline', 'modules.DiffusersVideo', 'LoadPipeline', 'wanPipeline', {
+      pipeline_class: { value: 'LTX2Pipeline' },
+    }),
+    node('generate', 'modules.DiffusersVideo', 'GenerateVideoAudio', 'wanGenerate', {
+      prompt: { value: 'A synchronized musical clockwork scene' },
+      num_frames: { value: 121 },
+      frame_rate: { value: 24 },
+    }),
+    node('export', 'modules.Video', 'ExportWithAudio', 'videoExport'),
+  ]);
+  assert.equal(ltx2.modelType, 'LTX2Pipeline');
+  assert.equal(ltx2.mode, 'text_to_video');
+  assert.equal(ltx2.numFrames, 121);
+  assert.equal(ltx2.fps, 24);
+});
+
+test('direct layers and dual-video workflows infer generic fields and block incomplete inputs', () => {
+  const node = (id, module, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module, action, studioRole, studioOwned: true, params },
+  });
+  const combinedNodes = [
+    node('pipeline', 'modules.DiffusersVideo', 'LoadPipeline', 'wanPipeline', {
+      pipeline_class: { value: 'AnimateDiffVideoToVideoControlNetPipeline' },
+    }),
+    node('source', 'modules.Video', 'Load', 'loadVideo', { file: { value: 'source.mp4' } }),
+    node('control', 'modules.Video', 'Load', 'loadControlVideo', { file: { value: 'control.mp4' } }),
+    node('generate', 'modules.DiffusersVideo', 'Generate', 'wanGenerate', {
+      prompt: { value: 'Follow the edge motion' },
+      conditioning_scale: { value: 0.75 },
+    }),
+  ];
+  const combined = workflowInferenceModule.inferStudioFormFromWorkflow(combinedNodes);
+  assert.equal(combined.modelType, 'AnimateDiffVideoToVideoControlNetPipeline');
+  assert.equal(combined.mode, 'control_video_to_video');
+  assert.equal(combined.sourceVideo, 'source.mp4');
+  assert.equal(combined.controlVideo, 'control.mp4');
+  assert.equal(combined.conditioningScale, 0.75);
+
+  const layered = workflowInferenceModule.inferStudioFormFromWorkflow([
+    node('pipeline', 'modules.DiffusersImage', 'LoadPipeline', 'diffusersImagePipeline', {
+      pipeline_class: { value: 'QwenImageLayeredPipeline' },
+    }),
+    node('image', 'modules.Image', 'Load', 'loadImage', { file: { value: ['portrait.png'] } }),
+    node('layers', 'modules.DiffusersImage', 'LayerDecompose', 'diffusersImageLayerDecompose', {
+      resolution: { value: 640 },
+      layers: { value: 6 },
+    }),
+  ]);
+  assert.equal(layered.modelType, 'QwenImageLayeredPipeline');
+  assert.equal(layered.mode, 'layer_decomposition');
+  assert.deepEqual(layered.referenceImages, ['portrait.png']);
+  assert.equal(layered.width, 640);
+  assert.equal(layered.height, 640);
+  assert.equal(layered.layers, 6);
+
+  const previousStudio = studioStoreModule.useStudioStore.getState();
+  const previousNodes = nodesStoreModule.useNodesStore.getState();
+  const previousFlow = flowStoreModule.useFlowStore.getState();
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    studioStoreModule.useStudioStore.setState({
+      form: { ...combined, sourceVideo: '', controlVideo: '' },
+      graphBinding: null,
+      graphFinalization: null,
+    });
+    const videoMessages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .filter(({ message }) => /source video|control video/i.test(message))
+      .map(({ message }) => message);
+    assert.equal(
+      videoMessages.some((message) => /source video/i.test(message)),
+      true,
+    );
+    assert.equal(
+      videoMessages.some((message) => /control video/i.test(message)),
+      true,
+    );
+
+    studioStoreModule.useStudioStore.setState({ form: { ...layered, width: 768, height: 768, layers: 11 } });
+    const layerMessages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.equal(
+      layerMessages.some((message) => /layer resolution/i.test(message)),
+      true,
+    );
+    assert.equal(
+      layerMessages.some((message) => /layer count/i.test(message)),
+      true,
+    );
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousNodes.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: previousNodes.studioModelCapabilitiesAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: previousStudio.form,
+      graphBinding: previousStudio.graphBinding,
+      graphFinalization: previousStudio.graphFinalization,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: previousFlow.nodes, edges: previousFlow.edges });
+  }
+});
+
+test('Allegro exposes its bounded native remote-only source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.AllegroPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'AllegroPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.ALLEGRO_REPO);
+  assert.equal(profilesModule.ALLEGRO_REVISION, 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6');
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 512);
+  assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+  assert.equal(form.width, 1280);
+  assert.equal(form.height, 720);
+  assert.equal(form.steps, 100);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.numFrames, 88);
+  assert.equal(form.fps, 15);
+});
+
+test('Latte exposes its bounded native remote-only source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.LattePipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'LattePipeline');
+  assert.equal(profile.defaultRepo, profilesModule.LATTE_REPO);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'float16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 120);
+  assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 50);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.numFrames, 16);
+  assert.equal(form.fps, 8);
+});
+
+test('Mochi exposes its bounded native remote-only source contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.MochiPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_video', 'MochiPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.MOCHI_REPO);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.defaultDtype, 'bfloat16');
+  assert.equal(profile.outputKind, 'video');
+  assert.equal(profile.recommendedMaxSequenceLength, 256);
+  assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+  assert.equal(form.width, 848);
+  assert.equal(form.height, 480);
+  assert.equal(form.steps, 64);
+  assert.equal(form.guidanceScale, 4.5);
+  assert.equal(form.numFrames, 31);
+  assert.equal(form.fps, 30);
+});
+
+test('SANA-Video exposes bounded native text and image remote-only contracts', () => {
+  for (const [modelType, mode, imageConditioned] of [
+    ['SanaVideoPipeline', 'text_to_video', false],
+    ['SanaImageToVideoPipeline', 'image_to_video', true],
+  ]) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    const form = profilesModule.getFormDefaultsForMode(mode, modelType);
+    assert.equal(profile.defaultRepo, profilesModule.SANA_VIDEO_REPO);
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profile.defaultDtype, 'bfloat16');
+    assert.equal(profile.outputKind, 'video');
+    assert.equal(profile.recommendedMaxSequenceLength, 300);
+    assert.equal(profile.offloadSupport.default, 'sequential_cpu');
+    assert.equal(profile.supportsImageInput, imageConditioned);
+    assert.equal(form.width, 832);
+    assert.equal(form.height, 480);
+    assert.equal(form.steps, 50);
+    assert.equal(form.guidanceScale, 6);
+    assert.equal(form.numFrames, 81);
+    assert.equal(form.fps, 16);
+  }
+});
+
+test('canonical Shap-E graphs infer the rendered 3D form', async () => {
+  const graph = JSON.parse(
+    await readFile(path.resolve(ROOT, '../MoDiff/data/graphs/studio/shap-e-pipeline/text-to-3d.json'), 'utf8'),
+  );
+  const form = workflowInferenceModule.inferStudioFormFromWorkflow(graph.nodes);
+  assert.equal(form.modelType, 'ShapEPipeline');
+  assert.equal(form.mode, 'text_to_3d');
+  assert.equal(form.width, 256);
+  assert.equal(form.height, 256);
+  assert.equal(form.fps, 12);
+});
+
+test('LCM DreamShaper exposes exact generic text and image-edit recipes', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.LatentConsistencyModelPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'LatentConsistencyModelPipeline');
+  const editForm = profilesModule.getFormDefaultsForMode('edit_image', 'LatentConsistencyModelPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.LCM_DREAMSHAPER_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(profile.supportsImageInput, true);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 4);
+  assert.equal(form.guidanceScale, 8.5);
+  assert.equal(editForm.strength, 0.8);
+});
+
+test('Stable Diffusion PAG exposes generic base and ControlNet controls over the pinned 1.5 base', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.StableDiffusionPAGPipeline;
+  const form = profilesModule.getFormDefaultsForMode('text_to_image', 'StableDiffusionPAGPipeline');
+  const editForm = profilesModule.getFormDefaultsForMode('edit_image', 'StableDiffusionPAGPipeline');
+  const inpaintForm = profilesModule.getFormDefaultsForMode('inpaint', 'StableDiffusionPAGPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.SD15_BASE_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.equal(profile.supportsImageInput, true);
+  assert.equal(profile.supportsMask, true);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image', 'inpaint', 'control_image', 'control_inpaint']);
+  assert.deepEqual(profile.modeRequirements.edit_image.requiredImages, ['referenceImages']);
+  assert.deepEqual(profile.modeRequirements.inpaint.requiredImages, ['referenceImages', 'maskImage']);
+  assert.equal(form.width, 512);
+  assert.equal(form.height, 512);
+  assert.equal(form.steps, 30);
+  assert.equal(form.guidanceScale, 7.5);
+  assert.equal(form.pagScale, 3);
+  assert.equal(form.pagAdaptiveScale, 0);
+  assert.equal(editForm.strength, 0.8);
+  assert.equal(inpaintForm.strength, 0.8);
+});
+
+test('generic control workflows infer source, mask, and control images by role', () => {
+  const node = (id, module, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module,
+      action,
+      studioRole,
+      studioOwned: true,
+      params,
+    },
+  });
+  const image = (id, studioRole, file) => node(id, 'modules.Image', 'Load', studioRole, { file: { value: file } });
+
+  for (const testCase of [
+    {
+      modelType: 'FluxCannyPipeline',
+      mode: 'control_edit_image',
+      action: 'ControlEdit',
+      actionRole: 'diffusersImageControlEdit',
+      images: [image('source', 'loadImage', 'source-edit.png'), image('control', 'loadControlImage', 'canny.png')],
+      expectedMask: '',
+    },
+    {
+      modelType: 'StableDiffusionPAGPipeline',
+      mode: 'control_inpaint',
+      action: 'ControlInpaint',
+      actionRole: 'diffusersImageControlInpaint',
+      images: [
+        image('source', 'loadImage', 'source-inpaint.png'),
+        image('mask', 'loadMask', 'mask.png'),
+        image('control', 'loadControlImage', 'edges.png'),
+      ],
+      expectedMask: 'mask.png',
+    },
+  ]) {
+    const nodes = [
+      node('pipeline', 'modules.DiffusersImage', 'LoadPipeline', 'diffusersImagePipeline', {
+        model_type: { value: testCase.modelType },
+      }),
+      ...testCase.images,
+      node('action', 'modules.DiffusersImage', testCase.action, testCase.actionRole, {
+        prompt: { value: 'Preserve the subject' },
+        strength: { value: 0.65 },
+        conditioning_scale: { value: 0.9 },
+      }),
+    ];
+
+    const form = workflowInferenceModule.inferStudioFormFromWorkflow(nodes);
+    assert.equal(form.modelType, testCase.modelType);
+    assert.equal(form.mode, testCase.mode);
+    assert.deepEqual(form.referenceImages, [testCase.images[0].data.params.file.value]);
+    assert.equal(form.maskImage, testCase.expectedMask);
+    assert.equal(form.controlImage, testCase.images.at(-1).data.params.file.value);
+    assert.equal(form.strength, 0.65);
+    assert.equal(form.conditioningScale, 0.9);
+  }
+});
+
+test('Marigold depth exposes a generic source-to-prediction-map profile', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.MarigoldDepthPipeline;
+  const form = profilesModule.getFormDefaultsForMode('depth_estimation', 'MarigoldDepthPipeline');
+  assert.equal(profilesModule.getDefaultModelForMode('depth_estimation'), 'MarigoldDepthPipeline');
+  assert.equal(profile.defaultRepo, profilesModule.MARIGOLD_DEPTH_LCM_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.equal(profile.supportsNegativePrompt, false);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.deepEqual(profile.modes, ['depth_estimation']);
+  assert.deepEqual(profile.modeRequirements.depth_estimation.requiredImages, ['referenceImages']);
+  assert.equal(form.steps, 1);
+  assert.equal(form.guidanceScale, 0);
+  assert.equal(form.processingResolution, 768);
+  assert.equal(form.matchInputResolution, true);
+});
+
+test('Whisper Tiny exposes generic transcription and translation contracts', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HuggingFaceSpeechRecognitionModel;
+  const transcription = profilesModule.getFormDefaultsForMode('speech_to_text', 'HuggingFaceSpeechRecognitionModel');
+  const translation = profilesModule.getFormDefaultsForMode('speech_translation', 'HuggingFaceSpeechRecognitionModel');
+  assert.equal(profilesModule.getDefaultModelForMode('speech_to_text'), 'HuggingFaceSpeechRecognitionModel');
+  assert.equal(profile.defaultRepo, profilesModule.WHISPER_TINY_REPO);
+  assert.equal(profile.defaultDtype, 'float32');
+  assert.equal(profile.runtimeKind, 'transformers');
+  assert.equal(profile.isDiffusersBacked, false);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.outputKind, 'json');
+  assert.deepEqual(profile.modes, ['speech_to_text', 'speech_translation']);
+  assert.deepEqual(profile.modeRequirements.speech_to_text.requiredAudio, ['sourceAudio']);
+  assert.equal(transcription.speechTimestamps, 'segment');
+  assert.equal(transcription.speechChunkSeconds, 30);
+  assert.equal(transcription.speechStrideSeconds, 5);
+  assert.equal(translation.mode, 'speech_translation');
+});
+
+test('equivalent Modular Diffusers Cluster identities retain their exact standard execution profiles', () => {
+  const expected = {
+    ErnieImageModularPipeline: {
+      label: 'ERNIE Image Turbo (Modular Cluster)',
+      repo: profilesModule.ERNIE_IMAGE_TURBO_REPO,
+      modes: ['text_to_image'],
+    },
+    LTXModularPipeline: {
+      label: 'LTX-Video (Modular Cluster)',
+      repo: profilesModule.LTX_VIDEO_REPO,
+      modes: ['text_to_video', 'image_to_video'],
+    },
+    Wan22ModularPipeline: {
+      label: 'Wan 2.2 T2V A14B (Modular Cluster)',
+      repo: profilesModule.WAN_22_T2V_A14B_REPO,
+      modes: ['text_to_video'],
+    },
+    Wan22Image2VideoModularPipeline: {
+      label: 'Wan 2.2 I2V A14B (Modular Cluster)',
+      repo: profilesModule.WAN_22_I2V_A14B_REPO,
+      modes: ['image_to_video'],
+    },
+  };
+  for (const [modelType, contract] of Object.entries(expected)) {
+    const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+    assert.equal(profile.label, contract.label);
+    assert.equal(profile.defaultRepo, contract.repo);
+    assert.deepEqual(profile.modes, contract.modes);
+    assert.equal(profile.catalogVisibility, 'workflowOnly');
+    assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS[modelType].autoStatus, 'manual_only');
+  }
+});
+
+test('HunyuanVideo 1.5 keeps exact T2V and source-derived I2V artifacts, defaults, and closed authority', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.HunyuanVideo15ModularPipeline;
+  const text = profilesModule.getFormDefaultsForMode('text_to_video', 'HunyuanVideo15ModularPipeline');
+  const image = profilesModule.getFormDefaultsForMode('image_to_video', 'HunyuanVideo15ModularPipeline');
+
+  assert.equal(profile.label, 'HunyuanVideo 1.5 480p (Modular Cluster)');
+  assert.equal(profile.defaultRepo, profilesModule.HUNYUAN_VIDEO_15_T2V_REPO);
+  assert.deepEqual(profile.modes, ['text_to_video', 'image_to_video']);
+  assert.deepEqual(profile.modeRequirements.image_to_video.requiredImages, ['referenceImages']);
+  assert.equal(profile.executionStatus, 'expert_only');
+  assert.equal(profile.qualificationStatus, 'graph-qualified-execution-pending');
+  assert.deepEqual(profile.qualifiedModes, []);
+  assert.equal(profile.autoEligible, false);
+  assert.equal(profile.templateEligible, false);
+  assert.equal(profile.galleryEligible, false);
+  assert.equal(profile.liveProof, false);
+  assert.deepEqual(profile.offloadSupport.modes, ['model_cpu']);
+  assert.deepEqual(
+    profile.artifactSelections.map(({ modes, repo, revision, downloadFiles }) => [
+      modes,
+      repo,
+      revision,
+      downloadFiles.length,
+    ]),
+    [
+      [['text_to_video'], profilesModule.HUNYUAN_VIDEO_15_T2V_REPO, profilesModule.HUNYUAN_VIDEO_15_T2V_REVISION, 35],
+      [['image_to_video'], profilesModule.HUNYUAN_VIDEO_15_I2V_REPO, profilesModule.HUNYUAN_VIDEO_15_I2V_REVISION, 31],
+    ],
+  );
+  assert.deepEqual(
+    [text.width, text.height, text.steps, text.guidanceScale, text.numFrames, text.fps],
+    [848, 480, 50, 6, 121, 24],
+  );
+  assert.deepEqual(
+    [image.width, image.height, image.steps, image.guidanceScale, image.numFrames, image.fps],
+    [848, 480, 12, 1, 121, 24],
+  );
+  assert.equal(profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.HunyuanVideo15ModularPipeline.autoStatus, 'manual_only');
+
+  for (const [mode, repository, revision] of [
+    ['text_to_video', profilesModule.HUNYUAN_VIDEO_15_T2V_REPO, profilesModule.HUNYUAN_VIDEO_15_T2V_REVISION],
+    ['image_to_video', profilesModule.HUNYUAN_VIDEO_15_I2V_REPO, profilesModule.HUNYUAN_VIDEO_15_I2V_REVISION],
+  ]) {
+    const policies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+      modelType: 'HunyuanVideo15ModularPipeline',
+      mode,
+    });
+    assert.deepEqual(
+      policies.map((policy) => [policy.repository, policy.revision, policy.useScope]),
+      [[repository, revision, 'license_review_required']],
+    );
+    assert.equal(policies[0].access, 'public');
+    assert.equal(
+      policies[0].termsUrl,
+      `https://huggingface.co/${profilesModule.HUNYUAN_VIDEO_15_LICENSE_REPO}/blob/${profilesModule.HUNYUAN_VIDEO_15_LICENSE_REVISION}/LICENSE`,
+    );
+  }
+});
+
+test('Janus stays Expert-only with a pinned run acknowledgement and generic mode inference', () => {
+  const modelType = 'HuggingFaceAnyToAnyModel';
+  const profile = profilesModule.STUDIO_MODEL_PROFILES[modelType];
+  assert.equal(profile.defaultRepo, profilesModule.JANUS_PRO_1B_REPO);
+  assert.deepEqual(profile.revisionCandidates, [profilesModule.JANUS_PRO_1B_REVISION]);
+  assert.equal(profile.runtimeKind, 'transformers');
+  assert.equal(profile.isDiffusersBacked, false);
+  assert.equal(profile.catalogVisibility, 'workflowOnly');
+  assert.equal(profile.executionStatus, 'expert_only');
+  assert.equal(profile.autoEligible, false);
+  assert.equal(profile.galleryEligible, false);
+  assert.deepEqual(profile.modeOutputKinds, {
+    text_generation: 'json',
+    image_to_text: 'json',
+    text_to_image: 'image',
+  });
+  assert.deepEqual(profile.modeRequirements.image_to_text.requiredImages, ['referenceImages']);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+    modelType,
+    mode: 'text_to_image',
+  });
+  assert.equal(policies.length, 1);
+  assert.equal(policies[0].repository, profilesModule.JANUS_PRO_1B_REPO);
+  assert.equal(policies[0].revision, profilesModule.JANUS_PRO_1B_REVISION);
+  assert.equal(policies[0].reviewedRevision, profilesModule.JANUS_PRO_1B_REVISION);
+  assert.equal(policies[0].useScope, 'license_review_required');
+  assert.match(policies[0].shortSummary, /not product legal approval/i);
+  assert.match(policies[0].termsUrl, /LICENSE-MODEL$/);
+  assert.match(modelUsagePoliciesModule.usagePolicyAcknowledgementKey(policies), /^terms-v2:[0-9a-f]{8}$/);
+  assert.deepEqual(
+    modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+      modelType: 'HuggingFaceTextGenerationModel',
+      mode: 'text_generation',
+    }),
+    [],
+  );
+
+  const node = (id, action, studioRole, params = {}) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: action === 'Load' ? 'modules.Image' : 'modules.HuggingFaceTransformers',
+      action,
+      studioRole,
+      studioOwned: true,
+      params,
+    },
+  });
+  for (const [mode, generationMode, imagePath] of [
+    ['text_generation', 'text', null],
+    ['image_to_text', 'text', 'source.png'],
+    ['text_to_image', 'image', null],
+  ]) {
+    const nodes = [
+      node('model', 'LoadAnyToAnyModel', 'transformersAnyToAnyModel', {
+        model_id: { value: profilesModule.JANUS_PRO_1B_REPO },
+      }),
+      ...(imagePath ? [node('source', 'Load', 'loadImage', { file: { value: imagePath } })] : []),
+      node('generate', 'GenerateAnyToAny', 'transformersAnyToAnyGenerate', {
+        prompt: { value: 'A small red fox' },
+        generation_mode: { value: generationMode },
+      }),
+    ];
+    const form = workflowInferenceModule.inferStudioFormFromWorkflow(nodes);
+    assert.equal(form.modelType, modelType);
+    assert.equal(form.mode, mode);
+    assert.equal(form.prompt, 'A small red fox');
+    assert.deepEqual(form.referenceImages, imagePath ? [imagePath] : []);
+  }
+});
+
+test('canonical Whisper graphs infer their speech form without model-specific graph rewrites', async () => {
+  for (const [file, mode] of [
+    ['speech-to-text.json', 'speech_to_text'],
+    ['speech-translation.json', 'speech_translation'],
+  ]) {
+    const graph = JSON.parse(
+      await readFile(
+        path.resolve(ROOT, '../MoDiff/data/graphs/studio/hugging-face-speech-recognition-model', file),
+        'utf8',
+      ),
+    );
+    const form = workflowInferenceModule.inferStudioFormFromWorkflow(graph.nodes);
+    assert.equal(form.modelType, 'HuggingFaceSpeechRecognitionModel');
+    assert.equal(form.mode, mode);
+    assert.equal(form.speechTimestamps, 'segment');
+    assert.equal(form.speechChunkSeconds, 30);
+    assert.equal(form.speechStrideSeconds, 5);
+  }
+});
+
+test('run readiness blocks unsupported backend modes in Auto and warns in Expert', () => {
   const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
   const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
   const previousForm = studioStoreModule.useStudioStore.getState().form;
@@ -152,8 +1613,17 @@ test('run readiness blocks a model and task pair omitted by authoritative backen
     const issue = runReadinessModule
       .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
       .find((item) => item.code === 'backend_mode_unsupported');
-    assert.equal(issue?.blocking, true);
+    assert.equal(issue?.blocking, false);
+    assert.equal(issue?.severity, 'warning');
     assert.equal(issue?.message, 'Qwen-Image-2512 does not support Control image on the connected backend.');
+    studioStoreModule.useStudioStore.setState({
+      form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+    });
+    const autoIssue = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
+      .find((item) => item.code === 'backend_mode_unsupported');
+    assert.equal(autoIssue?.blocking, true);
+    assert.equal(autoIssue?.severity, 'error');
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: previousCapabilities,
@@ -199,6 +1669,7 @@ test('an imported stale Qwen Edit Plus inpaint form stays blocked by backend cap
       .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
       .find((item) => item.code === 'backend_mode_unsupported');
     assert.equal(issue?.blocking, true);
+    assert.equal(issue?.severity, 'error');
     assert.equal(issue?.message, 'Qwen-Image-Edit-2511 does not support Inpaint on the connected backend.');
   } finally {
     nodesStoreModule.useNodesStore.setState({
@@ -224,14 +1695,17 @@ function optionalRequirement(overrides = {}) {
 }
 
 function qualifiedOptionalRuntimeCatalog() {
+  const profileId = 'huggingface-transformers-peft-5.14.1-0.20.0';
+  const specDigest = `sha256:${'1'.repeat(64)}`;
   return {
     schemaVersion: 1,
     processLoadStatus: 'active',
+    activeOptionalRuntimeSpecs: [{ profileId, specDigest }],
     profiles: [
       {
-        id: 'huggingface-transformers-peft-5.14.1-0.20.0',
+        id: profileId,
         label: 'Hugging Face Transformers + PEFT',
-        specDigest: `sha256:${'1'.repeat(64)}`,
+        specDigest,
         contractState: 'qualified',
         cutoverReady: true,
         installActionAvailable: true,
@@ -288,7 +1762,8 @@ test('optional runtime readiness is exact-mode scoped and base delivery stays ne
     issue = runReadinessModule
       .collectRunReadinessIssues({ sid: 'test-session', isConnected: true })
       .find((item) => item.code === 'optional_runtime_required');
-    assert.equal(issue?.blocking, true);
+    assert.equal(issue?.blocking, false);
+    assert.equal(issue?.severity, 'warning');
     assert.equal(issue?.action, 'open_setup');
     assert.match(issue?.message ?? '', /reviewed optional runtime/i);
   } finally {
@@ -388,9 +1863,9 @@ test('optional runtime readiness mirrors repository disambiguation for shared lo
     flowStoreModule.useFlowStore.setState({
       nodes: [loader({ source: 'local', value: 'black-forest-labs/FLUX.1-dev' })],
     });
-    assert.equal(optionalIssue()?.blocking, true, 'local selections cannot prove a shared loader profile');
+    assert.equal(optionalIssue()?.blocking, false, 'local selections warn but do not block manual submission');
     flowStoreModule.useFlowStore.setState({ nodes: [loader('example/unknown-flux')] });
-    assert.equal(optionalIssue()?.blocking, true, 'unknown Hub repositories remain ambiguous');
+    assert.equal(optionalIssue()?.blocking, false, 'unknown Hub repositories remain visible manual warnings');
     flowStoreModule.useFlowStore.setState({ nodes: [loader('black-forest-labs/FLUX.1-schnell')] });
     assert.equal(optionalIssue(), undefined, 'a known sibling repository uses that sibling runtime delivery');
 
@@ -403,6 +1878,114 @@ test('optional runtime readiness mirrors repository disambiguation for shared lo
     });
     flowStoreModule.useFlowStore.setState({ nodes: [loader('example/unknown-flux')] });
     assert.equal(optionalIssue(), undefined, 'ambiguous base-delivered loaders remain readiness-neutral');
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: nodesState.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: nodesState.studioModelCapabilitiesAuthoritative,
+      optionalRuntimeCatalog: nodesState.optionalRuntimeCatalog,
+      discoveryRequests: nodesState.discoveryRequests,
+    });
+    studioStoreModule.useStudioStore.setState({ form: studioState.form, graphBinding: studioState.graphBinding });
+    flowStoreModule.useFlowStore.setState({ nodes: flowState.nodes, edges: flowState.edges });
+  }
+});
+
+test('optional runtime readiness accepts a backend-unique generic loader without a redundant identity field', () => {
+  const nodesState = nodesStoreModule.useNodesStore.getState();
+  const studioState = studioStoreModule.useStudioStore.getState();
+  const flowState = flowStoreModule.useFlowStore.getState();
+  const requirement = optionalRequirement({
+    delivery: 'optional_overlay',
+    requiredNow: true,
+    executionProfileIds: ['smollm2-135m-instruct:direct'],
+    state: 'active',
+    reason: 'optional_runtime_active',
+  });
+  const executionProfile = {
+    id: 'smollm2-135m-instruct:direct',
+    model_type: 'HuggingFaceTextGenerationModel',
+    modes: ['text_generation'],
+    loader_module: 'modules.HuggingFaceTransformers',
+    loader_action: 'LoadTextGenerationModel',
+    execution_path: 'direct-huggingface-transformers-text',
+    backend_path: 'modules.HuggingFaceTransformers.LoadTextGenerationModel',
+    pipeline_class: 'AutoModelForCausalLM',
+    default_repo: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+    fallback_repo: null,
+    compatible_repos: [],
+    optionalRuntimeRequirement: requirement,
+  };
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilitiesAuthoritative: true,
+      optionalRuntimeCatalog: qualifiedOptionalRuntimeCatalog(),
+      discoveryRequests: {
+        ...nodesState.discoveryRequests,
+        capabilities: { status: 'success', error: null, requestId: 1 },
+        optionalRuntimes: { status: 'success', error: null, requestId: 1 },
+      },
+      studioModelCapabilities: [
+        {
+          modelType: 'HuggingFaceTextGenerationModel',
+          modes: ['text_generation'],
+          runnableModes: ['text_generation'],
+          optionalRuntimeRequirement: requirement,
+          executionProfiles: [executionProfile],
+        },
+      ],
+    });
+    studioStoreModule.useStudioStore.setState({
+      form: {
+        ...studioState.form,
+        modelType: 'HuggingFaceTextGenerationModel',
+        mode: 'text_generation',
+        resourceMode: 'expert',
+      },
+      graphBinding: {
+        mode: 'text_generation',
+        modelType: 'HuggingFaceTextGenerationModel',
+        nodes: { transformersTextModel: 'transformers-loader' },
+        managedNodeIds: ['transformers-loader', 'transformers-viewer'],
+        managedEdgeIds: ['viewer-edge'],
+        fingerprint: 'transformers-runtime-identity-test',
+      },
+    });
+    flowStoreModule.useFlowStore.setState({
+      nodes: [
+        {
+          id: 'transformers-loader',
+          data: {
+            type: 'custom',
+            module: 'modules.HuggingFaceTransformers',
+            action: 'LoadTextGenerationModel',
+            params: {
+              model_id: { value: 'HuggingFaceTB/SmolLM2-135M-Instruct' },
+            },
+          },
+        },
+        {
+          id: 'transformers-viewer',
+          data: {
+            type: 'custom',
+            module: 'modules.Primitive',
+            action: 'DataViewer',
+            label: 'Data Viewer',
+            params: { value: { value: null } },
+          },
+        },
+      ],
+      edges: [{ id: 'viewer-edge', source: 'transformers-loader', target: 'transformers-viewer' }],
+    });
+
+    const issues = runReadinessModule.collectRunReadinessIssues({ sid: 'test-session', isConnected: true });
+    assert.equal(
+      issues.find((item) => item.code === 'optional_runtime_required'),
+      undefined,
+    );
+    assert.equal(
+      issues.find((item) => /connected output node/i.test(item.message)),
+      undefined,
+    );
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: nodesState.studioModelCapabilities,
@@ -476,19 +2059,19 @@ test('a required runtime becomes ready only with the exact qualified active cata
         },
       ],
     });
-    assert.equal(optionalIssue()?.blocking, true, 'present execution profiles require an exact selected-mode match');
+    assert.equal(optionalIssue()?.blocking, false, 'an exact-mode mismatch remains visible in manual mode');
     nodesStoreModule.useNodesStore.setState({ studioModelCapabilities: [activeCapability] });
     assert.equal(optionalIssue(), undefined);
     for (const key of ['capabilities', 'optionalRuntimes']) {
       for (const status of ['loading', 'error']) {
         setDiscovery(key, status);
-        assert.equal(optionalIssue()?.blocking, true, `${key} ${status} must make retained runtime status stale`);
+        assert.equal(optionalIssue()?.blocking, false, `${key} ${status} remains a manual-mode warning`);
         setDiscovery(key, 'success');
         assert.equal(optionalIssue(), undefined);
       }
     }
     nodesStoreModule.useNodesStore.setState({ optionalRuntimeCatalog: null });
-    assert.equal(optionalIssue()?.blocking, true, 'missing or stale status must restore the blocker');
+    assert.equal(optionalIssue()?.blocking, false, 'missing or stale status must restore the manual warning');
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: previousNodesState.studioModelCapabilities,
@@ -920,8 +2503,8 @@ test('existing saved canonical imports are adopted during workflow-tab normaliza
       decode: 'decode',
       preview: 'preview',
     });
-    assert.equal(restored.snapshot.studioForm.modelType, 'Flux2KleinPipeline');
-    assert.equal(restored.snapshot.studioGraphBinding.modelType, 'Flux2KleinPipeline');
+    assert.equal(restored.snapshot.studioForm.modelType, 'Flux2KleinModularPipeline');
+    assert.equal(restored.snapshot.studioGraphBinding.modelType, 'Flux2KleinModularPipeline');
     assert.ok(restored.snapshot.nodes.every((node) => node.data.studioOwned === true));
   } finally {
     studioStoreModule.useStudioStore.setState({ workflowTabs: beforeTabs });
@@ -992,8 +2575,8 @@ test('persisted inferred bindings self-repair stale model metadata from canonica
     const restored = studioStoreModule.useStudioStore
       .getState()
       .workflowTabs.find((tab) => tab.id === 'interim-stale-canonical-import');
-    assert.equal(restored?.snapshot.studioForm.modelType, 'Flux2KleinPipeline');
-    assert.equal(restored?.snapshot.studioGraphBinding?.modelType, 'Flux2KleinPipeline');
+    assert.equal(restored?.snapshot.studioForm.modelType, 'Flux2KleinModularPipeline');
+    assert.equal(restored?.snapshot.studioGraphBinding?.modelType, 'Flux2KleinModularPipeline');
     assert.equal(restored?.snapshot.studioGraphBinding?.createdAt, 0);
     assert.equal(restored?.snapshot.studioGraphBinding?.updatedAt, 0);
   } finally {
@@ -2194,6 +3777,27 @@ test('controlled artifacts never inherit a base-only Ran here label at plan time
   );
 });
 
+test('MiniMax authored music template retains native settings without claiming publication', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'minimax_music3_chamber_pop');
+  assert.ok(template, 'MiniMax needs a discoverable authored template, not only a palette admission');
+  assert.equal(template.modelType, 'MiniMaxMusic3ModularPipeline');
+  assert.equal(template.mode, 'text_to_audio');
+  assert.equal(template.example.status, 'unverified');
+  assert.equal(template.example.outputPath, undefined);
+  assert.equal(template.example.modelRevision, profilesModule.MINIMAX_MUSIC3_REVISION);
+  assert.deepEqual(template.example.expectedOutput, { durationSeconds: 60, sampleRate: 44100 });
+  assert.equal(template.example.lockedSettings.steps, 30);
+  assert.equal(template.example.lockedSettings.audioDuration, 60);
+  assert.equal(template.example.lockedSettings.quantizationMode, 'none');
+  assert.equal(template.example.lockedSettings.dtype, 'bfloat16');
+  assert.equal(template.example.lockedSeed, 20260908);
+  assert.match(template.prompt, /96 BPM in D major/);
+  assert.match(template.example.lockedSettings.lyrics, /\[verse\]\nSilver rails/);
+  assert.match(template.example.lockedSettings.lyrics, /\[chorus\]\nLeave a little light/);
+  assert.equal(template.negativePrompt, '');
+  assert.equal(template.outputKinds[0], 'audio');
+});
+
 test('ACE templates lock musical structure, metadata, and model-aware negative behavior', () => {
   const templates = templatesModule.STUDIO_TEMPLATES.filter(
     (template) => template.modelType === 'AceStepAudioPipeline',
@@ -2287,6 +3891,11 @@ test('ACE templates lock musical structure, metadata, and model-aware negative b
     chineseNewYear.workflowBlockSettings.lora.baseModel.value,
     'Runware/acestep-v15-turbo-diffusers',
     'the official 2048-wide LoRA must retain its matching base instead of the XL Studio default',
+  );
+  assert.deepEqual(
+    templatesModule.getStudioTemplateLoraBaseModel(chineseNewYear.id),
+    chineseNewYear.workflowBlockSettings.lora.baseModel,
+    'Auto readiness and runtime hints must share the exact architecture-locked LoRA base',
   );
   assert.equal(
     chineseNewYear.workflowBlockSettings.lora.baseModel.revision,
@@ -2434,6 +4043,7 @@ test('template browser exposes the complete workflow catalog across task and ada
     [
       'recommended',
       'all',
+      'experimental',
       'getting-started',
       'image',
       'edit',
@@ -3304,10 +4914,467 @@ test('every Studio model declares Auto requirements or an explicit Manual-only r
     assert.ok(requirement.minimum, `${id} declares minimum hardware requirements`);
     assert.ok(requirement.recommended, `${id} declares recommended hardware requirements`);
     assert.ok(requirement.qualityDefaults, `${id} declares quality-safe defaults`);
-    assert.ok(requirement.artifacts.length > 0, `${id} declares required artifacts`);
+    if (profilesModule.STUDIO_MODEL_PROFILES[id].artifactInstallRequired === false) {
+      assert.deepEqual(requirement.artifacts, [], `${id} does not invent an installable artifact`);
+    } else {
+      assert.ok(requirement.artifacts.length > 0, `${id} declares required artifacts`);
+    }
     if (requirement.autoStatus === 'manual_only') {
       assert.ok(requirement.manualOnlyReason, `${id} explains why Auto is not enabled`);
     }
+  }
+});
+
+test('built-in image operations are locally ready without model discovery or installation', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinImageOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinImageOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/image-operations/v1');
+  assert.deepEqual(profile.modes, [
+    'image_adjustment',
+    'image_filter',
+    'image_crop',
+    'image_upscale',
+    'image_stitch',
+    'image_tile',
+    'image_channels',
+    'mask_composite',
+  ]);
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+  assert.match(status.reason, /no model installation/i);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.ImageOperations',
+          action: 'ProcessImage',
+          studioRole: 'imageOperation',
+          params: { operation: { value: 'image_filter' } },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinImageOperation');
+  assert.equal(inferred.mode, 'image_filter');
+});
+
+test('built-in data operations are locally ready and preserve source text inference', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinDataOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinDataOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/data-operations/v1');
+  assert.deepEqual(profile.modes, ['text_select', 'data_conversion', 'graph_utility']);
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getDefaultModelForMode('text_select'), 'BuiltinDataOperation');
+  assert.equal(profilesModule.getDefaultModelForMode('graph_utility'), 'BuiltinDataOperation');
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+  assert.match(status.reason, /no model installation/i);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Text',
+          action: 'ProcessText',
+          studioRole: 'dataOperation',
+          params: {
+            operation: { value: 'text_select' },
+            source: { value: 'first\nsecond' },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinDataOperation');
+  assert.equal(inferred.mode, 'text_select');
+  assert.equal(inferred.prompt, 'first\nsecond');
+});
+
+test('built-in audio operations are locally ready and preserve dual-source inference', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinAudioOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinAudioOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/audio-operations/v1');
+  assert.deepEqual(profile.modes, ['audio_trim', 'audio_join', 'audio_loudness_match']);
+  assert.deepEqual(profile.modeRequirements, {
+    audio_trim: { requiredAudio: ['sourceAudio'] },
+    audio_join: { requiredAudio: ['sourceAudio', 'referenceAudio'] },
+    audio_loudness_match: { requiredAudio: ['sourceAudio', 'referenceAudio'] },
+  });
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getDefaultModelForMode('audio_trim'), 'BuiltinAudioOperation');
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Audio',
+          action: 'Load',
+          studioRole: 'loadAudio',
+          params: { file: { value: 'source.wav' } },
+        },
+      },
+      {
+        data: {
+          module: 'modules.Audio',
+          action: 'Load',
+          studioRole: 'loadReferenceAudio',
+          params: { file: { value: 'reference.wav' } },
+        },
+      },
+      {
+        data: {
+          module: 'modules.Audio',
+          action: 'ProcessAudio',
+          studioRole: 'audioOperation',
+          params: { operation: { value: 'audio_loudness_match' } },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinAudioOperation');
+  assert.equal(inferred.mode, 'audio_loudness_match');
+  assert.equal(inferred.sourceAudio, 'source.wav');
+  assert.equal(inferred.referenceAudio, 'reference.wav');
+});
+
+test('built-in video operations are locally ready and preserve multi-video inference', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.BuiltinVideoOperation;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.BuiltinVideoOperation;
+  assert.equal(profile.runtimeKind, 'builtin');
+  assert.equal(profile.artifactKind, 'builtin');
+  assert.equal(profile.artifactInstallRequired, false);
+  assert.equal(profile.defaultRepo, 'builtin://modiff/video-operations/v1');
+  assert.deepEqual(profile.modes, [
+    'video_frame_extract',
+    'frame_interpolation',
+    'video_stitch',
+    'video_trim',
+    'video_reverse',
+    'video_tile',
+  ]);
+  assert.deepEqual(requirement.artifacts, []);
+  assert.equal(profilesModule.getStudioModelRuntimeLabel(profile), 'Built-in · CPU · no model download');
+
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.equal(status.installed, true);
+  assert.equal(status.runnable, true);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'video_stitch' },
+            videos: { value: ['first.mp4', 'second.mp4'] },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'BuiltinVideoOperation');
+  assert.equal(inferred.mode, 'video_stitch');
+  assert.deepEqual(inferred.referenceVideos, ['first.mp4', 'second.mp4']);
+
+  const trimmed = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'video_trim' },
+            videos: { value: ['source.mp4'] },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(trimmed.mode, 'video_trim');
+  assert.equal(trimmed.sourceVideo, 'source.mp4');
+
+  const interpolated = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'frame_interpolation' },
+            videos: { value: ['source.mp4'] },
+            interpolation_fps: { value: 60 },
+          },
+        },
+      },
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'Export',
+          studioRole: 'videoExport',
+          params: { fps: { value: 60 } },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(interpolated.mode, 'frame_interpolation');
+  assert.equal(interpolated.sourceVideo, 'source.mp4');
+  assert.equal(interpolated.fps, 60);
+  assert.equal(profilesModule.getFormDefaultsForMode('frame_interpolation', 'BuiltinVideoOperation').fps, 60);
+
+  const tiled = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'ProcessVideo',
+          studioRole: 'videoOperation',
+          params: {
+            operation: { value: 'video_tile' },
+            videos: { value: ['first.mp4', 'second.mp4'] },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(tiled.mode, 'video_tile');
+  assert.deepEqual(tiled.referenceVideos, ['first.mp4', 'second.mp4']);
+});
+
+test('Real-ESRGAN video upscale stays model-backed and infers the generic source-video contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.SpandrelVideoUpscale;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.SpandrelVideoUpscale;
+  assert.equal(profile.runtimeKind, 'spandrel');
+  assert.equal(profile.artifactKind, 'spandrel_upscaler');
+  assert.equal(profile.artifactInstallRequired, true);
+  assert.equal(profile.defaultRepo, 'nateraw/real-esrgan');
+  assert.deepEqual(profile.downloadFiles, ['RealESRGAN_x2plus.pth']);
+  assert.deepEqual(profile.revisionCandidates, ['42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094']);
+  assert.deepEqual(profile.modes, ['video_upscale']);
+  assert.deepEqual(requirement.artifacts, ['nateraw/real-esrgan']);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Video',
+          action: 'UpscaleVideo',
+          studioRole: 'videoUpscaler',
+          params: {
+            operation: { value: 'video_upscale' },
+            video: { value: '/managed/source.mp4' },
+            device: { value: 'cpu' },
+            fps: { value: 30 },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'SpandrelVideoUpscale');
+  assert.equal(inferred.mode, 'video_upscale');
+  assert.equal(inferred.sourceVideo, '/managed/source.mp4');
+  assert.equal(inferred.device, 'cpu');
+  assert.equal(inferred.fps, 30);
+});
+
+test('Real-ESRGAN image upscale stays model-backed and infers the generic source-image contract', () => {
+  const profile = profilesModule.STUDIO_MODEL_PROFILES.SpandrelImageUpscale;
+  const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.SpandrelImageUpscale;
+  assert.equal(profile.runtimeKind, 'spandrel');
+  assert.equal(profile.artifactKind, 'spandrel_upscaler');
+  assert.equal(profile.artifactInstallRequired, true);
+  assert.equal(profile.defaultRepo, 'nateraw/real-esrgan');
+  assert.deepEqual(profile.downloadFiles, ['RealESRGAN_x2plus.pth']);
+  assert.deepEqual(profile.revisionCandidates, ['42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094']);
+  assert.deepEqual(profile.modes, ['image_upscale']);
+  assert.deepEqual(requirement.artifacts, ['nateraw/real-esrgan']);
+
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      {
+        data: {
+          module: 'modules.Spandrel',
+          action: 'Upscaler',
+          studioRole: 'imageUpscaler',
+          params: {
+            image: { value: '/managed/source.png' },
+            device: { value: 'cpu' },
+          },
+        },
+      },
+    ],
+    profilesModule.DEFAULT_STUDIO_FORM,
+  );
+  assert.equal(inferred.modelType, 'SpandrelImageUpscale');
+  assert.equal(inferred.mode, 'image_upscale');
+  assert.equal(inferred.device, 'cpu');
+});
+
+test('video stitching requires two local source videos before execution', () => {
+  const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+  const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    const baseForm = {
+      ...profilesModule.getFormDefaultsForMode('video_stitch', 'BuiltinVideoOperation'),
+      referenceVideos: ['first.mp4'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: baseForm, graphBinding: null });
+    let messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.ok(messages.some((message) => /2 source videos/i.test(message)));
+
+    studioStoreModule.useStudioStore.setState({
+      form: { ...baseForm, referenceVideos: ['first.mp4', 'second.mp4'] },
+    });
+    messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.equal(
+      messages.some((message) => /source videos/i.test(message)),
+      false,
+    );
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousCapabilities,
+      studioModelCapabilitiesAuthoritative: previousAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
+test('mask compositing requires two source images and one mask before execution', () => {
+  const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+  const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    const baseForm = {
+      ...profilesModule.getFormDefaultsForMode('mask_composite', 'BuiltinImageOperation'),
+      referenceImages: ['background.png'],
+      maskImage: '',
+    };
+    studioStoreModule.useStudioStore.setState({ form: baseForm, graphBinding: null });
+    let messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.ok(messages.some((message) => /2 source images/i.test(message)));
+    assert.ok(messages.some((message) => /mask image/i.test(message)));
+
+    studioStoreModule.useStudioStore.setState({
+      form: {
+        ...baseForm,
+        referenceImages: ['background.png', 'foreground.png'],
+        maskImage: 'mask.png',
+      },
+    });
+    messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.equal(
+      messages.some((message) => /source images|required.*mask image/i.test(message)),
+      false,
+    );
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousCapabilities,
+      studioModelCapabilitiesAuthoritative: previousAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
+test('image stitching requires at least two source images before execution', () => {
+  const previousCapabilities = nodesStoreModule.useNodesStore.getState().studioModelCapabilities;
+  const previousAuthoritative = nodesStoreModule.useNodesStore.getState().studioModelCapabilitiesAuthoritative;
+  const previousForm = studioStoreModule.useStudioStore.getState().form;
+  const previousNodes = flowStoreModule.useFlowStore.getState().nodes;
+  const previousEdges = flowStoreModule.useFlowStore.getState().edges;
+
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    const baseForm = {
+      ...profilesModule.getFormDefaultsForMode('image_stitch', 'BuiltinImageOperation'),
+      referenceImages: ['first.png'],
+    };
+    studioStoreModule.useStudioStore.setState({ form: baseForm, graphBinding: null });
+    let messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.ok(messages.some((message) => /2 source images/i.test(message)));
+
+    studioStoreModule.useStudioStore.setState({
+      form: { ...baseForm, referenceImages: ['first.png', 'second.png'] },
+    });
+    messages = runReadinessModule
+      .collectRunReadinessIssues({ sid: 'contract-test', isConnected: true })
+      .map(({ message }) => message);
+    assert.equal(
+      messages.some((message) => /2 source images/i.test(message)),
+      false,
+    );
+  } finally {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: previousCapabilities,
+      studioModelCapabilitiesAuthoritative: previousAuthoritative,
+    });
+    studioStoreModule.useStudioStore.setState({ form: previousForm });
+    flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
   }
 });
 
@@ -3327,6 +5394,20 @@ test('Studio form migration normalizes legacy offload and leaves quantization to
   });
   assert.equal(zImage.quantizationMode, 'bnb_4bit');
   assert.equal(zImage.offloadMode, 'group_disk');
+
+  const speech = outputContractsModule.coerceStudioFormState({
+    ...profilesModule.DEFAULT_STUDIO_FORM,
+    mode: 'speech_to_text',
+    modelType: 'HuggingFaceSpeechRecognitionModel',
+    speechLanguage: 'French',
+    speechTimestamps: 'sentence',
+    speechChunkSeconds: 20,
+    speechStrideSeconds: 3,
+  });
+  assert.equal(speech.speechLanguage, 'French');
+  assert.equal(speech.speechTimestamps, 'segment');
+  assert.equal(speech.speechChunkSeconds, 20);
+  assert.equal(speech.speechStrideSeconds, 3);
 });
 
 test('every registered Studio model survives persisted form and binding validation', () => {
@@ -3742,8 +5823,66 @@ test('Qwen-Image-2512 Auto remains backend-owned while Expert blocks unsafe sett
           ]),
         ],
       },
+      {
+        modelType: 'BuiltinImageOperation',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['image_upscale'],
+        studioExecutionSpecs: [
+          {
+            ...readinessSpec('image_upscale', 'modules.ImageOperations', 'ProcessImage', [
+              ['imageOperation', 'modules.ImageOperations.ProcessImage'],
+            ]),
+            bindings: [],
+          },
+        ],
+      },
+      {
+        modelType: 'SpandrelVideoUpscale',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['video_upscale'],
+        studioExecutionSpecs: [
+          {
+            ...readinessSpec('video_upscale', 'modules.Video', 'UpscaleVideo', [
+              ['videoUpscaler', 'modules.Video.UpscaleVideo'],
+            ]),
+            bindings: [],
+          },
+        ],
+      },
+      {
+        modelType: 'SpandrelImageUpscale',
+        studioExecutionSpecSchemaVersion: 1,
+        studioExecutionSpecModes: ['image_upscale'],
+        studioExecutionSpecs: [
+          {
+            ...readinessSpec('image_upscale', 'modules.Spandrel', 'Upscaler', [
+              ['imageUpscaler', 'modules.Spandrel.Upscaler'],
+            ]),
+            bindings: [],
+          },
+        ],
+      },
     ],
   });
+
+  for (const [modelType, mode, nodeKey] of [
+    ['BuiltinImageOperation', 'image_upscale', 'modules.ImageOperations.ProcessImage'],
+    ['SpandrelVideoUpscale', 'video_upscale', 'modules.Video.UpscaleVideo'],
+    ['SpandrelImageUpscale', 'image_upscale', 'modules.Spandrel.Upscaler'],
+  ]) {
+    const noneOnlyIssue = runReadinessModule.getStudioOffloadCapabilityIssue(
+      {
+        ...form,
+        modelType,
+        mode,
+        resourceMode: 'expert',
+        autoOffload: false,
+        offloadMode: 'none',
+      },
+      { [nodeKey]: { params: {} } },
+    );
+    assert.equal(noneOnlyIssue, null, `${modelType} must not require a synthetic no-op offload field`);
+  }
 
   const missingQuantNodeIssue = runReadinessModule.getStudioQuantizationCapabilityIssue(
     { ...form, mode: 'control_image', resourceMode: 'expert', quantizationMode: 'bnb_4bit' },
@@ -4342,6 +6481,144 @@ test('canonical workflow generation normalizes unsupported devices and preserves
   assert.equal(workflowNodeDeviceOffloadError(cudaNode), null);
 });
 
+test('canonical workflows reject retired or mutable Hub attention backends', () => {
+  const node = (value, options) => ({ data: { params: { attention_backend: { value, options } } } });
+  assert.match(workflowNodeAttentionBackendError(node('auto', ['auto', { value: 'aiter' }])), /aiter/);
+  assert.match(
+    workflowNodeAttentionBackendError(node('aiter_fa2_hub', { auto: 'Auto', aiter_fa2_hub: 'Hub AITER' })),
+    /aiter_fa2_hub/,
+  );
+  assert.equal(workflowNodeAttentionBackendError(node('_native_flash', ['auto', '_native_flash'])), null);
+  assert.equal(workflowNodeAttentionBackendError({ data: { params: {} } }), null);
+});
+
+test('Hub-backed adapter member filenames are not treated as standalone local models', () => {
+  const references = runReadinessModule.collectNodeModelReferences({
+    id: 'audio-lora',
+    data: {
+      module: 'modules.DiffusersAudio',
+      action: 'LoadAdapter',
+      params: {
+        model: {
+          value: {
+            source: 'hub',
+            value: 'ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA',
+          },
+        },
+        weight_name: { value: 'adapter_model.safetensors', label: 'Weight name', description: 'Adapter weights' },
+      },
+    },
+  });
+
+  assert.deepEqual(references, [
+    {
+      kind: 'repo',
+      value: 'ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA',
+      paramKey: 'model',
+    },
+  ]);
+  assert.deepEqual(
+    runReadinessModule.collectNodeModelReferences({
+      id: 'local-lora',
+      data: {
+        module: 'modules.DiffusersAudio',
+        action: 'LoadAdapter',
+        params: {
+          weight_name: { value: 'adapter_model.safetensors', label: 'Weight name', description: 'Adapter weights' },
+        },
+      },
+    }),
+    [{ kind: 'path', value: 'adapter_model.safetensors', paramKey: 'weight_name' }],
+  );
+
+  assert.deepEqual(
+    runReadinessModule.collectNodeModelReferences({
+      id: 'sdxl-ip-adapter',
+      data: {
+        module: 'modules.ModularDiffusers',
+        action: 'IPAdapter',
+        params: {
+          adapter_model: {
+            display: 'modelselect',
+            value: { source: 'hub', value: 'h94/IP-Adapter' },
+          },
+          adapter_weight_name: {
+            value: 'sdxl_models/ip-adapter_sdxl.safetensors',
+            label: 'Adapter Weight',
+          },
+        },
+      },
+    }),
+    [{ kind: 'repo', value: 'h94/IP-Adapter', paramKey: 'adapter_model' }],
+  );
+});
+
+test('a reviewed Modular model variant replaces the sealed baseline in readiness and Auto lookup', () => {
+  const loader = {
+    id: 'qwen-models',
+    data: {
+      module: 'modules.ModularDiffusers',
+      action: 'ModelsLoader',
+      params: {
+        repo_id: {
+          label: 'Repository ID',
+          value: { source: 'hub', value: 'Qwen/Qwen-Image-2512' },
+        },
+        reviewed_variant: {
+          label: 'Model',
+          description: 'Reviewed model variant',
+          value: 'Qwen/Qwen-Image',
+        },
+      },
+    },
+  };
+  assert.deepEqual(runReadinessModule.collectNodeModelReferences(loader), [
+    { kind: 'repo', value: 'Qwen/Qwen-Image', paramKey: 'reviewed_variant' },
+  ]);
+  assert.equal(autoResourceModule.selectedHubRepo(loader), 'Qwen/Qwen-Image');
+});
+
+test('declarative Dynamic Block readiness follows exact component pins instead of treating the sidecar repo as weights', () => {
+  const references = runReadinessModule.collectNodeModelReferences({
+    id: 'dynamic-modular',
+    data: {
+      module: 'modules.ModularDiffusers',
+      action: 'DynamicBlockNode',
+      params: {
+        repo_id: { value: { source: 'hub', value: 'diffusers/metadata-only-modular' } },
+        modiff_pipeline_identity: {
+          value: {
+            schema: 'modiff.custom-pipeline-identity.v3',
+            component_revisions: {
+              'owner/base-model': 'a'.repeat(40),
+              'owner/quantized-text-encoder': 'b'.repeat(40),
+            },
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(references, [
+    {
+      kind: 'repo',
+      value: 'owner/base-model',
+      paramKey: 'modiff_pipeline_identity.component_revisions.owner/base-model',
+      revision: 'a'.repeat(40),
+    },
+    {
+      kind: 'repo',
+      value: 'owner/quantized-text-encoder',
+      paramKey: 'modiff_pipeline_identity.component_revisions.owner/quantized-text-encoder',
+      revision: 'b'.repeat(40),
+    },
+  ]);
+  assert.equal(
+    references.some((reference) => reference.value === 'diffusers/metadata-only-modular'),
+    false,
+  );
+});
+
 test('Studio runtime hints preserve the exact Qwen Auto recipe without a client-owned CUDA budget', () => {
   const totalBytes = 16 * 1024 ** 3;
   const freeBytes = 15 * 1024 ** 3;
@@ -4674,6 +6951,232 @@ test('partially downloaded Hugging Face snapshots are not runnable cache hits', 
   assert.equal(modelCacheModule.cacheContains([{ id: repo }], repo), true);
 });
 
+test('Expert Model Manager installs only an exact reviewed immutable snapshot after its optional runtime is active', () => {
+  const revision = '47da56e2ad66ce4125a9922b4a8826bf407f9d0a';
+  const profile = {
+    ...profilesModule.STUDIO_MODEL_PROFILES.LTX2ConditionPipeline,
+    defaultRepo: 'Lightricks/LTX-2',
+    executionStatus: 'expert_only',
+    revisionCandidates: [revision],
+    downloadFiles: ['transformer/model.safetensors', 'model_index.json', 'model_index.json'],
+    optionalRuntimeRequirement: {
+      requiredNow: true,
+      state: 'active',
+    },
+  };
+  const status = modelCacheModule.getStudioModelCacheStatus(profile, [], [], null);
+  assert.deepEqual(modelCacheModule.reviewedExpertInstallTarget(profile, status), {
+    repo: 'Lightricks/LTX-2',
+    label: profile.artifactLabel || profile.label,
+    reason: 'Install the exact reviewed model revision and file selection required by this Expert workflow.',
+    actionLabel: 'Install',
+    repair: false,
+    revision,
+    files: ['model_index.json', 'transformer/model.safetensors'],
+  });
+
+  assert.equal(
+    modelCacheModule.reviewedExpertInstallTarget(
+      {
+        ...profile,
+        optionalRuntimeRequirement: { requiredNow: true, state: 'missing' },
+      },
+      status,
+    ),
+    null,
+  );
+  assert.equal(
+    modelCacheModule.reviewedExpertInstallTarget({ ...profile, revisionCandidates: ['main'] }, status),
+    null,
+  );
+  assert.equal(
+    modelCacheModule.reviewedExpertInstallTarget({ ...profile, downloadFiles: ['../model.safetensors'] }, status),
+    null,
+  );
+});
+
+test('LTX-2 install and Run use one immutable revision-bound community-license acknowledgement', () => {
+  const policy = modelUsagePoliciesModule.usagePolicyForRepository(profilesModule.LTX2_REPO);
+  assert.equal(policy.repository, 'Lightricks/LTX-2');
+  assert.equal(policy.reviewedRevision, profilesModule.LTX2_REVISION);
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.access, 'public');
+  assert.match(policy.shortSummary, /\$10 million entity-wide annual-revenue threshold/i);
+  assert.equal(policy.termsUrl, `https://huggingface.co/Lightricks/LTX-2/blob/${profilesModule.LTX2_REVISION}/LICENSE`);
+
+  const policies = modelUsagePoliciesModule.acknowledgementRequiredForRepository(
+    profilesModule.LTX2_REPO,
+    profilesModule.LTX2_REVISION,
+  );
+  assert.deepEqual(
+    policies.map((candidate) => candidate.revision),
+    [profilesModule.LTX2_REVISION],
+  );
+  assert.match(modelUsagePoliciesModule.usagePolicyAcknowledgementKey(policies), /^terms-v2:[0-9a-f]{8}$/);
+  const runPolicies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+    modelType: 'LTX2ConditionPipeline',
+    mode: 'text_to_video',
+  });
+  assert.deepEqual(
+    runPolicies.map((candidate) => [candidate.repository, candidate.revision]),
+    [[profilesModule.LTX2_REPO, profilesModule.LTX2_REVISION]],
+  );
+  assert.equal(
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(runPolicies),
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(policies),
+  );
+  assert.equal(modelUsagePoliciesModule.repositoryRequiresHuggingFaceGate(profilesModule.LTX2_REPO), false);
+});
+
+test('Anima install and Run use one immutable revision-bound non-commercial-license acknowledgement', () => {
+  const policy = modelUsagePoliciesModule.usagePolicyForRepository(profilesModule.ANIMA_REPO);
+  assert.equal(policy.repository, 'circlestone-labs/Anima-Base-v1.0-Diffusers');
+  assert.equal(policy.reviewedRevision, profilesModule.ANIMA_REVISION);
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.access, 'public');
+  assert.match(policy.shortSummary, /model and derivative use to non-commercial purposes/i);
+  assert.match(policy.shortSummary, /outputs may be used commercially/i);
+  assert.equal(
+    policy.termsUrl,
+    `https://huggingface.co/circlestone-labs/Anima-Base-v1.0-Diffusers/blob/${profilesModule.ANIMA_REVISION}/LICENSE.md`,
+  );
+
+  const installPolicies = modelUsagePoliciesModule.acknowledgementRequiredForRepository(
+    profilesModule.ANIMA_REPO,
+    profilesModule.ANIMA_REVISION,
+  );
+  const runPolicies = modelUsagePoliciesModule.acknowledgementRequiredForModelRun({
+    modelType: 'AnimaModularPipeline',
+    mode: 'text_to_image',
+  });
+  assert.deepEqual(
+    runPolicies.map((candidate) => [candidate.repository, candidate.revision]),
+    [[profilesModule.ANIMA_REPO, profilesModule.ANIMA_REVISION]],
+  );
+  assert.equal(
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(runPolicies),
+    modelUsagePoliciesModule.usagePolicyAcknowledgementKey(installPolicies),
+  );
+  assert.equal(modelUsagePoliciesModule.repositoryRequiresHuggingFaceGate(profilesModule.ANIMA_REPO), false);
+});
+
+test('shared pipeline classes resolve one exact Expert artifact per workflow mode', () => {
+  const profile = {
+    ...profilesModule.STUDIO_MODEL_PROFILES.WanImage2VideoModularPipeline,
+    executionStatus: 'expert_only',
+    artifactSelections: [
+      {
+        modes: ['single_image_to_video'],
+        repo: 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+        revision: 'b184e23a8a16b20f108f727c902e769e873ffc73',
+        downloadFiles: ['model_index.json', 'transformer/i2v.safetensors'],
+        label: 'Wan I2V 480P',
+      },
+      {
+        modes: ['image_to_video'],
+        repo: 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers',
+        revision: '17c30769b1e0b5dcaa1799b117bf20a9c31f59d7',
+        downloadFiles: ['model_index.json', 'transformer/flf.safetensors'],
+        label: 'Wan FLF2V 720P',
+      },
+    ],
+  };
+  const variants = profilesModule.expandArtifactSelectionProfiles(profile);
+  assert.deepEqual(
+    variants.map(({ modes, defaultRepo, revisionCandidates, downloadFiles }) => ({
+      modes,
+      defaultRepo,
+      revisionCandidates,
+      downloadFiles,
+    })),
+    [
+      {
+        modes: ['single_image_to_video'],
+        defaultRepo: 'Wan-AI/Wan2.1-I2V-14B-480P-Diffusers',
+        revisionCandidates: ['b184e23a8a16b20f108f727c902e769e873ffc73'],
+        downloadFiles: ['model_index.json', 'transformer/i2v.safetensors'],
+      },
+      {
+        modes: ['image_to_video'],
+        defaultRepo: 'Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers',
+        revisionCandidates: ['17c30769b1e0b5dcaa1799b117bf20a9c31f59d7'],
+        downloadFiles: ['model_index.json', 'transformer/flf.safetensors'],
+      },
+    ],
+  );
+  for (const variant of variants) {
+    const status = modelCacheModule.getStudioModelCacheStatus(variant, [], [], null);
+    const target = modelCacheModule.reviewedExpertInstallTarget(variant, status);
+    assert.equal(target.repo, variant.defaultRepo);
+    assert.equal(target.revision, variant.revisionCandidates[0]);
+    assert.deepEqual(target.files, [...variant.downloadFiles].sort());
+  }
+});
+
+test('exact workflow requirements reject a healthy repo with the wrong installed file selection', () => {
+  const repo = 'h94/IP-Adapter';
+  const cache = [
+    {
+      id: repo,
+      installed: true,
+      complete: true,
+      planned_revision: profilesModule.SDXL_IP_ADAPTER_REVISION,
+      planned_files: [
+        'sdxl_models/ip-adapter_sdxl.safetensors',
+        'models/image_encoder/config.json',
+        'models/image_encoder/model.safetensors',
+      ],
+    },
+  ];
+  const expectation = {
+    revision: profilesModule.SDXL_IP_ADAPTER_REVISION,
+    files: profilesModule.SDXL_IP_ADAPTER_FILES,
+  };
+  const mismatch = modelCacheModule.getRepoCacheStatus(repo, cache, [], null, expectation);
+  assert.equal(mismatch.runnable, false);
+  assert.equal(mismatch.repairRequired, true);
+  assert.match(mismatch.reason, /does not include the exact revision and files/);
+
+  cache[0].planned_files = [...profilesModule.SDXL_IP_ADAPTER_FILES];
+  const match = modelCacheModule.getRepoCacheStatus(repo, cache, [], null, expectation);
+  assert.equal(match.runnable, true);
+  assert.equal(match.repairRequired, false);
+});
+
+test('reviewed model profiles require their current immutable path selection before showing Ready', () => {
+  const profile = {
+    ...profilesModule.STUDIO_MODEL_PROFILES.LTXVideoPipeline,
+    defaultRepo: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+    revisionCandidates: ['7c64400e1861cc0d7b98d570a1926d5408ec60cd'],
+    downloadFiles: [
+      'model_index.json',
+      'text_encoder/model-00001-of-00004.safetensors',
+      'vae/text_encoder/model-00001-of-00004.safetensors',
+    ],
+  };
+  const cache = [
+    {
+      id: profile.defaultRepo,
+      installed: true,
+      complete: true,
+      planned_revision: profile.revisionCandidates[0],
+      planned_files: profile.downloadFiles.slice(0, 2),
+    },
+  ];
+
+  const mismatch = modelCacheModule.getStudioModelCacheStatus(profile, cache, [], null);
+  assert.equal(mismatch.runnable, false);
+  assert.equal(mismatch.repairRequired, true);
+  assert.match(mismatch.reason, /does not include the exact revision and files/);
+
+  cache[0].planned_files = [...profile.downloadFiles];
+  const match = modelCacheModule.getStudioModelCacheStatus(profile, cache, [], null);
+  assert.equal(match.runnable, true);
+  assert.equal(match.repairRequired, false);
+});
+
 test('startup request caches recover manifest and plans at their startup readiness signals without a modal refresh', async () => {
   let attempts = 0;
   const cache = startupRequestModule.createStartupRequestCache(async () => {
@@ -4748,4 +7251,51 @@ test('startup request caches recover manifest and plans at their startup readine
   );
   assert.match(browserSource, /shouldRetryStaticStartupRequest\(\{[\s\S]*?manifestStartupRetryAttempted\.current/);
   assert.doesNotMatch(browserSource, /templateManifestRequest\s*\?\?=/);
+});
+
+test('template creation waits for initial capabilities and cannot continue into another workflow', async () => {
+  const { createWorkflowFromTemplate } = await server.ssrLoadModule('/src/studio/templateWorkflow.ts');
+  const nodeStore = nodesStoreModule.useNodesStore;
+  const studioStore = studioStoreModule.useStudioStore;
+  const flowStore = flowStoreModule.useFlowStore;
+  const previousNodes = nodeStore.getState();
+  const previousStudio = studioStore.getState();
+  const previousFlow = flowStore.getState();
+  let resolveCapabilities;
+  let requested = false;
+  const capabilities = new Promise((resolve) => {
+    resolveCapabilities = resolve;
+  });
+  nodeStore.setState({
+    discoveryRequests: {
+      ...previousNodes.discoveryRequests,
+      capabilities: { status: 'loading', error: null, requestId: 1 },
+    },
+    fetchStudioModelCapabilities: async () => {
+      requested = true;
+      await capabilities;
+    },
+  });
+  let pending;
+  try {
+    pending = createWorkflowFromTemplate(
+      templatesModule.STUDIO_TEMPLATES.find(({ id }) => id === 'qwen_product_mockup'),
+    );
+    assert.equal(requested, true);
+    assert.equal(flowStore.getState().nodes.length, 0);
+    studioStore.getState().createWorkflowTab('User switched documents');
+    resolveCapabilities();
+    await assert.rejects(pending, (error) => studioStoreModule.isWorkflowOperationCancelled(error));
+    assert.equal(flowStore.getState().nodes.length, 0);
+    assert.equal(
+      studioStore.getState().workflowTabs.find(({ id }) => id === studioStore.getState().activeWorkflowTabId).title,
+      'User switched documents',
+    );
+  } finally {
+    resolveCapabilities();
+    await pending?.catch(() => {});
+    nodeStore.setState(previousNodes);
+    studioStore.setState(previousStudio);
+    flowStore.setState(previousFlow);
+  }
 });

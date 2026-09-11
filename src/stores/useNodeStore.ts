@@ -16,6 +16,11 @@ import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runt
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
 import {
+  buildTaskTemplateSkeleton,
+  parseTaskTemplateContracts,
+  type StudioTaskTemplateSkeleton,
+} from '../studio/taskTemplateContracts';
+import {
   parseOptionalRuntimeCatalog,
   parseOptionalRuntimeExecutionProfiles,
   parseOptionalRuntimeRequirement,
@@ -25,13 +30,18 @@ import {
 import type {
   ExecutionProgress,
   RunReadinessIssue,
+  StudioExecutionSpec,
   StudioExecutionProfile,
+  StudioMode,
   StudioModelProfile,
+  StudioTaskTemplateContract,
   UserBlockDefinition,
 } from '../studio/types';
 import type { ModiffFieldStyle, ModiffNodeStyle } from '../theme';
 import { enqueueSnackbar } from '../ui/snackbar';
 import type { ImageArtifact } from '../utils/imageArtifacts';
+import type { HuggingFaceClusterInstance } from '../studio/huggingFaceClusterInstance';
+import type { BlockGraphNodeModularDiffusersV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { createLatestRequestGate, formatRequestError, requestJson, RequestError } from '../utils/requestJson';
 import { useStudioStore } from './useStudioStore';
 
@@ -40,7 +50,7 @@ export type NodeParamSignal = { direction: 'input' | 'output'; origin?: string; 
 export type NodeExecutionStatus = 'queued' | 'running' | 'completed' | 'cached' | 'failed' | 'cancelled' | 'succeeded';
 
 export type NodeData = {
-  type: 'custom' | 'any' | 'group' | 'loop' | 'block';
+  type: 'custom' | 'any' | 'group' | 'loop' | 'block' | 'cluster';
   module: string;
   action: string;
   label: string;
@@ -67,6 +77,9 @@ export type NodeData = {
     blockExpanded?: boolean;
     blockCollapsedWidth?: number;
     blockCollapsedHeight?: number;
+    clusterCollapsedWidth?: number;
+    clusterCollapsedHeight?: number;
+    clusterExecutionEdgesReady?: boolean;
     disabled?: boolean;
     validationSeverity?: RunReadinessIssue['severity'];
     validationMessage?: string;
@@ -81,6 +94,76 @@ export type NodeData = {
   userBlockSnapshot?: UserBlockDefinition;
   userBlockInstanceId?: string;
   userBlockSourceNodeId?: string;
+  /**
+   * Canonical source-neutral composite authority. A V2 root must not carry a
+   * legacy User Block snapshot or Hugging Face Cluster instance beside it.
+   */
+  blockInstanceV2?: BlockInstanceV2;
+  /** Runtime-only ownership for a node projected from a V2 effective graph. */
+  blockProjectionOwnerId?: string;
+  /** Stable semantic node id inside the owner's effective graph. */
+  blockProjectionNodeId?: string;
+  /** Projected nodes are derived canvas/execution views, never persistence authority. */
+  blockProjectionKind?: 'internal';
+  /** Presentation-only marker for a semantic container that owns child nodes. */
+  blockProjectionContainer?: boolean;
+  /** This projected node is one exact upstream Modular Diffusers block. */
+  blockProjectionModular?: boolean;
+  /** Number of immediate projected children, including ordinary utilities. */
+  blockProjectionChildCount?: number;
+  /** Whether this projected container currently shows its descendants. */
+  blockProjectionContainerExpanded?: boolean;
+  /** Zero-based depth inside the owning Block's shared semantic hierarchy. */
+  blockProjectionDepth?: number;
+  /**
+   * Runtime-only handles exposed by a collapsed Modular subtree. The canvas
+   * handle belongs to the visible container, while the binding identifies the
+   * exact semantic child socket that execution and structural edits own.
+   */
+  blockProjectionPortBindings?: Record<
+    string,
+    {
+      direction: 'input' | 'output';
+      nodeId: string;
+      fieldOrPortId: string;
+      mirrorBindings?: { nodeId: string; fieldOrPortId: string }[];
+    }
+  >;
+  /** Pinned placement identity carried by a standalone catalog Modular block. */
+  modularDiffusersCatalogNode?: BlockGraphNodeModularDiffusersV2;
+  /**
+   * Hidden compiler-session ownership used while a registered graph receives
+   * backend-declared dynamic fields. These nodes never persist, export, enter
+   * history, or render as the inserted catalog Block.
+   */
+  blockCompilationTransientV2?: string;
+  /**
+   * Runtime-only canvas feedback shown while an immutable registered Block is
+   * being compiled. It shares the final Block's location, but is excluded from
+   * persistence, execution, export, and undo history by the transient marker.
+   */
+  blockInsertionPendingV2?: {
+    label: string;
+    message: string;
+  };
+  huggingFaceClusterRole?: 'root' | 'block' | 'execution';
+  huggingFaceClusterInstance?: HuggingFaceClusterInstance;
+  huggingFaceClusterInstanceId?: string;
+  huggingFaceClusterPath?: string;
+  huggingFaceClusterSemanticId?: string;
+  huggingFaceClusterParameterPath?: string;
+  huggingFaceClusterKind?: 'auto' | 'conditional' | 'sequential' | 'loop' | 'block' | 'container';
+  huggingFaceClusterImplicit?: boolean;
+  huggingFaceClusterHasParameters?: boolean;
+  huggingFaceClusterPathExpanded?: boolean;
+  huggingFaceClusterConditionalRole?: 'selector' | 'branch';
+  huggingFaceClusterConditionalStatus?: 'active' | 'inactive' | 'skipped' | 'error';
+  huggingFaceClusterSelectedBlockName?: string | null;
+  huggingFaceClusterTriggerInputs?: string[];
+  huggingFaceClusterExecutionAdmissionId?: string;
+  huggingFaceClusterExecutionSpecId?: string;
+  huggingFaceClusterExecutionRole?: string;
+  huggingFaceClusterExecutionPosition?: { x: number; y: number };
 };
 
 export type NodeParams = {
@@ -191,6 +274,10 @@ export type HfDownloadProgress = {
   completed_at?: number | null;
   size_known?: boolean;
   plan_error?: string;
+  revision?: string | null;
+  repair?: boolean;
+  requested_file_count?: number;
+  reserved_bytes?: number;
   error?: string | null;
   error_code?: string | null;
   last_error?: string;
@@ -341,6 +428,8 @@ type NodesStore = {
   studioModelCapabilities: StudioModelProfile[];
   studioModelCapabilitiesAuthoritative: boolean;
   studioExecutionSpecInvalid: boolean;
+  studioTaskTemplateContracts: StudioTaskTemplateContract[];
+  studioTaskTemplateSkeletons: StudioTaskTemplateSkeleton[];
   runtimeStatus: RuntimeStatus | null;
   runtimeResources: RuntimeResourceSnapshot | null;
   runtimeError: string | null;
@@ -350,12 +439,14 @@ type NodesStore = {
   customModuleError: string | null;
   discoveryRequests: Record<DiscoveryRequestKey, DiscoveryRequestState>;
   setHfDownloadProgress: (progress: HfDownloadProgress) => void;
+  rehydrateHfDownloadProgress: (downloads: HfDownloadProgress[]) => void;
+  reconcileHfDownloadProgress: () => Promise<void>;
   clearHfDownloadProgress: (repoId: string) => void;
   refreshModelIndexes: (refresh?: boolean, options?: { invalidateAutoPlans?: boolean }) => Promise<void>;
   installHfModel: (
     repoId: string,
     sid?: string | null,
-    options?: { repair?: boolean; files?: string[] },
+    options?: { repair?: boolean; files?: string[]; revision?: string },
   ) => Promise<HfInstallResult>;
   fetchCustomModules: () => Promise<void>;
   refreshCustomModules: () => Promise<CustomModuleActionResult>;
@@ -394,6 +485,10 @@ type NodesStoreGet = () => NodesStore;
 
 const inFlightHfInstalls = new Map<string, Promise<HfInstallResult>>();
 let inFlightNodeDiscovery: Promise<void> | null = null;
+// The capability endpoint has no force-refresh variant. All concurrent
+// consumers must observe the same publication instead of cancelling one
+// another through the store's latest-request gate.
+let inFlightStudioCapabilitiesDiscovery: Promise<void> | null = null;
 const discoveryRequestGate = createLatestRequestGate<DiscoveryRequestKey>();
 const CUSTOM_MODULE_TIMEOUT_MS = 16 * 60 * 1000;
 const HF_DOWNLOAD_TIMEOUT_MS = 6 * 60 * 60 * 1000;
@@ -566,9 +661,172 @@ function invalidModelCapabilities(): never {
   throw new Error('Invalid model-capabilities response.');
 }
 
-function parseStudioModelCapabilities(value: unknown) {
+// Keep discovery bounded without coupling the wire contract to the original
+// 128-entry catalog. The reviewed backend catalog already grows beyond that
+// as new Diffusers and Transformers routes are admitted.
+export const MAX_STUDIO_MODEL_CAPABILITIES = 512;
+
+function parseModeOutputKinds(value: unknown, modes: readonly string[]) {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) invalidModelCapabilities();
+  const entries = Object.entries(value);
+  if (
+    entries.length > modes.length ||
+    entries.some(
+      ([mode, outputKind]) =>
+        !modes.includes(mode) || !['image', 'video', 'audio', 'json'].includes(String(outputKind)),
+    )
+  )
+    invalidModelCapabilities();
+  return { ...value } as StudioModelProfile['modeOutputKinds'];
+}
+
+function parseOutputMedia(value: unknown, outputKind: unknown) {
+  if (value === undefined) return undefined;
+  const mediaKinds = ['image', 'video', 'audio', 'json'];
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > mediaKinds.length ||
+    value.some((item) => !mediaKinds.includes(String(item))) ||
+    new Set(value).size !== value.length ||
+    (typeof outputKind === 'string' && !value.includes(outputKind))
+  )
+    invalidModelCapabilities();
+  return [...value] as NonNullable<StudioModelProfile['outputMedia']>;
+}
+
+function parseLicenseCompliance(value: unknown) {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 8 ||
+    value.state !== 'product_and_user_review_required' ||
+    !['codeLicense', 'weightsLicense', 'noticePath'].every(
+      (key) => typeof value[key] === 'string' && Boolean(value[key].trim()),
+    ) ||
+    ![
+      'useRestrictionsPresent',
+      'distributionAndHostedUseCarryDuties',
+      'sourceExecutable',
+      'liveExecutionQualified',
+    ].every((key) => typeof value[key] === 'boolean')
+  )
+    invalidModelCapabilities();
+  return { ...value } as StudioModelProfile['licenseCompliance'];
+}
+
+function parseLayerCount(value: unknown) {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    Object.keys(value).sort().join() !== 'default,max,min' ||
+    ![value.default, value.min, value.max].every(Number.isInteger) ||
+    !((value.min as number) >= 1 && (value.min as number) <= (value.default as number)) ||
+    !((value.default as number) <= (value.max as number) && (value.max as number) <= 16)
+  )
+    invalidModelCapabilities();
+  return { ...value } as NonNullable<StudioModelProfile['layerCount']>;
+}
+
+function parseLayerResolutions(value: unknown) {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > 8 ||
+    value.some((item) => !Number.isInteger(item) || item < 64 || item > 2048 || item % 16 !== 0) ||
+    new Set(value).size !== value.length
+  )
+    invalidModelCapabilities();
+  return [...value] as number[];
+}
+
+function parseDownloadFiles(value: unknown) {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length > 4096 ||
+    new Set(value).size !== value.length ||
+    value.some((item) => {
+      if (typeof item !== 'string' || item.length < 1 || item.length > 512 || item.includes('\\')) return true;
+      if (item.startsWith('/') || item.endsWith('/')) return true;
+      return item.split('/').some((segment) => !segment || segment === '.' || segment === '..');
+    })
+  )
+    invalidModelCapabilities();
+  return [...value] as string[];
+}
+
+function validCapabilityRepository(value: unknown, artifactKind: unknown) {
+  if (typeof value !== 'string' || value.length > 193) return false;
+  if (artifactKind === 'builtin') return /^builtin:\/\/modiff\/[a-z0-9-]+\/v[1-9][0-9]*$/u.test(value);
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/u.test(value);
+}
+
+function parseArtifactSelections(value: unknown, capabilityModes: StudioMode[]) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 32) invalidModelCapabilities();
+  const seenModes = new Set<StudioMode>();
+  const selections = value.map((raw) => {
+    if (!isRecord(raw)) invalidModelCapabilities();
+    const modes = parseRuntimeModes(raw.modes, isStudioMode);
+    const files = parseDownloadFiles(raw.downloadFiles);
+    if (
+      modes.length < 1 ||
+      modes.some((mode) => !capabilityModes.includes(mode) || seenModes.has(mode)) ||
+      typeof raw.repo !== 'string' ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(raw.repo) ||
+      typeof raw.revision !== 'string' ||
+      !/^[0-9a-f]{40}$/.test(raw.revision) ||
+      !files?.length ||
+      (raw.label !== undefined && (typeof raw.label !== 'string' || raw.label.length < 1 || raw.label.length > 256))
+    )
+      invalidModelCapabilities();
+    modes.forEach((mode) => seenModes.add(mode));
+    return {
+      modes,
+      repo: raw.repo,
+      revision: raw.revision,
+      downloadFiles: files,
+      ...(raw.label === undefined ? {} : { label: raw.label }),
+    };
+  });
+  return selections as NonNullable<StudioModelProfile['artifactSelections']>;
+}
+
+function parseModeDefaults(value: unknown, capabilityModes: StudioMode[]) {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) invalidModelCapabilities();
+  const allowedFields = new Set(['width', 'height', 'steps', 'guidanceScale', 'numFrames', 'fps']);
+  const parsed = Object.fromEntries(
+    Object.entries(value).map(([mode, raw]) => {
+      if (!isStudioMode(mode) || !capabilityModes.includes(mode) || !isRecord(raw)) invalidModelCapabilities();
+      if (Object.keys(raw).some((field) => !allowedFields.has(field))) invalidModelCapabilities();
+      const defaults = Object.fromEntries(
+        Object.entries(raw).map(([field, fieldValue]) => {
+          if (typeof fieldValue !== 'number' || !Number.isFinite(fieldValue)) invalidModelCapabilities();
+          if (
+            ((field === 'width' || field === 'height') &&
+              (!Number.isSafeInteger(fieldValue) || fieldValue < 1 || fieldValue > 65_536)) ||
+            ((field === 'steps' || field === 'numFrames' || field === 'fps') &&
+              (!Number.isSafeInteger(fieldValue) || fieldValue < 1 || fieldValue > 10_000)) ||
+            (field === 'guidanceScale' && (fieldValue < -100 || fieldValue > 1_000))
+          )
+            invalidModelCapabilities();
+          return [field, fieldValue];
+        }),
+      );
+      return [mode, defaults];
+    }),
+  );
+  return parsed as NonNullable<StudioModelProfile['modeDefaults']>;
+}
+
+export function parseStudioModelCapabilities(value: unknown) {
   const payload = payloadRecord(value, 'Invalid model-capabilities response.');
-  if (!Array.isArray(payload.capabilities) || payload.capabilities.length > 128) invalidModelCapabilities();
+  if (!Array.isArray(payload.capabilities) || payload.capabilities.length > MAX_STUDIO_MODEL_CAPABILITIES)
+    invalidModelCapabilities();
   const modelTypes = new Set();
   const capabilities = payload.capabilities.flatMap((item) => {
     if (!isRecord(item) || typeof item.modelType !== 'string') invalidModelCapabilities();
@@ -589,6 +847,47 @@ function parseStudioModelCapabilities(value: unknown) {
     const modes = parseRuntimeModes(item.modes, isStudioMode);
     const runnableModes =
       item.runnableModes === undefined ? undefined : parseRuntimeModes(item.runnableModes, isStudioMode);
+    const qualifiedModes =
+      item.qualifiedModes === undefined ? undefined : parseRuntimeModes(item.qualifiedModes, isStudioMode);
+    const modeOutputKinds = parseModeOutputKinds(item.modeOutputKinds, modes);
+    const outputMedia = parseOutputMedia(item.outputMedia, item.outputKind);
+    const licenseCompliance = parseLicenseCompliance(item.licenseCompliance);
+    const layerCount = parseLayerCount(item.layerCount);
+    const layerResolutions = parseLayerResolutions(item.layerResolutions);
+    const downloadFiles = parseDownloadFiles(item.downloadFiles);
+    const artifactSelections = parseArtifactSelections(item.artifactSelections, modes);
+    const modeDefaults = parseModeDefaults(item.modeDefaults, modes);
+    const artifactKind = item.artifactKind;
+    const artifactInstallRequired = item.artifactInstallRequired;
+    const defaultRepo = item.defaultRepo;
+    const artifactLabel = item.artifactLabel;
+    if (
+      qualifiedModes?.some((mode) => !modes.includes(mode)) ||
+      [item.autoEligible, item.templateEligible, item.galleryEligible, item.liveProof].some(
+        (flag) => flag !== undefined && typeof flag !== 'boolean',
+      ) ||
+      ((layerCount || layerResolutions) && !modes.includes('layer_decomposition')) ||
+      Boolean(layerCount) !== Boolean(layerResolutions) ||
+      (artifactKind !== undefined && !['model', 'spandrel_upscaler', 'builtin'].includes(String(artifactKind))) ||
+      (artifactInstallRequired !== undefined && typeof artifactInstallRequired !== 'boolean') ||
+      ((artifactKind === 'builtin' || artifactInstallRequired === false) &&
+        !(artifactKind === 'builtin' && artifactInstallRequired === false)) ||
+      (defaultRepo !== undefined && !validCapabilityRepository(defaultRepo, artifactKind)) ||
+      (artifactLabel !== undefined &&
+        (typeof artifactLabel !== 'string' || artifactLabel.length < 1 || artifactLabel.length > 256)) ||
+      (item.executionStatus !== undefined &&
+        !['expert_only', 'supported', 'supported_with_model'].includes(String(item.executionStatus)))
+    )
+      invalidModelCapabilities();
+    const revisionCandidates = item.revisionCandidates;
+    if (
+      revisionCandidates !== undefined &&
+      (!Array.isArray(revisionCandidates) ||
+        revisionCandidates.length > 32 ||
+        revisionCandidates.some((revision) => typeof revision !== 'string' || !/^[0-9a-f]{40}$/.test(revision)) ||
+        new Set(revisionCandidates).size !== revisionCandidates.length)
+    )
+      invalidModelCapabilities();
     const optionalRuntimeRequirement =
       item.optionalRuntimeRequirement === undefined
         ? undefined
@@ -597,15 +896,21 @@ function parseStudioModelCapabilities(value: unknown) {
       item.executionProfiles === undefined
         ? undefined
         : parseOptionalRuntimeExecutionProfiles(item.executionProfiles, optionalRuntimeRequirement, isStudioMode);
-    const studioExecutionSpecs =
-      item.studioExecutionSpecs === undefined
-        ? undefined
-        : parseStudioExecutionSpecs(
-            item.studioExecutionSpecs,
-            item.modelType,
-            modes,
-            executionProfiles as unknown as StudioExecutionProfile[] | undefined,
-          );
+    let studioExecutionSpecs: StudioExecutionSpec[] | undefined;
+    try {
+      studioExecutionSpecs =
+        item.studioExecutionSpecs === undefined
+          ? undefined
+          : parseStudioExecutionSpecs(
+              item.studioExecutionSpecs,
+              item.modelType,
+              runnableModes ?? modes,
+              executionProfiles as unknown as StudioExecutionProfile[] | undefined,
+            );
+    } catch (error) {
+      const detail = error instanceof Error ? ` ${error.message}` : '';
+      throw new Error(`Invalid Studio execution specification for ${item.modelType}.${detail}`);
+    }
     const studioExecutionSpecModes =
       item.studioExecutionSpecModes === undefined
         ? undefined
@@ -624,24 +929,64 @@ function parseStudioModelCapabilities(value: unknown) {
           studioExecutionSpecs.length !== studioExecutionSpecModes.length ||
           studioExecutionSpecs.some((spec) => !studioExecutionSpecModes.includes(spec.mode))))
     )
-      throw new Error('Invalid Studio execution specification.');
+      throw new Error(`Invalid Studio execution specification for ${item.modelType}.`);
     if (
       executionProfiles &&
-      (executionProfiles.some((profile) => profile.modes.some((mode) => !modes.includes(mode))) ||
+      (executionProfiles.some((profile) => profile.modes.some((mode) => !(runnableModes ?? modes).includes(mode))) ||
         (runnableModes ?? modes).some((mode) => !executionProfiles.some((profile) => profile.modes.includes(mode))))
     )
       invalidModelCapabilities();
     item.modes = modes;
+    if (revisionCandidates) item.revisionCandidates = [...revisionCandidates];
     if (runnableModes) item.runnableModes = runnableModes;
+    if (qualifiedModes) item.qualifiedModes = qualifiedModes;
+    if (modeOutputKinds) item.modeOutputKinds = modeOutputKinds;
+    if (outputMedia) item.outputMedia = outputMedia;
+    if (licenseCompliance) item.licenseCompliance = licenseCompliance;
+    if (layerCount) item.layerCount = layerCount;
+    if (layerResolutions) item.layerResolutions = layerResolutions;
+    if (downloadFiles) item.downloadFiles = downloadFiles;
+    if (artifactSelections) item.artifactSelections = artifactSelections;
+    if (modeDefaults) item.modeDefaults = modeDefaults;
     if (executionProfiles) item.executionProfiles = executionProfiles;
     if (studioExecutionSpecs) item.studioExecutionSpecs = studioExecutionSpecs;
     if (studioExecutionSpecModes) item.studioExecutionSpecModes = studioExecutionSpecModes;
     if (item.studioExecutionSpecSchemaVersion === 1) item.studioExecutionSpecSchemaVersion = 1;
     return [item as unknown as StudioModelProfile];
   });
+  const taskTemplateFields = [payload.taskTemplateContractSchemaVersion, payload.taskTemplateContracts];
+  const taskTemplateContracts = taskTemplateFields.every((field) => field === undefined)
+    ? []
+    : parseTaskTemplateContracts(
+        payload.taskTemplateContracts,
+        payload.taskTemplateContractSchemaVersion,
+        capabilities,
+      );
+  if (taskTemplateContracts.length > 0) {
+    for (const capability of capabilities) {
+      const expected = taskTemplateContracts.filter((contract) => contract.modelType === capability.modelType);
+      const declaredModes = capability.taskTemplateContractModes;
+      if (
+        capability.taskTemplateContractSchemaVersion !== 1 ||
+        !Array.isArray(capability.taskTemplateContracts) ||
+        !Array.isArray(declaredModes) ||
+        declaredModes.length !== expected.length ||
+        expected.some(
+          (contract) =>
+            !declaredModes.includes(contract.mode) ||
+            !capability.taskTemplateContracts?.some(
+              (declared) => declared.id === contract.id && declared.contentHash === contract.contentHash,
+            ),
+        )
+      )
+        throw new Error('Invalid Studio task-template contract.');
+      capability.taskTemplateContracts = expected;
+    }
+  }
   return {
     authoritative: payload.schemaVersion === 2,
     capabilities,
+    taskTemplateContracts,
   };
 }
 
@@ -652,6 +997,25 @@ function parseHfInstallResponse(value: unknown, repoId: string) {
     throw new Error('The model-install response has an invalid task identifier.');
   }
   return payload as HfInstallResult;
+}
+
+function parseHfDownloadStatus(value: unknown) {
+  const payload = payloadRecord(value, 'The model-download status response is invalid.');
+  if (!Array.isArray(payload.downloads)) {
+    throw new Error('The model-download status response has no downloads array.');
+  }
+  return payload.downloads.map((candidate, index) => {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.repo_id !== 'string' ||
+      candidate.repo_id.length === 0 ||
+      (candidate.status !== undefined && typeof candidate.status !== 'string') ||
+      (candidate.progress !== undefined && candidate.progress !== null && typeof candidate.progress !== 'number')
+    ) {
+      throw new Error(`Model-download status entry ${index + 1} is invalid.`);
+    }
+    return candidate as HfDownloadProgress;
+  });
 }
 
 function parseCustomModuleInfo(value: unknown, index: number) {
@@ -711,6 +1075,8 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   studioModelCapabilities: [],
   studioModelCapabilitiesAuthoritative: false,
   studioExecutionSpecInvalid: false,
+  studioTaskTemplateContracts: [],
+  studioTaskTemplateSkeletons: [],
   runtimeStatus: null,
   runtimeResources: null,
   runtimeError: null,
@@ -741,6 +1107,36 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     }));
     notifyHfDownloadTransition(previous, nextProgress);
   },
+  rehydrateHfDownloadProgress: (downloads) => {
+    set((state) => {
+      const next = Object.fromEntries(
+        Object.entries(state.hfDownloadProgress).filter(([, progress]) => !isHfDownloadActive(progress)),
+      );
+      downloads.forEach((progress) => {
+        if (!progress.repo_id) return;
+        next[progress.repo_id] = progress;
+      });
+      return { hfDownloadProgress: next };
+    });
+  },
+  reconcileHfDownloadProgress: async () => {
+    const activeBefore = Object.values(get().hfDownloadProgress)
+      .filter(isHfDownloadActive)
+      .map((progress) => progress.repo_id)
+      .filter((repoId): repoId is string => Boolean(repoId));
+    const downloads = await requestJson(`${config.serverAddress}/hf_download/status`, {
+      timeoutMs: 10_000,
+      parse: parseHfDownloadStatus,
+    });
+    get().rehydrateHfDownloadProgress(downloads);
+    if (
+      activeBefore.some(
+        (repoId) => !downloads.some((progress) => progress.repo_id === repoId && isHfDownloadActive(progress)),
+      )
+    ) {
+      await get().refreshModelIndexes(true);
+    }
+  },
   clearHfDownloadProgress: (repoId) => {
     set((state) => {
       const next = { ...state.hfDownloadProgress };
@@ -763,7 +1159,8 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   },
   installHfModel: async (repoId, sid = null, options = {}) => {
     const requestedFiles = [...new Set(options.files?.map((file) => file.trim()).filter(Boolean) ?? [])].sort();
-    const installKey = `${repoId}:${options.repair ? 'repair' : 'install'}:${requestedFiles.join(',')}`;
+    const revision = options.revision?.trim() || '';
+    const installKey = `${repoId}:${revision}:${options.repair ? 'repair' : 'install'}:${requestedFiles.join(',')}`;
     const existing = inFlightHfInstalls.get(installKey);
     if (existing) {
       return existing;
@@ -784,6 +1181,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
             repo_id: repoId,
             ...(sid ? { sid } : {}),
             ...(options.repair ? { repair: true } : {}),
+            ...(revision ? { revision } : {}),
             ...(requestedFiles.length > 0 ? { files: requestedFiles } : {}),
           }),
           timeoutMs: HF_DOWNLOAD_TIMEOUT_MS,
@@ -805,6 +1203,31 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           repo_id: data?.repo_id ?? repoId,
         };
       } catch (error) {
+        if (error instanceof RequestError && (error.kind === 'network' || error.kind === 'timeout')) {
+          try {
+            const downloads = await requestJson(`${config.serverAddress}/hf_download/status`, {
+              timeoutMs: 10_000,
+              parse: parseHfDownloadStatus,
+            });
+            const recovered = downloads.find(
+              (candidate) =>
+                candidate.repo_id === repoId &&
+                (!revision || !candidate.revision || candidate.revision === revision) &&
+                (isHfDownloadActive(candidate) || isHfDownloadComplete(candidate)),
+            );
+            if (recovered) {
+              get().setHfDownloadProgress(recovered);
+              return {
+                error: false,
+                repo_id: repoId,
+                task_id: recovered.task_id ?? recovered.download_id,
+              };
+            }
+          } catch {
+            // Preserve the original transport failure when supervisor status
+            // cannot prove that the exact download is still active.
+          }
+        }
         const message = error instanceof Error ? error.message : String(error);
         const errorPayload =
           error instanceof RequestError && error.payload && typeof error.payload === 'object'
@@ -839,6 +1262,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/custom_modules`, {
           signal,
+          timeoutMs: 120_000,
           parse: (value) => parseCustomModules(value, 'Could not read custom modules.'),
         }),
       (data) => ({ customModules: data.modules, customModuleError: null }),
@@ -895,6 +1319,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/runtime/status`, {
           signal,
+          timeoutMs: 120_000,
           parse: parseRuntimeStatus,
         }),
       (runtimeStatus) => {
@@ -919,6 +1344,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/runtime/optional-runtimes`, {
           signal,
+          timeoutMs: 120_000,
           parse: parseOptionalRuntimeCatalog,
         }),
       (optionalRuntimeCatalog) => ({ optionalRuntimeCatalog }),
@@ -938,6 +1364,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (signal) =>
         requestJson(`${config.serverAddress}/nodes`, {
           signal,
+          timeoutMs: 120_000,
           parse: parseNodesResponse,
         }),
       (data) => ({ nodesRegistry: data.nodes, instance: data.instance, error: null }),
@@ -962,6 +1389,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         requestJson(`${config.serverAddress}/hf_cache?compact=1&refresh=${refresh}`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: (value) => parseArrayResponse(value, 'Hugging Face cache'),
         }),
       (hfCache) => ({ hfCache }),
@@ -978,6 +1406,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         requestJson(`${config.serverAddress}/local_models?refresh=${refresh}`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: (value) => parseArrayResponse(value, 'Local models'),
         }),
       (localModels) => ({ localModels }),
@@ -994,6 +1423,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
         requestJson(`${config.serverAddress}/model_cache/diagnostics?refresh=${refresh}`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: parseModelCacheDiagnostics,
         }),
       (modelCacheDiagnostics) => ({ modelCacheDiagnostics }),
@@ -1003,19 +1433,26 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   },
 
   fetchStudioModelCapabilities: async () => {
-    await runDiscoveryRequest(
+    if (inFlightStudioCapabilitiesDiscovery) {
+      await inFlightStudioCapabilitiesDiscovery;
+      return;
+    }
+    const request = runDiscoveryRequest(
       'capabilities',
       set,
       (signal) =>
         requestJson(`${config.serverAddress}/model_capabilities`, {
           method: 'GET',
           signal,
+          timeoutMs: 120_000,
           parse: parseStudioModelCapabilities,
         }),
-      ({ authoritative, capabilities }) => ({
+      ({ authoritative, capabilities, taskTemplateContracts }) => ({
         studioModelCapabilities: capabilities,
         studioModelCapabilitiesAuthoritative: authoritative,
         studioExecutionSpecInvalid: false,
+        studioTaskTemplateContracts: taskTemplateContracts,
+        studioTaskTemplateSkeletons: taskTemplateContracts.map(buildTaskTemplateSkeleton),
       }),
       (message) =>
         message.includes('Studio execution specification')
@@ -1023,10 +1460,20 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
               studioModelCapabilities: [],
               studioModelCapabilitiesAuthoritative: false,
               studioExecutionSpecInvalid: true,
+              studioTaskTemplateContracts: [],
+              studioTaskTemplateSkeletons: [],
             }
           : {},
       'Could not read model capabilities.',
     );
+    inFlightStudioCapabilitiesDiscovery = request;
+    try {
+      await request;
+    } finally {
+      if (inFlightStudioCapabilitiesDiscovery === request) {
+        inFlightStudioCapabilitiesDiscovery = null;
+      }
+    }
   },
 
   fetchRegistry: async () => {
@@ -1035,6 +1482,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     // could erase a freshly resolved plan.
     useStudioStore.getState().invalidateAutoResourcePlans();
     await get().fetchNodes();
-    await Promise.all([get().refreshModelIndexes(true, { invalidateAutoPlans: false }), get().fetchCustomModules()]);
+    // ModelStore is actualized while the backend worker starts. Forcing a
+    // second full Hub cache scan on every browser load is redundant and can
+    // delay websocket heartbeats on a large cache. Consume that fresh index at
+    // startup; explicit Refresh, completed installs, and repairs still pass
+    // `true` and advance the discovery generation.
+    await Promise.all([get().refreshModelIndexes(false, { invalidateAutoPlans: false }), get().fetchCustomModules()]);
   },
 }));

@@ -11,7 +11,7 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { fileBrowserParams } from '../stores/useSettingsStore';
 import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffIconButton, ModiffSearchInput } from '../ui';
 import { cx } from '../utils/classNames';
-import { createLatestRequestGate, requestJson } from '../utils/requestJson';
+import { createLatestRequestGate, formatRequestError, requestJson } from '../utils/requestJson';
 
 export interface FileItem {
   is_dir: boolean;
@@ -176,6 +176,7 @@ function FileBrowserDialog({
   const [directoryListing, setDirectoryListing] = useState<DirectoryListing | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>('');
   const debouncedSearch = useDebounce(search, 250);
   const multiple = opener?.multiple ?? false;
@@ -189,6 +190,7 @@ function FileBrowserDialog({
     async (path: string) => {
       const ticket = directoryRequestGate.begin('directory');
       setIsLoading(true);
+      setDirectoryError(null);
       try {
         const data = await requestJson(
           `${config.serverAddress}/listdir?path=${encodeURIComponent(path)}&type=${fileTypes}`,
@@ -197,7 +199,7 @@ function FileBrowserDialog({
         if (ticket.isLatest()) setDirectoryListing(data);
       } catch (error) {
         if (ticket.isLatest()) {
-          console.error('Error fetching directory listing:', error);
+          setDirectoryError(formatRequestError(error, 'Could not load this folder.'));
           setDirectoryListing({ files: [], path, abs_path: path });
         }
       } finally {
@@ -299,10 +301,15 @@ function FileBrowserDialog({
       open={Boolean(opener)}
       onClose={closeAndReset}
       title="File browser"
+      description="Choose files from the backend. Nothing is added until you select."
+      testId="file-browser-dialog"
       panelClassName="max-w-6xl"
-      bodyClassName="!max-h-[78vh] min-h-[60vh] !p-0"
+      bodyClassName="!p-0"
       footer={
         <>
+          <span role="status" className="mr-auto self-center text-xs text-modiff-subtle-text">
+            {isLoading ? 'Loading folder…' : `${selectedFiles.length} selected`}
+          </span>
           <ModiffButton onClick={closeAndReset}>Cancel</ModiffButton>
           <ModiffButton
             tone="primary"
@@ -317,14 +324,23 @@ function FileBrowserDialog({
               if (ownsCurrentCanvas) onSelect?.(selectedFiles.map((file) => file.path));
               closeAndReset();
             }}
-            disabled={selectedFiles.length === 0}
+            disabled={selectedFiles.length === 0 || isLoading || Boolean(directoryError) || !ownsCurrentCanvas}
           >
             Select
           </ModiffButton>
         </>
       }
     >
-      <div className="flex min-h-[60vh] flex-col">
+      <div className="flex min-h-0 flex-col">
+        {directoryError ? (
+          <div
+            role="alert"
+            className="m-4 grid gap-2 rounded-modiff-compact border border-modiff-invalid/40 bg-modiff-invalid/10 p-3 text-sm text-modiff-text"
+          >
+            <p className="break-words">{directoryError}</p>
+            <ModiffButton onClick={() => void fetchDirectoryListing(currentPath)}>Retry folder</ModiffButton>
+          </div>
+        ) : null}
         <nav
           className="flex flex-wrap items-center gap-1 border-b border-modiff-border bg-modiff-panel px-4 py-3 text-sm text-modiff-text"
           aria-label="Current folder"
@@ -344,7 +360,7 @@ function FileBrowserDialog({
             const path = pathSegments.slice(0, index + 1).join('/');
             const isLast = index === pathSegments.length - 1;
             return isLast ? (
-              <span key={index} className="px-1 text-modiff-text">
+              <span key={index} className="break-all px-1 text-modiff-text">
                 {segment}
               </span>
             ) : (
@@ -364,7 +380,7 @@ function FileBrowserDialog({
           })}
         </nav>
         <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1fr)_384px]">
-          <div className="relative min-h-0 select-none overflow-auto">
+          <div className="relative min-h-0 min-w-0 select-none overflow-auto">
             {isLoading && (
               <div className="absolute inset-0 z-[2] grid place-items-center bg-modiff-panel/90">
                 <LoaderCircle className="animate-spin text-hf-yellow" size={28} />
@@ -433,8 +449,18 @@ function FileBrowserDialog({
                 ))}
               </tbody>
             </table>
+            {!isLoading && !directoryError && directories.length === 0 && files.length === 0 ? (
+              <div className="p-3 text-sm text-modiff-subtle-text">
+                {search ? 'No files match your search.' : 'This folder has no matching files.'}
+                {search ? (
+                  <ModiffButton tone="ghost" onClick={() => setSearch('')}>
+                    Clear search
+                  </ModiffButton>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-          <aside className="min-h-0 overflow-hidden">
+          <aside className="min-h-0 overflow-hidden break-words">
             {selectedFile && (
               <img
                 src={`${config.serverAddress}/preview?file=${encodeURIComponent(selectedFile.path)}&width=384&height=384`}

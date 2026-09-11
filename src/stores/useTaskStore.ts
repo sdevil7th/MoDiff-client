@@ -55,6 +55,8 @@ export type Task = {
 const TASK_STATUSES = new Set<Task['status']>(['queued', 'running', 'completed', 'failed', 'cancelled']);
 const TERMINAL_TASK_STATUSES = new Set<Task['status']>(['completed', 'failed', 'cancelled']);
 const MAX_SESSION_RUNS = 30;
+const RECOVERED_WORKER_FAILURE_FRESHNESS_MS = 30 * 60 * 1000;
+const RECOVERED_WORKER_NOTICES_STORAGE_KEY = 'modiff-recovered-worker-failure-notices';
 const queueRequestGate = createLatestRequestGate<'queue'>();
 const supervisorQueueRequestGate = createLatestRequestGate<'supervisorQueue'>();
 let supervisorQueueRequest: Promise<void> | null = null;
@@ -209,6 +211,71 @@ interface TaskActions {
 function timestampToMs(value: number | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
   return value > 1_000_000_000_000 ? value : value * 1000;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function gibibytes(value: number) {
+  return `${(value / 1024 ** 3).toFixed(1)} GiB`;
+}
+
+export function recoveredWorkerFailureMemorySummary(task: Task) {
+  if (task.error_code !== 'backend_worker_exited') return null;
+  const snapshot = recordValue(task.resource_snapshot);
+  if (!snapshot) return null;
+  const process = recordValue(snapshot.process);
+  const system = recordValue(snapshot.system);
+  const accelerators = Array.isArray(snapshot.accelerators)
+    ? snapshot.accelerators.map(recordValue).filter((value): value is Record<string, unknown> => Boolean(value))
+    : [];
+  const accelerator = accelerators[0] ?? null;
+  const processRss = finiteNumber(process?.rssBytes);
+  const acceleratorAllocated = finiteNumber(accelerator?.allocatedBytes);
+  const acceleratorReserved = finiteNumber(accelerator?.reservedBytes);
+  const systemAvailable = finiteNumber(system?.ramAvailableBytes);
+  const facts = [
+    processRss !== null ? `worker RAM ${gibibytes(processRss)}` : null,
+    acceleratorAllocated !== null
+      ? `accelerator allocations ${gibibytes(acceleratorAllocated)}`
+      : acceleratorReserved !== null
+        ? `accelerator reservations ${gibibytes(acceleratorReserved)}`
+        : null,
+    systemAvailable !== null ? `system RAM available ${gibibytes(systemAvailable)}` : null,
+  ].filter((value): value is string => Boolean(value));
+  if (facts.length === 0) return null;
+  return `Last recorded before the native worker stopped: ${facts.join(', ')}. This evidence indicates memory pressure but cannot identify the native driver failure with certainty.`;
+}
+
+export function shouldOpenRecoveredWorkerFailure(task: Task, nowMs = Date.now()) {
+  if (task.status !== 'failed' || task.error_code !== 'backend_worker_exited') return false;
+  const completedAtMs = timestampToMs(task.completed_at ?? task.updated_at);
+  return (
+    completedAtMs !== undefined &&
+    nowMs - completedAtMs >= 0 &&
+    nowMs - completedAtMs <= RECOVERED_WORKER_FAILURE_FRESHNESS_MS
+  );
+}
+
+function markRecoveredWorkerFailureNotified(taskId: string) {
+  try {
+    const storage = window.sessionStorage;
+    const raw = storage.getItem(RECOVERED_WORKER_NOTICES_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    const notified = Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    if (notified.includes(taskId)) return false;
+    storage.setItem(RECOVERED_WORKER_NOTICES_STORAGE_KEY, JSON.stringify([...notified, taskId].slice(-30)));
+  } catch {
+    // Tests and storage-restricted browsers still get the in-memory notice.
+  }
+  return true;
 }
 
 function taskIdentity(task: Pick<Task, 'task_id' | 'sid' | 'name'>, fallback: string) {
@@ -369,11 +436,13 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
         });
       }
     }
+    let recoveredFailureToOpen: string | null = null;
     recent.forEach((task) => {
       if (!task.task_id || !isTerminalTaskStatus(task.status)) return;
       useFlowStore.getState().resetExecutionProgress(task.task_id);
       useStudioStore.getState().markRunContextStatus(task.task_id, task.client_run_id, task.status!);
-      if (task.status === 'failed' && !useRunIssueStore.getState().failuresByTaskId[task.task_id]) {
+      const failureAlreadyKnown = Boolean(useRunIssueStore.getState().failuresByTaskId[task.task_id]);
+      if (task.status === 'failed' && !failureAlreadyKnown) {
         useRunIssueStore.getState().reportFailure(
           {
             taskId: task.task_id,
@@ -388,11 +457,20 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
             errorCode: task.error_code ?? null,
             recoveryHint: task.recovery_hint ?? null,
             oom: task.oom ?? false,
+            memorySummary: recoveredWorkerFailureMemorySummary(task),
           },
           false,
         );
+        if (
+          recoveredFailureToOpen === null &&
+          shouldOpenRecoveredWorkerFailure(task) &&
+          markRecoveredWorkerFailureNotified(task.task_id)
+        ) {
+          recoveredFailureToOpen = task.task_id;
+        }
       }
     });
+    if (recoveredFailureToOpen) useRunIssueStore.getState().openFailure(recoveredFailureToOpen);
   },
 
   updateProgress: (task_id, progress, message, details = {}) => {

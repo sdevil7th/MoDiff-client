@@ -4,6 +4,7 @@ import { deepEqual } from '../utils/deepEqual';
 import { formatRequestError, requestJson } from '../utils/requestJson';
 import { normalizeStudioDeviceOffloadPlan, studioOffloadPlanConflict } from './deviceOffload';
 import { AUTO_RESOURCE_LOADER_TARGETS, AUTO_RESOURCE_TARGET_KEYS } from './resourcePlanner';
+import type { OptionalRuntimeRequirement } from './optionalRuntimes';
 import type { StudioFormState, StudioOffloadMode, StudioResourcePreference } from './types';
 
 export { autoProofIsReady } from './resourcePlanner';
@@ -155,11 +156,15 @@ export type StudioAutoResourceCandidate = {
   requirementsMatched?: string[];
   requirementsMissing?: string[];
   proof?: StudioAutoResourceProof;
+  optionalRuntimeProfileIds?: string[];
+  optionalRuntimeRequirement?: OptionalRuntimeRequirement;
 };
 
 export type StudioAutoResourceInstallTarget = {
   repo: string;
   label: string;
+  revision?: string;
+  files?: string[];
   reason?: string;
   actionLabel?: string;
   repair?: boolean;
@@ -208,6 +213,8 @@ export type StudioAutoResourcePlan = {
   requirementsMissing?: string[];
   candidateReasons?: string[];
   knownBadReasons?: string[];
+  optionalRuntimeProfileIds?: string[];
+  optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   message?: string;
   issue?: {
     code?: string;
@@ -472,6 +479,7 @@ export function fetchAutoResourcePlans(forms: StudioFormState[], keys: string[] 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ forms, keys }),
     signal,
+    timeoutMs: 120_000,
     parse: parseAutoResourcePlans,
   });
 }
@@ -591,6 +599,18 @@ export function autoPlanIsReady(
   );
 }
 
+/**
+ * Model installation is an artifact-level state. An installed Expert-only
+ * artifact remains ready even when Auto has no recipe for its workflow.
+ */
+export function modelInstallIsReady(
+  installedRunnable: boolean,
+  plan: StudioAutoResourcePlan | null | undefined,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+) {
+  return installedRunnable || autoPlanIsReady(plan, form);
+}
+
 function candidateRepo(candidate: StudioAutoResourceCandidate | null | undefined) {
   const repos = [
     candidate?.installTarget?.repo,
@@ -603,7 +623,7 @@ function candidateRepo(candidate: StudioAutoResourceCandidate | null | undefined
 }
 
 export function selectedHubRepo(node: FlowGraphNode) {
-  const raw = (node.data.params.model_id ?? node.data.params.repo_id)?.value;
+  const raw = (node.data.params.reviewed_variant ?? node.data.params.model_id ?? node.data.params.repo_id)?.value;
   if (typeof raw === 'string') return raw.trim();
   return raw &&
     typeof raw === 'object' &&

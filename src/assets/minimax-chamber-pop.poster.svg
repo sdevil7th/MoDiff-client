@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="768" viewBox="0 0 1024 768">
+  <rect width="1024" height="768" fill="#0B0F19"/>
+  <path d="M0 470 Q256 360 512 445 T1024 395 V768 H0Z" fill="#141C2E"/>
+  <path d="M0 605 Q256 510 512 570 T1024 495 V768 H0Z" fill="#1E2939"/>
+  <g fill="#FFD21E">
+    <circle cx="825" cy="155" r="42"/>
+    <circle cx="680" cy="104" r="3"/><circle cx="908" cy="283" r="3"/>
+    <circle cx="747" cy="302" r="2"/><circle cx="605" cy="182" r="2"/>
+  </g>
+  <g stroke="#FFD21E" stroke-width="6" stroke-linecap="round" opacity=".8">
+    <path d="M76 516v14m24-34v54m24-73v92m24-60v28m24-87v146m24-115v82m24-112v138m24-167v196m24-144v92m24-68v44m24-58v73m24-106v139m24-163v187m24-147v107m24-76v45m24-61v77m24-58v40m24-20v1"/>
+  </g>
+  <g fill="#F9FAFB" font-family="Arial, sans-serif">
+    <text x="72" y="102" font-size="22" letter-spacing="5" fill="#94A3B8">MINIMAX MUSIC3 · CHAMBER POP</text>
+    <text x="68" y="234" font-size="76" font-weight="700">Leave a</text>
+    <text x="68" y="318" font-size="76" font-weight="700">Little Light</text>
+    <text x="72" y="378" font-size="24" fill="#94A3B8">Original lyrics · Acoustic guitar · Piano · Cello</text>
+    <text x="72" y="668" font-size="24">60-second music recipe · 30 native steps</text>
+    <text x="72" y="716" font-size="18" fill="#94A3B8">EDITORIAL COVER — NOT A GENERATED AUDIO PREVIEW</text>
+  </g>
+</svg>

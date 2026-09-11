@@ -1,6 +1,6 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { FieldProps } from '../components/NodeContent';
+import type { FieldProps } from '../components/NodeContent';
 import { useFlowStore } from '../stores/useFlowStore';
 import { type NodeParamSignal, type NodeParams, useNodesStore } from '../stores/useNodeStore';
 import { captureWorkflowOperationContext } from '../stores/useStudioStore';
@@ -9,6 +9,7 @@ import { enqueueSnackbar } from '../ui/snackbar';
 import config from '../../app.config';
 import { beginManagedGraphSchemaMutation, finishManagedGraphSchemaMutation } from './managedGraphSchemaMutation';
 import { formatRequestError, requestJson, RequestError } from './requestJson';
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 
 type FieldActionDescriptor = {
   action?: string;
@@ -17,6 +18,36 @@ type FieldActionDescriptor = {
   prop?: keyof NodeParams;
   condition?: Record<string, unknown>;
 };
+
+const automaticSignalActionSuppressions = new Map<string, NodeParamSignal>();
+
+function signalActionKey(nodeId: string, fieldKey: string) {
+  return `${nodeId}\0${fieldKey}`;
+}
+
+/**
+ * Prevent HandleField's effect from duplicating a signal action that a managed
+ * graph finalizer is about to dispatch and await itself. The exact signal
+ * object is used as the token, so a later edge/user signal is never skipped.
+ */
+export function suppressNextAutomaticSignalFieldAction(nodeId: string, fieldKey: string, signal: NodeParamSignal) {
+  automaticSignalActionSuppressions.set(signalActionKey(nodeId, fieldKey), signal);
+}
+
+export function consumeAutomaticSignalFieldActionSuppression(
+  nodeId: string,
+  fieldKey: string,
+  signal: NodeParamSignal | undefined,
+) {
+  const key = signalActionKey(nodeId, fieldKey);
+  const expected = automaticSignalActionSuppressions.get(key);
+  if (expected !== signal) {
+    if (expected !== undefined) automaticSignalActionSuppressions.delete(key);
+    return false;
+  }
+  automaticSignalActionSuppressions.delete(key);
+  return true;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -34,7 +65,88 @@ function normalizeCreatedParams(value: unknown): Record<string, NodeParams> {
   return params;
 }
 
-export default async function fieldAction(props: FieldProps, value: unknown, event: string = 'onChange') {
+function fieldTypeForParam(param: NodeParams) {
+  const display = param.isInput ? 'input' : param.display || '';
+  const type = Array.isArray(param.type) ? (param.type[0] ?? 'string') : (param.type ?? 'string');
+  const dataType = String(type).toLowerCase();
+
+  if (display === 'input' || display === 'output') return display;
+  if (dataType.startsWith('bool')) return display === 'checkbox' || display === 'icontoggle' ? display : 'switch';
+  if (display.startsWith('ui_')) return display;
+  if (dataType === 'text' || display.startsWith('text')) return 'textarea';
+  if (display) return display;
+  if (param.options && typeof param.options === 'object') return 'select';
+  if (dataType.startsWith('int') || dataType === 'float' || dataType === 'number')
+    return display === 'slider' ? 'slider' : 'number';
+  return 'text';
+}
+
+/** Build the generic field-action adapter for any node in the visible graph. */
+export function buildFieldActionProps(nodeId: string, fieldKey: string): FieldProps | null {
+  const node = useFlowStore.getState().nodes.find((candidate) => candidate.id === nodeId);
+  const param = nodeConnectorParam(node, fieldKey);
+  if (!node || !param) return null;
+
+  const display = param.isInput ? 'input' : param.display || '';
+  const dataType = String(Array.isArray(param.type) ? (param.type[0] ?? 'string') : (param.type ?? 'string'));
+  return {
+    nodeId,
+    fieldKey,
+    label: param.label ?? fieldKey.charAt(0).toUpperCase() + fieldKey.slice(1),
+    display,
+    disabled: param.disabled || false,
+    hidden: param.hidden || false,
+    style: param.style || {},
+    value: param.value ?? param.default,
+    default: param.default,
+    options: param.options || [],
+    optionsSource: param.optionsSource || {},
+    dataType,
+    fieldType: fieldTypeForParam(param),
+    updateStore: (paramKey, value, key) => useFlowStore.getState().setParam(nodeId, paramKey, value, key),
+    module: node.data.module,
+    action: node.data.action,
+    isConnected: display === 'input' || display === 'output' ? param.isConnected || false : undefined,
+    onChange: param.onChange,
+    min: param.min,
+    max: param.max,
+    step: param.step,
+    fieldOptions: param.fieldOptions || {},
+    onSignal: param.onSignal,
+    signal: param.signal,
+  };
+}
+
+export type FieldActionWorkflowScope = 'form' | 'canvas';
+
+export type FieldActionOptions = {
+  /**
+   * Dynamic actions normally belong to the exact Studio form revision that
+   * dispatched them. The registered Block compiler is different: it runs on
+   * an isolated, unique transient graph while Studio may legitimately rebase
+   * its form from the first published schema. That compiler explicitly opts
+   * into canvas scope while retaining session, workflow-tab, and canvas-epoch
+   * ownership.
+   */
+  workflowScope?: FieldActionWorkflowScope;
+  /** Propagate backend failures to an enclosing managed transaction. */
+  propagateErrors?: boolean;
+  /**
+   * Bound one backend field-action request when the caller owns a shorter
+   * transaction deadline. Interactive Modular actions retain the generous
+   * default; the isolated registered Block compiler supplies its own bounded
+   * deadline so a hidden compiler node cannot leave insertion pending for two
+   * minutes with no visible node or actionable error.
+   */
+  timeoutMs?: number;
+};
+
+export default async function fieldAction(
+  props: FieldProps,
+  value: unknown,
+  event: string = 'onChange',
+  options: FieldActionOptions = {},
+) {
   const onEvent = event === 'onChange' ? props.onChange : event === 'onSignal' ? props.onSignal : null;
   if (!onEvent) {
     return;
@@ -44,7 +156,7 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
     await Promise.all(
       onEvent.map((evnt) => {
         const newProps = { ...props, [event]: evnt };
-        return fieldAction(newProps, value, event);
+        return fieldAction(newProps, value, event, options);
       }),
     );
     return;
@@ -72,7 +184,7 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
     if (edge && edge.sourceHandle) {
       const sourceNode = flowState.nodes.find((n) => n.id === edge.source);
       if (sourceNode) {
-        const sourceField = sourceNode.data.params[edge.sourceHandle];
+        const sourceField = nodeConnectorParam(sourceNode, edge.sourceHandle);
         if (sourceField) {
           return sourceField.type;
         }
@@ -92,9 +204,12 @@ export default async function fieldAction(props: FieldProps, value: unknown, eve
         String(data),
         props.fieldKey,
         Boolean(props.fieldOptions?.queue),
+        options.workflowScope,
+        options.timeoutMs,
       );
-    } catch {
+    } catch (error) {
       props.updateStore(props.fieldKey, false, 'disabled');
+      if (options.propagateErrors) throw error;
     } finally {
       if (!props.fieldOptions?.queue) {
         props.updateStore(props.fieldKey, false, 'disabled');
@@ -286,6 +401,8 @@ async function execAction(
   fn: string,
   fieldKey?: string,
   queue?: boolean,
+  workflowScope: FieldActionWorkflowScope = 'form',
+  timeoutMs = 120_000,
 ) {
   const nodeValues = useFlowStore.getState().getNodeParamsValues(nodeId);
   const workflowContext = captureWorkflowOperationContext();
@@ -296,6 +413,11 @@ async function execAction(
     await requestJson(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // Dynamic Modular schemas can require several browser/backend signal
+      // round trips while a large graph is publishing definitions. The
+      // backend remains bounded per signal; do not abort the enclosing action
+      // at the generic 15-second request default.
+      timeoutMs,
       body: JSON.stringify({
         node: nodeId,
         sid,
@@ -307,6 +429,11 @@ async function execAction(
         queue,
         workflowTabId: workflowContext.workflowTabId,
         workflowCanvasEpoch: workflowContext.canvasEpoch,
+        // Canvas-scoped actions are reserved for the isolated registered
+        // Block compiler. Omitting (rather than falsifying) this field lets
+        // the backend echo an explicit tab+canvas ownership receipt while a
+        // legitimate Studio-form rebase occurs during the same action batch.
+        workflowFormEpoch: workflowScope === 'canvas' ? undefined : workflowContext.formEpoch,
       }),
       parse: (value) => {
         if (!isRecord(value)) throw new Error('The node action returned an invalid response.');

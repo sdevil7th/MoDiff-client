@@ -26,6 +26,7 @@ import {
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { imageUrlLightboxOpener } from '../utils/mediaViewer';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
 import {
@@ -45,6 +46,7 @@ import { StudioPromptComposer } from './StudioPromptComposer';
 import { StudioPromptDiffPanel } from './StudioPromptDiffPanel';
 import { StudioPromptEnhancer } from './StudioPromptEnhancer';
 import { StudioVariationPlanner, type StudioVariationOption } from './StudioVariationPlanner';
+import { TemplateUsageTermsDialog } from './TemplateUsageTermsDialog';
 import NodeContent from './NodeContent';
 import {
   DEFAULT_STUDIO_FORM,
@@ -53,6 +55,8 @@ import {
   STUDIO_MODE_LABELS,
   STUDIO_OFFLOAD_LABELS,
   AUDIO_STUDIO_MODES,
+  SPEECH_STUDIO_MODES,
+  THREE_D_STUDIO_MODES,
   VIDEO_STUDIO_MODES,
   getStudioModelArtifactNote,
   getStudioModelDisplayName,
@@ -67,6 +71,8 @@ import {
 } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
+import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies';
+import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import {
   autoPlanIsReady,
   controlledArtifactProofNotice,
@@ -138,6 +144,7 @@ function copyText(value: string, label: string) {
 
 export default function StudioPanel() {
   const [isWorking, setIsWorking] = useState(false);
+  const modelUsageTerms = useModelUsageTermsGate();
   const [autoPlanChecking, setAutoPlanChecking] = useState(false);
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
@@ -192,7 +199,6 @@ export default function StudioPanel() {
     recentChange,
     pinnedGraphInputIds,
     workflowCanvasHydrated,
-    launcherDismissed,
     applyPreset,
     addPromptHistory,
     togglePinnedGraphInput,
@@ -216,7 +222,6 @@ export default function StudioPanel() {
       recentChange: state.recentChange,
       pinnedGraphInputIds: state.pinnedGraphInputIds,
       workflowCanvasHydrated: state.workflowCanvasHydrated,
-      launcherDismissed: state.launcherDismissed,
       applyPreset: state.applyPreset,
       addPromptHistory: state.addPromptHistory,
       togglePinnedGraphInput: state.togglePinnedGraphInput,
@@ -251,6 +256,15 @@ export default function StudioPanel() {
   );
   const isVideoMode = VIDEO_STUDIO_MODES.includes(form.mode);
   const isAudioMode = AUDIO_STUDIO_MODES.includes(form.mode);
+  const isUnconditionalMode = form.mode === 'unconditional_image';
+  const isPerceptionMode = form.mode === 'depth_estimation';
+  const isSpeechMode = SPEECH_STUDIO_MODES.includes(form.mode);
+  const isThreeDMode = THREE_D_STUDIO_MODES.includes(form.mode);
+  const usesPrompt =
+    !isUnconditionalMode &&
+    !isPerceptionMode &&
+    !isSpeechMode &&
+    STUDIO_MODEL_PROFILES[form.modelType].supportsPrompt !== false;
   const resourcePlan = useMemo(() => resolveStudioResourcePlan(form), [form]);
   const expertResourceMode = studioViewMode === 'expert';
   const autoPlanExecution = useMemo(
@@ -275,9 +289,15 @@ export default function StudioPanel() {
   const selectedModelName = getStudioModelDisplayName(STUDIO_MODEL_PROFILES[form.modelType]);
   const selectedModelRuntimeLabel = getStudioModelRuntimeLabel(STUDIO_MODEL_PROFILES[form.modelType], form);
   const selectedModelArtifactNote = getStudioModelArtifactNote(STUDIO_MODEL_PROFILES[form.modelType]);
+  const exactExecutionProfile = exactStudioExecutionProfileForForm(
+    studioModelCapabilities,
+    studioExecutionSpecInvalid,
+    form,
+  );
   const expertQuantizationModes =
-    exactStudioExecutionProfileForForm(studioModelCapabilities, studioExecutionSpecInvalid, form)
-      ?.expert_quantization_modes ?? [];
+    exactExecutionProfile?.available_expert_quantization_modes ??
+    exactExecutionProfile?.expert_quantization_modes ??
+    [];
   const selectedModelInfo = `${selectedModelRuntimeLabel}. ${selectedModelName} defaults to ${STUDIO_MODEL_PROFILES[form.modelType].recommendedSteps} steps, ${STUDIO_MODEL_PROFILES[form.modelType].guidanceLabel.toLowerCase()} ${STUDIO_MODEL_PROFILES[form.modelType].recommendedGuidance}, ${STUDIO_MODEL_PROFILES[form.modelType].defaultDtype}. ${selectedModelArtifactNote}`;
   const selectedAutoPlanSummary = selectedAutoPlanCandidate
     ? `${selectedAutoPlanCandidate.resolvedArtifact ?? selectedAutoPlanCandidate.artifact ?? selectedAutoPlanCandidate.modelRepo} | ${selectedAutoPlanCandidate.qualityTier ?? 'quality plan'} | ${selectedAutoPlanCandidate.generation?.width ?? form.width}x${selectedAutoPlanCandidate.generation?.height ?? form.height} | ${selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps | ${selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}`
@@ -346,8 +366,13 @@ export default function StudioPanel() {
         ? `${runReadiness.warningIssues.length} warning${runReadiness.warningIssues.length === 1 ? '' : 's'}`
         : undefined;
   const graphNodes = useFlowStore(useShallow((state) => state.nodes));
+  // A template can fail before its graph skeleton is committed (for example,
+  // when the connected backend is missing a required node contract). Keep the
+  // selected template's task controls and readiness issue visible in that
+  // state; treating every zero-node canvas as a brand-new workflow hides the
+  // actionable failure behind the empty-workflow launcher.
   const emptyWorkflow =
-    workflowCanvasHydrated && !templateGraphPreparing && !launcherDismissed && !graphBinding && graphNodes.length === 0;
+    workflowCanvasHydrated && !templateGraphPreparing && !activeTemplateId && graphNodes.length === 0;
   const selectedGraphNodes = useMemo(() => graphNodes.filter((node) => node.selected), [graphNodes]);
   const inspectExactNode = showExactNodeInspector || selectedGraphNodes.length > 0;
   const graphInputCandidates = useMemo(
@@ -366,6 +391,9 @@ export default function StudioPanel() {
     compatibleModels,
     compatibleModes,
     showImageTray,
+    requiresMaskImage,
+    requiresControlImage,
+    requiresIPAdapterImage,
     supportsMask,
     inpaintContract,
     missingInstallTarget,
@@ -378,6 +406,10 @@ export default function StudioPanel() {
     backendCapabilities: studioModelCapabilities,
     backendCapabilitiesAuthoritative: studioModelCapabilitiesAuthoritative,
   });
+  const requiredVideos = capability.modeRequirements?.[form.mode]?.requiredVideos ?? [];
+  const requiresSourceVideo = requiredVideos.includes('sourceVideo');
+  const requiresReferenceVideos = requiredVideos.includes('referenceVideos');
+  const requiresControlVideo = requiredVideos.includes('controlVideo');
   const runBlockedReason = runReadiness.blockingIssues[0]?.message ?? '';
   const runControlsBlocked = !runReadiness.canRun;
   const showFullStudioForm = !customGraphMode && !emptyWorkflow;
@@ -389,6 +421,8 @@ export default function StudioPanel() {
     handleModelTypeChange,
     handleResourceModeChange,
     handleRun,
+    handleInstallMissingModel,
+    isInstallingMissingModel,
     openSetup,
   } = useStudioRunActions({
     sid,
@@ -397,6 +431,14 @@ export default function StudioPanel() {
     installHfModel,
     setIsWorking,
   });
+
+  const requestModelRun = (
+    run: () => void | Promise<void>,
+    runForm: Pick<StudioFormState, 'modelType' | 'mode'> = form,
+  ) => {
+    const policies = acknowledgementRequiredForModelRun(runForm);
+    modelUsageTerms.request('run', policies, run);
+  };
 
   useEffect(() => {
     // Template creation publishes its managed graph only after dynamic fields,
@@ -629,7 +671,7 @@ export default function StudioPanel() {
     const state = useStudioStore.getState();
     const [latest, previous] = scopedOutputsForWorkflow(state.outputs, state.activeWorkflowTabId);
     if (!latest || !previous) return;
-    setLightboxOpener({ images: [previous.url, latest.url], currentIndex: 1, dataType: 'image', mimeType: null });
+    setLightboxOpener(imageUrlLightboxOpener([previous.url, latest.url], 1));
   }, [setLightboxOpener]);
 
   const handleReviewRunIssues = useCallback(() => {
@@ -923,7 +965,7 @@ export default function StudioPanel() {
           hasGalleryItems={activeWorkflowOutputs.length > 0}
           hasComparePair={activeWorkflowOutputs.length > 1}
           onRun={() => {
-            void handleRun();
+            requestModelRun(handleRun);
           }}
           onInterrupt={() => {
             void handleInterrupt();
@@ -938,7 +980,7 @@ export default function StudioPanel() {
           onOpenSetup={openSetup}
           onRestoreLatest={restoreLatestOutput}
           onRerunLatest={() => {
-            void rerunLatestOutput();
+            requestModelRun(rerunLatestOutput, activeWorkflowOutputs[0]?.formSnapshot);
           }}
           onCompareLatest={compareLatestOutputs}
         />
@@ -1068,6 +1110,22 @@ export default function StudioPanel() {
                 />
               </>
             )}
+            {missingInstallTarget ? (
+              <StudioButton
+                fullWidth
+                tone="secondary"
+                data-testid="studio-install-missing-model"
+                disabled={isWorking || isInstallingMissingModel}
+                onClick={() => {
+                  void handleInstallMissingModel();
+                }}
+                title={`${missingInstallTarget.label} | ${missingInstallTarget.repo}`}
+              >
+                {isInstallingMissingModel
+                  ? 'Installing model...'
+                  : `${missingInstallTarget.actionLabel ?? (missingInstallTarget.repair ? 'Repair' : 'Install')} ${missingInstallTarget.label}`}
+              </StudioButton>
+            ) : null}
             {templateGraphPreparing ? (
               <ActionStatusRow tone="info" title="Preparing graph" testId="studio-run-readiness" />
             ) : (
@@ -1111,192 +1169,253 @@ export default function StudioPanel() {
 
       {showFullStudioForm && (
         <>
-          <div className="relative grid gap-3">
-            <StudioSection
-              id="prompt"
-              title="Prompt"
-              defaultOpen
-              testId="studio-sticky-prompt"
-              className="sticky z-10 rounded-modiff-panel border border-modiff-border bg-modiff-bg px-2 pb-2 shadow-modiff-node before:absolute before:-inset-x-3 before:-top-3 before:h-3 before:bg-modiff-bg before:content-['']"
-              stickyTop={stickyHeaderHeight + 12}
-            >
-              <div data-testid="studio-prompt-input">
-                <StudioInput
-                  label="Prompt"
-                  value={form.prompt}
-                  multiline
-                  onChange={(value) => updateAndSync({ prompt: value })}
-                />
-              </div>
-              {capability.supportsNegativePrompt !== false && (
-                <div data-testid="studio-negative-prompt-input">
+          {usesPrompt && (
+            <div className="relative grid gap-3">
+              <StudioSection
+                id="prompt"
+                title="Prompt"
+                defaultOpen
+                testId="studio-sticky-prompt"
+                className="sticky z-10 rounded-modiff-panel border border-modiff-border bg-modiff-bg px-2 pb-2 shadow-modiff-node before:absolute before:-inset-x-3 before:-top-3 before:h-3 before:bg-modiff-bg before:content-['']"
+                stickyTop={stickyHeaderHeight + 12}
+              >
+                <div data-testid="studio-prompt-input">
                   <StudioInput
-                    label="Negative prompt"
-                    value={form.negativePrompt}
+                    label="Prompt"
+                    value={form.prompt}
                     multiline
-                    onChange={(value) => updateAndSync({ negativePrompt: value })}
+                    onChange={(value) => updateAndSync({ prompt: value })}
                   />
                 </div>
-              )}
-              <div className="flex gap-2">
-                <StudioButton tone="ghost" icon={<Save size={15} />} onClick={saveCurrentPromptAsSnippet}>
-                  Snippet
-                </StudioButton>
-                <StudioButton
-                  tone="ghost"
-                  icon={<WandSparkles size={15} />}
-                  onClick={() => addPromptHistory(form.prompt)}
-                >
-                  History
-                </StudioButton>
-              </div>
-            </StudioSection>
-
-            <StudioSection id="prompt-tools" title="Prompt tools">
-              <section>
-                <SectionHeader title="Presets" />
-                <div className="flex flex-wrap gap-1.5">
-                  {visiblePresets.map((preset) => (
-                    <StudioChip key={preset.id} title={preset.description} onClick={() => handlePresetApply(preset)}>
-                      {preset.label}
-                    </StudioChip>
-                  ))}
-                </div>
-                {recentChange && (
-                  <div
-                    className="mt-2 rounded-modiff-compact border border-hf-yellow/60 bg-modiff-surface p-2 text-xs text-modiff-text"
-                    data-testid="studio-recent-change"
-                  >
-                    <p className="font-semibold text-hf-yellow">{recentChange.label}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {recentChange.fields.slice(0, 6).map((field) => (
-                        <span
-                          key={String(field.key)}
-                          className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-modiff-subtle-text"
-                        >
-                          {field.label}: {formatStudioFieldValue(field.before)}
-                          {' -> '}
-                          {formatStudioFieldValue(field.after)}
-                        </span>
-                      ))}
-                    </div>
+                {capability.supportsNegativePrompt !== false && (
+                  <div data-testid="studio-negative-prompt-input">
+                    <StudioInput
+                      label="Negative prompt"
+                      value={form.negativePrompt}
+                      multiline
+                      onChange={(value) => updateAndSync({ negativePrompt: value })}
+                    />
                   </div>
                 )}
-              </section>
-              <StudioDivider />
-              <StudioPromptComposer form={form} template={activeTemplate} onChange={updateAndSync} />
-              <StudioDivider />
-              <StudioPromptEnhancer form={form} template={activeTemplate} onApply={updateAndSync} />
-              {(promptHistory.length > 0 || savedSnippets.length > 0 || negativePromptPresets.length > 0) && (
-                <>
-                  <StudioDivider />
-                  <div className="grid gap-3">
-                    {savedSnippets.length > 0 && (
-                      <section>
-                        <SectionHeader title="Saved snippets" />
-                        <div className="grid gap-1">
-                          {savedSnippets.slice(0, 4).map((snippet) => (
-                            <div key={snippet} className="flex gap-1">
+                <div className="flex gap-2">
+                  <StudioButton tone="ghost" icon={<Save size={15} />} onClick={saveCurrentPromptAsSnippet}>
+                    Snippet
+                  </StudioButton>
+                  <StudioButton
+                    tone="ghost"
+                    icon={<WandSparkles size={15} />}
+                    onClick={() => addPromptHistory(form.prompt)}
+                  >
+                    History
+                  </StudioButton>
+                </div>
+              </StudioSection>
+
+              <StudioSection id="prompt-tools" title="Prompt tools">
+                <section>
+                  <SectionHeader title="Presets" />
+                  <div className="flex flex-wrap gap-1.5">
+                    {visiblePresets.map((preset) => (
+                      <StudioChip key={preset.id} title={preset.description} onClick={() => handlePresetApply(preset)}>
+                        {preset.label}
+                      </StudioChip>
+                    ))}
+                  </div>
+                  {recentChange && (
+                    <div
+                      className="mt-2 rounded-modiff-compact border border-hf-yellow/60 bg-modiff-surface p-2 text-xs text-modiff-text"
+                      data-testid="studio-recent-change"
+                    >
+                      <p className="font-semibold text-hf-yellow">{recentChange.label}</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {recentChange.fields.slice(0, 6).map((field) => (
+                          <span
+                            key={String(field.key)}
+                            className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-modiff-subtle-text"
+                          >
+                            {field.label}: {formatStudioFieldValue(field.before)}
+                            {' -> '}
+                            {formatStudioFieldValue(field.after)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+                <StudioDivider />
+                <StudioPromptComposer form={form} template={activeTemplate} onChange={updateAndSync} />
+                <StudioDivider />
+                <StudioPromptEnhancer form={form} template={activeTemplate} onApply={updateAndSync} />
+                {(promptHistory.length > 0 || savedSnippets.length > 0 || negativePromptPresets.length > 0) && (
+                  <>
+                    <StudioDivider />
+                    <div className="grid gap-3">
+                      {savedSnippets.length > 0 && (
+                        <section>
+                          <SectionHeader title="Saved snippets" />
+                          <div className="grid gap-1">
+                            {savedSnippets.slice(0, 4).map((snippet) => (
+                              <div key={snippet} className="flex gap-1">
+                                <StudioButton
+                                  fullWidth
+                                  tone="ghost"
+                                  align="left"
+                                  onClick={() => {
+                                    applySnippet(snippet);
+                                    queueMicrotask(() => syncStudioGraphValues());
+                                  }}
+                                >
+                                  {snippet}
+                                </StudioButton>
+                                <StudioIconButton title="Remove snippet" onClick={() => removeSnippet(snippet)}>
+                                  <Trash2 size={15} />
+                                </StudioIconButton>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+                      {promptHistory.length > 0 && (
+                        <section>
+                          <SectionHeader title="Prompt history" />
+                          <div className="grid gap-1">
+                            {promptHistory.slice(0, 4).map((prompt) => (
                               <StudioButton
-                                fullWidth
+                                key={prompt}
                                 tone="ghost"
                                 align="left"
+                                onClick={() => updateAndSync({ prompt })}
+                              >
+                                {prompt}
+                              </StudioButton>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+                      {capability.supportsNegativePrompt !== false && (
+                        <section>
+                          <SectionHeader title="Negative presets" />
+                          <div className="flex flex-wrap gap-1">
+                            {negativePromptPresets.map((preset) => (
+                              <StudioChip
+                                key={preset}
                                 onClick={() => {
-                                  applySnippet(snippet);
+                                  applyNegativePreset(preset);
                                   queueMicrotask(() => syncStudioGraphValues());
                                 }}
                               >
-                                {snippet}
-                              </StudioButton>
-                              <StudioIconButton title="Remove snippet" onClick={() => removeSnippet(snippet)}>
-                                <Trash2 size={15} />
-                              </StudioIconButton>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                    {promptHistory.length > 0 && (
-                      <section>
-                        <SectionHeader title="Prompt history" />
-                        <div className="grid gap-1">
-                          {promptHistory.slice(0, 4).map((prompt) => (
-                            <StudioButton
-                              key={prompt}
-                              tone="ghost"
-                              align="left"
-                              onClick={() => updateAndSync({ prompt })}
-                            >
-                              {prompt}
-                            </StudioButton>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                    {capability.supportsNegativePrompt !== false && (
-                      <section>
-                        <SectionHeader title="Negative presets" />
-                        <div className="flex flex-wrap gap-1">
-                          {negativePromptPresets.map((preset) => (
-                            <StudioChip
-                              key={preset}
-                              onClick={() => {
-                                applyNegativePreset(preset);
-                                queueMicrotask(() => syncStudioGraphValues());
-                              }}
-                            >
-                              {preset}
-                            </StudioChip>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                  </div>
-                </>
-              )}
-              <StudioDivider />
-              <StudioPromptDiffPanel
-                currentPrompt={form.prompt}
-                promptHistory={promptHistory}
-                savedSnippets={savedSnippets}
-                onApplyPrompt={(prompt) => updateAndSync({ prompt })}
-              />
-            </StudioSection>
-          </div>
+                                {preset}
+                              </StudioChip>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+                    </div>
+                  </>
+                )}
+                <StudioDivider />
+                <StudioPromptDiffPanel
+                  currentPrompt={form.prompt}
+                  promptHistory={promptHistory}
+                  savedSnippets={savedSnippets}
+                  onApplyPrompt={(prompt) => updateAndSync({ prompt })}
+                />
+              </StudioSection>
+            </div>
+          )}
 
           <StudioSection id="advanced-generation" title={expertResourceMode ? 'Advanced generation' : 'Generation'}>
             <section>
-              <SectionHeader title={isVideoMode ? 'Video frame' : 'Image size'} />
-              <div className="flex gap-2">
+              <SectionHeader
+                title={
+                  isVideoMode
+                    ? 'Video frame'
+                    : isThreeDMode
+                      ? 'Rendered orbit frame'
+                      : isUnconditionalMode
+                        ? 'Native sample size'
+                        : isPerceptionMode
+                          ? 'Prediction map'
+                          : isSpeechMode
+                            ? 'Speech recognition'
+                            : 'Image size'
+                }
+              />
+              {isUnconditionalMode ? (
+                <p className="text-xs text-modiff-subtle-text" data-testid="studio-unconditional-native-size">
+                  This checkpoint produces fixed {form.width}×{form.height} samples.
+                </p>
+              ) : isPerceptionMode ? (
+                <div className="grid gap-2" data-testid="studio-perception-controls">
+                  <StudioInput
+                    label="Processing resolution"
+                    value={form.processingResolution}
+                    onChange={(value) =>
+                      updateAndSync({
+                        processingResolution: numberValue(value, form.processingResolution),
+                      })
+                    }
+                  />
+                  <StudioCheckbox
+                    checked={form.matchInputResolution}
+                    onChange={(checked) => updateAndSync({ matchInputResolution: checked })}
+                    label="Match output to source resolution"
+                  />
+                  <p className="text-xs text-modiff-subtle-text">
+                    Output is a normalized relative-depth map: near is 0, far is 1. Studio also previews it as
+                    grayscale.
+                  </p>
+                </div>
+              ) : isSpeechMode ? (
+                <p className="text-xs text-modiff-subtle-text" data-testid="studio-speech-summary">
+                  Transcribe local audio into a normalized transcript with bounded chunking and timestamps.
+                </p>
+              ) : capability.layerResolutions?.length ? (
                 <StudioSelect
-                  aria-label="Aspect ratio"
-                  value={form.aspectRatio}
-                  onValueChange={(value) => handleAspectChange(value as StudioAspectRatio)}
-                  options={[
-                    ...ASPECT_OPTIONS.map((aspect) => ({ value: aspect.label, label: aspect.label })),
-                    { value: 'custom', label: 'Custom' },
-                  ]}
-                  className="flex-1"
+                  aria-label="Layer resolution"
+                  data-testid="studio-layer-resolution-select"
+                  value={String(form.width)}
+                  onValueChange={(value) => {
+                    const resolution = numberValue(value, form.width);
+                    updateAndSync({ width: resolution, height: resolution, aspectRatio: '1:1' });
+                  }}
+                  options={capability.layerResolutions.map((resolution) => ({
+                    value: String(resolution),
+                    label: `${resolution} × ${resolution}`,
+                  }))}
                 />
-                <StudioTextInput
-                  aria-label="Width"
-                  value={form.width}
-                  data-testid="studio-width-input"
-                  onChange={(event) =>
-                    updateAndSync({ width: numberValue(event.target.value, form.width), aspectRatio: 'custom' })
-                  }
-                  className="w-[86px]"
-                />
-                <StudioTextInput
-                  aria-label="Height"
-                  value={form.height}
-                  data-testid="studio-height-input"
-                  onChange={(event) =>
-                    updateAndSync({ height: numberValue(event.target.value, form.height), aspectRatio: 'custom' })
-                  }
-                  className="w-[86px]"
-                />
-              </div>
+              ) : (
+                <div className="flex gap-2">
+                  <StudioSelect
+                    aria-label="Aspect ratio"
+                    value={form.aspectRatio}
+                    onValueChange={(value) => handleAspectChange(value as StudioAspectRatio)}
+                    options={[
+                      ...ASPECT_OPTIONS.map((aspect) => ({ value: aspect.label, label: aspect.label })),
+                      { value: 'custom', label: 'Custom' },
+                    ]}
+                    className="flex-1"
+                  />
+                  <StudioTextInput
+                    aria-label="Width"
+                    value={form.width}
+                    data-testid="studio-width-input"
+                    onChange={(event) =>
+                      updateAndSync({ width: numberValue(event.target.value, form.width), aspectRatio: 'custom' })
+                    }
+                    className="w-[86px]"
+                  />
+                  <StudioTextInput
+                    aria-label="Height"
+                    value={form.height}
+                    data-testid="studio-height-input"
+                    onChange={(event) =>
+                      updateAndSync({ height: numberValue(event.target.value, form.height), aspectRatio: 'custom' })
+                    }
+                    className="w-[86px]"
+                  />
+                </div>
+              )}
             </section>
             {form.mode === 'outpaint' && (
               <section data-testid="studio-outpaint-controls">
@@ -1350,54 +1469,169 @@ export default function StudioPanel() {
                 </div>
               </section>
             )}
-            <section>
-              <SectionHeader title="Generation" />
-              <div className="grid gap-2">
-                <div data-testid="studio-seed-input">
-                  <StudioInput
-                    label="Seed"
-                    value={form.seed}
-                    onChange={(value) => updateAndSync({ seed: numberValue(value, form.seed) })}
-                    disabled={form.randomSeed}
+            {!isSpeechMode && (
+              <section>
+                <SectionHeader title="Generation" />
+                <div className="grid gap-2">
+                  <div data-testid="studio-seed-input">
+                    <StudioInput
+                      label="Seed"
+                      value={form.seed}
+                      onChange={(value) => updateAndSync({ seed: numberValue(value, form.seed) })}
+                      disabled={form.randomSeed}
+                    />
+                  </div>
+                  <StudioCheckbox
+                    checked={form.randomSeed}
+                    onChange={(checked) => updateAndSync({ randomSeed: checked })}
+                    label="Randomize seed on export"
                   />
-                </div>
-                <StudioCheckbox
-                  checked={form.randomSeed}
-                  onChange={(checked) => updateAndSync({ randomSeed: checked })}
-                  label="Randomize seed on export"
-                />
-                <ModiffFieldShell label={`Steps: ${form.steps}`}>
-                  <StudioSlider
-                    min={1}
-                    max={80}
-                    value={form.steps}
-                    onChange={(value) => updateAndSync({ steps: value })}
-                  />
-                </ModiffFieldShell>
-                <ModiffFieldShell label={`${capability.guidanceLabel}: ${form.guidanceScale}`}>
-                  <StudioSlider
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    value={form.guidanceScale}
-                    onChange={(value) => updateAndSync({ guidanceScale: value })}
-                  />
-                </ModiffFieldShell>
-                {isVideoMode && (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <StudioInput
-                        label="Frames"
-                        value={form.numFrames}
-                        onChange={(value) => updateAndSync({ numFrames: numberValue(value, form.numFrames) })}
+                  <ModiffFieldShell label={`Steps: ${form.steps}`}>
+                    <StudioSlider
+                      min={1}
+                      max={isUnconditionalMode ? 1000 : 80}
+                      value={form.steps}
+                      onChange={(value) => updateAndSync({ steps: value })}
+                    />
+                  </ModiffFieldShell>
+                  {isUnconditionalMode && (
+                    <StudioInput
+                      label="Batch size"
+                      value={form.batchSize}
+                      onChange={(value) => updateAndSync({ batchSize: numberValue(value, form.batchSize) })}
+                    />
+                  )}
+                  {form.modelType === 'DDIMPipeline' && (
+                    <ModiffFieldShell label={`Eta: ${form.eta}`}>
+                      <StudioSlider
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={form.eta}
+                        onChange={(value) => updateAndSync({ eta: value })}
                       />
-                      <StudioInput
-                        label="FPS"
-                        value={form.fps}
-                        onChange={(value) => updateAndSync({ fps: numberValue(value, form.fps) })}
+                    </ModiffFieldShell>
+                  )}
+                  {form.modelType === 'ConsistencyModelPipeline' && (
+                    <StudioInput
+                      label="Class label (-1 is unconditional)"
+                      value={form.classLabel}
+                      onChange={(value) => updateAndSync({ classLabel: numberValue(value, form.classLabel) })}
+                    />
+                  )}
+                  {usesPrompt && (
+                    <ModiffFieldShell label={`${capability.guidanceLabel}: ${form.guidanceScale}`}>
+                      <StudioSlider
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        value={form.guidanceScale}
+                        onChange={(value) => updateAndSync({ guidanceScale: value })}
                       />
-                    </div>
-                    <ModiffFieldShell label={`Conditioning: ${form.conditioningScale}`}>
+                    </ModiffFieldShell>
+                  )}
+                  {capability.recommendedPagScale !== undefined && (
+                    <>
+                      <ModiffFieldShell label={`PAG scale: ${form.pagScale}`}>
+                        <StudioSlider
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={form.pagScale}
+                          onChange={(value) => updateAndSync({ pagScale: value })}
+                        />
+                      </ModiffFieldShell>
+                      <ModiffFieldShell label={`PAG adaptive scale: ${form.pagAdaptiveScale}`}>
+                        <StudioSlider
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={form.pagAdaptiveScale}
+                          onChange={(value) => updateAndSync({ pagAdaptiveScale: value })}
+                        />
+                      </ModiffFieldShell>
+                    </>
+                  )}
+                  {isVideoMode && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <StudioInput
+                          label="Frames"
+                          value={form.numFrames}
+                          onChange={(value) => updateAndSync({ numFrames: numberValue(value, form.numFrames) })}
+                        />
+                        <StudioInput
+                          label="FPS"
+                          value={form.fps}
+                          onChange={(value) => updateAndSync({ fps: numberValue(value, form.fps) })}
+                        />
+                      </div>
+                      <ModiffFieldShell label={`Conditioning: ${form.conditioningScale}`}>
+                        <StudioSlider
+                          min={0}
+                          max={2}
+                          step={0.05}
+                          value={form.conditioningScale}
+                          onChange={(value) => updateAndSync({ conditioningScale: value })}
+                        />
+                      </ModiffFieldShell>
+                      {expertResourceMode ? (
+                        <>
+                          <ModiffFieldShell label={`Guidance 2: ${form.guidanceScale2}`}>
+                            <StudioSlider
+                              min={0}
+                              max={20}
+                              step={0.1}
+                              value={form.guidanceScale2}
+                              onChange={(value) => updateAndSync({ guidanceScale2: value })}
+                            />
+                          </ModiffFieldShell>
+                          <div className="grid grid-cols-2 gap-2">
+                            <StudioSelect
+                              aria-label="Output type"
+                              value={form.outputType}
+                              onValueChange={(value) =>
+                                updateAndSync({ outputType: value as StudioFormState['outputType'] })
+                              }
+                              options={[
+                                { value: 'pil', label: 'Output: PIL' },
+                                { value: 'np', label: 'Output: NumPy' },
+                                { value: 'pt', label: 'Output: Torch' },
+                              ]}
+                            />
+                            <StudioInput
+                              label="Max tokens"
+                              value={form.maxSequenceLength}
+                              onChange={(value) =>
+                                updateAndSync({ maxSequenceLength: numberValue(value, form.maxSequenceLength) })
+                              }
+                            />
+                          </div>
+                          <StudioInput
+                            label="Attention kwargs JSON"
+                            value={form.attentionKwargsJson}
+                            multiline
+                            onChange={(value) => updateAndSync({ attentionKwargsJson: value })}
+                          />
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                  {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
+                    <>
+                      <ModiffFieldShell label={`Strength: ${form.strength}`}>
+                        <StudioSlider
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={form.strength}
+                          onChange={(value) => updateAndSync({ strength: value })}
+                        />
+                      </ModiffFieldShell>
+                    </>
+                  )}
+                  {(requiresControlImage || requiresControlVideo) && (
+                    <ModiffFieldShell label={`Control conditioning: ${form.conditioningScale}`}>
                       <StudioSlider
                         min={0}
                         max={2}
@@ -1406,94 +1640,82 @@ export default function StudioPanel() {
                         onChange={(value) => updateAndSync({ conditioningScale: value })}
                       />
                     </ModiffFieldShell>
-                    {expertResourceMode ? (
-                      <>
-                        <ModiffFieldShell label={`Guidance 2: ${form.guidanceScale2}`}>
-                          <StudioSlider
-                            min={0}
-                            max={20}
-                            step={0.1}
-                            value={form.guidanceScale2}
-                            onChange={(value) => updateAndSync({ guidanceScale2: value })}
-                          />
-                        </ModiffFieldShell>
-                        <div className="grid grid-cols-2 gap-2">
-                          <StudioSelect
-                            aria-label="Output type"
-                            value={form.outputType}
-                            onValueChange={(value) =>
-                              updateAndSync({ outputType: value as StudioFormState['outputType'] })
-                            }
-                            options={[
-                              { value: 'pil', label: 'Output: PIL' },
-                              { value: 'np', label: 'Output: NumPy' },
-                              { value: 'pt', label: 'Output: Torch' },
-                            ]}
-                          />
-                          <StudioInput
-                            label="Max tokens"
-                            value={form.maxSequenceLength}
-                            onChange={(value) =>
-                              updateAndSync({ maxSequenceLength: numberValue(value, form.maxSequenceLength) })
-                            }
-                          />
-                        </div>
-                        <StudioInput
-                          label="Attention kwargs JSON"
-                          value={form.attentionKwargsJson}
-                          multiline
-                          onChange={(value) => updateAndSync({ attentionKwargsJson: value })}
-                        />
-                      </>
-                    ) : null}
-                  </>
-                )}
-                {capability.supportsImageInput && !isVideoMode && (
-                  <>
-                    <ModiffFieldShell label={`Strength: ${form.strength}`}>
+                  )}
+                  {requiresIPAdapterImage && (
+                    <ModiffFieldShell label={`IP-Adapter scale: ${form.ipAdapterScale}`}>
                       <StudioSlider
                         min={0}
-                        max={1}
+                        max={2}
                         step={0.05}
-                        value={form.strength}
-                        onChange={(value) => updateAndSync({ strength: value })}
+                        value={form.ipAdapterScale}
+                        onChange={(value) => updateAndSync({ ipAdapterScale: value })}
                       />
                     </ModiffFieldShell>
-                  </>
-                )}
-                {capability.supportsLayers && (
-                  <StudioInput
-                    label="Layers"
-                    value={form.layers}
-                    onChange={(value) => updateAndSync({ layers: numberValue(value, form.layers) })}
-                  />
-                )}
-              </div>
-            </section>
-            <StudioParameterExplainers form={form} />
-            <StudioVariationPlanner
-              form={form}
-              template={activeTemplate}
-              onChange={updateAndSync}
-              onRunSweep={(variations) => {
-                void handleRunSweep(variations);
-              }}
-              disabled={isWorking || Boolean(runBlockedReason)}
-            />
+                  )}
+                  {capability.supportsLayers && (
+                    <StudioInput
+                      label={
+                        capability.layerCount
+                          ? `Layers (${capability.layerCount.min}–${capability.layerCount.max})`
+                          : 'Layers'
+                      }
+                      value={form.layers}
+                      onChange={(value) => {
+                        const layers = numberValue(value, form.layers);
+                        updateAndSync({
+                          layers: capability.layerCount
+                            ? Math.min(capability.layerCount.max, Math.max(capability.layerCount.min, layers))
+                            : layers,
+                        });
+                      }}
+                    />
+                  )}
+                </div>
+              </section>
+            )}
+            {usesPrompt && <StudioParameterExplainers form={form} />}
+            {usesPrompt && (
+              <StudioVariationPlanner
+                form={form}
+                template={activeTemplate}
+                onChange={updateAndSync}
+                onRunSweep={(variations) => {
+                  requestModelRun(() => handleRunSweep(variations));
+                }}
+                disabled={isWorking || Boolean(runBlockedReason)}
+              />
+            )}
           </StudioSection>
 
-          <StudioSection id="controlled-workflows" title="Controlled workflows">
-            <StudioControlledWorkflows form={form} onChange={updateAndSync} disabled={isWorking} />
-          </StudioSection>
+          {usesPrompt && (
+            <StudioSection id="controlled-workflows" title="Controlled workflows">
+              <StudioControlledWorkflows form={form} onChange={updateAndSync} disabled={isWorking} />
+            </StudioSection>
+          )}
 
           {isVideoMode && (
             <StudioSection id="video-inputs" title="Video inputs" defaultOpen>
               <div className="grid gap-2">
-                {['video_to_video', 'video_inpaint', 'video_outpaint', 'video_color_edit'].includes(form.mode) && (
+                {requiresSourceVideo && (
                   <StudioInput
                     label="Source video path"
                     value={form.sourceVideo}
                     onChange={(value) => updateAndSync({ sourceVideo: value })}
+                  />
+                )}
+                {requiresReferenceVideos && (
+                  <StudioInput
+                    label="Source video paths (one per line)"
+                    value={form.referenceVideos.join('\n')}
+                    onChange={(value) =>
+                      updateAndSync({
+                        referenceVideos: value
+                          .split(/\r?\n/)
+                          .map((item) => item.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    multiline
                   />
                 )}
                 {(form.mode === 'video_inpaint' || form.mode === 'video_outpaint') && (
@@ -1503,7 +1725,7 @@ export default function StudioPanel() {
                     onChange={(value) => updateAndSync({ maskVideo: value })}
                   />
                 )}
-                {form.mode === 'control_to_video' && (
+                {requiresControlVideo && (
                   <StudioInput
                     label="Control video path"
                     value={form.controlVideo}
@@ -1632,6 +1854,54 @@ export default function StudioPanel() {
             </StudioSection>
           )}
 
+          {isSpeechMode && (
+            <StudioSection id="speech-inputs" title="Speech recognition" defaultOpen>
+              <div className="grid gap-2" data-testid="studio-speech-controls">
+                <StudioInput
+                  label="Source audio path"
+                  value={form.sourceAudio}
+                  onChange={(value) => updateAndSync({ sourceAudio: value })}
+                />
+                <StudioInput
+                  label="Language hint (optional)"
+                  value={form.speechLanguage}
+                  onChange={(value) => updateAndSync({ speechLanguage: value })}
+                />
+                <StudioSelect
+                  aria-label="Speech timestamps"
+                  value={form.speechTimestamps}
+                  onValueChange={(value) =>
+                    updateAndSync({ speechTimestamps: value as StudioFormState['speechTimestamps'] })
+                  }
+                  options={[
+                    { value: 'none', label: 'No timestamps' },
+                    { value: 'segment', label: 'Segment timestamps' },
+                    { value: 'word', label: 'Word timestamps' },
+                  ]}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <StudioInput
+                    label="Chunk length (seconds)"
+                    value={form.speechChunkSeconds}
+                    onChange={(value) =>
+                      updateAndSync({ speechChunkSeconds: numberValue(value, form.speechChunkSeconds) })
+                    }
+                  />
+                  <StudioInput
+                    label="Chunk stride (seconds)"
+                    value={form.speechStrideSeconds}
+                    onChange={(value) =>
+                      updateAndSync({ speechStrideSeconds: numberValue(value, form.speechStrideSeconds) })
+                    }
+                  />
+                </div>
+                {form.mode === 'speech_translation' && (
+                  <p className="text-xs text-modiff-subtle-text">Translation output is normalized to English.</p>
+                )}
+              </div>
+            </StudioSection>
+          )}
+
           {expertResourceMode && (
             <StudioSection id="runtime" title="Runtime">
               <section className="grid gap-2" data-testid="studio-expert-runtime-controls">
@@ -1702,39 +1972,42 @@ export default function StudioPanel() {
           )}
 
           {(showImageTray || form.mode === 'image_to_video' || form.mode === 'reference_to_video') && (
-            <StudioSection id="reference-inputs" title="Reference inputs" defaultOpen>
+            <StudioSection
+              id="reference-inputs"
+              title={isPerceptionMode ? 'Source image' : 'Reference inputs'}
+              defaultOpen
+            >
               <StudioImageReferenceTray />
             </StudioSection>
           )}
 
-          {(form.mode === 'inpaint' || form.mode === 'control_image') && (
+          {(requiresMaskImage || requiresControlImage || requiresIPAdapterImage) && (
             <StudioSection
               id="mask-control"
-              title={form.mode === 'inpaint' ? 'Mask draft' : 'Control image'}
+              title={
+                [requiresMaskImage, requiresControlImage, requiresIPAdapterImage].filter(Boolean).length > 1
+                  ? 'Conditioning inputs'
+                  : requiresMaskImage
+                    ? 'Mask draft'
+                    : requiresControlImage
+                      ? 'Control image'
+                      : 'IP-Adapter image'
+              }
               defaultOpen
             >
-              <StudioInput
-                label={form.mode === 'inpaint' ? 'Mask image path' : 'Control image path'}
-                value={form.mode === 'inpaint' ? form.maskImage : form.controlImage}
-                onChange={(value) =>
-                  updateAndSync(form.mode === 'inpaint' ? { maskImage: value } : { controlImage: value })
-                }
-              />
-              <p
-                className={cx(
-                  'text-xs',
-                  form.mode === 'control_image' || supportsMask ? 'text-modiff-subtle-text' : 'text-hf-orange',
-                )}
-              >
-                {form.mode === 'control_image'
-                  ? 'Control image is wired to Qwen Image plus Qwen ControlNet Union. Install both models and add one control image before running.'
-                  : supportsMask
-                    ? 'Mask execution is supported by this model metadata.'
-                    : (inpaintContract?.reason ??
-                      'Brush, erase, invert, feather, clear, and fill are frontend draft controls until backend/template support is confirmed.')}
-              </p>
-              {form.mode === 'inpaint' && (
+              {requiresMaskImage && (
                 <>
+                  <StudioInput
+                    label="Mask image path"
+                    value={form.maskImage}
+                    onChange={(value) => updateAndSync({ maskImage: value })}
+                  />
+                  <p className={cx('text-xs', supportsMask ? 'text-modiff-subtle-text' : 'text-hf-orange')}>
+                    {supportsMask
+                      ? 'The mask limits which source-image region can change.'
+                      : (inpaintContract?.reason ??
+                        'Brush, erase, invert, feather, clear, and fill are frontend draft controls until backend support is confirmed.')}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <StudioButton tone="ghost" onClick={() => setMaskEditorOpen(true)}>
                       Open mask editor
@@ -1758,6 +2031,38 @@ export default function StudioPanel() {
                   )}
                 </>
               )}
+              {requiresControlImage && (
+                <>
+                  <StudioInput
+                    label="Control image path"
+                    value={form.controlImage}
+                    onChange={(value) => updateAndSync({ controlImage: value })}
+                  />
+                  <p className="text-xs text-modiff-subtle-text">
+                    The control image is a separate structural guide declared by the selected task contract.
+                  </p>
+                  {form.mode.includes('control_union') && (
+                    <StudioInput
+                      label="ControlNet Union mode (0–5)"
+                      value={form.controlMode}
+                      onChange={(value) => updateAndSync({ controlMode: numberValue(value, form.controlMode) })}
+                    />
+                  )}
+                </>
+              )}
+              {requiresIPAdapterImage && (
+                <>
+                  <StudioInput
+                    label="IP-Adapter image path"
+                    value={form.ipAdapterImage}
+                    onChange={(value) => updateAndSync({ ipAdapterImage: value })}
+                  />
+                  <p className="text-xs text-modiff-subtle-text">
+                    This reference is encoded by the separately editable IP-Adapter block; it is not the source or
+                    ControlNet image.
+                  </p>
+                </>
+              )}
             </StudioSection>
           )}
 
@@ -1770,6 +2075,13 @@ export default function StudioPanel() {
           ) : null}
         </>
       )}
+      <TemplateUsageTermsDialog
+        open={Boolean(modelUsageTerms.pending)}
+        policies={modelUsageTerms.pending?.policies ?? []}
+        action="run"
+        onCancel={modelUsageTerms.cancel}
+        onConfirm={modelUsageTerms.confirm}
+      />
     </div>
   );
 }

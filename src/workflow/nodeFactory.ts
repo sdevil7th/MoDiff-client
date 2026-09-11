@@ -17,7 +17,8 @@ export function createNodeFromRegistry(
   const data = cloneNodeData(registryNode);
 
   return {
-    id: nanoid(),
+    // Ordinary nodes must also have valid semantic IDs when moved into a Block.
+    id: `node-${nanoid()}`,
     type: data.type,
     position,
     data,

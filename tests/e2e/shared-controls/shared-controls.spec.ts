@@ -104,6 +104,7 @@ test('shared controls expose consistent states and keyboard behavior', async ({ 
   await expect(page.getByRole('group', { name: 'Technical' })).toBeVisible();
   await page.getByRole('option', { name: 'Model' }).click();
   await expect(page.getByTestId('matrix-select')).toContainText('Model');
+  await expect(portalledListbox).not.toBeVisible();
   await page.getByTestId('matrix-select').click();
   await expect(page.getByRole('option', { name: 'Runtime' })).toHaveAttribute('data-disabled');
   await page.keyboard.press('Escape');

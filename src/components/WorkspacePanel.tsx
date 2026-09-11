@@ -11,9 +11,12 @@ import RunQueuePanel from './RunQueuePanel';
 import StudioPanel from './StudioPanel';
 import AppModePanel from './AppModePanel';
 import CompatibilityPanel from './CompatibilityPanel';
+import BlockEditorPanelV2 from './BlockEditorPanelV2';
+import { useBlockEditorStore } from '../stores/useBlockEditorStore';
 
 const tabs: { value: WorkspacePanelTab; label: string; Icon: LucideIcon }[] = [
   { value: 'studio', label: 'Studio', Icon: Rocket },
+  { value: 'block', label: 'Block', Icon: Settings2 },
   { value: 'compatibility', label: 'Compatibility', Icon: AlertTriangle },
   { value: 'queue', label: 'Queue', Icon: CirclePlay },
   { value: 'setup', label: 'Setup', Icon: Settings2 },
@@ -21,6 +24,7 @@ const tabs: { value: WorkspacePanelTab; label: string; Icon: LucideIcon }[] = [
 ];
 
 export default function WorkspacePanel() {
+  const blockEditor = useBlockEditorStore((state) => state.target);
   const rightPanelTab = useSettingsStore((state) => state.rightPanelTab);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const studioViewMode = useSettingsStore((state) => state.studioViewMode);
@@ -31,6 +35,7 @@ export default function WorkspacePanel() {
   const primaryTabs = tabs.filter(
     (tab) =>
       tab.value === 'studio' ||
+      (tab.value === 'block' && Boolean(blockEditor)) ||
       tab.value === 'queue' ||
       tab.value === 'setup' ||
       (tab.value === 'compatibility' && rightPanelTab === 'compatibility'),
@@ -123,6 +128,7 @@ export default function WorkspacePanel() {
         className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
       >
         {activeTab === 'studio' && <StudioPanel />}
+        {activeTab === 'block' && <BlockEditorPanelV2 />}
         {activeTab === 'compatibility' && <CompatibilityPanel />}
         {activeTab === 'queue' && <RunQueuePanel />}
         {activeTab === 'setup' && <ModelSetupPanel />}

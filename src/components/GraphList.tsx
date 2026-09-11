@@ -39,7 +39,7 @@ import {
   backendWorkflowTab,
   deleteWorkflowNow,
   markWorkflowTabOpen,
-  saveWorkflowNow,
+  saveDetachedWorkflowNow,
 } from '../studio/useWorkflowBackendSync';
 
 export interface GraphData {
@@ -56,6 +56,8 @@ export interface GraphData {
 }
 
 const graphListRequestGate = createLatestRequestGate<'graphs'>();
+
+type SavedWorkflowSummary = Omit<WorkflowTab, 'snapshot'> & { snapshot?: WorkflowTab['snapshot'] };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -89,6 +91,20 @@ function parseGraphEntry(value: unknown, index: number): GraphData {
   };
 }
 
+function backendWorkflowSummary(value: unknown): SavedWorkflowSummary | null {
+  if (!isRecord(value) || typeof value.id !== 'string') return null;
+  return {
+    id: value.id,
+    title: typeof value.title === 'string' ? value.title : 'Workflow',
+    createdAt: typeof value.createdAt === 'number' ? value.createdAt : Date.now(),
+    updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : Date.now(),
+    dirty: false,
+    source: typeof value.source === 'string' ? (value.source as WorkflowTab['source']) : 'manual',
+    sourceLabel: typeof value.sourceLabel === 'string' ? value.sourceLabel : undefined,
+    backendRevision: typeof value.revision === 'number' ? value.revision : 0,
+  };
+}
+
 function parseGraphList(value: unknown) {
   if (!Array.isArray(value)) throw new Error('The workflow list response must be an array.');
   return value.map(parseGraphEntry);
@@ -118,7 +134,7 @@ function workflowTestId(value: string) {
 function GraphList() {
   const [isLoading, setIsLoading] = useState(false);
   const [graphs, setGraphs] = useState<GraphData[]>([]);
-  const [savedWorkflows, setSavedWorkflows] = useState<WorkflowTab[]>([]);
+  const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflowSummary[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [mediaFilter, setMediaFilter] = useState('all');
@@ -159,9 +175,9 @@ function GraphList() {
 
   const fetchSavedWorkflows = useCallback(async () => {
     try {
-      const payload = await requestJson<unknown>(`${config.serverAddress}/workflows`);
+      const payload = await requestJson<unknown>(`${config.serverAddress}/workflows?view=summary`);
       const records = isRecord(payload) && Array.isArray(payload.workflows) ? payload.workflows : [];
-      setSavedWorkflows(records.map(backendWorkflowTab).filter((tab): tab is WorkflowTab => Boolean(tab)));
+      setSavedWorkflows(records.map(backendWorkflowSummary).filter((tab): tab is SavedWorkflowSummary => Boolean(tab)));
     } catch (error) {
       console.warn('Could not refresh My workflows.', error);
     }
@@ -223,10 +239,13 @@ function GraphList() {
     tierFilter !== 'all' ||
     readinessFilter !== 'all';
   const savedWorkflowRows = useMemo(() => {
-    const byId = new Map(savedWorkflows.map((tab) => [tab.id, tab]));
+    const byId = new Map<string, SavedWorkflowSummary>(savedWorkflows.map((tab) => [tab.id, tab]));
     workflowTabs.forEach((tab) => byId.set(tab.id, tab));
     return [...byId.values()].sort((left, right) => right.updatedAt - left.updatedAt);
   }, [savedWorkflows, workflowTabs]);
+  const visibleSavedWorkflowRows = savedWorkflowRows.filter((tab) =>
+    tab.title.toLowerCase().includes(search.trim().toLowerCase()),
+  );
   const filteredGraphs = useMemo(() => {
     if (!filtersActive) return visibleGraphs;
     return allWorkflowFiles.filter(
@@ -283,25 +302,49 @@ function GraphList() {
     [createWorkflowTab, edgeType, setRightPanelOpen, setRightPanelTab],
   );
 
-  const duplicateSavedWorkflow = (id: string) => {
+  const fetchSavedWorkflow = useCallback(async (tab: SavedWorkflowSummary) => {
+    if (tab.snapshot) return tab as WorkflowTab;
+    const payload = await requestJson<unknown>(`${config.serverAddress}/workflows/${encodeURIComponent(tab.id)}`);
+    const complete = backendWorkflowTab(payload);
+    if (!complete) throw new Error(`MoDiff returned an invalid saved workflow for ${tab.title}.`);
+    return complete;
+  }, []);
+
+  const duplicateSavedWorkflow = async (id: string) => {
     useStudioStore.getState().saveActiveWorkflowTab(true);
     const tab = savedWorkflowRows.find((item) => item.id === id);
     if (!tab) return;
-    createWorkflowTab(`${tab.title} copy`, tab.snapshot, 'manual', tab.sourceLabel);
-    enqueueSnackbar('Workflow duplicated', { variant: 'success', autoHideDuration: 2200 });
+    try {
+      const complete = await fetchSavedWorkflow(tab);
+      createWorkflowTab(`${complete.title} copy`, complete.snapshot, 'manual', complete.sourceLabel);
+      enqueueSnackbar('Workflow duplicated', { variant: 'success', autoHideDuration: 2200 });
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, `Could not duplicate ${tab.title}.`), {
+        variant: 'error',
+        autoHideDuration: 6000,
+      });
+    }
   };
 
-  const exportSavedWorkflow = (id: string) => {
+  const exportSavedWorkflow = async (id: string) => {
     useStudioStore.getState().saveActiveWorkflowTab(true);
     const tab = savedWorkflowRows.find((item) => item.id === id);
     if (!tab) return;
-    const blob = new Blob([JSON.stringify(tab.snapshot, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${tab.title.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'workflow'}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    try {
+      const complete = await fetchSavedWorkflow(tab);
+      const blob = new Blob([JSON.stringify(complete.snapshot, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${complete.title.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'workflow'}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, `Could not export ${tab.title}.`), {
+        variant: 'error',
+        autoHideDuration: 6000,
+      });
+    }
   };
 
   const deleteSavedWorkflow = (id: string) => {
@@ -330,15 +373,23 @@ function GraphList() {
     });
   };
 
-  const openSavedWorkflow = (tab: WorkflowTab) => {
-    markWorkflowTabOpen(tab.id);
-    if (!workflowTabs.some((item) => item.id === tab.id)) {
-      mergeBackendWorkflow(tab);
+  const openSavedWorkflow = async (tab: SavedWorkflowSummary) => {
+    try {
+      const complete = await fetchSavedWorkflow(tab);
+      markWorkflowTabOpen(complete.id);
+      if (!workflowTabs.some((item) => item.id === complete.id)) {
+        mergeBackendWorkflow(complete);
+      }
+      switchWorkflowTab(complete.id);
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, `Could not open ${tab.title}.`), {
+        variant: 'error',
+        autoHideDuration: 6000,
+      });
     }
-    switchWorkflowTab(tab.id);
   };
 
-  const renameSavedWorkflow = async (tab: WorkflowTab, title: string) => {
+  const renameSavedWorkflow = async (tab: SavedWorkflowSummary, title: string) => {
     const trimmed = title.trim();
     if (!trimmed || trimmed === tab.title) return;
     if (workflowTabs.some((item) => item.id === tab.id)) {
@@ -346,7 +397,8 @@ function GraphList() {
       return;
     }
     try {
-      const saved = await saveWorkflowNow({ ...tab, title: trimmed, dirty: true }, { merge: false });
+      const complete = await fetchSavedWorkflow(tab);
+      const saved = await saveDetachedWorkflowNow({ ...complete, title: trimmed, dirty: true });
       setSavedWorkflows((current) => current.map((item) => (item.id === saved.id ? saved : item)));
     } catch (error) {
       enqueueSnackbar(formatRequestError(error, `Could not rename ${tab.title}.`), {
@@ -473,7 +525,7 @@ function GraphList() {
       <section className="min-w-0 overflow-hidden border-b border-modiff-border px-2 pb-2" data-testid="my-workflows">
         <h3 className="text-modiff-label mb-1 px-1 font-semibold uppercase text-modiff-subtle-text">My workflows</h3>
         <div className="grid gap-1">
-          {savedWorkflowRows.map((tab) => (
+          {visibleSavedWorkflowRows.map((tab) => (
             <div
               key={tab.id}
               className={`group flex min-h-8 min-w-0 items-center gap-1 overflow-hidden rounded-modiff-compact px-2 text-xs ${tab.id === activeWorkflowTabId ? 'bg-hf-yellow/10 text-hf-yellow' : 'text-modiff-text hover:bg-modiff-surface-hover/50'}`}
@@ -500,7 +552,7 @@ function GraphList() {
                 <GraphControlButton
                   type="button"
                   className="min-h-7 min-w-0 flex-1 truncate text-left"
-                  onClick={() => openSavedWorkflow(tab)}
+                  onClick={() => void openSavedWorkflow(tab)}
                 >
                   {tab.dirty ? '* ' : ''}
                   {tab.title}
@@ -526,10 +578,10 @@ function GraphList() {
                   >
                     Rename
                   </ModiffMenuAction>
-                  <ModiffMenuAction icon={<Copy size={13} />} onClick={() => duplicateSavedWorkflow(tab.id)}>
+                  <ModiffMenuAction icon={<Copy size={13} />} onClick={() => void duplicateSavedWorkflow(tab.id)}>
                     Duplicate
                   </ModiffMenuAction>
-                  <ModiffMenuAction icon={<Download size={13} />} onClick={() => exportSavedWorkflow(tab.id)}>
+                  <ModiffMenuAction icon={<Download size={13} />} onClick={() => void exportSavedWorkflow(tab.id)}>
                     Export
                   </ModiffMenuAction>
                   <ModiffMenuAction
@@ -579,11 +631,11 @@ function GraphList() {
         <div className="select-none" data-testid="workflow-list">
           {filteredGraphs.length > 0 ? (
             filteredGraphs.map((item) => renderDir(item, 0))
-          ) : (
+          ) : visibleSavedWorkflowRows.length === 0 ? (
             <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
               No saved, imported, or example workflows found.
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

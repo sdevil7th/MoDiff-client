@@ -1,5 +1,10 @@
 # MoDiff Client Agent Instructions
 
+Before node/Block/hierarchy, persistence/execution, qualification or cross-machine
+integration work, read [Cluster engineering lessons and required procedure](docs/cluster-engineering-lessons.md)
+completely. Treat its reproduction, preservation and proof-level checks as required,
+not optional background. Keep the mirrored guide in both repositories aligned.
+
 These rules apply to Codex, Copilot-style agents, and any AI tool editing this repo. `CONTRIBUTING.md` is the full human-facing source of truth; keep this file aligned with it.
 
 ## Non-Negotiable Rules

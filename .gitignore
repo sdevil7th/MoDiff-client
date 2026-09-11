@@ -13,6 +13,13 @@ dist-ssr
 artifacts
 output
 
+# Local review notes, evidence, recordings, and handoff checkpoints.
+/review/
+/reviews/
+/review-assets/
+/checkpoints/
+/maintenance/
+
 # Gallery binaries live in the pinned public Hugging Face Dataset. Keep only
 # the small runtime metadata that lets source code resolve and verify them.
 public/template-gallery/**
@@ -21,9 +28,14 @@ public/template-gallery/**
 public/template-gallery/runtime-inputs/**
 !public/template-gallery/runtime-inputs/default-input-bindings.json
 
-playwright-report
-playwright-report-*/
-test-results
+# Browser-test reports, traces, screenshots, videos, and custom qualification
+# output directories are local evidence. Review-worthy assets are staged in the
+# backend's ignored data/qualification/local-review tree instead.
+/playwright-report/
+/playwright-report-*/
+/blob-report/
+/test-results/
+/test-results-*/
 __pycache__/
 *.py[cod]
 .pytest_cache/

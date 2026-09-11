@@ -162,14 +162,18 @@ function workflowModelRequirements(template: StudioTemplate): StudioModelRequire
 function modelRequirements(template: StudioTemplate): StudioModelRequirement[] {
   const profile = STUDIO_MODEL_PROFILES[template.modelType];
   return [
-    {
-      id: `${template.modelType}-base`,
-      label: profile.label,
-      repo: profile.defaultRepo,
-      kind: 'base',
-      requiredForModes: [template.mode],
-      description: `Base model for ${profile.label}.`,
-    },
+    ...(profile.artifactInstallRequired === false
+      ? []
+      : [
+          {
+            id: `${template.modelType}-base`,
+            label: profile.label,
+            repo: profile.defaultRepo,
+            kind: 'base' as const,
+            requiredForModes: [template.mode],
+            description: `Base model for ${profile.label}.`,
+          },
+        ]),
     ...getModelRequirementsForMode(profile, template.mode),
     ...workflowModelRequirements(template),
   ];

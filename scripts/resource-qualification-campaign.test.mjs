@@ -8,12 +8,22 @@ const contract = {
     {
       id: 'slow',
       modelType: 'FluxSchnellPipeline',
-      lastSuccessfulRealRun: { executionDurationSeconds: 100 },
+      lastSuccessfulRealRun: {
+        executionDurationSeconds: 100,
+        evidenceMatch: 'current',
+        proofFormat: 'modiff.live-proof.provenance.v2',
+        provenancePath: 'data/slow.json',
+      },
     },
     {
       id: 'fast',
       modelType: 'FluxSchnellPipeline',
-      lastSuccessfulRealRun: { executionDurationSeconds: 20 },
+      lastSuccessfulRealRun: {
+        executionDurationSeconds: 20,
+        evidenceMatch: 'current',
+        proofFormat: 'modiff.live-proof.provenance.v2',
+        provenancePath: 'data/fast.json',
+      },
     },
   ],
 };
@@ -58,8 +68,24 @@ test('resource campaign runs the shortest missing recipe before alphabetical mod
   const jobs = selectResourceQualificationJobs(
     {
       templates: [
-        { id: 'alphabetical-slow', lastSuccessfulRealRun: { executionDurationSeconds: 200 } },
-        { id: 'later-fast', lastSuccessfulRealRun: { executionDurationSeconds: 10 } },
+        {
+          id: 'alphabetical-slow',
+          lastSuccessfulRealRun: {
+            executionDurationSeconds: 200,
+            evidenceMatch: 'current',
+            proofFormat: 'modiff.live-proof.provenance.v2',
+            provenancePath: 'data/alphabetical-slow.json',
+          },
+        },
+        {
+          id: 'later-fast',
+          lastSuccessfulRealRun: {
+            executionDurationSeconds: 10,
+            evidenceMatch: 'current',
+            proofFormat: 'modiff.live-proof.provenance.v2',
+            provenancePath: 'data/later-fast.json',
+          },
+        },
       ],
     },
     {
@@ -124,4 +150,60 @@ test('resource campaign invokes one full-workload receipt run with the exact rec
   assert.equal(args.includes('--steps'), false);
   assert.equal(args.includes('--width'), false);
   assert.equal(args.includes('--height'), false);
+});
+
+test('resource campaign honors an explicitly requested owning template', () => {
+  const jobs = selectResourceQualificationJobs(contract, coverage, {
+    templates: ['slow'],
+    offloadModes: [],
+    includeDeferred: false,
+    includeQuantized: false,
+    maxRecipes: Number.POSITIVE_INFINITY,
+  });
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].templateId, 'slow');
+  assert.equal(jobs[0].baselineExecutionDurationSeconds, 100);
+});
+
+test('resource campaign blocks a recipe before inference when no current v2 baseline exists', () => {
+  const jobs = selectResourceQualificationJobs(
+    {
+      templates: [{ id: 'unproven', modelType: 'WanTI2VPipeline', lastSuccessfulRealRun: null }],
+    },
+    {
+      recipes: [
+        {
+          status: 'missing',
+          releaseLane: 'deferred',
+          modelType: 'WanTI2VPipeline',
+          dtype: 'bfloat16',
+          offloadMode: 'none',
+          quantizationMode: 'none',
+          templates: ['unproven'],
+        },
+      ],
+    },
+    {
+      templates: ['unproven'],
+      offloadModes: ['none'],
+      includeDeferred: true,
+      includeQuantized: false,
+      maxRecipes: Number.POSITIVE_INFINITY,
+    },
+  );
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].status, 'blocked');
+  assert.match(jobs[0].blocker, /baseline/);
+  assert.throws(
+    () =>
+      galleryArgsForResourceJob(jobs[0], {
+        server: 'http://127.0.0.1:8088',
+        port: 5194,
+        timeoutMs: 1000,
+        queueWaitTimeoutMs: 2000,
+      }),
+    /without a current v2 locked-template baseline/,
+  );
 });

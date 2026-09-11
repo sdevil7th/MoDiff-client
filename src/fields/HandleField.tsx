@@ -4,7 +4,7 @@ import { Position, useUpdateNodeInternals } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import { FieldProps } from '../components/NodeContent';
 import { useEffect, useRef } from 'react';
-import fieldAction, { relaySignal } from '../utils/fieldAction';
+import fieldAction, { consumeAutomaticSignalFieldActionSuppression, relaySignal } from '../utils/fieldAction';
 import { dataTypeClass, normalizeDataType } from '../utils/dataTypeCategory';
 import { FieldFrame } from '../ui';
 import { useGraphFixStore } from '../stores/useGraphFixStore';
@@ -22,6 +22,7 @@ export default function HandleField(props: FieldProps) {
   const propsRef = useRef(props);
   propsRef.current = props;
   const { fieldKey, isConnected, nodeId, onChange, onSignal, signal } = props;
+  const suppressInitialFieldAction = props.fieldOptions?.suppressInitialFieldAction === true;
   const connectedTargetType = useFlowStore(
     useShallow((state) => {
       if (type !== 'target') return null;
@@ -34,6 +35,8 @@ export default function HandleField(props: FieldProps) {
   const handleGradient = connectionTypeGradient(visualType);
   const typeLabel = connectionTypes(visualType).join(' or ') || 'untyped';
   const directionLabel = type === 'source' ? 'Output' : 'Input';
+  const endpointDescription = props.fieldOptions?.connectionDescription;
+  const labelTitle = typeof endpointDescription === 'string' ? `${props.label} · ${endpointDescription}` : props.label;
   const graphFixHighlighted = useGraphFixStore((state) =>
     Boolean(
       (state.dialogOpen &&
@@ -48,20 +51,22 @@ export default function HandleField(props: FieldProps) {
   );
 
   useEffect(() => {
-    if (onChange) {
+    if (onChange && !suppressInitialFieldAction) {
       fieldAction(propsRef.current, (isConnected || false).toString());
       updateNodeInternals(nodeId);
     }
-  }, [isConnected, nodeId, onChange, updateNodeInternals]);
+  }, [isConnected, nodeId, onChange, suppressInitialFieldAction, updateNodeInternals]);
 
   useEffect(() => {
     if (onSignal && signal?.value !== undefined) {
-      fieldAction(propsRef.current, signal?.value, 'onSignal');
+      if (!suppressInitialFieldAction && !consumeAutomaticSignalFieldActionSuppression(nodeId, fieldKey, signal)) {
+        fieldAction(propsRef.current, signal?.value, 'onSignal');
+      }
       updateNodeInternals(nodeId);
     }
 
     relaySignal(nodeId, fieldKey, signal);
-  }, [fieldKey, nodeId, onSignal, signal, updateNodeInternals]);
+  }, [fieldKey, nodeId, onSignal, signal, suppressInitialFieldAction, updateNodeInternals]);
 
   return (
     <FieldFrame
@@ -79,7 +84,7 @@ export default function HandleField(props: FieldProps) {
         type={type}
         position={position}
         aria-label={`${directionLabel} ${props.label}, ${typeLabel}`}
-        title={`${props.label} · ${typeLabel}`}
+        title={`${labelTitle} · ${typeLabel}`}
         data-connection-type={typeLabel}
         data-testid={`node-handle-${nodeId}-${props.fieldKey}`}
         connectionColor={handleColor}
@@ -95,7 +100,7 @@ export default function HandleField(props: FieldProps) {
       ) : (
         <div
           className={`text-modiff-control mx-0.5 truncate px-2 text-modiff-subtle-text ${textAlignClassName}`}
-          title={props.label}
+          title={labelTitle}
         >
           {props.label}
         </div>

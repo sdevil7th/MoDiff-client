@@ -46,6 +46,7 @@ test('official Hugging Face runtimes remain backend-only and explicitly optional
 
 test('optional runtime actions stay generic, explicit, and backend-qualified', () => {
   const contract = source('src/studio/optionalRuntimes.ts');
+  const e2eHooks = source('src/utils/e2eHooks.ts');
   const setup = source('src/components/RuntimeOptimizationsCard.tsx');
   const store = source('src/stores/useNodeStore.ts');
   assert.match(store, /\/runtime\/optional-runtimes/);
@@ -59,6 +60,8 @@ test('optional runtime actions stay generic, explicit, and backend-qualified', (
   assert.doesNotMatch(setup, /\/runtime\/optimizations\/(?:install|activate|rollback|jobs)/);
   assert.doesNotMatch(`${contract}\n${setup}`, /Qwen|Flux|Wan|ZImage|AceStep/);
   assert.match(setup, /contractState/);
+  assert.match(e2eHooks, /if \(!validation\.canRun\) \{/);
+  assert.doesNotMatch(e2eHooks, /e2eOptionalRuntime(?:OverlayIsActive|IsSatisfied)/);
 });
 
 test('frontend workflow generation has no library-specific model driver', () => {

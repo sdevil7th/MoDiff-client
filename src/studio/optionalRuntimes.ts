@@ -3,7 +3,7 @@ import {
   runtimeRecord as record,
   runtimeText as string,
 } from './runtimeOptimizations';
-import { REPO_ID } from './executionSpecs';
+import { isStudioArtifactId, REPO_ID } from './executionSpecs';
 
 export type OptionalRuntimeRequirement = {
   schemaVersion: 1;
@@ -28,6 +28,8 @@ export type OptionalRuntimeRequirement = {
 export type OptionalRuntimeProfileStatus = {
   id: string;
   label: string;
+  platform: 'linux' | 'macos' | 'windows';
+  machine: 'arm64' | 'x86_64';
   specDigest: string;
   contractState: string;
   cutoverReady: boolean;
@@ -35,12 +37,15 @@ export type OptionalRuntimeProfileStatus = {
   activationAvailable: boolean;
   status: 'missing' | 'present_unqualified' | 'wrong_version';
   overlayStatus: 'active' | 'missing' | 'repair_required' | 'staged' | 'staged_unchecked';
+  satisfiesProfiles: Array<{ profileId: string; specDigest: string }>;
 };
 
 export type OptionalRuntimeCatalog = {
   profiles: OptionalRuntimeProfileStatus[];
   processLoadStatus: 'active' | 'base' | 'busy_recovery_only' | 'repair_required' | 'restart_required';
+  activeOptionalRuntimeSpecs: Array<{ profileId: string; specDigest: string }>;
   stagedEnvironmentIds: Record<string, string>;
+  activeEnvironmentId: string | null;
   previousEnvironmentId: string | null;
   installBusy: boolean;
 };
@@ -236,7 +241,9 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     const profile = record(raw);
     const id = string(profile.id, executionId);
     const modes = parseRuntimeModes(profile.modes, isMode);
-    for (const repo of [profile.default_repo, profile.fallback_repo]) if (repo != null) string(repo, REPO_ID);
+    for (const repo of [profile.default_repo, profile.fallback_repo]) {
+      if (repo != null && (typeof repo !== 'string' || !isStudioArtifactId(repo))) invalid();
+    }
     if (profile.compatible_repos !== undefined) ids(profile.compatible_repos, REPO_ID, true);
     if (profile.optionalRuntimeRequirement !== undefined && profile.optional_runtime_requirement !== undefined)
       invalid();
@@ -255,6 +262,16 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
         ? undefined
         : (ids(profile.expert_quantization_modes, runtimeQuantization, false) as StudioRuntimeQuantization[]);
     if (expertQuantizationModes && expertQuantizationModes.length > 4) invalid();
+    const availableExpertQuantizationModes =
+      profile.available_expert_quantization_modes === undefined
+        ? expertQuantizationModes
+        : (ids(profile.available_expert_quantization_modes, runtimeQuantization, true) as StudioRuntimeQuantization[]);
+    if (
+      availableExpertQuantizationModes &&
+      (!expertQuantizationModes ||
+        availableExpertQuantizationModes.some((mode) => !expertQuantizationModes.includes(mode)))
+    )
+      invalid();
     if (
       (profile.optional_runtime_delivery !== undefined &&
         !delivery.test(profile.optional_runtime_delivery as string)) ||
@@ -272,6 +289,8 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     if (expertQuantizationPolicy) profile.expert_quantization_policy = expertQuantizationPolicy;
     if (expertMpsPolicy) profile.expert_mps_policy = expertMpsPolicy;
     if (expertQuantizationModes) profile.expert_quantization_modes = expertQuantizationModes;
+    if (availableExpertQuantizationModes)
+      profile.available_expert_quantization_modes = availableExpertQuantizationModes;
     return profile as Record<string, unknown> & {
       id: string;
       modes: T[];
@@ -280,6 +299,7 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
       expert_quantization_policy?: StudioExpertQuantizationPolicy;
       expert_mps_policy?: StudioExpertMpsPolicy;
       expert_quantization_modes?: StudioRuntimeQuantization[];
+      available_expert_quantization_modes?: StudioRuntimeQuantization[];
     };
   });
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();
@@ -315,11 +335,27 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
     invalid();
   string(item.id, runtimeId);
   string(item.label);
+  string(item.platform, /^(?:linux|macos|windows)$/);
+  string(item.machine, /^(?:arm64|x86_64)$/);
   string(item.specDigest, specDigest);
   string(item.contractState);
   string(item.status, /^(?:missing|present_unqualified|wrong_version)$/);
   string(item.overlayStatus, /^(?:active|missing|repair_required|staged|staged_unchecked)$/);
-  return item as unknown as OptionalRuntimeProfileStatus;
+  const rawSatisfiedProfiles = item.satisfiesProfiles ?? [];
+  if (!Array.isArray(rawSatisfiedProfiles) || rawSatisfiedProfiles.length > 32) invalid();
+  const satisfiesProfiles = rawSatisfiedProfiles.map((rawProfile) => {
+    const profile = record(rawProfile);
+    return {
+      profileId: string(profile.id, runtimeId)!,
+      specDigest: string(profile.specDigest, specDigest)!,
+    };
+  });
+  if (
+    new Set(satisfiesProfiles.map(({ profileId, specDigest: digest }) => profileId + digest)).size !==
+    satisfiesProfiles.length
+  )
+    invalid();
+  return { ...(item as unknown as OptionalRuntimeProfileStatus), satisfiesProfiles };
 }
 
 function nullableId(value: unknown, pattern: RegExp) {
@@ -340,7 +376,10 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
     invalid();
   const profiles = payload.profiles.map(parseProfile);
   if (new Set(profiles.map(({ id }) => id)).size !== profiles.length) invalid();
-  nullableId(state.activeEnvironmentId, environmentId);
+  const activeEnvironmentId = nullableId(state.activeEnvironmentId, environmentId);
+  const previousEnvironmentId = nullableId(state.previousEnvironmentId, environmentId);
+  const activeOptionalRuntimeSpecs: Array<{ profileId: string; specDigest: string }> = [];
+  const activeOptionalRuntimeSpecKeys = new Set<string>();
   const stagedEnvironmentIds: Record<string, string> = {};
   const ambiguousSpecs = new Set<string>();
   const seenEnvironments = new Set<string>();
@@ -351,6 +390,7 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       environment.status,
       /^(?:legacy_unqualified|missing|ready|repair_required|staged_unchecked)$/,
     );
+    const activeUsable = status === 'ready' || status === 'staged_unchecked';
     if (
       seenEnvironments.has(id) ||
       typeof environment.active !== 'boolean' ||
@@ -364,7 +404,25 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       if (!['optimization', 'optional_runtime'].includes(spec.kind as string)) invalid();
       const profileId = string(spec.id, runtimeId)!;
       const digest = string(spec.specDigest, specDigest)!;
-      if (spec.kind === 'optional_runtime' && !environment.active && ['ready', 'staged_unchecked'].includes(status!)) {
+      if (spec.kind === 'optional_runtime' && environment.active && id === activeEnvironmentId && activeUsable) {
+        const activeSpecs = [
+          { profileId, specDigest: digest },
+          ...(profiles.find((profile) => profile.id === profileId && profile.specDigest === digest)
+            ?.satisfiesProfiles ?? []),
+        ];
+        for (const activeSpec of activeSpecs) {
+          const key = activeSpec.profileId + activeSpec.specDigest;
+          if (activeOptionalRuntimeSpecKeys.has(key)) continue;
+          activeOptionalRuntimeSpecKeys.add(key);
+          activeOptionalRuntimeSpecs.push(activeSpec);
+        }
+      }
+      if (
+        spec.kind === 'optional_runtime' &&
+        !environment.active &&
+        status === 'ready' &&
+        id !== previousEnvironmentId
+      ) {
         const key = profileId + digest;
         if (stagedEnvironmentIds[key]) {
           delete stagedEnvironmentIds[key];
@@ -385,8 +443,10 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
       overlay.processLoadStatus,
       /^(?:active|base|busy_recovery_only|repair_required|restart_required)$/,
     ) as OptionalRuntimeCatalog['processLoadStatus'],
+    activeOptionalRuntimeSpecs,
     stagedEnvironmentIds,
-    previousEnvironmentId: nullableId(state.previousEnvironmentId, environmentId),
+    activeEnvironmentId,
+    previousEnvironmentId,
     installBusy: payload.activeInstallJob !== null,
   };
 }
@@ -457,14 +517,28 @@ export function optionalRuntimeBlockState(
   if (requirement.state !== 'active') return requirement.state;
   if (!catalog || catalog.processLoadStatus === 'base') return 'unavailable';
   if (catalog.processLoadStatus !== 'active') return catalog.processLoadStatus;
+  // Profile IDs are alternative pins (e.g. transformers 5.14.1 vs reviewed main).
+  // One fully active overlay satisfies the requirement.
+  let fallback: OptionalRuntimeRequirement['state'] = 'unavailable';
   for (const profileId of requirement.profileIds) {
     const profile = catalog.profiles.find(({ id }) => id === profileId);
-    if (!profile?.cutoverReady || profile.contractState !== 'qualified') return 'unavailable';
-    if (profile.overlayStatus !== 'active') {
-      if (profile.overlayStatus === 'staged' || profile.overlayStatus === 'repair_required')
-        return profile.overlayStatus;
-      return profile.status;
+    if (!profile) continue;
+    if (
+      profile.cutoverReady &&
+      profile.contractState === 'qualified' &&
+      profile.overlayStatus === 'active' &&
+      (catalog.activeOptionalRuntimeSpecs ?? []).some(
+        (spec) => spec.profileId === profile.id && spec.specDigest === profile.specDigest,
+      )
+    ) {
+      return null;
+    }
+    if (profile.overlayStatus === 'active' || !profile.cutoverReady || profile.contractState !== 'qualified') continue;
+    if (profile.overlayStatus === 'staged' || profile.overlayStatus === 'repair_required') {
+      fallback = profile.overlayStatus;
+    } else {
+      fallback = profile.status;
     }
   }
-  return null;
+  return fallback;
 }

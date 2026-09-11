@@ -1,11 +1,24 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
+  appCacheUrl,
+  appDownloadStatusUrl,
+  appReadinessForJobs,
+  acquireCampaignLock,
+  blockedReadinessKinds,
   campaignStatusForRunner,
+  downloadReadinessForStatus,
   galleryArgsForGroup,
+  inputReadinessForJobs,
   jobGroups,
   modelFamilyForTemplate,
+  requiredReadinessChecks,
   selectedJobs,
+  writeCampaignStateAtomic,
 } from './release-qualification-campaign.mjs';
 
 const contract = {
@@ -93,6 +106,7 @@ test('qualification executes locked non-exact templates without conflating execu
       port: 5194,
       timeoutMs: 10_000,
       queueWaitTimeoutMs: 5_000,
+      server: 'http://127.0.0.1:8088',
       reuseExistingRuntimeKey: 'ZImagePipeline:auto-planned',
     },
     ['z_image_lora_style'],
@@ -105,6 +119,10 @@ test('qualification executes locked non-exact templates without conflating execu
     'auto',
   ]);
   assert.equal(args.includes('--reuse-runtime-within-model'), true);
+  assert.deepEqual(args.slice(args.indexOf('--server'), args.indexOf('--server') + 2), [
+    '--server',
+    'http://127.0.0.1:8088',
+  ]);
   assert.deepEqual(
     args.slice(args.indexOf('--reuse-existing-runtime-key'), args.indexOf('--reuse-existing-runtime-key') + 2),
     ['--reuse-existing-runtime-key', 'ZImagePipeline:auto-planned'],
@@ -115,4 +133,315 @@ test('qualification campaign stops distinctly on runner infrastructure loss', ()
   assert.equal(campaignStatusForRunner({ status: 0, error: null }), 'qualified');
   assert.equal(campaignStatusForRunner({ status: 1, error: null }), 'failed');
   assert.equal(campaignStatusForRunner({ status: 70, error: null }), 'infrastructure_failed');
+});
+
+test('qualification app readiness requires every exact app-installed artifact revision', () => {
+  const jobs = [
+    {
+      templateId: 'ready-template',
+      requiredArtifacts: [
+        { repo: 'owner/model', revision: 'a'.repeat(40), role: 'model' },
+        { repo: 'owner/lora', revision: 'b'.repeat(40), role: 'lora' },
+      ],
+    },
+  ];
+  const readiness = appReadinessForJobs(jobs, [
+    {
+      id: 'owner/model',
+      installed: true,
+      complete: true,
+      repair_required: false,
+      revisions: [{ hash: 'a'.repeat(40) }],
+    },
+    {
+      id: 'owner/lora',
+      installed: true,
+      complete: true,
+      repair_required: false,
+      revisions: [{ hash: 'b'.repeat(40) }],
+    },
+  ]);
+  assert.equal(readiness.status, 'ready');
+  assert.equal(readiness.readyJobCount, 1);
+  assert.equal(readiness.readyArtifactCount, 2);
+  assert.deepEqual(readiness.blockedJobs, []);
+});
+
+test('qualification app readiness fails closed for absent, incomplete, repair, and receipt gaps', () => {
+  const revision = 'c'.repeat(40);
+  const readiness = appReadinessForJobs(
+    [
+      {
+        templateId: 'repair-template',
+        requiredArtifacts: [{ repo: 'owner/repair', revision, role: 'model' }],
+      },
+      {
+        templateId: 'missing-template',
+        requiredArtifacts: [{ repo: 'owner/missing', revision, role: 'model' }],
+      },
+      { templateId: 'receiptless-template', requiredArtifacts: [] },
+    ],
+    [
+      {
+        id: 'owner/repair',
+        installed: true,
+        complete: false,
+        repair_required: true,
+        revisions: [{ hash: revision }],
+      },
+    ],
+  );
+  assert.equal(readiness.status, 'blocked');
+  assert.equal(readiness.blockedJobCount, 3);
+  assert.deepEqual(
+    readiness.blockedJobs.map((job) => job.blockedArtifacts[0].reason),
+    ['repair_required', 'repository_missing', 'artifact_receipt_missing'],
+  );
+});
+
+test('qualification app readiness permits only uncredentialed loopback HTTP origins', () => {
+  assert.equal(appCacheUrl('http://127.0.0.1:8088/path'), 'http://127.0.0.1:8088/hf_cache');
+  assert.equal(appCacheUrl('https://localhost:8443'), 'https://localhost:8443/hf_cache');
+  assert.equal(appCacheUrl('http://[::1]:8088'), 'http://[::1]:8088/hf_cache');
+  for (const server of ['https://example.com', 'file:///tmp/app', 'http://user:secret@127.0.0.1:8088', 'not a URL']) {
+    assert.throws(() => appCacheUrl(server), /loopback/);
+  }
+});
+
+test('qualification campaign requires an idle app download and Gallery reservation state', () => {
+  const ready = downloadReadinessForStatus({
+    error: false,
+    schemaVersion: 1,
+    downloads: [],
+    activeCount: 0,
+    queuedReservationBytes: 0,
+    templateGalleryReservationBytes: 0,
+  });
+  assert.equal(ready.status, 'ready');
+  assert.equal(appDownloadStatusUrl('http://127.0.0.1:8088/path'), 'http://127.0.0.1:8088/hf_download/status');
+
+  const blocked = downloadReadinessForStatus({
+    error: false,
+    schemaVersion: 1,
+    downloads: [
+      {
+        repo_id: 'owner/model',
+        revision: 'd'.repeat(40),
+        task_id: 'download-task',
+        status: 'downloading',
+        phase: 'downloading',
+        progress: 0.5,
+        remaining_bytes: 50,
+      },
+    ],
+    activeCount: 1,
+    queuedReservationBytes: 50,
+    templateGalleryReservationBytes: 0,
+  });
+  assert.equal(blocked.status, 'blocked');
+  assert.deepEqual(blocked.activeDownloads[0], {
+    repo: 'owner/model',
+    revision: 'd'.repeat(40),
+    taskId: 'download-task',
+    status: 'downloading',
+    phase: 'downloading',
+    progress: 0.5,
+    remainingBytes: 50,
+  });
+
+  assert.throws(
+    () =>
+      downloadReadinessForStatus({
+        error: false,
+        schemaVersion: 1,
+        downloads: [],
+        activeCount: 1,
+        queuedReservationBytes: 0,
+        templateGalleryReservationBytes: 0,
+      }),
+    /malformed|bound/,
+  );
+  assert.throws(() => appDownloadStatusUrl('https://example.com'), /loopback/);
+});
+
+test('qualification campaign identifies every blocked group readiness boundary', () => {
+  assert.deepEqual(
+    blockedReadinessKinds({
+      appReadiness: { status: 'blocked' },
+      downloadReadiness: { status: 'ready' },
+      inputReadiness: { status: 'blocked' },
+    }),
+    ['model cache', 'default inputs'],
+  );
+  assert.deepEqual(
+    blockedReadinessKinds({
+      appReadiness: null,
+      downloadReadiness: { status: 'ready' },
+      inputReadiness: null,
+    }),
+    [],
+  );
+});
+
+test('real qualification always requires every readiness check while dry runs remain explicit', () => {
+  assert.deepEqual(
+    requiredReadinessChecks({
+      dryRun: false,
+      checkAppReadiness: false,
+      checkDownloadIdle: false,
+      checkInputReadiness: false,
+    }),
+    { appCache: true, downloads: true, defaultInputs: true },
+  );
+  assert.deepEqual(
+    requiredReadinessChecks({
+      dryRun: true,
+      checkAppReadiness: true,
+      checkDownloadIdle: false,
+      checkInputReadiness: true,
+    }),
+    { appCache: true, downloads: false, defaultInputs: true },
+  );
+});
+
+test('qualification campaign owns one state writer and atomically replaces its receipt', () => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-qualification-campaign-'));
+  const lockPath = join(root, 'campaign-state.json.lock');
+  const statePath = join(root, 'campaign-state.json');
+  try {
+    const release = acquireCampaignLock(lockPath, process.pid);
+    assert.equal(JSON.parse(readFileSync(lockPath, 'utf8')).pid, process.pid);
+    assert.throws(() => acquireCampaignLock(lockPath, process.pid), /another release qualification campaign/i);
+    writeCampaignStateAtomic(statePath, { schemaVersion: 1, value: 1 });
+    writeCampaignStateAtomic(statePath, { schemaVersion: 1, value: 2 });
+    assert.equal(JSON.parse(readFileSync(statePath, 'utf8')).value, 2);
+    assert.deepEqual(
+      readdirSync(root).filter((entry) => entry.endsWith('.tmp')),
+      [],
+    );
+    release();
+    assert.equal(existsSync(lockPath), false);
+    writeFileSync(lockPath, `${JSON.stringify({ pid: 0, startedAt: new Date(0).toISOString() })}\n`, 'utf8');
+    const releaseRecovered = acquireCampaignLock(lockPath, process.pid);
+    assert.equal(JSON.parse(readFileSync(lockPath, 'utf8')).pid, process.pid);
+    releaseRecovered();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('qualification app readiness rejects malformed app inventory and artifact receipts', () => {
+  assert.throws(
+    () => appReadinessForJobs([], [{ id: 'owner/model', revisions: [{ hash: 'main' }] }]),
+    /malformed|bound/,
+  );
+  assert.throws(
+    () =>
+      appReadinessForJobs(
+        [{ templateId: 'moving', requiredArtifacts: [{ repo: 'owner/model', revision: 'main', role: 'model' }] }],
+        [],
+      ),
+    /immutable revision/,
+  );
+});
+
+test('qualification input readiness verifies exact local default-input bytes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-qualification-inputs-'));
+  try {
+    const bytes = Buffer.from('byte-pinned qualification input');
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    const runtimePath = `/template-gallery/runtime-inputs/assets/${digest}.webp`;
+    const localPath = join(root, runtimePath.replace(/^\/+/, ''));
+    mkdirSync(dirname(localPath), { recursive: true });
+    writeFileSync(localPath, bytes);
+    const readiness = inputReadinessForJobs(
+      [{ templateId: 'with-input' }, { templateId: 'text-only' }],
+      {
+        'with-input': [
+          {
+            field: 'referenceImages',
+            defaultAssets: [{ runtimePath, runtimeSha256: `sha256:bytes:${digest}` }],
+          },
+        ],
+      },
+      {
+        assets: [
+          {
+            path: runtimePath.replace(/^\/+/, ''),
+            sha256: `sha256:bytes:${digest}`,
+            size: bytes.length,
+          },
+        ],
+      },
+      [join(root, 'lightweight-client-public'), root],
+    );
+    assert.equal(readiness.status, 'ready');
+    assert.equal(readiness.jobCount, 2);
+    assert.equal(readiness.assetCount, 1);
+    assert.equal(readiness.requiredBytes, bytes.length);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('qualification input readiness blocks absent and hash-mismatched local bytes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-qualification-inputs-'));
+  try {
+    const expected = Buffer.from('expected');
+    const digest = createHash('sha256').update(expected).digest('hex');
+    const runtimePath = `/template-gallery/runtime-inputs/assets/${digest}.png`;
+    const bindings = {
+      input: [
+        {
+          field: 'controlImage',
+          defaultAssets: [{ runtimePath, runtimeSha256: `sha256:bytes:${digest}` }],
+        },
+      ],
+    };
+    const manifest = {
+      assets: [
+        {
+          path: runtimePath.replace(/^\/+/, ''),
+          sha256: `sha256:bytes:${digest}`,
+          size: expected.length,
+        },
+      ],
+    };
+    const missing = inputReadinessForJobs([{ templateId: 'input' }], bindings, manifest, root);
+    assert.equal(missing.status, 'blocked');
+    assert.equal(missing.blockedAssets[0].reason, 'local_file_missing');
+
+    const localPath = join(root, runtimePath.replace(/^\/+/, ''));
+    mkdirSync(dirname(localPath), { recursive: true });
+    writeFileSync(localPath, Buffer.from('tampered'));
+    const mismatched = inputReadinessForJobs([{ templateId: 'input' }], bindings, manifest, root);
+    assert.equal(mismatched.blockedAssets[0].reason, 'sha256_mismatch');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('qualification input readiness rejects unpinned binding and manifest metadata', () => {
+  assert.throws(
+    () =>
+      inputReadinessForJobs(
+        [{ templateId: 'input' }],
+        {
+          input: [
+            {
+              field: 'sourceVideo',
+              defaultAssets: [
+                {
+                  runtimePath: '/template-gallery/runtime-inputs/assets/moving.png',
+                  runtimeSha256: 'sha256:bytes:not-a-digest',
+                },
+              ],
+            },
+          ],
+        },
+        { assets: [] },
+        '/tmp',
+      ),
+    /content-addressed/,
+  );
 });

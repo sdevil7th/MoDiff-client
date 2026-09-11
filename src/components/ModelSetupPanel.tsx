@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { Download, FolderOpen, FolderSearch, Info, RefreshCw, Settings } from 'lucide-react';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
@@ -54,7 +54,12 @@ import { cx } from '../utils/classNames';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import { RuntimeEnvironmentCard } from './RuntimeEnvironmentCard';
 import RuntimeOptimizationsCard from './RuntimeOptimizationsCard';
+import { TemplateGallerySetupCard } from './TemplateGallerySetupCard';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
+
+const CompositeMigrationCard = lazy(() =>
+  import('./CompositeMigrationCard').then((module) => ({ default: module.CompositeMigrationCard })),
+);
 
 function formatBytes(bytes?: number) {
   if (!bytes || bytes <= 0) return '0 B';
@@ -406,7 +411,11 @@ export default function ModelSetupPanel() {
 
   const handleInstall = async (target: StudioAutoResourceInstallTarget) => {
     try {
-      await installHfModel(target.repo, sid, { repair: target.repair });
+      await installHfModel(target.repo, sid, {
+        repair: target.repair,
+        revision: target.revision,
+        files: target.files,
+      });
       await refresh();
     } catch (error) {
       console.error(error);
@@ -450,6 +459,7 @@ export default function ModelSetupPanel() {
 
       <RuntimeEnvironmentCard error={runtimeError} status={runtimeStatus} />
       <RuntimeOptimizationsCard />
+      <TemplateGallerySetupCard />
 
       {currentIssueGroups.length > 0 && (
         <section
@@ -524,6 +534,10 @@ export default function ModelSetupPanel() {
         buttonClassName="p-0"
         panelClassName="mt-3 grid gap-3"
       >
+        <Suspense fallback={<p className="text-xs text-modiff-subtle-text">Loading migration tools…</p>}>
+          <CompositeMigrationCard />
+        </Suspense>
+
         {hasCustomGraphContext ? (
           <section className="grid gap-2" data-testid="setup-workflow-model-health">
             <div className="flex items-center gap-2">

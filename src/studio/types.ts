@@ -6,48 +6,214 @@ import type {
 } from './optionalRuntimes';
 
 export type StudioMode =
+  | 'unconditional_image'
+  | 'depth_estimation'
+  | 'text_generation'
+  | 'image_to_text'
+  | 'speech_to_text'
+  | 'speech_translation'
   | 'text_to_image'
+  | 'image_to_image'
+  | 'inpainting'
+  | 'modular_text_to_image'
+  | 'modular_image_to_image'
+  | 'modular_inpainting'
   | 'edit_image'
   | 'multi_image_reference_edit'
   | 'inpaint'
   | 'outpaint'
   | 'control_image'
+  | 'control_edit_image'
+  | 'control_inpaint'
+  | 'control_union_image'
+  | 'control_union_edit_image'
+  | 'control_union_inpaint'
+  | 'ip_adapter_image'
+  | 'ip_adapter_edit_image'
+  | 'ip_adapter_inpaint'
+  | 'ip_adapter_control_image'
+  | 'ip_adapter_control_edit_image'
+  | 'ip_adapter_control_inpaint'
+  | 'ip_adapter_control_union_image'
+  | 'ip_adapter_control_union_edit_image'
+  | 'ip_adapter_control_union_inpaint'
   | 'layer_decomposition'
   | 'text_to_video'
   | 'image_to_video'
+  | 'single_image_to_video'
   | 'video_to_video'
+  | 'text_to_video_with_audio'
+  | 'first_last_frame_to_video_with_audio'
+  | 'reference_to_video_with_audio'
+  | 'image_to_video_with_audio'
+  | 'video_to_video_with_audio'
   | 'video_inpaint'
   | 'video_outpaint'
   | 'reference_to_video'
+  | 'in_context_to_video'
   | 'control_to_video'
+  | 'control_video_to_video'
   | 'video_color_edit'
+  | 'character_animate'
+  | 'character_replace'
   | 'text_to_audio'
   | 'audio_variation'
   | 'audio_continuation'
   | 'audio_repaint'
+  | 'audio_trim'
+  | 'audio_join'
+  | 'audio_loudness_match'
+  | 'text_select'
+  | 'data_conversion'
+  | 'graph_utility'
+  | 'text_to_3d'
+  | 'image_to_3d'
+  | 'image_adjustment'
+  | 'image_filter'
+  | 'image_crop'
+  | 'image_upscale'
+  | 'image_stitch'
+  | 'image_tile'
+  | 'image_channels'
+  | 'mask_composite'
+  | 'video_frame_extract'
+  | 'frame_interpolation'
+  | 'video_stitch'
+  | 'video_trim'
+  | 'video_reverse'
+  | 'video_tile'
+  | 'video_upscale'
   | 'advanced_workflow';
 
 export type StudioModelType =
+  | 'AnimaModularPipeline'
+  | 'HeliosModularPipeline'
+  | 'HeliosPyramidModularPipeline'
+  | 'HeliosPyramidDistilledModularPipeline'
+  | 'HunyuanVideo15ModularPipeline'
+  | 'Cosmos3DistilledModularPipeline'
+  | 'Cosmos3OmniModularPipeline'
+  | 'MiniMaxH3ModularPipeline'
+  | 'WanAnimate2ModularPipeline'
+  | 'WanAnimate2DistilledModularPipeline'
+  | 'DDPMPipeline'
+  | 'DDIMPipeline'
+  | 'ConsistencyModelPipeline'
+  | 'StableDiffusionPipeline'
+  | 'LatentConsistencyModelPipeline'
+  | 'StableDiffusionPAGPipeline'
+  | 'MarigoldDepthPipeline'
+  | 'HuggingFaceTextGenerationModel'
+  | 'HuggingFaceImageTextToTextModel'
+  | 'HuggingFaceAnyToAnyModel'
+  | 'HuggingFaceSpeechRecognitionModel'
+  | 'HuggingFaceCTCSpeechRecognitionModel'
   | 'ZImageModularPipeline'
+  | 'StableDiffusionXLModularPipeline'
   | 'QwenImageModularPipeline'
   | 'QwenImageEditModularPipeline'
   | 'QwenImageEditPlusModularPipeline'
+  | 'QwenImageEditPipeline'
+  | 'QwenImageEditPlusPipeline'
   | 'QwenImageLayeredModularPipeline'
+  | 'QwenImageControlNetPipeline'
+  | 'QwenImageLayeredPipeline'
+  | 'ZImageInpaintPipeline'
   | 'WanVACEPipeline'
   | 'WanVideoPipeline'
+  | 'WanModularPipeline'
   | 'WanImageToVideoPipeline'
   | 'WanTI2VPipeline'
+  | 'Wan22Pipeline'
+  | 'Wan22ModularPipeline'
+  | 'Wan22Image2VideoModularPipeline'
+  | 'WanAnimatePipeline'
+  | 'WanImage2VideoModularPipeline'
   | 'LTXVideoPipeline'
+  | 'LTXModularPipeline'
+  | 'LTXI2VLongMultiPromptPipeline'
+  | 'LTX2ConditionPipeline'
+  | 'LTX2ModularPipeline'
+  | 'LTX2Pipeline'
+  | 'HunyuanVideoFramepackPipeline'
+  | 'StableVideoDiffusionPipeline'
+  | 'AnimateDiffPipeline'
+  | 'AnimateDiffPAGPipeline'
+  | 'AnimateDiffVideoToVideoPipeline'
+  | 'AnimateDiffControlNetPipeline'
+  | 'AnimateDiffVideoToVideoControlNetPipeline'
+  | 'AnimateLCMPipeline'
+  | 'CogVideoXPipeline'
+  | 'CogVideoXVideoToVideoPipeline'
+  | 'AllegroPipeline'
+  | 'LattePipeline'
+  | 'MochiPipeline'
+  | 'SanaVideoPipeline'
+  | 'SanaImageToVideoPipeline'
   | 'AceStepAudioPipeline'
+  | 'StableAudioPipeline'
+  | 'MiniMaxMusic3ModularPipeline'
+  | 'LongCatAudioDiTPipeline'
+  | 'AudioLDM2Pipeline'
+  | 'ShapEPipeline'
   | 'FluxSchnellPipeline'
   | 'FluxDevPipeline'
   | 'FluxKreaPipeline'
   | 'FluxKontextPipeline'
+  | 'FluxKontextInpaintPipeline'
   | 'FluxFillPipeline'
   | 'FluxDepthPipeline'
   | 'FluxCannyPipeline'
   | 'FluxReduxPipeline'
-  | 'Flux2KleinPipeline';
+  | 'Flux2KleinPipeline'
+  | 'FluxModularPipeline'
+  | 'FluxKontextModularPipeline'
+  | 'Flux2KleinModularPipeline'
+  | 'Flux2KleinBaseModularPipeline'
+  | 'Flux2ModularPipeline'
+  | 'Flux2KleinInpaintPipeline'
+  | 'StableDiffusionXLPipeline'
+  | 'StableDiffusionXLTurboPipeline'
+  | 'StableDiffusionXLInstructPix2PixPipeline'
+  | 'StableDiffusionXLControlNetPipeline'
+  | 'HunyuanDiTPipeline'
+  | 'HunyuanDiTPAGPipeline'
+  | 'HunyuanDiTControlNetPipeline'
+  | 'StableDiffusionXLAdapterPipeline'
+  | 'StableDiffusionXLPAGPipeline'
+  | 'PixArtSigmaPipeline'
+  | 'PixArtSigmaPAGPipeline'
+  | 'Kandinsky3Pipeline'
+  | 'LongCatImagePipeline'
+  | 'LongCatImageEditPipeline'
+  | 'LuminaPipeline'
+  | 'Lumina2Pipeline'
+  | 'OmniGenPipeline'
+  | 'OvisImagePipeline'
+  | 'PRXPipeline'
+  | 'NucleusMoEImagePipeline'
+  | 'AuraFlowPipeline'
+  | 'ChromaPipeline'
+  | 'ChromaImg2ImgPipeline'
+  | 'ChromaInpaintPipeline'
+  | 'CogView3PlusPipeline'
+  | 'CogView4Pipeline'
+  | 'ErnieImagePipeline'
+  | 'ErnieImageModularPipeline'
+  | 'GlmImagePipeline'
+  | 'JoyImageEditPipeline'
+  | 'JoyImageEditPlusPipeline'
+  | 'SanaPipeline'
+  | 'SanaPAGPipeline'
+  | 'SanaSprintPipeline'
+  | 'DreamLitePipeline'
+  | 'DreamLiteMobilePipeline'
+  | 'BuiltinAudioOperation'
+  | 'BuiltinDataOperation'
+  | 'BuiltinImageOperation'
+  | 'BuiltinVideoOperation'
+  | 'SpandrelVideoUpscale'
+  | 'SpandrelImageUpscale';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -123,6 +289,7 @@ export type StudioTemplateId =
   | 'wan_vace_reference_motion'
   | 'wan_vace_grayscale_control'
   | 'ace_step_text_to_audio'
+  | 'minimax_music3_chamber_pop'
   | 'ace_step_audio_variation'
   | 'ace_step_audio_continuation'
   | 'ace_step_audio_repaint'
@@ -165,7 +332,7 @@ export type StudioTemplateId =
   | 'qwen_edit_plus_single_image';
 
 export type WorkspacePanelTab =
-  'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints';
+  'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints' | 'block';
 
 export type StudioResourcePreference = 'recommended' | 'best_quality' | 'faster' | 'lowest_memory';
 
@@ -207,7 +374,15 @@ export type RunReadinessIssue = {
   category: RunReadinessIssueCategory;
   severity: RunReadinessIssueSeverity;
   nodeId?: string;
+  /** Visible field/socket to highlight when a diagnostic has an exact target. */
+  fieldId?: string;
   repoId?: string;
+  /** Exact Hugging Face Hub snapshot request; never a direct file URL. */
+  installOptions?: {
+    revision?: string;
+    files?: string[];
+    repair?: boolean;
+  };
   modelPath?: string;
   message: string;
   details?: string;
@@ -328,36 +503,57 @@ export type StudioGraphRole =
   | 'qwenGenerate'
   | 'qwenInpaintPipeline'
   | 'qwenOutpaintCanvas'
+  | 'outpaintCanvas'
   | 'qwenInpaint'
   | 'prompt'
+  | 'beforeEncode'
+  | 'textEncode'
+  | 'duration'
+  | 'conditionEncode'
+  | 'referenceEncode'
   | 'denoise'
   | 'decode'
+  | 'afterDecode'
   | 'preview'
   | 'loadImage'
+  | 'controlPreprocessor'
   | 'loadControlImage'
   | 'loadMask'
   | 'applyMask'
   | 'imageEmbeddings'
   | 'imageEncode'
+  | 'videoEncode'
   | 'loadLastImage'
   | 'controlnetModel'
   | 'controlnet'
+  | 'loadIPAdapterImage'
+  | 'guider'
+  | 'ipAdapter'
   | 'diffusersQuantization'
   | 'diffusersRecipe'
   | 'wanPipeline'
   | 'loadVideo'
   | 'loadControlVideo'
   | 'loadMaskVideo'
+  | 'loadPoseVideo'
+  | 'loadFaceVideo'
+  | 'loadBackgroundVideo'
   | 'normalizeVideo'
+  | 'normalizeControlVideo'
   | 'alignMaskVideo'
   | 'videoColor'
   | 'wanGenerate'
   | 'videoExport'
   | 'diffusersImagePipeline'
   | 'diffusersImageGenerate'
+  | 'diffusersUnconditionalGenerate'
+  | 'diffusersPredictMap'
   | 'diffusersImageEdit'
   | 'diffusersImageInpaint'
   | 'diffusersImageControl'
+  | 'diffusersImageControlEdit'
+  | 'diffusersImageControlInpaint'
+  | 'diffusersImageLayerDecompose'
   | 'loadAdapter'
   | 'loadAudio'
   | 'loadReferenceAudio'
@@ -365,7 +561,27 @@ export type StudioGraphRole =
   | 'audioGenerate'
   | 'audioLoudnessMatch'
   | 'audioJoin'
-  | 'audioExport';
+  | 'audioOperation'
+  | 'audioExport'
+  | 'dataOperation'
+  | 'dataPreview'
+  | 'dataExport'
+  | 'diffusersThreeDPipeline'
+  | 'diffusersThreeDGenerate'
+  | 'speechModel'
+  | 'transcribeAudio'
+  | 'transcriptPreview'
+  | 'transformersTextModel'
+  | 'transformersTextGenerate'
+  | 'transformersImageTextModel'
+  | 'transformersImageTextGenerate'
+  | 'transformersAnyToAnyModel'
+  | 'transformersAnyToAnyGenerate'
+  | 'transformersTextPreview'
+  | 'imageOperation'
+  | 'imageUpscaler'
+  | 'videoOperation'
+  | 'videoUpscaler';
 
 export type StudioGraphBinding = {
   mode: StudioMode;
@@ -558,11 +774,30 @@ export type UserBlockDefinition = {
   exposedParams: AppModeInput[];
   createdAt: number;
   updatedAt: number;
+  origin?: {
+    schemaVersion: 1;
+    kind: 'hugging_face_cluster_fork' | 'hugging_face_hub_import';
+    provider: 'diffusers' | 'transformers';
+    definitionId?: string;
+    libraryRevision?: string;
+    contentHash?: string;
+    pipelineClass?: string;
+    workflowId?: string;
+    rootBlockDefinitionId?: string;
+    blockContractHash?: string;
+    compositionKind?: 'modiff_graph_snapshot' | 'reviewed_modular_blocks';
+    admissionId?: string;
+    repo?: string;
+    revision?: string;
+    importedAt: number;
+  };
 };
 
 export type StudioFormState = {
   mode: StudioMode;
   modelType: StudioModelType;
+  /** Exact reviewed same-pipeline artifact selected by a registered Block instance. */
+  modelRepo?: string;
   prompt: string;
   negativePrompt: string;
   aspectRatio: StudioAspectRatio;
@@ -572,6 +807,13 @@ export type StudioFormState = {
   randomSeed: boolean;
   steps: number;
   guidanceScale: number;
+  pagScale: number;
+  pagAdaptiveScale: number;
+  processingResolution: number;
+  matchInputResolution: boolean;
+  batchSize: number;
+  eta: number;
+  classLabel: number;
   resourceMode: StudioResourceMode;
   resourcePreference?: StudioResourcePreference;
   confirmedCommunityArtifact?: string;
@@ -592,13 +834,21 @@ export type StudioFormState = {
   outpaintFillColor: string;
   alphaMode: 'ignore' | 'add alpha' | 'remove alpha';
   referenceImages: string[];
+  referenceVideos: string[];
   maskImage: string;
   controlImage: string;
+  controlMode: number;
+  ipAdapterImage: string;
+  ipAdapterScale: number;
   sourceVideo: string;
   maskVideo: string;
   controlVideo: string;
   sourceAudio: string;
   referenceAudio: string;
+  speechLanguage: string;
+  speechTimestamps: 'none' | 'segment' | 'word';
+  speechChunkSeconds: number;
+  speechStrideSeconds: number;
   lyrics: string;
   audioDuration: number;
   extensionDuration: number;
@@ -617,6 +867,8 @@ export type StudioFormState = {
   outputType: 'pil' | 'np' | 'pt';
   maxSequenceLength: number;
   attentionKwargsJson: string;
+  /** Campaign / expert override for diffusersRecipe.attention_backend (e.g. _native_math). */
+  attentionBackend?: string;
 };
 
 export type StudioInpaintContractStatus = {
@@ -645,10 +897,16 @@ export type StudioExecutionProfile = {
   supported_offload_modes: StudioOffloadMode[];
   retry_offload_modes: StudioOffloadMode[];
   expert_quantization_modes?: Exclude<StudioQuantizationMode, 'none'>[];
+  available_expert_quantization_modes?: Exclude<StudioQuantizationMode, 'none'>[];
   max_low_memory_side?: number | null;
   max_low_memory_steps?: number | null;
   live_proof: boolean;
   optional_runtime_delivery?: 'base' | 'optional_overlay';
+  optional_runtime_platform_deliveries?: Array<{
+    platform: 'linux' | 'macos' | 'windows';
+    machine: 'arm64' | 'x86_64';
+    delivery: 'base' | 'optional_overlay';
+  }>;
   optional_runtime_profiles?: string[];
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   expert_cuda_policy?: StudioExpertCudaPolicy;
@@ -673,29 +931,156 @@ export type StudioExecutionSpec = {
   bindings: Array<[StudioGraphRole, string, string]>;
   autoFields: string[];
   actions: [];
+  /** Declared non-media sink roles retained for execution/audit side effects. */
+  auxiliaryTerminalRoles?: StudioGraphRole[];
   contentHash: string;
+};
+
+export type StudioTaskTemplateRequiredMedia = {
+  kind: 'image' | 'video' | 'audio';
+  field:
+    | 'referenceImages'
+    | 'lastImage'
+    | 'maskImage'
+    | 'controlImage'
+    | 'sourceVideo'
+    | 'referenceVideos'
+    | 'maskVideo'
+    | 'controlVideo'
+    | 'poseVideo'
+    | 'faceVideo'
+    | 'backgroundVideo'
+    | 'sourceAudio'
+    | 'referenceAudio';
+  minimumCount: number;
+};
+
+export type StudioTaskTemplateContract = {
+  schemaVersion: 1;
+  canonicalizationVersion: 1;
+  id: string;
+  modelType: StudioModelType;
+  mode: StudioMode;
+  mediaKind: 'image' | 'video' | 'audio' | 'json';
+  executionProfileId: string;
+  executionSpecId: string;
+  executionSpecContentHash: string;
+  loaderModule: string;
+  loaderAction: string;
+  loaderRole: StudioGraphRole;
+  pipelineClass: string;
+  defaultRepo: string;
+  loaderRepositories: string[];
+  requiredMedia: StudioTaskTemplateRequiredMedia[];
+  auxiliaryTerminalRoles: StudioGraphRole[];
+  output: {
+    mediaKind: 'image' | 'video' | 'audio' | 'json';
+    role: StudioGraphRole;
+    nodeKey: string;
+    inputHandle: string;
+  };
+  qualificationStatus: string;
+  galleryEligible: boolean;
+  contentHash: string;
+};
+
+export type StudioArtifactSelection = {
+  modes: StudioMode[];
+  repo: string;
+  revision: string;
+  downloadFiles: string[];
+  label?: string;
 };
 
 export type StudioModelProfile = {
   modelType: StudioModelType;
   label: string;
   displayName: string;
-  family: 'Z-Image' | 'Qwen Image' | 'Wan Video' | 'LTX Video' | 'ACE Audio' | 'FLUX Image';
+  family:
+    | 'Anima'
+    | 'Helios'
+    | 'HunyuanVideo 1.5'
+    | 'Cosmos 3'
+    | 'MiniMax H3'
+    | 'Z-Image'
+    | 'Qwen Image'
+    | 'Wan Video'
+    | 'LTX Video'
+    | 'Stable Video Diffusion'
+    | 'AnimateDiff'
+    | 'CogVideoX'
+    | 'Allegro'
+    | 'Latte'
+    | 'Mochi'
+    | 'SANA Video'
+    | 'ACE Audio'
+    | 'Stable Audio'
+    | 'MiniMax Music 3'
+    | 'LongCat AudioDiT'
+    | 'AudioLDM2'
+    | 'Shap-E'
+    | 'FLUX Image'
+    | 'Stable Diffusion XL'
+    | 'Hunyuan-DiT'
+    | 'DDPM'
+    | 'DDIM'
+    | 'Consistency Models'
+    | 'Stable Diffusion 1.x'
+    | 'Latent Consistency Models'
+    | 'PixArt Sigma'
+    | 'Kandinsky'
+    | 'LongCat Image'
+    | 'Lumina'
+    | 'OmniGen'
+    | 'Ovis Image'
+    | 'PRX'
+    | 'Nucleus Image'
+    | 'AuraFlow'
+    | 'Chroma'
+    | 'CogView3'
+    | 'CogView4'
+    | 'ERNIE Image'
+    | 'GLM-Image'
+    | 'JoyAI Image'
+    | 'Sana'
+    | 'DreamLite'
+    | 'Marigold'
+    | 'SmolLM'
+    | 'SmolVLM'
+    | 'Janus'
+    | 'Whisper'
+    | 'Wav2Vec2'
+    | 'Built-in Media'
+    | 'Real-ESRGAN';
   catalogVisibility?: 'default' | 'workflowOnly' | 'internal';
   surfaceCategory?: 'Image' | 'Image Edit' | 'Control' | 'Video' | 'Audio' | 'Utility';
-  runtimeKind?: 'diffusers' | 'diffusers_accelerated' | 'experimental_diffusers' | 'unsupported';
+  runtimeKind?:
+    | 'diffusers'
+    | 'diffusers_accelerated'
+    | 'experimental_diffusers'
+    | 'transformers'
+    | 'spandrel'
+    | 'builtin'
+    | 'unsupported';
   isDiffusersBacked?: boolean;
   acceleratorStrategy?: string;
   specializedReason?: string;
   defaultRepo: string;
   artifactLabel?: string;
+  artifactKind?: 'model' | 'spandrel_upscaler' | 'builtin';
+  artifactInstallRequired?: boolean;
   alternateArtifact?: string;
   defaultDtype: StudioFormState['dtype'];
   defaultSize: { width: number; height: number; aspectRatio: StudioAspectRatio };
   recommendedSteps: number;
   recommendedGuidance: number;
+  recommendedPagScale?: number;
+  recommendedPagAdaptiveScale?: number;
+  recommendedStrength?: number;
+  recommendedMaxSequenceLength?: number;
   guidanceLabel: string;
   supportsNegativePrompt?: boolean;
+  supportsPrompt?: boolean;
   supportsImageInput: boolean;
   supportsMask: boolean;
   supportsMultiImage: boolean;
@@ -706,11 +1091,15 @@ export type StudioModelProfile = {
   supportsVideoMask?: boolean;
   supportsAudioInput?: boolean;
   outputKind?: 'image' | 'video' | 'audio' | 'json';
+  outputMedia?: Array<'image' | 'video' | 'audio' | 'json'>;
+  modeOutputKinds?: Partial<Record<StudioMode, 'image' | 'video' | 'audio' | 'json'>>;
   recommendedFrames?: number;
   recommendedFps?: number;
   recommendedDuration?: number;
   recommendedSampleRate?: number;
   conditioningScale?: number;
+  layerCount?: { default: number; min: number; max: number };
+  layerResolutions?: number[];
   inpaintContract?: StudioInpaintContractStatus;
   offloadSupport: {
     modes: StudioOffloadMode[];
@@ -735,11 +1124,40 @@ export type StudioModelProfile = {
   mediaKind?: 'image' | 'video' | 'audio' | 'json';
   supportTier?: 'supported' | 'experimental';
   pipelineClasses?: string[];
+  revisionCandidates?: string[];
+  artifactSelections?: StudioArtifactSelection[];
+  modeDefaults?: Partial<
+    Record<
+      StudioMode,
+      Partial<Pick<StudioFormState, 'width' | 'height' | 'steps' | 'guidanceScale' | 'numFrames' | 'fps'>>
+    >
+  >;
   executionProfiles?: StudioExecutionProfile[];
   studioExecutionSpecs?: StudioExecutionSpec[];
   studioExecutionSpecSchemaVersion?: 1;
   studioExecutionSpecModes?: StudioMode[];
+  taskTemplateContracts?: StudioTaskTemplateContract[];
+  taskTemplateContractSchemaVersion?: 1;
+  taskTemplateContractModes?: StudioMode[];
   runnableModes?: StudioMode[];
+  executionStatus?: 'expert_only' | 'supported' | 'supported_with_model';
+  qualificationStatus?: string;
+  qualifiedModes?: StudioMode[];
+  autoEligible?: boolean;
+  templateEligible?: boolean;
+  galleryEligible?: boolean;
+  liveProof?: boolean;
+  license?: string;
+  licenseCompliance?: {
+    state: 'product_and_user_review_required';
+    codeLicense: string;
+    weightsLicense: string;
+    noticePath: string;
+    useRestrictionsPresent: boolean;
+    distributionAndHostedUseCarryDuties: boolean;
+    sourceExecutable: boolean;
+    liveExecutionQualified: boolean;
+  };
   downloadFiles?: string[];
   inputContracts?: Partial<Record<StudioMode, StudioModeRequirement>>;
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
@@ -750,16 +1168,38 @@ export type StudioModelRequirement = {
   label: string;
   repo: string;
   revision?: string;
-  kind: 'base' | 'controlnet' | 'adapter';
+  downloadFiles?: string[];
+  kind: 'base' | 'controlnet' | 't2i_adapter' | 'adapter' | 'safety_checker';
   requiredForModes?: StudioMode[];
   description?: string;
 };
 
 export type StudioModeRequirement = {
   modelRequirements?: StudioModelRequirement[];
-  requiredImages?: Array<'referenceImages' | 'maskImage' | 'controlImage'>;
-  requiredVideos?: Array<'sourceVideo' | 'maskVideo' | 'controlVideo'>;
+  requiredImages?: Array<'referenceImages' | 'lastImage' | 'maskImage' | 'controlImage' | 'ipAdapterImage'>;
+  requiredVideos?: Array<
+    'sourceVideo' | 'referenceVideos' | 'maskVideo' | 'controlVideo' | 'poseVideo' | 'faceVideo' | 'backgroundVideo'
+  >;
   requiredAudio?: Array<'sourceAudio' | 'referenceAudio'>;
+  minimumCounts?: Partial<
+    Record<
+      | 'referenceImages'
+      | 'lastImage'
+      | 'maskImage'
+      | 'controlImage'
+      | 'ipAdapterImage'
+      | 'sourceVideo'
+      | 'referenceVideos'
+      | 'maskVideo'
+      | 'controlVideo'
+      | 'poseVideo'
+      | 'faceVideo'
+      | 'backgroundVideo'
+      | 'sourceAudio'
+      | 'referenceAudio',
+      number
+    >
+  >;
   note?: string;
 };
 
@@ -849,7 +1289,7 @@ export type StudioTemplateWorkflowBlockSettings = {
   };
   soundtrack?: {
     model: StudioTemplateModelArtifact;
-    pipelineClass: 'AceStepPipeline' | 'StableAudioPipeline';
+    pipelineClass: 'AceStepPipeline' | 'StableAudioPipeline' | 'LongCatAudioDiTPipeline' | 'AudioLDM2Pipeline';
     prompt: string;
     negativePrompt?: string;
     durationSeconds: number;
@@ -950,6 +1390,7 @@ export type StudioTemplateInputFormField =
   | 'referenceImages'
   | 'maskImage'
   | 'controlImage'
+  | 'ipAdapterImage'
   | 'sourceVideo'
   | 'maskVideo'
   | 'controlVideo'
@@ -1204,8 +1645,18 @@ export type StudioRunContext = {
   variationLabel?: string;
 };
 
+export type StudioEncodedVideoMetadata = {
+  source: 'encoded-file';
+  width?: number;
+  height?: number;
+  frame_count?: number;
+  fps?: number;
+  duration_seconds?: number;
+};
+
 export type StudioOutputMediaItem = {
   index: number;
+  mediaMetadata?: StudioEncodedVideoMetadata;
   role?: string;
   label?: string;
   value?: unknown;
@@ -1277,6 +1728,7 @@ export type StudioOutputProvenance = {
 };
 
 export type StudioOutput = {
+  resolvedExecutionInputs?: import('./resolvedExecutionInputs').ResolvedExecutionInputs;
   id: string;
   clientRunId?: string;
   runInputHash?: string;

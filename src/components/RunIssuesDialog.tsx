@@ -65,6 +65,7 @@ export default function RunIssuesDialog() {
   const cleanupRunning = cleanupState === 'running';
   const hasCleanupIssue = issues.some((item) => item.action === 'cleanup_gpu');
   const nextCandidate = autoResourcePlan?.nextCandidate;
+  const workerExitedUnexpectedly = failure?.errorCode === 'backend_worker_exited';
   const failureTargetsActiveWorkflow = runtimeFailureTargetsActiveWorkflow(failure, failureRunContext, {
     activeWorkflowTabId,
     currentRunContext,
@@ -171,9 +172,10 @@ export default function RunIssuesDialog() {
     closeFailure();
   };
 
-  const handleInstall = async (repoId: string) => {
+  const handleInstall = async (item: RunReadinessIssue) => {
+    if (!item.repoId) return;
     try {
-      await installHfModel(repoId, sid);
+      await installHfModel(item.repoId, sid, item.installOptions);
     } catch (error) {
       console.error(error);
     }
@@ -302,7 +304,7 @@ export default function RunIssuesDialog() {
                   tone="primary"
                   icon={<Download size={15} />}
                   onClick={() => {
-                    void handleInstall(item.repoId!);
+                    void handleInstall(item);
                   }}
                 >
                   Install
@@ -381,9 +383,9 @@ export default function RunIssuesDialog() {
               </ModiffButton>
             ) : null}
             {failure?.oom ? cleanupButton : null}
-            {failure?.oom && failureTargetsActiveWorkflow ? (
+            {(failure?.oom || workerExitedUnexpectedly) && failureTargetsActiveWorkflow ? (
               <ModiffButton icon={<Gauge size={15} />} onClick={applyFailureLowVramPreset} disabled={cleanupRunning}>
-                Low-VRAM preset
+                {workerExitedUnexpectedly ? 'Apply lower-memory settings' : 'Low-VRAM preset'}
               </ModiffButton>
             ) : null}
             {failure?.nodeId && failureTargetsActiveWorkflow ? (
@@ -400,7 +402,10 @@ export default function RunIssuesDialog() {
       >
         {failure && (
           <div>
-            <IssueCard tone={failure.oom ? 'warning' : 'error'} title={failureTitle(failure)}>
+            <IssueCard
+              tone={failure.oom || workerExitedUnexpectedly ? 'warning' : 'error'}
+              title={failureTitle(failure)}
+            >
               <p className="break-words">{failureUserMessage(failure)}</p>
               {failure.message.trim() && failure.message.trim() !== failureUserMessage(failure) ? (
                 <p
@@ -415,6 +420,14 @@ export default function RunIssuesDialog() {
                   {failure.recoveryHint}
                 </p>
               )}
+              {failure.memorySummary && (
+                <p
+                  className="mt-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 text-xs text-modiff-subtle-text"
+                  data-testid="run-failure-memory-summary"
+                >
+                  {failure.memorySummary}
+                </p>
+              )}
             </IssueCard>
           </div>
         )}
@@ -425,6 +438,7 @@ export default function RunIssuesDialog() {
 
 function failureTitle(failure: RuntimeFailure) {
   if (failure.oom || failure.category === 'oom') return 'The run ran out of available accelerator memory';
+  if (failure.errorCode === 'backend_worker_exited') return 'The native model worker stopped unexpectedly';
   if (failure.category === 'missing_model') return 'A required model is missing';
   if (failure.category === 'missing_dependency') return 'A backend dependency is missing';
   if (failure.category === 'backend_unavailable') return 'The backend became unavailable';
@@ -438,6 +452,9 @@ function failureUserMessage(failure: RuntimeFailure) {
   if (failure.category === 'missing_model') return 'Install or select the model needed by this workflow.';
   if (failure.category === 'missing_dependency') return 'Complete the required setup, then try the run again.';
   if (failure.category === 'backend_unavailable') return 'Reconnect to MoDiff, then check the queue before retrying.';
+  if (failure.errorCode === 'backend_worker_exited') {
+    return 'The accelerator or native model runtime ended the backend process before Python could return a normal error. MoDiff recovered the failed run from its supervisor instead of leaving it active.';
+  }
   return 'The generation could not finish. Check the highlighted step and try again.';
 }
 

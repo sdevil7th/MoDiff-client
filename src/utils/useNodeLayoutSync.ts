@@ -23,12 +23,17 @@ export function useNodeLayoutSync(nodeId: string, ref: RefObject<HTMLElement | n
     if (typeof ResizeObserver === 'undefined') return undefined;
 
     const observer = new ResizeObserver(() => scheduleNodeLayoutSync());
-    observer.observe(element);
+    // React can mount passive effects while React Flow is delivering a node
+    // measurement. Registering a new (shallower) observation in that delivery
+    // produces a skipped-notification loop error even with a deferred callback.
+    // Both registration and mutations belong outside that delivery cycle.
+    const observeFrame = window.requestAnimationFrame(() => observer.observe(element));
     const observedEvents = ['load', 'error', 'loadeddata', 'loadedmetadata', 'transitionend'] as const;
     observedEvents.forEach((eventName) => {
       element.addEventListener(eventName, scheduleNodeLayoutSync, true);
     });
     return () => {
+      window.cancelAnimationFrame(observeFrame);
       observer.disconnect();
       observedEvents.forEach((eventName) => {
         element.removeEventListener(eventName, scheduleNodeLayoutSync, true);

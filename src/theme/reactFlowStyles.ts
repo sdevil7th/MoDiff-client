@@ -103,6 +103,18 @@ export const reactFlowBaseCss = `
   filter: saturate(0.7);
 }
 
+/*
+ * An expanded Block is a visual boundary, not an opaque canvas layer. XYFlow
+ * writes pointer-events inline on selectable node wrappers; without an
+ * important override that large wrapper steals pointer input from ordinary
+ * top-level nodes which happen to overlap its rectangle. The Block frame
+ * explicitly opts its header and public connector tray back into pointer
+ * events, while projected internal nodes remain ordinary sibling nodes.
+ */
+.react-flow__node.modiff-block-v2-expanded-root {
+  pointer-events: none !important;
+}
+
 .react-flow__edge.modiff-graph-fix-ghost {
   pointer-events: none;
 }

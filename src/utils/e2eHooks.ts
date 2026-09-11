@@ -2,7 +2,8 @@ import { useFlowStore, type APIGraphExport, type CustomNodeType } from '../store
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import { useHuggingFaceClusterRuntimeStore } from '../stores/useHuggingFaceClusterRuntimeStore';
+import { captureWorkflowOperationContext, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import {
@@ -25,7 +26,10 @@ import {
 import { handleWebsocketMessage } from '../stores/websocketMessageHandler';
 import { inspectCurrentGraph, validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
+import { applyHuggingFaceClusterRuntimeHints } from '../studio/huggingFaceClusterRuntime';
 import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
+import { getFormDefaultsForMode } from '../studio/modelProfiles';
+import type { StudioTaskTemplateSkeleton } from '../studio/taskTemplateContracts';
 import { materializeTemplateDefaultInputs } from '../studio/templateInputs';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { UserBlockDefinition } from '../studio/types';
@@ -84,19 +88,24 @@ type ControlledWorkflowBlockForTest = 'upscaler' | 'video_sequence' | 'quality_v
 type ModiffE2EHooks = {
   getState: () => unknown;
   listTemplates: (includePlanning?: boolean) => GalleryTemplateSummary[];
+  listTaskTemplateSkeletons: () => StudioTaskTemplateSkeleton[];
   applyTemplate: (templateId: StudioTemplateId, formOverrides?: Partial<StudioFormState>) => Promise<void>;
+  applyTaskTemplateSkeleton: (templateId: string, formOverrides?: Partial<StudioFormState>) => Promise<void>;
   applyControlledWorkflowBlockForTest: (
     block: ControlledWorkflowBlockForTest,
     settingsTemplateId: StudioTemplateId,
   ) => Promise<void>;
+  refreshTaskTemplateContracts: () => Promise<number>;
   refreshModelIndexes: () => Promise<void>;
   installHfModel: (repoId: string, repair?: boolean, files?: string[]) => Promise<unknown>;
   runActiveTemplate: () => Promise<GalleryRunResult>;
   runPreparedTemplateGraph: (graph: APIGraphExport) => Promise<GalleryRunResult>;
   applyNodeDefinitionForAction: (action: string, params: Record<string, unknown>) => boolean;
   inspectCurrentGraph: () => unknown;
+  inspectRunReadiness: () => unknown;
   inspectStudioGraphBindingDivergence: () => unknown;
   exportWorkflowGraph: () => unknown;
+  exportAuthorizedApiGraph: () => unknown;
   prepareWorkflowGraphForExport: () => Promise<unknown>;
   arrangeWorkflowGraphSnapshot: (graph: {
     nodes?: CustomNodeType[];
@@ -127,6 +136,7 @@ type ModiffE2EHooks = {
     assets: Array<Partial<StudioImportedAsset> & { id: string; url: string; name: string }>,
   ) => void;
   openWorkspacePanelForTest: (tab: WorkspacePanelTab) => void;
+  rehydrateActiveWorkflowCanvasForTest: () => void;
   setWorkspacePanelOpenForTest: (open: boolean) => void;
   sendWebsocketMessage: (message: unknown) => void;
 };
@@ -145,6 +155,7 @@ declare global {
 // the selected template and Auto contracts unchanged.
 let pendingGalleryFormOverrides: Partial<StudioFormState> = {};
 let managedGraphFinalizationForTest: Promise<void> | null = null;
+const GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS = 120_000;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -164,6 +175,39 @@ function listTemplates(includePlanning = false): GalleryTemplateSummary[] {
     workflowBlocks: [...(template.workflowBlocks ?? [])],
     runtimeReuseKey: template.runtimeReuseKey,
   }));
+}
+
+function listTaskTemplateSkeletons() {
+  return cloneJson(useNodesStore.getState().studioTaskTemplateSkeletons);
+}
+
+async function applyTaskTemplateSkeleton(templateId: string, formOverrides: Partial<StudioFormState> = {}) {
+  await useNodesStore.getState().fetchStudioModelCapabilities();
+  const template = useNodesStore
+    .getState()
+    .studioTaskTemplateSkeletons.find((candidate) => candidate.id === templateId);
+  if (!template) throw new Error(`Unknown Studio task-template skeleton: ${templateId}`);
+
+  if (!useStudioStore.getState().workflowCanvasHydrated) {
+    useStudioStore.getState().hydrateActiveWorkflowCanvas();
+  }
+  setGraphScenarioForTest('empty');
+  const form = {
+    ...getFormDefaultsForMode(template.mode, template.modelType),
+    ...formOverrides,
+  };
+  useStudioStore.getState().updateForm(form);
+  const context = captureWorkflowOperationContext();
+  await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
+  const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+  if (!autoReady) {
+    throw new Error(
+      useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
+    );
+  }
+  await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
+  pendingGalleryFormOverrides = { ...formOverrides };
+  useStudioStore.getState().saveActiveWorkflowTab(true);
 }
 
 async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partial<StudioFormState> = {}) {
@@ -196,35 +240,56 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
     startedAt: Date.now(),
   });
   try {
-    await createOrUpdateStudioGraph(useStudioStore.getState().form);
-    const coreFinalized = await waitForStudioGraphFinalization(30_000);
-    if (!coreFinalized) {
-      throw new Error('The template graph did not finish finalizing within 30 seconds.');
+    const context = captureWorkflowOperationContext();
+    // Materialize the loader graph before validating Auto's selected target.
+    // The app-wide Auto sync is paused by this template transition while the
+    // caller owns the initial graph and the subsequent plan commit.
+    await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
+    const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+    if (!autoReady) {
+      throw new Error(
+        useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
+      );
     }
+    await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
     for (const block of template.workflowBlocks ?? []) {
       if (block === 'lora') {
-        await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora);
+        await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora, {
+          graphPrepared: true,
+          workflowContext: context,
+        });
       } else if (block === 'upscaler') {
-        await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler);
+        await addUpscaleWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.upscaler, {
+          graphPrepared: true,
+          workflowContext: context,
+        });
       } else if (block === 'video_sequence') {
         await addVideoSequenceWorkflowBlock(
           useStudioStore.getState().form,
           template.workflowBlockSettings?.videoSequence,
+          { graphPrepared: true, workflowContext: context },
         );
       } else if (block === 'quality_video_sequence') {
         await addQualityVideoSequenceWorkflowBlock(
           useStudioStore.getState().form,
           template.workflowBlockSettings?.qualityVideoSequence,
+          { graphPrepared: true, workflowContext: context },
         );
       } else if (block === 'soundtrack') {
-        await addSoundtrackWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.soundtrack);
+        await addSoundtrackWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.soundtrack, {
+          graphPrepared: true,
+          workflowContext: context,
+        });
       } else {
-        await addLyricVideoWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lyricVideo);
+        await addLyricVideoWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lyricVideo, {
+          graphPrepared: true,
+          workflowContext: context,
+        });
       }
     }
-    const blocksFinalized = await waitForStudioGraphFinalization(30_000);
+    const blocksFinalized = await waitForStudioGraphFinalization(GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS, context);
     if (!blocksFinalized) {
-      throw new Error('The template workflow blocks did not finish finalizing within 30 seconds.');
+      throw new Error('The template workflow blocks did not finish finalizing within 120 seconds.');
     }
     const finalization = useStudioStore.getState().graphFinalization;
     if (finalization?.status === 'error') {
@@ -232,7 +297,15 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
     }
     await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
     await useFlowStore.getState().arrangeGraph({ history: false });
-    validateStudioGraphReadyForRun(useStudioStore.getState().form);
+    try {
+      validateStudioGraphReadyForRun(useStudioStore.getState().form);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'Graph changed.') throw error;
+      if (!syncStudioGraphDefinition(useStudioStore.getState().form)) {
+        throw new Error('The template graph schema could not be revalidated after layout.');
+      }
+      validateStudioGraphReadyForRun(useStudioStore.getState().form);
+    }
     useStudioStore.getState().saveActiveWorkflowTab(true);
   } catch (error) {
     if (useFlowStore.getState().nodes.length === 0) {
@@ -291,14 +364,22 @@ async function runActiveTemplate(): Promise<GalleryRunResult> {
   // A managed graph is created in two phases: its skeleton is synchronous, while
   // dynamic fields and edges finish asynchronously. Waiting here matters even
   // after applyTemplate(), because this call can schedule a fresh graph update.
-  await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  try {
+    await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'Graph changed.') throw error;
+    if (!syncStudioGraphDefinition(useStudioStore.getState().form)) {
+      throw new Error('The template graph schema could not be revalidated before run.');
+    }
+    validateStudioGraphReadyForRun(useStudioStore.getState().form);
+  }
   const autoReady = await ensureStudioAutoPlanReadyForRun();
   if (!autoReady) {
     throw new Error(
       useStudioStore.getState().lastError ?? 'Auto could not choose a runnable local plan for this workflow.',
     );
   }
-  if (Object.keys(pendingGalleryFormOverrides).length > 0) {
+  if (Object.keys(pendingGalleryFormOverrides).length > 0 && useStudioStore.getState().form.resourceMode === 'auto') {
     const autoPlan = useStudioStore.getState().autoResourcePlan;
     const selectedCandidate = autoPlan?.selectedCandidate;
     const generationOverrides = Object.fromEntries(
@@ -336,7 +417,14 @@ async function runActiveTemplate(): Promise<GalleryRunResult> {
   // offload settings. Gallery probe overrides may then restore bounded
   // generation values. Both changes schedule a managed-graph finalization, so
   // validate only after the final graph is ready as well.
-  await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  try {
+    await ensureStudioGraphReadyForRun(useStudioStore.getState().form);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'Graph changed.') throw error;
+    if (!syncStudioGraphDefinition(useStudioStore.getState().form)) {
+      throw new Error('The template graph schema could not be revalidated after Auto.');
+    }
+  }
   const validation = validateCurrentRun({
     sid,
     isConnected: websocket.isConnected,
@@ -794,6 +882,7 @@ function seedStudioOutputsForTest(outputs: Array<Partial<StudioOutput> & { id: s
       variationLabel: output.variationLabel,
       provenance: output.provenance,
       backendProvenance: output.backendProvenance,
+      resolvedExecutionInputs: output.resolvedExecutionInputs,
       backendImagePath: output.backendImagePath,
       backendMediaPath: output.backendMediaPath,
       mediaHash: output.mediaHash,
@@ -858,16 +947,20 @@ export function installE2EHooks() {
               : useFlowStore.getState().nodes.length,
           nodes: useFlowStore.getState().nodes.map((node) => ({
             id: node.id,
+            type: node.type,
+            dataType: node.data.type,
             parentId: node.parentId,
             selected: node.selected,
             position: node.position,
             module: node.data.module,
             action: node.data.action,
             label: node.data.label,
+            category: node.data.category,
             params: Object.fromEntries(
               Object.entries(node.data.params).map(([key, param]) => [
                 key,
                 {
+                  label: param.label,
                   value: param.value,
                   artifacts: param.artifacts,
                   display: param.display,
@@ -887,6 +980,15 @@ export function installE2EHooks() {
             studioRole: node.data.studioRole,
             studioOwned: node.data.studioOwned,
             studioAuxiliary: node.data.studioAuxiliary,
+            huggingFaceClusterRole: node.data.huggingFaceClusterRole,
+            huggingFaceClusterInstance: node.data.huggingFaceClusterInstance,
+            huggingFaceClusterInstanceId: node.data.huggingFaceClusterInstanceId,
+            huggingFaceClusterExecutionRole: node.data.huggingFaceClusterExecutionRole,
+            huggingFaceClusterExecutionAdmissionId: node.data.huggingFaceClusterExecutionAdmissionId,
+            blockInstanceV2: node.data.blockInstanceV2,
+            blockProjectionOwnerId: node.data.blockProjectionOwnerId,
+            blockProjectionNodeId: node.data.blockProjectionNodeId,
+            blockProjectionPortBindings: node.data.blockProjectionPortBindings,
           })),
           edges: useFlowStore.getState().edges.map((edge) => ({
             id: edge.id,
@@ -894,6 +996,7 @@ export function installE2EHooks() {
             target: edge.target,
             sourceHandle: edge.sourceHandle,
             targetHandle: edge.targetHandle,
+            blockProjectionOwnerId: edge.data?.blockProjectionOwnerId,
           })),
           historyPast: useFlowStore.getState().historyPast.length,
           historyFuture: useFlowStore.getState().historyFuture.length,
@@ -920,6 +1023,8 @@ export function installE2EHooks() {
           modelCacheDiagnostics: useNodesStore.getState().modelCacheDiagnostics,
           studioModelCapabilities: useNodesStore.getState().studioModelCapabilities,
           hfDownloadProgress: useNodesStore.getState().hfDownloadProgress,
+          optionalRuntimeCatalog: useNodesStore.getState().optionalRuntimeCatalog,
+          discoveryRequests: useNodesStore.getState().discoveryRequests,
         },
         tasks: {
           currentTask: useTaskStore.getState().currentTask,
@@ -930,6 +1035,7 @@ export function installE2EHooks() {
         settings: {
           rightPanelOpen: useSettingsStore.getState().isRightPanelOpen,
           rightPanelTab: useSettingsStore.getState().rightPanelTab,
+          studioViewMode: useSettingsStore.getState().studioViewMode,
         },
         runIssues: {
           issues: useRunIssueStore.getState().issues,
@@ -941,19 +1047,65 @@ export function installE2EHooks() {
           sid: useWebsocketStore.getState().sid,
           isConnected: useWebsocketStore.getState().isConnected,
         },
+        huggingFaceClusterRuntime: {
+          authorities: useHuggingFaceClusterRuntimeStore.getState().authorities,
+        },
       }),
     listTemplates,
+    listTaskTemplateSkeletons,
     applyTemplate,
+    applyTaskTemplateSkeleton,
     applyControlledWorkflowBlockForTest,
-    refreshModelIndexes: () => useNodesStore.getState().refreshModelIndexes(true),
+    refreshTaskTemplateContracts: async () => {
+      await useNodesStore.getState().fetchStudioModelCapabilities();
+      return useNodesStore.getState().studioTaskTemplateSkeletons.length;
+    },
+    refreshModelIndexes: (refresh = true) => useNodesStore.getState().refreshModelIndexes(refresh),
+    inspectDiscovery: () => {
+      const nodes = useNodesStore.getState();
+      const cache = Array.isArray(nodes.hfCache) ? nodes.hfCache : [];
+      const ids = cache.map((item) =>
+        item && typeof item === 'object' && 'id' in item ? String(item.id) : String(item),
+      );
+      return {
+        hfCacheCount: cache.length,
+        hfCacheStatus: nodes.discoveryRequests.hfCache.status,
+        optionalRuntimesStatus: nodes.discoveryRequests.optionalRuntimes.status,
+        capabilitiesStatus: nodes.discoveryRequests.capabilities.status,
+        processLoadStatus: nodes.optionalRuntimeCatalog?.processLoadStatus ?? null,
+        profiles: (nodes.optionalRuntimeCatalog?.profiles ?? []).map((profile) => ({
+          id: profile.id,
+          overlayStatus: profile.overlayStatus,
+          cutoverReady: profile.cutoverReady,
+          contractState: profile.contractState,
+          status: profile.status,
+        })),
+        sampleCacheIds: ids.slice(0, 8),
+        hasLcm: ids.some((id) => id.includes('LCM_Dreamshaper_v7')),
+      };
+    },
     installHfModel: (repoId: string, repair = false, files: string[] = []) =>
       useNodesStore.getState().installHfModel(repoId, useWebsocketStore.getState().sid, { repair, files }),
     runActiveTemplate,
     runPreparedTemplateGraph,
     applyNodeDefinitionForAction,
     inspectCurrentGraph: () => cloneJson(inspectCurrentGraph()),
+    inspectRunReadiness: () =>
+      cloneJson(
+        validateCurrentRun({
+          sid: useWebsocketStore.getState().sid,
+          isConnected: useWebsocketStore.getState().isConnected,
+          includeStudio: true,
+          showDialog: false,
+        }),
+      ),
     inspectStudioGraphBindingDivergence: () => cloneJson(inspectStudioGraphBindingDivergence()),
     exportWorkflowGraph: () => cloneJson(useFlowStore.getState().toObject()),
+    exportAuthorizedApiGraph: () => {
+      const sid = useWebsocketStore.getState().sid;
+      if (!sid) throw new Error('Backend session is unavailable.');
+      return cloneJson(applyHuggingFaceClusterRuntimeHints(useFlowStore.getState().exportGraph(sid)));
+    },
     prepareWorkflowGraphForExport,
     arrangeWorkflowGraphSnapshot,
     setGraphScenarioForTest,
@@ -986,6 +1138,7 @@ export function installE2EHooks() {
     seedStudioOutputsForTest,
     seedImportedAssetsForTest,
     openWorkspacePanelForTest,
+    rehydrateActiveWorkflowCanvasForTest: () => useStudioStore.getState().hydrateActiveWorkflowCanvas(),
     setWorkspacePanelOpenForTest,
     sendWebsocketMessage,
   };

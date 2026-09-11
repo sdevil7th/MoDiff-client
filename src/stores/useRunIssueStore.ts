@@ -91,12 +91,17 @@ export const useRunIssueStore = create<RunIssueState & RunIssueActions>((set) =>
       };
       const taskId = normalizedTaskId(nextFailure.taskId);
       if (taskId) nextFailure.taskId = taskId;
+      // Queue reconciliation can precede websocket failure details. A passive
+      // update must not dismiss the dialog the user just opened, nor replace
+      // it with a different workflow's background failure.
+      const keepOpenSelection = !open && state.failureDialogOpen && state.failure;
+      const sameSelectedTask = taskId && normalizedTaskId(state.failure?.taskId) === taskId;
       return {
-        failure: nextFailure,
+        failure: keepOpenSelection && !sameSelectedTask ? state.failure : nextFailure,
         failuresByTaskId: taskId
           ? withBoundedFailure(state.failuresByTaskId, taskId, nextFailure)
           : state.failuresByTaskId,
-        failureDialogOpen: open,
+        failureDialogOpen: open || Boolean(keepOpenSelection),
       };
     }),
   selectFailure: (taskId) =>

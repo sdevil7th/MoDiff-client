@@ -10,6 +10,7 @@ import {
   canonicalWorkflowContract,
   findCanonicalWorkflowRecord,
 } from './release-contract-core.mjs';
+import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -75,8 +76,8 @@ function findProofRuns(value, found = []) {
 
 function readLatestProof(entry) {
   if (!entry?.provenancePath) return null;
-  const path = join(CLIENT_ROOT, 'public', String(entry.provenancePath).replace(/^\/+/, ''));
-  if (!existsSync(path)) return null;
+  const path = findGalleryEvidencePath(CLIENT_ROOT, BACKEND_ROOT, entry.provenancePath);
+  if (!path) return null;
   const provenance = readJson(path);
   return (
     findProofRuns(provenance)
@@ -329,7 +330,7 @@ const workflowRecords = workflowManifest.workflows.map((workflow) => {
 const vite = await createServer({
   root: CLIENT_ROOT,
   appType: 'custom',
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
 });
 
 try {
@@ -370,22 +371,15 @@ try {
     const galleryReceipt = receipt(template.id, galleryEntry, proof);
     const currentCatalogTemplateLockHash = getTemplateLockHash(template);
     const currentPromptSettingsHash = getPromptSettingsHash(getTemplateLockedSettings(template));
-    const matchingDirectReceipts = (directReceiptsByTemplate.get(template.id) ?? []).filter(
-      (candidate) =>
-        candidate.catalogTemplateLockHash === currentCatalogTemplateLockHash &&
-        candidate.promptSettingsHash === currentPromptSettingsHash,
-    );
-    const historicalCandidates = [...matchingDirectReceipts, galleryReceipt]
+    const historicalCandidates = [...(directReceiptsByTemplate.get(template.id) ?? []), galleryReceipt]
       .filter(Boolean)
-      .filter(
-        (candidate) =>
-          candidate.catalogTemplateLockHash === currentCatalogTemplateLockHash &&
-          candidate.promptSettingsHash === currentPromptSettingsHash,
-      )
       .sort((left, right) => String(left.capturedAt ?? '').localeCompare(String(right.capturedAt ?? '')));
     const assessedHistoricalCandidates = historicalCandidates.map((candidate) => ({
       candidate,
-      assessment: assessHistoricalEvidence(candidate, workflow?.contract ?? null, backendNodeRegistry),
+      assessment: assessHistoricalEvidence(candidate, workflow?.contract ?? null, backendNodeRegistry, {
+        catalogTemplateLockHash: currentCatalogTemplateLockHash,
+        promptSettingsHash: currentPromptSettingsHash,
+      }),
     }));
     const currentHistoricalEvidence = assessedHistoricalCandidates.filter((item) => item.assessment.matches).at(-1);
     const latestHistoricalEvidence = assessedHistoricalCandidates.at(-1) ?? null;
@@ -447,6 +441,8 @@ try {
       canonicalWorkflowPath: workflow?.manifest.graphPath ?? null,
       exactModelRevision: modelRevision,
       reviewedExampleModelRevision: exactRevision(galleryEntry?.modelRevision),
+      reviewedExampleVerificationStatus: galleryEntry?.verificationStatus ?? null,
+      reviewedExampleQualityReviewStatus: galleryEntry?.qualityReviewStatus ?? null,
       requiredArtifacts: artifactRequirements,
       backendNodes,
       packageSetIds: [packageSet.id],
@@ -510,6 +506,13 @@ try {
     workflows,
     coverage: {
       templateCount: templates.length,
+      reviewedExampleCount: templates.filter((item) => item.reviewedExampleModelRevision).length,
+      approvedReviewedExampleCount: templates.filter((item) =>
+        String(item.reviewedExampleQualityReviewStatus ?? '').startsWith('approved_'),
+      ).length,
+      historicalEvidenceCount: templates.filter((item) => item.historicalEvidence).length,
+      currentHistoricalEvidenceCount: templates.filter((item) => item.lastSuccessfulRealRun).length,
+      staleHistoricalEvidenceCount: templates.filter((item) => item.historicalEvidence?.status === 'stale').length,
       releaseEligibleTemplateCount: templates.filter((item) => item.releaseEligible).length,
       templateReceiptCount: templates.filter((item) => item.lastSuccessfulRealRun).length,
       completeQualificationReceiptCount: templates.filter((item) => item.qualificationReceiptMissingFields.length === 0)

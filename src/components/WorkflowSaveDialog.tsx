@@ -51,6 +51,8 @@ export default function WorkflowSaveDialog({
       open={open}
       onClose={loading ? () => undefined : onClose}
       title="Save workflow as"
+      description="Keep a reusable workflow in MoDiff or download a portable JSON copy."
+      dismissible={!loading}
       testId="save-workflow-dialog"
       panelClassName="max-w-lg"
       footer={
@@ -83,6 +85,7 @@ export default function WorkflowSaveDialog({
         >
           <ModiffInput
             autoFocus
+            disabled={loading}
             data-testid="save-workflow-name"
             value={name}
             onChange={(event) => setName(event.currentTarget.value)}

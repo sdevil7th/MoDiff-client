@@ -7,7 +7,7 @@ import { editorialPosterSizeError } from './template-card-contract.mjs';
 const server = await createServer({
   configFile: false,
   logLevel: 'silent',
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
   appType: 'custom',
 });
 const { resolveTemplateAssetUrlFromSource } = await server.ssrLoadModule('/src/studio/templateAssets.ts');

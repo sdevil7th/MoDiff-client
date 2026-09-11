@@ -32,6 +32,8 @@ export function StudioVariationPlanner({
     form.mode === 'edit_image' ||
     form.mode === 'multi_image_reference_edit' ||
     form.mode === 'inpaint' ||
+    form.mode === 'control_edit_image' ||
+    form.mode === 'control_inpaint' ||
     form.mode === 'layer_decomposition'
       ? [
           {

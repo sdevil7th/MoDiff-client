@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { decodedMediaHash, loadTemplateRuntime } from './template-gallery-harness.mjs';
 import {
   executionReceiptForProvenance,
   executionReceiptsForRun,
   inputArtifactsForOverrides,
+  runtimeFingerprintForProvenance,
 } from './template-gallery-runner.mjs';
 import {
-  backendSourceIdentity,
+  backendSourceEvidence,
   createRunProvenance,
   modelSetIdentity,
   resolvedModelReposFromOutput,
@@ -37,7 +38,6 @@ function ffmpegPath(backendDir) {
 async function main() {
   const mediaDir = resolve(option('--media-dir'));
   const templateId = option('--template');
-  const server = option('--server', 'http://127.0.0.1:8088');
   const backendDir = resolve(option('--backend-dir', resolve(ROOT, '..', 'MoDiff')));
   if (!templateId || !existsSync(mediaDir)) throw new Error('Use --media-dir <path> --template <id>.');
 
@@ -45,8 +45,31 @@ async function main() {
   const base = `${templateId}.run1`;
   const outputPath = join(evidenceDir, `${base}.output.json`);
   const eventsPath = join(evidenceDir, `${base}.websocket-events.json`);
+  const nodesPath = join(evidenceDir, `${base}.nodes.json`);
+  const modelPath = join(evidenceDir, `${base}.model-fingerprint.json`);
+  const backendSourceBeforePath = join(dirname(mediaDir), 'backend-source-before.json');
+  const backendSourceAfterPath = join(evidenceDir, `${base}.backend-source-after.json`);
+  for (const requiredPath of [
+    outputPath,
+    eventsPath,
+    nodesPath,
+    modelPath,
+    backendSourceBeforePath,
+    backendSourceAfterPath,
+  ]) {
+    if (!existsSync(requiredPath)) {
+      throw new Error(
+        `Retained proof repair is fail-closed because original execution evidence is missing: ${requiredPath}`,
+      );
+    }
+  }
   const outputEvidence = JSON.parse(readFileSync(outputPath, 'utf8'));
   const eventEvidence = JSON.parse(readFileSync(eventsPath, 'utf8'));
+  const nodesPayload = JSON.parse(readFileSync(nodesPath, 'utf8'));
+  const modelPayload = JSON.parse(readFileSync(modelPath, 'utf8'));
+  const backendSourceBefore = JSON.parse(readFileSync(backendSourceBeforePath, 'utf8'));
+  const backendSourceAfter = JSON.parse(readFileSync(backendSourceAfterPath, 'utf8'));
+  const backendSource = backendSourceBefore?.identity;
   const { output, run, terminalTask } = outputEvidence;
   const retainedMedia = readdirSync(mediaDir)
     .filter(
@@ -72,29 +95,6 @@ async function main() {
   const events = eventEvidence.events ?? [];
   const executionReceipts = executionReceiptsForRun(template, output, events);
   const repos = resolvedModelReposFromOutput(output);
-  const [nodesResponse, ...modelResponses] = await Promise.all([
-    fetch(new URL('/nodes', server)),
-    ...repos.map((repo) =>
-      fetch(
-        new URL(
-          `/model_fingerprints?modelType=${encodeURIComponent(template.modelType)}&repo=${encodeURIComponent(repo)}`,
-          server,
-        ),
-      ),
-    ),
-  ]);
-  if (!nodesResponse.ok || modelResponses.some((response) => !response.ok)) {
-    throw new Error('Backend nodes or model fingerprints are unavailable for retained evidence repair.');
-  }
-  const nodesPayload = await nodesResponse.json();
-  const modelPayloads = await Promise.all(modelResponses.map((response) => response.json()));
-  const modelPayload = {
-    error: false,
-    count: modelPayloads.reduce((count, payload) => count + Number(payload?.count ?? 0), 0),
-    models: modelPayloads.flatMap((payload) => payload?.models ?? []),
-    runtimeFingerprint: modelPayloads.find((payload) => payload?.runtimeFingerprint)?.runtimeFingerprint ?? null,
-    source: 'modiff-backend-executed-repos',
-  };
   const identities = repos.map((repo) => {
     const identity = selectInstalledModelIdentity(modelPayload, repo);
     if (!identity) throw new Error(`No installed commit was resolved for ${repo}.`);
@@ -124,6 +124,25 @@ async function main() {
   const completionEvent = [...events]
     .reverse()
     .find((event) => event?.type === 'graph_completed' && event?.task_id === run.taskId);
+  const selectedRuntimeFingerprint = runtimeFingerprintForProvenance({
+    deterministicEvent,
+    completionEvent,
+    terminalTask,
+    output,
+  });
+  const sourceEvidence = backendSourceEvidence({
+    before: backendSource,
+    after: backendSourceAfter?.identity,
+    runtimeFingerprint: selectedRuntimeFingerprint,
+  });
+  if (backendSourceAfter?.error || sourceEvidence.blockers.length > 0) {
+    throw new Error(
+      `Retained proof repair cannot establish the original worker-loaded backend source identity: ${[
+        ...(backendSourceAfter?.error ? [backendSourceAfter.error] : []),
+        ...sourceEvidence.blockers,
+      ].join(' ')}`,
+    );
+  }
   const outputAnalysis = {
     ok: true,
     outputCount: analyses.length,
@@ -141,9 +160,9 @@ async function main() {
     modelIdentity: identities[0],
     modelIdentities: identities,
     inputArtifacts: inputArtifactsForOverrides(output.formSnapshot),
-    runtimeFingerprint: deterministicEvent?.runtimeFingerprint ?? terminalTask?.runtimeFingerprint ?? null,
+    runtimeFingerprint: selectedRuntimeFingerprint,
     deterministicMode: deterministicEvent?.deterministicMode ?? output.apiGraphSnapshot?.deterministicMode,
-    backendSource: backendSourceIdentity(backendDir),
+    backendSource: sourceEvidence.identity,
     outputAnalysis,
     executedOutput: output,
     executionReceipt: executionReceiptForProvenance(completionEvent, terminalTask),
@@ -153,8 +172,6 @@ async function main() {
   if (provenance.blockers.length)
     throw new Error(`Retained provenance is incomplete: ${provenance.blockers.join(' ')}`);
 
-  writeFileSync(join(evidenceDir, `${base}.nodes.json`), `${JSON.stringify(nodesPayload, null, 2)}\n`);
-  writeFileSync(join(evidenceDir, `${base}.model-fingerprint.json`), `${JSON.stringify(modelPayload, null, 2)}\n`);
   writeFileSync(eventsPath, `${JSON.stringify({ taskId: run.taskId, executionReceipts, events }, null, 2)}\n`);
   writeFileSync(join(evidenceDir, `${base}.provenance.json`), `${JSON.stringify(provenance, null, 2)}\n`);
   console.log(
