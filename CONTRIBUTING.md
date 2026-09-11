@@ -284,6 +284,13 @@ npm run check
 
 This runs formatting, lint, type checking, style audit, unit/contract tests, production build, and bundle budget.
 
+The Linux CI quality job checks out this client and an immutable, compatible
+`sdevil7th/MoDiff` backend revision as sibling directories. It installs the
+backend's reviewed CPU profile and test dependencies before running the same
+gate. Update the backend commit in `.github/workflows/ci.yml` when a coordinated
+contract change requires it. This setup does not download model weights or
+qualify accelerator execution; platform smoke jobs remain client-only.
+
 Run the mocked browser gate for behavior or layout-sensitive changes:
 
 ```bash
