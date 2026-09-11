@@ -170,6 +170,7 @@ export type StudioModelType =
   | 'FluxKontextModularPipeline'
   | 'Flux2KleinModularPipeline'
   | 'Flux2KleinBaseModularPipeline'
+  | 'Flux2ModularPipeline'
   | 'Flux2KleinInpaintPipeline'
   | 'StableDiffusionXLPipeline'
   | 'StableDiffusionXLTurboPipeline'
@@ -288,6 +289,7 @@ export type StudioTemplateId =
   | 'wan_vace_reference_motion'
   | 'wan_vace_grayscale_control'
   | 'ace_step_text_to_audio'
+  | 'minimax_music3_chamber_pop'
   | 'ace_step_audio_variation'
   | 'ace_step_audio_continuation'
   | 'ace_step_audio_repaint'
@@ -330,7 +332,7 @@ export type StudioTemplateId =
   | 'qwen_edit_plus_single_image';
 
 export type WorkspacePanelTab =
-  'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints';
+  'studio' | 'compatibility' | 'gallery' | 'queue' | 'setup' | 'share' | 'app' | 'blueprints' | 'block';
 
 export type StudioResourcePreference = 'recommended' | 'best_quality' | 'faster' | 'lowest_memory';
 
@@ -372,6 +374,8 @@ export type RunReadinessIssue = {
   category: RunReadinessIssueCategory;
   severity: RunReadinessIssueSeverity;
   nodeId?: string;
+  /** Visible field/socket to highlight when a diagnostic has an exact target. */
+  fieldId?: string;
   repoId?: string;
   /** Exact Hugging Face Hub snapshot request; never a direct file URL. */
   installOptions?: {
@@ -1641,8 +1645,18 @@ export type StudioRunContext = {
   variationLabel?: string;
 };
 
+export type StudioEncodedVideoMetadata = {
+  source: 'encoded-file';
+  width?: number;
+  height?: number;
+  frame_count?: number;
+  fps?: number;
+  duration_seconds?: number;
+};
+
 export type StudioOutputMediaItem = {
   index: number;
+  mediaMetadata?: StudioEncodedVideoMetadata;
   role?: string;
   label?: string;
   value?: unknown;
@@ -1714,6 +1728,7 @@ export type StudioOutputProvenance = {
 };
 
 export type StudioOutput = {
+  resolvedExecutionInputs?: import('./resolvedExecutionInputs').ResolvedExecutionInputs;
   id: string;
   clientRunId?: string;
   runInputHash?: string;

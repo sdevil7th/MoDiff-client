@@ -60,6 +60,101 @@ function exportSeed(value, setParam = () => {}) {
   return graph.nodes.generate.params.seed;
 }
 
+function loopMember(id) {
+  return {
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.ModularDiffusers',
+      action: 'ReviewedModularWorkflowStep',
+      blockProjectionOwnerId: 'qwen',
+      params: {
+        pipeline_class: { type: 'string', value: 'QwenImageModularPipeline' },
+        workflow_id: { type: 'string', value: 'text2image' },
+        execution_kind: { type: 'string', value: 'loop_member' },
+        placement_path: { type: 'object', value: ['loop', id] },
+        loop_members_in: { type: 'modular_loop_members', display: 'input' },
+        loop_members: { type: 'modular_loop_members', display: 'output' },
+        iteration_input__latents: { type: ['latent', 'modular_loop_value'], display: 'input' },
+        iteration_previous__latents: { type: 'modular_loop_value', display: 'output' },
+      },
+    },
+  };
+}
+
+function loopOwner(id = 'owner') {
+  const node = loopMember(id);
+  node.data.params.execution_kind.value = 'loop_owner';
+  node.data.params.placement_path.value = ['loop'];
+  return node;
+}
+
+test('loop-carried wires lower to iteration bindings, not a cyclic outer execution graph', () => {
+  const nodes = [loopMember('before'), loopMember('after'), loopOwner()];
+  const edges = [
+    { id: 'order', source: 'before', sourceHandle: 'loop_members', target: 'after', targetHandle: 'loop_members_in' },
+    { id: 'owner', source: 'after', sourceHandle: 'loop_members', target: 'owner', targetHandle: 'loop_members_in' },
+    {
+      id: 'carried',
+      source: 'after',
+      sourceHandle: 'iteration_previous__latents',
+      target: 'before',
+      targetHandle: 'iteration_input__latents',
+    },
+  ];
+  const original = JSON.stringify({ nodes, edges });
+  const exported = exportModule.buildApiGraphExport({ nodes, edges, sid: 'loop', setParam: () => {} });
+  assert.deepEqual(exported.nodes.before.params.iteration_bindings.value, {
+    latents: { kind: 'state', sourcePath: ['loop', 'after'], output: 'latents', timing: 'previous' },
+  });
+  assert.equal(exported.nodes.before.params.iteration_input__latents, undefined);
+  assert.equal(exported.nodes.after.params.loop_members_in.sourceId, 'before');
+  assert.equal(JSON.stringify({ nodes, edges }), original);
+});
+
+test('iteration wiring cannot escape to another loop instance or silently overwrite a constant', () => {
+  const nodes = [loopMember('before'), loopMember('after'), loopOwner()];
+  const edges = [
+    { id: 'order', source: 'before', sourceHandle: 'loop_members', target: 'after', targetHandle: 'loop_members_in' },
+    { id: 'owner', source: 'after', sourceHandle: 'loop_members', target: 'owner', targetHandle: 'loop_members_in' },
+    {
+      id: 'carried',
+      source: 'after',
+      sourceHandle: 'iteration_previous__latents',
+      target: 'before',
+      targetHandle: 'iteration_input__latents',
+    },
+  ];
+  const run = () => exportModule.buildApiGraphExport({ nodes, edges, sid: 'loop', setParam: () => {} });
+  nodes[1].data.blockProjectionOwnerId = 'other-qwen';
+  assert.throws(run, /same loop instance/);
+  nodes[1].data.blockProjectionOwnerId = 'qwen';
+  nodes[0].data.params.iteration_input__latents.value = [1, 2, 3];
+  assert.throws(run, /competing constant/);
+});
+
+test('standalone loop instances cannot exchange iteration values merely because their paths match', () => {
+  const nodes = [loopMember('before'), loopMember('after'), loopOwner('left'), loopOwner('right')];
+  for (const node of nodes) delete node.data.blockProjectionOwnerId;
+  const edges = [
+    { id: 'left', source: 'before', sourceHandle: 'loop_members', target: 'left', targetHandle: 'loop_members_in' },
+    { id: 'right', source: 'after', sourceHandle: 'loop_members', target: 'right', targetHandle: 'loop_members_in' },
+    {
+      id: 'cross-loop',
+      source: 'after',
+      sourceHandle: 'iteration_previous__latents',
+      target: 'before',
+      targetHandle: 'iteration_input__latents',
+    },
+  ];
+  assert.throws(
+    () => exportModule.buildApiGraphExport({ nodes, edges, sid: 'loop', setParam: () => {} }),
+    /same loop instance/,
+  );
+});
+
 test('locked random-field seeds export without the random display marker', () => {
   const seed = exportSeed({ value: 1234, isRandom: false });
 
@@ -535,4 +630,25 @@ test('collapsed user blocks inside loops retain loop ancestry when expanded for 
     setParam: () => {},
   });
   assert.deepEqual(new Set(graph.loops[0].bodyNodeIds), new Set(['block-step__generate', 'loop-result']));
+});
+
+test('Auto inspection exports stored seeds without consuming randomness or editing the graph', () => {
+  const originalRandom = Math.random;
+  Math.random = () => {
+    throw new Error('Inspection cannot generate a seed');
+  };
+  try {
+    const result = exportModule.buildApiGraphExport({
+      nodes: [seedNode({ value: 1234, isRandom: true })],
+      edges: [],
+      sid: '',
+      randomizeSeeds: false,
+      setParam: () => {
+        throw new Error('Inspection cannot edit fields');
+      },
+    });
+    assert.equal(result.nodes.generate.params.seed.value, 1234);
+  } finally {
+    Math.random = originalRandom;
+  }
 });

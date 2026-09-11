@@ -44,7 +44,7 @@ function forkSourceId(id: string, instanceId: string) {
   return id.startsWith(prefix) ? id.slice(prefix.length) : id;
 }
 
-function ordinaryForkNode(node: CustomNodeType, instanceId: string): CustomNodeType {
+export function ordinaryForkNode(node: CustomNodeType, instanceId: string): CustomNodeType {
   const cloned = cloneJson(node);
   cloned.id = forkSourceId(cloned.id, instanceId);
   delete cloned.measured;

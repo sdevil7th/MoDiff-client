@@ -24,7 +24,7 @@ function currentWorkflowTitle() {
   return studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId)?.title.trim() || 'Workflow';
 }
 
-function contextualDefinitionName(label: string, workflowTitle: string) {
+export function contextualDefinitionName(label: string, workflowTitle: string) {
   const normalizedLabel = label.trim() || 'User Node';
   const normalizedWorkflow = workflowTitle.trim() || 'Workflow';
   const suffix = ` — ${normalizedWorkflow}`;
@@ -61,10 +61,12 @@ function currentInstance(instanceId: string) {
 export async function saveBlockInstanceV2AsNewUserDefinition(
   {
     instanceId,
+    displayName,
     workflowTitle = currentWorkflowTitle(),
     context = captureWorkflowOperationContext(),
   }: {
     instanceId: string;
+    displayName?: string;
     workflowTitle?: string;
     context?: WorkflowOperationContext;
   },
@@ -77,7 +79,8 @@ export async function saveBlockInstanceV2AsNewUserDefinition(
   const candidate = reusableBlockDefinitionFromInstanceV2(instance, {
     choice: 'new',
     definitionId: nextDefinitionId(),
-    displayName: contextualDefinitionName(instance.definitionSnapshot.displayName, workflowTitle),
+    displayName:
+      displayName?.trim() || contextualDefinitionName(instance.definitionSnapshot.displayName, workflowTitle),
   });
   const saved = await saveDefinition(candidate);
   if (canonicalBlockStringifyV2(saved) !== canonicalBlockStringifyV2(candidate)) {
@@ -97,12 +100,14 @@ export async function saveBlockSubtreeV2AsNewUserDefinition(
     instanceId,
     rootNodeId,
     label,
+    displayName,
     workflowTitle = currentWorkflowTitle(),
     context = captureWorkflowOperationContext(),
   }: {
     instanceId: string;
     rootNodeId: string;
     label: string;
+    displayName?: string;
     workflowTitle?: string;
     context?: WorkflowOperationContext;
   },
@@ -115,7 +120,7 @@ export async function saveBlockSubtreeV2AsNewUserDefinition(
   const candidate = reusableBlockDefinitionFromSubtreeV2(instance, {
     rootNodeId,
     definitionId: nextDefinitionId(),
-    displayName: contextualDefinitionName(label, workflowTitle),
+    displayName: displayName?.trim() || contextualDefinitionName(label, workflowTitle),
   });
   const saved = await saveDefinition(candidate);
   if (canonicalBlockStringifyV2(saved) !== canonicalBlockStringifyV2(candidate)) {
@@ -138,11 +143,13 @@ export async function persistBlockInstanceV2Choice(
   {
     instanceId,
     choice,
+    displayName,
     workflowTitle = currentWorkflowTitle(),
     context = captureWorkflowOperationContext(),
   }: {
     instanceId: string;
     choice: BlockPersistenceChoiceV2;
+    displayName?: string;
     workflowTitle?: string;
     context?: WorkflowOperationContext;
   },
@@ -162,7 +169,10 @@ export async function persistBlockInstanceV2Choice(
   }
 
   if (choice === 'new') {
-    const saved = await saveBlockInstanceV2AsNewUserDefinition({ instanceId, workflowTitle, context }, saveDefinition);
+    const saved = await saveBlockInstanceV2AsNewUserDefinition(
+      { instanceId, workflowTitle, displayName, context },
+      saveDefinition,
+    );
     useFlowStore.getState().applyBlockDefinitionV2(instanceId, saved);
     useStudioStore.getState().saveActiveWorkflowTab(true);
     return { choice, definition: saved } as const;
@@ -172,7 +182,7 @@ export async function persistBlockInstanceV2Choice(
   const candidate = reusableBlockDefinitionFromInstanceV2(instance, {
     choice,
     definitionId: instance.definitionRef.definitionId,
-    displayName: instance.definitionSnapshot.displayName,
+    displayName: displayName?.trim() || instance.definitionSnapshot.displayName,
   });
   const saved = await saveDefinition(candidate);
   if (canonicalBlockStringifyV2(saved) !== canonicalBlockStringifyV2(candidate)) {
@@ -196,10 +206,12 @@ export async function persistBlockSelectionV2Choice(
   {
     nodeId,
     choice,
+    displayName,
     context = captureWorkflowOperationContext(),
   }: {
     nodeId: string;
     choice: BlockPersistenceChoiceV2;
+    displayName?: string;
     context?: WorkflowOperationContext;
   },
   saveDefinition: (definition: BlockDefinitionV2) => Promise<BlockDefinitionV2> = (definition) =>
@@ -211,7 +223,7 @@ export async function persistBlockSelectionV2Choice(
   const selected = useFlowStore.getState().nodes.find((node) => node.id === nodeId);
   if (!selected) throw new Error('The selected Block is no longer available in this workflow.');
   if (selected.data.blockInstanceV2) {
-    return persistBlockInstanceV2Choice({ instanceId: nodeId, choice, context }, saveDefinition);
+    return persistBlockInstanceV2Choice({ instanceId: nodeId, choice, displayName, context }, saveDefinition);
   }
   const ownerId = selected.data.blockProjectionOwnerId;
   const semanticNodeId = selected.data.blockProjectionNodeId;
@@ -222,11 +234,7 @@ export async function persistBlockSelectionV2Choice(
   if (selected.id !== blockProjectionNodeIdV2(ownerId, semanticNodeId)) {
     throw new Error('The selected Modular subtree has an invalid projection identity.');
   }
-  if (
-    !instance.effectiveGraph.nodes.some(
-      (node) => node.nodeId === semanticNodeId && node.modularDiffusers?.kind === 'upstream_block',
-    )
-  ) {
+  if (!instance.effectiveGraph.nodes.some((node) => node.nodeId === semanticNodeId)) {
     throw new Error('The selected Modular subtree is no longer present in the owning Block.');
   }
   if (choice === 'update') {
@@ -239,6 +247,7 @@ export async function persistBlockSelectionV2Choice(
     {
       instanceId: ownerId,
       rootNodeId: semanticNodeId,
+      displayName,
       label: selected.data.label || selected.data.action || 'Modular Diffusers Block',
       context,
     },

@@ -7,7 +7,13 @@ import { deepEqual } from '../utils/deepEqual';
 import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import { normalizeBlockInstanceV2 } from '../studio/blockSchemaV2';
-import { createBlockRootNodeV2, materializeBlockProjectionV2, setBlockPresentationV2 } from '../studio/blockRuntimeV2';
+import {
+  blockProjectionNodeIdV2,
+  createBlockRootNodeV2,
+  duplicateOrdinaryBlockNodeV2,
+  materializeBlockProjectionV2,
+  setBlockPresentationV2,
+} from '../studio/blockRuntimeV2';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 
@@ -268,7 +274,24 @@ export function duplicateFlowNode(id: string, set: FlowStoreSet, get: FlowStoreG
     return null;
   }
 
-  const cloneId = nanoid();
+  // Both ordinary clones and Block instance/semantic IDs can be adopted into Blocks.
+  const cloneId = `node-${nanoid()}`;
+  if (node.data.blockProjectionKind === 'internal') {
+    const ownerId = node.data.blockProjectionOwnerId;
+    const semanticId = node.data.blockProjectionNodeId;
+    const state = get();
+    const owner = state.nodes.find((item) => item.id === ownerId);
+    if (!owner?.data.blockInstanceV2 || !semanticId)
+      throw new Error('Cannot duplicate an internal node without its owning Block.');
+    const instance = duplicateOrdinaryBlockNodeV2(owner.data.blockInstanceV2, semanticId, cloneId);
+    const projection = materializeBlockProjectionV2(createBlockRootNodeV2(instance));
+    const nodes = state.nodes.flatMap((item) =>
+      item.id === ownerId ? projection.nodes : item.data.blockProjectionOwnerId === ownerId ? [] : [item],
+    );
+    const edges = [...state.edges.filter((edge) => edge.data?.blockProjectionOwnerId !== ownerId), ...projection.edges];
+    set({ nodes, edges: decorateConnectionEdges(nodes, edges) });
+    return blockProjectionNodeIdV2(instance.instanceId, cloneId);
+  }
   if (node.data.blockInstanceV2) {
     const instance = normalizeBlockInstanceV2({
       ...node.data.blockInstanceV2,

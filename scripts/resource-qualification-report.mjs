@@ -232,10 +232,25 @@ if (existsSync(ROUTE_RECEIPT_REGISTRY_PATH)) {
     throw new Error('Route resource workload receipt registry is malformed.');
   }
   const currentRouteManifest = loadCurrentResourceRouteManifest({ backendRoot: BACKEND_ROOT });
-  for (const receipt of registry.receipts) {
-    const proofs = retainedRouteResourceProofs({ receipt, backendRoot: BACKEND_ROOT });
-    const currentRoute = exactCurrentResourceRouteFromManifest(receipt.routeBinding, currentRouteManifest);
-    const validated = validateRouteResourceWorkloadReceipt({ receipt, proofs, currentRoute });
+  const invalidReceipts = [];
+  const checkedReceipts = registry.receipts.flatMap((receipt, index) => {
+    try {
+      const proofs = retainedRouteResourceProofs({ receipt, backendRoot: BACKEND_ROOT });
+      const currentRoute = exactCurrentResourceRouteFromManifest(receipt.routeBinding, currentRouteManifest);
+      return [{ receipt, validated: validateRouteResourceWorkloadReceipt({ receipt, proofs, currentRoute }) }];
+    } catch (error) {
+      invalidReceipts.push(`Receipt ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  });
+  // Diagnose every rejected receipt, but never publish a partial report that
+  // silently drops stale or corrupt evidence from the qualification gate.
+  if (invalidReceipts.length) {
+    throw new Error(
+      `Route resource workload registry has ${invalidReceipts.length} invalid receipt(s):\n${invalidReceipts.join('\n')}`,
+    );
+  }
+  for (const { receipt, validated } of checkedReceipts) {
     const routeKey = `${validated.routeBindingHash}|${validated.recipeHash}`;
     if (routeQualificationsByKey.has(routeKey)) {
       throw new Error('Route resource workload receipt registry contains a duplicate exact route recipe.');

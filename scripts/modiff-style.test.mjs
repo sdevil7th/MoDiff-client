@@ -269,6 +269,27 @@ test('shared combobox and rich radio cards replace browser and feature-local cho
   assert.match(radioMarkup, /Direct repair/);
 });
 
+test('typing a live free-form selection keeps suggestions filtered before Tab commits', () => {
+  const options = [
+    { value: 'unrelated/audio', label: 'unrelated/audio' },
+    { value: 'InstantX/Union', label: 'InstantX/Union' },
+  ];
+  assert.deepEqual(
+    comboboxOptions.visibleModiffComboboxOptions(options, 'InstantX/Union', ['InstantX/Union'], false, true),
+    [options[1]],
+  );
+  assert.deepEqual(
+    comboboxOptions.visibleModiffComboboxOptions(
+      options,
+      'custom/not-installed',
+      ['custom/not-installed'],
+      false,
+      true,
+    ),
+    [],
+  );
+});
+
 test('combobox opens installed alternatives when the current free-form value is unavailable', () => {
   const options = [{ value: 'InstantX/Qwen-Image-ControlNet-Union', label: 'InstantX/Qwen-Image-ControlNet-Union' }];
 

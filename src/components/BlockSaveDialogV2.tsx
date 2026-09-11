@@ -1,21 +1,11 @@
-import { lazy, Suspense, useState } from 'react';
-import { ModiffDialog } from '../ui';
-import { captureWorkflowOperationContext } from '../stores/useStudioStore';
+import { useEffect } from 'react';
+import { useBlockEditorStore } from '../stores/useBlockEditorStore';
 
-const BlockSaveDialogContentV2 = lazy(() => import('./BlockSaveDialogContentV2'));
-
-/** Save choices are shared at every depth, but are not needed to open a graph. */
-export default function BlockSaveDialogV2(props: { nodeId: string; onClose: () => void }) {
-  const [context] = useState(captureWorkflowOperationContext);
-  return (
-    <Suspense
-      fallback={
-        <ModiffDialog open title="Save block changes" onClose={props.onClose} panelClassName="max-w-lg">
-          <p role="status">Loading save options…</p>
-        </ModiffDialog>
-      }
-    >
-      <BlockSaveDialogContentV2 {...props} context={context} />
-    </Suspense>
-  );
+/** Keep existing node entry points; the editor is owned by the workspace panel. */
+export default function BlockSaveDialogV2({ nodeId, onClose }: { nodeId: string; onClose: () => void }) {
+  useEffect(() => {
+    useBlockEditorStore.getState().open(nodeId, 'save');
+    onClose();
+  }, [nodeId, onClose]);
+  return null;
 }

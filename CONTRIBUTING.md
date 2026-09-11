@@ -4,6 +4,10 @@ Thank you for helping improve MoDiff Client. This guide covers development setup
 
 By submitting a contribution, you agree that it can be distributed under the repository's [Apache License 2.0](LICENSE). You are responsible for ensuring that contributed code, assets, prompts, media, model references, and generated examples can legally be included.
 
+Before changing nodes, Blocks, graph persistence/execution, model qualification or
+integrating another machine's work, read and follow
+[Cluster engineering lessons and required procedure](docs/cluster-engineering-lessons.md).
+
 ## Before You Start
 
 - Search existing issues and pull requests before opening a duplicate.
@@ -340,6 +344,13 @@ Then verify that every repository-relative Markdown link resolves and that every
   small Gallery metadata described in the asset guide.
 - Do not add large generated media, model weights, cache snapshots, or runtime evidence outside an accepted public-asset change.
 - Keep screenshots/traces in pull-request attachments rather than the repository unless they are durable, licensed documentation assets.
+
+Local `reviews/`, `checkpoints/`, and `maintenance/` directories are ignored.
+Keep handoff notes and raw proof bundles there or outside the checkout. Review
+`git status --short`, `git diff --cached --stat`, and `git diff --cached --check`
+before committing, then inspect staged content: ignore rules do not remove
+already tracked files. Retain source fixtures, generated contract bindings, and
+intentional UI assets that the application uses.
 
 ## Pull Requests
 

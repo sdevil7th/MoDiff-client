@@ -53,6 +53,121 @@ before(async () => {
   studioStore = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
 });
 
+test('duplicating an ordinary projected leaf creates a durable independent semantic node', () => {
+  const original = runtime.setBlockPresentationV2(instance('duplicate-leaf', { prompt: 'saved prompt', steps: 23 }), {
+    expanded: true,
+  });
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(original));
+  flowStore.useFlowStore.setState({ ...projection, history: [], historyIndex: -1 });
+  const leaf = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+  const cloneId = flowStore.useFlowStore.getState().duplicateNode(leaf.id);
+  const state = flowStore.useFlowStore.getState();
+  const changed = state.nodes.find((node) => node.id === original.instanceId).data.blockInstanceV2;
+  assert.equal(changed.effectiveGraph.nodes.length, original.effectiveGraph.nodes.length + 1);
+  const cloned = changed.effectiveGraph.nodes.find(
+    (node) => node.nodeId !== 'generate' && node.data.action === 'Generate',
+  );
+  assert.ok(cloned);
+  // NanoID may start with '_' or '-'; semantic IDs require an alphanumeric prefix.
+  assert.match(cloned.nodeId, /^node-[A-Za-z0-9_-]+$/u);
+  assert.equal(cloned.data.params.prompt.value, 'saved prompt');
+  assert.equal(cloned.data.params.steps.value, 23);
+  assert.deepEqual(changed.effectiveGraph.edges, original.effectiveGraph.edges);
+  assert.deepEqual(changed.effectiveInterface, original.effectiveInterface);
+  assert.deepEqual(changed.values, original.values);
+  assert.deepEqual(changed.definitionSnapshot, original.definitionSnapshot);
+  assert.equal(state.nodes.find((node) => node.id === cloneId).data.blockProjectionNodeId, cloned.nodeId);
+  const persisted = runtime.canonicalizePersistedBlockGraphV2(state.nodes, state.edges);
+  const restored = runtime.materializeBlockProjectionV2(persisted.nodes[0]);
+  assert.doesNotThrow(() => runtime.expandBlockGraphV2ForExecution(restored.nodes, restored.edges));
+  assert.equal(restored.nodes.filter((node) => node.data.blockProjectionNodeId === cloned.nodeId).length, 1);
+  state.undo();
+  assert.deepEqual(
+    flowStore.useFlowStore.getState().nodes.find((node) => node.id === original.instanceId).data.blockInstanceV2
+      .effectiveGraph,
+    original.effectiveGraph,
+  );
+  flowStore.useFlowStore.getState().redo();
+  assert.deepEqual(
+    flowStore.useFlowStore.getState().nodes.find((node) => node.id === original.instanceId).data.blockInstanceV2
+      .effectiveGraph,
+    changed.effectiveGraph,
+  );
+  const editedOriginal = runtime.setBlockInstanceValueV2(changed, 'prompt', 'original edited later');
+  assert.equal(
+    editedOriginal.effectiveGraph.nodes.find((node) => node.nodeId === cloned.nodeId).data.params.prompt.value,
+    'saved prompt',
+  );
+});
+
+test('new ordinary nodes and duplicated Block roots have adoption-safe IDs', async () => {
+  const { createNodeFromRegistry } = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
+  const created = createNodeFromRegistry('fixture', { fixture: { type: 'custom', params: {} } }, { x: 0, y: 0 });
+  assert.match(created.id, /^node-[A-Za-z0-9_-]+$/u);
+  const original = instance('duplicate-root', { prompt: 'saved prompt', steps: 23 });
+  const root = runtime.createBlockRootNodeV2(original);
+  flowStore.useFlowStore.setState({ nodes: [root], edges: [], history: [], historyIndex: -1 });
+  const cloneId = flowStore.useFlowStore.getState().duplicateNode(root.id);
+  assert.match(cloneId, /^node-[A-Za-z0-9_-]+$/u);
+  const copied = flowStore.useFlowStore.getState().nodes.find((node) => node.id === cloneId).data.blockInstanceV2;
+  assert.deepEqual(copied.values, original.values);
+  assert.deepEqual(copied.effectiveGraph, original.effectiveGraph);
+  assert.deepEqual(copied.definitionSnapshot, original.definitionSnapshot);
+});
+
+test('a public boundary socket does not erase its ordinary internal editable widget', () => {
+  const original = runtime.setBlockPresentationV2(
+    instance('public-leaf-widget', { prompt: 'saved prompt', steps: 23 }),
+    {
+      expanded: true,
+    },
+  );
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(original));
+  const leaf = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+  assert.equal(leaf.data.params.prompt.display, 'textarea', 'keep the editable widget alongside its boundary alias');
+  const widget = Object.entries(leaf.data.params).find(
+    ([, param]) =>
+      !param.hidden && param.display === 'textarea' && param.fieldOptions?.blockBindingV2?.logicalId === 'prompt',
+  );
+  assert.ok(widget, 'the expanded internal node must still expose the authored Prompt control');
+  assert.equal(widget[1].value, 'saved prompt');
+  flowStore.useFlowStore.setState({ ...projection, history: [], historyIndex: -1 });
+  flowStore.useFlowStore.getState().setParamWithHistory(leaf.id, widget[0], 'edited inside');
+  const state = flowStore.useFlowStore.getState();
+  const changed = state.nodes.find((node) => node.id === original.instanceId).data.blockInstanceV2;
+  assert.deepEqual(changed.values, { prompt: 'edited inside', steps: 23 });
+  assert.deepEqual(changed.effectiveGraph, original.effectiveGraph);
+  assert.deepEqual(changed.definitionSnapshot, original.definitionSnapshot);
+  const execution = runtime.expandBlockGraphV2ForExecution(state.nodes, state.edges);
+  const executed = execution.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+  assert.equal(executed.data.params.prompt.value, 'edited inside');
+  assert.equal(
+    Object.keys(executed.data.params).some((key) => key.startsWith('block-control:')),
+    false,
+  );
+});
+
+test('port-heavy ordinary leaves reserve controls and remain inside their root without rewriting saved sizes', () => {
+  let original = instance('port-heavy-leaf', { prompt: 'saved prompt', steps: 23 });
+  const graph = structuredClone(original.effectiveGraph);
+  const source = graph.nodes.find((node) => node.nodeId === 'generate');
+  for (let index = 0; index < 30; index += 1) {
+    source.data.params[`optional_${index}`] = { type: 'tensor', display: 'input' };
+  }
+  original = runtime.replaceBlockEffectiveGraphV2(original, graph);
+  original = runtime.setBlockPresentationV2(original, {
+    expanded: true,
+    internalLayout: { ...original.presentation.internalLayout, generate: { x: 20, y: 80, width: 340, height: 112 } },
+  });
+  const before = JSON.stringify(original);
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(original));
+  const leaf = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+  const root = projection.nodes.find((node) => node.id === original.instanceId);
+  assert.ok(leaf.height >= 44 + 32 + 30 * 24 + 120);
+  assert.ok(root.height > leaf.position.y + leaf.height);
+  assert.equal(JSON.stringify(original), before);
+});
+
 test('Block V2 public connector projection is reused for one immutable instance', () => {
   const current = instance('connector-cache', { prompt: 'one exact prompt', steps: 12 });
   const node = runtime.createBlockRootNodeV2(current);
@@ -66,6 +181,68 @@ test('Block V2 public connector projection is reused for one immutable instance'
   const third = nodeConnectorResolution.nodeConnectorParams(updatedNode);
   assert.notEqual(third, first);
   assert.equal(third.prompt.value, 'a different prompt');
+});
+
+test('projected leaf connectors use V2 scalar aliases without rewriting schemas or ordinary nodes', () => {
+  const params = {
+    prompt_2: { type: 'text', display: 'input' },
+    output: { type: 'builtins.str', display: 'output' },
+    references: { type: 'list[str]', display: 'input' },
+  };
+  const node = { data: { params, blockProjectionOwnerId: 'root', blockProjectionNodeId: 'leaf' } };
+  const resolved = nodeConnectorResolution.nodeConnectorParams(node);
+  assert.equal(resolved.prompt_2.type, 'string');
+  assert.equal(resolved.output.type, 'string');
+  assert.equal(resolved.references.type, 'list[str]');
+  assert.equal(nodeConnectorResolution.nodeConnectorParams(node), resolved);
+  assert.equal(params.prompt_2.type, 'text');
+  assert.equal(nodeConnectorResolution.nodeConnectorParams({ data: { params } }), params);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('string', resolved.prompt_2.type), true);
+});
+
+test('a rejected structural drag restores geometry without undoing current prompt edits or retaining new layout entries', () => {
+  const before = instance('rejected-drag', { prompt: 'original', steps: 12 });
+  const changedValue = runtime.setBlockInstanceValueV2(before, 'prompt', 'keep this current value');
+  const dragged = runtime.setBlockPresentationV2(changedValue, {
+    position: { x: 800, y: 700 },
+    internalLayout: { generate: { x: 5000, y: 6000, width: 400, height: 500 } },
+  });
+  const restored = runtime.setBlockPresentationV2(
+    dragged,
+    runtime.rejectedBlockDragPresentationPatchV2(before.presentation, dragged.presentation),
+  );
+  assert.deepEqual(restored.presentation, before.presentation);
+  assert.deepEqual(restored.values, changedValue.values);
+  assert.deepEqual(restored.effectiveGraph, before.effectiveGraph);
+  assert.deepEqual(restored.effectiveInterface, before.effectiveInterface);
+});
+
+test('runtime public projections revalidate each call and never reuse authority after caller mutation', () => {
+  for (const name of [
+    'blockViewModelV2',
+    'blockControlParamsV2',
+    'blockConnectorParamsV2',
+    'blockPreviewViewsV2',
+    'blockModularParentIdsV2',
+    'blockExpandedProjectionSizeV2',
+    'createBlockRootNodeV2',
+  ]) {
+    const current = instance(`strict-${name}`);
+    const before = JSON.stringify(current);
+    runtime[name](current);
+    assert.equal(JSON.stringify(current), before, `${name} must not mutate its input`);
+    current.effectiveGraph.nodes[0].data.label = 'tampered after validation';
+    assert.throws(() => runtime[name](current), /graphHash/u, `${name} must reject the now-stale hash`);
+  }
+  for (const name of ['canonicalizePersistedBlockGraphV2', 'expandBlockGraphV2ForExecution']) {
+    const root = runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(instance(), { expanded: true }));
+    const graph = runtime.materializeBlockProjectionV2(root);
+    runtime[name](graph.nodes, graph.edges);
+    const forged = structuredClone(graph.edges);
+    assert.ok(forged.length);
+    forged[0].targetHandle = 'forged-handle-after-first-projection';
+    assert.throws(() => runtime[name](graph.nodes, forged), /receipt and projected endpoints disagree/u);
+  }
 });
 
 test('Block V2 aliases scalar upstream types without broadening ordinary graph or collection semantics', () => {
@@ -132,7 +309,7 @@ test('registered Block V2 Auto authority is exact and Expert/manual readiness ne
     includeStudio: false,
   });
   assert.equal(
-    issues.some(({ code }) => code === 'block_v2_auto_authority_missing'),
+    issues.some(({ code, blocking }) => code === 'workflow_auto_plan_pending' && !blocking),
     true,
   );
 
@@ -334,6 +511,113 @@ function instance(id = 'instance-a', values = { prompt: '', steps: 0 }) {
     },
   });
 }
+
+test('outside LoRA connects to an undeclared internal input and survives collapse, persistence and explicit moves', async () => {
+  const crossing = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const persistence = await server.ssrLoadModule('/src/studio/blockDefinitionPersistenceV2.ts');
+  let current = instance('outside-lora', { prompt: 'keep prompt', steps: 23 });
+  const graph = structuredClone(current.effectiveGraph);
+  graph.nodes.find((node) => node.nodeId === 'load').data.params.lora = {
+    display: 'input',
+    type: 'custom_lora',
+  };
+  current = runtime.setBlockPresentationV2(runtime.replaceBlockEffectiveGraphV2(current, graph), { expanded: true });
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+  const outside = {
+    id: 'external-lora',
+    type: 'custom',
+    position: { x: -400, y: 100 },
+    data: {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'Lora',
+      params: {
+        lora: { display: 'output', type: 'custom_lora' },
+      },
+    },
+  };
+  flowStore.useFlowStore.setState({
+    ...projection,
+    nodes: [outside, ...projection.nodes],
+    historyPast: [],
+    historyFuture: [],
+    historyTransaction: null,
+  });
+  flowStore.useFlowStore.getState().onConnect({
+    source: outside.id,
+    sourceHandle: 'lora',
+    target: runtime.blockProjectionNodeIdV2(current.instanceId, 'load'),
+    targetHandle: 'lora',
+  });
+  let state = flowStore.useFlowStore.getState();
+  assert.ok(
+    state.edges.some((edge) => edge.source === outside.id),
+    'native connection must be committed',
+  );
+  const visible = crossing.blockCrossingSurfaceV2(state.nodes, state.edges);
+  assert.equal(
+    visible.edges.find((edge) => edge.source === outside.id).target,
+    runtime.blockProjectionNodeIdV2(current.instanceId, 'load'),
+  );
+  const before = runtime.canonicalizePersistedBlockGraphV2(state.nodes, state.edges);
+  assert.deepEqual(
+    before.nodes.find((node) => node.id === current.instanceId).data.blockInstanceV2.effectiveInterface,
+    current.effectiveInterface,
+  );
+  state.toggleUserBlockExpanded(current.instanceId);
+  state = flowStore.useFlowStore.getState();
+  assert.equal(
+    Object.keys(crossing.blockCrossingSurfaceV2(state.nodes, state.edges).paramsByNodeId.get(current.instanceId))
+      .length,
+    1,
+  );
+  const saved = runtime.canonicalizePersistedBlockGraphV2(state.nodes, state.edges);
+  const execution = runtime.expandBlockGraphV2ForExecution(saved.nodes, saved.edges);
+  assert.ok(
+    execution.edges.some(
+      (edge) =>
+        edge.source === outside.id &&
+        edge.target === runtime.blockProjectionNodeIdV2(current.instanceId, 'load') &&
+        edge.targetHandle === 'lora',
+    ),
+  );
+  const isolated = state.exportGraph('scope-test', current.instanceId);
+  assert.equal(isolated.nodes[outside.id], undefined, 'Run Block must exclude outside LoRA');
+  const whole = state.exportGraph('scope-test');
+  assert.ok(whole.nodes[outside.id], 'whole graph must include outside LoRA');
+  const reusable = persistence.reusableBlockDefinitionFromInstanceV2(
+    state.nodes.find((node) => node.id === current.instanceId).data.blockInstanceV2,
+    { choice: 'new', definitionId: 'user:without-outside-lora', displayName: 'My Qwen Block' },
+  );
+  assert.deepEqual(reusable.boundary, current.effectiveInterface.boundary);
+  assert.equal(
+    reusable.graph.nodes.some((node) => node.nodeId === outside.id),
+    false,
+  );
+  state.toggleUserBlockExpanded(current.instanceId);
+  flowStore.useFlowStore.getState().adoptNodeIntoBlockV2(outside.id, current.instanceId);
+  state = flowStore.useFlowStore.getState();
+  assert.ok(
+    state.exportGraph('scope-test', current.instanceId).nodes[
+      runtime.blockProjectionNodeIdV2(current.instanceId, outside.id)
+    ],
+    'a source moved inside participates in Run Block',
+  );
+  const moved = state.moveNodeOutOfBlockV2(runtime.blockProjectionNodeIdV2(current.instanceId, outside.id), {
+    x: -400,
+    y: 100,
+  });
+  state = flowStore.useFlowStore.getState();
+  assert.ok(state.edges.some((edge) => edge.source === moved));
+  assert.equal(state.exportGraph('scope-test', current.instanceId).nodes[moved], undefined);
+  state.removeEdges(state.edges.find((edge) => edge.source === outside.id).id);
+  assert.equal(
+    flowStore.useFlowStore.getState().edges.some((edge) => edge.source === outside.id),
+    false,
+  );
+  const disconnected = flowStore.useFlowStore.getState();
+  assert.equal(crossing.blockCrossingSurfaceV2(disconnected.nodes, disconnected.edges).paramsByNodeId.size, 0);
+});
 
 function withAutoAuthority(instanceValue, overrides = {}, nowMs = Date.parse('2026-09-01T12:00:00Z')) {
   return schema.normalizeBlockInstanceV2({
@@ -576,6 +860,241 @@ test('hierarchical Modular Diffusers projection nests placements and preserves l
     x: current.presentation.position.x + 380 + 28,
     y: current.presentation.position.y + 76 + 360,
   });
+});
+
+function nestedConnectionInstance(expanded = false) {
+  const base = definition();
+  const metadata = {
+    kind: 'upstream_block',
+    pipelineClass: 'TestModularPipeline',
+    blocksClass: 'TestBlocks',
+    workflowId: 'text2image',
+    libraryRevision: 'a'.repeat(40),
+    runtimeRole: 'stage',
+    blockDefinitionId: `diffusers.modular-block:TestStep:sha256:${'b'.repeat(64)}`,
+    blockClass: 'TestStep',
+    blockKind: 'sequential',
+    blockContractHash: `sha256:${'c'.repeat(64)}`,
+    placementPath: ['stage'],
+    componentNames: [],
+  };
+  const nodes = base.graph.nodes.map((node) => {
+    if (node.nodeId === 'load') return node;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        label: 'Step',
+        params: { ...node.data.params, prompt: { type: 'string', display: 'textarea', default: 'creator default' } },
+      },
+      modularDiffusers: {
+        ...metadata,
+        blockKind: 'block',
+        placementPath: ['stage', node.nodeId],
+        parentPlacementPath: ['stage'],
+      },
+    };
+  });
+  nodes.push({ ...structuredClone(nodes[0]), nodeId: 'alternate-load' });
+  nodes.push({
+    nodeId: 'stage',
+    nodeType: 'group',
+    data: { type: 'group', label: 'Stage', params: {} },
+    modularDiffusers: metadata,
+  });
+  const graph = {
+    nodes,
+    edges: base.graph.edges,
+    executionOrder: ['load', 'alternate-load', 'stage', 'generate', 'preview'],
+  };
+  base.graph = { ...graph, graphHash: schema.blockGraphHashV2(graph) };
+  base.boundary.inputs[0].mirrorBindings = [{ nodeId: 'preview', fieldOrPortId: 'prompt' }];
+  base.controls[0].mirrorBindings = [{ nodeId: 'preview', fieldId: 'prompt' }];
+  base.contentHash = schema.blockDefinitionContentHashV2(base);
+  return runtime.setBlockPresentationV2(
+    schema.createBlockInstanceV2(base, {
+      instanceId: 'nested-connections',
+      position: { x: 0, y: 0 },
+      size: { width: 640, height: 720 },
+    }),
+    { expanded: true, internalLayoutMode: 'hierarchical', collapsedContainerNodeIds: expanded ? [] : ['stage'] },
+  );
+}
+
+test('nested mirror sockets retain every exact consumer behind one logical port at every disclosure level', () => {
+  const current = nestedConnectionInstance();
+  const original = JSON.stringify(current);
+  const project = (value) => runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(value));
+  const collapsed = project(current).nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  const expanded = project(runtime.setBlockPresentationV2(current, { collapsedContainerNodeIds: [] })).nodes.find(
+    (node) => node.data.blockProjectionNodeId === 'stage',
+  );
+  const promptSockets = Object.entries(collapsed.data.blockProjectionPortBindings).filter(
+    ([, binding]) => binding.fieldOrPortId === 'prompt',
+  );
+  assert.equal(promptSockets.length, 1, 'one logical public prompt is not split into duplicate sockets');
+  const labels = promptSockets.map(([id]) => collapsed.data.params[id].label);
+  assert.equal(new Set(labels).size, 1);
+  for (const [handle, endpoint] of promptSockets) {
+    assert.match(collapsed.data.params[handle].label, /Prompt/u);
+    assert.match(collapsed.data.params[handle].fieldOptions.connectionDescription, new RegExp(endpoint.nodeId));
+    assert.equal(expanded.data.params[handle].label, collapsed.data.params[handle].label);
+    assert.deepEqual(expanded.data.blockProjectionPortBindings[handle], endpoint);
+    assert.deepEqual(runtime.blockProjectionConnectionEndpointV2(collapsed, handle, 'input'), {
+      nodeId: endpoint.nodeId,
+      fieldOrPortId: 'prompt',
+    });
+    assert.deepEqual(runtime.blockProjectionConnectionEndpointsV2(collapsed, handle, 'input'), [
+      { nodeId: 'generate', fieldOrPortId: 'prompt' },
+      { nodeId: 'preview', fieldOrPortId: 'prompt' },
+    ]);
+  }
+  assert.equal(JSON.stringify(current), original, 'labels are projection only');
+});
+
+test('connecting through a visible ancestor replaces the leaf writer atomically and is undoable', () => {
+  for (const expanded of [false, true]) {
+    const current = nestedConnectionInstance(expanded);
+    const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+    const state = flowStore.useFlowStore;
+    state.setState({ nodes: projection.nodes, edges: projection.edges });
+    state.getState().resetHistory();
+    const target = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+    const source = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'alternate-load');
+    const targetHandle = Object.entries(target.data.blockProjectionPortBindings).find(
+      ([, endpoint]) => endpoint.nodeId === 'generate' && endpoint.fieldOrPortId === 'components',
+    )[0];
+    const connection = { source: source.id, sourceHandle: 'components', target: target.id, targetHandle };
+    state.getState().onConnect(connection);
+    const next = state.getState().nodes.find((node) => node.id === current.instanceId).data.blockInstanceV2;
+    const writers = next.effectiveGraph.edges.filter(
+      (edge) => edge.targetNodeId === 'generate' && edge.targetPortId === 'components',
+    );
+    assert.equal(writers.length, 1, 'ancestor and leaf are aliases, not two different inputs');
+    assert.equal(writers[0].sourceNodeId, 'alternate-load');
+    assert.equal(writers[0].edgeId, 'components', 'a replacement retains the existing semantic edge ID');
+    assert.deepEqual(next.values, current.values);
+    assert.deepEqual(next.effectiveInterface, current.effectiveInterface);
+    assert.deepEqual(next.definitionSnapshot, current.definitionSnapshot);
+    assert.equal(state.getState().historyPast.length, 1);
+    state.getState().onConnect(connection);
+    assert.equal(state.getState().historyPast.length, 1, 'same connection is a no-op');
+    state.getState().undo();
+    assert.deepEqual(
+      state.getState().nodes.find((node) => node.id === current.instanceId).data.blockInstanceV2,
+      current,
+    );
+    state.getState().redo();
+    const execution = runtime.expandBlockGraphV2ForExecution(state.getState().nodes, state.getState().edges);
+    assert.equal(execution.edges.length, current.effectiveGraph.edges.length);
+    assert.equal(execution.edges.filter((edge) => edge.targetHandle === 'components').length, 1);
+  }
+});
+
+test('projected endpoint resolution rejects missing handles and direction mismatches', () => {
+  const projection = runtime.materializeBlockProjectionV2(
+    runtime.createBlockRootNodeV2(nestedConnectionInstance(true)),
+  );
+  const leaf = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+  assert.equal(runtime.blockProjectionConnectionEndpointV2(leaf, 'nonexistent', 'input'), null);
+  assert.equal(runtime.blockProjectionConnectionEndpointV2(leaf, 'components', 'output'), null);
+  assert.equal(runtime.blockProjectionConnectionEndpointV2(leaf, 'images', 'input'), null);
+});
+
+test('invalid nested replacement leaves the old writer, history, values and other instances intact', () => {
+  const current = nestedConnectionInstance(true);
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+  const sibling = runtime.createBlockRootNodeV2(instance('unrelated-instance'));
+  const state = flowStore.useFlowStore;
+  state.setState({ nodes: [...projection.nodes, sibling], edges: projection.edges });
+  state.getState().resetHistory();
+  const source = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'alternate-load');
+  const target = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+  const before = JSON.stringify({ nodes: state.getState().nodes, edges: state.getState().edges });
+  for (const conn of [
+    { source: source.id, sourceHandle: 'missing', target: target.id, targetHandle: 'components' },
+    { source: source.id, sourceHandle: 'components', target: target.id, targetHandle: 'missing' },
+    { source: sibling.id, sourceHandle: 'images', target: target.id, targetHandle: 'components' },
+  ]) {
+    state.getState().onConnect(conn);
+    assert.equal(JSON.stringify({ nodes: state.getState().nodes, edges: state.getState().edges }), before);
+    assert.equal(state.getState().historyPast.length, 0);
+  }
+  // Simulate a stale/inconsistent canvas field that appears compatible. Strict
+  // semantic validation must fail before removing the existing connection.
+  state.setState({
+    nodes: state.getState().nodes.map((node) =>
+      node.id === source.id
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              params: { ...node.data.params, nonexistent: { type: 'pipeline_components', display: 'output' } },
+            },
+          }
+        : node,
+    ),
+  });
+  const beforeInvalid = JSON.stringify({ nodes: state.getState().nodes, edges: state.getState().edges });
+  assert.throws(() =>
+    state
+      .getState()
+      .onConnect({ source: source.id, sourceHandle: 'nonexistent', target: target.id, targetHandle: 'components' }),
+  );
+  assert.equal(JSON.stringify({ nodes: state.getState().nodes, edges: state.getState().edges }), beforeInvalid);
+  assert.equal(state.getState().historyPast.length, 0);
+});
+
+test('reconnecting the identical nested endpoint is a no-op even through an ancestor alias', () => {
+  const current = nestedConnectionInstance(true);
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+  const state = flowStore.useFlowStore;
+  state.setState({ nodes: projection.nodes, edges: projection.edges });
+  state.getState().resetHistory();
+  const edge = projection.edges.find((edge) => edge.data?.blockProjectionEdgeId === 'components');
+  const target = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  const handle = Object.entries(target.data.blockProjectionPortBindings).find(
+    ([, endpoint]) => endpoint.nodeId === 'generate' && endpoint.fieldOrPortId === 'components',
+  )[0];
+  // The stale object must not be allowed to nominate a different semantic edge.
+  state.getState().onReconnect(
+    { ...edge, data: { ...edge.data, blockProjectionEdgeId: 'preview-images' } },
+    {
+      source: edge.source,
+      sourceHandle: edge.sourceHandle,
+      target: target.id,
+      targetHandle: handle,
+    },
+  );
+  assert.deepEqual(state.getState().nodes.find((node) => node.id === current.instanceId).data.blockInstanceV2, current);
+  assert.equal(state.getState().historyPast.length, 0);
+});
+
+test('disconnecting a baseline crossing keeps its nested socket available without restoring the wire', () => {
+  const original = nestedConnectionInstance();
+  const project = (instance) => runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+  const before = project(original);
+  const stageBefore = before.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  const disconnected = runtime.replaceBlockEffectiveGraphV2(original, {
+    ...original.effectiveGraph,
+    edges: original.effectiveGraph.edges.filter((edge) => edge.edgeId !== 'components'),
+  });
+  const after = project(disconnected);
+  const stageAfter = after.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  assert.deepEqual(stageAfter.data.blockProjectionPortBindings, stageBefore.data.blockProjectionPortBindings);
+  assert.equal(
+    after.edges.some((edge) => edge.data?.blockProjectionEdgeId === 'components'),
+    false,
+  );
+  assert.equal(
+    runtime.expandBlockGraphV2ForExecution(after.nodes, after.edges).edges.length,
+    original.effectiveGraph.edges.length - 1,
+  );
+  const restored = project(schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(disconnected))));
+  assert.deepEqual(
+    restored.nodes.find((node) => node.data.blockProjectionNodeId === 'stage').data.blockProjectionPortBindings,
+    stageBefore.data.blockProjectionPortBindings,
+  );
 });
 
 test('hierarchical Modular Diffusers containers collapse descendants without changing semantic graph or layout', () => {
@@ -1631,6 +2150,81 @@ test('preview and sealed-control owners use identity-preserving compatible repla
     /replacement field repository is missing or incompatible/u,
   );
   assert.deepEqual(authorized, authorizedSnapshot);
+});
+
+test('saved Block previews resolve exact retained media without changing graph or borrowing another run', async () => {
+  const { withDurableBlockPreviewsV2 } = await server.ssrLoadModule('/src/studio/blockPreviewPersistenceV2.ts');
+  const original = runtime.setBlockPreviewStateV2(
+    instance('retained-preview'),
+    { nodeId: 'preview', outputPortId: 'images' },
+    { mediaReference: '/cache/execution/0', taskId: 'retained-task', status: 'complete' },
+  );
+  const nodes = [runtime.createBlockRootNodeV2(original)];
+  const output = {
+    taskId: 'retained-task',
+    nodeId: runtime.blockProjectionNodeIdV2('retained-preview', 'preview'),
+    fieldKey: 'images',
+    value: ['/cache/execution/0'],
+    url: '/file?file=retained.webp',
+    backendMediaPath: '@data/studio/outputs/retained.webp',
+    mediaItems: [
+      {
+        index: 0,
+        value: '/cache/execution/0',
+        url: '/file?file=retained.webp',
+        backendPath: '@data/studio/outputs/retained.webp',
+      },
+    ],
+  };
+  assert.equal(withDurableBlockPreviewsV2(nodes, [{ ...output, taskId: 'newer-task' }]), nodes);
+  assert.equal(withDurableBlockPreviewsV2(nodes, [{ ...output, backendMediaPath: undefined, mediaItems: [] }]), nodes);
+  const retained = withDurableBlockPreviewsV2(nodes, [output]);
+  assert.equal(retained[0].data.blockInstanceV2.previewStates[0].mediaReference, output.url);
+  assert.deepEqual({ ...retained[0].data.blockInstanceV2, previewStates: original.previewStates }, original);
+  assert.equal(withDurableBlockPreviewsV2(retained, [output]), retained);
+  assert.equal(nodes[0].data.blockInstanceV2.previewStates[0].mediaReference, '/cache/execution/0');
+  const copied = [{ ...nodes[0], id: 'copied-block' }];
+  assert.equal(
+    withDurableBlockPreviewsV2(copied, [output])[0].data.blockInstanceV2.previewStates[0].mediaReference,
+    output.url,
+  );
+  const collection = {
+    ...output,
+    mediaItems: [
+      { ...output.mediaItems[0], value: '/cache/execution/1', url: '/file?file=other.webp' },
+      output.mediaItems[0],
+    ],
+  };
+  assert.equal(
+    withDurableBlockPreviewsV2(nodes, [collection])[0].data.blockInstanceV2.previewStates[0].mediaReference,
+    output.url,
+  );
+  const newer = {
+    ...output,
+    id: 'new-current-output',
+    taskId: 'new-current-task',
+    url: '/file?file=newer.webp',
+    mediaItems: [],
+  };
+  const slot = {
+    workflowTabId: 'this-workflow',
+    nodeId: output.nodeId,
+    fieldKey: output.fieldKey,
+    status: 'ready',
+    currentOutputId: newer.id,
+  };
+  const current = { workflowTabId: 'this-workflow', previewSlots: { key: slot } };
+  const advanced = withDurableBlockPreviewsV2(nodes, [newer, output], current);
+  assert.equal(advanced[0].data.blockInstanceV2.previewStates[0].taskId, newer.taskId);
+  assert.equal(advanced[0].data.blockInstanceV2.previewStates[0].mediaReference, newer.url);
+  assert.equal(withDurableBlockPreviewsV2(nodes, [newer], { ...current, workflowTabId: 'another-workflow' }), nodes);
+  assert.equal(
+    withDurableBlockPreviewsV2(nodes, [newer], { ...current, previewSlots: { key: { ...slot, status: 'pending' } } }),
+    nodes,
+  );
+  const canonical = runtime.canonicalizePersistedBlockGraphV2(retained, []);
+  const reopened = runtime.materializeBlockProjectionV2(JSON.parse(JSON.stringify(canonical.nodes[0])));
+  assert.equal(reopened.nodes[0].data.blockInstanceV2.previewStates[0].mediaReference, output.url);
 });
 
 test('preview updates remain instance-local run state and preserve semantic authority', () => {

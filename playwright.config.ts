@@ -29,6 +29,8 @@ export default defineConfig({
     timeout: 120 * 1000,
     env: {
       VITE_BACKEND_PROXY_TARGET: liveBackendUrl,
+      MODIFF_VITE_CACHE_DIR: `node_modules/.vite-playwright-${mockFrontendPort}`,
+      MODIFF_GALLERY_STABLE: '1',
     },
   },
   use: {

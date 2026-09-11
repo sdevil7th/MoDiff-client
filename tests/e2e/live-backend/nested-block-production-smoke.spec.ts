@@ -1,4 +1,40 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { waitForRecursiveDomGeometry } from './blockDomGeometry';
+
+test('deployed cold workspace panels initialize all tab icons without a module-cycle crash', async ({ browser }) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    // The supported share entry opens the lazy workspace panel during cold
+    // startup, exposing icon descriptors captured before a cyclic entry loads.
+    const url = new URL(process.env.MODIFF_NESTED_FRONTEND_URL ?? 'http://127.0.0.1:8088');
+    url.searchParams.set('share', '');
+    await page.goto(url.href, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('workspace-panel')).toBeVisible({ timeout: 60_000 });
+    for (const tab of ['studio', 'queue', 'setup'])
+      await expect(page.getByTestId(`workspace-tab-${tab}`).locator('svg')).toBeVisible();
+    // Catch deferred mount/recovery errors rather than racing to a new tab.
+    await page.waitForTimeout(5_000);
+    await expect(page.getByTestId('workspace-panel')).toBeVisible();
+    expect(errors).toEqual([]);
+    await context.close();
+  }
+});
+
+async function dragResizeGrip(page: Page, node: Locator, dx: number, dy: number) {
+  const grip = node.getByTestId('node-resize-grip');
+  await expect(grip).toBeVisible();
+  const bounds = await grip.boundingBox();
+  if (!bounds) throw new Error('The deployed node resize grip has no layout box.');
+  const x = bounds.x + bounds.width / 2;
+  const y = bounds.y + bounds.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y + dy, { steps: 12 });
+  await page.mouse.up();
+}
 
 async function waitForWorkspaceStartup(page: Page, timeout = 300_000) {
   const deadline = Date.now() + timeout;
@@ -10,64 +46,6 @@ async function waitForWorkspaceStartup(page: Page, timeout = 300_000) {
     await page.waitForTimeout(500);
   }
   throw new Error('Workspace startup did not recover.');
-}
-
-async function waitForRecursiveDomGeometry(page: Page) {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
-      ),
-  );
-  await expect
-    .poll(
-      () =>
-        page.evaluate(() => {
-          const issues: string[] = [];
-          const byParent = new Map<string, HTMLElement[]>();
-          document.querySelectorAll<HTMLElement>('[data-block-projection="modular-diffusers"]').forEach((frame) => {
-            const parentId = frame.dataset.blockParentNodeId;
-            const wrapper = frame.closest<HTMLElement>('.react-flow__node');
-            if (!parentId || !wrapper) {
-              issues.push('projected Block has no inspectable parent');
-              return;
-            }
-            const parent = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(parentId)}"]`);
-            if (!parent) {
-              issues.push(`${wrapper.dataset.id}: missing parent ${parentId}`);
-              return;
-            }
-            const childRect = wrapper.getBoundingClientRect();
-            const parentRect = parent.getBoundingClientRect();
-            if (
-              childRect.left < parentRect.left - 2 ||
-              childRect.top < parentRect.top + 1 ||
-              childRect.right > parentRect.right + 2 ||
-              childRect.bottom > parentRect.bottom + 2
-            )
-              issues.push(`${wrapper.dataset.id}: escapes ${parentId}`);
-            byParent.set(parentId, [...(byParent.get(parentId) ?? []), wrapper]);
-          });
-          byParent.forEach((siblings, parentId) => {
-            siblings.forEach((left, index) => {
-              const leftRect = left.getBoundingClientRect();
-              siblings.slice(index + 1).forEach((right) => {
-                const rightRect = right.getBoundingClientRect();
-                if (
-                  leftRect.left < rightRect.right - 1 &&
-                  leftRect.right > rightRect.left + 1 &&
-                  leftRect.top < rightRect.bottom - 1 &&
-                  leftRect.bottom > rightRect.top + 1
-                )
-                  issues.push(`${left.dataset.id}: overlaps ${right.dataset.id} in ${parentId}`);
-              });
-            });
-          });
-          return issues;
-        }),
-      { timeout: 15_000 },
-    )
-    .toEqual([]);
 }
 
 async function expectEveryVisibleContainerHasConnectors(page: Page) {
@@ -84,6 +62,12 @@ async function expectEveryVisibleContainerHasConnectors(page: Page) {
 }
 
 test('deployed Qwen Block uses progressive shared Block frames', async ({ page }) => {
+  const pageErrors: string[] = [];
+  const missingHandles: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.text().includes("[React Flow]: Couldn't create edge for")) missingHandles.push(message.text());
+  });
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.addInitScript(() => {
     window.localStorage.clear();
@@ -123,6 +107,9 @@ test('deployed Qwen Block uses progressive shared Block frames', async ({ page }
   await expect(saveChoices.getByRole('button', { name: 'Save as new User Node', exact: true })).toBeEnabled();
   await expect(saveChoices.getByRole('button', { name: 'Update existing User Node', exact: true })).toHaveCount(0);
   await saveChoices.getByRole('button', { name: 'Cancel', exact: true }).click();
+  // This is the original reported failure: a manually resized collapsed root
+  // must not constrain its expanded descendants to the same saved dimensions.
+  await dragResizeGrip(page, root, -180, -180);
   await root.getByLabel('Expand block').click();
 
   const projectedBlocks = page.locator('[data-block-projection="modular-diffusers"]');
@@ -140,6 +127,21 @@ test('deployed Qwen Block uses progressive shared Block frames', async ({ page }
   const initialEdgeCount = await projectedEdges.count();
   await waitForRecursiveDomGeometry(page);
   await expectEveryVisibleContainerHasConnectors(page);
+  const denoiser = projectedBlocks.filter({
+    has: page.getByRole('button', { name: 'Save changes to Qwen Image Auto Core Denoise Step', exact: true }),
+  });
+  const heightLabels = await denoiser
+    .locator('.react-flow__handle.target[aria-label^="Input height"]')
+    .evaluateAll((handles) =>
+      handles.map((handle) => ({ label: handle.getAttribute('aria-label'), title: handle.getAttribute('title') })),
+    );
+  // One public height control fans out to both preparation and denoising.
+  // The shared Block surface must expose one socket, not duplicate aliases.
+  expect(heightLabels).toHaveLength(1);
+  expect(new Set(heightLabels.map(({ label }) => label)).size).toBe(heightLabels.length);
+  expect(heightLabels.every(({ title }) => title?.includes('height') && title.includes('denoise'))).toBe(true);
+  await page.getByTestId('arrange-graph').click();
+  await waitForRecursiveDomGeometry(page);
 
   const encoder = projectedBlocks.filter({
     has: page.getByRole('button', { name: 'Save changes to Qwen Image Auto Text Encoder Step', exact: true }),
@@ -201,6 +203,68 @@ test('deployed Qwen Block uses progressive shared Block frames', async ({ page }
     await expectEveryVisibleContainerHasConnectors(page);
   }
   await expect(projectedBlocks.locator('[aria-label^="Expand "]')).toHaveCount(0);
+  // The node envelope fitting is not enough: Advanced's intrinsic grid sizing
+  // previously pushed the numeric value and right step button out of the body.
+  const textStep = projectedBlocks.filter({
+    has: page.getByRole('button', { name: 'Save changes to Qwen Image Text Encoder Step', exact: true }),
+  });
+  await expect(textStep).toHaveCount(1);
+  const auto = page.getByTestId('topbar-auto-switch');
+  if ((await auto.getAttribute('aria-checked')) !== 'true') await auto.click();
+  const advanced = textStep.getByRole('button', { name: 'Advanced', exact: true });
+  await advanced.click();
+  const sequenceLength = textStep.getByLabel('Maximum Sequence Length', { exact: true });
+  await expect(sequenceLength).toHaveValue('512');
+  await sequenceLength.scrollIntoViewIfNeeded();
+  for (const sizeChange of [
+    { x: -50, y: 60 },
+    { x: 100, y: 60 },
+  ]) {
+    await dragResizeGrip(page, textStep, sizeChange.x, sizeChange.y);
+    await waitForRecursiveDomGeometry(page);
+    await expect
+      .poll(() =>
+        sequenceLength.evaluate((input) => {
+          const field = input.closest('[data-key]')!;
+          const disclosure = field.closest('[data-testid^="node-advanced-controls-"]')!;
+          const box = disclosure.getBoundingClientRect();
+          return (
+            disclosure.scrollWidth <= disclosure.clientWidth + 1 &&
+            [...field.querySelectorAll('input, button')].every((element) => {
+              const child = element.getBoundingClientRect();
+              return child.left >= box.left - 1 && child.right <= box.right + 1;
+            })
+          );
+        }),
+      )
+      .toBe(true);
+  }
+  await advanced.click();
+  await expect(sequenceLength).toHaveCount(0);
+  await advanced.click();
+  await expect(sequenceLength).toHaveValue('512');
+  await page.getByTestId('arrange-graph').click();
+  await waitForRecursiveDomGeometry(page);
+  const ordinaryLeaf = page
+    .locator('[data-node-parent-id]')
+    .filter({
+      has: page.getByTestId('node-resize-grip'),
+    })
+    .first();
+  await expect(ordinaryLeaf).toBeVisible();
+  const originalLeafSize = await ordinaryLeaf.boundingBox();
+  if (!originalLeafSize) throw new Error('An internal ordinary node must have measurable dimensions.');
+  await dragResizeGrip(page, ordinaryLeaf, 70, 90);
+  await expect
+    .poll(async () => {
+      const resized = await ordinaryLeaf.boundingBox();
+      return Boolean(
+        resized && resized.width > originalLeafSize.width + 20 && resized.height > originalLeafSize.height + 20,
+      );
+    })
+    .toBe(true);
+  await waitForRecursiveDomGeometry(page);
+  await expectEveryVisibleContainerHasConnectors(page);
   await page.getByTestId('arrange-graph').click();
   await waitForRecursiveDomGeometry(page);
   const canvas = page.locator('.react-flow').first();
@@ -221,4 +285,41 @@ test('deployed Qwen Block uses progressive shared Block frames', async ({ page }
   if (process.env.MODIFF_REVIEW_SCREENSHOT) {
     await page.screenshot({ path: process.env.MODIFF_REVIEW_SCREENSHOT, fullPage: true });
   }
+  if (process.env.MODIFF_REVIEW_NUMERIC_SCREENSHOT) {
+    // Fit first; DOM screenshot clipping alone does not pan the React Flow
+    // viewport and can otherwise capture an overlapping off-screen region.
+    // The body deliberately consumes wheel events for its own scrollbar.
+    // Zoom over the header, not over editable/scrollable content. One fixed
+    // wheel delta is not enough at every fit-to-graph starting scale.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const overviewBox = (await textStep.boundingBox())!;
+      if (overviewBox.width > 250) break;
+      await page.mouse.move(overviewBox.x + overviewBox.width / 2, overviewBox.y + 2);
+      await page.mouse.wheel(0, -350);
+      await page.waitForTimeout(250);
+    }
+    await expect.poll(async () => (await textStep.boundingBox())!.width).toBeGreaterThan(250);
+    await sequenceLength.scrollIntoViewIfNeeded();
+    const box = (await textStep.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    await textStep.screenshot({ path: process.env.MODIFF_REVIEW_NUMERIC_SCREENSHOT });
+  }
+  if (process.env.MODIFF_REVIEW_LIBRARY_SCREENSHOT) {
+    const resize = (await page.getByTestId('left-panel-resize-handle').boundingBox())!;
+    await page.mouse.move(resize.x + resize.width / 2, resize.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(640, resize.y + 100, { steps: 10 });
+    await page.mouse.up();
+    const label = (await row.locator('[data-catalog-entry-label]').boundingBox())!;
+    const badge = (await row.locator('[data-catalog-entry-readiness]').boundingBox())!;
+    expect(badge.x).toBeGreaterThan(label.x + label.width);
+    expect(badge.y).toBeLessThan(label.y + label.height + 12);
+    await group.screenshot({ path: process.env.MODIFF_REVIEW_LIBRARY_SCREENSHOT });
+  }
+  expect(pageErrors).toEqual([]);
+  expect(missingHandles).toEqual([]);
 });

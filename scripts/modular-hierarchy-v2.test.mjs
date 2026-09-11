@@ -9,8 +9,11 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BACKEND_ROOT = path.resolve(ROOT, '..', 'MoDiff');
 const BACKEND_DATA = path.join(BACKEND_ROOT, 'data');
-const BACKEND_PYTHON = process.env.MODIFF_BACKEND_PYTHON || path.join(BACKEND_ROOT, '.venv', 'bin', 'python');
-const RUNTIME_LAUNCHER = path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
+const BACKEND_PYTHON =
+  process.env.MODIFF_BACKEND_PYTHON ||
+  path.join(BACKEND_ROOT, '.venv', ...(process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']));
+const RUNTIME_LAUNCHER =
+  process.platform === 'win32' ? BACKEND_PYTHON : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
 
 let conditionalModule;
 let catalogModule;
@@ -19,6 +22,7 @@ let reviewedGraphModule;
 let blockRuntimeModule;
 let blockSchemaModule;
 let blockPersistenceModule;
+let blockContainerInterfaceModule;
 let graphLayoutModule;
 let nodeLibraryModule;
 let reviewedLibrary;
@@ -49,7 +53,7 @@ before(async () => {
   const libraryResult = spawnSync(
     RUNTIME_LAUNCHER,
     [
-      BACKEND_PYTHON,
+      ...(process.platform === 'win32' ? [] : [BACKEND_PYTHON]),
       '-c',
       'import json; from modiff.huggingface_node_library import build_huggingface_node_library; print(json.dumps(build_huggingface_node_library(), separators=(",", ":")))',
     ],
@@ -77,6 +81,7 @@ before(async () => {
   blockRuntimeModule = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
   blockSchemaModule = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
   blockPersistenceModule = await server.ssrLoadModule('/src/studio/blockDefinitionPersistenceV2.ts');
+  blockContainerInterfaceModule = await server.ssrLoadModule('/src/studio/blockContainerInterfaceV1.ts');
   graphLayoutModule = await server.ssrLoadModule('/src/workflow/graphLayout.ts');
   nodeLibraryModule = await server.ssrLoadModule('/src/studio/huggingFaceNodeLibrary.ts');
   reviewedLibrary = nodeLibraryModule.parseHuggingFaceNodeLibrary(JSON.parse(libraryResult.stdout));
@@ -146,7 +151,7 @@ test('the Modular Diffusers catalog exposes every exact block once and retains a
     expectedPlacements,
   );
   assert.ok(section.entries.every(({ id }) => id.startsWith('modular-block:diffusers.modular-block:')));
-  assert.ok(section.entries.every(({ groupPath }) => groupPath.length === 2));
+  assert.ok(section.entries.every(({ groupPath }) => groupPath.length === 3));
   assert.ok(section.entries.every(({ insertable, readiness }) => insertable && readiness === 'composable'));
   assert.ok(section.entries.some(({ detail }) => detail.includes('conditional')));
   assert.ok(section.entries.some(({ detail }) => detail.includes('sequential')));
@@ -361,6 +366,22 @@ test('all 94 reviewed workflows compile to one V2 graph with progressively proje
       blockRuntimeModule.createBlockRootNodeV2(progressivelyExpanded),
     );
     const progressiveChildren = progressiveProjection.nodes.filter(({ id }) => id !== instance.instanceId);
+    const disconnected = blockRuntimeModule.replaceBlockEffectiveGraphV2(progressivelyExpanded, {
+      ...instance.effectiveGraph,
+      edges: [],
+    });
+    const disconnectedProjection = blockRuntimeModule.materializeBlockProjectionV2(
+      blockRuntimeModule.createBlockRootNodeV2(disconnected),
+    );
+    assert.equal(disconnectedProjection.edges.length, 0, `${definition.id}: must not restore deleted wires`);
+    for (const node of progressiveChildren.filter(({ data }) => data.blockProjectionContainer)) {
+      const disconnectedNode = disconnectedProjection.nodes.find((candidate) => candidate.id === node.id);
+      assert.deepEqual(
+        disconnectedNode.data.blockProjectionPortBindings,
+        node.data.blockProjectionPortBindings,
+        `${definition.id}: disconnecting must not hide baseline boundary sockets`,
+      );
+    }
     if (containerIds.length > 0) {
       assert.ok(
         progressiveChildren.length < instance.effectiveGraph.nodes.length,
@@ -385,6 +406,40 @@ test('all 94 reviewed workflows compile to one V2 graph with progressively proje
       blockRuntimeModule.createBlockRootNodeV2(fullyExpanded),
     );
     const fullChildren = fullProjection.nodes.filter(({ id }) => id !== instance.instanceId);
+    // Labels may be shared upstream, but two visible handles on one side of a
+    // container must identify distinct consumers. IDs and semantic endpoints
+    // cannot change as the same container is opened.
+    for (const projection of [progressiveProjection, fullProjection]) {
+      for (const node of projection.nodes.filter(({ data }) => data.blockProjectionContainer)) {
+        const labels = new Set();
+        for (const [handle, param] of Object.entries(node.data.params)) {
+          const direction =
+            param.display === 'output' ? 'output' : param.display === 'input' || param.isInput ? 'input' : null;
+          if (!direction || param.hidden) continue;
+          const key = `${direction}:${param.label}`;
+          assert.ok(!labels.has(key), `${definition.id}: ambiguous ${key} on ${node.data.blockProjectionNodeId}`);
+          labels.add(key);
+          const endpoint = blockRuntimeModule.blockProjectionConnectionEndpointV2(node, handle, direction);
+          assert.ok(endpoint, `${definition.id}: unresolved ${handle}`);
+          assert.ok(instance.effectiveGraph.nodes.some(({ nodeId }) => nodeId === endpoint.nodeId));
+        }
+      }
+    }
+    for (const initial of progressiveChildren.filter(({ data }) => data.blockProjectionContainer)) {
+      const opened = fullChildren.find((node) => node.id === initial.id);
+      for (const [handle, binding] of Object.entries(initial.data.blockProjectionPortBindings ?? {})) {
+        assert.deepEqual(
+          opened.data.blockProjectionPortBindings[handle],
+          binding,
+          `${definition.id}: ${handle} changed target`,
+        );
+        assert.equal(
+          opened.data.params[handle].label,
+          initial.data.params[handle].label,
+          `${definition.id}: ${handle} changed label`,
+        );
+      }
+    }
     // Every declared control must remain editable at every containing depth,
     // not just on a collapsed root or its fully expanded leaf.
     const parentIds = blockRuntimeModule.blockModularParentIdsV2(instance);
@@ -455,6 +510,18 @@ test('all 94 reviewed workflows compile to one V2 graph with progressively proje
         child.position.y + childHeight <= parentHeight + 1,
         `${definition.pipelineClass}.${definition.workflowId} lets ${child.id} escape the bottom edge of ${parent.id}`,
       );
+      const parentPorts = parent.data.blockInstanceV2
+        ? Object.values(blockRuntimeModule.blockConnectorParamsV2(parent.data.blockInstanceV2)).flatMap(Object.values)
+        : Object.values(parent.data.params ?? {});
+      const connectorRows = Math.max(
+        parentPorts.filter((param) => param.isInput || param.display === 'input').length,
+        parentPorts.filter((param) => !param.isInput && param.display === 'output').length,
+      );
+      const connectorTrayHeight = connectorRows ? connectorRows * 24 + 9 : 0;
+      assert.ok(
+        child.position.y + childHeight + connectorTrayHeight + 28 <= parentHeight + 1,
+        `${definition.pipelineClass}.${definition.workflowId} overlaps ${parent.id}'s connector tray with ${child.id}`,
+      );
     });
 
     const expandedExecution = blockRuntimeModule.expandBlockGraphV2ForExecution(
@@ -492,6 +559,86 @@ test('all 94 reviewed workflows compile to one V2 graph with progressively proje
       parameterLocalityChecks += 1;
     }
     const beforeSubtreeSaves = JSON.stringify(instance);
+    const declaredGraph = structuredClone(instance.effectiveGraph);
+    for (const node of declaredGraph.nodes) {
+      if (containerIds.includes(node.nodeId))
+        node.containerInterface = blockContainerInterfaceModule.blockContainerInterfaceV1(instance, node.nodeId);
+    }
+    const declared = blockRuntimeModule.replaceBlockEffectiveGraphV2(instance, declaredGraph);
+    const declaredReloaded = blockSchemaModule.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(declared)));
+    assert.deepEqual(declaredReloaded.effectiveInterface, instance.effectiveInterface);
+    assert.deepEqual(declaredReloaded.values, instance.values);
+    for (const collapsedContainerNodeIds of [containerIds, []]) {
+      const declaredProjection = blockRuntimeModule.materializeBlockProjectionV2(
+        blockRuntimeModule.createBlockRootNodeV2(
+          blockRuntimeModule.setBlockPresentationV2(declaredReloaded, { expanded: true, collapsedContainerNodeIds }),
+        ),
+      );
+      assert.deepEqual(
+        executionContract(
+          blockRuntimeModule.expandBlockGraphV2ForExecution(declaredProjection.nodes, declaredProjection.edges),
+        ),
+        executionContract(collapsedExecution),
+        `${definition.id}: declaring durable internal interfaces changed execution`,
+      );
+    }
+    // The upstream identity is not an admission requirement for ordinary
+    // utilities: every family must retain a source-neutral nested Text Value.
+    const utilityId = 'ordinary-ownership-audit';
+    const utilityParent = containerIds[0];
+    const withUtility = blockRuntimeModule.addBlockEffectiveGraphNodeV2(declaredReloaded, {
+      nodeId: utilityId,
+      nodeType: 'custom',
+      ...(utilityParent ? { parentNodeId: utilityParent } : {}),
+      data: {
+        type: 'custom',
+        label: 'Text Value',
+        module: 'modules.Primitive',
+        action: 'TextValue',
+        params: {
+          text: { type: 'string', display: 'text', value: `Retained ordinary text for ${definition.id}` },
+          output: { type: 'string', display: 'output' },
+        },
+      },
+    });
+    const reloadedUtility = blockSchemaModule.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(withUtility)));
+    assert.deepEqual(reloadedUtility.definitionSnapshot, instance.definitionSnapshot);
+    assert.deepEqual(reloadedUtility.effectiveInterface, instance.effectiveInterface);
+    assert.deepEqual(reloadedUtility.values, instance.values);
+    assert.equal(reloadedUtility.effectiveGraph.nodes.find((n) => n.nodeId === utilityId).modularDiffusers, undefined);
+    let utilityExecution;
+    for (const expanded of [false, true]) {
+      const projection = blockRuntimeModule.materializeBlockProjectionV2(
+        blockRuntimeModule.createBlockRootNodeV2(
+          blockRuntimeModule.setBlockPresentationV2(reloadedUtility, { expanded, collapsedContainerNodeIds: [] }),
+        ),
+      );
+      const execution = executionContract(
+        blockRuntimeModule.expandBlockGraphV2ForExecution(projection.nodes, projection.edges),
+      );
+      if (utilityExecution)
+        assert.deepEqual(execution, utilityExecution, `${definition.id}: ordinary nested utility changed on expand`);
+      utilityExecution = execution;
+      if (expanded && utilityParent) {
+        const utility = projection.nodes.find((n) => n.data.blockProjectionNodeId === utilityId);
+        const parent = projection.nodes.find((n) => n.data.blockProjectionNodeId === utilityParent);
+        assert.equal(utility.parentId, parent.id, `${definition.id}: ordinary utility escaped its semantic parent`);
+      }
+    }
+    const savedWithUtility = blockPersistenceModule.reusableBlockDefinitionFromSubtreeV2(reloadedUtility, {
+      rootNodeId: utilityParent ?? utilityId,
+      definitionId: `ordinary-subtree-${workflowAudit.length}`,
+      displayName: 'Ordinary subtree',
+    });
+    assert.ok(
+      savedWithUtility.graph.nodes.some((n) => n.nodeId === utilityId),
+      `${definition.id}: subtree save dropped its ordinary child`,
+    );
+    assert.equal(
+      savedWithUtility.graph.nodes.find((n) => n.nodeId === utilityId).data.params.text.value,
+      `Retained ordinary text for ${definition.id}`,
+    );
+
     let workflowSubtreeSaveChecks = 0;
     for (const node of instance.effectiveGraph.nodes) {
       if (node.modularDiffusers?.kind !== 'upstream_block') continue;
@@ -536,6 +683,9 @@ test('all 94 reviewed workflows compile to one V2 graph with progressively proje
       collapsedExpandedExecutionEquivalent: true,
       parameterLocalityVerified: Boolean(editableControl),
       independentSubtreeSaveAndReuseChecks: workflowSubtreeSaveChecks,
+      durableContainerInterfaceChecks: containerIds.length,
+      ordinaryNodeOwnershipRoundTrip: true,
+      ordinaryNodeNestedParent: utilityParent ?? null,
     });
   }
   assert.equal(definitions.length, 94);

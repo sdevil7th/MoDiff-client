@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 
@@ -19,7 +21,10 @@ before(async () => {
     server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
-  graphFixer = await server.ssrLoadModule('/src/studio/graphFixer.ts');
+  graphFixer = {
+    ...(await server.ssrLoadModule('/src/studio/graphFixer.ts')),
+    ...(await server.ssrLoadModule('/src/studio/graphFixMaterialization.ts')),
+  };
   blockSchema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
   blockRuntime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
 });
@@ -40,7 +45,7 @@ function edge(id, source, sourceHandle, target, targetHandle) {
   return { id, source, sourceHandle, target, targetHandle, type: 'default' };
 }
 
-function blockV2Node(instanceId = 'v2-image-block') {
+function blockV2Node(instanceId = 'v2-image-block', referenceDisplay = 'input') {
   const semanticGraph = {
     nodes: [
       {
@@ -52,7 +57,7 @@ function blockV2Node(instanceId = 'v2-image-block') {
           action: 'Generate',
           label: 'Generate',
           params: {
-            reference: { display: 'input', type: 'image', label: 'Reference', required: true },
+            reference: { display: referenceDisplay, type: 'image', label: 'Reference', required: true },
             image: { display: 'output', type: 'image', label: 'Image' },
           },
         },
@@ -122,6 +127,68 @@ const imagePreview = definition('modules.Image', 'Preview', 'Preview image', {
   image: { display: 'input', type: 'image', label: 'Image', required: true },
 });
 
+test('a missing required Block media input offers targeted navigation, never an invented mask or mutation', () => {
+  const root = blockV2Node();
+  const before = structuredClone(root);
+  const plan = graphFixer.buildGraphFixPlan({
+    nodes: [root],
+    edges: [],
+    registry: {},
+    readinessIssues: [
+      {
+        id: 'missing-mask',
+        code: 'block_media_input_missing',
+        category: 'asset',
+        severity: 'error',
+        blocking: true,
+        nodeId: root.id,
+        fieldId: 'reference',
+        action: 'inspect_node',
+        message: 'Choose Reference before running.',
+        details: 'Required media input reference is empty.',
+      },
+    ],
+  });
+  const issue = plan.issues.find((item) => item.kind === 'missing_media');
+  assert.equal(issue.targetNodeId, root.id);
+  assert.equal(issue.targetHandle, 'reference');
+  assert.equal(issue.candidates.length, 1);
+  assert.deepEqual(issue.candidates[0].operations, [{ kind: 'external', action: 'inspect_node', nodeId: root.id }]);
+  assert.deepEqual(root, before);
+});
+
+test('editable Block boundary controls do not receive mandatory connection repairs for blank values', () => {
+  const catalog = JSON.parse(
+    gunzipSync(readFileSync(path.resolve(ROOT, '../MoDiff/modiff/registered_block_v2_catalog.v1.json.gz'))),
+  );
+  const entry = catalog.entries.find(
+    ({ definition }) => definition.source.manifestDefinitionId === 'diffusers.composite:FluxFillPipeline:outpaint',
+  );
+  assert.ok(entry);
+  let instance = blockSchema.createBlockInstanceV2(entry.definition, {
+    instanceId: 'required-fill-controls',
+    position: { x: 0, y: 0 },
+    size: { width: 360, height: 420 },
+  });
+  for (const [key, value] of Object.entries(entry.values))
+    instance = blockRuntime.setBlockInstanceValueV2(instance, key, value);
+  const root = blockRuntime.createBlockRootNodeV2(instance);
+  const opaqueSource = definition('modules.Test', 'Configuration', 'Unrelated configuration', {
+    value: { display: 'output', type: 'any', label: 'Configuration' },
+  });
+  const plan = graphFixer.buildGraphFixPlan({
+    nodes: [root],
+    edges: [],
+    registry: { 'modules.Test.GenerateImage': imageSource, 'modules.Test.Configuration': opaqueSource },
+  });
+  assert.deepEqual(
+    plan.issues.filter(
+      (item) => item.kind === 'missing_input' && ['prompt', 'image', 'mask_image'].includes(item.targetHandle),
+    ),
+    [],
+  );
+});
+
 test('adds and connects a compatible output node', () => {
   const source = node('source', imageSource, 0, 0);
   const registry = { 'modules.Image.Preview': imagePreview };
@@ -142,6 +209,55 @@ test('adds and connects a compatible output node', () => {
   assert.equal(result.edges[0].target, result.addedNodeIds[0]);
   assert.equal(result.edges[0].targetHandle, 'image');
   assert.equal(result.edges[0].type, 'smoothstep');
+});
+
+test('Fix recognizes an internal connected output in collapsed, expanded and saved V2 Blocks', () => {
+  for (const expanded of [false, true]) {
+    for (const connected of [false, true]) {
+      const root = blockV2Node('nested-output');
+      const graph = structuredClone(root.data.blockInstanceV2.effectiveGraph);
+      graph.nodes.push({ nodeId: 'preview', nodeType: 'custom', data: imagePreview });
+      if (connected)
+        graph.edges.push({
+          edgeId: 'to-preview',
+          sourceNodeId: 'generate',
+          sourcePortId: 'image',
+          targetNodeId: 'preview',
+          targetPortId: 'image',
+        });
+      const instance = blockRuntime.setBlockPresentationV2(
+        blockRuntime.replaceBlockEffectiveGraphV2(root.data.blockInstanceV2, graph),
+        { expanded },
+      );
+      const projection = blockRuntime.materializeBlockProjectionV2(blockRuntime.createBlockRootNodeV2(instance));
+      const restored = JSON.parse(JSON.stringify(projection));
+      const plan = graphFixer.buildGraphFixPlan({ ...restored, registry: { 'modules.Image.Preview': imagePreview } });
+      assert.equal(
+        plan.issues.some(({ kind }) => kind === 'missing_output'),
+        !connected,
+        `expanded=${expanded}, connected=${connected}`,
+      );
+      assert.deepEqual(restored, projection);
+    }
+  }
+});
+
+test('required inputs with explicit values or defaults do not receive spurious connection repairs', () => {
+  const text = definition('modules.Test', 'Text', 'Text', { text: { display: 'output', type: 'string' } });
+  const target = definition('modules.Test', 'Generate', 'Generate', {
+    prompt: { display: 'input', type: 'string', required: true, value: 'An original song' },
+    seed: { display: 'input', type: 'int', required: true, default: 0 },
+    enabled: { display: 'input', type: 'bool', required: true, value: false },
+  });
+  const plan = graphFixer.buildGraphFixPlan({
+    nodes: [node('text', text), node('generate', target)],
+    edges: [],
+    registry: {},
+  });
+  assert.equal(
+    plan.issues.some((issue) => issue.kind === 'missing_input'),
+    false,
+  );
 });
 
 test('connects an existing compatible pipeline to a required input', () => {
@@ -191,6 +307,65 @@ test('Graph Fix treats BlockDefinitionV2 boundary ports as ordinary canvas socke
     repaired.issues.some((issue) => issue.targetNodeId === block.id),
     false,
   );
+});
+
+test('Graph Fix resolves projected boundary values from the execution authority', () => {
+  const root = blockV2Node('valued-expanded-block', 'textarea');
+  const instance = blockRuntime.setBlockPresentationV2(
+    blockRuntime.setBlockInstanceValueV2(root.data.blockInstanceV2, 'reference', 'reference.png'),
+    { expanded: true },
+  );
+  const projection = blockRuntime.materializeBlockProjectionV2(blockRuntime.createBlockRootNodeV2(instance));
+  const before = structuredClone(projection);
+  const plan = graphFixer.buildGraphFixPlan({ ...projection, registry: {} });
+  assert.equal(
+    plan.issues.some((issue) => issue.kind === 'missing_input'),
+    false,
+  );
+  assert.deepEqual(projection, before, 'Fix inspection must not rewrite presentation or durable values');
+});
+
+test('Graph Fix never loops a Block public output back into its own output child', () => {
+  const root = blockV2Node('internal-preview-block');
+  const graph = structuredClone(root.data.blockInstanceV2.effectiveGraph);
+  graph.nodes.push({ nodeId: 'preview', nodeType: 'custom', data: imagePreview });
+  const instance = blockRuntime.setBlockPresentationV2(
+    blockRuntime.replaceBlockEffectiveGraphV2(root.data.blockInstanceV2, graph),
+    { expanded: true },
+  );
+  const projection = blockRuntime.materializeBlockProjectionV2(blockRuntime.createBlockRootNodeV2(instance));
+  const plan = graphFixer.buildGraphFixPlan({ ...projection, registry: {} });
+  const output = plan.issues.find((issue) => issue.kind === 'missing_output');
+  assert.ok(output?.candidates.length);
+  for (const candidate of output.candidates) {
+    assert.equal(
+      candidate.operations.some((op) => op.kind === 'connect' && op.source.nodeId === root.id),
+      false,
+    );
+  }
+  const before = structuredClone(projection);
+  const repaired = graphFixer.materializeGraphFixes({ ...projection, registry: {} }, [output.candidates[0]]);
+  assert.deepEqual(projection, before);
+  const repairedRoot = repaired.nodes.find((node) => node.id === root.id);
+  assert.ok(
+    repairedRoot.data.blockInstanceV2.effectiveGraph.edges.some(
+      (edge) => edge.sourceNodeId === 'generate' && edge.targetNodeId === 'preview',
+    ),
+  );
+  assert.deepEqual(repairedRoot.data.blockInstanceV2.definitionSnapshot, instance.definitionSnapshot);
+  assert.doesNotThrow(() => blockRuntime.expandBlockGraphV2ForExecution(repaired.nodes, repaired.edges));
+  const removed = graphFixer.materializeGraphFixes({ ...repaired, registry: {} }, [
+    {
+      id: 'remove-internal',
+      issueId: 'remove-internal',
+      title: 'Disconnect',
+      description: '',
+      confidence: 'safe',
+      operations: [{ kind: 'remove_edges', edgeIds: repaired.edges.map((edge) => edge.id) }],
+    },
+  ]);
+  assert.equal(removed.nodes.find((node) => node.id === root.id).data.blockInstanceV2.effectiveGraph.edges.length, 0);
+  assert.doesNotThrow(() => blockRuntime.expandBlockGraphV2ForExecution(removed.nodes, removed.edges));
 });
 
 test('Graph Fix offers an explicit reviewed-structure recovery and preserves compatible custom additions', () => {
@@ -456,4 +631,46 @@ test('does not offer a fix for an already complete graph', () => {
   const plan = graphFixer.buildGraphFixPlan({ nodes: [source, preview], edges, registry: {} });
   assert.equal(plan.canFix, false);
   assert.deepEqual(plan.issues, []);
+});
+
+test('Fix retains a component explanation even when no safe automatic replacement exists', () => {
+  const readiness = {
+    category: 'graph',
+    code: 'modular_component_requirement',
+    nodeId: 'foreign',
+    severity: 'warning',
+    blocking: false,
+    action: 'inspect_node',
+    message: 'Foreign decoder requires a different VAE.',
+    details: 'Connect a compatible component; do not change the model automatically.',
+  };
+  const plan = graphFixer.buildGraphFixPlan({ nodes: [], edges: [], registry: {}, readinessIssues: [readiness] });
+  assert.equal(plan.canFix, false);
+  assert.equal(plan.candidateCount, 0);
+  assert.equal(plan.issues.length, 1);
+  assert.equal(plan.issues[0].targetNodeId, 'foreign');
+  assert.match(plan.issues[0].description, /requires a different VAE/);
+  assert.deepEqual(plan.issues[0].candidates, []);
+});
+
+test('Fix retains a runtime-only loop failure without guessing an initial tensor', () => {
+  const readiness = {
+    id: 'failed-loop-run',
+    category: 'graph',
+    code: 'modular_runtime_failure',
+    nodeId: 'denoise',
+    severity: 'warning',
+    blocking: false,
+    action: 'inspect_node',
+    message:
+      'Loop member denoise/before: previous-iteration connection needs initial state noise_pred for iteration 0.',
+    details: 'Inspect the initial state or correct the carried-value connection; no tensor is guessed.',
+  };
+  const plan = graphFixer.buildGraphFixPlan({ nodes: [], edges: [], registry: {}, readinessIssues: [readiness] });
+  assert.equal(plan.canFix, false);
+  assert.equal(plan.candidateCount, 0);
+  assert.equal(plan.issues.length, 1);
+  assert.equal(plan.issues[0].targetNodeId, 'denoise');
+  assert.match(plan.issues[0].description, /noise_pred/);
+  assert.deepEqual(plan.issues[0].candidates, []);
 });

@@ -27,6 +27,20 @@ function familyLabel(value: string | undefined) {
     .trim();
 }
 
+function taskLabel(value: string | undefined) {
+  return value
+    ? familyLabel(value)
+        .replace(/text2image/iu, 'Text to image')
+        .replace(/image2image/iu, 'Image to image')
+    : 'Custom Blocks';
+}
+
+function displayFamily(name: string) {
+  // Old saved forks sometimes omit pipelineClass. Their original display
+  // prefix is useful for browsing, but never becomes execution provenance.
+  return name.includes(' — ') ? name.split(' — ')[0]!.replace(/\s*\(Fork\)$/u, '') : 'Custom Blocks';
+}
+
 /** Display-only context from the existing save naming convention, not execution provenance. */
 export function storedUserBlockGroupPath(block: StoredUserBlockDefinition, grouping: UserBlockGrouping = 'source') {
   if (grouping === 'workflow') {
@@ -46,7 +60,11 @@ export function storedUserBlockGroupPath(block: StoredUserBlockDefinition, group
           : source.kind === 'hub_import'
             ? 'Hub imports'
             : 'Workflow created';
-    return [origin, familyLabel(source.pipelineClass)];
+    return [
+      origin,
+      source.pipelineClass ? familyLabel(source.pipelineClass) : displayFamily(block.displayName),
+      taskLabel(source.workflow),
+    ];
   }
   const origin = block.origin;
   const source =
@@ -57,7 +75,11 @@ export function storedUserBlockGroupPath(block: StoredUserBlockDefinition, group
         : origin?.kind === 'hugging_face_hub_import'
           ? 'Hub imports'
           : 'Workflow created';
-  return [source, familyLabel(origin?.pipelineClass)];
+  return [
+    source,
+    origin?.pipelineClass ? familyLabel(origin.pipelineClass) : displayFamily(block.name),
+    taskLabel(origin?.workflowId),
+  ];
 }
 
 export function storedUserBlockRevision(block: StoredUserBlockDefinition) {

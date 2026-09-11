@@ -5,6 +5,7 @@ import { REGISTERED_BLOCK_V2_ROUTES } from './registeredBlockV2Routes';
 import { blockValueTypesAreCompatibleV2 } from './blockValueTypeCompatibilityV2';
 import {
   blockModularContainerNodeIdsV2,
+  blockInstancePreviewBindingsV2,
   normalizeBlockInstanceV2,
   type BlockInstanceV2,
   type BlockJsonValue,
@@ -47,25 +48,24 @@ export const REGISTERED_BLOCK_ROUTE_SETS_V1: readonly RegisteredBlockRouteSetV1[
     label: 'Text-to-image pipeline',
     portableValueIds: ['prompt', 'seed'],
     routes: [
-      {
-        key: 'qwen-image-2512',
-        catalogDefinitionId: 'diffusers.modular:QwenImageModularPipeline:text2image',
-        compiledDefinitionId: 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image',
-        label: 'Qwen Image 2512',
-      },
-      {
-        key: 'flux-1-dev',
-        catalogDefinitionId: 'diffusers.modular:FluxModularPipeline:text2image',
-        compiledDefinitionId: 'diffusers.cluster-admission:FluxModularPipeline:text2image:mode:text_to_image',
-        label: 'FLUX.1 Dev',
-      },
-      {
-        key: 'sdxl-base-1.0',
-        catalogDefinitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:text2image',
-        compiledDefinitionId:
-          'diffusers.cluster-admission:StableDiffusionXLModularPipeline:text2image:mode:text_to_image',
-        label: 'Stable Diffusion XL 1.0',
-      },
+      exactRegisteredRouteV1(
+        'qwen-image-2512',
+        'Qwen Image 2512',
+        'diffusers.modular:QwenImageModularPipeline:text2image',
+        'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image',
+      ),
+      exactRegisteredRouteV1(
+        'flux-1-dev',
+        'FLUX.1 Dev',
+        'diffusers.modular:FluxModularPipeline:text2image',
+        'diffusers.cluster-admission:FluxModularPipeline:text2image:mode:text_to_image',
+      ),
+      exactRegisteredRouteV1(
+        'sdxl-base-1.0',
+        'Stable Diffusion XL 1.0',
+        'diffusers.modular:StableDiffusionXLModularPipeline:text2image',
+        'diffusers.cluster-admission:StableDiffusionXLModularPipeline:text2image:mode:text_to_image',
+      ),
       exactRegisteredRouteV1(
         'z-image',
         'Z-Image',
@@ -88,7 +88,7 @@ export const REGISTERED_BLOCK_ROUTE_SETS_V1: readonly RegisteredBlockRouteSetV1[
         'flux-2',
         'FLUX.2',
         'diffusers.modular:Flux2ModularPipeline:text2image',
-        'diffusers.cluster-admission:Flux2ModularPipeline:text2image:mode:equivalent_standard_route',
+        'diffusers.cluster-admission:Flux2ModularPipeline:text2image:mode:text_to_image',
       ),
       exactRegisteredRouteV1(
         'cosmos-3-distilled',
@@ -338,6 +338,26 @@ export const REGISTERED_BLOCK_ROUTE_SETS_V1: readonly RegisteredBlockRouteSetV1[
       ),
     ],
   },
+  {
+    schemaVersion: 1,
+    routeSetId: 'diffusers.route-set:klein-text-to-image:v1',
+    label: 'Text-to-image pipeline',
+    portableValueIds: ['prompt', 'seed'],
+    routes: [
+      exactRegisteredRouteV1(
+        'flux2-klein',
+        'FLUX.2 Klein',
+        'diffusers.modular:Flux2KleinModularPipeline:text2image',
+        'diffusers.cluster-admission:Flux2KleinModularPipeline:text2image:mode:text_to_image',
+      ),
+      exactRegisteredRouteV1(
+        'flux2-klein-base',
+        'FLUX.2 Klein Base',
+        'diffusers.modular:Flux2KleinBaseModularPipeline:text2image',
+        'diffusers.cluster-admission:Flux2KleinBaseModularPipeline:text2image:mode:text_to_image',
+      ),
+    ],
+  },
 ];
 
 function fail(message: string): never {
@@ -424,7 +444,10 @@ function instanceFromDraft(
         ? { collapsedContainerNodeIds: draft.collapsedContainerNodeIds }
         : { collapsedContainerNodeIds: blockModularContainerNodeIdsV2(draft.effectiveGraph) }),
     },
-    previewStates: draft.definitionSnapshot.previews.map((binding) => ({ binding, status: 'idle' })),
+    previewStates: blockInstancePreviewBindingsV2(draft.definitionSnapshot, draft.effectiveGraph).map((binding) => ({
+      binding,
+      status: 'idle',
+    })),
     authorities: [],
     routeSelection,
   });
@@ -456,7 +479,10 @@ export function inactiveBlockRouteDraftInstanceV1(currentValue: BlockInstanceV2,
         ? { collapsedContainerNodeIds: draft.collapsedContainerNodeIds }
         : { collapsedContainerNodeIds: blockModularContainerNodeIdsV2(draft.effectiveGraph) }),
     },
-    previewStates: draft.definitionSnapshot.previews.map((binding) => ({ binding, status: 'idle' })),
+    previewStates: blockInstancePreviewBindingsV2(draft.definitionSnapshot, draft.effectiveGraph).map((binding) => ({
+      binding,
+      status: 'idle',
+    })),
     authorities: [],
   });
 }

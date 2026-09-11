@@ -38,6 +38,44 @@ let deviceRebaseModule;
 let modelUsagePoliciesModule;
 let modelCapabilitiesModule;
 
+test('run readiness ignores progress-only task changes but invalidates task ownership and lifecycle', () => {
+  const fingerprint = runReadinessModule.runReadinessTaskFingerprint;
+  const task = {
+    task_id: 'background-task',
+    status: 'running',
+    workflow_tab_id: 'other-workflow',
+    workflow_title: 'Background generation',
+    name: 'Graph execution',
+    updated_at: 1,
+  };
+  const initial = fingerprint(task);
+  for (let step = 0; step < 500; step += 1) {
+    assert.equal(
+      fingerprint({
+        ...task,
+        updated_at: step + 2,
+        progress: step / 5,
+        current_step: step,
+        last_heartbeat_at: step + 2,
+        message: `Progress ${step}`,
+      }),
+      initial,
+    );
+  }
+  for (const change of [
+    { task_id: 'new-task' },
+    { workflow_tab_id: 'selected-workflow' },
+    { workflow_title: 'Renamed generation' },
+    { name: 'Renamed task' },
+    { status: 'completed' },
+    { status: 'failed' },
+    { status: 'cancelled' },
+  ])
+    assert.notEqual(fingerprint({ ...task, ...change }), initial);
+  assert.notEqual(fingerprint(undefined), initial);
+  assert.equal(fingerprint({ ...task, status: undefined }), initial);
+});
+
 before(async () => {
   globalThis.window = {
     location: {
@@ -3739,6 +3777,27 @@ test('controlled artifacts never inherit a base-only Ran here label at plan time
   );
 });
 
+test('MiniMax authored music template retains native settings without claiming publication', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'minimax_music3_chamber_pop');
+  assert.ok(template, 'MiniMax needs a discoverable authored template, not only a palette admission');
+  assert.equal(template.modelType, 'MiniMaxMusic3ModularPipeline');
+  assert.equal(template.mode, 'text_to_audio');
+  assert.equal(template.example.status, 'unverified');
+  assert.equal(template.example.outputPath, undefined);
+  assert.equal(template.example.modelRevision, profilesModule.MINIMAX_MUSIC3_REVISION);
+  assert.deepEqual(template.example.expectedOutput, { durationSeconds: 60, sampleRate: 44100 });
+  assert.equal(template.example.lockedSettings.steps, 30);
+  assert.equal(template.example.lockedSettings.audioDuration, 60);
+  assert.equal(template.example.lockedSettings.quantizationMode, 'none');
+  assert.equal(template.example.lockedSettings.dtype, 'bfloat16');
+  assert.equal(template.example.lockedSeed, 20260908);
+  assert.match(template.prompt, /96 BPM in D major/);
+  assert.match(template.example.lockedSettings.lyrics, /\[verse\]\nSilver rails/);
+  assert.match(template.example.lockedSettings.lyrics, /\[chorus\]\nLeave a little light/);
+  assert.equal(template.negativePrompt, '');
+  assert.equal(template.outputKinds[0], 'audio');
+});
+
 test('ACE templates lock musical structure, metadata, and model-aware negative behavior', () => {
   const templates = templatesModule.STUDIO_TEMPLATES.filter(
     (template) => template.modelType === 'AceStepAudioPipeline',
@@ -7192,4 +7251,51 @@ test('startup request caches recover manifest and plans at their startup readine
   );
   assert.match(browserSource, /shouldRetryStaticStartupRequest\(\{[\s\S]*?manifestStartupRetryAttempted\.current/);
   assert.doesNotMatch(browserSource, /templateManifestRequest\s*\?\?=/);
+});
+
+test('template creation waits for initial capabilities and cannot continue into another workflow', async () => {
+  const { createWorkflowFromTemplate } = await server.ssrLoadModule('/src/studio/templateWorkflow.ts');
+  const nodeStore = nodesStoreModule.useNodesStore;
+  const studioStore = studioStoreModule.useStudioStore;
+  const flowStore = flowStoreModule.useFlowStore;
+  const previousNodes = nodeStore.getState();
+  const previousStudio = studioStore.getState();
+  const previousFlow = flowStore.getState();
+  let resolveCapabilities;
+  let requested = false;
+  const capabilities = new Promise((resolve) => {
+    resolveCapabilities = resolve;
+  });
+  nodeStore.setState({
+    discoveryRequests: {
+      ...previousNodes.discoveryRequests,
+      capabilities: { status: 'loading', error: null, requestId: 1 },
+    },
+    fetchStudioModelCapabilities: async () => {
+      requested = true;
+      await capabilities;
+    },
+  });
+  let pending;
+  try {
+    pending = createWorkflowFromTemplate(
+      templatesModule.STUDIO_TEMPLATES.find(({ id }) => id === 'qwen_product_mockup'),
+    );
+    assert.equal(requested, true);
+    assert.equal(flowStore.getState().nodes.length, 0);
+    studioStore.getState().createWorkflowTab('User switched documents');
+    resolveCapabilities();
+    await assert.rejects(pending, (error) => studioStoreModule.isWorkflowOperationCancelled(error));
+    assert.equal(flowStore.getState().nodes.length, 0);
+    assert.equal(
+      studioStore.getState().workflowTabs.find(({ id }) => id === studioStore.getState().activeWorkflowTabId).title,
+      'User switched documents',
+    );
+  } finally {
+    resolveCapabilities();
+    await pending?.catch(() => {});
+    nodeStore.setState(previousNodes);
+    studioStore.setState(previousStudio);
+    flowStore.setState(previousFlow);
+  }
 });

@@ -1,6 +1,11 @@
-import { useFlowStore, withoutBlockCompilationTransientsV2 } from '../stores/useFlowStore';
+import {
+  useFlowStore,
+  withoutBlockCompilationTransientsV2,
+  resolveFlowExecutionTargetNodeIds,
+} from '../stores/useFlowStore';
+import { buildApiGraphExport } from '../stores/flowGraphExport';
 import { useNodesStore } from '../stores/useNodeStore';
-import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { runtimeFailureTargetsActiveWorkflow, useRunIssueStore } from '../stores/useRunIssueStore';
 import { currentAutoResourcePlanTarget, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore, type Task } from '../stores/useTaskStore';
 import { getStudioModelCacheStatus } from './modelCache';
@@ -46,13 +51,32 @@ import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm, RE
 import { getStudioTemplateLoraBaseModel } from './templates';
 import { useHuggingFaceClusterRuntimeStore } from '../stores/useHuggingFaceClusterRuntimeStore';
 import { useUserBlockStore } from '../stores/useUserBlockStore';
-import { expandUserBlockGraph, inspectUserBlockCompositions } from './userBlocks';
+import { expandUserBlockGraph, inspectUserBlockCompositions, runtimeProgressTarget } from './userBlocks';
+import { modularRuntimeFailureIssue } from './modularRuntimeFailureIssue';
 import { expandHuggingFaceClusterBoundaryEdges } from './huggingFaceClusterGraph';
 import { blockProjectionNodeIdV2, expandBlockGraphV2ForExecution } from './blockRuntimeV2';
 import { registeredBlockAutoAuthorityIssuesV2 } from './blockExecutionAuthorityV2';
 import { inspectRegisteredBlockAutoEligibilityV2 } from './blockAutoEligibilityV2';
+import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
+import { inspectBlockSeedBindingsV2 } from './blockSeedRepairV2';
+import { inspectReviewedStateV2 } from './reviewedStateDiagnosticsV2';
+import { inspectReviewedLoopV2 } from './reviewedLoopDiagnosticsV2';
+import { inspectReviewedComponentRequirementsV2 } from './reviewedBlockContextV2';
+import { useHuggingFaceModularConditionalStore } from '../stores/useHuggingFaceModularConditionalStore';
+import { inspectBlockDerivedControlsV2 } from './blockDerivedControlRepairV2';
+import { inspectBlockMediaInputsV2 } from './blockMediaReadinessV2';
 
 const GIB = 1024 ** 3;
+
+// Queue pressure reads ownership, lifecycle and the displayed run label, not
+// progress/heartbeat timestamps. Revalidating every Block on each progress tick
+// starves layout and navigation while another workflow is generating.
+export function runReadinessTaskFingerprint(task: Task | undefined) {
+  return task
+    ? JSON.stringify([task.task_id, task.status ?? 'running', task.workflow_tab_id, task.workflow_title, task.name])
+    : 'idle';
+}
+
 const MODEL_PARAM_HINTS = [
   'repo',
   'repository',
@@ -858,12 +882,26 @@ export function collectGraphDeviceOffloadIssues(graph = executableFlowGraph()): 
   });
 }
 
-function executableFlowGraph() {
+function executableFlowGraph(targetNodeId?: string) {
   const { nodes, edges } = useFlowStore.getState();
   const durable = withoutBlockCompilationTransientsV2(nodes, edges);
   const userBlocks = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
   const legacyClusters = expandHuggingFaceClusterBoundaryEdges(userBlocks);
-  return expandBlockGraphV2ForExecution(legacyClusters.nodes, legacyClusters.edges);
+  const execution = expandBlockGraphV2ForExecution(legacyClusters.nodes, legacyClusters.edges, targetNodeId);
+  if (!targetNodeId) return execution;
+  // Use the same target/dependency closure as selected Run. This is inspection:
+  // randomized fields must not write back into the user's saved instance.
+  const selected = buildApiGraphExport({
+    ...execution,
+    sid: 'readiness',
+    targetNodeIds: resolveFlowExecutionTargetNodeIds(nodes, targetNodeId, edges),
+    setParam: () => {},
+  });
+  const included = new Set(Object.keys(selected.nodes));
+  return {
+    nodes: execution.nodes.filter((node) => included.has(node.id)),
+    edges: execution.edges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
+  };
 }
 
 function invalidCompositeExecutionGraphIssue(error: unknown) {
@@ -1072,6 +1110,19 @@ function collectRegisteredBlockV2AuthorityIssues(): RunReadinessIssue[] {
   const authorities = registeredBlockAutoAuthorityIssuesV2(flow.nodes);
   if (!authorities.length) return [];
   const eligibility = inspectRegisteredBlockAutoEligibilityV2(flow.nodes, flow.edges);
+  if (!eligibility.eligible && eligibility.code !== 'malformed_graph')
+    return [
+      issue({
+        code: 'workflow_auto_plan_pending',
+        category: 'environment',
+        severity: 'info',
+        blocking: false,
+        message: 'Auto will plan this workflow when the run starts.',
+        action: 'inspect_node',
+        details:
+          'The backend checks the actual loaders, connected resource controls and combined retained-model memory before dispatch. An unsupported recipe reports its exact node without changing the graph.',
+      }),
+    ];
   return authorities.map((authority) => {
     if (eligibility.eligible && eligibility.rootId === authority.instanceId) {
       return issue({
@@ -1148,6 +1199,7 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
   const issues = [
     ...collectUserBlockCompositionIssues(),
     ...collectGraphStructureIssues(executionGraph),
+    ...inspectBlockMediaInputsV2(visibleGraph.nodes, executionGraph),
     ...collectGraphModelIssues(executionGraph),
     ...collectGraphDeviceOffloadIssues(executionGraph),
   ];
@@ -1691,6 +1743,7 @@ export function collectRunReadinessIssues(options: {
   sid?: string | null;
   isConnected: boolean;
   includeStudio?: boolean;
+  targetNodeId?: string;
 }) {
   const issues: RunReadinessIssue[] = [];
   const studioState = useStudioStore.getState();
@@ -1763,18 +1816,131 @@ export function collectRunReadinessIssues(options: {
 
   let executionGraph: ReturnType<typeof executableFlowGraph> | null = null;
   try {
-    executionGraph = executableFlowGraph();
+    executionGraph = executableFlowGraph(options.targetNodeId);
   } catch (error) {
     issues.push(invalidCompositeExecutionGraphIssue(error));
   }
   if (executionGraph) {
     issues.push(...collectGraphStructureIssues(executionGraph));
+    issues.push(...inspectBlockMediaInputsV2(useFlowStore.getState().nodes, executionGraph));
     issues.push(...collectGraphModelIssues(executionGraph));
     issues.push(...collectGraphDeviceOffloadIssues(executionGraph));
   }
   issues.push(...collectUserBlockCompositionIssues());
   issues.push(...collectHuggingFaceClusterAuthorityIssues());
   issues.push(...collectRegisteredBlockV2AuthorityIssues());
+  const visibleNodes = useFlowStore.getState().nodes;
+  const conditionalSnapshot = useHuggingFaceModularConditionalStore.getState().snapshot;
+  const modularDefinitions = [
+    ...(useHuggingFaceNodeLibraryStore.getState().library?.blockDefinitions ?? []),
+    ...(conditionalSnapshot?.blockDefinitions ?? []),
+  ];
+  for (const root of visibleNodes) {
+    if (!root.data.blockInstanceV2 || root.data.blockProjectionOwnerId) continue;
+    for (const requirement of inspectReviewedComponentRequirementsV2(root.data.blockInstanceV2, conditionalSnapshot)) {
+      const projected = visibleNodes.find(
+        ({ data, hidden }) =>
+          !hidden && data.blockProjectionOwnerId === root.id && data.blockProjectionNodeId === requirement.nodeId,
+      );
+      issues.push(
+        issue({
+          category: 'graph',
+          severity: 'warning',
+          blocking: false,
+          action: 'inspect_node',
+          code: 'modular_component_requirement',
+          nodeId: projected?.id ?? root.id,
+          message: requirement.message,
+          details:
+            'This is a declaration warning, not a verdict on your replacement components. Connect compatible components through the loader. Run checks the actual types; Fix will not guess a replacement model.',
+        }),
+      );
+    }
+    for (const loopIssue of inspectReviewedLoopV2(root.data.blockInstanceV2, modularDefinitions)) {
+      const projected = visibleNodes.find(
+        ({ data, hidden }) =>
+          !hidden && data.blockProjectionOwnerId === root.id && data.blockProjectionNodeId === loopIssue.nodeId,
+      );
+      issues.push(
+        issue({
+          category: 'graph',
+          severity: 'error',
+          blocking: true,
+          action: 'inspect_node',
+          code: loopIssue.code,
+          nodeId: projected?.id ?? root.id,
+          message: loopIssue.message,
+          details: `Affected socket: ${loopIssue.fieldId}. Open Fix for the explanation; the saved draft is retained.`,
+        }),
+      );
+    }
+    for (const stateIssue of inspectReviewedStateV2(root.data.blockInstanceV2, modularDefinitions)) {
+      const projected = visibleNodes.find(
+        ({ data, hidden }) =>
+          !hidden && data.blockProjectionOwnerId === root.id && data.blockProjectionNodeId === stateIssue.nodeId,
+      );
+      issues.push(
+        issue({
+          category: 'graph',
+          severity: 'error',
+          blocking: true,
+          action: 'inspect_node',
+          code: 'modular_state_input_missing',
+          nodeId: projected?.id ?? root.id,
+          message: stateIssue.message,
+          details: 'Connect the missing inputs; check Fix for repair options.',
+        }),
+      );
+    }
+    for (const derivedIssue of inspectBlockDerivedControlsV2(root.data.blockInstanceV2, modularDefinitions)) {
+      const projected = visibleNodes.find(
+        ({ data, hidden }) =>
+          !hidden && data.blockProjectionOwnerId === root.id && data.blockProjectionNodeId === derivedIssue.nodeId,
+      );
+      issues.push(
+        issue({
+          category: 'graph',
+          severity: 'warning',
+          blocking: false,
+          action: 'inspect_node',
+          code: 'modular_derived_control_overridden',
+          nodeId: projected?.id ?? root.id,
+          message: `A mirrored ${derivedIssue.fieldId} overwrites upstream-derived state.`,
+          details: `${derivedIssue.canRepair ? 'Use Fix to repair this binding. ' : ''}${derivedIssue.reason}`,
+        }),
+      );
+    }
+    for (const seedIssue of inspectBlockSeedBindingsV2(root.data.blockInstanceV2, modularDefinitions)) {
+      const projected = visibleNodes.find(
+        ({ data, hidden }) =>
+          !hidden && data.blockProjectionOwnerId === root.id && data.blockProjectionNodeId === seedIssue.nodeId,
+      );
+      issues.push(
+        issue({
+          category: 'graph',
+          severity: 'warning',
+          blocking: false,
+          action: 'inspect_node',
+          code: 'modular_seed_not_consumed',
+          nodeId: projected?.id ?? root.id,
+          message: 'This saved seed is not consumed by its Modular Diffusers step.',
+          details: `${seedIssue.canRepair ? 'Use Fix to explicitly repair the seed binding. ' : ''}${seedIssue.reason}`,
+        }),
+      );
+    }
+  }
+  const failure = useRunIssueStore.getState().failure;
+  const failureContext = failure?.taskId
+    ? (studioState.runContextsByTaskId[failure.taskId] ?? null)
+    : failure?.clientRunId
+      ? (studioState.runContextsByClientRunId[failure.clientRunId] ?? null)
+      : null;
+  const runtimeIssue = modularRuntimeFailureIssue(
+    failure,
+    runtimeFailureTargetsActiveWorkflow(failure, failureContext, studioState),
+    failure?.nodeId ? runtimeProgressTarget(flow.nodes, failure.nodeId, failure.nodeName) : null,
+  );
+  if (runtimeIssue) issues.push(runtimeIssue);
   const unique = new Map<string, RunReadinessIssue>();
   issues.forEach((item) => {
     const key = `${item.nodeId ?? ''}:${item.repoId ?? ''}:${item.modelPath ?? ''}:${item.message}`;
@@ -1794,6 +1960,7 @@ export function collectRunReadinessIssues(options: {
     'graph_output_missing',
     'graph_output_disconnected',
     'composite_execution_graph_invalid',
+    'block_media_input_missing',
   ]);
   return collected.map((item) => {
     if (!item.blocking || hardSubmissionBlocks.has(item.code ?? '') || item.code?.startsWith('user_block_')) {
@@ -1827,6 +1994,7 @@ export function validateCurrentRun(options: {
   isConnected: boolean;
   includeStudio?: boolean;
   showDialog?: boolean;
+  targetNodeId?: string;
 }) {
   const issues = collectRunReadinessIssues(options);
   applyRunReadinessToGraph(issues);

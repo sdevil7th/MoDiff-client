@@ -493,7 +493,7 @@ test('same-family model selection is one ordinary value edit and preserves the e
     label: 'Model',
     value: 'Qwen/Qwen-Image-2512',
     default: 'Qwen/Qwen-Image-2512',
-    options: ['Qwen/Qwen-Image', 'Qwen/Qwen-Image-2512'],
+    options: ['Qwen/Qwen-Image', 'Qwen/Qwen-Image-2512', 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit'],
     fieldOptions: {
       huggingFaceClusterBinding: binding(admission.id, 'modelVariant', 'execution_parameter'),
     },
@@ -507,15 +507,19 @@ test('same-family model selection is one ordinary value edit and preserves the e
   assert.deepEqual(control.binding, { nodeId: 'loadModels', fieldId: 'reviewed_variant' });
   const reviewedVariantParam = compiled.definition.graph.nodes.find(({ nodeId }) => nodeId === 'loadModels').data.params
     .reviewed_variant;
-  assert.deepEqual(reviewedVariantParam.options, ['Qwen/Qwen-Image', 'Qwen/Qwen-Image-2512']);
+  assert.deepEqual(reviewedVariantParam.options, [
+    'Qwen/Qwen-Image',
+    'Qwen/Qwen-Image-2512',
+    'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
+  ]);
   assert.equal(reviewedVariantParam.disabled, undefined);
   const projectedModelControl = runtime.blockViewModelV2(compiled.instance).controlParams.modelVariant;
   assert.equal(projectedModelControl.label, 'Model');
   assert.equal(projectedModelControl.hidden, false);
 
   const before = structuredClone(compiled.instance);
-  const switched = runtime.setBlockInstanceValueV2(before, 'modelVariant', 'Qwen/Qwen-Image');
-  assert.equal(switched.values.modelVariant, 'Qwen/Qwen-Image');
+  const switched = runtime.setBlockInstanceValueV2(before, 'modelVariant', 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
+  assert.equal(switched.values.modelVariant, 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   assert.equal(switched.definitionRef.definitionId, before.definitionRef.definitionId);
   assert.equal(switched.definitionRef.contentHash, before.definitionRef.contentHash);
   assert.deepEqual(switched.definitionSnapshot, before.definitionSnapshot);
@@ -525,7 +529,7 @@ test('same-family model selection is one ordinary value edit and preserves the e
   assert.equal(switched.customization.state, 'parameters_changed');
 
   const restored = schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(switched)));
-  assert.equal(restored.values.modelVariant, 'Qwen/Qwen-Image');
+  assert.equal(restored.values.modelVariant, 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   assert.deepEqual(restored.effectiveGraph, before.effectiveGraph);
   assert.deepEqual(restored.presentation.internalLayout, before.presentation.internalLayout);
 });
@@ -1011,15 +1015,15 @@ test('every reviewed direct-media projection is explicit and undeclared media ha
       .filter(({ mediaType }) => mediaType !== undefined)
       .map((binding) => ({ registeredRoute, binding })),
   );
-  assert.equal(reviewedMediaBindings.length, 80);
+  assert.equal(reviewedMediaBindings.length, 112);
   assert.equal(
     reviewedMediaBindings.every(({ binding }) => binding.adaptation !== undefined),
     true,
   );
 
   const directMediaBindings = reviewedMediaBindings.filter(({ binding }) => binding.adaptation === 'direct_media');
-  assert.equal(directMediaBindings.length, 55);
-  assert.equal(new Set(directMediaBindings.map(({ registeredRoute }) => registeredRoute.definitionId)).size, 51);
+  assert.equal(directMediaBindings.length, 81);
+  assert.equal(new Set(directMediaBindings.map(({ registeredRoute }) => registeredRoute.definitionId)).size, 77);
   for (const { registeredRoute, binding } of directMediaBindings) {
     assert.notEqual(binding.fieldId, 'file', `${registeredRoute.definitionId} must use a reviewed export for files`);
     assert.notEqual(binding.role, 'videoExport', `${registeredRoute.definitionId} must not bypass its export node`);

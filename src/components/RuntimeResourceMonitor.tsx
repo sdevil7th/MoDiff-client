@@ -84,6 +84,12 @@ function AcceleratorSection({ accelerator, active }: { accelerator: RuntimeAccel
       <ResourceRow label="MoDiff reserved" value={formatResourceBytes(accelerator.reservedBytes)} />
       <ResourceRow label="Peak allocated" value={formatResourceBytes(accelerator.peakAllocatedBytes)} />
       <ResourceRow label="Peak reserved" value={formatResourceBytes(accelerator.peakReservedBytes)} />
+      {accelerator.allocatorStatsStatus === 'paused_during_execution' ? (
+        <p className="text-xs text-modiff-subtle-text">
+          Allocator readings are paused during generation to avoid blocking the model runtime. Device readings use
+          available OS counters; unavailable values are shown as —.
+        </p>
+      ) : null}
     </section>
   );
 }

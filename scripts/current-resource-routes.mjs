@@ -142,7 +142,15 @@ export function exactCurrentResourceRouteFromManifest(routeBinding, manifestValu
       JSON.stringify(stable(route.routeBinding)) === JSON.stringify(stable(binding)),
   );
   if (matches.length !== 1) {
-    throw new Error('Route resource evidence does not match one exact current registered BlockDefinitionV2 route.');
+    const current = manifest.routes.find((route) => route.admissionId === binding.admissionId);
+    const currentIdentity = current
+      ? `${current.routeBinding.blockDefinition.contentHash} / ${current.routeBinding.blockDefinition.canonicalSha256}; binding ${current.routeBindingHash}`
+      : 'no current admission';
+    throw new Error(
+      `Route resource evidence does not match one exact current registered BlockDefinitionV2 route: ${binding.admissionId}. ` +
+        `Retained ${binding.blockDefinition.contentHash} / ${binding.blockDefinition.canonicalSha256}; binding ${bindingHash}. ` +
+        `Current ${currentIdentity}. Preserve the retained proofs; generate two new exact-current route proofs instead of rebinding historical evidence.`,
+    );
   }
   return matches[0];
 }

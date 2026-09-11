@@ -10,6 +10,8 @@ let originalFetch;
 let server;
 let studioStoreModule;
 let previewStateModule;
+let outputContracts;
+let outputUtils;
 
 const storageValues = new Map();
 const localStorageMock = {
@@ -40,6 +42,8 @@ before(async () => {
   });
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   previewStateModule = await server.ssrLoadModule('/src/studio/previewState.ts');
+  outputContracts = await server.ssrLoadModule('/src/studio/outputContracts.ts');
+  outputUtils = await server.ssrLoadModule('/src/studio/outputUtils.ts');
   originalFetch = globalThis.fetch;
 });
 
@@ -282,6 +286,41 @@ test('a failed favorite mutation rolls back only the affected optimistic value',
   assert.equal(state.galleryBackendError, 'Favorite rejected.');
 });
 
+test('favorite requests contain only editable metadata and preserve captured identity', async () => {
+  const receipt = {
+    schemaVersion: 1,
+    source: 'backend-execution',
+    taskId: 'task',
+    attemptIndex: 0,
+    nodeId: 'node-1',
+    nodes: [],
+    summary: {},
+    ambiguousFields: [],
+    unavailableFields: [],
+    uncapturedNodeIds: [],
+    truncated: false,
+  };
+  const captured = { ...output('a'), taskId: 'task', attemptIndex: 0, resolvedExecutionInputs: receipt };
+  studioStoreModule.useStudioStore.setState({ outputs: [captured], outputRevision: 1 });
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), method: init.method, body: JSON.parse(init.body) });
+    return jsonResponse({ error: false, outputs: [{ ...captured, favorite: true }], revision: 2 });
+  };
+  studioStoreModule.useStudioStore.getState().toggleFavoriteOutput('a');
+  await flushPromises();
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].url, /\/studio_outputs\/a$/);
+  assert.equal(requests[0].method, 'PATCH');
+  assert.deepEqual(requests[0].body, { favorite: true });
+  const updated = studioStoreModule.useStudioStore.getState().outputs[0];
+  assert.equal(updated.favorite, true);
+  assert.equal(updated.taskId, 'task');
+  assert.equal(updated.nodeId, 'node-1');
+  assert.equal(updated.attemptIndex, 0);
+  assert.deepEqual(updated.resolvedExecutionInputs, receipt);
+});
+
 test('an older favorite failure cannot undo or report over a newer successful toggle', async () => {
   studioStoreModule.useStudioStore.setState({ outputs: [output('a', false)], outputRevision: 1 });
   const calls = [];
@@ -319,4 +358,69 @@ test('a failed output delete restores its target without removing a concurrent o
   const state = studioStoreModule.useStudioStore.getState();
   assert.deepEqual(new Set(state.outputs.map((item) => item.id)), new Set(['a', 'b', 'c']));
   assert.equal(state.galleryBackendError, 'Delete rejected.');
+});
+
+function encodedVideoOutput(
+  metadata = { source: 'encoded-file', width: 592, height: 832, frame_count: 129, fps: 24, duration_seconds: 5.38 },
+) {
+  return outputContracts.coerceStudioOutput({
+    ...output('encoded-video'),
+    url: '/file?file=video.mp4',
+    displayType: 'video',
+    width: 640,
+    height: 800,
+    formSnapshot: { width: 640, height: 800, numFrames: 132, fps: 24 },
+    mediaItems: [{ index: 0, url: '/file?file=video.mp4', displayType: 'video', mediaMetadata: metadata }],
+  });
+}
+
+test('encoded video metadata survives the output boundary without rewriting generation controls', () => {
+  const value = encodedVideoOutput();
+  assert.deepEqual(value.mediaItems[0].mediaMetadata, {
+    source: 'encoded-file',
+    width: 592,
+    height: 832,
+    frame_count: 129,
+    fps: 24,
+    duration_seconds: 5.38,
+  });
+  assert.equal(value.width, 640);
+  assert.equal(value.height, 800);
+  assert.equal(value.formSnapshot.numFrames, 132);
+  assert.equal(value.formSnapshot.width, 640);
+});
+
+test('encoded video metadata rejects unsupported sources and invalid numeric claims', () => {
+  for (const metadata of [
+    null,
+    [],
+    { source: 'requested', width: 592 },
+    { source: 'encoded-file', width: -1, height: '832', frame_count: 1.5, fps: Infinity, duration_seconds: NaN },
+  ]) {
+    assert.equal(encodedVideoOutput(metadata).mediaItems[0].mediaMetadata, undefined);
+  }
+  assert.deepEqual(
+    encodedVideoOutput({ source: 'encoded-file', width: 592, height: 832, fps: '24' }).mediaItems[0].mediaMetadata,
+    { source: 'encoded-file', width: 592, height: 832 },
+  );
+});
+
+test('encoded video labels prefer the primary measured item and distinguish legacy requested settings', () => {
+  const value = encodedVideoOutput();
+  const before = structuredClone(value);
+  value.mediaItems.unshift({
+    index: 1,
+    url: '/other.mp4',
+    displayType: 'video',
+    mediaMetadata: { source: 'encoded-file', width: 32, height: 32 },
+  });
+  assert.equal(outputUtils.videoOutputSummary(value), '592x832 | 129 frames | 24fps');
+  value.mediaItems.shift();
+  assert.deepEqual(value, before);
+  assert.equal(outputUtils.videoOutputSummary(encodedVideoOutput(undefined)), '592x832 | 129 frames | 24fps');
+  assert.equal(outputUtils.videoOutputSummary(encodedVideoOutput(null)), 'Requested 640x800 | 132 frames | 24fps');
+  assert.equal(
+    outputUtils.videoOutputSummary(encodedVideoOutput({ source: 'encoded-file', width: 592, height: 832 })),
+    '592x832',
+  );
 });

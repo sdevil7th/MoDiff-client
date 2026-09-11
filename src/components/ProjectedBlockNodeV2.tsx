@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Maximize2, Minimize2, Save, Settings2 } from 'lucide-react';
 import { type NodeProps, useStoreApi, useUpdateNodeInternals } from '@xyflow/react';
 
@@ -8,10 +8,12 @@ import { modiffLayout } from '../theme';
 import { BlockNodeFrame, ModiffIconButton } from '../ui';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
 import { syncManagedNodeControlChange } from '../studio/managedControlSync';
+import { blockContainerPreviewViewsV2 } from '../studio/blockRuntimeV2';
 import ErrorBoundary from './ErrorBoundary';
 import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
+import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
 
 /**
  * Block-shaped view of one upstream Modular Diffusers placement.
@@ -35,17 +37,22 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   const beginHistoryTransaction = useFlowStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useFlowStore((state) => state.commitHistoryTransaction);
   const toggleContainer = useFlowStore((state) => state.toggleBlockContainerExpandedV2);
-  const ownerSourceKind = useFlowStore((state) => {
+  const ownerInstance = useFlowStore((state) => {
     const ownerId = node.data.blockProjectionOwnerId;
-    if (!ownerId) return 'diffusers_catalog' as const;
-    return state.nodes.find((candidate) => candidate.id === ownerId)?.data.blockInstanceV2?.definitionSnapshot.source
-      .kind;
+    return state.nodes.find((candidate) => candidate.id === ownerId)?.data.blockInstanceV2;
   });
+  const ownerSourceKind = ownerInstance?.definitionSnapshot.source.kind;
+  const params = useMemo<CustomNodeType['data']['params']>(() => {
+    if (!ownerInstance || !node.data.blockProjectionNodeId) return node.data.params;
+    const previews = blockContainerPreviewViewsV2(ownerInstance, node.data.blockProjectionNodeId);
+    if (!previews.length) return node.data.params;
+    return Object.assign({ ...node.data.params }, ...previews.map((preview) => preview.params));
+  }, [node.data.params, node.data.blockProjectionNodeId, ownerInstance]);
   const label = node.data.label || node.data.action || node.data.blockProjectionNodeId || 'Modular Diffusers Block';
   const isContainer = node.data.blockProjectionContainer === true;
   const expanded = isContainer && node.data.blockProjectionContainerExpanded !== false;
   const childCount = node.data.blockProjectionChildCount ?? 0;
-  const hasVisibleControls = Object.values(node.data.params).some(
+  const hasVisibleControls = Object.values(params).some(
     (param) => param.display !== 'input' && param.display !== 'output' && !param.hidden,
   );
 
@@ -91,7 +98,9 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
       (current.height ?? 0) >= minimumHeight
     )
       return;
-    setNodeSize(node.id, current.width ?? 280, minimumHeight);
+    // This is derived DOM geometry, not a new user edit. Recording it after
+    // Undo discarded the pending Redo before the user could restore a wire.
+    setNodeSize(node.id, current.width ?? 280, minimumHeight, { history: false });
     updateNodeInternals(node.id);
     scheduleNodeLayoutSync();
   }, [
@@ -218,7 +227,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
             <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
               <NodeContent
                 nodeId={node.id}
-                params={node.data.params}
+                params={params}
                 updateStore={updateStore}
                 module={node.data.module || ''}
                 action={node.data.action || ''}
@@ -232,8 +241,10 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
               {node.data.description ? <p>{node.data.description}</p> : null}
               <p>
                 {childCount
-                  ? `${childCount} immediate Modular ${childCount === 1 ? 'block' : 'blocks'}`
-                  : 'Leaf Modular Diffusers block'}
+                  ? `${childCount} immediate ${childCount === 1 ? 'node or block' : 'nodes and blocks'}`
+                  : node.data.blockProjectionModular
+                    ? 'Leaf Modular Diffusers block'
+                    : 'Empty Block'}
               </p>
             </div>
           )
@@ -242,12 +253,15 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
           <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
             <NodeContent
               nodeId={node.id}
-              params={node.data.params}
+              params={Object.fromEntries(
+                Object.entries(params).filter(([, param]) => !param.fieldOptions?.blockConnectedCrossingV2),
+              )}
               updateStore={updateStore}
               module={node.data.module || ''}
               action={node.data.action || ''}
               mode="connectors"
             />
+            <BlockCrossingPortsV2 nodeId={node.id} />
           </ErrorBoundary>
         }
         connectorsWhenExpanded

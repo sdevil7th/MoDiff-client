@@ -1,3 +1,4 @@
+import { moveBlockSelectionPreparedV2, topLevelBlockSelectionV2 } from '../studio/blockSelectionMovesV2';
 import {
   forwardRef,
   useCallback,
@@ -16,6 +17,7 @@ import {
   Copy,
   EllipsisVertical,
   Files,
+  LogOut,
   Maximize2,
   Minimize2,
   Play,
@@ -127,10 +129,29 @@ export function SelectionToolbar({
     [selectedNodes],
   );
   const singleNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const replacementSource =
+    selectedNodes.length === 2
+      ? selectedNodes.find((node) => node.data.type === 'custom' && !node.parentId && !node.data.blockProjectionOwnerId)
+      : undefined;
+  const replacementTarget = replacementSource
+    ? selectedNodes.find((node) => node.data.blockProjectionKind === 'internal' && !node.data.blockProjectionContainer)
+    : undefined;
+  const moveSelection = topLevelBlockSelectionV2(
+    nodes,
+    selectedNodes.map((node) => node.id),
+  );
+  const canMoveOut =
+    moveSelection.length > 0 &&
+    moveSelection.every(
+      (node) =>
+        (node.data.blockProjectionOwnerId && node.data.blockProjectionKind === 'internal') ||
+        node.data.userBlockInstanceId ||
+        (node.data.huggingFaceClusterRole === 'execution' && node.parentId),
+    );
   const singleContainer = singleNode?.data.type === 'group' || singleNode?.data.type === 'loop' ? singleNode : null;
   const singleProjectedModular =
     singleNode?.data.blockProjectionKind === 'internal' &&
-    singleNode.data.blockProjectionModular === true &&
+    (singleNode.data.blockProjectionModular === true || singleNode.data.type === 'group') &&
     singleNode.data.blockProjectionOwnerId &&
     singleNode.data.blockProjectionNodeId
       ? singleNode
@@ -253,12 +274,22 @@ export function SelectionToolbar({
 
   const handleRunFromNode = useCallback(async () => {
     if (!singleActionNode) return;
-    if (singleActionNode.data.huggingFaceClusterRole === 'root' || singleActionNode.data.blockInstanceV2) {
-      await prepareHuggingFaceClustersForRun([singleActionNode.id]);
+    try {
+      if (singleActionNode.data.huggingFaceClusterRole === 'root' || singleActionNode.data.blockInstanceV2) {
+        await prepareHuggingFaceClustersForRun([singleActionNode.id]);
+      }
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: false,
+        targetNodeId: singleActionNode.id,
+      });
+      if (!validation.canRun || !sid) return;
+      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      enqueueSnackbar(message, { variant: 'error', persist: true });
     }
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false });
-    if (!validation.canRun || !sid) return;
-    await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id });
   }, [isConnected, sid, singleActionNode]);
 
   const handleToggleCollapse = useCallback(() => {
@@ -334,12 +365,59 @@ export function SelectionToolbar({
     >
       <ToolbarActionButton
         label="Delete selection"
+        title="Delete selection · Delete / Backspace"
+        aria-keyshortcuts="Delete Backspace"
         danger
         onClick={handleDeleteSelection}
         data-testid="selection-toolbar-delete"
       >
         <Trash2 size={16} />
       </ToolbarActionButton>
+
+      {replacementSource && replacementTarget ? (
+        <ToolbarActionButton
+          label="Replace internal node with selected node"
+          data-testid="selection-toolbar-replace-internal"
+          onClick={() => {
+            try {
+              useFlowStore.getState().replaceNodeInBlockV2(replacementSource.id, replacementTarget.id);
+              useStudioStore.getState().saveActiveWorkflowTab(true);
+              enqueueSnackbar('The internal node was replaced in this workflow Block.', { variant: 'success' });
+            } catch (error) {
+              enqueueSnackbar(error instanceof Error ? error.message : 'Could not replace this internal node.', {
+                variant: 'error',
+              });
+            }
+          }}
+        >
+          <RefreshCcw size={16} />
+        </ToolbarActionButton>
+      ) : null}
+
+      {canMoveOut ? (
+        <ToolbarActionButton
+          label="Move out of Block"
+          title="Move out of Block · Ctrl/Cmd + drag to move between Blocks"
+          data-testid="selection-toolbar-move-out"
+          onClick={async () => {
+            try {
+              await moveBlockSelectionPreparedV2(
+                selectedNodes.map((node) => node.id),
+                null,
+                'out',
+              );
+              useStudioStore.getState().saveActiveWorkflowTab(true);
+            } catch (error) {
+              enqueueSnackbar(error instanceof Error ? error.message : 'Could not move this item out of the Block.', {
+                variant: 'error',
+                autoHideDuration: 6000,
+              });
+            }
+          }}
+        >
+          <LogOut size={16} />
+        </ToolbarActionButton>
+      ) : null}
 
       {singleContainer && !singleProjectedModular && (
         <ToolbarActionButton
@@ -391,7 +469,7 @@ export function SelectionToolbar({
             <Files size={16} />
           </ToolbarActionButton>
           <ToolbarActionButton
-            label="Run from node"
+            label={singleActionNode?.data.blockInstanceV2 ? 'Run Block' : 'Run from node'}
             onClick={() => {
               void handleRunFromNode();
             }}

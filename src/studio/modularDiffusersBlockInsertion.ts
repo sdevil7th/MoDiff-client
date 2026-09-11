@@ -15,6 +15,7 @@ import {
 } from './blockSchemaV2';
 import { createBlockRootNodeV2, setBlockPresentationV2 } from './blockRuntimeV2';
 import { compactReviewedModularInternalLayoutV2 } from './reviewedModularGraphV2';
+import { addReviewedValuePortsV2 } from './reviewedValuePortsV2';
 
 const STEP_KEY = 'modules.ModularDiffusers.ReviewedModularWorkflowStep';
 export const HUGGING_FACE_MODULAR_BLOCK_DRAG_PREFIX = 'modiff:hugging-face-modular-block:';
@@ -108,17 +109,24 @@ export function createModularDiffusersCatalogNode(
     block_contract_hash: identity(base.params.block_contract_hash, block.contentHash),
     execution_kind: identity(base.params.execution_kind, executionKind),
   });
-  block.inputs.forEach((field) => {
-    if (field.name === 'generator') {
-      if (base.params.seed) params.seed = clone(base.params.seed);
-      return;
+  // A loop member is a recipe consumed on each upstream iteration. Ordinary
+  // step parameters are intentionally inert on legacy recipes; new insertions
+  // must only offer the explicit, consumed iteration bindings below.
+  if (executionKind !== 'loop_member') {
+    block.inputs.forEach((field) => {
+      if (field.name === 'generator') {
+        if (base.params.seed) params.seed = clone(base.params.seed);
+        return;
+      }
+      const key = base.params[field.name]?.display === 'output' ? `state_input__${field.name}` : field.name;
+      params[key] = manifestInput(base.params[key], field);
+    });
+    for (const output of block.outputs) {
+      const outputParam = base.params[output.name];
+      if (outputParam?.display === 'output') params[output.name] = clone(outputParam);
     }
-    params[field.name] = manifestInput(base.params[field.name], field);
-  });
-  for (const output of block.outputs) {
-    const outputParam = base.params[output.name];
-    if (outputParam?.display === 'output') params[output.name] = clone(outputParam);
   }
+  addReviewedValuePortsV2(params, base.params, block.inputs, block.outputs, executionKind);
   const metadata = {
     kind: 'upstream_block' as const,
     pipelineClass: context.pipelineClass,

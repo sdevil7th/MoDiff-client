@@ -2,6 +2,7 @@
 
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
+import { relatedWorkflowEvidencePaths } from './catalog-evidence-discovery.mjs';
 
 const args = process.argv.slice(2);
 const valueAfter = (name, fallback) => {
@@ -93,12 +94,12 @@ const workflows = definitions
         };
       });
     });
-    const evidencePaths = [...evidenceText.entries()]
-      .filter(([, text]) => [definition.id, ...admissionIds].some((identity) => text.includes(identity)))
-      .map(([path]) => {
+    const relatedEvidencePaths = relatedWorkflowEvidencePaths(evidenceText, [definition.id, ...admissionIds]).map(
+      (path) => {
         const owner = evidenceRoots.find((root) => path.startsWith(`${root}/`) || path === root);
         return owner ? `${owner}/${relative(owner, path)}` : path;
-      });
+      },
+    );
     const sourceHierarchyDepth = Math.max(
       1,
       ...(definition.blockPlacements ?? []).map((placement) =>
@@ -141,7 +142,7 @@ const workflows = definitions
       allDeclaredArtifactsCached:
         artifactRequirements.length > 0 &&
         artifactRequirements.every(({ exactRevisionComplete }) => exactRevisionComplete),
-      evidencePaths,
+      relatedEvidencePaths,
     };
   })
   .sort((left, right) => left.label.localeCompare(right.label));
@@ -161,7 +162,13 @@ const genericGroups = Object.values(
 ).sort((left, right) => left.key.localeCompare(right.key));
 
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  evidenceInterpretation: 'discovery_only_not_qualification',
+  evidenceLimitations: [
+    'Related files can contain failed, historical or unverified runs.',
+    'No current execution, model, output quality, resource or publication qualification is inferred from file discovery.',
+    'Publication flags below are the backend catalog claims, not validation by this report.',
+  ],
   generatedAt: new Date().toISOString(),
   source: {
     backend,
@@ -176,7 +183,8 @@ const manifest = {
       .length,
     allDeclaredArtifactsCachedCount: workflows.filter(({ allDeclaredArtifactsCached }) => allDeclaredArtifactsCached)
       .length,
-    workflowsWithCurrentEvidenceCount: workflows.filter(({ evidencePaths }) => evidencePaths.length > 0).length,
+    workflowsWithRelatedEvidenceCount: workflows.filter(({ relatedEvidencePaths }) => relatedEvidencePaths.length > 0)
+      .length,
     maxHierarchyDepth: Math.max(...workflows.map(({ maxHierarchyDepth }) => maxHierarchyDepth)),
     duplicateWorkflowIdentities: definitionIds.length - new Set(definitionIds).size,
   },

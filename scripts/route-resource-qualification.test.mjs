@@ -5,7 +5,11 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
-import { currentResourceRouteManifestHash, normalizeCurrentResourceRouteManifest } from './current-resource-routes.mjs';
+import {
+  currentResourceRouteManifestHash,
+  exactCurrentResourceRouteFromManifest,
+  normalizeCurrentResourceRouteManifest,
+} from './current-resource-routes.mjs';
 import { liveProofLockHash, sha256Value } from './live-proof-provenance.mjs';
 import {
   recordRouteResourceQualification,
@@ -440,6 +444,43 @@ test('route workload receipts populate only the independent route lane', async (
     assert.equal(report.routeQualifications[0].evidence.proofCount, 2);
     assert.deepEqual(report.routeQualifications[0].evidence.taskIds, ['route-task-1', 'route-task-2']);
     assert.equal(report.routeQualifications[0].evidence.evidenceSource, 'route_resource_two_live_proofs');
+
+    const reportPath = join(release, 'resource-recipe-coverage.v1.json');
+    const retainedReport = readFileSync(reportPath, 'utf8');
+    const originalRegistry = readFileSync(registryPath, 'utf8');
+    const updatedBinding = structuredClone(routeBinding);
+    updatedBinding.blockDefinition.contentHash = 'block-definition-v2-5678abcd';
+    updatedBinding.blockDefinition.canonicalSha256 = `sha256:${'e'.repeat(64)}`;
+    writeFileSync(manifestPath, JSON.stringify(routeManifest(updatedBinding)));
+    const rejected = spawnSync(process.execPath, [resolve('scripts/resource-qualification-report.mjs')], {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+      env: { ...process.env, MODIFF_BACKEND_DIR: backendRoot, MODIFF_CURRENT_RESOURCE_ROUTES_MANIFEST: manifestPath },
+    });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr, /1 invalid receipt/u);
+    assert.ok(rejected.stderr.includes(admissionId));
+    assert.ok(rejected.stderr.includes(routeBinding.blockDefinition.contentHash));
+    assert.ok(rejected.stderr.includes(updatedBinding.blockDefinition.contentHash));
+    assert.match(rejected.stderr, /two new exact-current route proofs/u);
+    assert.equal(readFileSync(reportPath, 'utf8'), retainedReport, 'do not publish partial qualification coverage');
+    assert.equal(readFileSync(registryPath, 'utf8'), originalRegistry, 'do not rebind historical receipts');
+
+    const invalidRegistry = JSON.parse(originalRegistry);
+    const corrupt = structuredClone(invalidRegistry.receipts[0]);
+    corrupt.proofs[0].proofSha256 = `sha256:${'0'.repeat(64)}`;
+    invalidRegistry.receipts.push(corrupt);
+    writeFileSync(registryPath, JSON.stringify(invalidRegistry));
+    const multiple = spawnSync(process.execPath, [resolve('scripts/resource-qualification-report.mjs')], {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+      env: { ...process.env, MODIFF_BACKEND_DIR: backendRoot, MODIFF_CURRENT_RESOURCE_ROUTES_MANIFEST: manifestPath },
+    });
+    assert.notEqual(multiple.status, 0);
+    assert.match(multiple.stderr, /2 invalid receipt/u);
+    assert.match(multiple.stderr, /Receipt 1:.*exact current registered/u);
+    assert.match(multiple.stderr, /Receipt 2:.*proof hash mismatch/u);
+    assert.equal(readFileSync(reportPath, 'utf8'), retainedReport);
   } finally {
     rmSync(backendRoot, { recursive: true, force: true });
   }
@@ -455,4 +496,17 @@ test('current route manifests fail closed on duplicate or stale identities', () 
   const stale = structuredClone(manifest);
   stale.routes[0].definition.contentHash = `sha256:${'f'.repeat(64)}`;
   assert.throws(() => normalizeCurrentResourceRouteManifest(stale), /malformed or stale/u);
+});
+
+test('a removed route reports its identity without accepting its historical binding', () => {
+  const body = { schemaVersion: 1, format: 'modiff.current-resource-routes.v1', routes: [] };
+  const manifest = { ...body, manifestHash: currentResourceRouteManifestHash(body) };
+  assert.throws(
+    () => exactCurrentResourceRouteFromManifest(routeBinding, manifest),
+    (error) => {
+      assert.ok(error.message.includes(admissionId));
+      assert.match(error.message, /no current admission/u);
+      return true;
+    },
+  );
 });

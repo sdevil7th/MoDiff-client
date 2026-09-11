@@ -1,6 +1,7 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
+import { createDurableNodesSelector } from './flowDurableReferences';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { NodeData, NodeParams, type NodeParamSignal } from './useNodeStore';
 import { Node, Edge, OnNodesChange, OnEdgesChange, NodeChange, EdgeChange, Connection, Viewport } from '@xyflow/react';
@@ -62,8 +63,6 @@ import {
 import { useUserBlockStore } from './useUserBlockStore';
 import { replaceFlowGraph, type FlowGraphReplacement, type FlowGraphReplacementOptions } from './flowGraphMutations';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
-import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
-import { blockValueTypesAreCompatibleV2 } from '../studio/blockValueTypeCompatibilityV2';
 import {
   collapseHuggingFaceClusterInstance,
   expandHuggingFaceClusterInstance,
@@ -80,25 +79,58 @@ import {
   toggleHuggingFaceClusterBlockExpanded,
 } from '../studio/huggingFaceClusterGraph';
 import { useHuggingFaceNodeLibraryStore } from './useHuggingFaceNodeLibraryStore';
+import { useHuggingFaceModularConditionalStore } from './useHuggingFaceModularConditionalStore';
+import {
+  reviewedBlockCanBeAuthoredV2,
+  bindReviewedNodeContextV2,
+  reviewedDestinationContextV2,
+} from '../studio/reviewedBlockContextV2';
 import { useHuggingFaceClusterRuntimeStore } from './useHuggingFaceClusterRuntimeStore';
 import type { UserBlockDefinition } from '../studio/types';
 import type { UserBlockInsertionSuggestion } from '../studio/userBlocks';
 import type {
   BlockBoundaryV2,
   BlockControlV2,
+  BlockPreviewBindingV2,
   BlockDefinitionV2,
   BlockGraphNodeV2,
   BlockJsonValue,
 } from '../studio/blockSchemaV2';
-import { blockModularContainerNodeIdsV2 } from '../studio/blockSchemaV2';
-import { rebaseBlockInstanceV2ToDefinition } from '../studio/blockDefinitionPersistenceV2';
+import {
+  blockGraphParentIdsV2,
+  blockGraphSubtreeNodeIdsV2,
+  blockModularContainerNodeIdsV2,
+  createBlockInstanceV2,
+} from '../studio/blockSchemaV2';
+import { stableStringify } from '../studio/stableHash';
+import { reparentOrdinaryBlockNodeV2 } from '../studio/blockReparentingV2';
+import { repositionBlockChildV2 } from '../studio/blockLayoutDragV2';
+import { detachBlockGraphNodesV2, remapDetachedBlockEdgesV2 } from '../studio/blockDetachmentV2';
+import {
+  assertBlockCrossingConnectionV2,
+  blockConnectionTargetsV2,
+  blockCrossingHandleV2,
+  parseBlockCrossingHandleV2,
+} from '../studio/blockCrossingConnectionsV2';
+import {
+  rebaseBlockInstanceV2ToDefinition,
+  reusableBlockDefinitionFromSubtreeV2,
+} from '../studio/blockDefinitionPersistenceV2';
+import { configureBlockContainerInterfaceV1, setBlockContainerControlValueV1 } from '../studio/blockContainerEditingV1';
+import {
+  blockContainerFieldV1,
+  blockContainerFieldValueV1,
+  remapBlockContainerInterfaceV1,
+} from '../studio/blockContainerInterfaceV1';
 import { assertBlockRouteEdgesCompatibleV1, switchBlockRouteInstanceV1 } from '../studio/blockRouteSelectionV1';
 import {
+  assertBlockInternalConnectionV2,
   addBlockEffectiveGraphNodeV2,
   addBlockEffectiveGraphSubtreeV2,
   blockExpandedProjectionSizeV2,
   blockInputPortBindingsV2,
   blockProjectionNodeIdV2,
+  blockRelativeInternalLayoutsV2,
   canonicalizePersistedBlockGraphV2,
   createBlockRootNodeV2,
   expandBlockGraphV2ForExecution,
@@ -107,7 +139,6 @@ import {
   replaceBlockEffectiveGraphV2,
   replaceBlockEffectiveGraphNodeV2,
   replaceBlockEffectiveInterfaceV2,
-  removeBlockEffectiveGraphNodesV2,
   setBlockInstanceValueV2 as reduceBlockInstanceValueV2,
   setBlockPreviewStateV2 as reduceBlockPreviewStateV2,
   setBlockPresentationV2 as reduceBlockPresentationV2,
@@ -158,7 +189,7 @@ export type FlowStore = {
     value: NodeParams[K],
     key?: K,
   ) => void;
-  setNodeSize: (id: string, width: number, height: number) => void;
+  setNodeSize: (id: string, width: number, height: number, options?: { history?: boolean }) => void;
   getNodeParamsValues: (id: string) => Record<string, unknown>;
   replaceNodeParams: (id: string, params: Record<string, NodeParams>) => void;
   setNodeUiState: (id: string, uiState: Partial<NonNullable<NodeData['uiState']>>) => void;
@@ -198,11 +229,21 @@ export type FlowStore = {
   ensureBlockMinimumHeightV2: (id: string, minimumHeight: number) => void;
   persistBlockCanvasPresentationV2: (nodeId: string) => void;
   fitBlockProjectionToChildrenV2: (id: string) => void;
+  growBlockContainersForDragV2: (nodeId: string) => void;
   adoptNodeIntoBlockV2: (nodeId: string, blockId: string, parentSemanticNodeId?: string) => void;
   adoptBlockFragmentIntoBlockV2: (fragmentId: string, blockId: string, parentSemanticNodeId?: string) => void;
   replaceNodeInBlockV2: (nodeId: string, projectedNodeId: string) => void;
   moveNodeOutOfBlockV2: (projectedNodeId: string, position: { x: number; y: number }) => string;
-  configureBlockInterfaceV2: (id: string, value: { boundary: BlockBoundaryV2; controls: BlockControlV2[] }) => void;
+  reparentNodeInBlockV2: (
+    projectedNodeId: string,
+    parentSemanticNodeId: string | undefined,
+    absolutePosition: { x: number; y: number },
+  ) => void;
+  configureBlockInterfaceV2: (
+    id: string,
+    value: { boundary: BlockBoundaryV2; controls: BlockControlV2[]; previews?: BlockPreviewBindingV2[] },
+    subtreeId?: string,
+  ) => void;
   fitUserBlockToChildren: (id: string) => void;
   placeNodeInUserBlock: (nodeId: string, blockId: string) => void;
   insertNodeInUserBlock: (blockId: string, suggestion: UserBlockInsertionSuggestion) => void;
@@ -228,7 +269,11 @@ export type FlowStore = {
     executionTime?: Record<string, number>,
   ) => void;
   updateCacheStatus: (ids: string | string[]) => void;
-  exportGraph: (sid: string, targetNodeId?: string) => APIGraphExport;
+  exportGraph: (
+    sid: string,
+    targetNodeId?: string,
+    options?: { randomizeSeeds?: boolean; sourceGraph?: { nodes: CustomNodeType[]; edges: Edge[] } },
+  ) => APIGraphExport;
   updateProgress: (
     id: string,
     progress: number,
@@ -282,10 +327,15 @@ function cloneJson<T>(value: T): T {
  * composite expansion. Keeping this beside exportGraph prevents toolbar runs,
  * direct store exports, and queued submissions from selecting different paths.
  */
-export function resolveFlowExecutionTargetNodeId(nodes: CustomNodeType[], targetNodeId?: string): string | undefined {
+export function resolveFlowExecutionTargetNodeId(
+  nodes: CustomNodeType[],
+  targetNodeId?: string,
+  edges: Edge[] = [],
+): string | undefined {
   if (!targetNodeId) return undefined;
   const target = nodes.find((node) => node.id === targetNodeId);
   if (!target) return targetNodeId;
+  if (target.data.blockProjectionContainer) return resolveFlowExecutionTargetNodeIds(nodes, targetNodeId)?.[0];
 
   if (target.data.blockInstanceV2 !== undefined) {
     if (!isBlockRootV2(target)) {
@@ -308,12 +358,95 @@ export function resolveFlowExecutionTargetNodeId(nodes: CustomNodeType[], target
       terminalPreviews[0] ??
       instance.definitionSnapshot.previews.find((candidate) => candidate.primary === true) ??
       instance.definitionSnapshot.previews[0];
-    return preview ? blockProjectionNodeIdV2(instance.instanceId, preview.nodeId) : undefined;
+    return preview
+      ? blockProjectionNodeIdV2(instance.instanceId, preview.nodeId)
+      : resolveFlowExecutionTargetNodeIds(nodes, targetNodeId)?.[0];
   }
 
-  // Legacy composite roots do not exist in their concrete execution graph.
-  if (target.data.userBlockId || target.data.huggingFaceClusterRole === 'root') return undefined;
+  if (target.data.userBlockId) {
+    // A generic User Node expands to ordinary nodes with this instance prefix.
+    // Returning undefined would run every disconnected workflow on the canvas.
+    const expanded = expandUserBlockGraph(nodes, edges, useUserBlockStore.getState().blocks);
+    const prefix = `${targetNodeId}__`;
+    const owned = expanded.nodes.filter((node) => node.id.startsWith(prefix));
+    const ownedIds = new Set(owned.map((node) => node.id));
+    const withInternalOutputs = new Set(
+      expanded.edges.filter((edge) => ownedIds.has(edge.target)).map((edge) => edge.source),
+    );
+    const terminals = owned.filter((node) => !withInternalOutputs.has(node.id));
+    const preview = terminals.find((node) =>
+      Object.values(node.data.params ?? {}).some((param) =>
+        ['ui_image', 'ui_video', 'ui_audio'].includes(String(param.display)),
+      ),
+    );
+    const endpoint = preview ?? terminals[0];
+    if (!endpoint) throw new Error(`User Node run target ${targetNodeId} has no executable terminal node.`);
+    return endpoint.id;
+  }
+
+  // Historical registered Cluster roots retain their separate compatibility path.
+  if (target.data.huggingFaceClusterRole === 'root') return undefined;
   return targetNodeId;
+}
+
+/** Root and nested Block Run include all local terminal branches and upstream dependencies. */
+export function resolveFlowExecutionTargetNodeIds(
+  nodes: CustomNodeType[],
+  targetNodeId?: string,
+  edges: Edge[] = [],
+): string[] | undefined {
+  const target = nodes.find((node) => node.id === targetNodeId);
+  if (!target?.data.blockProjectionContainer && target?.data.blockInstanceV2 === undefined) {
+    const id = resolveFlowExecutionTargetNodeId(nodes, targetNodeId, edges);
+    return id ? [id] : undefined;
+  }
+  const isRoot = target.data.blockInstanceV2 !== undefined;
+  const owner = isRoot ? target : nodes.find((node) => node.id === target.data.blockProjectionOwnerId);
+  const semanticId = isRoot ? undefined : target.data.blockProjectionNodeId;
+  if (!owner?.data.blockInstanceV2 || !isBlockRootV2(owner) || (!isRoot && !semanticId))
+    throw new Error('The selected internal Block has no valid execution owner.');
+  const instance = owner.data.blockInstanceV2;
+  const included = semanticId
+    ? blockGraphSubtreeNodeIdsV2(instance.effectiveGraph, semanticId)
+    : new Set(instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId));
+  const parents = blockGraphParentIdsV2(instance.effectiveGraph);
+  const disabledIds = new Set(
+    instance.effectiveGraph.nodes
+      .filter((node) => isRecord(node.data.uiState) && node.data.uiState.disabled === true)
+      .map(({ nodeId }) => nodeId),
+  );
+  const disabled = (id: string) => {
+    let ancestor: string | undefined = id;
+    while (ancestor) {
+      if (disabledIds.has(ancestor)) return true;
+      ancestor = parents.get(ancestor);
+    }
+    return false;
+  };
+  const executableIds = new Set(
+    instance.effectiveGraph.nodes
+      .filter(
+        (node) =>
+          included.has(node.nodeId) &&
+          !disabled(node.nodeId) &&
+          node.nodeType !== 'group' &&
+          node.nodeType !== 'loop' &&
+          node.data.module &&
+          node.data.action,
+      )
+      .map((node) => node.nodeId),
+  );
+  const nonterminal = new Set(
+    instance.effectiveGraph.edges
+      .filter((edge) => executableIds.has(edge.sourceNodeId) && executableIds.has(edge.targetNodeId))
+      .map((edge) => edge.sourceNodeId),
+  );
+  const terminals = [...executableIds].filter((id) => !nonterminal.has(id));
+  if (!terminals.length)
+    throw new Error(
+      'This Block has no enabled executable terminal node. Add, enable or reconnect its nodes before running it.',
+    );
+  return terminals.map((id) => blockProjectionNodeIdV2(instance.instanceId, id));
 }
 
 /** Remove hidden registered-definition compiler sessions from every durable or executable graph view. */
@@ -456,6 +589,23 @@ function snapshotFlowState(state: Pick<FlowStore, 'nodes' | 'edges' | 'viewport'
   return normalizePersistedFlowState(state);
 }
 
+const selectPersistenceNodes = createDurableNodesSelector();
+let persistenceSource: Pick<FlowStore, 'nodes' | 'edges' | 'viewport'> | undefined;
+let persistenceSnapshot: FlowHistorySnapshot;
+function persistedFlowSnapshot(state: FlowStore) {
+  const nodes = selectPersistenceNodes(state.nodes);
+  if (
+    !persistenceSource ||
+    persistenceSource.nodes !== nodes ||
+    persistenceSource.edges !== state.edges ||
+    persistenceSource.viewport !== state.viewport
+  ) {
+    persistenceSource = { nodes, edges: state.edges, viewport: state.viewport };
+    persistenceSnapshot = snapshotFlowState(state);
+  }
+  return persistenceSnapshot;
+}
+
 function pushHistory(past: FlowHistorySnapshot[], snapshot: FlowHistorySnapshot) {
   return [...past, snapshot].slice(-FLOW_HISTORY_LIMIT);
 }
@@ -494,9 +644,17 @@ function projectBlockInstanceV2(
     ...(current.zIndex === undefined ? {} : { zIndex: current.zIndex }),
   };
 
+  const previousById = new Map(state.nodes.map((node) => [node.id, node]));
   const nodes = state.nodes.flatMap((node) => {
     if (node.data.blockProjectionOwnerId === id) return [];
-    if (node.id === id) return [projectedRoot, ...projectedChildren];
+    if (node.id === id)
+      return [
+        projectedRoot,
+        ...projectedChildren.map((child) => {
+          const previous = previousById.get(child.id);
+          return previous?.selected === undefined ? child : { ...child, selected: previous.selected };
+        }),
+      ];
     return [node];
   });
   const retainedEdges = state.edges.filter((edge) => {
@@ -557,100 +715,127 @@ function adoptTopLevelNodeIntoBlockV2(
         ({ nodeId: candidate }) => candidate === parentSemanticNodeId,
       )
     : null;
-  if (parentSemanticNodeId && (!parentSemantic || parentSemantic.nodeType !== 'group'))
+  if (
+    parentSemanticNodeId &&
+    (!parentSemantic ||
+      (parentSemantic.nodeType !== 'group' &&
+        !(
+          parentSemantic.modularDiffusers?.kind === 'upstream_block' &&
+          parentSemantic.modularDiffusers.blockKind !== 'block'
+        )))
+  )
     throw new Error(`Cannot move node "${nodeId}" into unknown Modular container "${parentSemanticNodeId}".`);
   const incidentEdges = state.edges.filter((edge) => edge.source === source.id || edge.target === source.id);
+  // Older ordinary nodes used bare NanoIDs, which may start with '_' or '-'.
+  // Re-key only the explicitly adopted instance and its crossing edges; Undo
+  // retains the original top-level ID. Strict schema validation still applies.
+  const adoptedId = /^[_-]/u.test(source.id) ? `node-${source.id}` : source.id;
+  const retainedCrossings: Edge[] = [];
   const crossingEdges = incidentEdges.flatMap((edge) => {
+    if (!edge.sourceHandle || !edge.targetHandle) throw new Error('Cannot move an incomplete connection.');
+    if (edge.source === source.id && edge.target === source.id)
+      return [
+        {
+          edgeId: edge.id,
+          sourceNodeId: adoptedId,
+          sourcePortId: edge.sourceHandle,
+          targetNodeId: adoptedId,
+          targetPortId: edge.targetHandle,
+        },
+      ];
     if (edge.source === source.id && edge.target === target.id) {
-      const port = target.data.blockInstanceV2!.effectiveInterface.boundary.inputs.find(
-        ({ portId }) => portId === edge.targetHandle,
-      );
-      const sourceParam = nodeConnectorParam(source, edge.sourceHandle);
-      if (
-        !port ||
-        !edge.sourceHandle ||
-        sourceParam?.display !== 'output' ||
-        !blockValueTypesAreCompatibleV2(sourceParam.type, port.valueType)
-      )
-        throw new Error(
-          `Cannot move connected node "${nodeId}" into this Block: its incoming public-port edge is invalid.`,
-        );
-      return blockInputPortBindingsV2(port).map((binding) => ({
-        edgeId: `workflow-edge-${nanoid()}`,
-        sourceNodeId: source.id,
+      const targets = blockConnectionTargetsV2(target, edge.targetHandle ?? '', 'input');
+      if (!targets.length) throw new Error('The connected Block input is no longer available.');
+      return targets.map((binding, index) => ({
+        edgeId: index ? `workflow-edge-${nanoid()}` : edge.id,
+        sourceNodeId: adoptedId,
         sourcePortId: edge.sourceHandle!,
         targetNodeId: binding.nodeId,
         targetPortId: binding.fieldOrPortId,
       }));
     }
     if (edge.source === target.id && edge.target === source.id) {
-      const port = target.data.blockInstanceV2!.effectiveInterface.boundary.outputs.find(
-        ({ portId }) => portId === edge.sourceHandle,
-      );
-      const targetParam = nodeConnectorParam(source, edge.targetHandle);
-      if (
-        !port ||
-        !edge.targetHandle ||
-        (targetParam?.display !== 'input' && !targetParam?.isInput) ||
-        !blockValueTypesAreCompatibleV2(port.valueType, targetParam.type)
-      )
-        throw new Error(
-          `Cannot move connected node "${nodeId}" into this Block: its outgoing public-port edge is invalid.`,
-        );
+      const binding = blockConnectionTargetsV2(target, edge.sourceHandle ?? '', 'output')[0];
+      if (!binding) throw new Error('The connected Block output is no longer available.');
       return [
         {
-          edgeId: `workflow-edge-${nanoid()}`,
-          sourceNodeId: port.binding.nodeId,
-          sourcePortId: port.binding.fieldOrPortId,
-          targetNodeId: source.id,
+          edgeId: edge.id,
+          sourceNodeId: binding.nodeId,
+          sourcePortId: binding.fieldOrPortId,
+          targetNodeId: adoptedId,
           targetPortId: edge.targetHandle,
         },
       ];
     }
-    throw new Error(
-      `Cannot move connected node "${nodeId}" into this Block while an edge crosses to another top-level node. Disconnect it, move the node, configure the Block interface, then reconnect through a public port.`,
-    );
+    retainedCrossings.push({
+      ...edge,
+      ...(edge.source === source.id
+        ? {
+            source: target.id,
+            sourceHandle: blockCrossingHandleV2({
+              nodeId: adoptedId,
+              fieldOrPortId: edge.sourceHandle,
+              direction: 'output',
+            }),
+          }
+        : {}),
+      ...(edge.target === source.id
+        ? {
+            target: target.id,
+            targetHandle: blockCrossingHandleV2({
+              nodeId: adoptedId,
+              fieldOrPortId: edge.targetHandle,
+              direction: 'input',
+            }),
+          }
+        : {}),
+    });
+    return [];
   });
 
   const width = source.measured?.width ?? source.width;
   const height = source.measured?.height ?? source.height;
-  let adoptedNode = ordinaryBlockGraphNodeV2(source);
+  let adoptedNode = { ...ordinaryBlockGraphNodeV2(source), nodeId: adoptedId };
   if (parentSemantic) {
     const parentMetadata = parentSemantic.modularDiffusers;
     const sourceMetadata = adoptedNode.modularDiffusers;
-    if (
-      parentMetadata?.kind !== 'upstream_block' ||
-      !parentMetadata.placementPath?.length ||
-      sourceMetadata?.kind !== 'upstream_block'
-    )
-      throw new Error('Only a Modular Diffusers catalog node can be dropped into a nested Modular container.');
-    if (
-      sourceMetadata.pipelineClass !== parentMetadata.pipelineClass ||
-      sourceMetadata.libraryRevision !== parentMetadata.libraryRevision
-    )
-      throw new Error(
-        `Cannot place ${sourceMetadata.blockClass ?? 'this block'} inside ${parentMetadata.blockClass ?? 'this container'}: choose a block from the same pinned pipeline family.`,
+    if (parentMetadata?.kind !== 'upstream_block' || sourceMetadata?.kind !== 'upstream_block') {
+      // An ordinary utility stays an ordinary utility. Its customized owner
+      // belongs to the flat graph, not fabricated Diffusers source metadata.
+      adoptedNode = { ...adoptedNode, parentNodeId: parentSemantic.nodeId };
+    } else {
+      if (!parentMetadata.placementPath?.length)
+        throw new Error('The destination Modular container has no exact placement identity.');
+      const destinationContext = reviewedDestinationContextV2(target.data.blockInstanceV2, parentMetadata);
+      if (
+        !reviewedBlockCanBeAuthoredV2(
+          sourceMetadata,
+          destinationContext,
+          useHuggingFaceModularConditionalStore.getState().snapshot,
+        )
+      )
+        throw new Error(`Unsupported contract: ${sourceMetadata.blockClass} inside ${parentMetadata.blockClass}.`);
+      const occupied = new Set(
+        target.data.blockInstanceV2.effectiveGraph.nodes.map(({ modularDiffusers }) =>
+          modularDiffusers?.placementPath?.join('/'),
+        ),
       );
-    const occupied = new Set(
-      target.data.blockInstanceV2.effectiveGraph.nodes.map(({ modularDiffusers }) =>
-        modularDiffusers?.placementPath?.join('/'),
-      ),
-    );
-    const sourcePlacementPath = sourceMetadata.placementPath ?? [];
-    const leaf = sourcePlacementPath[sourcePlacementPath.length - 1] ?? sourceMetadata.blockClass ?? 'block';
-    let placementPath = [...parentMetadata.placementPath, leaf];
-    let suffix = 2;
-    while (occupied.has(placementPath.join('/')))
-      placementPath = [...parentMetadata.placementPath, `${leaf}_${suffix++}`];
-    adoptedNode = {
-      ...adoptedNode,
-      modularDiffusers: {
-        ...sourceMetadata,
-        runtimeRole: `custom:${placementPath.join('/')}`,
-        placementPath,
-        parentPlacementPath: [...parentMetadata.placementPath],
-      },
-    };
+      const sourcePlacementPath = sourceMetadata.placementPath ?? [];
+      const leaf = sourcePlacementPath[sourcePlacementPath.length - 1] ?? sourceMetadata.blockClass ?? 'block';
+      let placementPath = [...parentMetadata.placementPath, leaf];
+      let suffix = 2;
+      while (occupied.has(placementPath.join('/')))
+        placementPath = [...parentMetadata.placementPath, `${leaf}_${suffix++}`];
+      adoptedNode = {
+        ...bindReviewedNodeContextV2(adoptedNode, destinationContext),
+        modularDiffusers: {
+          ...sourceMetadata,
+          runtimeRole: `custom:${placementPath.join('/')}`,
+          placementPath,
+          parentPlacementPath: [...parentMetadata.placementPath],
+        },
+      };
+    }
   }
   const nodeById = new Map(state.nodes.map((node) => [node.id, node]));
   const absolutePosition = (node: CustomNodeType) => {
@@ -685,6 +870,12 @@ function adoptTopLevelNodeIntoBlockV2(
     },
   });
   if (crossingEdges.length) {
+    for (const edge of crossingEdges)
+      assertBlockInternalConnectionV2(
+        instance,
+        { nodeId: edge.sourceNodeId, fieldOrPortId: edge.sourcePortId },
+        { nodeId: edge.targetNodeId, fieldOrPortId: edge.targetPortId },
+      );
     instance = replaceBlockEffectiveGraphV2(instance, {
       ...instance.effectiveGraph,
       edges: [...instance.effectiveGraph.edges, ...crossingEdges],
@@ -692,9 +883,16 @@ function adoptTopLevelNodeIntoBlockV2(
   }
   const projected = projectBlockInstanceV2(state, target.id, instance);
   if (!projected) throw new Error(`Cannot move node "${nodeId}" into Block "${blockId}": projection failed.`);
+  const nextNodes = projected.nodes.filter((node) => node.id !== source.id);
+  const nextEdges = [
+    ...projected.edges.filter((edge) => !incidentEdges.some(({ id }) => id === edge.id)),
+    ...retainedCrossings,
+  ];
+  for (const edge of retainedCrossings)
+    assertBlockCrossingConnectionV2(edge as Connection, nextNodes, nextEdges, new Set([edge.id]));
   return {
-    nodes: projected.nodes.filter((node) => node.id !== source.id),
-    edges: projected.edges.filter((edge) => !incidentEdges.some(({ id }) => id === edge.id)),
+    nodes: nextNodes,
+    edges: nextEdges,
   };
 }
 
@@ -712,51 +910,73 @@ function adoptTopLevelBlockFragmentIntoBlockV2(
     throw new Error('The Modular Diffusers fragment is no longer available.');
   if (!target || !targetInstance || !isBlockRootV2(target) || !targetInstance.presentation.expanded)
     throw new Error('Expand a valid destination Block before dropping this Modular Diffusers fragment.');
-  if (
-    fragment.definitionSnapshot.source.kind !== 'diffusers_catalog' ||
-    fragment.effectiveGraph.nodes.length === 0 ||
-    fragment.effectiveGraph.nodes.some(({ modularDiffusers }) => modularDiffusers?.kind !== 'upstream_block')
-  )
-    throw new Error('Only an exact Modular Diffusers catalog subtree can be flattened into another Block.');
-  if (
-    state.edges.some(
-      (edge) =>
-        (edge.source === fragmentId || edge.target === fragmentId) && edge.data?.blockProjectionOwnerId !== fragmentId,
-    )
-  )
-    throw new Error('Disconnect the Modular Diffusers fragment before moving it into another Block.');
-
+  if (fragment.effectiveGraph.nodes.length === 0)
+    throw new Error('An empty Block has no nodes to insert. Add content before nesting it.');
   const destinationParent = parentSemanticNodeId
     ? targetInstance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === parentSemanticNodeId)
     : null;
-  if (parentSemanticNodeId && destinationParent?.nodeType !== 'group')
+  if (
+    parentSemanticNodeId &&
+    (!destinationParent ||
+      (destinationParent.nodeType !== 'group' &&
+        !(
+          destinationParent.modularDiffusers?.kind === 'upstream_block' &&
+          destinationParent.modularDiffusers.blockKind !== 'block'
+        )))
+  )
     throw new Error(`The destination Modular container ${parentSemanticNodeId} is unavailable.`);
   const destinationMetadata = destinationParent?.modularDiffusers;
-  const sourceMetadata = fragment.effectiveGraph.nodes[0]?.modularDiffusers;
-  const destinationFamily =
-    destinationMetadata?.kind === 'upstream_block'
-      ? destinationMetadata
-      : targetInstance.effectiveGraph.nodes.find(({ modularDiffusers }) => modularDiffusers?.kind === 'upstream_block')
-          ?.modularDiffusers;
+  const destinationContext = destinationMetadata && reviewedDestinationContextV2(targetInstance, destinationMetadata);
+  const sourceParents = blockGraphParentIdsV2(fragment.effectiveGraph);
+  const roots = fragment.effectiveGraph.nodes.filter((node) => !sourceParents.has(node.nodeId));
+  const sourceMetadata = roots.length === 1 ? roots[0]!.modularDiffusers : undefined;
+  const publicSurface = {
+    schemaVersion: 1 as const,
+    boundary: fragment.effectiveInterface.boundary,
+    controls: fragment.effectiveInterface.controls.map((control) => {
+      const entry = cloneJson(control);
+      delete entry.defaultValue;
+      return entry;
+    }),
+    previews: fragment.definitionSnapshot.previews.filter((preview) =>
+      fragment.effectiveGraph.nodes.some((node) => node.nodeId === preview.nodeId),
+    ),
+  };
+  const sourceLocal = roots.length === 1 ? roots[0]!.containerInterface : undefined;
+  const needsWrapper =
+    roots.length !== 1 ||
+    // Do not overwrite an independently configured local surface when the
+    // source's outer public surface happens to differ from its sole child.
+    (sourceLocal !== undefined &&
+      stableStringify({ ...sourceLocal, previews: sourceLocal.previews ?? [] }) !== stableStringify(publicSurface)) ||
+    (roots[0]!.nodeType !== 'group' &&
+      !(sourceMetadata?.kind === 'upstream_block' && sourceMetadata.blockKind !== 'block'));
+  const wrapperId = needsWrapper ? `nested-block-${nanoid(16)}` : undefined;
+  // Generic grouping imposes no pipeline family. An actual upstream control
+  // owner requires a contract reviewed for its pinned execution context.
   if (
-    sourceMetadata?.kind !== 'upstream_block' ||
-    !destinationFamily ||
-    destinationFamily.kind !== 'upstream_block' ||
-    sourceMetadata.pipelineClass !== destinationFamily.pipelineClass ||
-    sourceMetadata.libraryRevision !== destinationFamily.libraryRevision
+    destinationMetadata?.kind === 'upstream_block' &&
+    fragment.effectiveGraph.nodes.some(
+      ({ modularDiffusers }) =>
+        modularDiffusers &&
+        !reviewedBlockCanBeAuthoredV2(
+          modularDiffusers,
+          destinationContext!,
+          useHuggingFaceModularConditionalStore.getState().snapshot,
+        ),
+    )
   )
-    throw new Error('Choose a Modular Diffusers subtree from the same pinned pipeline family as the destination.');
+    throw new Error('Choose a subtree with contracts reviewed for this destination.');
 
   const sourcePaths = new Map(
-    fragment.effectiveGraph.nodes.map((node) => [node.nodeId, node.modularDiffusers!.placementPath!]),
+    fragment.effectiveGraph.nodes.flatMap((node) =>
+      node.modularDiffusers?.kind === 'upstream_block'
+        ? [[node.nodeId, node.modularDiffusers.placementPath!] as const]
+        : [],
+    ),
   );
-  const sourcePathKeys = new Set([...sourcePaths.values()].map((path) => path.join('/')));
-  const roots = fragment.effectiveGraph.nodes.filter((node) => {
-    const parent = node.modularDiffusers?.parentPlacementPath;
-    return !parent?.length || !sourcePathKeys.has(parent.join('/'));
-  });
-  if (roots.length !== 1) throw new Error('The selected Modular Diffusers catalog item is not one exact subtree.');
-  const sourceRootPath = roots[0]!.modularDiffusers!.placementPath!;
+  const sourceRootPath =
+    !needsWrapper && sourceMetadata?.kind === 'upstream_block' ? sourceMetadata.placementPath! : [];
   const destinationParentPath =
     destinationMetadata?.kind === 'upstream_block' ? (destinationMetadata.placementPath ?? []) : [];
   const occupied = new Set(
@@ -764,7 +984,7 @@ function adoptTopLevelBlockFragmentIntoBlockV2(
       modularDiffusers?.placementPath?.length ? [modularDiffusers.placementPath.join('/')] : [],
     ),
   );
-  const rootLeaf = sourceRootPath[sourceRootPath.length - 1]!;
+  const rootLeaf = sourceRootPath[sourceRootPath.length - 1] ?? `user_${nanoid(12)}`;
   let destinationRootPath = [...destinationParentPath, rootLeaf];
   let suffix = 2;
   while (occupied.has(destinationRootPath.join('/')))
@@ -776,29 +996,104 @@ function adoptTopLevelBlockFragmentIntoBlockV2(
   });
   const rebasedPathBySource = new Map<string, string[]>();
   fragment.effectiveGraph.nodes.forEach((node) => {
-    const path = sourcePaths.get(node.nodeId)!;
-    rebasedPathBySource.set(node.nodeId, [...destinationRootPath, ...path.slice(sourceRootPath.length)]);
+    const path = sourcePaths.get(node.nodeId);
+    if (path) rebasedPathBySource.set(node.nodeId, [...destinationRootPath, ...path.slice(sourceRootPath.length)]);
   });
   const nodes = fragment.effectiveGraph.nodes.map((node) => {
-    const placementPath = rebasedPathBySource.get(node.nodeId)!;
-    const metadata = node.modularDiffusers!;
+    const placementPath = rebasedPathBySource.get(node.nodeId);
+    const metadata = node.modularDiffusers ? cloneJson(node.modularDiffusers) : undefined;
+    if (metadata?.kind === 'upstream_block') delete metadata.parentPlacementPath;
+    let copied = cloneJson(node);
+    delete copied.parentNodeId;
+    const sourceParent = sourceParents.get(node.nodeId);
+    const parent = sourceParent ? semanticIdBySource.get(sourceParent) : (wrapperId ?? parentSemanticNodeId);
+    if (parent) copied.parentNodeId = parent;
+    for (const fieldId of Object.keys(isRecord(copied.data.params) ? copied.data.params : {})) {
+      const field = blockContainerFieldV1(copied, fieldId);
+      const value = blockContainerFieldValueV1(fragment, node.nodeId, fieldId);
+      if (field && value !== undefined) field.value = cloneJson(value);
+    }
+    // Bake source values first: otherwise the source's saved hidden context
+    // overwrites the destination binding during nested User Node adoption.
+    if (destinationMetadata?.kind === 'upstream_block' && metadata?.kind === 'upstream_block')
+      copied = bindReviewedNodeContextV2(copied, destinationContext!);
+    const local = !needsWrapper && node.nodeId === roots[0]!.nodeId ? publicSurface : node.containerInterface;
     return {
-      ...cloneJson(node),
+      ...copied,
       nodeId: semanticIdBySource.get(node.nodeId)!,
-      modularDiffusers: {
-        ...cloneJson(metadata),
-        runtimeRole: `custom:${placementPath.join('/')}`,
-        placementPath,
-        ...(placementPath.length > 1 ? { parentPlacementPath: placementPath.slice(0, -1) } : {}),
-      },
+      ...(local ? { containerInterface: remapBlockContainerInterfaceV1(local, semanticIdBySource) } : {}),
+      ...(metadata?.kind === 'upstream_block' && placementPath
+        ? {
+            modularDiffusers: {
+              ...metadata,
+              runtimeRole: `custom:${placementPath.join('/')}`,
+              placementPath,
+              ...(placementPath.length > 1 ? { parentPlacementPath: placementPath.slice(0, -1) } : {}),
+            },
+          }
+        : {}),
     };
   });
+  if (wrapperId)
+    nodes.unshift({
+      nodeId: wrapperId,
+      nodeType: 'group',
+      data: { type: 'group', label: fragment.definitionSnapshot.displayName, params: {} },
+      ...(parentSemanticNodeId ? { parentNodeId: parentSemanticNodeId } : {}),
+      containerInterface: remapBlockContainerInterfaceV1(publicSurface, semanticIdBySource),
+    });
   const edges = fragment.effectiveGraph.edges.map((edge) => ({
     ...cloneJson(edge),
     edgeId: `adopted-edge-${nanoid(16)}`,
     sourceNodeId: semanticIdBySource.get(edge.sourceNodeId)!,
     targetNodeId: semanticIdBySource.get(edge.targetNodeId)!,
   }));
+  const originalFragmentEdgeCount = edges.length;
+  const remainingEdges: Edge[] = [];
+  const resolveMoved = (handle: string | null | undefined, direction: 'input' | 'output') => {
+    const bindings = blockConnectionTargetsV2(source, handle ?? '', direction);
+    if (!bindings.length) throw new Error('A moved Block connection no longer resolves to an internal socket.');
+    return bindings.map((binding) => ({ ...binding, nodeId: semanticIdBySource.get(binding.nodeId)! }));
+  };
+  for (const edge of state.edges) {
+    if (edge.data?.blockProjectionOwnerId === fragmentId) continue;
+    const fromMoved = edge.source === fragmentId;
+    const toMoved = edge.target === fragmentId;
+    if (!fromMoved && !toMoved) {
+      remainingEdges.push(edge);
+      continue;
+    }
+    if ((fromMoved && edge.target === blockId) || (toMoved && edge.source === blockId)) {
+      const sources = fromMoved
+        ? resolveMoved(edge.sourceHandle, 'output')
+        : blockConnectionTargetsV2(target, edge.sourceHandle ?? '', 'output');
+      const targets = toMoved
+        ? resolveMoved(edge.targetHandle, 'input')
+        : blockConnectionTargetsV2(target, edge.targetHandle ?? '', 'input');
+      if (!sources.length || !targets.length)
+        throw new Error('A destination connection no longer resolves to an internal socket.');
+      for (const input of targets)
+        for (const output of sources)
+          edges.push({
+            edgeId: `adopted-edge-${nanoid(16)}`,
+            sourceNodeId: output.nodeId,
+            sourcePortId: output.fieldOrPortId,
+            targetNodeId: input.nodeId,
+            targetPortId: input.fieldOrPortId,
+          });
+    } else {
+      const endpoints = resolveMoved(fromMoved ? edge.sourceHandle : edge.targetHandle, fromMoved ? 'output' : 'input');
+      endpoints.forEach((endpoint, index) =>
+        remainingEdges.push({
+          ...edge,
+          id: index ? `${edge.id}:consumer:${index}` : edge.id,
+          ...(fromMoved
+            ? { source: blockId, sourceHandle: blockCrossingHandleV2({ ...endpoint, direction: 'output' }) }
+            : { target: blockId, targetHandle: blockCrossingHandleV2({ ...endpoint, direction: 'input' }) }),
+        }),
+      );
+    }
+  }
   const nodeById = new Map(state.nodes.map((node) => [node.id, node]));
   const absolutePosition = (node: CustomNodeType) => {
     let position = { ...node.position };
@@ -818,25 +1113,85 @@ function adoptTopLevelBlockFragmentIntoBlockV2(
       )
     : target;
   const origin = destinationCanvasParent ? absolutePosition(destinationCanvasParent) : target.position;
+  const sourceLayouts = blockRelativeInternalLayoutsV2(fragment);
+  const dropPosition = { x: source.position.x - origin.x, y: source.position.y - origin.y };
   const layouts = Object.fromEntries(
     fragment.effectiveGraph.nodes.map((node) => {
       const nextId = semanticIdBySource.get(node.nodeId)!;
-      const sourceLayout = fragment.presentation.internalLayout[node.nodeId];
+      const sourceLayout = sourceLayouts[node.nodeId]!;
       return [
         nextId,
-        node.nodeId === roots[0]!.nodeId
+        !needsWrapper && node.nodeId === roots[0]!.nodeId
           ? {
-              x: source.position.x - origin.x,
-              y: source.position.y - origin.y,
+              ...dropPosition,
               ...(sourceLayout?.width ? { width: sourceLayout.width } : {}),
               ...(sourceLayout?.height ? { height: sourceLayout.height } : {}),
             }
-          : cloneJson(sourceLayout ?? { x: 32, y: 80 }),
+          : cloneJson(sourceLayout),
       ];
     }),
   );
-  const nextInstance = addBlockEffectiveGraphSubtreeV2(targetInstance, nodes, edges, layouts);
-  const projected = projectBlockInstanceV2(state, target.id, nextInstance);
+  const insertedRootId = wrapperId ?? semanticIdBySource.get(roots[0]!.nodeId)!;
+  if (wrapperId)
+    layouts[wrapperId] = {
+      ...dropPosition,
+      ...fragment.presentation.size,
+    };
+  // Normalize only presentation coordinates to one parent-relative convention.
+  // This does not touch semantic graph, parameters, interfaces or execution.
+  const hierarchicalTarget = reduceBlockPresentationV2(targetInstance, {
+    internalLayoutMode: 'hierarchical',
+    internalLayout: blockRelativeInternalLayoutsV2(targetInstance),
+  });
+  let addedInstance = addBlockEffectiveGraphSubtreeV2(
+    hierarchicalTarget,
+    nodes,
+    edges.slice(0, originalFragmentEdgeCount),
+    layouts,
+  );
+  if (edges.length > originalFragmentEdgeCount)
+    addedInstance = replaceBlockEffectiveGraphV2(addedInstance, {
+      ...addedInstance.effectiveGraph,
+      edges: [...addedInstance.effectiveGraph.edges, ...edges.slice(originalFragmentEdgeCount)],
+    });
+  let nextInstance = reduceBlockPresentationV2(addedInstance, {
+    collapsedContainerNodeIds: [
+      ...new Set([
+        ...(targetInstance.presentation.collapsedContainerNodeIds ?? []),
+        insertedRootId,
+        ...(fragment.presentation.collapsedContainerNodeIds ?? []).map((id) => semanticIdBySource.get(id)!),
+      ]),
+    ],
+  });
+  // Moving an existing Block within this workflow retains completed media, but
+  // a moved graph must never inherit an in-flight run's execution ownership.
+  for (const preview of fragment.previewStates) {
+    if (preview.status !== 'complete' || preview.mediaReference === undefined) continue;
+    const nodeId = semanticIdBySource.get(preview.binding.nodeId)!;
+    if (
+      !nextInstance.previewStates.some(
+        (candidate) =>
+          candidate.binding.nodeId === nodeId && candidate.binding.outputPortId === preview.binding.outputPortId,
+      )
+    )
+      continue;
+    nextInstance = reduceBlockPreviewStateV2(
+      nextInstance,
+      { nodeId, outputPortId: preview.binding.outputPortId },
+      {
+        status: 'complete',
+        mediaReference: preview.mediaReference,
+        ...(preview.taskId ? { taskId: preview.taskId } : {}),
+      },
+    );
+  }
+  for (const edge of edges.slice(originalFragmentEdgeCount))
+    assertBlockInternalConnectionV2(
+      nextInstance,
+      { nodeId: edge.sourceNodeId, fieldOrPortId: edge.sourcePortId },
+      { nodeId: edge.targetNodeId, fieldOrPortId: edge.targetPortId },
+    );
+  const projected = projectBlockInstanceV2({ ...state, edges: remainingEdges }, target.id, nextInstance);
   if (!projected) throw new Error('The destination Block could not project the inserted Modular subtree.');
   const removedCanvasIds = new Set([
     fragmentId,
@@ -883,12 +1238,16 @@ function replaceProjectedNodeInBlockV2(
   const sourceMetadata = replacement.modularDiffusers;
   const targetMetadata = replacedSemantic?.modularDiffusers;
   if (sourceMetadata?.kind === 'upstream_block' && targetMetadata?.kind === 'upstream_block') {
+    const destinationContext = reviewedDestinationContextV2(root.data.blockInstanceV2, targetMetadata);
     if (
-      sourceMetadata.pipelineClass !== targetMetadata.pipelineClass ||
-      sourceMetadata.libraryRevision !== targetMetadata.libraryRevision
+      !reviewedBlockCanBeAuthoredV2(
+        sourceMetadata,
+        destinationContext,
+        useHuggingFaceModularConditionalStore.getState().snapshot,
+      )
     )
       throw new Error(
-        `Cannot replace ${targetMetadata.blockClass ?? 'this block'} with ${sourceMetadata.blockClass ?? 'that block'}: choose a block from the same pinned pipeline family.`,
+        `Unsupported replacement contract: ${sourceMetadata.blockClass} for ${targetMetadata.blockClass}.`,
       );
     if (sourceMetadata.blockKind !== 'block' || targetMetadata.blockKind !== 'block')
       throw new Error(
@@ -898,7 +1257,7 @@ function replaceProjectedNodeInBlockV2(
     const sourceIdentity = { ...sourceMetadata };
     delete sourceIdentity.parentPlacementPath;
     replacement = {
-      ...replacement,
+      ...bindReviewedNodeContextV2(replacement, destinationContext),
       modularDiffusers: {
         ...sourceIdentity,
         runtimeRole: `custom:${placementPath.join('/')}`,
@@ -936,75 +1295,12 @@ function moveProjectedNodeOutOfBlockV2(
   const instance = root.data.blockInstanceV2;
   const semantic = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === semanticNodeId);
   if (!semantic) throw new Error(`Cannot move unknown Block V2 internal node "${semanticNodeId}" out.`);
+  if (projected.data.blockProjectionContainer)
+    return moveProjectedSubtreeOutOfBlockV2(state, root, projected, position);
   const incident = instance.effectiveGraph.edges.filter(
     ({ sourceNodeId, targetNodeId }) => sourceNodeId === semanticNodeId || targetNodeId === semanticNodeId,
   );
-  const translatedCandidates = incident.map((edge) => {
-    if (edge.sourceNodeId === semanticNodeId && edge.targetNodeId === semanticNodeId) {
-      return { kind: 'self' as const, sourceHandle: edge.sourcePortId, targetHandle: edge.targetPortId };
-    }
-    if (edge.sourceNodeId === semanticNodeId) {
-      const port = instance.effectiveInterface.boundary.inputs.find((candidate) =>
-        blockInputPortBindingsV2(candidate).some(
-          ({ nodeId, fieldOrPortId }) => nodeId === edge.targetNodeId && fieldOrPortId === edge.targetPortId,
-        ),
-      );
-      if (!port)
-        throw new Error(
-          `Cannot move "${semanticNodeId}" out while ${edge.edgeId} crosses the Block boundary. Configure a public input for ${edge.targetNodeId}.${edge.targetPortId} first.`,
-        );
-      if (
-        !port.multiple &&
-        state.edges.some((candidate) => candidate.target === ownerId && candidate.targetHandle === port.portId)
-      )
-        throw new Error(`Cannot move "${semanticNodeId}" out: public input ${port.portId} is already connected.`);
-      return {
-        kind: 'input' as const,
-        sourceHandle: edge.sourcePortId,
-        targetRootPortId: port.portId,
-        targetBindingKey: `${edge.targetNodeId}\0${edge.targetPortId}`,
-      };
-    }
-    const port = instance.effectiveInterface.boundary.outputs.find(
-      ({ binding }) => binding.nodeId === edge.sourceNodeId && binding.fieldOrPortId === edge.sourcePortId,
-    );
-    if (!port)
-      throw new Error(
-        `Cannot move "${semanticNodeId}" out while ${edge.edgeId} crosses the Block boundary. Configure a public output for ${edge.sourceNodeId}.${edge.sourcePortId} first.`,
-      );
-    return { kind: 'output' as const, sourceRootPortId: port.portId, targetHandle: edge.targetPortId };
-  });
-  const seenInputGroups = new Set<string>();
-  const translated = translatedCandidates.filter((candidate) => {
-    if (candidate.kind !== 'input') return true;
-    const groupKey = `${candidate.sourceHandle}\0${candidate.targetRootPortId}`;
-    if (seenInputGroups.has(groupKey)) return false;
-    const group = translatedCandidates.filter(
-      (other) =>
-        other.kind === 'input' &&
-        other.sourceHandle === candidate.sourceHandle &&
-        other.targetRootPortId === candidate.targetRootPortId,
-    );
-    const port = instance.effectiveInterface.boundary.inputs.find(
-      ({ portId }) => portId === candidate.targetRootPortId,
-    );
-    if (!port) throw new Error(`Cannot move "${semanticNodeId}" out: its public input disappeared.`);
-    const expected = new Set(
-      blockInputPortBindingsV2(port).map(({ nodeId, fieldOrPortId }) => `${nodeId}\0${fieldOrPortId}`),
-    );
-    const actual = new Set(group.flatMap((other) => (other.kind === 'input' ? [other.targetBindingKey] : [])));
-    if (
-      actual.size !== group.length ||
-      actual.size !== expected.size ||
-      [...actual].some((target) => !expected.has(target))
-    )
-      throw new Error(
-        `Cannot move "${semanticNodeId}" out: its connections do not cover the complete fan-out for public input ${port.portId}.`,
-      );
-    seenInputGroups.add(groupKey);
-    return true;
-  });
-  const nextInstance = removeBlockEffectiveGraphNodesV2(instance, [semanticNodeId]);
+  const nextInstance = detachBlockGraphNodesV2(instance, new Set([semanticNodeId]));
   const graph = projectBlockInstanceV2(state, ownerId, nextInstance);
   if (!graph) throw new Error(`Cannot move Block V2 internal node "${semanticNodeId}" out: projection failed.`);
 
@@ -1016,14 +1312,20 @@ function moveProjectedNodeOutOfBlockV2(
   delete data.blockProjectionNodeId;
   delete data.blockProjectionKind;
   delete data.blockProjectionContainer;
+  delete data.blockProjectionContainerExpanded;
   delete data.blockProjectionModular;
   delete data.blockProjectionChildCount;
   delete data.blockProjectionDepth;
   delete data.blockProjectionPortBindings;
+  // The standalone node keeps its exact upstream identity. Projection markers
+  // are disposable, but dropping provenance here made a move-out/reinsert turn
+  // a Modular leaf into an untyped utility with no source contract.
+  if (semantic.modularDiffusers) data.modularDiffusersCatalogNode = cloneJson(semantic.modularDiffusers);
   Object.values(data.params).forEach((param) => {
     if (!isRecord(param.fieldOptions)) return;
     const fieldOptions = { ...param.fieldOptions };
     delete fieldOptions.blockBindingV2;
+    delete fieldOptions.blockContainerControlV1;
     param.fieldOptions = fieldOptions;
   });
   const topLevel: CustomNodeType = {
@@ -1036,16 +1338,159 @@ function moveProjectedNodeOutOfBlockV2(
   delete topLevel.extent;
   delete topLevel.expandParent;
 
-  const crossingEdges: Edge[] = translated.map((translation) => ({
+  const inputPortFor = (edge: (typeof incident)[number]) =>
+    instance.effectiveInterface.boundary.inputs.find((port) => {
+      const targets = blockInputPortBindingsV2(port);
+      return (
+        targets.some(
+          (binding) => binding.nodeId === edge.targetNodeId && binding.fieldOrPortId === edge.targetPortId,
+        ) &&
+        targets.every((binding) =>
+          incident.some(
+            (candidate) =>
+              candidate.sourceNodeId === semanticNodeId &&
+              candidate.sourcePortId === edge.sourcePortId &&
+              candidate.targetNodeId === binding.nodeId &&
+              candidate.targetPortId === binding.fieldOrPortId,
+          ),
+        )
+      );
+    });
+  const crossingCandidates: Edge[] = incident.map((edge) => ({
     id: `workflow-edge-${nanoid()}`,
-    source: translation.kind === 'self' ? topLevelId : translation.kind === 'output' ? ownerId : topLevelId,
-    sourceHandle: translation.kind === 'output' ? translation.sourceRootPortId : translation.sourceHandle,
-    target: translation.kind === 'self' ? topLevelId : translation.kind === 'input' ? ownerId : topLevelId,
-    targetHandle: translation.kind === 'input' ? translation.targetRootPortId : translation.targetHandle,
-    type: 'smoothstep',
+    source: edge.sourceNodeId === semanticNodeId ? topLevelId : ownerId,
+    sourceHandle:
+      edge.sourceNodeId === semanticNodeId
+        ? edge.sourcePortId
+        : (instance.effectiveInterface.boundary.outputs.find(
+            (port) => port.binding.nodeId === edge.sourceNodeId && port.binding.fieldOrPortId === edge.sourcePortId,
+          )?.portId ??
+          blockCrossingHandleV2({ nodeId: edge.sourceNodeId, fieldOrPortId: edge.sourcePortId, direction: 'output' })),
+    target: edge.targetNodeId === semanticNodeId ? topLevelId : ownerId,
+    targetHandle:
+      edge.targetNodeId === semanticNodeId
+        ? edge.targetPortId
+        : (inputPortFor(edge)?.portId ??
+          blockCrossingHandleV2({ nodeId: edge.targetNodeId, fieldOrPortId: edge.targetPortId, direction: 'input' })),
+    type: 'default',
   }));
+  const crossingEdges = crossingCandidates.filter(
+    (edge, index) =>
+      crossingCandidates.findIndex(
+        (other) =>
+          other.source === edge.source &&
+          other.sourceHandle === edge.sourceHandle &&
+          other.target === edge.target &&
+          other.targetHandle === edge.targetHandle,
+      ) === index,
+  );
+  const retainedEdges = remapDetachedBlockEdgesV2(graph.edges, root, new Set([semanticNodeId]), topLevelId, false);
   const nodes = [...graph.nodes, topLevel];
-  return { nodes, edges: decorateConnectionEdges(nodes, [...graph.edges, ...crossingEdges]), topLevelId };
+  return { nodes, edges: decorateConnectionEdges(nodes, [...retainedEdges, ...crossingEdges]), topLevelId };
+}
+
+/** Detach a complete subtree as a workflow-owned Block, never a library write. */
+function moveProjectedSubtreeOutOfBlockV2(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  root: CustomNodeType,
+  projected: CustomNodeType,
+  position: { x: number; y: number },
+) {
+  const instance = root.data.blockInstanceV2!;
+  const semanticId = projected.data.blockProjectionNodeId!;
+  const included = blockGraphSubtreeNodeIdsV2(instance.effectiveGraph, semanticId);
+  const definition = reusableBlockDefinitionFromSubtreeV2(instance, {
+    rootNodeId: semanticId,
+    definitionId: `user:detached-${nanoid()}`,
+    displayName: projected.data.label || 'Detached User Block',
+  });
+  const topLevelId = `block-${nanoid()}`;
+  const crossingCandidates: Edge[] = instance.effectiveGraph.edges.flatMap((edge) => {
+    const fromInside = included.has(edge.sourceNodeId),
+      toInside = included.has(edge.targetNodeId);
+    if (fromInside === toInside) return [];
+    const outputBoundary = fromInside ? definition.boundary : instance.effectiveInterface.boundary;
+    const inputBoundary = toInside ? definition.boundary : instance.effectiveInterface.boundary;
+    const outputPort = outputBoundary.outputs.find(
+      (port) => port.binding.nodeId === edge.sourceNodeId && port.binding.fieldOrPortId === edge.sourcePortId,
+    );
+    const inputPort = inputBoundary.inputs.find((port) => {
+      const targets = blockInputPortBindingsV2(port);
+      return (
+        targets.some(
+          (binding) => binding.nodeId === edge.targetNodeId && binding.fieldOrPortId === edge.targetPortId,
+        ) &&
+        targets.every((binding) =>
+          instance.effectiveGraph.edges.some(
+            (candidate) =>
+              candidate.sourceNodeId === edge.sourceNodeId &&
+              candidate.sourcePortId === edge.sourcePortId &&
+              candidate.targetNodeId === binding.nodeId &&
+              candidate.targetPortId === binding.fieldOrPortId,
+          ),
+        )
+      );
+    });
+    return [
+      {
+        id: `workflow-edge-${nanoid()}`,
+        source: fromInside ? topLevelId : root.id,
+        target: toInside ? topLevelId : root.id,
+        sourceHandle:
+          outputPort?.portId ??
+          blockCrossingHandleV2({ nodeId: edge.sourceNodeId, fieldOrPortId: edge.sourcePortId, direction: 'output' }),
+        targetHandle:
+          inputPort?.portId ??
+          blockCrossingHandleV2({ nodeId: edge.targetNodeId, fieldOrPortId: edge.targetPortId, direction: 'input' }),
+        type: 'default',
+      },
+    ];
+  });
+  const crossings = crossingCandidates.filter(
+    (edge, index) =>
+      crossingCandidates.findIndex(
+        (other) =>
+          other.source === edge.source &&
+          other.sourceHandle === edge.sourceHandle &&
+          other.target === edge.target &&
+          other.targetHandle === edge.targetHandle,
+      ) === index,
+  );
+  const remaining = detachBlockGraphNodesV2(instance, included);
+  const layouts = blockRelativeInternalLayoutsV2(instance);
+  let detached = createBlockInstanceV2(definition, {
+    instanceId: topLevelId,
+    position,
+    size: { width: layouts[semanticId]?.width ?? 420, height: layouts[semanticId]?.height ?? 480 },
+    internalLayoutMode: 'hierarchical',
+    internalLayout: Object.fromEntries(
+      [...included].map((id) => [id, id === semanticId ? { ...layouts[id], x: 32, y: 80 } : layouts[id]!]),
+    ),
+  });
+  detached = reduceBlockPresentationV2(detached, {
+    collapsedContainerNodeIds: (instance.presentation.collapsedContainerNodeIds ?? []).filter((id) => included.has(id)),
+  });
+  for (const preview of instance.previewStates) {
+    if (preview.status !== 'complete' || preview.mediaReference === undefined || !included.has(preview.binding.nodeId))
+      continue;
+    if (
+      !detached.previewStates.some(
+        ({ binding }) =>
+          binding.nodeId === preview.binding.nodeId && binding.outputPortId === preview.binding.outputPortId,
+      )
+    )
+      continue;
+    detached = reduceBlockPreviewStateV2(detached, preview.binding, {
+      status: 'complete',
+      mediaReference: preview.mediaReference,
+      ...(preview.taskId ? { taskId: preview.taskId } : {}),
+    });
+  }
+  const graph = projectBlockInstanceV2(state, root.id, remaining);
+  if (!graph) throw new Error('Could not project the remaining Block.');
+  const nodes = [...graph.nodes, createBlockRootNodeV2(detached, { selected: projected.selected })];
+  const retained = remapDetachedBlockEdgesV2(graph.edges, root, included, topLevelId, true);
+  return { nodes, edges: decorateConnectionEdges(nodes, [...retained, ...crossings]), topLevelId };
 }
 
 function updateBlockInstanceV2(
@@ -1173,6 +1618,32 @@ export const useFlowStore = create<FlowStore>()(
         const blockOwnerId = node?.data.blockProjectionOwnerId;
         const blockSemanticNodeId = node?.data.blockProjectionNodeId;
         if (blockOwnerId && blockSemanticNodeId && (key === undefined || key === 'value')) {
+          const localBindingValue = node.data.params[param]?.fieldOptions?.blockContainerControlV1;
+          const localBinding = isRecord(localBindingValue) ? localBindingValue : null;
+          if (localBinding) {
+            if (
+              localBinding.schemaVersion !== 1 ||
+              localBinding.ownerId !== blockOwnerId ||
+              localBinding.containerNodeId !== blockSemanticNodeId ||
+              typeof localBinding.controlId !== 'string'
+            )
+              throw new Error('This internal control has an invalid binding. Reopen the Block.');
+            const controlId = localBinding.controlId;
+            get().withHistory('Edit internal Block control', () => {
+              set((state) => {
+                const graph = updateBlockInstanceV2(state, blockOwnerId, (instance) =>
+                  setBlockContainerControlValueV1(
+                    instance,
+                    blockSemanticNodeId,
+                    controlId,
+                    value as BlockJsonValue | undefined,
+                  ),
+                );
+                return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+              });
+            });
+            return;
+          }
           const bindingValue = node.data.params[param]?.fieldOptions?.blockBindingV2;
           const binding = isRecord(bindingValue) ? bindingValue : null;
           const logicalId =
@@ -1236,8 +1707,10 @@ export const useFlowStore = create<FlowStore>()(
           get().refreshConnectionVisuals();
         }
       },
-      setNodeSize: (id: string, width: number, height: number) => {
-        get().withHistory('Resize node', () => setFlowNodeSize(id, width, height, set));
+      setNodeSize: (id: string, width: number, height: number, options) => {
+        const resize = () => setFlowNodeSize(id, width, height, set);
+        if (options?.history === false) resize();
+        else get().withHistory('Resize node', resize);
       },
       getNodeParamsValues: (id: string) => {
         return getFlowNodeParamValues(id, get);
@@ -1555,18 +2028,46 @@ export const useFlowStore = create<FlowStore>()(
           const semanticNodeId = node.data.blockProjectionNodeId;
           if (!ownerId || !semanticNodeId) return state;
           const graph = updateBlockInstanceV2(state, ownerId, (instance) =>
-            reduceBlockPresentationV2(instance, {
-              internalLayout: {
-                [semanticNodeId]: {
-                  x: node.position.x,
-                  y: node.position.y,
-                  ...((node.measured?.width ?? node.width) ? { width: node.measured?.width ?? node.width } : {}),
-                  ...((node.measured?.height ?? node.height) ? { height: node.measured?.height ?? node.height } : {}),
-                },
-              },
+            repositionBlockChildV2(instance, semanticNodeId, {
+              x: node.position.x,
+              y: node.position.y,
+              ...((node.measured?.width ?? node.width) ? { width: node.measured?.width ?? node.width } : {}),
+              ...((node.measured?.height ?? node.height) ? { height: node.measured?.height ?? node.height } : {}),
             }),
           );
           return graph ? { nodes: graph.nodes, edges: graph.edges } : state;
+        });
+      },
+      growBlockContainersForDragV2: (nodeId) => {
+        set((state) => {
+          const byId = new Map(state.nodes.map((node) => [node.id, node]));
+          const resized = new Map<string, CustomNodeType>();
+          let child = byId.get(nodeId);
+          while (child?.parentId && child.data.blockProjectionOwnerId) {
+            const parent = byId.get(child.parentId);
+            if (!parent) break;
+            const boundary = parent.data.blockInstanceV2?.effectiveInterface.boundary;
+            const params = Object.values(parent.data.params);
+            const inputCount =
+              boundary?.inputs.length ?? params.filter((param) => param.isInput || param.display === 'input').length;
+            const outputCount = boundary?.outputs.length ?? params.filter((param) => param.display === 'output').length;
+            const bottom = 48 + 24 * Math.max(inputCount, outputCount);
+            const width = Math.max(
+              parent.width ?? 0,
+              child.position.x + (child.width ?? child.measured?.width ?? 320) + 32,
+            );
+            const height = Math.max(
+              parent.height ?? 0,
+              child.position.y + (child.height ?? child.measured?.height ?? 240) + bottom,
+            );
+            if (width === parent.width && height === parent.height) {
+              child = parent;
+              continue;
+            }
+            child = { ...parent, width, height, style: { ...parent.style, width, height } };
+            resized.set(parent.id, child);
+          }
+          return resized.size ? { nodes: state.nodes.map((node) => resized.get(node.id) ?? node) } : state;
         });
       },
       fitBlockProjectionToChildrenV2: (id) => {
@@ -1576,6 +2077,7 @@ export const useFlowStore = create<FlowStore>()(
           if (!root || !instance?.presentation.expanded) return state;
           const children = state.nodes.filter((node) => node.data.blockProjectionOwnerId === id);
           if (!children.length) return state;
+          if (children.some((node) => node.dragging)) return state;
           const size = blockExpandedProjectionSizeV2(instance, children);
           // Always publish a fresh controlled root after projection mount.
           // React Flow may retain a collapsed wrapper measurement for the same
@@ -1645,18 +2147,74 @@ export const useFlowStore = create<FlowStore>()(
         if (!topLevelId) throw new Error('Could not materialize the node outside this Block.');
         return topLevelId;
       },
-      configureBlockInterfaceV2: (id, value) => {
+      reparentNodeInBlockV2: (projectedNodeId, parentSemanticNodeId, absolutePosition) => {
+        get().withHistory('Move internal node between Blocks', () => {
+          set((state) => {
+            const source = state.nodes.find((node) => node.id === projectedNodeId);
+            const ownerId = source?.data.blockProjectionOwnerId;
+            const semanticId = source?.data.blockProjectionNodeId;
+            const owner = state.nodes.find((node) => node.id === ownerId);
+            if (!source || !ownerId || !semanticId || !owner?.data.blockInstanceV2?.presentation.expanded)
+              throw new Error('Expand the owning Block before moving its internal nodes.');
+            const destination = parentSemanticNodeId
+              ? state.nodes.find(
+                  (node) =>
+                    node.data.blockProjectionOwnerId === ownerId &&
+                    node.data.blockProjectionNodeId === parentSemanticNodeId,
+                )
+              : owner;
+            if (
+              !destination ||
+              destination.hidden ||
+              (parentSemanticNodeId && destination.data.blockProjectionContainerExpanded !== true)
+            )
+              throw new Error('Expand the destination internal Block first.');
+            let origin = { ...destination.position };
+            let ancestorId = destination.parentId;
+            const visited = new Set([destination.id]);
+            while (ancestorId) {
+              if (visited.has(ancestorId)) throw new Error('Invalid canvas parent cycle.');
+              visited.add(ancestorId);
+              const ancestor = state.nodes.find((node) => node.id === ancestorId);
+              if (!ancestor) throw new Error('The destination canvas parent is missing.');
+              origin = { x: origin.x + ancestor.position.x, y: origin.y + ancestor.position.y };
+              ancestorId = ancestor.parentId;
+            }
+            const next = reparentOrdinaryBlockNodeV2(owner.data.blockInstanceV2, semanticId, parentSemanticNodeId, {
+              x: absolutePosition.x - origin.x,
+              y: absolutePosition.y - origin.y,
+            });
+            const graph = projectBlockInstanceV2(state, ownerId, next);
+            if (!graph) throw new Error('Could not project the moved internal node.');
+            return graph;
+          });
+          get().updateHandleConnectionStatus();
+        });
+      },
+      configureBlockInterfaceV2: (id, value, subtreeId) => {
+        if (!subtreeId && value.previews !== undefined)
+          throw new Error('Root preview bindings belong to the Block definition, not its effective interface.');
         get().withHistory('Configure Block interface', () => {
           set((state) => {
             const root = state.nodes.find((node) => node.id === id);
             if (!root?.data.blockInstanceV2 || !isBlockRootV2(root))
               throw new Error(`Cannot configure invalid Block V2 root "${id}".`);
+            if (subtreeId) {
+              const graph = updateBlockInstanceV2(state, id, (instance) =>
+                configureBlockContainerInterfaceV1(instance, subtreeId, value),
+              );
+              return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
+            }
             const inputIds = new Set(value.boundary.inputs.map(({ portId }) => portId));
             const outputIds = new Set(value.boundary.outputs.map(({ portId }) => portId));
             const impacted = state.edges.filter(
               (edge) =>
-                (edge.target === id && (!edge.targetHandle || !inputIds.has(edge.targetHandle))) ||
-                (edge.source === id && (!edge.sourceHandle || !outputIds.has(edge.sourceHandle))),
+                (edge.target === id &&
+                  !parseBlockCrossingHandleV2(edge.targetHandle) &&
+                  (!edge.targetHandle || !inputIds.has(edge.targetHandle))) ||
+                (edge.source === id &&
+                  !parseBlockCrossingHandleV2(edge.sourceHandle) &&
+                  (!edge.sourceHandle || !outputIds.has(edge.sourceHandle))),
             );
             if (impacted.length)
               throw new Error(
@@ -1818,18 +2376,23 @@ export const useFlowStore = create<FlowStore>()(
         updateFlowCacheStatus(ids, set);
       },
 
-      exportGraph: (sid: string, targetNodeId?: string) => {
-        const { nodes, edges } = get();
+      exportGraph: (sid: string, targetNodeId?: string, options = {}) => {
+        const { nodes, edges } = options.sourceGraph ?? get();
         const durable = withoutBlockCompilationTransientsV2(nodes, edges);
         const expanded = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
         const withClusterBoundaries = expandHuggingFaceClusterBoundaryEdges(expanded);
-        const executable = expandBlockGraphV2ForExecution(withClusterBoundaries.nodes, withClusterBoundaries.edges);
+        const executable = expandBlockGraphV2ForExecution(
+          withClusterBoundaries.nodes,
+          withClusterBoundaries.edges,
+          targetNodeId,
+        );
         return buildApiGraphExport({
           nodes: executable.nodes,
           edges: executable.edges,
           sid,
-          targetNodeId: resolveFlowExecutionTargetNodeId(nodes, targetNodeId),
+          targetNodeIds: resolveFlowExecutionTargetNodeIds(nodes, targetNodeId, edges),
           setParam: get().setParam,
+          randomizeSeeds: options.randomizeSeeds,
         });
       },
       updateProgress: (id: string, progress: number, metadata) => {
@@ -2010,7 +2573,7 @@ export const useFlowStore = create<FlowStore>()(
         historyFuture: [],
         historyTransaction: null,
       }),
-      partialize: (state) => snapshotFlowState(state),
+      partialize: persistedFlowSnapshot,
       onRehydrateStorage: () => (state) => {
         state?.resetExecutionProgress();
       },

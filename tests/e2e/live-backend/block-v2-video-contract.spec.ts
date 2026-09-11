@@ -10,6 +10,29 @@ import {
   sha256Value,
 } from '../../../scripts/live-proof-provenance.mjs';
 import { decodedMediaHash } from '../../../scripts/template-gallery-harness.mjs';
+import { startRuntimeResponsivenessProbe } from './runtimeResponsivenessProbe';
+
+let runtimeProbe: ReturnType<typeof startRuntimeResponsivenessProbe> | null = null;
+test.afterEach(async ({ page }, testInfo) => {
+  if (!runtimeProbe) return;
+  const samples = await runtimeProbe.stop();
+  runtimeProbe = null;
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(`${testInfo.outputDir}/runtime-responsiveness.json`, JSON.stringify(samples, null, 2));
+  if (testInfo.status === 'failed' && !page.isClosed()) {
+    await testInfo.attach('runtime-probe-failure', { body: await page.screenshot(), contentType: 'image/png' });
+  }
+  expect(samples.filter((sample) => sample.error || sample.status !== 200)).toEqual([]);
+  const active = samples.filter((sample) => sample.path === '/runtime/resources' && sample.taskId);
+  expect(active.length).toBeGreaterThan(5);
+  expect(
+    active.every(
+      (sample) =>
+        sample.allocatorStatuses?.length &&
+        sample.allocatorStatuses.every((status) => status === 'paused_during_execution'),
+    ),
+  ).toBe(true);
+});
 
 const LIVE_BACKEND_URL = process.env.MODIFF_LIVE_BACKEND_URL || 'http://127.0.0.1:8088';
 const DEFINITION_ID = 'diffusers.cluster-admission:WanTI2VPipeline:text_to_video:mode:text_to_video';
@@ -697,6 +720,9 @@ test('exact Wan TI2V catalog drag is one durable V2 Block and generates video af
   expect(runtimeExpectation.runtimeHints.optimizationQualificationForm).toEqual(runtimeExpectation.form);
 
   await restored.locator('header').first().click();
+  if (process.env.MODIFF_VERIFY_RUNTIME_RESPONSIVENESS === '1') {
+    runtimeProbe = startRuntimeResponsivenessProbe(LIVE_BACKEND_URL);
+  }
   const submission = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/graph' && response.request().method() === 'POST',
     { timeout: 180_000 },
@@ -706,6 +732,15 @@ test('exact Wan TI2V catalog drag is one durable V2 Block and generates video af
   if (!response.ok())
     throw new Error(`Wan V2 graph submission failed (${response.status()}): ${await response.text()}`);
   await expect(page.getByRole('dialog', { name: 'Run blocked' })).toHaveCount(0);
+  if (runtimeProbe) {
+    await page.getByTestId('topbar-resource-monitor').click();
+    await expect(page.getByTestId('topbar-resource-popover')).toContainText(
+      'Allocator readings are paused during generation',
+      { timeout: 20_000 },
+    );
+    await page.screenshot({ path: `${evidenceRoot}/resource-monitor-during-run.png`, fullPage: false });
+    await page.keyboard.press('Escape');
+  }
   const submittedGraph = response.request().postDataJSON() as ExecutionExport;
   expect(Object.keys(submittedGraph.nodes)).toHaveLength(5);
   expect(JSON.stringify(submittedGraph.nodes)).toContain(workload.prompt);

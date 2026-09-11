@@ -3,57 +3,28 @@ import {
   blockGraphHashV2,
   canonicalBlockStringifyV2,
   createBlockInstanceV2,
+  blockInstancePreviewBindingsV2,
   normalizeBlockDefinitionV2,
   normalizeBlockInstanceV2,
   type BlockDefinitionV2,
-  type BlockGraphNodeV2,
   type BlockInstanceV2,
   type BlockPreviewStateV2,
   type BlockSourceV2,
 } from './blockSchemaV2';
 import { blockInputPortBindingsV2, blockModularParentIdsV2 } from './blockRuntimeV2';
+import {
+  blockContainerFieldV1,
+  blockContainerFieldValueV1,
+  blockContainerInterfaceV1,
+} from './blockContainerInterfaceV1';
 
 export type ReusableBlockDefinitionChoiceV2 = 'new' | 'update';
-
-function sourceParamType(node: BlockGraphNodeV2, fieldId: string) {
-  const params = node.data.params;
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return 'any';
-  const field = (params as Record<string, unknown>)[fieldId];
-  if (!field || typeof field !== 'object' || Array.isArray(field)) return 'any';
-  const type = (field as Record<string, unknown>).type;
-  if (typeof type === 'string' && type) return type;
-  if (Array.isArray(type)) {
-    const first = type.find((item): item is string => typeof item === 'string' && Boolean(item));
-    if (first) return first;
-  }
-  return 'any';
-}
-
-function sourceParamLabel(node: BlockGraphNodeV2, fieldId: string) {
-  const params = node.data.params;
-  const field =
-    params && typeof params === 'object' && !Array.isArray(params)
-      ? (params as Record<string, unknown>)[fieldId]
-      : undefined;
-  const label =
-    field && typeof field === 'object' && !Array.isArray(field) ? (field as Record<string, unknown>).label : undefined;
-  return typeof label === 'string' && label.trim() ? label.trim() : fieldId.replace(/[_-]/gu, ' ');
-}
-
-function uniquePortId(base: string, occupied: Set<string>) {
-  const normalized = base.replace(/[^A-Za-z0-9_.:/-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'port';
-  let candidate = normalized;
-  let index = 2;
-  while (occupied.has(candidate)) candidate = `${normalized}-${index++}`;
-  occupied.add(candidate);
-  return candidate;
-}
 
 /**
  * Materialize one selected Modular Diffusers placement and every descendant
  * placement as an independent, top-level User Node definition. This is a
  * semantic copy: it never embeds another Block/Cluster instance. Crossing
- * edges become explicit public sockets and instance controls become defaults.
+ * edges are omitted; only deliberately declared sockets are reusable.
  */
 export function reusableBlockDefinitionFromSubtreeV2(
   instanceValue: BlockInstanceV2,
@@ -61,9 +32,7 @@ export function reusableBlockDefinitionFromSubtreeV2(
 ): BlockDefinitionV2 {
   const instance = normalizeBlockInstanceV2(instanceValue);
   const rootNode = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === rootNodeId);
-  if (!rootNode?.modularDiffusers || rootNode.modularDiffusers.kind !== 'upstream_block') {
-    throw new Error('Only an exact Modular Diffusers block placement can be saved as a subtree User Node.');
-  }
+  if (!rootNode) throw new Error('The selected subtree is no longer present in this Block.');
   const parents = blockModularParentIdsV2(instance);
   const included = new Set<string>([rootNodeId]);
   let changed = true;
@@ -76,8 +45,19 @@ export function reusableBlockDefinitionFromSubtreeV2(
       }
     });
   }
-  const nodes = instance.effectiveGraph.nodes.filter(({ nodeId }) => included.has(nodeId));
-  const nodeById = new Map(instance.effectiveGraph.nodes.map((node) => [node.nodeId, node]));
+  const nodes = structuredClone(instance.effectiveGraph.nodes.filter(({ nodeId }) => included.has(nodeId)));
+  // Bake workflow-owned values into the copied fields, including controls
+  // deliberately hidden from the selected container's public interface.
+  nodes.forEach((node) => {
+    if (node.parentNodeId && !included.has(node.parentNodeId)) delete node.parentNodeId;
+    const params = node.data.params;
+    if (!params || typeof params !== 'object' || Array.isArray(params)) return;
+    Object.keys(params).forEach((fieldId) => {
+      const field = blockContainerFieldV1(node, fieldId);
+      const value = blockContainerFieldValueV1(instance, node.nodeId, fieldId);
+      if (field && value !== undefined) field.value = structuredClone(value);
+    });
+  });
   const internalEdges = instance.effectiveGraph.edges.filter(
     ({ sourceNodeId, targetNodeId }) => included.has(sourceNodeId) && included.has(targetNodeId),
   );
@@ -105,33 +85,6 @@ export function reusableBlockDefinitionFromSubtreeV2(
   const outputPorts = instance.effectiveInterface.boundary.outputs.filter(({ binding }) =>
     included.has(binding.nodeId),
   );
-  const inputIds = new Set(inputPorts.map(({ portId }) => portId));
-  const outputIds = new Set(outputPorts.map(({ portId }) => portId));
-  instance.effectiveGraph.edges.forEach((edge) => {
-    if (!included.has(edge.sourceNodeId) && included.has(edge.targetNodeId)) {
-      const target = nodeById.get(edge.targetNodeId)!;
-      inputPorts.push({
-        portId: uniquePortId(edge.targetPortId, inputIds),
-        label: sourceParamLabel(target, edge.targetPortId),
-        valueType: sourceParamType(target, edge.targetPortId),
-        required: Boolean(
-          ((target.data.params as Record<string, Record<string, unknown>> | undefined)?.[edge.targetPortId] ?? {})
-            .required,
-        ),
-        binding: { nodeId: edge.targetNodeId, fieldOrPortId: edge.targetPortId },
-      });
-    } else if (included.has(edge.sourceNodeId) && !included.has(edge.targetNodeId)) {
-      const source = nodeById.get(edge.sourceNodeId)!;
-      outputPorts.push({
-        portId: uniquePortId(edge.sourcePortId, outputIds),
-        label: sourceParamLabel(source, edge.sourcePortId),
-        valueType: sourceParamType(source, edge.sourcePortId),
-        required: false,
-        binding: { nodeId: edge.sourceNodeId, fieldOrPortId: edge.sourcePortId },
-      });
-    }
-  });
-
   const controls = instance.effectiveInterface.controls.flatMap((control) => {
     const targets = [control.binding, ...(control.mirrorBindings ?? [])].filter(({ nodeId }) => included.has(nodeId));
     if (!targets.length) return [];
@@ -170,30 +123,42 @@ export function reusableBlockDefinitionFromSubtreeV2(
   });
 
   const current = instance.definitionSnapshot;
+  const local =
+    rootNode.containerInterface ??
+    (rootNode.modularDiffusers?.kind === 'upstream_block'
+      ? undefined
+      : blockContainerInterfaceV1(instance, rootNodeId, { includeCrossings: false }));
+  const savedControls = local
+    ? local.controls.map((control) => {
+        const value = blockContainerFieldValueV1(instance, control.binding.nodeId, control.binding.fieldId);
+        return { ...control, ...(value === undefined ? {} : { defaultValue: value }) };
+      })
+    : controls;
+  const savedControlIds = new Set(savedControls.map(({ controlId }) => controlId));
   const withoutHash: Omit<BlockDefinitionV2, 'contentHash'> = {
     schemaVersion: 2,
     definitionId,
     displayName,
-    description: `${rootNode.modularDiffusers.blockClass} subtree saved from ${current.displayName}.`,
+    description: `${rootNode.modularDiffusers?.blockClass ?? rootNode.data.label ?? rootNode.nodeId} subtree saved from ${current.displayName}.`,
     source: userSourceWithDirectParent(current),
     graph,
-    boundary: { mode: 'explicit', inputs: inputPorts, outputs: outputPorts },
+    boundary: local ? structuredClone(local.boundary) : { mode: 'explicit', inputs: inputPorts, outputs: outputPorts },
     // Filtering a subtree can leave gaps in the source control order. Keep
     // relative order, but give the independent definition a contiguous order.
-    controls: controls.map((control, order) => ({ ...control, order })),
+    controls: savedControls.map((control, order) => ({ ...control, order })),
     ...(current.suggestedInputs
       ? {
           suggestedInputs: current.suggestedInputs
             .map((suggestion) => ({
               ...suggestion,
               values: Object.fromEntries(
-                Object.entries(suggestion.values).filter(([controlId]) => controlIds.has(controlId)),
+                Object.entries(suggestion.values).filter(([controlId]) => savedControlIds.has(controlId)),
               ),
             }))
             .filter((suggestion) => Object.keys(suggestion.values).length),
         }
       : {}),
-    previews: current.previews.filter(({ nodeId }) => included.has(nodeId)),
+    previews: local?.previews ?? current.previews.filter(({ nodeId }) => included.has(nodeId)),
     ownership: { kind: 'user', definitionMutable: true },
   };
   return normalizeBlockDefinitionV2({ ...withoutHash, contentHash: blockDefinitionContentHashV2(withoutHash) });
@@ -306,7 +271,9 @@ export function reusableBlockDefinitionFromInstanceV2(
             .filter((suggestion) => Object.keys(suggestion.values).length > 0),
         }
       : {}),
-    previews: current.previews,
+    previews: current.previews.filter((binding) =>
+      instance.effectiveGraph.nodes.some((node) => node.nodeId === binding.nodeId),
+    ),
     ownership: { kind: 'user', definitionMutable: true },
   };
   return normalizeBlockDefinitionV2({
@@ -369,7 +336,9 @@ export function rebaseBlockInstanceV2ToDefinition(
   return normalizeBlockInstanceV2({
     ...rebased,
     presentation: instance.presentation,
-    previewStates: definition.previews.map((binding) => previewStateForDefinition(instance.previewStates, binding)),
+    previewStates: blockInstancePreviewBindingsV2(definition, definition.graph).map((binding) =>
+      previewStateForDefinition(instance.previewStates, binding),
+    ),
     // Reusable-definition identity changed. Reviewed execution, Auto, and
     // publication authority must be recalculated independently.
     authorities: [],

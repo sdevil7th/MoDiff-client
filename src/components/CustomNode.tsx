@@ -125,6 +125,13 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const duplicateNode = useFlowStore((state) => state.duplicateNode);
   const toggleNodeCollapsed = useFlowStore((state) => state.toggleNodeCollapsed);
   const resetNodeSize = useFlowStore((state) => state.resetNodeSize);
+  // NodeProps.height is React Flow's latest measurement, not necessarily a
+  // user-authored size. Feeding it back into textarea minima changed natural
+  // content height inside React Flow's ResizeObserver delivery (110 -> 160),
+  // causing undelivered notifications. Only explicit canvas sizing opts in.
+  const hasTallExplicitSize = useFlowStore(
+    (state) => (state.nodes.find((candidate) => candidate.id === node.id)?.height ?? 0) > 360,
+  );
   const setNodeUiState = useFlowStore((state) => state.setNodeUiState);
   const [helpAnchor, setHelpAnchor] = useState<PanelAnchor | null>(null);
   const [issueAnchor, setIssueAnchor] = useState<PanelAnchor | null>(null);
@@ -143,15 +150,12 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const reactFlowStore = useStoreApi();
   const scheduleNodeLayoutSync = useNodeLayoutSync(node.id, nodeRef);
   const isClusterGraphProjection = node.data.huggingFaceClusterRole === 'execution';
-  const isModularBlockProjection = useFlowStore((state) => {
+  const isBlockProjection = useFlowStore((state) => {
     const ownerId = node.data.blockProjectionOwnerId;
     const semanticNodeId = node.data.blockProjectionNodeId;
     if (!ownerId || !semanticNodeId) return false;
     const owner = state.nodes.find((candidate) => candidate.id === ownerId);
-    return Boolean(
-      owner?.data.blockInstanceV2?.effectiveGraph.nodes.find(({ nodeId }) => nodeId === semanticNodeId)
-        ?.modularDiffusers?.kind === 'upstream_block',
-    );
+    return Boolean(owner?.data.blockInstanceV2?.effectiveGraph.nodes.some(({ nodeId }) => nodeId === semanticNodeId));
   });
   const validationSeverity = isClusterGraphProjection ? undefined : node.data.uiState?.validationSeverity;
   const validationMessage = isClusterGraphProjection
@@ -212,13 +216,19 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
 
   const handleRunFromNode = useCallback(async () => {
     closeContextMenu();
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false });
+    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false, targetNodeId: node.id });
     if (!validation.canRun || !sid) return;
     await coordinateGraphRun({ sid, targetNodeId: node.id });
   }, [closeContextMenu, isConnected, node.id, sid]);
 
   const handlePreviewBranch = useCallback(() => {
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false, showDialog: false });
+    const validation = validateCurrentRun({
+      sid,
+      isConnected,
+      includeStudio: false,
+      showDialog: false,
+      targetNodeId: node.id,
+    });
     if (!validation.canRun || !sid || !contextMenu) return;
     const apiGraph = useFlowStore.getState().exportGraph(sid, node.id);
     const nodeIds = Object.keys(apiGraph.nodes);
@@ -296,6 +306,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     <CustomNodeFrame
       ref={nodeRef}
       id={node.id}
+      parentNodeId={node.parentId}
       testId={`graph-node-action-${node.data.action}`}
       className={cx(
         normalizeDataType(`${node.data.module}_${node.data.action}`),
@@ -377,9 +388,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           <div
             className={cx(
               'nowheel flex min-h-0 w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto bg-modiff-surface p-3 pb-2 text-modiff-text',
-              node.height && node.height > 360
-                ? '[&_.modiff-textarea-field]:min-h-40'
-                : '[&_.modiff-textarea-field]:min-h-[110px]',
+              hasTallExplicitSize ? '[&_.modiff-textarea-field]:min-h-40' : '[&_.modiff-textarea-field]:min-h-[110px]',
             )}
             data-testid={`node-scroll-body-${node.id}`}
           >
@@ -513,7 +522,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           >
             Duplicate
           </ContextMenuItem>
-          {isModularBlockProjection ? (
+          {isBlockProjection ? (
             <ContextMenuItem
               data-testid="node-menu-save-modular-subtree"
               icon={<Save size={15} />}

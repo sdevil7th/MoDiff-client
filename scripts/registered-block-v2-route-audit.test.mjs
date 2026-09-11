@@ -5,15 +5,23 @@ import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { createServer } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BACKEND_ROOT = path.resolve(ROOT, '..', 'MoDiff');
-const PYTHON = process.env.MODIFF_BACKEND_PYTHON || path.join(BACKEND_ROOT, '.venv', 'bin', 'python');
-const RUNTIME_LAUNCHER = path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
+const PYTHON =
+  process.env.MODIFF_BACKEND_PYTHON ||
+  path.join(BACKEND_ROOT, '.venv', ...(process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']));
+// CONTRIBUTING specifies direct managed Python on Windows; POSIX profiles use
+// the existing environment wrapper before importing Torch.
+const RUNTIME_LAUNCHER =
+  process.platform === 'win32' ? PYTHON : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
 
 let adapter;
 let blockSchema;
+let seedRepair;
+let derivedControlRepair;
 let clusterInstance;
 let clusterMaterializer;
 let clusterRuntime;
@@ -308,14 +316,15 @@ for definition in library["definitions"]:
             raise ValueError("Registered dynamic schema witness is not deterministic.")
         finalization_witnesses[key] = witness
 
-print(json.dumps({
+import base64, gzip
+print(base64.b64encode(gzip.compress(json.dumps({
     "library": library,
     "specs": specs,
     "baseRegistry": base_registry,
     "registries": registries,
     "finalizationWitnesses": finalization_witnesses,
     "modularConditionalSnapshot": reviewed_modular_conditional_snapshot(),
-}, allow_nan=False))
+}, allow_nan=False).encode(), mtime=0)).decode())
 `;
 
 function eligibleAdmission(admission) {
@@ -553,6 +562,14 @@ function finalizedRegisteredAuditSkeleton({ definition, instance, admission, exe
 
 const REVIEWED_MEDIA_FILE_INPUTS = new Map([
   [
+    'diffusers.modular:WanAnimate2ModularPipeline:default\0driving_video',
+    { role: 'loadPoseVideo', fieldId: 'file', mediaType: 'video' },
+  ],
+  [
+    'diffusers.modular:WanAnimate2DistilledModularPipeline:default\0driving_video',
+    { role: 'loadPoseVideo', fieldId: 'file', mediaType: 'video' },
+  ],
+  [
     'diffusers.modular:LTX2ModularPipeline:condition\0conditions',
     { role: 'loadImage', fieldId: 'file', mediaType: 'image' },
   ],
@@ -717,6 +734,8 @@ function routeCandidateDiagnostic(definition, skeleton) {
     }),
   );
   return {
+    missingBindingSources: skeleton.missingBindingSources,
+    pendingFields: skeleton.pendingFields,
     definitionInputs: definition.inputs.map(({ name, type }) => ({ name, type })),
     definitionOutputs: definition.outputs.map(({ name, type }) => ({ name, type })),
     nodes: skeleton.nodes.map((node) => ({
@@ -782,6 +801,37 @@ const REVIEWED_IMAGE_RESULT_DEFINITIONS = [
  * admission and graph pins below still fail closed if any terminal changes.
  */
 const REVIEWED_TERMINAL_OUTPUTS = new Map([
+  ...[
+    ['FluxControlNetPipeline', 'control_image', 'diffusersImageControl'],
+    ['FluxControlNetImg2ImgPipeline', 'control_edit_image', 'diffusersImageControlEdit'],
+    ['FluxControlNetInpaintPipeline', 'control_inpaint', 'diffusersImageControlInpaint'],
+    ['Flux2KleinKVPipeline', 'text_to_image', 'diffusersImageGenerate'],
+    ['Flux2KleinKVPipeline', 'edit_image', 'diffusersImageEdit'],
+    ['Flux2KleinKVPipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
+    ['Flux2KleinInpaintPipeline', 'inpaint', 'diffusersImageInpaint'],
+    ['Flux2KleinInpaintPipeline', 'outpaint', 'diffusersImageInpaint'],
+    ['Flux2KleinPipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
+    ['Flux2Pipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
+    ['FluxCannyPipeline', 'control_edit_image', 'diffusersImageControlEdit'],
+    ['FluxCannyPipeline', 'control_image', 'diffusersImageControl'],
+    ['FluxCannyPipeline', 'control_inpaint', 'diffusersImageControlInpaint'],
+    ['FluxDepthPipeline', 'control_edit_image', 'diffusersImageControlEdit'],
+    ['FluxDepthPipeline', 'control_image', 'diffusersImageControl'],
+    ['FluxDepthPipeline', 'control_inpaint', 'diffusersImageControlInpaint'],
+    ['FluxDevPipeline', 'inpaint', 'diffusersImageInpaint'],
+    ['FluxFillPipeline', 'inpaint', 'diffusersImageInpaint'],
+    ['FluxFillPipeline', 'outpaint', 'diffusersImageInpaint'],
+    ['FluxKontextInpaintPipeline', 'inpaint', 'diffusersImageInpaint'],
+    ['FluxKontextInpaintPipeline', 'outpaint', 'diffusersImageInpaint'],
+    ['FluxKontextPipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
+    ['FluxKreaPipeline', 'text_to_image', 'diffusersImageGenerate'],
+    ['FluxReduxPipeline', 'edit_image', 'diffusersImageEdit'],
+    ['FluxReduxPipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
+    ['FluxSchnellPipeline', 'text_to_image', 'diffusersImageGenerate'],
+  ].map(([pipeline, mode, role]) => [
+    `diffusers.composite:${pipeline}:${mode}`,
+    [{ portId: 'images', role, fieldId: 'images', adaptation: 'direct_media', mediaType: 'image' }],
+  ]),
   ...REVIEWED_VIDEO_FILE_DEFINITIONS.map((definitionId) => [
     definitionId,
     [
@@ -854,6 +904,14 @@ const REVIEWED_TERMINAL_OUTPUTS = new Map([
       },
     ],
   ],
+  ...['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint'].map((mode) => [
+    `diffusers.composite:AceStepAudioPipeline:${mode}`,
+    [{ portId: 'audio', role: 'audioExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'audio' }],
+  ]),
+  ...['LongCatAudioDiTPipeline', 'AudioLDM2Pipeline'].map((pipeline) => [
+    `diffusers.composite:${pipeline}:text_to_audio`,
+    [{ portId: 'audio', role: 'audioExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'audio' }],
+  ]),
   [
     'diffusers.modular:ErnieImageModularPipeline:text2image',
     [{ portId: 'images', role: 'diffusersImageGenerate', fieldId: 'images', mediaType: 'image' }],
@@ -879,14 +937,21 @@ before(async () => {
   };
   if (!existsSync(PYTHON)) throw new Error(`MoDiff backend Python is missing: ${PYTHON}`);
   if (!existsSync(RUNTIME_LAUNCHER)) throw new Error(`MoDiff runtime launcher is missing: ${RUNTIME_LAUNCHER}`);
-  const result = spawnSync(RUNTIME_LAUNCHER, [PYTHON, '-c', backendSnapshotProgram], {
-    cwd: BACKEND_ROOT,
-    encoding: 'utf8',
-    env: { ...process.env, PYTHONPATH: BACKEND_ROOT },
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  if (result.status !== 0) throw new Error(`Could not build the live backend route audit:\n${result.stderr}`);
-  snapshot = JSON.parse(result.stdout);
+  const result = spawnSync(
+    RUNTIME_LAUNCHER,
+    [...(process.platform === 'win32' ? [] : [PYTHON]), '-c', backendSnapshotProgram],
+    {
+      cwd: BACKEND_ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, PYTHONPATH: BACKEND_ROOT },
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  if (result.status !== 0)
+    throw new Error(
+      `Could not build the live backend route audit (${result.error?.message ?? result.signal ?? result.status}; ${result.stdout?.length ?? 0} bytes):\n${result.stderr}`,
+    );
+  snapshot = JSON.parse(gunzipSync(Buffer.from(result.stdout.trim(), 'base64')).toString('utf8'));
   server = await createServer({
     root: ROOT,
     configFile: false,
@@ -897,6 +962,8 @@ before(async () => {
   });
   adapter = await server.ssrLoadModule('/src/studio/registeredBlockAdapterV2.ts');
   blockSchema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  seedRepair = await server.ssrLoadModule('/src/studio/blockSeedRepairV2.ts');
+  derivedControlRepair = await server.ssrLoadModule('/src/studio/blockDerivedControlRepairV2.ts');
   clusterInstance = await server.ssrLoadModule('/src/studio/huggingFaceClusterInstance.ts');
   clusterMaterializer = await server.ssrLoadModule('/src/studio/huggingFaceClusterMaterializer.ts');
   clusterRuntime = await server.ssrLoadModule('/src/studio/huggingFaceClusterRuntime.ts');
@@ -1023,6 +1090,46 @@ test('every explicitly routed admission is an exact live schema-v6 compiler succ
         const incomingSockets = new Set(
           compiled.definition.graph.edges.map((edge) => `${edge.targetNodeId}\0${edge.targetPortId}`),
         );
+        assert.deepEqual(
+          seedRepair.inspectBlockSeedBindingsV2(compiled.instance, snapshot.library.blockDefinitions),
+          [],
+          `${admission.id}: new admissions must not need a seed repair`,
+        );
+        const compiledNodesById = new Map(compiled.definition.graph.nodes.map((node) => [node.nodeId, node]));
+        assert.deepEqual(
+          derivedControlRepair.inspectBlockDerivedControlsV2(compiled.instance, snapshot.library.blockDefinitions),
+          [],
+          `${definition.id} contains duplicate caller bindings after a state writer`,
+        );
+        const seedConsumers = compiled.definition.graph.nodes.filter(
+          (node) => node.data.action === 'ReviewedModularWorkflowStep' && node.data.params?.seed,
+        );
+        for (const node of seedConsumers) {
+          const block = snapshot.library.blockDefinitions.find(
+            (block) => block.id === node.modularDiffusers?.blockDefinitionId,
+          );
+          assert.ok(
+            block?.inputs.some(({ name }) => name === 'generator'),
+            `${admission.id}: seed on ${node.nodeId} is not consumed by upstream Generator input`,
+          );
+        }
+        assert.ok(
+          seedConsumers.length <= 1,
+          `${admission.id}: shared Generator must not be reset at every mirrored leaf`,
+        );
+        for (const edge of compiled.definition.graph.edges) {
+          const sourceField = compiledNodesById.get(edge.sourceNodeId)?.data.params?.[edge.sourcePortId];
+          const targetField = compiledNodesById.get(edge.targetNodeId)?.data.params?.[edge.targetPortId];
+          assert.equal(
+            sourceField?.display,
+            'output',
+            `${admission.id}: missing output ${edge.sourceNodeId}.${edge.sourcePortId}`,
+          );
+          assert.ok(
+            targetField && targetField.display !== 'output',
+            `${admission.id}: missing input ${edge.targetNodeId}.${edge.targetPortId}`,
+          );
+        }
         const unboundRequiredInputs = compiled.definition.graph.nodes.flatMap((node) =>
           Object.entries(node.data.params ?? {}).flatMap(([fieldId, param]) =>
             param?.display === 'input' && param.required === true && !incomingSockets.has(`${node.nodeId}\0${fieldId}`)
@@ -1269,7 +1376,7 @@ test('every explicitly routed admission is an exact live schema-v6 compiler succ
       definition.integrationStatus !== 'equivalent_standard_route',
   );
   if (process.env.MODIFF_ROUTE_CANDIDATES_ONLY !== '1')
-    assert.equal(exactModularSuccesses.length, 70, 'the complete currently admitted exact Modular route set drifted');
+    assert.equal(exactModularSuccesses.length, 72, 'the complete currently admitted exact Modular route set drifted');
   exactModularSuccesses.forEach(({ definition, compiledDefinition }) => {
     const exactSteps = compiledDefinition.graph.nodes.filter(
       (node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === 'ReviewedModularWorkflowStep',
@@ -1283,6 +1390,26 @@ test('every explicitly routed admission is an exact live schema-v6 compiler succ
       exactSteps.every((node) => node.modularDiffusers?.kind === 'upstream_block'),
       `${definition.id} contains an unowned generic reviewed step`,
     );
+    // A scheduler step writes the strength-adjusted inference count into
+    // Pipeline State. Reinjecting the caller's original count at the loop
+    // overwrites that derived value (the live 50-step / 0.65 case ran 33
+    // timesteps while incorrectly advertising a 50-step loop).
+    if (definition.pipelineClass === 'QwenImageModularPipeline') {
+      const scheduler = exactSteps.find(
+        (node) => node.modularDiffusers.blockClass === 'QwenImageSetTimestepsWithStrengthStep',
+      );
+      if (scheduler) {
+        const loop = exactSteps.find((node) => node.modularDiffusers.blockKind === 'loop');
+        assert.ok(loop, `${definition.id} has no loop`);
+        const inheritedSteps = loop.data.params.num_inference_steps;
+        if (inheritedSteps !== undefined) {
+          assert.equal(inheritedSteps.display, 'input', 'derived steps may only be an explicit connection');
+          assert.equal(inheritedSteps.value, undefined, `${definition.id} overwrites the scheduler-derived count`);
+          assert.equal(inheritedSteps.default, undefined, `${definition.id} defaults the scheduler-derived count`);
+        }
+        assert.ok(scheduler.data.params.num_inference_steps, 'the requested step control must remain on its owner');
+      }
+    }
     if (definition.workflowId === 'default') {
       exactSteps.forEach((node) => {
         assert.deepEqual(

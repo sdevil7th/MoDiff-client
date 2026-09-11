@@ -2,7 +2,11 @@ import { useFlowStore } from '../stores/useFlowStore';
 import { useHuggingFaceClusterRuntimeStore } from '../stores/useHuggingFaceClusterRuntimeStore';
 import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
 import { useNodesStore } from '../stores/useNodeStore';
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  useStudioStore,
+  captureWorkflowOperationContext,
+  assertWorkflowOperationContext,
+} from '../stores/useStudioStore';
 import { finalizeHuggingFaceClusterDynamicFieldsInFlow } from './huggingFaceClusterFinalization';
 import { attachHuggingFaceClusterExecutableGraph } from './huggingFaceClusterGraph';
 import {
@@ -26,7 +30,8 @@ function incompleteMessage(result: Awaited<ReturnType<typeof finalizeHuggingFace
   return `Cluster execution fields are incomplete${missing.length ? `: ${missing.join(', ')}` : '.'}`;
 }
 
-async function prepareOne(instanceId: string) {
+async function prepareOne(instanceId: string, authoring = false) {
+  const context = authoring ? captureWorkflowOperationContext() : null;
   let root = useFlowStore
     .getState()
     .nodes.find((node) => node.id === instanceId && node.data.huggingFaceClusterRole === 'root');
@@ -59,7 +64,7 @@ async function prepareOne(instanceId: string) {
         node.data.huggingFaceClusterRole === 'execution' && node.data.huggingFaceClusterInstanceId === instanceId,
     );
   const allEnabled = executionNodes.length > 0 && executionNodes.every((node) => !node.data.uiState?.disabled);
-  const manualMode = useStudioStore.getState().form.resourceMode === 'expert';
+  const manualMode = authoring || useStudioStore.getState().form.resourceMode === 'expert';
   if (manualMode && allEnabled && !useHuggingFaceClusterRuntimeStore.getState().authorities[instanceId]) return;
   const authority = useHuggingFaceClusterRuntimeStore.getState().authorities[instanceId];
   if (
@@ -114,6 +119,7 @@ async function prepareOne(instanceId: string) {
   if (!finalized.studioExecutionSpec) throw new Error(incompleteMessage(finalized));
 
   if (manualMode) {
+    if (context) assertWorkflowOperationContext(context);
     useHuggingFaceClusterRuntimeStore.getState().clearAuthority(instanceId);
     const executable = authorizeHuggingFaceClusterManualExecutionSkeleton(finalized.skeleton);
     const flow = useFlowStore.getState();
@@ -168,4 +174,10 @@ export async function prepareHuggingFaceClustersForRun(instanceIds?: readonly st
   // node state while their backend field actions resolve.
   for (const id of ids) await prepareHuggingFaceClusterForRun(id);
   await prepareRegisteredBlockAutoAuthoritiesV2(instanceIds);
+}
+
+/** Materialize a historical executable instance for editing without allocating
+ * model resources, changing mode or issuing Auto authority. */
+export async function prepareHuggingFaceClusterForAuthoring(instanceId: string) {
+  return prepareOne(instanceId, true);
 }

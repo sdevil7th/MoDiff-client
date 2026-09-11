@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 
@@ -90,6 +91,7 @@ beforeEach(() => {
     edges: [],
   });
   studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'expert' },
     activeWorkflowTabId: 'workflow-origin',
     workflowCanvasHydrated: true,
     workflowCanvasEpoch: 0,
@@ -407,7 +409,7 @@ test('submission rejects an invalid User Node composition with an actionable soc
   assert.equal(requestCount, 0);
 });
 
-test('a historical registered V2 fixture remains runnable in Expert but fails Auto before submission', async () => {
+test('a historical registered V2 fixture needs a graph resource plan even if it carries old Auto authority', async () => {
   const registeredRoot = blockV2Root('registered-coordinator-block-v2', true, true);
   flowStoreModule.useFlowStore.setState({ nodes: [registeredRoot], edges: [] });
   const baseForm = studioStoreModule.useStudioStore.getState().form;
@@ -415,21 +417,23 @@ test('a historical registered V2 fixture remains runnable in Expert but fails Au
   let requestCount = 0;
   globalThis.fetch = async () => {
     requestCount += 1;
-    return jsonResponse({ task_id: 'registered-v2-run', sid: 'session-1', message: 'queued' });
+    return requestCount === 2
+      ? jsonResponse({ task_id: 'registered-v2-run', sid: 'session-1', message: 'queued' })
+      : jsonResponse(workflowPlan(false));
   };
 
   await assert.rejects(
     coordinatorModule.coordinateGraphRun({ sid: 'session-1', targetNodeId: registeredRoot.id }),
-    /Auto requires the current exact registered Block definition/u,
+    /Auto cannot run this workflow: No reviewed recipe/u,
   );
-  assert.equal(requestCount, 0);
+  assert.equal(requestCount, 1);
 
   studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'expert' } });
   const manual = await coordinatorModule.coordinateGraphRun({
     sid: 'session-1',
     targetNodeId: registeredRoot.id,
   });
-  assert.equal(requestCount, 1);
+  assert.equal(requestCount, 2);
   assert.equal(manual.response.task_id, 'registered-v2-run');
   assert.equal(manual.submittedGraph.nodes[registeredRoot.id], undefined);
   assert.equal(JSON.stringify(manual.submittedGraph.nodes).includes('blockInstanceV2'), false);
@@ -459,21 +463,22 @@ test('a historical registered V2 fixture remains runnable in Expert but fails Au
   studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'auto' } });
   await assert.rejects(
     coordinatorModule.coordinateGraphRun({ sid: 'session-1', targetNodeId: registeredRoot.id }),
-    /Auto requires the current exact registered Block definition/u,
+    /Auto cannot run this workflow: No reviewed recipe/u,
   );
-  assert.equal(requestCount, 1);
+  assert.equal(requestCount, 3);
   studioStoreModule.useStudioStore.setState({ form: baseForm });
 });
 
-test('an untargeted two-Block graph queues in Expert while Auto rejects ambiguous planning', async () => {
+test('an untargeted two-Block graph uses the existing executor in both Expert and graph Auto', async () => {
   const first = blockV2Root('registered-expert-first', true, true);
   const second = blockV2Root('registered-expert-second', true, true);
   flowStoreModule.useFlowStore.setState({ nodes: [first, second], edges: [] });
   const baseForm = studioStoreModule.useStudioStore.getState().form;
   studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'expert' } });
   let requestCount = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (url) => {
     requestCount += 1;
+    if (String(url).endsWith('/auto_resource/workflow')) return jsonResponse(workflowPlan(true));
     return jsonResponse({ task_id: 'two-block-expert-run', sid: 'session-1', message: 'queued' });
   };
 
@@ -484,11 +489,18 @@ test('an untargeted two-Block graph queues in Expert while Auto rejects ambiguou
   assert.equal(JSON.stringify(manual.submittedGraph.nodes).includes('blockInstanceV2'), false);
 
   studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'auto' } });
-  await assert.rejects(
-    coordinatorModule.coordinateGraphRun({ sid: 'session-1' }),
-    /Auto currently plans one registered Block at a time/u,
-  );
-  assert.equal(requestCount, 1);
+  const automatic = await coordinatorModule.coordinateGraphRun({ sid: 'session-1' });
+  assert.equal(Object.keys(automatic.submittedGraph.nodes).length, 4);
+  assert.equal(automatic.submittedGraph.runtimeHints.resourceMode, 'auto');
+  assert.equal(automatic.submittedGraph.runtimeHints.workflowAutoPlan.graphHash, workflowPlan(true).plannedGraphHash);
+  assert.equal(requestCount, 3);
+  const asApp = await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    studioContext: { applyRuntimeMetadata: false },
+  });
+  assert.equal(asApp.submittedGraph.runtimeHints.resourceMode, 'auto');
+  assert.equal(asApp.submittedGraph.runtimeHints.workflowAutoPlan.graphHash, workflowPlan(true).plannedGraphHash);
+  assert.equal(requestCount, 5);
   studioStoreModule.useStudioStore.setState({ form: baseForm });
 });
 
@@ -1144,15 +1156,19 @@ test('run from a V2 root submits its primary preview path without executable wra
   assert.equal(submittedGraph.paths.length, 1);
   assert.equal(submittedGraph.paths[0].at(-1), previewTarget);
   assert.equal(submittedGraph.nodes[generateTarget].params.prompt.value, 'coordinated prompt');
-  assert.equal(submittedGraph.runtimeHints.nodeId, previewTarget);
-  assert.equal(result.context.apiGraph.runtimeHints.nodeId, previewTarget);
+  assert.equal(
+    submittedGraph.runtimeHints.nodeId,
+    undefined,
+    'the backend must execute the complete exported Block scope',
+  );
+  assert.equal(result.context.apiGraph.runtimeHints.nodeId, undefined);
   const executablePayload = JSON.stringify({ nodes: submittedGraph.nodes, paths: submittedGraph.paths });
   assert.equal(executablePayload.includes('blockInstanceV2'), false);
   assert.equal(executablePayload.includes('blockProjectionOwnerId'), false);
   assert.equal(executablePayload.includes('blockProjectionNodeId'), false);
   assert.equal(executablePayload.includes('blockProjectionKind'), false);
   const sessionRun = taskStoreModule.useTaskStore.getState().sessionRuns.find((run) => run.id === 'task-block-v2');
-  assert.equal(sessionRun.node_id, previewTarget);
+  assert.equal(sessionRun.node_id, undefined);
 });
 
 test('an unrelated prepared graph cannot retain or mint registered route provenance', async () => {
@@ -3040,4 +3056,423 @@ test('terminal run contexts are pruned while the current context remains address
   assert.equal(state.currentRunContext.clientRunId, 'terminal-client-24');
   assert.equal(state.currentRunContext.status, 'completed');
   assert.equal(state.runContextsByTaskId['terminal-task-24'].clientRunId, 'terminal-client-24');
+});
+
+test('run from a reinserted generic User Node excludes its sibling instance', async () => {
+  const userBlocks = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const generate = {
+    id: 'generate',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    selected: true,
+    data: {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Generate',
+      label: 'Generate',
+      params: {
+        prompt: { type: 'string', value: 'unchanged original prompt' },
+        images: { type: 'image', display: 'output' },
+      },
+    },
+  };
+  const preview = {
+    id: 'preview',
+    type: 'custom',
+    position: { x: 400, y: 0 },
+    selected: true,
+    data: {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      params: {
+        image: { type: 'image', display: 'input' },
+        preview: { type: 'image', display: 'ui_image', sourceKey: 'output' },
+      },
+    },
+  };
+  const edges = [
+    { id: 'generate-preview', source: 'generate', sourceHandle: 'images', target: 'preview', targetHandle: 'image' },
+  ];
+  const made = userBlocks.createUserBlockFromSelection({ nodes: [generate, preview], edges });
+  assert.equal(made.ok, true);
+  const first = userBlocks.createUserBlockNode(made.block, { x: 0, y: 0 }, 'first');
+  const second = userBlocks.createUserBlockNode(made.block, { x: 500, y: 0 }, 'second');
+  flowStoreModule.useFlowStore.setState({ nodes: [first, second], edges: [] });
+  const exported = flowStoreModule.useFlowStore.getState().exportGraph('session-1', second.id);
+  assert.deepEqual(Object.keys(exported.nodes).sort(), ['second__generate', 'second__preview']);
+  assert.deepEqual(exported.paths, [['second__generate', 'second__preview']]);
+  assert.equal(exported.nodes.second__generate.params.prompt.value, 'unchanged original prompt');
+  assert.equal(flowStoreModule.resolveFlowExecutionTargetNodeId([first, second], second.id, []), 'second__preview');
+});
+
+test('resource assessment uses actual Block scope and invalidates semantic edits without changing the graph', async () => {
+  const assessment = await server.ssrLoadModule('/src/studio/workflowResourceAssessmentV2.ts');
+  const root = blockV2Root('resource-scope');
+  const outside = {
+    id: 'outside-lora',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module: 'modules.ModularDiffusers', action: 'Lora', label: 'Outside LoRA', params: {} },
+  };
+  const nodes = [root, outside];
+  const before = JSON.stringify(nodes);
+  const whole = assessment.buildWorkflowResourceRequestV2(nodes, []);
+  const selected = assessment.buildWorkflowResourceRequestV2(nodes, [], root.id);
+  assert.equal(whole.adapterCount, 1);
+  assert.equal(selected.adapterCount, 0);
+  assert.equal(whole.nodeCount, selected.nodeCount + 1);
+  assert.equal(JSON.stringify(nodes), before);
+  const moved = structuredClone(nodes);
+  moved[0].position = { x: 350, y: 220 };
+  moved[0].data.blockInstanceV2.presentation.position = { x: 350, y: 220 };
+  assert.equal(assessment.buildWorkflowResourceRequestV2(moved, []).key, whole.key);
+  const changed = structuredClone(nodes);
+  changed[1].data.params.scale = { type: 'float', value: 0.6 };
+  assert.notEqual(assessment.buildWorkflowResourceRequestV2(changed, []).key, whole.key);
+  assert.equal(assessment.buildWorkflowResourceRequestV2(changed, [], root.id).key, selected.key);
+  assert.throws(() => assessment.buildWorkflowResourceRequestV2(nodes, [], 'missing'), /Select a Block/);
+});
+
+test('selected Block Auto eligibility ignores an upstream Block excluded from execution', async () => {
+  const eligibility = await server.ssrLoadModule('/src/studio/blockAutoEligibilityV2.ts');
+  const first = blockV2Root('source-block', true, true);
+  const second = blockV2Root('selected-block', true, true);
+  const result = eligibility.inspectRegisteredBlockAutoEligibilityV2(
+    [first, second],
+    [{ id: 'crossing', source: first.id, sourceHandle: 'images', target: second.id, targetHandle: 'prompt' }],
+    second.id,
+  );
+  assert.equal(
+    result.code,
+    'stale_registered_definition',
+    'selected root is inspected on its own; a historical fixture is still not granted Auto authority',
+  );
+});
+
+function workflowPlan(ready) {
+  return {
+    schemaVersion: 1,
+    graphHash: 'sha256:workflow-auto-v1:' + 'a'.repeat(64),
+    plannedGraphHash: 'sha256:workflow-auto-v1:' + 'b'.repeat(64),
+    canAutoRun: ready,
+    issues: ready ? [] : ['No reviewed recipe'],
+    message: 'Workflow Auto',
+    patches: [],
+    loaders: [],
+    requirements: {},
+    available: {},
+    sharedMemory: false,
+  };
+}
+
+test('Auto refuses a stale plan if the workflow changes while planning', async () => {
+  studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+  });
+  const pending = deferredResponse();
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    return pending.promise;
+  };
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const run = auto.prepareWorkflowAutoExecutionV2(graph());
+  studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: 'another-workflow' });
+  pending.resolve(jsonResponse(workflowPlan(true)));
+  await assert.rejects(run, /workflow or mode changed/);
+  assert.equal(requests, 1);
+});
+
+test('Auto plans an older collapsed Block through a virtual conversion and commits offload with one Undo', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const legacy = await server.ssrLoadModule('/src/studio/legacyBlockMovementV2.ts');
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const definition = {
+    id: 'legacy-model',
+    name: 'Legacy model',
+    version: 1,
+    nodes: [
+      {
+        id: 'loader',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'custom',
+          module: 'modules.Primitive',
+          action: 'TextValue',
+          params: {
+            text: { type: 'string', value: 'unchanged prompt' },
+            offload_mode: { type: 'string', value: 'none' },
+            output: { type: 'string', display: 'output' },
+          },
+        },
+      },
+    ],
+    edges: [],
+    inputs: [],
+    outputs: [{ id: 'result', label: 'Result', type: 'string', nodeId: 'loader', paramKey: 'output' }],
+    exposedParams: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const root = users.createUserBlockNode(definition, { x: 0, y: 0 }, 'legacy-root');
+  const flow = flowStoreModule.useFlowStore;
+  flow.getState().replaceGraph({ nodes: [root], edges: [] });
+  studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+  });
+  const prepared = legacy.prepareLegacyGraphForAutoV2(flow.getState().nodes, [], undefined);
+  const exported = flow.getState().exportGraph('sid', undefined, { sourceGraph: prepared, randomizeSeeds: false });
+  assert.equal(flow.getState().nodes[0].data.blockInstanceV2, undefined);
+  const loaderId = Object.keys(exported.nodes)[0];
+  globalThis.fetch = async () =>
+    jsonResponse({ ...workflowPlan(true), patches: [{ nodeId: loaderId, field: 'offload_mode', value: 'model_cpu' }] });
+  const submitted = await auto.prepareWorkflowAutoExecutionV2(exported, prepared);
+  assert.equal(submitted.nodes[loaderId].params.offload_mode.value, 'model_cpu');
+  const converted = flow.getState().nodes.find((node) => node.id === root.id).data.blockInstanceV2;
+  assert.equal(converted.effectiveGraph.nodes[0].data.params.text.value, 'unchanged prompt');
+  assert.equal(converted.effectiveGraph.nodes[0].data.params.offload_mode.value, 'model_cpu');
+  flow.getState().undo();
+  assert.equal(flow.getState().nodes.find((node) => node.id === root.id).data.blockInstanceV2, undefined);
+});
+
+test('computed resource updates preserve newer user edits and reject malformed events', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const node = {
+    id: 'loader',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Primitive',
+      action: 'TextValue',
+      params: { offload_mode: { type: 'string', value: 'none' }, output: { type: 'string', display: 'output' } },
+    },
+  };
+  flow.getState().replaceGraph({ nodes: [node], edges: [] });
+  auto.applyRuntimeWorkflowAutoSettingsV2([
+    { nodeId: node.id, field: 'offload_mode', previousValue: 'none', value: 'model_cpu' },
+  ]);
+  assert.equal(flow.getState().nodes[0].data.params.offload_mode.value, 'model_cpu');
+  assert.throws(
+    () =>
+      auto.applyRuntimeWorkflowAutoSettingsV2([
+        { nodeId: node.id, field: 'offload_mode', previousValue: 'none', value: 'group_disk' },
+      ]),
+    /newer workflow edits/,
+  );
+  assert.equal(flow.getState().nodes[0].data.params.offload_mode.value, 'model_cpu');
+});
+
+test('runtime resource-update messages reject non-resource fields and wrong value types', () => {
+  const message = {
+    type: 'auto_resource_plan_applied',
+    resourceUpdates: [{ nodeId: 'loader', field: 'offload_mode', value: 'model_cpu', previousValue: 'none' }],
+  };
+  assert.ok(websocketModule.parseWebsocketMessage(JSON.stringify(message)));
+  message.resourceUpdates[0].field = 'dtype';
+  assert.equal(websocketModule.parseWebsocketMessage(JSON.stringify(message)), null);
+  message.resourceUpdates[0].field = 'auto_offload';
+  assert.equal(websocketModule.parseWebsocketMessage(JSON.stringify(message)), null);
+});
+
+function resourceInputBlock(mirrored = false) {
+  const nodes = ['loader', ...(mirrored ? ['peer'] : [])].map((nodeId) => ({
+    nodeId,
+    nodeType: 'custom',
+    data: {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'Loader',
+      params: {
+        offload_mode: { type: 'string', value: 'none', isInput: true },
+        output: { type: 'pipeline', display: 'output' },
+      },
+    },
+  }));
+  const graph = { nodes, edges: [], executionOrder: nodes.map((node) => node.nodeId) };
+  graph.graphHash = blockSchemaModule.blockGraphHashV2(graph);
+  const definition = {
+    schemaVersion: 2,
+    definitionId: 'user:resource-input',
+    displayName: 'Resource input',
+    source: { kind: 'user' },
+    graph,
+    boundary: {
+      mode: 'explicit',
+      inputs: [
+        {
+          portId: 'resource',
+          label: 'Offload',
+          valueType: 'string',
+          required: false,
+          binding: { nodeId: 'loader', fieldOrPortId: 'offload_mode' },
+          ...(mirrored ? { mirrorBindings: [{ nodeId: 'peer', fieldOrPortId: 'offload_mode' }] } : {}),
+        },
+      ],
+      outputs: [],
+    },
+    controls: [],
+    previews: [],
+    ownership: { kind: 'user', definitionMutable: true },
+  };
+  definition.contentHash = blockSchemaModule.blockDefinitionContentHashV2(definition);
+  return blockRuntimeModule.createBlockRootNodeV2(
+    blockSchemaModule.createBlockInstanceV2(definition, {
+      instanceId: 'resource-block',
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 320 },
+      values: { resource: 'none' },
+    }),
+  );
+}
+
+test('Auto updates a boundary resource input and keeps export, Undo and Redo consistent', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const flow = flowStoreModule.useFlowStore;
+  flow.getState().replaceGraph({ nodes: [resourceInputBlock()], edges: [] });
+  const exported = () => flow.getState().exportGraph('', undefined, { randomizeSeeds: false });
+  const id = blockRuntimeModule.blockProjectionNodeIdV2('resource-block', 'loader');
+  const before = exported();
+  const submitted = auto.applyWorkflowAutoSettingsV2(before, [
+    { nodeId: id, field: 'offload_mode', value: 'model_cpu' },
+  ]);
+  assert.equal(
+    flow.getState().nodes.find((node) => node.id === 'resource-block').data.blockInstanceV2.values.resource,
+    'model_cpu',
+  );
+  assert.deepEqual(exported(), submitted);
+  flow.getState().undo();
+  assert.deepEqual(exported(), before);
+  flow.getState().redo();
+  assert.deepEqual(exported(), submitted);
+});
+
+test('Auto treats mirrored boundary resource inputs as one atomic resource group', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const flow = flowStoreModule.useFlowStore;
+  flow.getState().replaceGraph({ nodes: [resourceInputBlock(true)], edges: [] });
+  const exported = () => flow.getState().exportGraph('', undefined, { randomizeSeeds: false });
+  const before = exported();
+  const patches = ['loader', 'peer'].map((nodeId) => ({
+    nodeId: blockRuntimeModule.blockProjectionNodeIdV2('resource-block', nodeId),
+    field: 'offload_mode',
+    value: 'model_cpu',
+  }));
+  assert.throws(() => auto.applyWorkflowAutoSettingsV2(before, patches.slice(0, 1)), /shared resource control/);
+  assert.deepEqual(exported(), before);
+  studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+  });
+  globalThis.fetch = async () => jsonResponse({ ...workflowPlan(true), patches });
+  const submitted = await auto.prepareWorkflowAutoExecutionV2(before);
+  assert.deepEqual(exported().nodes, submitted.nodes);
+  assert.deepEqual(submitted.runtimeHints.workflowAutoPlan.resourceControlGroups, [
+    patches.map(({ nodeId, field }) => ({ nodeId, field })),
+  ]);
+  flow.getState().undo();
+  assert.deepEqual(exported(), before);
+});
+
+test('mixed legacy and Modular Auto reaches planning without committing a rejected conversion', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const { useHuggingFaceNodeLibraryStore: catalog } = await server.ssrLoadModule(
+    '/src/stores/useHuggingFaceNodeLibraryStore.ts',
+  );
+  const { useHuggingFaceModularConditionalStore: hierarchy } = await server.ssrLoadModule(
+    '/src/stores/useHuggingFaceModularConditionalStore.ts',
+  );
+  const original = [catalog.getState(), hierarchy.getState()];
+  try {
+    catalog.setState({ library: { definitions: [] } });
+    hierarchy.setState({ snapshot: { pipelines: [] } });
+    const definition = JSON.parse(
+      readFileSync(path.join(ROOT, '../MoDiff/tests/fixtures/block_container_interface_v1.json'), 'utf8'),
+    );
+    const current = blockRuntimeModule.createBlockRootNodeV2(
+      blockSchemaModule.createBlockInstanceV2(definition, {
+        instanceId: 'current-modular',
+        position: { x: 0, y: 0 },
+        size: { width: 400, height: 320 },
+      }),
+    );
+    const legacy = users.createUserBlockNode(
+      {
+        id: 'legacy',
+        name: 'Legacy',
+        version: 1,
+        nodes: [
+          {
+            id: 'value',
+            type: 'custom',
+            position: { x: 0, y: 0 },
+            data: {
+              type: 'custom',
+              module: 'modules.Primitive',
+              action: 'TextValue',
+              params: { text: { type: 'string', value: 'preserved' }, output: { type: 'string', display: 'output' } },
+            },
+          },
+        ],
+        edges: [],
+        inputs: [],
+        outputs: [{ id: 'result', label: 'Result', type: 'string', nodeId: 'value', paramKey: 'output' }],
+        exposedParams: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      { x: 0, y: 0 },
+      'legacy-root',
+    );
+    const flow = flowStoreModule.useFlowStore;
+    flow.getState().replaceGraph({ nodes: [legacy, current], edges: [] });
+    const before = flow.getState().toObject();
+    studioStoreModule.useStudioStore.setState({
+      form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+    });
+    let planned;
+    globalThis.fetch = async (url, options) => {
+      assert.match(String(url), /auto_resource\/workflow$/);
+      planned = JSON.parse(options.body).graph;
+      return jsonResponse(workflowPlan(false));
+    };
+    await assert.rejects(coordinatorModule.coordinateGraphRun({ sid: 'session-1' }), /No reviewed recipe/);
+    assert.ok(Object.values(planned.nodes).some((node) => node.params.text?.value === 'preserved'));
+    assert.deepEqual(flow.getState().toObject(), before);
+  } finally {
+    catalog.setState(original[0]);
+    hierarchy.setState(original[1]);
+  }
+});
+
+test('Modular preparation still rejects live edits while lowering a virtual graph', async () => {
+  const composition = await server.ssrLoadModule('/src/studio/modularComposition.ts');
+  const { useHuggingFaceNodeLibraryStore: catalog } = await server.ssrLoadModule(
+    '/src/stores/useHuggingFaceNodeLibraryStore.ts',
+  );
+  const { useHuggingFaceModularConditionalStore: hierarchy } = await server.ssrLoadModule(
+    '/src/stores/useHuggingFaceModularConditionalStore.ts',
+  );
+  const original = [catalog.getState(), hierarchy.getState()];
+  const flow = flowStoreModule.useFlowStore;
+  try {
+    catalog.setState({ library: { definitions: [] } });
+    const snapshot = flow.getState();
+    const executionNodes = structuredClone(snapshot.nodes);
+    hierarchy.setState({
+      snapshot: null,
+      fetchSnapshot: async () => {
+        flow.setState({ nodes: [...flow.getState().nodes, resourceInputBlock()] });
+        hierarchy.setState({ snapshot: { pipelines: [] } });
+      },
+    });
+    await assert.rejects(composition.prepareModularCompositionExecutionV2(snapshot, executionNodes), /graph changed/);
+    assert.ok(flow.getState().nodes.some((node) => node.id === 'resource-block'));
+  } finally {
+    catalog.setState(original[0]);
+    hierarchy.setState(original[1]);
+  }
 });

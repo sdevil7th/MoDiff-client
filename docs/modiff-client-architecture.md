@@ -53,11 +53,20 @@ The backend may use official model libraries maintained and published by Hugging
 - `src/components/GraphFixDialog.tsx` presents deterministic repairs produced by `src/studio/graphFixer.ts`; fixes remain
   explicit user-reviewed graph mutations.
 - `src/components/RuntimeResourceMonitor.tsx` reads the bounded `/runtime/resources` snapshot for top-bar monitoring.
+  During execution its allocator counters may be explicitly paused to prevent native allocator probes from blocking
+  the model worker. The popover explains this state; it does not substitute zero or cached readings for unavailable
+  values. OS resource samples and the execution's final resource measurements remain separate contracts.
 - `src/components/RuntimeOptimizationsCard.tsx` owns the Setup UI for optimization catalog, jobs, receipts,
   qualification, isolated-environment activation, and rollback.
 - `src/components/LeftLibraryPanels.tsx` implements template, Gallery/media, model, and related left-rail libraries; node and workflow lists have dedicated components.
 
 The app shell is responsible for arranging features, not duplicating their domain state.
+
+Startup recovery preserves a selected nonempty, dirty, or backend-saved editing
+document. If that document changes while recovery is pending, automatic navigation
+is cancelled. The activity shelf still reports a running task and opens it on
+explicit selection; a fresh empty session can recover its snapshot. Recovery
+must not mutate the running graph or steal the user's editing tab.
 
 ## Graph State And Mutations
 
@@ -80,10 +89,31 @@ The store persists only nodes, edges, and viewport under `modiff.flow`. Runtime,
 
 Connections are validated against handle/input rules. A normal input accepts one incoming edge unless the backend definition exposes spawn/multi-input behavior. `exportGraph(sid, targetNodeId?)` converts the visible graph into the backend graph payload.
 
-Running from a V2 Block root resolves to a terminal declared preview in its
-effective graph. An intermediate diagnostic preview cannot truncate execution
-merely because legacy lexical ordering marked it `primary`; the primary marker
-is a terminal tie-breaker and fallback.
+`blockControlConnectionsV2` resolves root and nested control aliases against the
+owning effective graph and external public-input wires. Connected body controls
+show their saved fallback read-only, with the source node/port and an explicit
+notice; partially wired mirrored controls explain which targets still use that
+fallback. Rendering never evaluates upstream nodes or replaces stored values.
+Connection mutations reject competing internal/public drivers and sealed-control
+bypasses before mutating either the old or proposed wire.
+
+`nodeMeasurementDispatch` batches passive browser dimension reports outside the
+ResizeObserver delivery, together with implicit parent expansion. User drags and
+resizes remain synchronous; navigation, removals and unmount discard stale work.
+This is not an error-suppression mechanism or a claim that all observer loops are
+resolved. Selection-only toolbar code loads on the first actual selection and
+then stays mounted so focus changes do not discard open dialog state.
+
+Running from a V2 Block root or internal Block selects all enabled terminal
+branches in that semantic scope and their contained upstream dependencies.
+Outside suppliers are removed before validation and lowering, including public-input
+suppliers; stored internal fallbacks remain available. Whole-workflow execution keeps
+the crossing wires. Missing
+previews never mean "run the whole workflow". Disabled descendants are excluded;
+an entirely disabled/non-executable selection produces an actionable error.
+The representative node used for run metadata still prefers a terminal media
+preview over an intermediate diagnostic; that representative does not truncate
+the actual multi-path execution selection.
 
 All execution surfaces, including Studio and Run as app, must submit this graph representation. Do not add a second hidden workflow model.
 
@@ -156,26 +186,280 @@ definitions, graph hashes or saved workflow authority. Initial field actions
 are suppressed on projection mount, just as for ordinary projected fields.
 
 `BlockInterfaceDialogV2` shares the deferred Configure Interface editor between
-root and internal Blocks. An internal entry point scopes **exposure through the
-owning effective interface**, not a separate nested persisted interface. Only
-entries whose complete primary/mirror binding set lies in that subtree can be
-edited there. Shared cross-branch entries and unrelated branches are preserved;
-the root editor is required to change shared consumers. Crossing link sockets
-remain derived from semantic edges. The dialog captures workflow context and
+root and internal Blocks. An internal entry point edits that semantic node's
+optional, hash-covered `containerInterface: BlockContainerInterfaceV1`; it does
+not edit the root `effectiveInterface`. The declaration owns explicit local
+ports and controls whose complete primary/mirror target sets lie within that
+exact placement subtree. It lives inside the single flat `effectiveGraph`, not
+in a nested `BlockInstanceV2` or a second executor. The dialog captures workflow context and
 instance state before lazy loading; changes to graph, interface, values or
 definition while it is open reject Apply. Connected-port and sealed-control
 checks remain in the store/domain reducer. Newly exposed controls inherit the
 current effective field value, including explicit zero, false, null or empty
-values. No `BlockDefinitionV2` schema extension is introduced by this editor.
+values. Local controls cannot declare independent `defaultValue` or `values`
+storage: `blockContainerControlV1` canvas aliases edit the original bound fields
+or existing root logical values. Shared root controls retain their complete
+mirror semantics. Configure Interface changes only the selected declaration;
+ordinary value edits never regenerate nodes, ports or sibling values.
+For newly compiled reviewed routes, caller-control mirrors stop at the first
+exact selected block declaring that field as both input and state output.
+Later consumers inherit the derived Pipeline State value; requested controls
+and creator defaults do not change. Existing `BlockDefinitionV2` snapshots and
+instances are not migrated on load. `blockDerivedControlRepairV2` diagnoses
+duplicate shared bindings using exact contracts and connected state ancestry;
+an explicit Graph Fix retargets only verified shared ownership. Sealed,
+independent or wired overrides fail closed. The immutable snapshot, logical
+values and unrelated graph/presentation state survive repair and Undo/Redo.
+`graphFixMaterialization` is loaded with the deferred Fix dialog; planning and
+canvas previews stay synchronous without loading mutation-only code at startup.
+Internal connection/removal repairs use the pure graph mutations shared with
+native wiring gestures. They update the owning instance's effective graph and
+rebuild its projection atomically; raw canvas edges are not durable repairs.
+`reviewedValuePortsV2` exposes exact declared intermediate outputs using
+`state_output__<name>` and collision-safe `state_input__<name>` inputs. Unconnected
+inputs carry no literal/default override; adapted media sockets keep their
+identity. Loop-member descriptors are not one-shot value producers. Compiled
+definition hashes cover the new sockets; saved historical snapshots are not
+silently rewritten.
+`reviewedStateDiagnosticsV2` follows exact declared state writers and reports
+missing inputs on the affected internal node (or its collapsed root). Unknown
+ordinary processors stay opaque. Fix's explicit state reconnection rechecks
+the graph hash and contracts, adds one edge, and supports Undo/Redo without
+requiring unrelated draft errors to be repaired first. The Fix dialog loads
+reviewed contracts even when the palette has not yet loaded them.
+Boundary aliases expose resolved instance values, so Fix does not mistake a
+filled prompt for a missing wire. Cross-boundary source/bridge additions require
+explicit adoption or public-interface configuration, not illegal repair edges.
+Undeclared descendants inherit the nearest containing local controls before
+root controls. Mirrored inputs remain one logical socket with their exact
+subtree-local fan-out, not duplicate labelled sockets. This inheritance is a
+view only; editing a value does not manufacture another interface declaration.
+`blockContainerInterfaceV1.ts` derives legacy surfaces and rebases durable
+bindings; `blockContainerEditingV1.ts` validates connected-port/sealed-control
+impacts before atomic edits. Save-as-subtree promotes a configured local
+interface to the reusable User Node boundary and snapshots effective values.
+Adoption rebases all local bindings with their semantic node IDs and validates
+the whole incoming subtree atomically, including forward child references.
+
+Optional `containerInterface.previews` binds descendant media/text outputs using
+the same strict preview schema as the root. One owner inventory deduplicates
+root and local preview sources; each view keeps its own primary/selection.
+The nested Configure Interface editor can add/remove/reorder these bindings and
+choose one primary. Its choices are filtered through that same schema validator,
+including explicit URL/base64 preview widgets, rather than another type-guessing
+implementation. Omitted previews in a programmatic interface edit preserve the
+prior selection; explicit `[]` clears only that local surface. Root preview
+bindings still belong to `BlockDefinitionV2`, so the root effective-interface
+editor rejects a local-preview payload instead of silently dropping it. Preview
+selection does not change prompts, parameters, connections, sibling declarations,
+or media files. Save-as-User-Node promotes the local selection with the subtree.
+`blockContainerPreviewViewsV2` reads current owner state without rebuilding the
+projection on a run update. Backend preview slots remain the current-output
+authority; persisted completed references are compatibility/move fallbacks.
+Deletion/replacement protects retained local preview bindings. The shared
+Python/TypeScript fixture is `block_container_previews_v1.json`.
+
+Compatible replacement of a preview or sealed-control owner preserves the
+target's semantic node ID. It replaces the implementation behind that role;
+it does not rebind immutable definition previews or create another preview
+authority. Every retained edge, root/local port and control must still resolve
+to a compatible field, and preview fields retain their media and display role.
+Sealed-control validation still applies to the replacement. Ordinary unprotected
+replacements may use the dropped node's semantic ID and atomically rebase their
+retained bindings. Neither path silently disconnects incompatible consumers or
+updates the reusable library definition.
+
+Root and local boundaries share the same explicit media/file-picker rules.
+A matching file browser may carry an image/video/audio input as its path-valued
+control; a video picker may decode a declared PIL-frame sequence. Other string
+controls do not become media sockets. Preview widgets use their exact `ui_image`,
+`ui_video`, `ui_audio` or `ui_text` display to qualify URL/base64 transport.
+The earlier 90 compiled admissions have structural nesting/Save coverage in
+both runtimes; this is not model-generation qualification. Four subsequently
+added ACE-Step audio composites have separate acceptance tracking in the backend
+audio completion plan. They reuse the same Block V2 and ordinary audio nodes,
+not a fabricated Modular hierarchy. Their Studio model-type identifier is
+`AceStepAudioPipeline`; the sealed implementation class is `AceStepPipeline`.
+Standard-composite class checks compare the execution profile with `blocksClass`,
+while model-type checks still compare with `pipelineClass`. Numeric literal
+bindings remain safe integers except the explicit `boundaryFade001 = 0.01`
+continuation seam constant. BPM normalization matches the native template path.
+
+Whole multi-root Block drops create a generic non-executing wrapper, rebase all
+children/edges/interfaces, bake effective fields, and retain the source public
+surface as the wrapper's local interface. A distinct sole-child interface is
+not overwritten. There is no nested instance or executor. Layout coordinates
+are converted to parent-relative presentation, independently of semantic values.
+The new wrapper starts collapsed. A move retains completed preview references,
+not in-flight ownership; reusable definitions omit transient media. Nested Run
+exports all terminal paths within that subtree and its contained upstream dependencies.
+It excludes outside nodes and unrelated sibling branches. `flowGraphExport.ts` supports an internal
+multi-target selection using the existing backend `paths` contract.
+
+Ordinary dragging preserves ownership and grows/rebases the owning frame while
+preserving world positions of unaffected nodes. Only Ctrl/Cmd drag or an explicit
+selection-toolbar action reparents nodes/Blocks. Modifier-drag hit testing uses the
+pre-drag frame bounds. Ordinary reparenting and whole-subtree detachment are separate
+atomic edits: encoded semantic crossing endpoints preserve links without promoting
+them into the reusable interface, and edited values survive without a library write.
+React Flow geometry measurements and overlay observation registration are
+scheduled outside the current native ResizeObserver delivery. Small ordinary
+graphs and expanded composites remain mounted to avoid same-delivery sibling
+mounts; large flat graphs retain viewport culling. Native resize errors are not
+filtered in the strict diagnostic browser gate. Historical V1 User Blocks use a
+lazy compatibility renderer within the shared Block canvas type; current V2
+frames and sockets remain eager, and deferred dialogs capture their context
+before loading.
+
+Playwright frontends use a port-specific Vite dependency cache. Concurrent live
+and mocked runs must not replace the same optimized dependency files beneath
+each other's browsers. This isolates the harness, not product errors; native
+resize, missing-handle, persistence and gesture assertions remain strict.
+
+The exact Modular compiler verifies every edge endpoint against the actual
+declared fields after hierarchy decomposition. Coarse decoder outputs map to
+their final selected upstream writer, including `audio` to official `sound`.
+The backend retains raw sound in PipelineState and exposes a sample-rate-bearing
+audio object to the ordinary export node; missing rate and unsupported batches
+fail explicitly, never silently default to 48 kHz or drop batch members.
+
+`BlockDetailDialogV2` defers route-confirmation and composition details, including
+recipe derivation, until requested. Node frames and sockets stay eager. A
+composition request is cancelled when its recipe changes or the dialog closes;
+an old response cannot qualify a newly edited recipe.
+
+At run submission, `modularComposition.ts` reconstructs a structural
+recipe against the pinned upstream hierarchy, not the saved User Node snapshot.
+This keeps added/replaced/moved/removed upstream placements meaningful after
+Save as User Node and reinsertion. Ordinary utility nodes remain ordinary graph
+nodes. Unchanged graphs and parameter-only edits keep the original runtime
+route. The edited recipe and full placement paths travel with each affected
+`ReviewedModularWorkflowStep`; they do not mutate the durable Block definition.
+API-graph and portable workflow exports use the same lowering as Run. Selected
+workflow specializations (including required inputs) are restored from their
+exact reviewed contracts before edits are applied to the unpruned tree.
+Loop-member wires determine the ordered upstream loop. Disconnected or cyclic
+member chains fail with a named correction instead of silently using the old
+order. Exact upstream identities and loader/state ownership remain enforced.
+The preview rebuild receipt is still structural evidence, not a model-output
+qualification or publication approval.
+
+Customized ownership is source-neutral: optional hash-covered
+`BlockGraphNodeV2.parentNodeId` names an existing semantic container in the same
+flat graph. Ordinary nodes inserted inside an upstream Block keep their real
+module/action and have no fabricated `modularDiffusers` identity. Without this
+field, exact upstream placement remains the parent source; explicit parents
+may not contradict an existing upstream parent. Missing/non-container parents
+and cycles fail strict frontend/backend validation. Shared parent resolution
+drives disclosure, layout, local-interface scope, deletion/replacement and
+subtree saving. Saved subtrees remove only parent references leaving their
+copied scope. All other ownership and current field values remain intact.
+
+`blockDropTargetsV2.ts` performs shared deepest-visible-container hit testing
+in absolute graph coordinates. Ordinary palette nodes and exact Modular or
+saved User subtrees use one insertion/adoption history transaction, including
+rollback on failure; they cannot leave a detached canvas child. Saved User
+subtrees carry baked current values and rebased local interface bindings.
+Independent multi-root Blocks use their existing explicit public interface on
+a generic wrapper; this path never guesses an interface or discards connected
+external edges. `reviewedBlockContextV2` assesses pinned component requirements,
+not membership in the destination's original tree. Semantic-invalid drafts may
+be authored and saved; declared component conflicts appear as advisory findings
+and runtime checks use the actual connected Python component types. Source
+provenance stays immutable, while execution context is rebound **after** saved
+values are baked. Tensor socket compatibility alone never authorizes foreign
+Pipeline State transfer or an unreviewed class/revision.
+
+`blockReparentingV2.ts` supports ordinary internal node/User-container moves
+between visible expanded containers in the same instance, including back to
+the root. Stable fields, semantic IDs and wires remain unchanged; canvas
+parent-first ordering is never execution order. Cycles and local declarations
+that would point outside their owner reject atomically with Configure Interface
+guidance. Upstream placements can also move: retain their original source path
+and definition, rebase execution paths, and lower the edit as a move rather than
+an insertion—even after repeated Save as User Node. A new occupant of a vacated
+path is not the original node. Moving a loop member outside its owning loop
+retains the draft but produces a scope/calling-convention diagnostic.
+Empty generic groups remain expandable insertion targets.
+
+Reviewed loop sockets use explicit `iteration_input__`, `iteration_output__`
+and `iteration_previous__` prefixes. These edges remain in the saved effective
+graph, but `reviewedLoopConnectionsV2` lowers them to bounded
+`iteration_bindings` descriptors before outer-DAG export. Both endpoints must
+reach the same concrete loop owner through the Loop Members chain; matching
+path strings alone are insufficient. The existing upstream loop owns timestep
+iteration. Previous-iteration values require initial state, current producers
+must precede consumers, and a wire cannot silently overwrite a constant.
+Ordinary legacy loop-member fields remain inert unless explicitly bound.
+New palette loop members expose only these consumed iteration bindings, not
+duplicate ordinary step controls. Loading existing saved recipes does not rewrite
+their fields or inject new constant values.
+
+`reviewedLoopDiagnosticsV2` names empty loops, orphan/wrong-convention members,
+forks, invalid order/scope/ports and competing constants. `reviewedLoopRepairV2`
+offers only an unambiguous missing baseline descriptor link, with graph-hash
+revalidation and the normal single Undo transaction. Fix retains explanations
+even with no automatic candidate; it must not hide a problem because no safe
+repair can be guessed. Component declaration warnings are non-blocking because
+the user may have supplied a valid replacement component.
+
+A complete internal subtree can be moved out as a workflow-owned User Block.
+Current values, local interfaces, relative layout and completed preview
+references are retained. It does not create a library entry or transfer an
+in-flight run. Crossing wires need exact existing public ports on both sides
+and complete mirror fan-out; retained root controls/previews must be rebound
+explicitly. Undo restores the original ownership in one transaction.
+
+Execution checks imported graphs too: duplicate internal/public drivers and
+sealed-control wires fail visibly before dispatch, rather than relying only on
+pointer-gesture validation. Disabled semantic ancestors propagate to their
+execution descendants even though execution nodes have no canvas `parentId`.
+
+Moving an exact Modular leaf back to the ordinary canvas retains its upstream
+identity as `modularDiffusersCatalogNode`; projection ownership markers alone
+are discarded. Reinsertions must not silently downgrade it to an anonymous
+utility. Concurrent consumers of the Hub node-library endpoint share one
+in-flight fetch so that every awaiting compiler receives the settled result;
+an explicit refresh after settlement still fetches again and validates strictly.
+
+Runtime public entry points validate and clone caller-owned V2 authority on
+every call. Private helpers may reuse that already-validated clone within the
+same operation, and visible-edge receipts are indexed once per owner per
+operation. Do not substitute cross-call caches over mutable instance objects
+or remove hash/receipt validation to improve responsiveness. Natural node
+measurements must not drive larger textarea minima synchronously; explicit
+user sizing may. Observer-triggered layout writes are coalesced to a frame
+and cancelled after unmount/disclosure changes.
+Client/backend strict validators and the shared
+`tests/fixtures/block_container_interface_v1.json` contract must change together.
+Absent optional declarations retain existing canonical bytes/hashes; old
+readers reject new declarations rather than silently dropping them.
 
 `BlockInstanceV2.presentation.internalLayout` stores each node's compact own
 box relative to its immediate semantic parent. It must not store a recursively
 expanded subtree size. At render time the projector measures visible children
 bottom-up, derives expanded ancestor bounds with header/right/bottom padding,
 and shifts colliding siblings without rewriting the saved preferred positions.
+The same collision solver applies to root-relative (non-hierarchical) Blocks,
+including standard-pipeline catalog routes. Root-relative coordinates are
+converted only for projection; saved layouts and execution graphs are not
+silently migrated. A node resize must therefore separate siblings in either
+layout mode, not only in a Modular hierarchy.
 If a control or connector tray changes a child's measured size, the complete
 ancestor chain is rematerialized atomically. Collapse restores the compact own
 box; it can never reuse or constrain an expanded descendant envelope.
+Expanded bottom clearance includes the full public/derived connector tray, not
+just a fixed gutter. The projector reserves each row using the shared tray's
+20px line height, 4px row gap, padding and border, plus 28px of clear canvas.
+Hidden optional sockets are counted conservatively. Both root and nested bounds
+use this rule. Browser containment assertions compare children against the
+parent header and tray boundaries, not merely the parent's outer rectangle;
+keep those tests aligned with any future connector typography changes.
+The production-browser geometry check inspects both projected Block frames and
+ordinary internal node frames (their `data-node-parent-id` mirrors React Flow's
+existing `parentId`, not a separate ownership model). It checks all visible
+siblings, including loaders/previews, and exercises collapsed-root resizing and
+ordinary-child resizing before rechecking every ancestor's content bounds.
 
 Global **Arrange graph** treats each V2 root as one layout unit. Its recursive
 projection is owned by the Block fitter and must not be resized or repositioned
@@ -188,20 +472,52 @@ search is full, placement continues beyond the occupied rightmost edge instead
 of falling back onto an existing expanded Block. Explicit drag/drop keeps the
 user's chosen target and its normal adoption/composition validation.
 
-Every visible internal Block exposes a derived connection surface. When a
+Every visible internal Block exposes a declared or derived connection surface. When a
 semantic edge or public binding crosses a subtree boundary, the canvas projects
 that exact descendant socket as a typed handle on the container whether the
 container is collapsed or expanded. A collapsed edge uses the container handle;
 an expanded edge remains attached to its visible leaf while the container keeps
 the same interface for ordinary external connect/reconnect gestures. The
 handle-to-leaf binding is runtime-only projection data: it is not written into
-`BlockDefinitionV2`, `effectiveGraph`, persistence, or content hashes. A
+`BlockDefinitionV2`, `effectiveGraph`, persistence, or content hashes; the
+underlying optional `containerInterface` declaration is durable and hash-covered. A
 reconnect through the visible handle updates the original semantic leaf
 endpoint. Edges wholly contained by one unopened subtree remain hidden, and
 opening it restores the original endpoints. Execution always expands the full
 flat `effectiveGraph`, independent of presentation collapse or node size.
+Explicitly declared sockets remain available while their node and field exist with
+the correct direction. Additional crossing sockets are derived only from live edges;
+the last disconnection removes them. `blockCrossingConnectionsV2` encodes the leaf
+endpoint in an ordinary durable workflow Edge handle, and `BlockCrossingPortsV2`
+shows the separate collapsed tray. Rendering never promotes these sockets into
+`effectiveInterface` or the saved User Node boundary. Declared mirrored inputs project one visible
+socket and identical canvas wires coalesce with exact semantic edge receipts.
+Connect/reconnect/delete operate on the complete receipt group atomically;
+expanded leaves remain individually editable. No gesture invents execution
+wires merely to display a socket. Connected local ports cannot be hidden or
+rebound until their affected wires are disconnected.
 Internal Block resize minimums include the shared header and connector tray so
 shrinking a Block cannot clip its handles or make its crossing links disappear.
+
+Repeated projected socket labels are qualified by their relative upstream
+placement (for example `height · prepare latents`, omitting shared prefixes). Hovering the
+label or handle reveals the exact placement and semantic field. Each mirror
+consumer retains its own stable handle and exact endpoint; matching labels or
+values never imply a merged fan-out port. This metadata is canvas-only and does
+not change either V2 persistence schema, creator defaults or definition hashes.
+
+Connection replacement resolves the semantic target before inspecting existing
+wires: an expanded leaf and an ancestor socket are two views of the same input.
+The reducer validates current durable source/target fields and commits one
+replacement, retaining the edge ID, without first removing the old projection.
+An identical wire/reconnection is a no-op. Missing/incompatible/stale endpoints
+leave the original connection intact; errors are surfaced through the canvas
+notification path. Reconnection reads the current edge by ID rather than trusting
+captured projection metadata. Undo, persistence and execution use the same
+effective graph. Tests cover these gestures on Qwen through the live frontend,
+and label/endpoint stability across all 94 catalog hierarchy contracts; those
+checks are not all-model execution qualification.
+
 Every contextual upstream placement is searchable under **Modular Diffusers
 Blocks**. Leaf entries insert as ordinary nodes. Container entries insert as
 source-neutral V2 fragments and, when dropped into an expanded compatible
@@ -412,6 +728,10 @@ Exact-route resource evidence has its own two-run lane:
   their file hashes and every receipt field, resolves the route against the
   current backend manifest again, and only then adds a `routeQualifications`
   entry. This does not increment model-family recipe coverage.
+  If receipts are invalid, it reports every rejected receipt (including the
+  retained and current route identities for stale pins), exits nonzero and
+  leaves the existing report and proofs unchanged. It never silently omits
+  stale/corrupt receipts or rewrites their bindings to make coverage pass.
 
 The route receipt explicitly records `familyCoverageDeclared: false`,
 `publicationAuthority: false`, and `autoAuthority: false`. Therefore the lane
@@ -534,6 +854,20 @@ execution representation.
 
 Durable snapshots never retain `onChange` or `onSignal` behavior. Restored and imported nodes remain inert while the registry is unavailable, then rebase the current registry's behavior onto matching stored fields, remove actions that are absent from the current contract, restore missing live hidden fields, and preserve stored values. This lets the backend evolve a generic node contract without adding model-name branches, executing behavior from an untrusted workflow, or silently dropping an execution-critical field from an older workflow.
 
+Registry `hidden` defaults must not overwrite an existing workflow's dynamic
+visibility, required sockets or bounds. A field hidden in text generation may
+be required in an edit mode. Missing hidden metadata is filled from the live
+registry; existing schema and values remain intact. UI-only preview contracts
+still refresh from the registry. Audio contract finalization compares effective
+values (explicit override or declared default), matching the field-action request.
+An exact audio recipe uses its own role/edge proof, never an image-embedding check.
+Standard audio composite admissions also declare the generator's form action.
+The pinned pipeline class and exact task resolve backend-owned field visibility
+before compilation, so inactive music controls cannot appear on sound-effect
+nodes. This metadata action does not load weights or authorize execution; the
+connected pipeline remains the runtime authority. Native-rate and waveform-count
+constants are explicitly parsed and pinned, not inferred from a family label.
+
 Backend-issued execution identities are opaque client values. The durable copy lives in a normal hidden parameter, so workflow snapshots, exports, and run-input hashes include it. A matching output `signal` may carry the identity across connected generic nodes while the graph is live; signal values are deliberately removed from durable snapshots and must be reconstructed by the backend after restore. The client transports and reconciles these values but does not parse repository names, pipeline classes, or identity fields to select behavior.
 
 Generic model selectors coalesce free-form repository edits through a short bounded debounce. Backend `onChange` work runs for the initial value and the latest repository selection or source switch; it must not run once per keystroke.
@@ -542,6 +876,15 @@ Their compatible choices come only from backend declarations. Hub entries apply 
 Custom React fields are dynamically imported from the `@custom-fields` Vite alias and served by the backend under `/user`. Treat custom fields as trusted operator-provided code, not untrusted data.
 
 ## Outputs, Gallery, And Packages
+
+Backend `resolvedExecutionInputs` receipts are bounded local plaintext history.
+The client validates identity, allowlisted scalar values and recomputed summaries
+before displaying captured settings. Connected prompts/settings replace only
+output details, never saved workflow fallbacks. Gallery distinguishes captured
+values from legacy declared metadata and marks ambiguity explicitly. No tensor,
+model object or credential is captured. Receipt identity cannot be reassigned by
+history enrichment. See the paired backend API reference for
+limits and omissions; receipt presence is not output-quality/publication proof.
 
 `update_value` messages that match recognized output fields are attributed to the active run context. The client stores a bounded output view and synchronizes through `/studio_outputs`. A backend preview slot, scoped by workflow/node/field, is the authority for the main preview: an accepted new run marks the slot pending, a generated output promotes its durable output ID, and tab changes or browser refreshes do not reclassify it. The Previous strip excludes that ID. Saved canvas values and current-run heuristics are compatibility fallbacks only when talking to an older backend that has no preview-slot contract.
 
@@ -554,7 +897,20 @@ An output can carry:
 - Parent/source/variation lineage
 - Task/client-run/input-hash identity
 
+Encoded video measurements are retained per media item as `mediaMetadata` with `source: "encoded-file"`. The output boundary accepts only positive finite measurements (integer dimensions and frame counts). Gallery labels use the primary video item's measured dimensions, frame count and frame rate. Without encoded measurements, use captured execution inputs labelled Resolved; only receipts without an execution-input capture fall back to values labelled Requested. Missing captured fields are not filled from form defaults. Inspect keeps requested settings, captured execution inputs and encoded measurements separate. Neither display path rewrites the form or workflow reused for generation.
+
 Gallery restore creates a workflow tab from the snapshot. Rerun recomputes current readiness and Auto state before submitting; persisted output metadata is not blindly trusted as current runtime proof.
+
+For images, Gallery uses decoded media dimensions for the output-size label and
+reports captured input dimensions separately. Reference-driven edit geometry may
+have no explicit width/height call arguments. Do not infer those missing inputs
+from the output image or form defaults. Inspect and refresh must retain the same
+distinction between delivered media, captured settings, and legacy declarations.
+
+Gallery and Studio output previews use `imageUrlLightboxOpener` for resolved
+image URLs, including durable backend `/file` references and comparison pairs.
+The lightbox retains the image URL sanitizer; raw base64 node-field values use
+their separate encoded-image input contract.
 
 Workflow packages are JSON. Image packages can also embed the `modiff.workflow` metadata key in PNG text chunks. Imported packages must be parsed/coerced at the boundary before they affect stores.
 
@@ -612,6 +968,26 @@ See the [frontend style guide](frontend-style-guide.md). `npm run style:audit` p
 
 ## Tests And Gates
 
+Saved Modular instances are diagnosed against the loaded exact upstream block
+ID/hash in `blockSeedRepairV2.ts`. A seed on a step that does not consume a
+Generator remains a visible, nonblocking warning. The existing Graph Fix dialog
+offers an explicit choice only when the concrete `state_in` / `state_out` ancestry
+identifies an unoccupied Generator consumer. The atomic transaction moves the
+seed field and its root/local bindings and incoming wire, retaining logical IDs,
+values, unrelated graph content, layout and the immutable definition snapshot.
+Sealed/mirrored ambiguity, stale contracts and local-subtree scope violations
+are refused with an explanation. Loading a workflow never applies this repair.
+Readiness invalidation includes effective graph/interface identities and cached
+instance-value fingerprints, so collapsed model switches and repairs cannot
+leave an old readiness result on screen.
+
+Task-driven readiness invalidation tracks task identity, lifecycle, workflow
+ownership and the displayed run label. Progress percentages, heartbeat timestamps
+and step counters update their normal task surfaces without revalidating the
+entire Block graph or rebuilding its Fix plan. Resource snapshots remain a
+separate invalidation signal, and changing the selected workflow rechecks queue
+ownership even when its graph is otherwise unchanged.
+
 - `scripts/*.test.mjs`: unit/contract tests for graphs, templates, requests, Gallery, styles, and coordination
 - `tests/e2e/studio-mocked/`: deterministic browser coverage with mocked backend routes
 - `npm run check`: format, lint, types, styles, unit tests, build, and bundle budget
@@ -644,3 +1020,36 @@ substring mocks can corrupt unrelated font requests containing `/files/`.
 - Document backend needs in the relevant public issue or cross-repository change; do not add workstation-specific handoff trackers to permanent docs.
 - Pair runtime claims with the correct proof level.
 - Update this document, user guides, tests, and backend contract documentation together when ownership or behavior changes.
+
+### Reviewed video file boundaries
+
+A reviewed upstream video input may be annotated as a list of PIL frames.
+Its public file-path adaptation must describe the bound video file browser;
+the decoded runtime connection remains a video socket. Wan Animate2's base
+and distilled routes declare this adaptation explicitly. Updating those types
+also updates the paired backend compiled catalog and its exact client pins.
+Preserve creator values, graph edges, structural containers and their layout.
+Do not relax generic input validation to accept an image file adaptation on a
+video loader. The focused regression exports both creators with only their
+required media paths supplied.
+
+Running from a generic User Node root resolves to a terminal media preview
+inside that specific expanded instance (or its first terminal node when it
+has no media preview). Both the store export and run coordinator use this
+resolution. Other disconnected User Node instances remain outside the run;
+ordinary incoming dependencies of the selected endpoint are retained. A
+legacy User Node with no executable terminal fails explicitly.
+
+### Block authoring and retained demo previews
+
+`useBlockEditorStore` captures the workflow epoch, selected scope and request identity
+for Save and Configure interface. `BlockEditorPanelV2` lazily renders their compact
+right-workspace content; switching documents cannot apply a stale draft to another
+Block. New User Nodes use an editable, prefilled name and omit outside nodes/wires
+and derived crossing sockets.
+
+`blockPreviewPersistenceV2` maps an exact run and field to its retained backend media
+URL. A ready backend current-output slot for the same workflow/node/field can restore
+completion missed while the browser was closed. A merely newer output from the same
+node is insufficient. Snapshots, saves and reloads retain these durable references
+without changing graph values or execution ownership.

@@ -6,6 +6,66 @@ import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { attachResizeObserverDiagnostics, installResizeObserverDiagnostics } from '../resize-observer-diagnostics';
+
+test('Advanced numeric values and step buttons fit a narrow scrolling node', async ({ page }) => {
+  page.setDefaultTimeout(15_000);
+  await ensureFrontend();
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html?node-field-layout`, { waitUntil: 'domcontentloaded' });
+  const node = page.getByTestId('numeric-width-proof');
+  const advanced = node.getByRole('button', { name: 'Advanced', exact: true });
+  await expect(node).toBeVisible();
+  await advanced.click();
+  const value = node.getByLabel('Maximum Sequence Length', { exact: true });
+  await expect(value).toHaveValue('512');
+  await value.scrollIntoViewIfNeeded();
+  const fit = async () =>
+    value.evaluate((input) => {
+      const field = input.closest('[data-key]')!;
+      const disclosure = field.closest('[data-testid^="node-advanced-controls-"]')!;
+      const bounds = disclosure.getBoundingClientRect();
+      return {
+        overflow: disclosure.scrollWidth - disclosure.clientWidth,
+        items: [...field.querySelectorAll('input, button')].map((item) => {
+          const box = item.getBoundingClientRect();
+          return {
+            name: item.getAttribute('aria-label') ?? item.id,
+            contained: box.left >= bounds.left && box.right <= bounds.right,
+            usable: box.width >= 16,
+          };
+        }),
+      };
+    });
+  await expect.poll(async () => (await fit()).overflow).toBeLessThanOrEqual(1);
+  expect((await fit()).items.every((item) => item.contained && item.usable)).toBe(true);
+  await node.getByRole('button', { name: 'Increase Maximum Sequence Length' }).click();
+  await expect(value).toHaveValue('513');
+  await advanced.click();
+  await expect(value).toHaveCount(0);
+  await advanced.focus();
+  await page.keyboard.press('Enter');
+  await expect(value).toHaveValue('513');
+  await value.fill('512');
+  await value.press('Enter');
+  await expect(value).toHaveValue('512');
+  await expect(node.getByLabel('Prompt', { exact: true })).toHaveValue('Keep this prompt unchanged.');
+  await page.screenshot({ path: test.info().outputPath('advanced-numeric-contained.png') });
+});
+
+test.beforeEach(async ({ page }) => {
+  if (process.env.MODIFF_TRACE_RESIZE === '1') await installResizeObserverDiagnostics(page);
+  if (process.env.MODIFF_TRACE_STARTUP === '1') {
+    page.on('pageerror', (error) => console.error('[startup pageerror]', error.message));
+    page.on('requestfailed', (request) => console.error('[startup requestfailed]', request.url(), request.failure()));
+    page.on('console', (message) => {
+      if (message.type() === 'error') console.error('[startup console]', message.text());
+    });
+  }
+});
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (process.env.MODIFF_TRACE_RESIZE === '1') await attachResizeObserverDiagnostics(page, testInfo);
+});
 
 async function verifyCompactDialog(page: Page, dialog: Locator, label: string) {
   const original = page.viewportSize();
@@ -35,6 +95,124 @@ async function verifyCompactDialog(page: Page, dialog: Locator, label: string) {
     });
   }
   if (original) await page.setViewportSize(original);
+}
+
+for (const gesture of ['choose', 'drop'] as const) {
+  test(`multi-reference file ${gesture} keeps every image and existing references`, async ({ page }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+    await dismissTaskLauncher(page);
+    await page.evaluate(async () => {
+      const [{ useFlowStore }, { useStudioStore }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/stores/useStudioStore.ts'),
+      ]);
+      useStudioStore.getState().clearGraphBinding();
+      useFlowStore.setState({
+        nodes: [
+          {
+            id: 'reference-input-proof',
+            type: 'custom',
+            position: { x: 120, y: 100 },
+            data: {
+              type: 'custom',
+              module: 'modules.Image',
+              action: 'Load',
+              label: 'Reference input proof',
+              category: 'image',
+              params: {
+                file: {
+                  type: 'str',
+                  label: 'References',
+                  display: 'filebrowser',
+                  fieldOptions: { multiple: true, fileTypes: ['image'] },
+                  value: ['@data/existing.png'],
+                },
+                prompt: { type: 'string', value: 'Leave this prompt unchanged' },
+                image: { type: 'image', display: 'output' },
+              },
+            },
+          },
+        ],
+        edges: [],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      });
+      useFlowStore.getState().resetHistory();
+      useStudioStore.setState({ launcherDismissed: true });
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+    });
+    const uploaded: string[] = [];
+    let failSecond = false;
+    await page.route('**/file', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      const name = /filename="([^"]+)"/.exec(route.request().postDataBuffer()!.toString())?.[1];
+      if (!name) throw new Error('Missing multipart upload filename');
+      uploaded.push(name);
+      await route.fulfill(
+        failSecond && name === 'second.png'
+          ? { status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Reference upload failed' }) }
+          : { contentType: 'application/json', body: JSON.stringify({ path: [`@data/${name}`] }) },
+      );
+    });
+    const root = page.locator('.react-flow__node[data-id="reference-input-proof"]');
+    const files = ['first.png', 'second.png'].map((name) => ({
+      name,
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    }));
+    const submit = async () => {
+      if (gesture === 'choose') {
+        await root.locator('input[type="file"]').setInputFiles(files);
+      } else {
+        const transfer = await page.evaluateHandle(
+          (entries) => {
+            const data = new DataTransfer();
+            for (const { name, bytes } of entries)
+              data.items.add(new File([new Uint8Array(bytes)], name, { type: 'image/png' }));
+            return data;
+          },
+          files.map(({ name, buffer }) => ({ name, bytes: [...buffer] })),
+        );
+        await root
+          .getByRole('button', { name: 'Upload files' })
+          .locator('..')
+          .dispatchEvent('drop', { dataTransfer: transfer });
+        await transfer.dispose();
+      }
+    };
+    const values = () =>
+      page.evaluate(async () => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return useFlowStore.getState().nodes.find((node) => node.id === 'reference-input-proof')!.data.params!.file
+          .value;
+      });
+    await submit();
+    await expect.poll(values).toEqual(['@data/existing.png', '@data/first.png', '@data/second.png']);
+    expect(uploaded).toEqual(['first.png', 'second.png']);
+    // Re-selecting the same files remains possible and must not duplicate refs.
+    await submit();
+    await expect.poll(() => uploaded.length).toBe(4);
+    await expect.poll(values).toEqual(['@data/existing.png', '@data/first.png', '@data/second.png']);
+    // Failed batches leave the current input untouched and report the error.
+    failSecond = true;
+    files[0]!.name = 'third.png';
+    await submit();
+    await expect(page.getByText('Reference upload failed', { exact: true })).toBeVisible();
+    expect(await values()).toEqual(['@data/existing.png', '@data/first.png', '@data/second.png']);
+    expect(
+      await page.evaluate(async () => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return useFlowStore.getState().nodes.find((node) => node.id === 'reference-input-proof')!.data.params!.prompt
+          .value;
+      }),
+    ).toBe('Leave this prompt unchanged');
+  });
 }
 
 test('file and export dialogs explain backend failures and remain usable on short and narrow screens', async ({
@@ -2561,7 +2739,12 @@ async function ensureFrontend() {
       : ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(FRONTEND_PORT)];
   const child = spawn(command, args, {
     cwd: CLIENT_ROOT,
-    env: { ...process.env, VITE_BACKEND_PROXY_TARGET: 'http://127.0.0.1:65530' },
+    env: {
+      ...process.env,
+      VITE_BACKEND_PROXY_TARGET: 'http://127.0.0.1:65530',
+      MODIFF_VITE_CACHE_DIR: `node_modules/.vite-playwright-${FRONTEND_PORT}`,
+      MODIFF_GALLERY_STABLE: '1',
+    },
   });
   managedProcesses.push(child);
   await waitForHttp(FRONTEND_URL);
@@ -4193,8 +4376,8 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
     }
     if (request.method() === 'POST' && !blockId) {
       const block = (request.postDataJSON() ?? {}) as Record<string, unknown>;
-      const saved = { ...block, updatedAt: Date.now() };
-      userBlocks.set(String(block.id), saved);
+      const saved = block.schemaVersion === 2 ? block : { ...block, updatedAt: Date.now() };
+      userBlocks.set(String(block.schemaVersion === 2 ? block.definitionId : block.id), saved);
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -5156,6 +5339,21 @@ async function bootMockedTemplateBrowser(page: Page) {
 }
 
 async function pinCurrentQwenRouteToMockRegistry(page: Page, compilerInstanceId: string) {
+  // Workspace hydration and the E2E bridge can finish before the independent
+  // capability request. Do not confuse a pending response with a bad fixture.
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+        return useNodesStore
+          .getState()
+          .studioModelCapabilities.some(
+            (capability) =>
+              capability.modelType === 'QwenImageModularPipeline' && capability.studioExecutionSpecs?.length,
+          );
+      }),
+    )
+    .toBe(true);
   const fixture = await page.evaluate(async (instanceId) => {
     const [
       libraryStore,
@@ -5421,6 +5619,23 @@ test('Hugging Face catalog uses Cluster Node terminology and fail-closed readine
   await expect(label).toBeVisible();
   expect((await label.boundingBox())!.width).toBeGreaterThan(90);
   expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const badge = qwenRow.locator('[data-catalog-entry-readiness]');
+  const badgeBox = (await badge.boundingBox())!;
+  const labelBox = (await label.boundingBox())!;
+  const rowBox = (await qwenRow.boundingBox())!;
+  expect(badgeBox.x + badgeBox.width).toBeGreaterThanOrEqual(rowBox.x + rowBox.width - 10);
+  expect(badgeBox.y).toBeLessThan(labelBox.y + labelBox.height + 24);
+  const guides = clusterGroup.locator('[data-tree-children-level]');
+  expect(await guides.count()).toBeGreaterThan(2);
+  for (const guide of await guides.all()) await expect(guide).toHaveCSS('border-left-style', 'dashed');
+  await page.getByLabel('Search nodes').fill('');
+  await clusterToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(clusterToggle).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Enter');
+  await expect(clusterToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(qwenRow).toBeVisible();
+  await clusterGroup.screenshot({ path: test.info().outputPath('nested-library-guides.png') });
 });
 
 test('a graph-qualified Qwen catalog drag inserts one durable V2 Block and preserves its ordinary projection', async ({
@@ -5513,7 +5728,7 @@ test('a graph-qualified Qwen catalog drag inserts one durable V2 Block and prese
   expect(autoEligibility).toMatchObject({ eligible: true, code: 'eligible', rootId });
   const autoSwitch = page.getByTestId('topbar-auto-switch');
   await expect(autoSwitch).toBeEnabled();
-  await expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
+  await expect(autoSwitch).toHaveAttribute('aria-checked', 'true');
 
   // Exact user regression: resizing the collapsed card must not pin the
   // subsequently expanded frame to that collapsed width/height.
@@ -5927,10 +6142,9 @@ test('a graph-qualified Qwen catalog drag inserts one durable V2 Block and prese
   });
   expect(restoredExpanded.hasLegacyClusterReceipt).toBe(false);
   expect(userNodeWriteRequests).toBe(0);
-  // The disposable route mutation above is intentionally module-local and is
-  // reset by a full browser reload; the restored fixture therefore returns to
-  // the production pin and fails closed as historical.
-  await expect(page.getByTestId('topbar-auto-switch')).toBeDisabled();
+  // Reload removes the fixture's source pin. Workflow Auto remains available,
+  // but its next Run must get a fresh plan for the actual exported graph.
+  await expect(page.getByTestId('topbar-auto-switch')).toBeEnabled();
 });
 
 test('canvas-scoped dynamic publications retain tab ownership across duplicate node ids', async ({ page }) => {
@@ -6107,6 +6321,67 @@ test('field actions reject their caller when the backend action fails', async ({
   await expect(page.getByText(/Injected compiler field-action failure\./)).toBeVisible();
 });
 
+test('selection toolbar shows rejected Block preparation without changing values or submitting a graph', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  const message = 'The selected Auto candidate needs a different execution recipe. Review the plan or choose Expert.';
+  let requests = 0;
+  let submitted = 0;
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.route('**/huggingface/cluster/auto-authority', async (route) => {
+    requests += 1;
+    await route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: true, message }),
+    });
+  });
+  await page.route('**/graph', async (route) => {
+    if (route.request().method() === 'POST') submitted += 1;
+    await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+  });
+  await page.addInitScript(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await dismissTaskLauncher(page);
+  await pinCurrentQwenRouteToMockRegistry(page, 'toolbar-auto-rejection');
+  await page.getByTestId('left-tab-nodes').click();
+  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes').getByRole('button').first();
+  if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click();
+  await (
+    await findQwenCatalogRow(page)
+  ).dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 500, y: 320 } });
+  const root = page.locator('.react-flow__node-block').filter({ has: page.locator('[data-block-schema-version="2"]') });
+  await expect(root).toHaveCount(1);
+  const id = (await root.getAttribute('data-id'))!;
+  const snapshot = () =>
+    page.evaluate(
+      (id) =>
+        JSON.stringify(window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.id === id)?.blockInstanceV2),
+      id,
+    );
+  const before = await snapshot();
+  const auto = page.getByTestId('topbar-auto-switch');
+  if ((await auto.getAttribute('aria-checked')) !== 'true') await auto.click();
+  await root.locator('header').first().click();
+  await page.getByTestId('selection-toolbar-run-from-node').click();
+  await expect.poll(() => requests).toBe(1);
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+  expect(submitted).toBe(0);
+  expect(errors).toEqual([]);
+  expect(await snapshot()).toBe(before);
+});
+
 test('a current registered Qwen V2 Block visibly requests instance-local Auto authority before concrete submission', async ({
   page,
 }) => {
@@ -6248,7 +6523,9 @@ test('a current registered Qwen V2 Block visibly requests instance-local Auto au
   await expect(runButton).toBeEnabled({ timeout: 15_000 });
   await runButton.click();
   await expect.poll(() => authorityRequests.length).toBe(1);
-  await expect.poll(() => graphRequests.length).toBe(1);
+  // The first run also loads the deferred composition tools and validates the
+  // pinned hierarchy. Allow the same cold-start window as palette admission.
+  await expect.poll(() => graphRequests.length, { timeout: 30_000 }).toBe(1);
 
   const authorityRequest = authorityRequests[0] as {
     instance: { instanceId: string; values: Record<string, unknown> };
@@ -6445,6 +6722,56 @@ test('top bar reports live system and accelerator resources without refreshing r
   await expect(popover).toContainText('Mock CUDA 16GB');
   await expect(popover).toContainText('42% (mock)');
   await expect(popover).toContainText('Peak allocated');
+});
+
+test('resource monitor explains paused allocator readings and restores measured idle values', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let paused = true;
+  await page.route('**/runtime/resources**', async (route) => {
+    await route.fulfill({
+      json: {
+        schemaVersion: 1,
+        sampledAt: Date.now() / 1000,
+        system: { cpuPercent: 18, ramPercent: 37.5 },
+        process: {},
+        activeDevice: 'cuda:0',
+        accelerators: [
+          {
+            device: 'cuda:0',
+            name: 'Observed GPU',
+            backend: 'rocm',
+            memoryKind: 'shared',
+            memoryTotalBytes: 16 * 1024 ** 3,
+            memoryFreeBytes: null,
+            memoryUsedBytes: null,
+            utilizationPercent: 42,
+            utilizationSource: 'sysfs',
+            allocatedBytes: paused ? null : 4 * 1024 ** 3,
+            reservedBytes: paused ? null : 5 * 1024 ** 3,
+            peakAllocatedBytes: paused ? null : 6 * 1024 ** 3,
+            peakReservedBytes: paused ? null : 7 * 1024 ** 3,
+            allocatorStatsStatus: paused ? 'paused_during_execution' : null,
+          },
+        ],
+        currentRun: paused ? { taskId: 'test-generation', progress: 80 } : null,
+        errors: [],
+      },
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.getByTestId('topbar-resource-monitor').click();
+  const popover = page.getByTestId('topbar-resource-popover');
+  await expect(popover).toContainText('Allocator readings are paused during generation');
+  await expect(popover).toContainText('42% (sysfs)');
+  await expect(popover.getByText('MoDiff allocated', { exact: true }).locator('..')).toContainText('—');
+  await expect(popover).not.toContainText('4.00 GiB');
+  paused = false;
+  await expect(popover).not.toContainText('Allocator readings are paused during generation', { timeout: 15_000 });
+  await expect(popover.getByText('MoDiff allocated', { exact: true }).locator('..')).toContainText('4.00 GiB');
 });
 
 test('Template Gallery setup plans and installs only after explicit consent', async ({ page }) => {
@@ -7863,19 +8190,19 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await expect(page.getByText('Hardware blocks', { exact: true })).toHaveCount(0);
   await page.getByTestId('left-tab-nodes').click();
   await expect(page.getByTestId('node-browser-view-essential')).toHaveCount(0);
-  await page.getByTestId('node-group-Load').click();
+  await page.getByLabel('Search nodes').fill('Load pipeline');
   await expect(page.getByTestId('node-row-modules-DiffusersImage-LoadPipeline')).toContainText('Load pipeline');
   await expect(page.getByTestId('node-row-modules-DiffusersImage-LoadPipeline')).not.toContainText('Diffusers');
   await expect(page.getByTestId('node-row-modules-DiffusersAudio-LoadPipeline')).toContainText('Load pipeline');
   await expect(page.getByTestId('node-row-modules-QwenImage-LoadPipeline')).toHaveCount(0);
-  await page.getByTestId('node-group-Generate').click();
+  await page.getByLabel('Search nodes').fill('Generate');
   await expect(page.getByTestId('node-row-modules-DiffusersImage-Generate')).toContainText('Generate image');
   await expect(page.getByTestId('node-row-modules-DiffusersAudio-Generate')).toContainText('Generate audio');
-  await page.getByTestId('node-group-Edit').click();
+  await page.getByLabel('Search nodes').fill('Edit');
   await expect(page.getByTestId('node-row-modules-DiffusersImage-Edit')).toContainText('Edit image');
-  await page.getByTestId('node-group-Preview').click();
+  await page.getByLabel('Search nodes').fill('Preview');
   await expect(page.getByTestId('node-row-modules-Image-Preview')).toContainText('Preview');
-  await page.getByTestId('node-group-Export').click();
+  await page.getByLabel('Search nodes').fill('Export');
   await expect(page.getByTestId('node-row-modules-Audio-Export')).toContainText('Export');
   await setStudioViewMode(page, 'expert');
   await expect(page.getByRole('tab', { name: 'Essentials' })).toBeVisible();
@@ -8203,7 +8530,7 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
 
   await page.getByTestId('task-launcher').getByRole('button', { name: 'Close' }).click();
   await page.getByTestId('left-tab-nodes').click();
-  await page.getByTestId('node-group-Load').click();
+  await page.getByLabel('Search nodes').fill('Load pipeline');
   const firstNode = page.locator('[data-testid^="node-row-"]').first();
   await expect(firstNode).toBeVisible();
   await firstNode.click();
@@ -8361,6 +8688,64 @@ test('mocked Gallery and workflow export use the latest active workflow output',
     id: 'active-workflow-output',
     url: '/cache/active-workflow-output.png',
   });
+});
+
+test('workflow and API exports preserve random seeds beside a Modular Block', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  const definition = JSON.parse(
+    await fs.readFile(path.resolve('../MoDiff/tests/fixtures/block_container_interface_v1.json'), 'utf8'),
+  );
+  await page.evaluate(async (definition) => {
+    const [{ useFlowStore }, schema, runtime] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+    ]);
+    const root = runtime.createBlockRootNodeV2(
+      schema.createBlockInstanceV2(definition, {
+        instanceId: 'export-modular',
+        position: { x: 0, y: 0 },
+        size: { width: 400, height: 320 },
+      }),
+    );
+    useFlowStore.getState().replaceGraph({
+      nodes: [
+        root,
+        {
+          id: 'export-seed',
+          type: 'custom',
+          position: { x: 500, y: 0 },
+          data: {
+            type: 'custom',
+            module: 'modules.Primitive',
+            action: 'Integer',
+            params: {
+              seed: { type: 'int', display: 'random', value: { value: 123, isRandom: true }, min: 1000, max: 1000 },
+              output: { type: 'int', display: 'output' },
+            },
+          },
+        },
+      ],
+      edges: [],
+    });
+  }, definition);
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  for (const kind of ['workflow-package', 'api-graph']) {
+    await page.getByTestId('topbar-export').click();
+    const downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
+    await page.getByTestId(`topbar-export-${kind}`).click();
+    const download = await downloadPromise;
+    const payload = JSON.parse(await fs.readFile((await download.path())!, 'utf8'));
+    const graph = kind === 'workflow-package' ? payload.apiGraph : payload;
+    expect(graph.nodes['export-seed'].params.seed.value).toBe(123);
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow)).toEqual(before);
+  }
 });
 
 test('mocked imported assets fill active Studio input slots', async ({ page }) => {
@@ -9907,10 +10292,10 @@ test('mocked Studio switches managed recipes to compact custom graph inspector a
     .toEqual({
       bound: false,
       nodeCount: 6,
-      resourceMode: 'expert',
+      resourceMode: 'auto',
     });
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'false');
-  await expect(page.getByTestId('topbar-auto-switch')).toBeDisabled();
+  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('topbar-auto-switch')).toBeEnabled();
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Current graph');
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
@@ -14996,6 +15381,62 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
   expect(errorLayout.handleBottomGapShift).toBeLessThanOrEqual(4);
 });
 
+test('startup run recovery preserves the selected saved workflow until explicit navigation', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  const { workflows } = await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  const identity = await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    useStudioStore.getState().saveActiveWorkflowTab(false);
+    const state = useStudioStore.getState();
+    const selected = state.workflowTabs.find((tab) => tab.id === state.activeWorkflowTabId)!;
+    const remoteId = state.createWorkflowTab('Other running workflow', selected.snapshot, 'manual');
+    useStudioStore.getState().switchWorkflowTab(selected.id);
+    useStudioStore.getState().saveActiveWorkflowTab(false);
+    return { selectedId: selected.id, remoteId, snapshot: selected.snapshot };
+  });
+  await page.route('http://127.0.0.1:65531/queue', async (route) => {
+    await route.fulfill({
+      json: {
+        current: {
+          task_id: 'other-client-task',
+          status: 'running',
+          workflow_tab_id: identity.remoteId,
+          workflow_title: 'Other running workflow',
+          workflow_snapshot: identity.snapshot,
+          current_node: identity.snapshot.nodes[0]!.id,
+          message: 'Denoising in another workflow',
+        },
+        queued: {},
+        recent: [],
+      },
+    });
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(
+    () => window.__MODIFF_E2E__?.getState().tasks.currentTask?.task_id === 'other-client-task',
+  );
+  await expect(page.getByTestId(`workflow-tab-${identity.selectedId}`)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('session-run-other-client-task')).toBeVisible();
+  await page.getByTestId('session-run-other-client-task').click();
+  await expect(page.getByTestId(`workflow-tab-${identity.remoteId}`)).toHaveAttribute('aria-selected', 'true');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`workflow-tab-${identity.remoteId}`)).toHaveAttribute('aria-selected', 'true');
+  // A genuinely fresh browser with no saved document should still recover the
+  // running workflow. Preserving an editing tab must not disable that fallback.
+  workflows.clear();
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`workflow-tab-${identity.remoteId}`)).toHaveAttribute('aria-selected', 'true');
+});
+
 test('disconnected supervisor recovery never overlaps queue polls', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
@@ -15875,6 +16316,27 @@ test('session activity and generation notifications open the originating workflo
   await expect(failureDialog).not.toContainText('Traceback');
   await expect(failureDialog).toContainText('A deliberately verbose backend exception');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
+  // A queue-derived failure can be opened before its richer websocket event
+  // arrives. Delivery of that same failure must not close the user's dialog.
+  await page.evaluate(
+    ({ workflowId }) => {
+      window.__MODIFF_E2E__!.sendWebsocketMessage({
+        type: 'task_failed',
+        sid: 'mock-sid',
+        task_id: 'notification-failure-task',
+        client_run_id: 'notification-failure-run',
+        workflow_tab_id: workflowId,
+        name: 'Notification failure run',
+        category: 'runtime',
+        current: null,
+        queued: {},
+        message: 'A deliberately verbose backend exception with late websocket details.',
+      });
+    },
+    { workflowId },
+  );
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog).toContainText('late websocket details');
   await failureDialog.locator('footer').getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByTestId('workspace-tab-queue').click();
   await page.getByTestId('queue-failed-run-notification-failure-task').click();
@@ -17692,8 +18154,13 @@ test('generic text and model-source actions debounce queries and send the latest
     .toBe(true);
 
   const initialRepositoryRequestCount = requests.filter((request) => request.fieldKey === 'repository').length;
+  // Test debounce time, not host scheduling latency under a concurrent GPU
+  // workload. A nominal 150ms wall-clock wait may resume after the debounce.
+  const frozenTime = new Date();
+  await page.clock.install({ time: frozenTime });
+  await page.clock.pauseAt(frozenTime);
   await repositoryInput.fill(selectedRepository);
-  await page.waitForTimeout(150);
+  await page.clock.runFor(150);
   expect(requests.filter((request) => request.fieldKey === 'repository')).toHaveLength(initialRepositoryRequestCount);
   expect(
     requests.filter(
@@ -17701,6 +18168,7 @@ test('generic text and model-source actions debounce queries and send the latest
     ),
   ).toHaveLength(0);
   await repositoryInput.blur();
+  await page.clock.resume();
   await expect
     .poll(() =>
       requests.some(
@@ -18963,9 +19431,13 @@ test('workflow tabs remain a single horizontally scrollable row with pinned new-
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
 
   const newTab = page.getByTestId('workflow-tab-new');
+  // The E2E bridge can become ready before the empty-workflow launcher mounts.
+  // Wait for this expected modal instead of racing an immediate isVisible().
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
   await dismissTaskLauncher(page);
   for (let index = 0; index < 20; index += 1) {
     await newTab.click();
+    await expect(page.getByTestId('task-launcher')).toBeVisible();
     await dismissTaskLauncher(page);
   }
 
@@ -19894,7 +20366,16 @@ test('Blocks save, expand in place, collapse, and survive library-definition del
 
 test('existing canvas nodes drag into User Nodes and the three persistence choices survive refresh', async ({
   page,
-}) => {
+}, testInfo) => {
+  const missingHandles: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning' && message.text().includes("Couldn't create edge for"))
+      missingHandles.push(message.text());
+  });
+  if (process.env.MODIFF_TRACE_LEGACY_HANDLES === '1') {
+    const { installLegacyHandleDiagnostics } = await import('../legacy-handle-diagnostics');
+    await installLegacyHandleDiagnostics(page);
+  }
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   await ensureFrontend();
@@ -19916,6 +20397,7 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
 
   const block = page.locator('.react-flow__node-block');
   await block.getByRole('button', { name: 'Expand block' }).click();
+  await page.getByTestId('arrange-graph').click();
   const ids = await page.evaluate(async () => {
     const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
     const state = useFlowStore.getState();
@@ -19928,25 +20410,40 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   expect(ids.blockId).toBeTruthy();
   expect(ids.ordinaryId).toBeTruthy();
   const ordinaryNode = page.locator(`.react-flow__node[data-id="${ids.ordinaryId}"]`);
+  await ordinaryNode.locator('header').click();
+  await expect(ordinaryNode).toHaveClass(/selected/u);
   const ordinaryBounds = await ordinaryNode.boundingBox();
+  const ordinaryHeader = await ordinaryNode.locator('header').boundingBox();
   const blockBounds = await block.boundingBox();
   expect(ordinaryBounds).toBeTruthy();
+  expect(ordinaryHeader).toBeTruthy();
   expect(blockBounds).toBeTruthy();
-  await page.mouse.move(
-    ordinaryBounds!.x + ordinaryBounds!.width / 2,
-    ordinaryBounds!.y + Math.min(28, ordinaryBounds!.height / 2),
-  );
+  await page.mouse.move(ordinaryHeader!.x + ordinaryHeader!.width / 2, ordinaryHeader!.y + ordinaryHeader!.height / 2);
+  await page.keyboard.down('Control');
   await page.mouse.down();
-  await page.mouse.move(blockBounds!.x + blockBounds!.width / 2, blockBounds!.y + blockBounds!.height / 2, {
-    steps: 8,
-  });
+  await page.waitForTimeout(100);
+  await page.mouse.move(
+    blockBounds!.x + blockBounds!.width / 2,
+    blockBounds!.y + blockBounds!.height / 2 - (ordinaryBounds!.height - ordinaryHeader!.height) / 2,
+    {
+      steps: 25,
+    },
+  );
+  await expect(page.getByTestId('block-drag-destination')).toBeVisible();
   await page.mouse.up();
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(150);
   await expect
     .poll(() =>
       page.evaluate(async ({ ordinaryId, blockId }) => {
         const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
-        const node = useFlowStore.getState().nodes.find((candidate) => candidate.id === ordinaryId);
-        return { parentId: node?.parentId, instanceId: node?.data.userBlockInstanceId, blockId };
+        const node = useFlowStore
+          .getState()
+          .nodes.find(
+            (candidate) =>
+              candidate.data.blockProjectionNodeId === ordinaryId && candidate.data.blockProjectionOwnerId === blockId,
+          );
+        return { parentId: node?.parentId, instanceId: node?.data.blockProjectionOwnerId, blockId };
       }, ids),
     )
     .toEqual({ parentId: ids.blockId, instanceId: ids.blockId, blockId: ids.blockId });
@@ -19978,10 +20475,10 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
         const restored = useFlowStore
           .getState()
           .nodes.find(
-            (node) => node.data.userBlockSourceNodeId === ordinaryId && node.data.userBlockInstanceId === blockId,
+            (node) => node.data.blockProjectionNodeId === ordinaryId && node.data.blockProjectionOwnerId === blockId,
           );
         return restored
-          ? { instanceId: restored.data.userBlockInstanceId, sourceId: restored.data.userBlockSourceNodeId }
+          ? { instanceId: restored.data.blockProjectionOwnerId, sourceId: restored.data.blockProjectionNodeId }
           : null;
       }, ids),
     )
@@ -19989,14 +20486,17 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
 
   const originalBlockId = await page.evaluate(async () => {
     const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
-    return useFlowStore.getState().nodes.find((node) => node.data.type === 'block')?.data.userBlockId ?? null;
+    return (
+      useFlowStore.getState().nodes.find((node) => node.data.type === 'block')?.data.blockInstanceV2?.definitionRef
+        .definitionId ?? null
+    );
   });
-  await block.getByRole('button', { name: 'Save User Node changes' }).click();
+  await block.getByRole('button', { name: 'Save block changes', exact: true }).click();
   let choices = page.locator('[data-testid^="save-user-block-choices-"]');
   await choices.getByRole('button', { name: 'Keep only in this workflow' }).click();
   await expect(choices).toHaveCount(0);
 
-  await block.getByRole('button', { name: 'Save User Node changes' }).click();
+  await block.getByRole('button', { name: 'Save block changes', exact: true }).click();
   choices = page.locator('[data-testid^="save-user-block-choices-"]');
   await choices.getByRole('button', { name: 'Save as new User Node' }).click();
   await expect(choices).toHaveCount(0);
@@ -20009,13 +20509,15 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
     const studio = window.__MODIFF_E2E__!.getState().studio;
     return {
       previousStillExists: useUserBlockStore.getState().blocks.some((definition) => definition.id === previousId),
-      currentId: current?.data.userBlockId ?? null,
+      currentId: current?.data.blockInstanceV2?.definitionRef.definitionId ?? null,
       currentName: current?.data.label ?? '',
       workflowTitle:
         studio.workflowTabs.find((tab: { id: string }) => tab.id === studio.activeWorkflowTabId)?.title ?? 'Workflow',
       currentSaved: useUserBlockStore
         .getState()
-        .blocks.some((definition) => definition.id === current?.data.userBlockId),
+        .blockDefinitionsV2.some(
+          (definition) => definition.definitionId === current?.data.blockInstanceV2?.definitionRef.definitionId,
+        ),
     };
   }, originalBlockId);
   expect(afterSaveAsNew.previousStillExists).toBe(true);
@@ -20023,13 +20525,18 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   expect(afterSaveAsNew.currentSaved).toBe(true);
   expect(afterSaveAsNew.currentName).toContain(`— ${afterSaveAsNew.workflowTitle}`);
 
-  await block.getByRole('button', { name: 'Save User Node changes' }).click();
+  await block.getByRole('button', { name: 'Save block changes', exact: true }).click();
   choices = page.locator('[data-testid^="save-user-block-choices-"]');
   await choices.getByRole('button', { name: 'Update existing User Node' }).click();
   await expect(choices).toHaveCount(0);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.locator('.react-flow__node-block')).toContainText(afterSaveAsNew.currentName);
+  expect(missingHandles).toEqual([]);
+  if (process.env.MODIFF_TRACE_LEGACY_HANDLES === '1') {
+    const { attachLegacyHandleDiagnostics } = await import('../legacy-handle-diagnostics');
+    await attachLegacyHandleDiagnostics(page, testInfo);
+  }
 });
 
 test('Collapsed many-output blocks keep preview and editable node disclosures usable', async ({ page }) => {
@@ -20135,7 +20642,7 @@ test('Collapsed many-output blocks keep preview and editable node disclosures us
     .toBe('Editable prompt from the collapsed block');
 });
 
-test('expanded V2 Blocks visibly adopt only disconnected ordinary nodes and rematerialize after refresh', async ({
+test('expanded V2 Blocks explicitly adopt disconnected and connected ordinary nodes and rematerialize after refresh', async ({
   page,
 }) => {
   await ensureFrontend();
@@ -20231,19 +20738,61 @@ test('expanded V2 Blocks visibly adopt only disconnected ordinary nodes and rema
   await expect(root).toBeVisible();
   await expect(ordinary).toBeVisible();
   await expect(root.getByRole('button', { name: 'Collapse block' })).toBeVisible();
-  const ordinaryBounds = await ordinary.boundingBox();
+  // Fixture insertion triggers asynchronous node measurement and initial fit.
+  // Finish viewport navigation before taking coordinates for a pointer drag.
+  await page.evaluate(async () => {
+    const [{ useSettingsStore }, { useStudioStore }] = await Promise.all([
+      import('/src/stores/useSettingsStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+    ]);
+    const now = Date.now();
+    useSettingsStore.getState().setWorkflowFocusRequest({
+      workflowTabId: useStudioStore.getState().activeWorkflowTabId,
+      nodeId: null,
+      requestId: now,
+      requestedAt: now,
+    });
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () => (await import('/src/stores/useSettingsStore.ts')).useSettingsStore.getState().workflowFocusRequest,
+      ),
+    )
+    .toBeNull();
+  await ordinary.getByRole('banner').hover();
+  const ordinaryBounds = await ordinary.getByRole('banner').boundingBox();
   const rootBounds = await root.boundingBox();
   expect(ordinaryBounds).toBeTruthy();
   expect(rootBounds).toBeTruthy();
-  await page.mouse.move(ordinaryBounds!.x + ordinaryBounds!.width / 2, ordinaryBounds!.y + 24);
+  const pointer = {
+    x: ordinaryBounds!.x + ordinaryBounds!.width / 2,
+    y: ordinaryBounds!.y + ordinaryBounds!.height / 2,
+  };
+  await page.mouse.move(pointer.x, pointer.y);
+  await page.keyboard.down('Control');
   await page.mouse.down();
+  // Prime XYFlow's drag threshold before the long move and retain the actual
+  // pointer offset. The drop target is selected by the node's center, not its
+  // header pointer position.
+  const primed = { x: pointer.x + 4, y: pointer.y + 4 };
+  await page.mouse.move(primed.x, primed.y, { steps: 4 });
+  const dragging = await ordinary.boundingBox();
+  expect(dragging).toBeTruthy();
   // Use the frame's right-side insertion lane. The minimal one-child fixture
   // deliberately has no full-card-sized gap; dropping over Generate is the
   // separate replacement gesture and must not be confused with adoption.
-  await page.mouse.move(rootBounds!.x + rootBounds!.width * 0.96, rootBounds!.y + rootBounds!.height * 0.58, {
-    steps: 10,
-  });
+  const destination = { x: rootBounds!.x + rootBounds!.width * 0.98, y: rootBounds!.y + rootBounds!.height * 0.58 };
+  await page.mouse.move(
+    destination.x - dragging!.width / 2 + primed.x - dragging!.x,
+    destination.y - dragging!.height / 2 + primed.y - dragging!.y,
+    { steps: 12 },
+  );
+  const beforeRelease = await ordinary.boundingBox();
+  expect(Math.abs(beforeRelease!.x + beforeRelease!.width / 2 - destination.x)).toBeLessThan(2);
+  expect(Math.abs(beforeRelease!.y + beforeRelease!.height / 2 - destination.y)).toBeLessThan(2);
   await page.mouse.up();
+  await page.keyboard.up('Control');
   await expect(page.getByText('The existing node was moved into this Block.')).toBeVisible();
   await expect
     .poll(() =>
@@ -20394,6 +20943,7 @@ test('expanded V2 Blocks visibly adopt only disconnected ordinary nodes and rema
     y: restoredRootBounds!.y + restoredRootBounds!.height * 0.25,
   };
   await page.mouse.move(connectedPointer.x, connectedPointer.y);
+  await page.keyboard.down('Control');
   await page.mouse.down();
   await page.mouse.move(
     rejectedDropCenter.x - connectedBounds!.width / 2 + connectedPointerOffset.x,
@@ -20401,9 +20951,8 @@ test('expanded V2 Blocks visibly adopt only disconnected ordinary nodes and rema
     { steps: 10 },
   );
   await page.mouse.up();
-  await expect(
-    page.getByText(/Disconnect it, move the node, configure the Block interface, then reconnect/u),
-  ).toBeVisible();
+  await page.keyboard.up('Control');
+  await expect(page.getByText('The existing node was moved into this Block.')).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(
@@ -20420,7 +20969,7 @@ test('expanded V2 Blocks visibly adopt only disconnected ordinary nodes and rema
         { blockId: fixture.blockId, ...connectedFixture },
       ),
     )
-    .toEqual({ sourceStillTopLevel: true, edgeStillPresent: true, semantic: false });
+    .toEqual({ sourceStillTopLevel: false, edgeStillPresent: true, semantic: true });
 });
 
 test('registered V2 Blocks visibly replace, cross public ports, reconnect, move out, configure, and persist', async ({
@@ -20711,6 +21260,7 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
   const dragNodeToPoint = async (node: ReturnType<Page['locator']>, point: { x: number; y: number }) => {
     const handle = node.locator('header').first();
     await expect(handle).toBeVisible();
+    await handle.click();
     const nodeBounds = await node.boundingBox();
     const bounds = await handle.boundingBox();
     expect(nodeBounds).toBeTruthy();
@@ -20752,6 +21302,7 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
       return reachable;
     });
     await page.mouse.move(pointer.x, pointer.y);
+    await page.keyboard.down('Control');
     await page.mouse.down();
     // Cross XYFlow's drag threshold before the long move. Its first drag event
     // establishes the pointer offset; using a large first step loses that step
@@ -20773,6 +21324,7 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
     expect(Math.abs(beforeRelease!.x + beforeRelease!.width / 2 - point.x)).toBeLessThan(2);
     expect(Math.abs(beforeRelease!.y + beforeRelease!.height / 2 - point.y)).toBeLessThan(2);
     await page.mouse.up();
+    await page.keyboard.up('Control');
     return {
       before: nodeBounds,
       beforeRelease,
@@ -20782,11 +21334,13 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
     };
   };
 
-  const dragNodeOnto = async (node: ReturnType<Page['locator']>, target: ReturnType<Page['locator']>) => {
-    await expect(target).toBeVisible();
-    const bounds = await target.boundingBox();
-    expect(bounds).toBeTruthy();
-    await dragNodeToPoint(node, { x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 });
+  const replaceWithSelectedNode = async (node: ReturnType<Page['locator']>, target: ReturnType<Page['locator']>) => {
+    await target.locator('header').first().click();
+    await node
+      .locator('header')
+      .first()
+      .click({ modifiers: ['Control'] });
+    await page.getByTestId('selection-toolbar-replace-internal').click();
   };
 
   const dragHandle = async (source: ReturnType<Page['locator']>, target: ReturnType<Page['locator']>) => {
@@ -20930,10 +21484,10 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
     hasLegacyClusterState: false,
   });
 
-  // Compatible replacement is one visible drag and stays on the same root.
+  // Compatible replacement is an explicit selection action and stays on the same root.
   let targetProjection = await projectedNode(fixture.replaceSemanticId);
   const replacement = page.locator(`.react-flow__node-custom[data-id="${fixture.replacementId}"]`);
-  await dragNodeOnto(replacement, targetProjection);
+  await replaceWithSelectedNode(replacement, targetProjection);
   await expect(page.getByText('The internal node was replaced in this workflow Block.')).toBeVisible();
   await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.replacementId);
   const afterReplacement = await inspect();
@@ -20958,7 +21512,7 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
   targetProjection = await projectedNode(fixture.replacementId);
   const authoritativeBeforeFailure = await inspect();
   const badReplacement = page.locator(`.react-flow__node-custom[data-id="${fixture.badReplacementId}"]`);
-  await dragNodeOnto(badReplacement, targetProjection);
+  await replaceWithSelectedNode(badReplacement, targetProjection);
   await expect(
     page.getByText(new RegExp(`replacement field ${fixture.missingField} is missing or incompatible`, 'i')),
   ).toBeVisible();
@@ -21095,8 +21649,11 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
   await expect(root.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicInputId}`)).toBeVisible();
   await expect(root.getByTestId(`node-handle-${fixture.blockId}-${fixture.publicOutputId}`)).toBeVisible();
   const interfaceBeforeAdoption = (await inspect()).interfaceHash;
+  await page.getByTestId('arrange-graph').click();
   await dragNodeToPoint(publicUtility, await emptyPointInsideRoot());
-  await expect(page.getByText('The existing node was moved into this Block.')).toBeVisible();
+  // The drop can reflow the expanded graph before this helper returns. Check
+  // durable ownership and the translated wire below, not a 3-second toast
+  // which may already have expired during pointer/layout stabilization.
   await expect.poll(async () => (await inspect()).semanticIds).toContain(fixture.publicUtilityId);
   const afterPublicAdoption = await inspect();
   expect(afterPublicAdoption.interfaceHash).toBe(interfaceBeforeAdoption);
@@ -21284,6 +21841,7 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
     if (!edge) throw new Error('The external reconnect edge is missing.');
     return { edgeId: edge.id };
   }, fixture);
+  await page.getByTestId('arrange-graph').click();
   const externalReconnectEdge = page.locator(`.react-flow__edge[data-id="${externalReconnect.edgeId}"]`);
   await selectEdgeForReconnect(externalReconnectEdge);
   await dragHandle(
@@ -21606,35 +22164,14 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
     expect(projectionId).toBeTruthy();
     return page.locator(`.react-flow__node[data-id="${projectionId}"]`);
   };
-  const dragNodeOnto = async (sourceId: string, target: ReturnType<Page['locator']>) => {
+  const replaceWithSelectedNode = async (sourceId: string, target: ReturnType<Page['locator']>) => {
     const source = page.locator(`.react-flow__node[data-id="${sourceId}"]`);
-    await expect(source).toBeVisible();
-    await expect(target).toBeVisible();
-    const sourceBounds = await source.boundingBox();
-    const sourceHeader = await source.locator('header').first().boundingBox();
-    const targetBounds = await target.boundingBox();
-    expect(sourceBounds).toBeTruthy();
-    expect(sourceHeader).toBeTruthy();
-    expect(targetBounds).toBeTruthy();
-    const start = {
-      x: sourceHeader!.x + sourceHeader!.width / 2,
-      y: sourceHeader!.y + Math.min(20, sourceHeader!.height / 2),
-    };
-    const center = { x: targetBounds!.x + targetBounds!.width / 2, y: targetBounds!.y + targetBounds!.height / 2 };
-    await page.mouse.move(start.x, start.y);
-    await page.mouse.down();
-    const primed = { x: start.x + 4, y: start.y + 4 };
-    await page.mouse.move(primed.x, primed.y, { steps: 4 });
-    const dragging = await source.boundingBox();
-    expect(dragging).toBeTruthy();
-    const offset = { x: primed.x - dragging!.x, y: primed.y - dragging!.y };
-    await page.mouse.move(center.x - dragging!.width / 2 + offset.x, center.y - dragging!.height / 2 + offset.y, {
-      steps: 12,
-    });
-    const dropped = await source.boundingBox();
-    expect(Math.abs(dropped!.x + dropped!.width / 2 - center.x)).toBeLessThan(2);
-    expect(Math.abs(dropped!.y + dropped!.height / 2 - center.y)).toBeLessThan(2);
-    await page.mouse.up();
+    await target.locator('header').first().click();
+    await source
+      .locator('header')
+      .first()
+      .click({ modifiers: ['Control'] });
+    await page.getByTestId('selection-toolbar-replace-internal').click();
   };
 
   // Fit the whole gesture fixture, including top-level replacements. Catalog
@@ -21668,7 +22205,7 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
     status: 'complete',
   });
 
-  await dragNodeOnto(fixture.previewReplacementId, await projectedNode(fixture.previewSemanticId));
+  await replaceWithSelectedNode(fixture.previewReplacementId, await projectedNode(fixture.previewSemanticId));
   await expect(page.getByText('The internal node was replaced in this workflow Block.')).toBeVisible();
   let replaced = await inspect();
   expect(replaced.actions[fixture.previewSemanticId]).toBe(fixture.previewReplacementAction);
@@ -21688,7 +22225,7 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
     .toBe(fixture.previewReplacementAction);
 
   const beforeInvalid = await inspect();
-  await dragNodeOnto(fixture.badPreviewReplacementId, await projectedNode(fixture.previewSemanticId));
+  await replaceWithSelectedNode(fixture.badPreviewReplacementId, await projectedNode(fixture.previewSemanticId));
   await expect(
     page.getByText(new RegExp(`preview field ${fixture.previewOutputId} is missing or incompatible`, 'i')),
   ).toBeVisible();
@@ -21697,7 +22234,7 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
   expect(afterInvalid.actions).toEqual(beforeInvalid.actions);
   expect(afterInvalid.topLevelIds).toContain(fixture.badPreviewReplacementId);
 
-  await dragNodeOnto(fixture.sealedReplacementId, await projectedNode(fixture.sealedSemanticId));
+  await replaceWithSelectedNode(fixture.sealedReplacementId, await projectedNode(fixture.sealedSemanticId));
   await expect(page.getByText('The internal node was replaced in this workflow Block.')).toBeVisible();
   replaced = await inspect();
   expect(replaced.actions[fixture.sealedSemanticId]).toBe(fixture.sealedReplacementAction);
@@ -21750,6 +22287,117 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
   await restoredRoot.getByTestId(`user-block-toggle-${fixture.blockId}`).click();
   await expect(projectedNode(fixture.previewSemanticId)).resolves.toBeTruthy();
   await expect(projectedNode(fixture.sealedSemanticId)).resolves.toBeTruthy();
+});
+
+test('nested Configure Interface selects previews and preserves prompts, root outputs and saved User Node bindings', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('nested-preview-editor-proof')) return;
+    localStorage.clear();
+    sessionStorage.setItem('nested-preview-editor-proof', '1');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  const definition = JSON.parse(
+    await fs.readFile(path.resolve('../MoDiff/tests/fixtures/block_container_previews_v1.json'), 'utf8'),
+  );
+  const stageId = await page.evaluate(async (definition) => {
+    const [schema, runtime, { useFlowStore }, { useStudioStore }] = await Promise.all([
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+    ]);
+    let instance = schema.createBlockInstanceV2(schema.normalizeBlockDefinitionV2(definition), {
+      instanceId: 'preview-config-root',
+      position: { x: 100, y: 80 },
+      size: { width: 900, height: 700 },
+      collapsedContainerNodeIds: ['stage'],
+    });
+    instance = runtime.setBlockPresentationV2(instance, { expanded: true });
+    instance = runtime.setBlockPreviewStateV2(
+      instance,
+      { nodeId: 'caption', outputPortId: 'text' },
+      {
+        mediaReference: 'A detailed captured caption',
+        status: 'complete',
+        taskId: 'mock-preview-proof',
+      },
+    );
+    const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+    useStudioStore.getState().clearGraphBinding();
+    useFlowStore.setState({ ...projection, viewport: { x: 0, y: 0, zoom: 0.8 } });
+    useFlowStore.getState().resetHistory();
+    useStudioStore.setState({ launcherDismissed: true });
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return projection.nodes.find((node) => node.data.blockProjectionNodeId === 'stage')!.id;
+  }, definition);
+  const inspect = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const instance = useFlowStore.getState().nodes.find((node) => node.id === 'preview-config-root')!.data
+        .blockInstanceV2!;
+      const { reusableBlockDefinitionFromSubtreeV2 } = await import('/src/studio/blockDefinitionPersistenceV2.ts');
+      const saved = reusableBlockDefinitionFromSubtreeV2(instance, {
+        rootNodeId: 'stage',
+        definitionId: 'user:configured-preview-proof',
+        displayName: 'Configured nested preview',
+      });
+      return {
+        local: instance.effectiveGraph.nodes.find((node) => node.nodeId === 'stage')!.containerInterface,
+        rootPreviews: instance.definitionSnapshot.previews,
+        values: instance.values,
+        generator: instance.effectiveGraph.nodes.find((node) => node.nodeId === 'generate'),
+        sibling: instance.effectiveGraph.nodes.find((node) => node.nodeId === 'sibling'),
+        savedPreviews: saved.previews,
+      };
+    });
+  const original = await inspect();
+  await page.getByTestId(`user-block-configure-${stageId}`).click();
+  const dialog = page.getByTestId(`configure-block-v2-${stageId}`);
+  await expect(page.getByTestId('workspace-panel')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Configure Block interface' })).toHaveCount(0);
+  const previews = dialog.getByTestId('block-interface-previews');
+  await expect(previews).toBeVisible();
+  await previews.getByRole('button', { name: 'Remove preview Caption / text (text)', exact: true }).click();
+  await previews.getByLabel('Internal preview source').click();
+  await page.getByRole('option', { name: 'Caption / text (text)', exact: true }).click();
+  await previews.getByRole('button', { name: 'Add collapsed preview', exact: true }).click();
+  await previews.getByRole('button', { name: 'Move preview Caption / text (text) up', exact: true }).click();
+  await previews.getByLabel('Primary collapsed preview').click();
+  await page.getByRole('option', { name: 'Generate / images (image)', exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Apply interface', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const changed = await inspect();
+  expect(changed.local!.previews).toEqual([
+    { nodeId: 'caption', outputPortId: 'text', mediaType: 'text' },
+    { nodeId: 'generate', outputPortId: 'images', mediaType: 'image', primary: true },
+  ]);
+  expect(changed.savedPreviews).toEqual(changed.local!.previews);
+  for (const key of ['rootPreviews', 'values', 'generator', 'sibling'] as const)
+    expect(changed[key]).toEqual(original[key]);
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`user-block-configure-${stageId}`)).toBeVisible({ timeout: 30_000 });
+  expect(await inspect()).toEqual(changed);
+  await page.getByTestId(`user-block-configure-${stageId}`).click();
+  await previews.getByRole('button', { name: 'Remove preview Caption / text (text)', exact: true }).click();
+  await previews.getByRole('button', { name: 'Remove preview Generate / images (image)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Apply interface', exact: true }).click();
+  expect((await inspect()).local!.previews).toEqual([]);
+  expect((await inspect()).rootPreviews).toEqual(original.rootPreviews);
+  expect(errors).toEqual([]);
 });
 
 test('mixed V1 and V2 User Nodes survive a full browser restart without cross-conversion', async ({ page }) => {
@@ -22421,4 +23069,200 @@ test('legacy registered Cluster migration visibly generates, previews, applies, 
   expect(rollbackCalls).toBe(1);
   expect(journalState).toBe('rolled_back');
   expect(savedWorkflowMutationCalls).toBe(0);
+});
+
+test('mocked Gallery displays encoded video geometry and preserves requested controls', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => {
+    const tabId = window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId;
+    window.__MODIFF_E2E__!.seedStudioOutputsForTest([
+      {
+        id: 'encoded-video-gallery',
+        url: '/file?file=encoded-video.mp4',
+        displayType: 'video',
+        workflowTabId: tabId,
+        modelLabel: 'Encoded video',
+        width: 640,
+        height: 800,
+        formSnapshot: {
+          ...window.__MODIFF_E2E__!.getState().studio.form,
+          width: 640,
+          height: 800,
+          numFrames: 132,
+          fps: 24,
+        },
+        mediaItems: [
+          {
+            index: 0,
+            url: '/file?file=encoded-video.mp4',
+            displayType: 'video',
+            mediaMetadata: {
+              source: 'encoded-file',
+              width: 592,
+              height: 832,
+              frame_count: 129,
+              fps: 24,
+              duration_seconds: 5.38,
+            },
+          },
+        ],
+      },
+    ]);
+  });
+  await page.getByTestId('topbar-gallery').click();
+  await expect(page.getByTestId('gallery-output-0')).toContainText('592x832 | 129 frames | 24fps');
+  await page.getByTestId('gallery-view-inspect').click();
+  const inspect = page.getByTestId('gallery-inspect-view');
+  await expect(inspect).toContainText('592x832 | 129 frames | 24fps');
+  await expect(inspect.locator('pre')).toContainText('"requestedSize": "640x800"');
+  await expect(inspect.locator('pre')).toContainText('"requestedNumFrames": 132');
+  const form = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0].formSnapshot);
+  expect({ width: form.width, height: form.height, numFrames: form.numFrames }).toEqual({
+    width: 640,
+    height: 800,
+    numFrames: 132,
+  });
+});
+
+test('mocked Gallery separates decoded image geometry from uncaptured input dimensions', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.seedStudioOutputsForTest([
+      {
+        id: 'reference-derived-image',
+        url: '/file?file=reference-derived.webp',
+        displayType: 'image',
+        taskId: 'reference-edit',
+        nodeId: 'preview',
+        attemptIndex: 0,
+        width: 640,
+        height: 640,
+        mediaItems: [{ index: 0, url: '/file?file=reference-derived.webp', width: 1024, height: 1024 }],
+        resolvedExecutionInputs: {
+          schemaVersion: 1,
+          source: 'backend-execution',
+          taskId: 'reference-edit',
+          nodeId: 'preview',
+          attemptIndex: 0,
+          nodes: [
+            {
+              nodeId: 'denoise',
+              module: 'modules.ModularDiffusers',
+              action: 'ReviewedModularWorkflowStep',
+              fields: { num_inference_steps: { value: 40, source: 'literal' } },
+              omittedFields: {},
+            },
+          ],
+          summary: { steps: 40 },
+          ambiguousFields: [],
+          unavailableFields: [],
+          uncapturedNodeIds: [],
+          truncated: false,
+        },
+      },
+    ]);
+  });
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-view-inspect').click();
+  const inspector = page.getByTestId('gallery-inspect-view');
+  await expect(inspector.getByTestId('resolved-inputs-status')).toContainText('captured by the backend');
+  const metadata = JSON.parse((await inspector.locator('pre').textContent())!);
+  expect(metadata).toMatchObject({
+    size: '1024x1024',
+    steps: 40,
+    resolvedInputDimensions: {
+      width: 'Not uniquely captured — see resolved inputs',
+      height: 'Not uniquely captured — see resolved inputs',
+    },
+  });
+  expect(metadata.resolvedExecutionInputs.summary).toEqual({ steps: 40 });
+});
+
+test('mocked Gallery keeps effective image overrides and favorite identity after refresh', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const output = {
+    id: 'effective-image',
+    url: '/file?file=effective-image.webp',
+    displayType: 'image',
+    taskId: 'effective-task',
+    nodeId: 'preview',
+    attemptIndex: 0,
+    createdAt: 1,
+    favorite: false,
+    prompt: 'Unused saved prompt',
+    seed: 7,
+    steps: 50,
+    formSnapshot: { prompt: 'Unused saved prompt', seed: 7, steps: 50 },
+    resolvedExecutionInputs: {
+      schemaVersion: 1,
+      source: 'backend-execution',
+      taskId: 'effective-task',
+      nodeId: 'preview',
+      attemptIndex: 0,
+      nodes: [
+        {
+          nodeId: 'generate',
+          module: 'modules.DiffusersImage',
+          action: 'Generate',
+          fields: {
+            prompt: { value: null, source: 'literal' },
+            seed: { value: null, source: 'literal' },
+            num_inference_steps: { value: null, source: 'literal' },
+          },
+          omittedFields: {},
+        },
+      ],
+      summary: { prompt: null, seed: null, steps: null },
+      ambiguousFields: [],
+      unavailableFields: [],
+      uncapturedNodeIds: [],
+      truncated: false,
+    },
+  };
+  let patches = 0;
+  await page.route('**/studio_outputs**', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      expect(route.request().postDataJSON()).toEqual({ favorite: true });
+      output.favorite = true;
+      patches += 1;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: false, outputs: [output], revision: patches + 1 }),
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  for (let reload = 0; reload < 2; reload += 1) {
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await page.getByTestId('topbar-gallery').click();
+    await expect(page.getByTestId('gallery-output-0')).toBeVisible();
+    if (reload === 0) {
+      await page.getByTestId('gallery-favorite-0').click();
+      await expect.poll(() => patches).toBe(1);
+    }
+    await page.getByTestId('gallery-view-inspect').click();
+    const inspector = page.getByTestId('gallery-inspect-view');
+    await expect(inspector).toContainText('No prompt recorded');
+    const metadata = JSON.parse((await inspector.locator('pre').textContent())!);
+    expect(metadata.seed).toContain('Not uniquely captured');
+    expect(metadata.steps).toContain('Not uniquely captured');
+    expect(metadata.resolvedExecutionInputs).toEqual(output.resolvedExecutionInputs);
+    const stored = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0]);
+    expect(stored.favorite).toBe(true);
+    expect(stored.formSnapshot.prompt).toBe('Unused saved prompt');
+    expect(stored.formSnapshot.seed).toBe(7);
+    if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
+  }
+  expect(patches).toBe(1);
 });

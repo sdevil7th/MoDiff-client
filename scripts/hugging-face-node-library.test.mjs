@@ -30,6 +30,27 @@ let nodeCatalogModule;
 let nodeListModule;
 let nodeStoreModule;
 let originalFetch;
+test('catalog search matches readable mixed-case internal node labels', () => {
+  const sections = [
+    {
+      id: 'modular_diffusers_block_nodes',
+      label: 'Modular Diffusers',
+      entries: [
+        {
+          id: 'text-inputs',
+          label: 'Qwen Image Text Inputs',
+          description: 'Batch Embeddings',
+          searchText: 'qwenimagetextinputsstep',
+        },
+      ],
+    },
+  ];
+  for (const query of ['Qwen Image Text Inputs', 'qwen image text inputs', 'Batch Embeddings'])
+    assert.equal(
+      libraryCatalogModule.filterHuggingFaceCatalogSections(sections, query)[0]?.entries[0]?.id,
+      'text-inputs',
+    );
+});
 let server;
 let studioStoreModule;
 let userBlocksModule;
@@ -47,7 +68,7 @@ test('User Node library groups saved context and actual revisions without changi
   };
   const second = { ...definition, definitionId: 'copy-two', contentHash: 'sha256:abcdef1234567890' };
   const before = JSON.stringify([definition, second]);
-  assert.deepEqual(library.storedUserBlockGroupPath(definition), ['Diffusers derived', 'Qwen Image']);
+  assert.deepEqual(library.storedUserBlockGroupPath(definition), ['Diffusers derived', 'Qwen Image', 'Text to image']);
   assert.deepEqual(library.storedUserBlockGroupPath(definition, 'workflow'), [
     'Product campaign',
     'Qwen Image — Text To Image',
@@ -1345,6 +1366,24 @@ test('standard Diffusers composites remain distinct from official Modular block 
   );
 });
 
+test('ordinary composite sequences retain repeated classes at distinct action placements', () => {
+  const body = payloadWithStandardDiffusersComposite();
+  const composite = body.definitions.at(-1);
+  const adapter = composite.graphAdapterContracts[0];
+  adapter.upstreamBlockSequence = adapter.actionSequence.map(() => 'modules.Image.Load');
+  const parsed = libraryModule.parseHuggingFaceNodeLibrary(body).definitions.at(-1);
+  assert.deepEqual(parsed.graphAdapterContracts[0].upstreamBlockSequence, adapter.upstreamBlockSequence);
+  const duplicateAction = structuredClone(body);
+  duplicateAction.definitions.at(-1).graphAdapterContracts[0].actionSequence[1] = adapter.actionSequence[0];
+  assert.throws(() => libraryModule.parseHuggingFaceNodeLibrary(duplicateAction));
+  const malformed = structuredClone(body);
+  malformed.definitions.at(-1).graphAdapterContracts[0].upstreamBlockSequence[0] = '../invalid';
+  assert.throws(() => libraryModule.parseHuggingFaceNodeLibrary(malformed));
+  const wrongLength = structuredClone(body);
+  wrongLength.definitions.at(-1).graphAdapterContracts[0].upstreamBlockSequence.pop();
+  assert.throws(() => libraryModule.parseHuggingFaceNodeLibrary(wrongLength));
+});
+
 test('unregistered publications remain structurally insertable while execution receipts stay sealed', () => {
   const body = payload();
   const flux = body.definitions[0];
@@ -2245,6 +2284,20 @@ test('schema-v4 admissions preserve reviewed auxiliary-stage and single-frame co
   assert.equal(values.workflowAfterDecodeBlock, 'after_decode');
 });
 
+test('audio admissions retain reviewed native rates, task and waveform count without accepting arbitrary constants', () => {
+  const { body } = payloadWithMiniMaxMusic3Workflow();
+  const admission = body.definitions[0].executionAdmissions[0];
+  const constants = { sampleRate24000: 24000, sampleRate16000: 16000, numWaveforms3: 3, text2audio: 'text2audio' };
+  admission.bindingSources.push(...Object.keys(constants));
+  Object.assign(admission.sealedBindingValues, constants);
+  const parsed = libraryModule.parseHuggingFaceNodeLibrary(body);
+  for (const [key, value] of Object.entries(constants))
+    assert.equal(parsed.definitions[0].executionAdmissions[0].sealedBindingValues[key], value);
+  admission.bindingSources.push('arbitraryAudioConstant');
+  admission.sealedBindingValues.arbitraryAudioConstant = 1;
+  assert.throws(() => libraryModule.parseHuggingFaceNodeLibrary(body), /Invalid Hugging Face/u);
+});
+
 test('official whole-workflow Modular Diffusers routes materialize their exact stateful stage graph', () => {
   const { body, receipt, revision } = payloadWithMiniMaxMusic3Workflow();
   const parsed = libraryModule.parseHuggingFaceNodeLibrary(body);
@@ -2658,6 +2711,18 @@ test('Cluster technical bindings are provisionally complete and rebind to the se
     quantizedComponents: ['transformer', 'text_encoder'],
     regionalCompile: true,
   });
+});
+
+test('Audio Cluster BPM binding matches the native template normalization without changing the form', () => {
+  const admission = { executionParameterSources: ['bpmNormalized'] };
+  for (const bpm of [96, 0, -1]) {
+    const form = { bpm, device: 'cuda:0', offloadMode: 'model_cpu', quantizationMode: 'none' };
+    const original = structuredClone(form);
+    assert.deepEqual(clusterRuntimeModule.huggingFaceClusterExecutionParameterValues(admission, form), {
+      bpmNormalized: bpm > 0 ? bpm : 0,
+    });
+    assert.deepEqual(form, original);
+  }
 });
 
 test('Cluster customization persists before replacement and leaves the original recoverable on failure', async () => {
@@ -3821,10 +3886,11 @@ test('Nodes panel keeps structural Clusters and Modular blocks draggable', () =>
       {
         node: { module: 'modules.HuggingFaceTransformers', category: 'Text' },
         surfaceCategory: 'Text',
+        groupPath: ['Text', 'Generate'],
       },
       false,
     ),
-    'Transformers Nodes',
+    'Text',
   );
   const userNode = userBlocksModule.createUserBlockNode(
     {
@@ -3870,4 +3936,63 @@ test('the store fetches the dedicated read-only endpoint and rejects malformed r
   assert.equal(state.loaded, true);
   assert.equal(state.library, null);
   assert.match(state.error, /Invalid Hugging Face node-library/);
+});
+
+test('concurrent catalog consumers await the same fetch instead of cancelling each other', async () => {
+  const store = libraryStoreModule.useHuggingFaceNodeLibraryStore;
+  store.setState({ library: null, loaded: false, error: null });
+  const requests = [];
+  globalThis.fetch = (url, options) =>
+    new Promise((resolve) => requests.push({ url, signal: options.signal, resolve }));
+  const first = store.getState().fetchLibrary();
+  const second = store.getState().fetchLibrary();
+  let firstSettled = false;
+  void first.then(() => {
+    firstSettled = true;
+  });
+  try {
+    await Promise.resolve();
+    assert.equal(requests.length, 1, 'palette, route compiler and Auto must share one in-flight catalog pull');
+    assert.equal(requests[0].signal.aborted, false);
+    assert.equal(firstSettled, false, 'an awaited fetch cannot return before the catalog is available');
+  } finally {
+    requests.forEach(({ resolve }) => resolve(jsonResponse(payload())));
+    await Promise.all([first, second]);
+  }
+  assert.equal(store.getState().library.definitions.length, 2);
+  assert.equal(store.getState().error, null);
+  // An explicit refresh after completion is still a new request, not a stale cache.
+  globalThis.fetch = async () => jsonResponse({ definitions: [] });
+  await store.getState().fetchLibrary();
+  assert.equal(store.getState().library, null);
+  assert.match(store.getState().error, /Invalid Hugging Face node-library/);
+});
+
+test('runtime library groups stay nested across modes and only identical executable contracts merge', async () => {
+  const audit = await server.ssrLoadModule('/src/studio/nodeLibraryAuditV2.ts');
+  const base = {
+    type: 'custom',
+    module: 'modules.Image',
+    action: 'Resize',
+    label: 'Resize image',
+    category: 'image_filter',
+    params: { width: { type: 'int', value: 512 } },
+  };
+  const registry = {
+    resize: base,
+    alias: { ...base, label: 'Resize picture' },
+    variant: { ...base, action: 'Fit', label: 'Resize image', params: { width: { type: 'int', value: 1024 } } },
+  };
+  const before = JSON.stringify(registry);
+  const entries = nodeCatalogModule.nodeCatalogEntries(registry);
+  assert.equal(entries.length, 2);
+  for (const entry of entries) {
+    assert.deepEqual(entry.groupPath, ['Image', 'Resize & Crop']);
+    assert.equal(
+      nodeCatalogModule.nodeGroupForCatalogEntry(entry, true),
+      nodeCatalogModule.nodeGroupForCatalogEntry(entry, false),
+    );
+  }
+  assert.equal(audit.auditNodeLibraryV2(registry, []).exactRuntimeAliases.length, 1);
+  assert.equal(JSON.stringify(registry), before);
 });

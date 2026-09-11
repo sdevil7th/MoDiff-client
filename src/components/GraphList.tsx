@@ -243,6 +243,9 @@ function GraphList() {
     workflowTabs.forEach((tab) => byId.set(tab.id, tab));
     return [...byId.values()].sort((left, right) => right.updatedAt - left.updatedAt);
   }, [savedWorkflows, workflowTabs]);
+  const visibleSavedWorkflowRows = savedWorkflowRows.filter((tab) =>
+    tab.title.toLowerCase().includes(search.trim().toLowerCase()),
+  );
   const filteredGraphs = useMemo(() => {
     if (!filtersActive) return visibleGraphs;
     return allWorkflowFiles.filter(
@@ -522,7 +525,7 @@ function GraphList() {
       <section className="min-w-0 overflow-hidden border-b border-modiff-border px-2 pb-2" data-testid="my-workflows">
         <h3 className="text-modiff-label mb-1 px-1 font-semibold uppercase text-modiff-subtle-text">My workflows</h3>
         <div className="grid gap-1">
-          {savedWorkflowRows.map((tab) => (
+          {visibleSavedWorkflowRows.map((tab) => (
             <div
               key={tab.id}
               className={`group flex min-h-8 min-w-0 items-center gap-1 overflow-hidden rounded-modiff-compact px-2 text-xs ${tab.id === activeWorkflowTabId ? 'bg-hf-yellow/10 text-hf-yellow' : 'text-modiff-text hover:bg-modiff-surface-hover/50'}`}
@@ -628,11 +631,11 @@ function GraphList() {
         <div className="select-none" data-testid="workflow-list">
           {filteredGraphs.length > 0 ? (
             filteredGraphs.map((item) => renderDir(item, 0))
-          ) : (
+          ) : visibleSavedWorkflowRows.length === 0 ? (
             <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
               No saved, imported, or example workflows found.
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

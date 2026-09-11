@@ -15,6 +15,7 @@ let connectorResolution;
 let workflowConnections;
 let interfaceEditing;
 let controlPolicy;
+let durableReferences;
 let server;
 
 before(async () => {
@@ -50,6 +51,7 @@ before(async () => {
   workflowConnections = await server.ssrLoadModule('/src/workflow/useWorkflowConnections.ts');
   interfaceEditing = await server.ssrLoadModule('/src/studio/blockInterfaceEditingV2.ts');
   controlPolicy = await server.ssrLoadModule('/src/studio/managedControlPolicy.ts');
+  durableReferences = await server.ssrLoadModule('/src/stores/flowDurableReferences.ts');
 });
 
 after(async () => {
@@ -67,6 +69,65 @@ beforeEach(() => {
     historyFuture: [],
     historyTransaction: null,
   });
+});
+
+test('progress-only updates reuse policy and persistence inputs without caching semantic changes', () => {
+  const node = {
+    id: 'ordinary',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'test',
+      action: 'Generate',
+      label: 'Generate',
+      params: { prompt: { value: 'keep me' } },
+      uiState: { disabled: false },
+    },
+  };
+  const select = durableReferences.createDurableNodesSelector();
+  const initial = [node];
+  assert.equal(select(initial), initial);
+  for (let step = 0; step < 200; step++) {
+    assert.equal(
+      select([
+        {
+          ...node,
+          selected: true,
+          data: {
+            ...node.data,
+            progress: step,
+            executionProgress: { currentStep: step },
+            uiState: { disabled: false, validationMessage: `Step ${step}` },
+          },
+        },
+      ]),
+      initial,
+    );
+  }
+  for (const changed of [
+    { ...node, position: { x: 10, y: 0 } },
+    { ...node, width: 800 },
+    { ...node, parentId: 'new-parent' },
+    { ...node, data: { ...node.data, params: { prompt: { value: 'changed' } } } },
+    { ...node, data: { ...node.data, uiState: { disabled: true } } },
+    { ...node, data: { ...node.data, uiState: { blockExpanded: true } } },
+    { ...node, data: { ...node.data, blockInstanceV2: {} } },
+    { ...node, data: { ...node.data, futureSemanticField: true } },
+  ]) {
+    select(initial);
+    const replacement = [changed];
+    assert.equal(select(replacement), replacement);
+  }
+  flowStore.useFlowStore.setState({ nodes: initial });
+  const partialize = flowStore.useFlowStore.persist.getOptions().partialize;
+  const saved = partialize(flowStore.useFlowStore.getState());
+  flowStore.useFlowStore.getState().updateProgress('ordinary', 50, { executionStatus: 'running' });
+  assert.equal(partialize(flowStore.useFlowStore.getState()), saved);
+  flowStore.useFlowStore.getState().setParam('ordinary', 'prompt', 'changed');
+  const edited = partialize(flowStore.useFlowStore.getState());
+  assert.notEqual(edited, saved);
+  assert.equal(edited.nodes[0].data.params.prompt.value, 'changed');
 });
 
 function definition() {
@@ -317,7 +378,7 @@ test('nested declared controls edit one logical value, preserve siblings and exe
   );
 });
 
-test('scoped interface drafts preserve other branches and reject cross-branch consumers and stale values', () => {
+test('internal interface drafts are local and reject cross-branch consumers and stale values', () => {
   const original = nestedModularRoot('scope').data.blockInstanceV2;
   const graph = structuredClone(original.effectiveGraph);
   graph.nodes.push({
@@ -341,32 +402,35 @@ test('scoped interface drafts preserve other branches and reject cross-branch co
   });
   const draft = interfaceEditing.blockInterfaceDraftV2(source, 'denoise');
   assert.deepEqual(
-    draft.boundary.inputs.map((port) => port.portId),
-    ['prompt'],
+    draft.boundary.inputs.map((port) => port.binding),
+    [{ nodeId: 'generate', fieldOrPortId: 'prompt' }],
   );
   draft.controls[0].label = 'Scene description';
   const merged = interfaceEditing.mergeBlockInterfaceDraftV2(source, source, draft, 'denoise');
-  assert.deepEqual(
-    merged.boundary.inputs.find((port) => port.portId === 'outside'),
-    boundary.inputs[1],
+  assert.equal(
+    merged.boundary.inputs.some((port) => port.portId === 'outside'),
+    false,
   );
+  assert.deepEqual(source.effectiveInterface.boundary, boundary);
   assert.equal(merged.controls[0].label, 'Scene description');
   const bad = structuredClone(draft);
   bad.controls[0].mirrorBindings = [{ nodeId: 'outside', fieldId: 'other' }];
-  assert.throws(() => interfaceEditing.mergeBlockInterfaceDraftV2(source, source, bad, 'denoise'), /another branch/);
+  assert.throws(() => interfaceEditing.mergeBlockInterfaceDraftV2(source, source, bad, 'denoise'), /unknown node/);
   const stale = runtime.setBlockInstanceValueV2(source, 'prompt', 'changed after opening');
   assert.throws(() => interfaceEditing.mergeBlockInterfaceDraftV2(source, stale, draft, 'denoise'), /changed while/);
   assert.throws(() => interfaceEditing.blockInterfaceDraftV2(source, 'removed'), /no longer exists/);
 });
 
-test('a scoped interface cannot remove a shared cross-branch mirror entry', () => {
+test('a local interface declares only its branch without changing shared root mirror bindings', () => {
   const source = inputFanoutRoot('scope-mirror').data.blockInstanceV2;
   const draft = interfaceEditing.blockInterfaceDraftV2(source, 'generate');
-  assert.equal(draft.boundary.inputs.length, 0);
+  assert.equal(draft.boundary.inputs.length, 1);
+  assert.deepEqual(draft.boundary.inputs[0].binding, { nodeId: 'generate', fieldOrPortId: 'prompt' });
+  assert.equal(draft.boundary.inputs[0].mirrorBindings, undefined);
+  draft.boundary.inputs = [];
   const merged = interfaceEditing.mergeBlockInterfaceDraftV2(source, source, draft, 'generate');
-  assert.deepEqual(merged.boundary.inputs, source.effectiveInterface.boundary.inputs);
-  draft.boundary.inputs.push({ ...source.effectiveInterface.boundary.inputs[0], mirrorBindings: [] });
-  assert.throws(() => interfaceEditing.mergeBlockInterfaceDraftV2(source, source, draft, 'generate'), /another branch/);
+  assert.deepEqual(merged.boundary.inputs, []);
+  assert.equal(source.effectiveInterface.boundary.inputs[0].mirrorBindings.length, 1);
 });
 
 test('new interface controls seed current values including null, zero, and empty strings', () => {
@@ -529,7 +593,7 @@ test('expand, internal edits, layout persistence, collapse, and rematerializatio
   state = flowStore.useFlowStore.getState();
   assert.deepEqual(
     state.nodes.find((node) => node.id === block.id).data.blockInstanceV2.presentation.internalLayout.generate,
-    { x: 222, y: 144 },
+    { x: 222, y: 144, width: child.width, height: child.height },
   );
 
   flowStore.useFlowStore.getState().toggleUserBlockExpanded(block.id);
@@ -601,10 +665,15 @@ test('a disconnected top-level node adopts into an expanded V2 Block as one dura
   assert.ok(adoptedRoot);
   assert.ok(adopted);
   assert.equal(adopted.parentId, adoptedRoot.id);
-  assert.deepEqual(adopted.position, {
+  const preferredPosition = {
     x: ordinary.position.x - initialRoot.position.x,
     y: ordinary.position.y - initialRoot.position.y,
-  });
+  };
+  assert.equal(adopted.position.y, preferredPosition.y);
+  assert.ok(adopted.position.x >= preferredPosition.x);
+  const fittedPosition = { ...adopted.position };
+  const stored = adoptedRoot.data.blockInstanceV2.presentation.internalLayout[ordinary.id];
+  assert.deepEqual({ x: stored.x, y: stored.y }, preferredPosition);
   assert.equal(adopted.width, ordinary.width);
   assert.equal(adopted.height, ordinary.height);
   const semantic = adoptedRoot.data.blockInstanceV2.effectiveGraph.nodes.find((node) => node.nodeId === ordinary.id);
@@ -657,10 +726,7 @@ test('a disconnected top-level node adopts into an expanded V2 Block as one dura
   adopted = state.nodes.find((node) => node.data.blockProjectionNodeId === ordinary.id);
   assert.ok(adopted);
   assert.equal(adopted.parentId, expandedInstance.instanceId);
-  assert.deepEqual(adopted.position, {
-    x: ordinary.position.x - initialRoot.position.x,
-    y: ordinary.position.y - initialRoot.position.y,
-  });
+  assert.deepEqual(adopted.position, fittedPosition);
   assert.deepEqual(adoptedRoot.data.blockInstanceV2.definitionSnapshot.boundary, initialBoundary);
 });
 
@@ -711,6 +777,62 @@ test('a catalog Modular Diffusers node adopts into the selected nested container
   assert.equal(state.nodes.find((node) => node.id === initial.id).data.blockInstanceV2.effectiveGraph.nodes.length, 3);
 });
 
+test('moving a Modular leaf out and back preserves exact source identity instead of downgrading it to an untyped utility', () => {
+  const initial = nestedModularRoot('move-out-source-identity');
+  const projection = runtime.materializeBlockProjectionV2(initial);
+  const source = modularCatalogNode('retained-catalog-identity');
+  flowStore.useFlowStore.setState({ nodes: [...projection.nodes, source], edges: projection.edges });
+  const get = flowStore.useFlowStore.getState;
+  get().resetHistory();
+  get().adoptNodeIntoBlockV2(source.id, initial.id, 'denoise');
+  const projected = get().nodes.find((n) => n.data.blockProjectionNodeId === source.id);
+  const metadata = get()
+    .nodes.find((n) => n.id === initial.id)
+    .data.blockInstanceV2.effectiveGraph.nodes.find((n) => n.nodeId === source.id).modularDiffusers;
+  const movedId = get().moveNodeOutOfBlockV2(projected.id, { x: 1200, y: 800 });
+  const moved = get().nodes.find((n) => n.id === movedId);
+  assert.deepEqual(moved.data.modularDiffusersCatalogNode, metadata);
+  assert.equal(moved.data.blockProjectionOwnerId, undefined);
+  assert.equal(moved.data.blockProjectionModular, undefined);
+  get().adoptNodeIntoBlockV2(movedId, initial.id, 'denoise');
+  const returned = get()
+    .nodes.find((n) => n.id === initial.id)
+    .data.blockInstanceV2.effectiveGraph.nodes.find((n) => n.nodeId === movedId);
+  assert.deepEqual(returned.modularDiffusers, metadata);
+  assert.equal(returned.data.modularDiffusersCatalogNode, undefined);
+});
+
+test('a saved subtree binds destination context after baking source hidden values', () => {
+  const target = nestedModularRoot('context-target');
+  const fragment = modularCatalogFragment('context-source');
+  const current = fragment.data.blockInstanceV2;
+  const changed = structuredClone(current.effectiveGraph);
+  const leaf = changed.nodes.find((n) => n.nodeId === 'fragment-leaf');
+  leaf.data.params.pipeline_class = {
+    type: 'string',
+    display: 'text',
+    hidden: true,
+    value: 'QwenImageModularPipeline',
+  };
+  leaf.data.params.workflow_id = { type: 'string', display: 'text', hidden: true, value: 'image_conditioned' };
+  fragment.data.blockInstanceV2 = runtime.replaceBlockEffectiveGraphV2(current, changed);
+  const projection = runtime.materializeBlockProjectionV2(target);
+  flowStore.useFlowStore.setState({ nodes: [...projection.nodes, fragment], edges: projection.edges });
+  flowStore.useFlowStore.getState().adoptBlockFragmentIntoBlockV2(fragment.id, target.id, 'denoise');
+  const instance = flowStore.useFlowStore.getState().nodes.find((n) => n.id === target.id).data.blockInstanceV2;
+  const adopted = instance.effectiveGraph.nodes.find(
+    (n) => n.modularDiffusers?.runtimeRole === 'custom:denoise/catalog-extra/leaf',
+  );
+  assert.equal(adopted.data.params.workflow_id.value, 'text2image');
+  assert.equal(adopted.data.params.pipeline_class.value, 'QwenImageModularPipeline');
+  for (const [key, field] of Object.entries(leaf.data.params)) {
+    if (!['pipeline_class', 'workflow_id'].includes(key)) assert.deepEqual(adopted.data.params[key], field);
+  }
+  assert.deepEqual(adopted.modularDiffusers.sourcePlacementPath, ['catalog-extra', 'leaf']);
+  const restored = schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(instance)));
+  assert.deepEqual(restored.effectiveGraph, instance.effectiveGraph);
+});
+
 test('a catalog Modular subtree flattens into ordinary internal nodes and survives Save/refresh', () => {
   const target = nestedModularRoot('nested-fragment-target');
   const projection = runtime.materializeBlockProjectionV2(target);
@@ -750,11 +872,23 @@ test('a catalog Modular subtree flattens into ordinary internal nodes and surviv
   const adoptedRootProjection = state.nodes.find(
     ({ data }) => data.blockProjectionOwnerId === target.id && data.blockProjectionNodeId === adoptedRoot.nodeId,
   );
+  assert.equal(
+    adoptedRootProjection.data.blockProjectionContainerExpanded,
+    false,
+    'a newly nested Block starts collapsed',
+  );
+  assert.equal(
+    state.nodes.some(({ data }) => data.blockProjectionNodeId === adoptedLeaf.nodeId),
+    false,
+  );
+  assert.equal(state.historyPast.length, 1);
+  state.toggleBlockContainerExpandedV2(target.id, adoptedRoot.nodeId);
+  state = flowStore.useFlowStore.getState();
   const adoptedLeafProjection = state.nodes.find(
     ({ data }) => data.blockProjectionOwnerId === target.id && data.blockProjectionNodeId === adoptedLeaf.nodeId,
   );
   assert.equal(adoptedLeafProjection.parentId, adoptedRootProjection.id);
-  assert.equal(state.historyPast.length, 1);
+  assert.equal(state.historyPast.length, 2);
 
   const persisted = flowStore.normalizePersistedFlowState(state);
   assert.deepEqual(
@@ -818,6 +952,61 @@ test('connected adoption consumes an existing Block public edge without inferrin
   );
 });
 
+test('legacy punctuation-prefixed ordinary IDs remain adoptable with exact crossing edges and Undo', () => {
+  for (const id of ['_legacy-node', '-legacy-node']) {
+    const initial = root('block-v2-legacy-id');
+    const expanded = runtime.setBlockPresentationV2(initial.data.blockInstanceV2, { expanded: true });
+    const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(expanded));
+    const utility = ordinaryNode(id);
+    flowStore.useFlowStore.setState({
+      nodes: [...projection.nodes, utility],
+      edges: projection.edges,
+      historyPast: [],
+    });
+    flowStore.useFlowStore.getState().onConnect({
+      source: initial.id,
+      sourceHandle: 'image',
+      target: id,
+      targetHandle: 'input',
+    });
+    flowStore.useFlowStore.getState().adoptNodeIntoBlockV2(id, initial.id);
+    let state = flowStore.useFlowStore.getState();
+    const instance = state.nodes.find((node) => node.id === initial.id).data.blockInstanceV2;
+    const adopted = instance.effectiveGraph.nodes.find((node) => node.nodeId === `node-${id}`);
+    assert.ok(adopted);
+    for (const [key, param] of Object.entries(utility.data.params)) {
+      assert.equal(adopted.data.params[key].type, param.type);
+      assert.equal(adopted.data.params[key].display, param.display);
+      assert.deepEqual(adopted.data.params[key].value, param.value);
+    }
+    assert.deepEqual(instance.values, expanded.values);
+    assert.deepEqual(instance.definitionSnapshot, expanded.definitionSnapshot);
+    assert.deepEqual(instance.effectiveInterface, expanded.effectiveInterface);
+    assert.ok(
+      instance.effectiveGraph.edges.some(
+        (edge) =>
+          edge.sourceNodeId === 'generate' &&
+          edge.sourcePortId === 'image' &&
+          edge.targetNodeId === adopted.nodeId &&
+          edge.targetPortId === 'input',
+      ),
+    );
+    assert.doesNotThrow(() => runtime.expandBlockGraphV2ForExecution(state.nodes, state.edges));
+    state.undo();
+    const undone = flowStore.useFlowStore.getState();
+    assert.ok(undone.nodes.some((node) => node.id === id));
+    assert.deepEqual(undone.nodes.find((node) => node.id === id).position, utility.position);
+    assert.deepEqual(
+      undone.nodes.find((node) => node.id === initial.id).data.blockInstanceV2.effectiveGraph,
+      expanded.effectiveGraph,
+    );
+    assert.ok(undone.edges.some((edge) => edge.source === initial.id && edge.target === id));
+    flowStore.useFlowStore.getState().redo();
+    state = flowStore.useFlowStore.getState();
+    assert.deepEqual(state.nodes.find((node) => node.id === initial.id).data.blockInstanceV2, instance);
+  }
+});
+
 test('public-input fan-out adoption materializes every declared target and move-out coalesces one root edge', () => {
   const initial = inputFanoutRoot();
   const expandedInstance = runtime.setBlockPresentationV2(initial.data.blockInstanceV2, { expanded: true });
@@ -878,7 +1067,7 @@ test('public-input fan-out adoption materializes every declared target and move-
   );
 });
 
-test('move-out rejects incomplete public-input fan-out atomically', () => {
+test('move-out preserves a partial fan-out through its exact internal input', () => {
   const initial = inputFanoutRoot('block-v2-input-fanout-incomplete');
   const expandedInstance = runtime.setBlockPresentationV2(initial.data.blockInstanceV2, { expanded: true });
   const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(expandedInstance));
@@ -916,9 +1105,13 @@ test('move-out rejects incomplete public-input fan-out atomically', () => {
   const projectedSource = state.nodes.find((node) => node.data.blockProjectionNodeId === source.id);
   const beforeMove = flowStore.normalizePersistedFlowState(state);
   const historyBeforeMove = state.historyPast.length;
-  assert.throws(() => state.moveNodeOutOfBlockV2(projectedSource.id, { x: 980, y: 420 }), /complete fan-out/u);
+  state.moveNodeOutOfBlockV2(projectedSource.id, { x: 980, y: 420 });
+  state = flowStore.useFlowStore.getState();
+  const crossing = state.edges.find((edge) => edge.source === source.id);
+  assert.equal(crossing.targetHandle, 'block-crossing:input:generate:prompt');
+  assert.equal(state.historyPast.length, historyBeforeMove + 1);
+  state.undo();
   assert.deepEqual(flowStore.normalizePersistedFlowState(flowStore.useFlowStore.getState()), beforeMove);
-  assert.equal(flowStore.useFlowStore.getState().historyPast.length, historyBeforeMove);
 });
 
 test('V2 Block adoption rejects unsafe sources and targets without partial graph or history mutation', () => {
@@ -963,13 +1156,14 @@ test('V2 Block adoption rejects unsafe sources and targets without partial graph
     historyFuture: [],
     historyTransaction: null,
   });
+  flowStore.useFlowStore.getState().refreshConnectionVisuals();
+  flowStore.useFlowStore.getState().updateHandleConnectionStatus();
   const connectedBefore = flowStore.normalizePersistedFlowState(flowStore.useFlowStore.getState());
-  assert.throws(
-    () => flowStore.useFlowStore.getState().adoptNodeIntoBlockV2(connected.id, target.id),
-    /Disconnect it, move the node, configure the Block interface/u,
-  );
+  flowStore.useFlowStore.getState().adoptNodeIntoBlockV2(connected.id, target.id);
+  assert.equal(flowStore.useFlowStore.getState().edges.find((edge) => edge.target === sink.id).source, target.id);
+  assert.equal(flowStore.useFlowStore.getState().historyPast.length, 1);
+  flowStore.useFlowStore.getState().undo();
   assert.deepEqual(flowStore.normalizePersistedFlowState(flowStore.useFlowStore.getState()), connectedBefore);
-  assert.equal(flowStore.useFlowStore.getState().historyPast.length, 0);
 
   assertRejected({ source: ordinaryNode('malformed semantic id'), pattern: /valid stable semantic nodeId/u });
   assertRejected({
@@ -1040,6 +1234,35 @@ test('refresh projection recovery is idempotent, non-history, and preserves root
   assert.equal(flowStore.useFlowStore.getState().historyPast.length, 0);
 });
 
+test('flat-layout Blocks separate overlapping ordinary nodes without changing saved layout or execution', () => {
+  let instance = root().data.blockInstanceV2;
+  instance = runtime.addBlockEffectiveGraphSubtreeV2(
+    instance,
+    [{ ...structuredClone(instance.effectiveGraph.nodes[0]), nodeId: 'second' }],
+    [],
+    { second: { x: 150, y: 80, width: 520, height: 800 } },
+  );
+  instance = runtime.setBlockPresentationV2(instance, {
+    expanded: true,
+    internalLayout: { generate: { x: 24, y: 80, width: 520, height: 700 } },
+  });
+  assert.notEqual(instance.presentation.internalLayoutMode, 'hierarchical');
+  const before = structuredClone(instance);
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+  const children = projection.nodes.filter((node) => node.parentId === instance.instanceId);
+  assert.equal(children.length, 2);
+  assert.ok(children[1].position.x >= children[0].position.x + children[0].width);
+  assert.deepEqual(instance, before);
+  flowStore.useFlowStore.setState({ nodes: projection.nodes, edges: projection.edges });
+  flowStore.useFlowStore.getState().setNodeSize(children[0].id, 900, 1000);
+  const resized = flowStore.useFlowStore.getState().nodes.filter((node) => node.parentId === instance.instanceId);
+  assert.ok(resized[1].position.x >= resized[0].position.x + resized[0].width);
+  const after = flowStore.useFlowStore.getState().nodes.find((node) => node.id === instance.instanceId)
+    .data.blockInstanceV2;
+  assert.deepEqual(after.effectiveGraph, before.effectiveGraph);
+  assert.deepEqual(after.values, before.values);
+});
+
 test('collapsed minimum height is authority-backed and never creates an undo entry', () => {
   const block = root();
   flowStore.useFlowStore.setState({ nodes: [block], edges: [], historyPast: [] });
@@ -1051,8 +1274,40 @@ test('collapsed minimum height is authority-backed and never creates an undo ent
   assert.equal(state.historyPast.length, 0);
 });
 
+test('automatic projected-node measurements preserve Redo while explicit resizing stays undoable', () => {
+  const instance = runtime.setBlockPresentationV2(root().data.blockInstanceV2, { expanded: true });
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+  flowStore.useFlowStore.setState({ nodes: projection.nodes, edges: projection.edges });
+  const child = projection.nodes.find((node) => node.parentId === instance.instanceId);
+  assert.ok(child);
+  const flow = flowStore.useFlowStore.getState();
+  flow.setNodeSize(child.id, 800, 900);
+  flow.undo();
+  flow.ensureBlockProjectionV2(instance.instanceId);
+  const before = flowStore.useFlowStore.getState();
+  assert.equal(before.historyFuture.length, 1);
+  const values = structuredClone(
+    before.nodes.find((node) => node.id === instance.instanceId).data.blockInstanceV2.values,
+  );
+  flow.setNodeSize(child.id, 520, 720, { history: false });
+  assert.equal(flowStore.useFlowStore.getState().historyFuture, before.historyFuture);
+  assert.equal(flowStore.useFlowStore.getState().historyPast, before.historyPast);
+  flow.redo();
+  flow.ensureBlockProjectionV2(instance.instanceId);
+  const resized = flowStore.useFlowStore.getState().nodes.find((node) => node.id === child.id);
+  assert.equal(resized.width, 800);
+  assert.equal(resized.height, 900);
+  assert.deepEqual(
+    flowStore.useFlowStore.getState().nodes.find((node) => node.id === instance.instanceId).data.blockInstanceV2.values,
+    values,
+  );
+  const source = fs.readFileSync(path.join(ROOT, 'src/components/ProjectedBlockNodeV2.tsx'), 'utf8');
+  assert.match(source, /setNodeSize\(node\.id, current\.width \?\? 280, minimumHeight, \{ history: false \}\)/u);
+});
+
 test('both composite generations use one shared frame and V2 stays on the block renderer', () => {
   const blockSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'BlockNode.tsx'), 'utf8');
+  const legacySource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'LegacyUserBlockNode.tsx'), 'utf8');
   const frameSource = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'BlockNodeFrame.tsx'), 'utf8');
   const v2Source = fs.readFileSync(path.join(ROOT, 'src', 'components', 'BlockNodeV2.tsx'), 'utf8');
   const interfaceSource = fs.readFileSync(
@@ -1061,7 +1316,7 @@ test('both composite generations use one shared frame and V2 stays on the block 
   );
   const projectedSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'ProjectedBlockNodeV2.tsx'), 'utf8');
   const workflowSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'Workflow.tsx'), 'utf8');
-  assert.match(blockSource, /<BlockNodeFrame/);
+  assert.match(legacySource, /<BlockNodeFrame/);
   assert.match(v2Source, /<BlockNodeFrame/);
   assert.match(projectedSource, /<BlockNodeFrame/);
   assert.match(projectedSource, /<BlockSaveDialogV2/);
@@ -1069,8 +1324,13 @@ test('both composite generations use one shared frame and V2 stays on the block 
   assert.match(projectedSource, /toggleBlockContainerExpandedV2/);
   assert.match(projectedSource, /mode="controls"/);
   assert.match(projectedSource, /mode="connectors"/);
+  assert.match(
+    frameSource,
+    /ref=\{connectorRef\} className="shrink-0 pb-7"/,
+    'collapsed Blocks reserve the resize grip below their final connector row',
+  );
   assert.match(workflowSource, /blockProjectionModular === true \? <ProjectedBlockNodeV2/);
-  assert.match(blockSource, /blockInstanceV2 \? <BlockNodeV2/);
+  assert.match(blockSource, /if \(node.data.blockInstanceV2\) return <BlockNodeV2/);
   assert.match(workflowSource, /block: BlockNode/);
   assert.match(v2Source, /params=\{view\.controlParams\}/);
   assert.match(v2Source, /params=\{connectorParams\}/);
@@ -1244,7 +1504,7 @@ test('V2 public sockets connect in both directions without mirroring connector s
   assert.deepEqual(flowStore.useFlowStore.getState().nodes.find((node) => node.id === block.id).data.params, {});
 });
 
-test('V2 projection children reject boundary links while same-owner internal links remain allowed', () => {
+test('V2 projection children accept outside links alongside same-owner internal links', () => {
   const migrated = schema.migrateUserBlockDefinitionV1({
     id: 'connection-boundary-v2',
     name: 'Connection boundary V2',
@@ -1329,8 +1589,8 @@ test('V2 projection children reject boundary links while same-owner internal lin
   const nodes = [...projection.nodes, source, sink];
   flowStore.useFlowStore.setState({ nodes, edges: projection.edges });
 
-  assert.equal(connectorResolution.blockV2ConnectionScopeIsAllowed(nodes, source.id, generate.id), false);
-  assert.equal(connectorResolution.blockV2ConnectionScopeIsAllowed(nodes, generate.id, sink.id), false);
+  assert.equal(connectorResolution.blockV2ConnectionScopeIsAllowed(nodes, source.id, generate.id), true);
+  assert.equal(connectorResolution.blockV2ConnectionScopeIsAllowed(nodes, generate.id, sink.id), true);
   assert.equal(connectorResolution.blockV2ConnectionScopeIsAllowed(nodes, generate.id, preview.id), true);
 
   flowStore.useFlowStore.getState().onConnect({
@@ -1347,7 +1607,7 @@ test('V2 projection children reject boundary links while same-owner internal lin
     targetHandle: 'image',
     edgeType: 'smoothstep',
   });
-  assert.equal(flowStore.useFlowStore.getState().edges.length, 0, 'external child links are rejected');
+  assert.equal(flowStore.useFlowStore.getState().edges.length, 2, 'outside links use stable Block endpoints');
 
   flowStore.useFlowStore.getState().onConnect({
     source: generate.id,
@@ -1356,7 +1616,9 @@ test('V2 projection children reject boundary links while same-owner internal lin
     targetHandle: 'image',
     edgeType: 'smoothstep',
   });
-  const internal = flowStore.useFlowStore.getState().edges;
+  const internal = flowStore.useFlowStore
+    .getState()
+    .edges.filter((edge) => edge.data?.blockProjectionKind === 'internal');
   assert.equal(internal.length, 1);
   assert.equal(internal[0].source, generate.id);
   assert.equal(internal[0].target, preview.id);
@@ -1372,7 +1634,7 @@ test('V2 projection children reject boundary links while same-owner internal lin
   authoritativeRoot = flowStore.useFlowStore.getState().nodes.find((node) => node.id === expandedInstance.instanceId);
   assert.equal(authoritativeRoot.data.blockInstanceV2.effectiveGraph.edges.length, 0);
   assert.deepEqual(authoritativeRoot.data.params, {});
-  assert.equal(flowStore.useFlowStore.getState().edges.length, 0);
+  assert.equal(flowStore.useFlowStore.getState().edges.length, 2);
 });
 
 test('Configure Interface persists one instance snapshot and protects connected public ports', () => {

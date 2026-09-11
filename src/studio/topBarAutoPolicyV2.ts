@@ -29,12 +29,14 @@ export function resolveTopBarAutoPolicyV2(input: {
   workflowCanvasHydrated: boolean;
   graphBindingPresent: boolean;
   graphBindingDiverged: boolean;
+  templateGraphBuilding?: boolean;
   nodes: CustomNodeType[];
   edges: Edge[];
 }): TopBarAutoPolicyV2 {
   const graph = withoutBlockCompilationTransientsV2(input.nodes, input.edges);
   const customGraphActive =
     input.workflowCanvasHydrated &&
+    !input.templateGraphBuilding &&
     graph.nodes.length > 0 &&
     (!input.graphBindingPresent || input.graphBindingDiverged);
   const registeredBlockEligibility = inspectRegisteredBlockAutoEligibilityV2(graph.nodes, graph.edges);
@@ -42,6 +44,8 @@ export function resolveTopBarAutoPolicyV2(input: {
     graph,
     customGraphActive,
     registeredBlockEligibility,
-    autoUnavailable: customGraphActive && (input.graphBindingDiverged || !registeredBlockEligibility.eligible),
+    // Graph topology is no longer an Auto blocker. The backend checks the
+    // concrete exported scope and each model's resource contract at Run.
+    autoUnavailable: customGraphActive && registeredBlockEligibility.code === 'malformed_graph',
   };
 }

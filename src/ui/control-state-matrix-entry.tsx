@@ -10,11 +10,14 @@ import '@fontsource/ibm-plex-mono/latin-700.css';
 import '../theme/modiff.css';
 import { ControlStateMatrix } from './ControlStateMatrix';
 import { ModiffSnackbarProvider } from './ModiffSnackbarProvider';
+import { NodeFieldLayoutFixture } from './NodeFieldLayoutFixture';
+import { useStudioStore } from '../stores/useStudioStore';
+
+const fieldLayout = new URLSearchParams(window.location.search).has('node-field-layout');
+if (fieldLayout) useStudioStore.setState({ form: { ...useStudioStore.getState().form, resourceMode: 'auto' } });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ModiffSnackbarProvider>
-      <ControlStateMatrix />
-    </ModiffSnackbarProvider>
+    <ModiffSnackbarProvider>{fieldLayout ? <NodeFieldLayoutFixture /> : <ControlStateMatrix />}</ModiffSnackbarProvider>
   </StrictMode>,
 );

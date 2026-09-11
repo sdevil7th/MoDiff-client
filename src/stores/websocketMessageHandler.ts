@@ -10,6 +10,7 @@ import {
   backendWorkflowTab,
   forgetBackendWorkflow,
   isWorkflowTabClosed,
+  isOwnWorkflowAcknowledgement,
   markBackendWorkflow,
 } from '../studio/useWorkflowBackendSync';
 import { isWebsocketMessage, type TaskWebsocketMessage, type WebsocketMessage } from '../types/api';
@@ -473,7 +474,9 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         markBackendWorkflow(workflow);
         const isOpen = useStudioStore.getState().workflowTabs.some((tab) => tab.id === workflow.id);
         if (isOpen && !isWorkflowTabClosed(workflow.id)) {
-          useStudioStore.getState().mergeBackendWorkflow(workflow);
+          useStudioStore.getState().mergeBackendWorkflow(workflow, {
+            acknowledgement: isOwnWorkflowAcknowledgement(message.workflow),
+          });
         }
       }
       break;
@@ -567,6 +570,21 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       console.info('Resource retry cleanup', message);
       break;
     case 'auto_resource_plan_applied':
+      if (message.resourceUpdates?.length && shouldApplyWorkflowCanvasMutation(message, context)) {
+        const updates = message.resourceUpdates;
+        void Promise.all([import('../studio/workflowAutoExecutionV2'), import('./useStudioStore')])
+          .then(([runtime, studio]) => {
+            if (!shouldApplyWorkflowCanvasMutation(message, context)) return;
+            runtime.applyRuntimeWorkflowAutoSettingsV2(updates);
+            studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+          })
+          .catch((error) =>
+            enqueueSnackbar(error instanceof Error ? error.message : 'Could not show the run resource settings.', {
+              variant: 'warning',
+              autoHideDuration: 6000,
+            }),
+          );
+      }
       console.info('Auto resource plan applied', message);
       if (message.message) {
         enqueueSnackbar(message.message, { variant: 'info', autoHideDuration: 3200 });
@@ -689,6 +707,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
           dataType: message.data_type,
           artifacts: message.artifacts,
           outputId: message.output_id,
+          resolvedExecutionInputs: message.resolved_execution_inputs,
         });
         const currentOutputId = message.preview_slot?.currentOutputId;
         if (currentOutputId && !useStudioStore.getState().outputs.some((output) => output.id === currentOutputId)) {

@@ -2,6 +2,7 @@ import type { Edge, NodeChange, Viewport } from '@xyflow/react';
 
 import { deleteNodeCache } from '../utils/serverActions';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
+import { parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import {
   blockProjectionNodeIdV2,
   isBlockRootV2,
@@ -47,8 +48,15 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
     const params = Object.fromEntries(
       Object.entries(storedParams).map(([fieldKey, storedParam]) => {
         const liveParam = liveParams?.[fieldKey];
-        const fullLiveField = liveParam && (liveParam.display?.startsWith('ui_') || liveParam.hidden);
-        const mergedParam = fullLiveField ? { ...storedParam, ...liveParam } : { ...storedParam };
+        const fullLiveField = liveParam?.display?.startsWith('ui_');
+        // Hidden is a mode-dependent field state, not permission to overwrite
+        // an existing workflow schema with the registry's initial-mode schema.
+        // Fill absent hidden metadata, but retain explicit saved visibility,
+        // required sockets and bounds. Actions below still come only from the
+        // live registry, never from the imported document.
+        const mergedParam = fullLiveField
+          ? { ...storedParam, ...liveParam }
+          : { ...(liveParam?.hidden ? liveParam : {}), ...storedParam };
         if (fullLiveField && hasOwn(storedParam, 'value')) mergedParam.value = storedParam.value;
         if (fullLiveField && hasOwn(storedParam, 'artifacts')) mergedParam.artifacts = storedParam.artifacts;
         for (const behaviorKey of ['onChange', 'onSignal'] as const) {
@@ -89,6 +97,31 @@ async function deleteServerNodeCache(nodeIds: string[]) {
   } catch (error) {
     console.error('Failed to delete cache', error);
   }
+}
+
+function removedRuntimeCacheIds(previous: CustomNodeType[], next: CustomNodeType[], removedCanvasIds: string[]) {
+  const retainedRuntimeIds = new Set(
+    next.flatMap((node) => {
+      const instance = node.data.blockInstanceV2;
+      return (
+        instance?.effectiveGraph.nodes.map((child) => blockProjectionNodeIdV2(instance.instanceId, child.nodeId)) ?? []
+      );
+    }),
+  );
+  // Hiding a projection is not deleting its durable executable node.
+  const ids = new Set(removedCanvasIds.filter((id) => !retainedRuntimeIds.has(id)));
+  const nextById = new Map(next.map((node) => [node.id, node]));
+  for (const node of previous) {
+    const instance = node.data.blockInstanceV2;
+    if (!instance) continue;
+    const retained = new Set(
+      nextById.get(node.id)?.data.blockInstanceV2?.effectiveGraph.nodes.map((child) => child.nodeId) ?? [],
+    );
+    for (const child of instance.effectiveGraph.nodes) {
+      if (!retained.has(child.nodeId)) ids.add(blockProjectionNodeIdV2(instance.instanceId, child.nodeId));
+    }
+  }
+  return [...ids];
 }
 
 function planBlockV2InternalNodeDeletion(nodes: CustomNodeType[], nodeIds: ReadonlySet<string>) {
@@ -239,11 +272,23 @@ export function removeFlowNodesInvariant(ids: string | string[], set: FlowStoreS
     });
   const edges = decorateConnectionEdges(
     nodes,
-    get().edges.filter((edge) => !nodeIds.has(edge.source) && !nodeIds.has(edge.target)),
+    get().edges.filter((edge) => {
+      if (nodeIds.has(edge.source) || nodeIds.has(edge.target)) return false;
+      for (const [id, handle] of [
+        [edge.source, edge.sourceHandle],
+        [edge.target, edge.targetHandle],
+      ]) {
+        const changed = id ? blockDeletion.nextInstances.get(id) : undefined;
+        const endpoint = parseBlockCrossingHandleV2(handle);
+        if (changed && endpoint && !changed.effectiveGraph.nodes.some((node) => node.nodeId === endpoint.nodeId))
+          return false;
+      }
+      return true;
+    }),
   );
   set({ nodes, edges });
   reconcileGraphConnections(get);
-  void deleteServerNodeCache(removedNodeIds);
+  void deleteServerNodeCache(removedRuntimeCacheIds(currentNodes, nodes, removedNodeIds));
   return true;
 }
 
@@ -270,7 +315,8 @@ export function replaceFlowGraph(
   set: FlowStoreSet,
   get: FlowStoreGet,
 ) {
-  const previousNodeIds = new Set(get().nodes.map((node) => node.id));
+  const previousNodes = get().nodes;
+  const previousNodeIds = new Set(previousNodes.map((node) => node.id));
   const nodes = withLiveFieldContracts(replacement.nodes);
   const nextNodeIds = new Set(nodes.map((node) => node.id));
   const removedNodeIds = [...previousNodeIds].filter((nodeId) => !nextNodeIds.has(nodeId));
@@ -287,6 +333,6 @@ export function replaceFlowGraph(
   reconcileGraphConnections(get);
 
   if (options.clearRemovedCache) {
-    void deleteServerNodeCache(removedNodeIds);
+    void deleteServerNodeCache(removedRuntimeCacheIds(previousNodes, nodes, removedNodeIds));
   }
 }

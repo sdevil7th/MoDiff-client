@@ -4,17 +4,18 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { useFlowStore } from '../stores/useFlowStore';
 import { useGraphFixStore } from '../stores/useGraphFixStore';
+import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import {
   buildGraphFixPlan,
-  materializeGraphFixes,
   type GraphFixCandidate,
   type GraphFixExternalAction,
   type GraphFixIssue,
 } from '../studio/graphFixer';
+import { materializeGraphFixes } from '../studio/graphFixMaterialization';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { useRunReadinessIssues } from '../studio/useRunReadinessIssues';
 import { ModiffButton, ModiffDialog, ModiffRadioCardGroup } from '../ui';
@@ -69,6 +70,11 @@ export default function GraphFixDialog() {
     })),
   );
   const registry = useNodesStore((state) => state.nodesRegistry);
+  const modularBlockDefinitions = useHuggingFaceNodeLibraryStore((state) => state.library?.blockDefinitions);
+  useEffect(() => {
+    if (dialogOpen && !useHuggingFaceNodeLibraryStore.getState().loaded)
+      void useHuggingFaceNodeLibraryStore.getState().fetchLibrary();
+  }, [dialogOpen]);
   const edgeType = useSettingsStore((state) => state.edgeType);
   const setLeftPanelOpen = useSettingsStore((state) => state.setLeftPanelOpen);
   const setLeftPanelTabIndex = useSettingsStore((state) => state.setLeftPanelTabIndex);
@@ -81,8 +87,8 @@ export default function GraphFixDialog() {
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const readiness = useRunReadinessIssues({ sid, isConnected, includeStudio: Boolean(graphBinding) });
   const plan = useMemo(
-    () => buildGraphFixPlan({ nodes, edges, registry, readinessIssues: readiness.issues }),
-    [edges, nodes, readiness.issues, registry],
+    () => buildGraphFixPlan({ nodes, edges, registry, modularBlockDefinitions, readinessIssues: readiness.issues }),
+    [edges, nodes, readiness.issues, registry, modularBlockDefinitions],
   );
   const planFingerprint = plan.issues
     .map((issue) => `${issue.id}:${issue.candidates.map((item) => item.id).join(',')}`)
@@ -110,6 +116,31 @@ export default function GraphFixDialog() {
   }, [dialogOpen, planFingerprint, setIssueTargets, setPreviewCandidate]);
 
   const applyExternalAction = (action: GraphFixExternalAction, options: { nodeId?: string; repoId?: string } = {}) => {
+    if (action === 'inspect_node') {
+      const settings = useSettingsStore.getState();
+      setRightPanelOpen(true);
+      setRightPanelTab('studio');
+      settings.setStudioViewMode('expert');
+      const flow = useFlowStore.getState();
+      if (options.nodeId && flow.nodes.some((node) => node.id === options.nodeId)) {
+        void flow.onNodesChange(
+          flow.nodes.map((node) => ({
+            id: node.id,
+            type: 'select' as const,
+            selected: node.id === options.nodeId,
+          })),
+        );
+        const workflowTabId = useStudioStore.getState().activeWorkflowTabId;
+        if (workflowTabId)
+          settings.setWorkflowFocusRequest({
+            workflowTabId,
+            nodeId: options.nodeId,
+            requestId: Date.now(),
+            requestedAt: Date.now(),
+          });
+      }
+      return;
+    }
     if (action === 'open_setup') {
       setRightPanelOpen(true);
       setRightPanelTab('setup');
@@ -147,7 +178,12 @@ export default function GraphFixDialog() {
       const repairedIssues = plan.issues.filter((item) =>
         graphCandidates.some((candidate) => candidate.issueId === item.id),
       );
-      const result = materializeGraphFixes({ nodes, edges, registry }, candidates, edgeType);
+      const current = useFlowStore.getState();
+      const result = materializeGraphFixes(
+        { nodes: current.nodes, edges: current.edges, registry, modularBlockDefinitions },
+        candidates,
+        edgeType,
+      );
       const graphChanged = graphCandidates.length > 0;
       if (graphChanged) {
         useFlowStore
@@ -170,6 +206,7 @@ export default function GraphFixDialog() {
         nodes: currentGraph.nodes,
         edges: currentGraph.edges,
         registry,
+        modularBlockDefinitions,
         readinessIssues: validation.issues,
       });
       const unresolved = graphChanged
@@ -210,30 +247,37 @@ export default function GraphFixDialog() {
   };
 
   const selectedCount = plan.issues.filter((issue) => Boolean(selected[issue.id])).length;
+  const manualOnly = plan.candidateCount === 0;
 
   return (
     <ModiffDialog
       open={dialogOpen}
       onClose={closeDialog}
       title="Fix graph"
-      description="Review proposed repairs before applying them. Graph changes can be undone."
+      description={
+        manualOnly
+          ? 'Review the issue and correct the named node or connection.'
+          : 'Review proposed repairs before applying them. Graph changes can be undone.'
+      }
       testId="graph-fix-dialog"
       panelClassName="max-w-2xl"
       footer={
         <>
           <ModiffButton onClick={closeDialog}>Cancel</ModiffButton>
-          <ModiffButton
-            tone="primary"
-            icon={<WandSparkles size={15} />}
-            disabled={selectedCount === 0 || isApplying}
-            loading={isApplying}
-            onClick={handleApply}
-            data-testid="graph-fix-apply"
-          >
-            {navigationOnly
-              ? selectedCandidates[0]?.title
-              : `Apply ${selectedCount === 1 ? 'fix' : `${selectedCount} fixes`}`}
-          </ModiffButton>
+          {!manualOnly && (
+            <ModiffButton
+              tone="primary"
+              icon={<WandSparkles size={15} />}
+              disabled={selectedCount === 0 || isApplying}
+              loading={isApplying}
+              onClick={handleApply}
+              data-testid="graph-fix-apply"
+            >
+              {navigationOnly
+                ? selectedCandidates[0]?.title
+                : `Apply ${selectedCount === 1 ? 'fix' : `${selectedCount} fixes`}`}
+            </ModiffButton>
+          )}
         </>
       }
     >
@@ -244,9 +288,11 @@ export default function GraphFixDialog() {
       ) : (
         <div className="grid gap-4">
           <p className="text-sm text-modiff-subtle-text">
-            {navigationOnly
-              ? 'Review the detected issue and continue to the exact place where it can be resolved.'
-              : 'Review the proposed connections. MoDiff will apply graph changes together as one undoable action.'}
+            {manualOnly
+              ? 'No automatic repair is available. Your graph has not been changed.'
+              : navigationOnly
+                ? 'Review the detected issue and continue to the exact place where it can be resolved.'
+                : 'Review the proposed connections. MoDiff will apply graph changes together as one undoable action.'}
           </p>
           {plan.issues.map((issue, issueIndex) => (
             <section
@@ -260,25 +306,43 @@ export default function GraphFixDialog() {
                   <h3 className="text-sm font-semibold text-modiff-text">{issue.title}</h3>
                   <p className="mt-0.5 text-xs text-modiff-subtle-text">{issue.description}</p>
                 </div>
+                {selected[issue.id] && (
+                  <ModiffButton
+                    className="ml-auto shrink-0"
+                    aria-label={`Skip ${issue.title}`}
+                    onClick={() => {
+                      setSelected((current) => ({ ...current, [issue.id]: '' }));
+                      setPreviewCandidate(null);
+                    }}
+                  >
+                    Skip
+                  </ModiffButton>
+                )}
               </div>
-              <ModiffRadioCardGroup
-                className="mt-3"
-                aria-label={issue.title}
-                value={selected[issue.id] ?? ''}
-                options={issue.candidates.map((candidate) => ({
-                  value: candidate.id,
-                  label: candidate.title,
-                  description: candidate.description,
-                  meta: candidate.confidence === 'safe' ? 'Direct' : 'Choice',
-                }))}
-                onOptionPreview={(candidateId) =>
-                  setPreviewCandidate(issue.candidates.find((candidate) => candidate.id === candidateId) ?? null)
-                }
-                onValueChange={(candidateId) => {
-                  setSelected((current) => ({ ...current, [issue.id]: candidateId }));
-                  setPreviewCandidate(issue.candidates.find((candidate) => candidate.id === candidateId) ?? null);
-                }}
-              />
+              {issue.candidates.length === 0 ? (
+                <p className="mt-3 text-xs text-modiff-subtle-text">
+                  Manual correction required. No automatic graph change will be applied for this issue.
+                </p>
+              ) : (
+                <ModiffRadioCardGroup
+                  className="mt-3"
+                  aria-label={issue.title}
+                  value={selected[issue.id] ?? ''}
+                  options={issue.candidates.map((candidate) => ({
+                    value: candidate.id,
+                    label: candidate.title,
+                    description: candidate.description,
+                    meta: candidate.confidence === 'safe' ? 'Direct' : 'Choice',
+                  }))}
+                  onOptionPreview={(candidateId) =>
+                    setPreviewCandidate(issue.candidates.find((candidate) => candidate.id === candidateId) ?? null)
+                  }
+                  onValueChange={(candidateId) => {
+                    setSelected((current) => ({ ...current, [issue.id]: candidateId }));
+                    setPreviewCandidate(issue.candidates.find((candidate) => candidate.id === candidateId) ?? null);
+                  }}
+                />
+              )}
             </section>
           ))}
         </div>

@@ -11,31 +11,41 @@ type HuggingFaceNodeLibraryStore = {
 };
 
 const libraryFetchGate = createLatestRequestGate<'library'>();
+let pendingLibraryFetch: Promise<void> | null = null;
 
 export const useHuggingFaceNodeLibraryStore = create<HuggingFaceNodeLibraryStore>()((set) => ({
   library: null,
   loaded: false,
   error: null,
 
-  fetchLibrary: async () => {
-    const ticket = libraryFetchGate.begin('library');
-    try {
-      const library = await requestJson(`${config.serverAddress}/huggingface/node-library`, {
-        signal: ticket.signal,
-        timeoutMs: 120_000,
-        parse: parseHuggingFaceNodeLibrary,
-      });
-      if (!ticket.isLatest()) return;
-      set({ library, loaded: true, error: null });
-    } catch (error) {
-      if (!ticket.isLatest()) return;
-      set({
-        library: null,
-        loaded: true,
-        error: formatRequestError(error, 'Could not load the Hugging Face node library.'),
-      });
-    } finally {
-      ticket.finish();
-    }
+  fetchLibrary: () => {
+    // Palette, route compilation and Auto may all ask during the same mount.
+    // They need the same result; cancelling an earlier caller resolves its
+    // await before any library exists and produces a misleading missing pin.
+    if (pendingLibraryFetch) return pendingLibraryFetch;
+    pendingLibraryFetch = (async () => {
+      const ticket = libraryFetchGate.begin('library');
+      try {
+        const library = await requestJson(`${config.serverAddress}/huggingface/node-library`, {
+          signal: ticket.signal,
+          timeoutMs: 120_000,
+          parse: parseHuggingFaceNodeLibrary,
+        });
+        if (!ticket.isLatest()) return;
+        set({ library, loaded: true, error: null });
+      } catch (error) {
+        if (!ticket.isLatest()) return;
+        set({
+          library: null,
+          loaded: true,
+          error: formatRequestError(error, 'Could not load the Hugging Face node library.'),
+        });
+      } finally {
+        ticket.finish();
+      }
+    })().finally(() => {
+      pendingLibraryFetch = null;
+    });
+    return pendingLibraryFetch;
   },
 }));

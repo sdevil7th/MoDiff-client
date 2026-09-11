@@ -3063,13 +3063,16 @@ async function applyAudioPipelineContract(binding: StudioGraphBinding) {
   const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
   if (!pipelineNode || !generateNode || !pipelineClassKey) return;
 
-  const pipelineClass = useFlowStore.getState().getParam(pipelineNode, pipelineClassKey, 'value');
   const props = buildFieldProps(pipelineNode, pipelineClassKey);
   if (!props?.onChange) throw new Error('Audio loader contract action missing.');
+  // Static recipes can retain a field's declared default without an explicit
+  // value override. Compare the same effective value sent by fieldAction,
+  // otherwise a valid default-selected loader is compared against "".
+  const pipelineClass = props.value;
+  const expectedMode = String(useFlowStore.getState().getNodeParamsValues(pipelineNode).mode ?? '');
   await fieldAction(props, pipelineClass);
 
   const expectedPipelineClass = String(pipelineClass ?? '');
-  const expectedMode = String(useFlowStore.getState().getParam(pipelineNode, 'mode', 'value') ?? '');
   const exactContract = (value: unknown) =>
     value &&
     typeof value === 'object' &&
@@ -3081,7 +3084,9 @@ async function applyAudioPipelineContract(binding: StudioGraphBinding) {
     const signal = useFlowStore.getState().getParam(pipelineNode, 'pipeline', 'signal');
     return exactContract(signal && typeof signal === 'object' ? (signal as { value?: unknown }).value : undefined);
   }, 5000);
-  if (!value) throw new Error('Audio task contract timed out.');
+  if (!value) {
+    throw new Error('Audio loader contract timed out before publishing the selected pipeline and mode.');
+  }
   // Stage the exact reviewed contract before invoking the input's declarative
   // value/exec actions. This prevents an older contract from being sampled by
   // the backend action while a workflow switches between audio modes.
@@ -3091,12 +3096,17 @@ async function applyAudioPipelineContract(binding: StudioGraphBinding) {
   const expectedTask = String((value as { taskType?: unknown }).taskType ?? '');
   const accepted = await waitForValue(
     () =>
-      useFlowStore.getState().getParam(generateNode, 'task_type', 'value') === expectedTask
+      useFlowStore.getState().getNodeParamsValues(generateNode).task_type === expectedTask
         ? exactContract(useFlowStore.getState().getParam(generateNode, 'audio_contract', 'value'))
         : undefined,
     5000,
   );
-  if (!accepted) throw new Error('Audio task contract timed out.');
+  if (!accepted) {
+    const observedTask = useFlowStore.getState().getParam(generateNode, 'task_type', 'value');
+    throw new Error(
+      `Audio generator contract timed out (expected task ${expectedTask}, received ${String(observedTask)}).`,
+    );
+  }
 }
 
 async function applyVideoPipelineContract(binding: StudioGraphBinding, mode: StudioMode) {
@@ -3273,7 +3283,14 @@ function connectBaseGraph(binding: StudioGraphBinding) {
   if (modularTopologyPending(binding)) {
     return collectManagedNodeEdgeIds(binding);
   }
-  return reconcileManagedEdges(binding, desiredEdgeSpecs(binding));
+  const desired = desiredEdgeSpecs(binding);
+  if (desired.length === 0 && requiresDynamicGraphChannel(useStudioStore.getState().form, binding)) {
+    // An exact dynamic specification returns no edges until all declared
+    // fields exist. That means "still loading", not "delete every wire".
+    // Keep component signals connected so consumers can publish those fields.
+    return collectManagedNodeEdgeIds(binding);
+  }
+  return reconcileManagedEdges(binding, desired);
 }
 
 function managedConnectionsAreReady(binding: StudioGraphBinding) {
@@ -4371,6 +4388,45 @@ async function finalizeModularGraph(
 ) {
   await applyModelType(binding, form.modelType, true);
   assertGraphFinalizationActive(token);
+  const modelTypeKey = findParamKey(binding.nodes.models, ['model_type']);
+  const componentConsumers = [
+    ['text_encoders', binding.nodes.prompt, 'text_encoders'],
+    ['unet_out', binding.nodes.denoise, 'unet'],
+    ['vae_out', binding.nodes.decode, 'vae'],
+    ['vae_out', binding.nodes.imageEncode, 'vae'],
+  ] as const;
+  const dynamicOutputs = componentConsumers
+    .filter(([, nodeId, input]) => nodeId && buildFieldProps(nodeId, input)?.onSignal)
+    .map(([output]) => output);
+  if (
+    binding.nodes.models &&
+    modelTypeKey &&
+    buildFieldProps(binding.nodes.models, modelTypeKey)?.onChange &&
+    dynamicOutputs.length
+  ) {
+    // The HTTP action can finish before its WebSocket publications arrive.
+    // Wait for the loader's authoritative signals: an empty source signal can
+    // otherwise overwrite a staged consumer signal during schema reconciliation.
+    const published = await waitForValue(() => {
+      assertGraphFinalizationActive(token);
+      return dynamicOutputs.every((output) => {
+        const signal = useFlowStore.getState().getParam(binding.nodes.models!, output, 'signal');
+        return signal && typeof signal === 'object' && (signal as { value?: unknown }).value === form.modelType;
+      })
+        ? true
+        : undefined;
+    }, 5000);
+    if (!published) throw new Error('Model loader timed out before publishing the selected pipeline contract.');
+  }
+  assertGraphFinalizationActive(token);
+  // Wire the stable component inputs before requesting dynamic consumer fields.
+  // Schema refreshes clear signals on unconnected inputs; staging a VAE signal
+  // without its real edge can erase the encoder's schema during another action.
+  ensureConnection(binding.nodes.models, ['text_encoders'], binding.nodes.prompt, ['text_encoders']);
+  ensureConnection(binding.nodes.models, ['unet_out'], binding.nodes.denoise, ['unet']);
+  ensureConnection(binding.nodes.models, ['vae_out'], binding.nodes.decode, ['vae']);
+  ensureConnection(binding.nodes.models, ['vae_out'], binding.nodes.imageEncode, ['vae']);
+  ensureConnection(binding.nodes.qwenQuantization, ['quantization_config'], binding.nodes.models, ['quant_config']);
   await Promise.all([
     applyManagedInputSignal(binding.nodes.prompt, ['text_encoders'], form.modelType),
     applyManagedInputSignal(binding.nodes.denoise, ['unet'], form.modelType),
@@ -4382,11 +4438,6 @@ async function finalizeModularGraph(
   assertGraphFinalizationActive(token);
   await applyControlnetModel(binding, form);
   assertGraphFinalizationActive(token);
-
-  ensureConnection(binding.nodes.models, ['text_encoders'], binding.nodes.prompt, ['text_encoders']);
-  ensureConnection(binding.nodes.models, ['unet_out'], binding.nodes.denoise, ['unet']);
-  ensureConnection(binding.nodes.models, ['vae_out'], binding.nodes.decode, ['vae']);
-  ensureConnection(binding.nodes.qwenQuantization, ['quantization_config'], binding.nodes.models, ['quant_config']);
 
   const denoiseGroups = binding.nodes.controlnet
     ? [['embeddings'], ['latents'], ['controlnet_bundle']]
@@ -4858,8 +4909,19 @@ export async function waitForStudioGraphDefinitionStability(
     if (revisionChanged || !finalized) {
       observedRevision = graphDefinitionRevision;
       stableSince = Date.now();
-      if (!binding.controlled && bindingMatchesForm(binding, form) && !inspectStudioGraphBindingDivergence(binding)) {
+      if (
+        !finalized &&
+        !binding.controlled &&
+        bindingMatchesForm(binding, form) &&
+        !inspectStudioGraphBindingDivergence(binding)
+      ) {
         syncStudioGraphDefinition(form);
+        if (useStudioStore.getState().graphFinalization?.status === 'pending') {
+          // A late schema update invalidates the first receipt. Re-run the
+          // existing finalizer; polling an invalidated proof cannot seal it.
+          const remaining = timeout - (Date.now() - startedAt);
+          if (remaining <= 0 || !(await waitForStudioGraphFinalization(remaining, context))) return false;
+        }
       }
     } else if (Date.now() - stableSince >= quietPeriod) {
       return true;
@@ -4880,6 +4942,14 @@ export function getStudioGraphRunBlockingMessage(form: StudioFormState = useStud
   }
   if (binding && modularVideoGroupObserved(binding)) {
     if (modularVideoTopology(binding) === false || !binding.finalizationProof) return 'Route pending.';
+    if (!participatingRoleNodesAreValid(binding, plannedForm)) return 'Graph changed.';
+    return null;
+  }
+  if (executionSpecForForm(plannedForm)) {
+    // Reviewed recipes declare their own ports and managed edges. Audio passes
+    // pipeline state, not Qwen image embeddings. The finalization proof already
+    // checks the exact recipe, live schemas and every managed connection.
+    if (!binding?.finalizationProof) return 'Route pending.';
     if (!participatingRoleNodesAreValid(binding, plannedForm)) return 'Graph changed.';
     return null;
   }

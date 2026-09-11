@@ -1,30 +1,37 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react';
 import { LayoutGrid, ListChecks, Maximize2, Minimize2, Save, Settings2 } from 'lucide-react';
 import { type NodeProps, useStoreApi, useUpdateNodeInternals } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useFlowStore } from '../stores/useFlowStore';
-import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
-import { useHuggingFaceModularConditionalStore } from '../stores/useHuggingFaceModularConditionalStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import type { BlockJsonValue } from '../studio/blockSchemaV2';
 import { blockExpandedProjectionSizeV2, blockProjectedChildCountV2, blockViewModelV2 } from '../studio/blockRuntimeV2';
 import { resolveCompositeBlockCapabilitiesV2 } from '../studio/compositeBlockCapabilitiesV2';
 import { compactReviewedModularInternalLayoutV2 } from '../studio/reviewedModularGraphV2';
-import {
-  rebuildReviewedModularComposition,
-  reviewedModularCompositionRecipeForInstanceV2,
-  type ModularCompositionReceipt,
-} from '../studio/modularComposition';
 import { saveBlockInstanceV2AsNewUserDefinition } from '../studio/blockPersistenceV2';
 import { registeredRouteSetForBlockV1 } from '../studio/blockRouteSelectionV1';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
-import { BlockNodeFrame, ModiffButton, ModiffDialog, ModiffFieldShell, ModiffIconButton, ModiffSelect } from '../ui';
+import { BlockNodeFrame, ModiffDialog, ModiffFieldShell, ModiffIconButton, ModiffSelect } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
+import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
+
+const BlockDetailDialogV2 = lazy(() => import('./BlockDetailDialogV2'));
 
 /**
  * Source-neutral Block V2 projection inside the shared `type: "block"`
@@ -36,9 +43,6 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   const headerRef = useRef<HTMLElement>(null);
   const connectorRef = useRef<HTMLDivElement>(null);
   const [compositionOpen, setCompositionOpen] = useState(false);
-  const [compositionBusy, setCompositionBusy] = useState(false);
-  const [compositionReceipt, setCompositionReceipt] = useState<ModularCompositionReceipt | null>(null);
-  const [compositionBackendError, setCompositionBackendError] = useState<string | null>(null);
   const [interfaceOpen, setInterfaceOpen] = useState(false);
   const [saveChoicesOpen, setSaveChoicesOpen] = useState(false);
   const [routeSwitchBusy, setRouteSwitchBusy] = useState(false);
@@ -55,8 +59,6 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   const ensureMinimumHeight = useFlowStore((state) => state.ensureBlockMinimumHeightV2);
   const beginHistoryTransaction = useFlowStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useFlowStore((state) => state.commitHistoryTransaction);
-  const huggingFaceLibrary = useHuggingFaceNodeLibraryStore((state) => state.library);
-  const modularConditionalSnapshot = useHuggingFaceModularConditionalStore((state) => state.snapshot);
   const connectedEdges = useFlowStore(
     useShallow((state) => state.edges.filter((edge) => edge.source === node.id || edge.target === node.id)),
   );
@@ -77,11 +79,17 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
     useShallow((state) => {
       const root = state.nodes.find((candidate) => candidate.id === node.id);
       const currentInstance = root?.data.blockInstanceV2;
-      if (!currentInstance?.presentation.expanded) return null;
-      return blockExpandedProjectionSizeV2(
-        currentInstance,
-        state.nodes.filter((candidate) => candidate.data.blockProjectionOwnerId === node.id),
-      );
+      if (!root || !currentInstance?.presentation.expanded) return null;
+      const children = state.nodes.filter((candidate) => candidate.data.blockProjectionOwnerId === node.id);
+      // The frame is the drop boundary during a drag. Fitting it to a pointer
+      // position makes it chase the child and prevents moving that child out.
+      if (children.some((candidate) => candidate.dragging)) {
+        return {
+          width: root.width ?? root.measured?.width ?? 360,
+          height: root.height ?? root.measured?.height ?? 320,
+        };
+      }
+      return blockExpandedProjectionSizeV2(currentInstance, children);
     }),
   );
 
@@ -90,7 +98,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
     if (!instance) throw new Error(`Block V2 renderer received a node without blockInstanceV2 (${node.id}).`);
     return blockViewModelV2(instance);
   }, [instance, node.id]);
-  const expectedProjectionCount = instance ? blockProjectedChildCountV2(instance) : 0;
+  const expectedProjectionCount = useMemo(() => (instance ? blockProjectedChildCountV2(instance) : 0), [instance]);
   const capabilities = useMemo(() => {
     if (!instance) throw new Error(`Block V2 renderer received a node without blockInstanceV2 (${node.id}).`);
     return resolveCompositeBlockCapabilitiesV2(instance.definitionSnapshot, instance, {
@@ -112,20 +120,6 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
     () => (instance ? compactReviewedModularInternalLayoutV2(instance) : null),
     [instance],
   );
-  const compositionPlan = useMemo(() => {
-    if (!instance) return { recipe: null, error: null };
-    try {
-      return {
-        recipe: reviewedModularCompositionRecipeForInstanceV2(instance, huggingFaceLibrary, modularConditionalSnapshot),
-        error: null,
-      };
-    } catch (error) {
-      return {
-        recipe: null,
-        error: error instanceof Error ? error.message : 'Could not derive the upstream Modular composition.',
-      };
-    }
-  }, [huggingFaceLibrary, instance, modularConditionalSnapshot]);
   const connectorParams = useMemo(
     () => ({
       ...Object.fromEntries(
@@ -173,21 +167,6 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
       autoHideDuration: 2800,
     });
   }, [compactInternalLayout, node.id, scheduleNodeLayoutSync, setPresentation, updateNodeInternals]);
-  const handleValidateComposition = useCallback(async () => {
-    if (!compositionPlan.recipe || compositionBusy) return;
-    setCompositionBusy(true);
-    setCompositionReceipt(null);
-    setCompositionBackendError(null);
-    try {
-      setCompositionReceipt(await rebuildReviewedModularComposition(compositionPlan.recipe));
-    } catch (error) {
-      setCompositionBackendError(
-        error instanceof Error ? error.message : 'The backend could not rebuild this Modular composition.',
-      );
-    } finally {
-      setCompositionBusy(false);
-    }
-  }, [compositionBusy, compositionPlan.recipe]);
   const performRouteSwitch = useCallback(
     async (routeKey: string, saveActiveRoute = false) => {
       if (routeSwitchBusy) return;
@@ -495,96 +474,53 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
           </>
         }
         connectors={
-          <NodeContent
-            nodeId={node.id}
-            params={connectorParams}
-            updateStore={updateStore}
-            module={view.source.library ?? view.source.provider ?? 'MoDiff'}
-            action="BlockV2"
-            mode="connectors"
-          />
+          <>
+            <NodeContent
+              nodeId={node.id}
+              params={connectorParams}
+              updateStore={updateStore}
+              module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+              action="BlockV2"
+              mode="connectors"
+            />
+            <BlockCrossingPortsV2 nodeId={node.id} />
+          </>
         }
         connectorsWhenExpanded
       />
-      <ModiffDialog
-        open={Boolean(pendingRouteKey)}
-        onClose={() => (routeSwitchBusy ? undefined : setPendingRouteKey(null))}
-        title="Switch model route"
-        testId={`switch-block-route-v1-${node.id}`}
-        panelClassName="max-w-lg"
-        footer={
-          <>
-            <ModiffButton disabled={routeSwitchBusy} onClick={() => setPendingRouteKey(null)}>
-              Cancel
-            </ModiffButton>
-            <ModiffButton
-              disabled={routeSwitchBusy || !pendingRouteKey}
-              onClick={() => pendingRouteKey && void performRouteSwitch(pendingRouteKey, true)}
-            >
-              Save active route and switch
-            </ModiffButton>
-            <ModiffButton
-              tone="primary"
-              disabled={routeSwitchBusy || !pendingRouteKey}
-              onClick={() => pendingRouteKey && void performRouteSwitch(pendingRouteKey)}
-            >
-              Keep draft and switch
-            </ModiffButton>
-          </>
-        }
-      >
-        <p className="text-sm text-modiff-subtle-text">
-          This route has workflow-local changes. MoDiff can keep its exact values, internal graph, interface, and layout
-          as an inactive workflow draft, then restore them when you switch back. Previews and run authority are not
-          copied between models.
-        </p>
-      </ModiffDialog>
-      <ModiffDialog
-        open={compositionOpen}
-        onClose={() => setCompositionOpen(false)}
-        title="Block composition"
-        testId={`user-block-composition-dialog-${node.id}`}
-        panelClassName="max-w-lg"
-        footer={
-          <>
-            <ModiffButton onClick={() => setCompositionOpen(false)}>Close</ModiffButton>
-            {compositionPlan.recipe ? (
-              <ModiffButton tone="primary" disabled={compositionBusy} onClick={() => void handleValidateComposition()}>
-                {compositionBusy ? 'Rebuilding…' : 'Validate upstream composition'}
-              </ModiffButton>
-            ) : null}
-          </>
-        }
-      >
-        <div className="grid gap-2 text-sm text-modiff-subtle-text">
-          <p>
-            {instance?.effectiveGraph.nodes.length ?? 0} ordinary internal nodes and{' '}
-            {instance?.effectiveGraph.edges.length ?? 0} internal connections are owned by this workflow instance.
-          </p>
-          <p>
-            Source: {view.source.kind}. Customization state: {view.customization.state.replace(/_/gu, ' ')}.
-          </p>
-          {compositionPlan.recipe ? (
-            <p data-testid={`block-v2-composition-summary-${node.id}`}>
-              Exact upstream recipe: {compositionPlan.recipe.operations.length} structural operation
-              {compositionPlan.recipe.operations.length === 1 ? '' : 's'}. Parameter-only changes are stored directly on
-              this workflow instance and do not rebuild sibling blocks.
-            </p>
-          ) : null}
-          {compositionPlan.error ? (
-            <p className="text-modiff-warning" data-testid={`block-v2-composition-error-${node.id}`}>
-              {compositionPlan.error}
-            </p>
-          ) : null}
-          {compositionReceipt ? (
-            <p className="text-modiff-green" data-testid={`block-v2-composition-receipt-${node.id}`}>
-              Upstream init_pipeline() rebuild passed for {compositionReceipt.composedPaths.length} paths. Receipt{' '}
-              {compositionReceipt.receiptHash.slice(0, 20)}…
-            </p>
-          ) : null}
-          {compositionBackendError ? <p className="text-modiff-red">{compositionBackendError}</p> : null}
-        </div>
-      </ModiffDialog>
+      {pendingRouteKey ? (
+        <Suspense
+          fallback={
+            <ModiffDialog open title="Switch model route" onClose={() => !routeSwitchBusy && setPendingRouteKey(null)}>
+              <p role="status">Loading route choices…</p>
+            </ModiffDialog>
+          }
+        >
+          <BlockDetailDialogV2
+            mode="route"
+            nodeId={node.id}
+            busy={routeSwitchBusy}
+            onClose={() => setPendingRouteKey(null)}
+            onSwitch={(save) => void performRouteSwitch(pendingRouteKey, save)}
+          />
+        </Suspense>
+      ) : null}
+      {compositionOpen && instance ? (
+        <Suspense
+          fallback={
+            <ModiffDialog open title="Block composition" onClose={() => setCompositionOpen(false)}>
+              <p role="status">Loading composition details…</p>
+            </ModiffDialog>
+          }
+        >
+          <BlockDetailDialogV2
+            mode="composition"
+            nodeId={node.id}
+            instance={instance}
+            onClose={() => setCompositionOpen(false)}
+          />
+        </Suspense>
+      ) : null}
       {interfaceOpen ? <BlockInterfaceDialogV2 nodeId={node.id} onClose={() => setInterfaceOpen(false)} /> : null}
       {saveChoicesOpen ? <BlockSaveDialogV2 nodeId={node.id} onClose={() => setSaveChoicesOpen(false)} /> : null}
     </>

@@ -2,10 +2,15 @@ import type { Edge } from '@xyflow/react';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
+import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from './blockCrossingConnectionsV2';
 import {
   blockGraphHashV2,
+  blockGraphParentIdsV2,
+  blockGraphSubtreeNodeIdsV2,
+  blockModularContainerNodeIdsV2,
   blockInterfaceHashV2,
   blockInstanceValueV2,
+  blockInstancePreviewBindingsV2,
   canonicalBlockStringifyV2,
   normalizeBlockInstanceV2,
   type BlockGraphEdgeV2,
@@ -20,13 +25,24 @@ import {
   type BlockSourceV2,
   type SuggestedInputSetV2,
 } from './blockSchemaV2';
-import { blockValueTypeMatchesMediaV2, blockValueTypesAreCompatibleV2 } from './blockValueTypeCompatibilityV2';
+import {
+  blockMediaFileBoundaryIsCompatibleV2,
+  blockValueTypeMatchesMediaV2,
+  blockValueTypesAreCompatibleV2,
+} from './blockValueTypeCompatibilityV2';
+import {
+  blockContainerControlTargetsV1,
+  blockContainerFieldValueV1,
+  blockContainerInterfaceV1,
+  blockContainerPortTargetsV1,
+  remapBlockContainerInterfaceV1,
+} from './blockContainerInterfaceV1';
 
 /**
  * Pure runtime projection/reducer for the common composite-node contract.
  *
- * This module deliberately does not register a React Flow renderer or route a
- * catalog insertion through V2 yet. `BlockInstanceV2` is the only authority;
+ * This module does not own React rendering or catalog registration.
+ * `BlockInstanceV2` is the only authority;
  * every root field, child node, connector, control, and edge returned here is
  * a replaceable projection of that instance.
  */
@@ -111,13 +127,29 @@ const CHILD_COLUMNS = 3;
 const EXPANDED_CHILD_FALLBACK_WIDTH = 320;
 const EXPANDED_CHILD_FALLBACK_HEIGHT = 560;
 const EXPANDED_RIGHT_PADDING = 28;
-// Leave the public connector tray clear at the bottom of an expanded Block.
+// Minimum gutter; larger interfaces must also reserve every connector row.
 const EXPANDED_BOTTOM_PADDING = 96;
 const INTERNAL_CONTAINER_WIDTH = 340;
 const INTERNAL_CONTAINER_MIN_HEIGHT = 176;
 const INTERNAL_CHILD_LEFT = 28;
 const INTERNAL_CHILD_TOP = 76;
 const INTERNAL_CHILD_GAP = 36;
+
+function expandedConnectorInsetV2(inputCount: number, outputCount: number) {
+  // Shared NodeContent tray: 20px line height, 4px row gap, 12px vertical
+  // padding, 1px border. Keep 28px of clear canvas above it. Count hidden
+  // optional ports conservatively so connecting one cannot cover a child.
+  const rows = Math.max(inputCount, outputCount);
+  return Math.max(EXPANDED_BOTTOM_PADDING, rows * 24 + 9 + 28);
+}
+
+function expandedNodeConnectorInsetV2(params: Record<string, NodeParams>) {
+  const ports = Object.values(params);
+  return expandedConnectorInsetV2(
+    ports.filter((param) => param.isInput || param.display === 'input').length,
+    ports.filter((param) => !param.isInput && param.display === 'output').length,
+  );
+}
 // Preflight only; strict BlockSchemaV2 normalization remains authoritative.
 const BLOCK_SEMANTIC_NODE_ID_V2 = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,383}$/u;
 
@@ -158,7 +190,12 @@ const PROJECTION_NODE_FIELDS = [
   'blockProjectionPortBindings',
 ] as const;
 
-const PROJECTION_EDGE_FIELDS = ['blockProjectionOwnerId', 'blockProjectionEdgeId', 'blockProjectionKind'] as const;
+const PROJECTION_EDGE_FIELDS = [
+  'blockProjectionOwnerId',
+  'blockProjectionEdgeId',
+  'blockProjectionEdgeIds',
+  'blockProjectionKind',
+] as const;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -238,8 +275,18 @@ export function createBlockRootNodeV2(
   options: { selected?: boolean } = {},
 ): CustomNodeType {
   const instance = normalizeBlockInstanceV2(instanceValue);
+  return rootNodeForNormalizedInstanceV2(instance, options);
+}
+
+/** Private helpers below only accept a fresh clone validated by a public entry point. */
+function rootNodeForNormalizedInstanceV2(
+  instance: BlockInstanceV2,
+  options: { selected?: boolean } = {},
+): CustomNodeType {
   const definition = instance.definitionSnapshot;
-  const size = instance.presentation.expanded ? blockExpandedProjectionSizeV2(instance) : instance.presentation.size;
+  const size = instance.presentation.expanded
+    ? expandedSizeForNormalizedInstanceV2(instance)
+    : instance.presentation.size;
   return {
     id: instance.instanceId,
     type: 'block',
@@ -367,6 +414,10 @@ function connectorParam(instance: BlockInstanceV2, port: BlockPortV2, direction:
  */
 export function blockConnectorParamsV2(instanceValue: BlockInstanceV2): BlockConnectorParamsV2 {
   const instance = normalizeBlockInstanceV2(instanceValue);
+  return connectorParamsForNormalizedInstanceV2(instance);
+}
+
+function connectorParamsForNormalizedInstanceV2(instance: BlockInstanceV2): BlockConnectorParamsV2 {
   return {
     inputs: Object.fromEntries(
       instance.effectiveInterface.boundary.inputs.map((port) => [port.portId, connectorParam(instance, port, 'input')]),
@@ -391,9 +442,29 @@ const PREVIEW_DISPLAY_V2: Record<BlockPreviewStateV2['binding']['mediaType'], st
 /** Collapsed preview fields derived from the declared definition binding and instance run state. */
 export function blockPreviewViewsV2(instanceValue: BlockInstanceV2): BlockPreviewViewV2[] {
   const instance = normalizeBlockInstanceV2(instanceValue);
-  return instance.previewStates.map((preview, index) => {
-    const binding = preview.binding;
-    const base = definitionParam(instance, binding.nodeId, binding.outputPortId);
+  return previewViewsForNormalizedInstanceV2(instance);
+}
+
+/** A local view reads the same owner inventory; it never caches independent run state. */
+export function blockContainerPreviewViewsV2(instanceValue: BlockInstanceV2, nodeId: string): BlockPreviewViewV2[] {
+  const instance = normalizeBlockInstanceV2(instanceValue);
+  const local = instance.effectiveGraph.nodes.find((node) => node.nodeId === nodeId)?.containerInterface;
+  return previewViewsForNormalizedInstanceV2(instance, local?.previews ?? []);
+}
+
+function previewViewsForNormalizedInstanceV2(
+  instance: BlockInstanceV2,
+  bindings = instance.definitionSnapshot.previews.filter((binding) =>
+    instance.effectiveGraph.nodes.some((node) => node.nodeId === binding.nodeId),
+  ),
+): BlockPreviewViewV2[] {
+  return bindings.map((binding, index) => {
+    const preview = instance.previewStates.find(
+      (state) => state.binding.nodeId === binding.nodeId && state.binding.outputPortId === binding.outputPortId,
+    )!;
+    const base =
+      sourceParam(instance, binding.nodeId, binding.outputPortId) ??
+      definitionParam(instance, binding.nodeId, binding.outputPortId);
     const fieldId = `preview-${index}-${binding.nodeId}-${binding.outputPortId}`;
     return {
       previewId: fieldId,
@@ -451,15 +522,15 @@ export function blockViewModelV2(instanceValue: BlockInstanceV2): BlockViewModel
     expanded: instance.presentation.expanded,
     position: cloneJson(instance.presentation.position),
     size: cloneJson(instance.presentation.size),
-    controlParams: blockControlParamsV2(instance),
-    connectorParams: blockConnectorParamsV2(instance),
+    controlParams: controlParamsForNormalizedInstanceV2(instance),
+    connectorParams: connectorParamsForNormalizedInstanceV2(instance),
     suggestedInputs: cloneJson(suggestedInputs),
     previewStates: cloneJson(instance.previewStates),
-    previewViews: blockPreviewViewsV2(instance),
+    previewViews: previewViewsForNormalizedInstanceV2(instance),
   };
 }
 
-function parameterCustomizationState(instance: BlockInstanceV2) {
+export function parameterCustomizationState(instance: BlockInstanceV2) {
   if (
     instance.effectiveGraph.graphHash !== instance.definitionSnapshot.graph.graphHash ||
     instance.effectiveInterface.effectiveInterfaceHash !== instance.effectiveInterface.baseInterfaceHash
@@ -533,6 +604,20 @@ export function setBlockPresentationV2(
   });
 }
 
+/** Restore geometry only after a rejected structural drag, including new entries. */
+export function rejectedBlockDragPresentationPatchV2(
+  before: BlockInstanceV2['presentation'],
+  current: BlockInstanceV2['presentation'],
+): BlockPresentationPatchV2 {
+  return {
+    ...cloneJson(before),
+    internalLayout: {
+      ...Object.fromEntries(Object.keys(current.internalLayout).map((key) => [key, null])),
+      ...cloneJson(before.internalLayout),
+    },
+  };
+}
+
 /**
  * Update one declared preview without changing definition/effective-graph
  * identity or execution authority. Preview data is workflow-instance run
@@ -589,6 +674,15 @@ export function replaceBlockEffectiveGraphV2(
   const next = {
     ...instance,
     effectiveGraph,
+    previewStates: blockInstancePreviewBindingsV2(instance.definitionSnapshot, effectiveGraph).map((binding) => {
+      const previous = instance.previewStates.find(
+        (state) =>
+          state.binding.nodeId === binding.nodeId &&
+          state.binding.outputPortId === binding.outputPortId &&
+          state.binding.mediaType === binding.mediaType,
+      );
+      return previous ? { ...previous, binding } : { binding, status: 'idle' as const };
+    }),
     presentation: {
       ...instance.presentation,
       internalLayout: Object.fromEntries(
@@ -664,7 +758,10 @@ export function replaceBlockEffectiveInterfaceV2(
     const fieldId = binding.fieldId ?? binding.fieldOrPortId;
     if (!fieldId) throw new Error(`Cannot configure Block V2 ${direction} ${logicalId}: its binding is missing.`);
     const param = effectiveParam(instance, binding.nodeId, fieldId, `${direction} ${logicalId}`);
-    if (!blockValueTypesAreCompatibleV2(valueType, param.type))
+    if (
+      !blockValueTypesAreCompatibleV2(valueType, param.type) &&
+      !(direction === 'input' && blockMediaFileBoundaryIsCompatibleV2(valueType, param))
+    )
       throw new Error(`Cannot configure Block V2 ${direction} ${logicalId}: its field type is incompatible.`);
     if (direction === 'output' && param.display !== 'output')
       throw new Error(`Cannot configure Block V2 output ${logicalId}: ${binding.nodeId}.${fieldId} is not an output.`);
@@ -806,20 +903,42 @@ export function addBlockEffectiveGraphNodeV2(
   });
 }
 
+/** Copy an ordinary leaf's current values, not its replaceable canvas receipt. */
+export function duplicateOrdinaryBlockNodeV2(
+  instanceValue: BlockInstanceV2,
+  sourceId: string,
+  cloneId: string,
+): BlockInstanceV2 {
+  const instance = normalizeBlockInstanceV2(instanceValue);
+  const source = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === sourceId);
+  if (!source || source.modularDiffusers || !['custom', 'any'].includes(source.nodeType))
+    throw new Error('Duplicate node requires an ordinary leaf. Save/reinsert a Modular subtree instead.');
+  const copied = cloneJson(source);
+  copied.nodeId = cloneId;
+  delete copied.semanticRole;
+  for (const [fieldId, param] of Object.entries(copied.data.params ?? {})) {
+    if (param.display === 'output') continue;
+    const value = blockContainerFieldValueV1(instance, sourceId, fieldId);
+    if (value !== undefined) param.value = cloneJson(value);
+  }
+  const layout = instance.presentation.internalLayout[sourceId] ?? defaultChildLayout(0);
+  return addBlockEffectiveGraphNodeV2(instance, copied, {
+    layout: { ...layout, x: layout.x + 36, y: layout.y + 36 },
+  });
+}
+
 export function addBlockEffectiveGraphSubtreeV2(
   instanceValue: BlockInstanceV2,
   nodesValue: readonly BlockGraphNodeV2[],
   edgesValue: readonly BlockGraphEdgeV2[],
   layouts: BlockInstanceV2['presentation']['internalLayout'] = {},
 ): BlockInstanceV2 {
-  let instance = normalizeBlockInstanceV2(instanceValue);
+  const instance = normalizeBlockInstanceV2(instanceValue);
   if (!nodesValue.length) throw new Error('Cannot add an empty Block V2 internal subtree.');
   const addedIds = new Set<string>();
   nodesValue.forEach((node) => {
     if (addedIds.has(node.nodeId)) throw new Error(`Cannot add duplicate subtree node "${node.nodeId}".`);
-    instance = addBlockEffectiveGraphNodeV2(instance, node, {
-      ...(layouts[node.nodeId] ? { layout: layouts[node.nodeId] } : {}),
-    });
+    assertAdoptableBlockGraphNodeV2(instance, node);
     addedIds.add(node.nodeId);
   });
   const existingEdgeIds = new Set(instance.effectiveGraph.edges.map(({ edgeId }) => edgeId));
@@ -829,13 +948,26 @@ export function addBlockEffectiveGraphSubtreeV2(
       throw new Error(`Cannot add subtree edge "${edge.edgeId}": both endpoints must belong to the subtree.`);
     existingEdgeIds.add(edge.edgeId);
   });
-  if (edgesValue.length) {
-    instance = replaceBlockEffectiveGraphV2(instance, {
-      ...instance.effectiveGraph,
-      edges: [...instance.effectiveGraph.edges, ...cloneJson(edgesValue)],
-    });
-  }
-  return instance;
+  // Validate one complete graph: a container's declared ports may reference
+  // children later in the incoming subtree, never a partially inserted graph.
+  const next = replaceBlockEffectiveGraphV2(instance, {
+    nodes: [...instance.effectiveGraph.nodes, ...cloneJson(nodesValue)],
+    edges: [...instance.effectiveGraph.edges, ...cloneJson(edgesValue)],
+    executionOrder: [
+      ...semanticNodeOrder(instance).map(({ nodeId }) => nodeId),
+      ...nodesValue.map(({ nodeId }) => nodeId),
+    ],
+  });
+  return setBlockPresentationV2(next, {
+    internalLayout: Object.fromEntries(
+      nodesValue.map((node, index) => [
+        node.nodeId,
+        layouts[node.nodeId]
+          ? cloneJson(layouts[node.nodeId]!)
+          : defaultChildLayout(instance.effectiveGraph.nodes.length + index),
+      ]),
+    ),
+  });
 }
 
 /**
@@ -851,10 +983,13 @@ export function replaceBlockEffectiveGraphNodeV2(
   const instance = normalizeBlockInstanceV2(instanceValue);
   const replaced = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === replacedNodeId);
   if (!replaced) throw new Error(`Cannot replace unknown Block V2 internal node "${replacedNodeId}".`);
-  const previewBindings = instance.definitionSnapshot.previews.filter(({ nodeId }) => nodeId === replacedNodeId);
-  const ownsSealedControl = instance.effectiveInterface.controls.some((control) =>
-    sealedControlOwnsNode(control, replacedNodeId),
-  );
+  const previewBindings = instance.previewStates
+    .map(({ binding }) => binding)
+    .filter(({ nodeId }) => nodeId === replacedNodeId);
+  const ownsSealedControl = [
+    ...instance.effectiveInterface.controls,
+    ...instance.effectiveGraph.nodes.flatMap((node) => node.containerInterface?.controls ?? []),
+  ].some((control) => sealedControlOwnsNode(control, replacedNodeId));
 
   const candidate = cloneJson(replacementValue);
   const validationInstance = {
@@ -873,7 +1008,10 @@ export function replaceBlockEffectiveGraphNodeV2(
   // before. This makes protected replacement possible without weakening
   // sealed values or adding mutable preview authority to the instance schema.
   const preservesProtectedIdentity = previewBindings.length > 0 || ownsSealedControl;
-  const replacement = preservesProtectedIdentity ? { ...candidate, nodeId: replacedNodeId } : candidate;
+  const replacement = {
+    ...(preservesProtectedIdentity ? { ...candidate, nodeId: replacedNodeId } : candidate),
+    ...(replaced.containerInterface ? { containerInterface: cloneJson(replaced.containerInterface) } : {}),
+  };
   const replacementParams = sourceParams(replacement);
   const requireReplacementField = (fieldId: string, valueType: unknown, direction: 'input' | 'output' | 'control') => {
     const param = replacementParams[fieldId];
@@ -928,7 +1066,32 @@ export function replaceBlockEffectiveGraphNodeV2(
       .forEach(({ fieldId }) => requireReplacementField(fieldId, control.valueType, 'control')),
   );
 
-  const nodes = instance.effectiveGraph.nodes.map((node) => (node.nodeId === replacedNodeId ? replacement : node));
+  instance.effectiveGraph.nodes.forEach((node) => {
+    const local = node.containerInterface;
+    if (!local) return;
+    [...local.boundary.inputs, ...local.boundary.outputs].forEach((port) => {
+      const direction = local.boundary.inputs.includes(port) ? 'input' : 'output';
+      blockContainerPortTargetsV1(port)
+        .filter(({ nodeId }) => nodeId === replacedNodeId)
+        .forEach(({ fieldOrPortId }) => requireReplacementField(fieldOrPortId, port.valueType, direction));
+    });
+    local.controls.forEach((control) =>
+      blockContainerControlTargetsV1(control)
+        .filter(({ nodeId }) => nodeId === replacedNodeId)
+        .forEach(({ fieldId }) => requireReplacementField(fieldId, control.valueType, 'control')),
+    );
+  });
+  const nodeIds = new Map([[replacedNodeId, replacement.nodeId]]);
+  const previousParent = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === replacedNodeId)?.parentNodeId;
+  const nodes = instance.effectiveGraph.nodes.map((node) => {
+    const next =
+      node.nodeId === replacedNodeId
+        ? { ...replacement, ...(previousParent ? { parentNodeId: previousParent } : {}) }
+        : { ...node, ...(node.parentNodeId === replacedNodeId ? { parentNodeId: replacement.nodeId } : {}) };
+    return next.containerInterface
+      ? { ...next, containerInterface: remapBlockContainerInterfaceV1(next.containerInterface, nodeIds) }
+      : next;
+  });
   const edges = instance.effectiveGraph.edges.map((edge) => ({
     ...edge,
     ...(edge.sourceNodeId === replacedNodeId ? { sourceNodeId: replacement.nodeId } : {}),
@@ -1014,7 +1177,7 @@ export function replaceBlockEffectiveGraphNodeV2(
   });
 }
 
-function blockNodeDeletionReferencesV2(instance: BlockInstanceV2, nodeId: string) {
+function blockNodeDeletionReferencesV2(instance: BlockInstanceV2, nodeId: string, removed: ReadonlySet<string>) {
   const references = [
     ...instance.effectiveInterface.boundary.inputs
       .filter((port) => blockInputPortBindingsV2(port).some((binding) => binding.nodeId === nodeId))
@@ -1028,6 +1191,24 @@ function blockNodeDeletionReferencesV2(instance: BlockInstanceV2, nodeId: string
     ...instance.definitionSnapshot.previews
       .filter((preview) => preview.nodeId === nodeId)
       .map((preview) => `${preview.mediaType} preview (${preview.nodeId}.${preview.outputPortId})`),
+    ...instance.effectiveGraph.nodes.flatMap((owner) => {
+      const local = owner.containerInterface;
+      if (!local || removed.has(owner.nodeId)) return [];
+      return [
+        ...[...local.boundary.inputs, ...local.boundary.outputs]
+          .filter((port) => blockContainerPortTargetsV1(port).some((binding) => binding.nodeId === nodeId))
+          .map((port) => `internal Block "${owner.nodeId}" port "${port.label}" (${port.portId})`),
+        ...local.controls
+          .filter((control) => blockContainerControlTargetsV1(control).some((binding) => binding.nodeId === nodeId))
+          .map((control) => `internal Block "${owner.nodeId}" control "${control.label}" (${control.controlId})`),
+        ...(local.previews ?? [])
+          .filter((preview) => preview.nodeId === nodeId)
+          .map(
+            (preview) =>
+              `internal Block "${owner.nodeId}" ${preview.mediaType} preview (${preview.nodeId}.${preview.outputPortId})`,
+          ),
+      ];
+    }),
   ];
   return [...new Set(references)];
 }
@@ -1048,7 +1229,7 @@ export function removeBlockEffectiveGraphNodesV2(
       throw new Error(`Cannot delete unknown Block V2 internal node "${nodeId}".`);
   });
   const blockers = semanticNodeIds.flatMap((nodeId) => {
-    const references = blockNodeDeletionReferencesV2(instance, nodeId);
+    const references = blockNodeDeletionReferencesV2(instance, nodeId, new Set(semanticNodeIds));
     return references.length ? [`"${nodeId}" is referenced by ${references.join(', ')}`] : [];
   });
   if (blockers.length)
@@ -1058,6 +1239,13 @@ export function removeBlockEffectiveGraphNodesV2(
   if (semanticNodeIds.length === 0) return instance;
 
   const removed = new Set(semanticNodeIds);
+  const retainedChild = instance.effectiveGraph.nodes.find(
+    ({ nodeId, parentNodeId }) => !removed.has(nodeId) && parentNodeId && removed.has(parentNodeId),
+  );
+  if (retainedChild)
+    throw new Error(
+      `Cannot delete a Block container while child ${retainedChild.nodeId} still belongs to it. Move or delete its children first.`,
+    );
   return replaceBlockEffectiveGraphV2(instance, {
     nodes: instance.effectiveGraph.nodes.filter(({ nodeId }) => !removed.has(nodeId)),
     edges: instance.effectiveGraph.edges.filter(
@@ -1190,6 +1378,25 @@ function defaultChildLayout(index: number): BlockInstanceV2['presentation']['int
   };
 }
 
+/** Source-relative coordinates for lossless nesting between flat and hierarchical layouts. */
+export function blockRelativeInternalLayoutsV2(instanceValue: BlockInstanceV2) {
+  const instance = normalizeBlockInstanceV2(instanceValue);
+  const parents = blockGraphParentIdsV2(instance.effectiveGraph);
+  const layouts = Object.fromEntries(
+    instance.effectiveGraph.nodes.map((node, index) => [
+      node.nodeId,
+      cloneJson(instance.presentation.internalLayout[node.nodeId] ?? defaultChildLayout(index)),
+    ]),
+  );
+  if (instance.presentation.internalLayoutMode === 'hierarchical') return layouts;
+  return Object.fromEntries(
+    Object.entries(layouts).map(([id, layout]) => {
+      const parent = layouts[parents.get(id) ?? ''];
+      return [id, parent ? { ...layout, x: layout.x - parent.x, y: layout.y - parent.y } : layout];
+    }),
+  );
+}
+
 type ProjectedLayoutV2 = { x: number; y: number; width: number; height: number };
 
 function projectedOwnSizeV2(
@@ -1257,13 +1464,28 @@ function projectedHierarchicalLayoutsV2(
   instance: BlockInstanceV2,
   orderedNodes: readonly BlockGraphNodeV2[],
   parentIds: ReadonlyMap<string, string>,
+  surfaceParams: ReadonlyMap<string, Record<string, NodeParams>>,
 ) {
   const orderIndex = new Map(orderedNodes.map((node, index) => [node.nodeId, index]));
-  const layoutByNodeId = new Map(
+  const storedLayoutByNodeId = new Map(
     instance.effectiveGraph.nodes.map((node, index) => [
       node.nodeId,
       instance.presentation.internalLayout[node.nodeId] ?? defaultChildLayout(index),
     ]),
+  );
+  // Root-relative legacy/standard-pipeline Blocks need the same collision
+  // solver as hierarchical Modular Blocks. Convert only the projection's
+  // preferred coordinates; never migrate saved layout or execution authority.
+  const layoutByNodeId = new Map(
+    [...storedLayoutByNodeId].map(([id, layout]) => {
+      const parent = storedLayoutByNodeId.get(parentIds.get(id) ?? '');
+      return [
+        id,
+        parent && instance.presentation.internalLayoutMode !== 'hierarchical'
+          ? { ...layout, x: layout.x - parent.x, y: layout.y - parent.y }
+          : layout,
+      ];
+    }),
   );
   const visibleIds = new Set(orderedNodes.map(({ nodeId }) => nodeId));
   const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
@@ -1293,6 +1515,22 @@ function projectedHierarchicalLayoutsV2(
       layoutByNodeId,
     );
     const result: ProjectedLayoutV2 = { x: preferred.x, y: preferred.y, ...own };
+    if (!directChildren.length && node.nodeType !== 'group') {
+      // A fixed-height ordinary leaf has a non-shrinking header, toolbar and
+      // connector tray. Reserve a usable scrolling body as well: old catalog
+      // sizes otherwise let the tray consume the entire editable area. This
+      // is projection-only and feeds the ancestor/collision solver below.
+      const fields = Object.values({ ...sourceParams(node), ...surfaceParams.get(node.nodeId) }).filter(
+        (field) => !field.hidden,
+      );
+      const inputs = fields.filter((field) => field.isInput || field.display === 'input').length;
+      const outputs = fields.filter((field) => !field.isInput && field.display === 'output').length;
+      const hasControls = fields.some(
+        (field) => !field.isInput && field.display !== 'input' && field.display !== 'output',
+      );
+      const trayHeight = Math.max(inputs, outputs) * 24 + 16;
+      result.height = Math.max(result.height, 44 + 32 + trayHeight + (hasControls ? 120 : 24));
+    }
     if (directChildren.length && !collapsed.has(node.nodeId)) {
       const placed: ProjectedLayoutV2[] = [];
       for (const child of directChildren) {
@@ -1314,7 +1552,8 @@ function projectedHierarchicalLayoutsV2(
         placed.push(placement);
       }
       result.width = Math.max(own.width, ...placed.map((child) => child.x + child.width + EXPANDED_RIGHT_PADDING));
-      result.height = Math.max(own.height, ...placed.map((child) => child.y + child.height + EXPANDED_BOTTOM_PADDING));
+      const bottomInset = expandedNodeConnectorInsetV2({ ...sourceParams(node), ...surfaceParams.get(node.nodeId) });
+      result.height = Math.max(own.height, ...placed.map((child) => child.y + child.height + bottomInset));
     }
     resolving.delete(node.nodeId);
     resolved.set(node.nodeId, result);
@@ -1322,14 +1561,18 @@ function projectedHierarchicalLayoutsV2(
   };
 
   const roots = childrenByParent.get(instance.instanceId) ?? [];
+  const hierarchical = instance.presentation.internalLayoutMode === 'hierarchical';
+  const rootHeaderOffset = hierarchical
+    ? 0
+    : Math.max(0, CHILD_TOP - Math.min(...roots.map((node) => layoutByNodeId.get(node.nodeId)!.y)));
   const placedRoots: ProjectedLayoutV2[] = [];
   for (const root of roots) {
     const size = resolveNode(root);
     const preferred = layoutByNodeId.get(root.nodeId)!;
     const placement: ProjectedLayoutV2 = {
       ...size,
-      x: Math.max(INTERNAL_CHILD_LEFT, preferred.x),
-      y: Math.max(INTERNAL_CHILD_TOP, preferred.y),
+      x: Math.max(hierarchical ? INTERNAL_CHILD_LEFT : 0, preferred.x),
+      y: Math.max(INTERNAL_CHILD_TOP, preferred.y + rootHeaderOffset),
     };
     let guard = 0;
     while (placedRoots.some((candidate) => layoutsOverlapV2(candidate, placement))) {
@@ -1354,26 +1597,10 @@ function semanticNodeOrder(instance: BlockInstanceV2) {
   return [...ordered, ...[...byId.values()].sort((left, right) => lexicalCompare(left.nodeId, right.nodeId))];
 }
 
-function placementKey(path: readonly string[] | undefined) {
-  return path?.join('/') ?? '';
-}
-
-/** Immediate semantic parents for the visual Modular Diffusers hierarchy. */
+/** Immediate semantic parents for the shared Block hierarchy. */
 export function blockModularParentIdsV2(instanceValue: BlockInstanceV2) {
   const instance = normalizeBlockInstanceV2(instanceValue);
-  const nodeIdByPlacement = new Map<string, string>();
-  instance.effectiveGraph.nodes.forEach((node) => {
-    const path = node.modularDiffusers?.kind === 'upstream_block' ? node.modularDiffusers.placementPath : undefined;
-    if (path?.length) nodeIdByPlacement.set(placementKey(path), node.nodeId);
-  });
-  return new Map(
-    instance.effectiveGraph.nodes.flatMap((node) => {
-      const parentPath =
-        node.modularDiffusers?.kind === 'upstream_block' ? node.modularDiffusers.parentPlacementPath : undefined;
-      const parentId = parentPath?.length ? nodeIdByPlacement.get(placementKey(parentPath)) : undefined;
-      return parentId ? ([[node.nodeId, parentId]] as const) : [];
-    }),
-  );
+  return blockGraphParentIdsV2(instance.effectiveGraph);
 }
 
 function hierarchyDepth(nodeId: string, parentIds: ReadonlyMap<string, string>) {
@@ -1430,7 +1657,10 @@ function inactiveRegisteredStructuralNodeIdsV2(instance: BlockInstanceV2, parent
   );
 }
 
-function visibleSemanticNodeIdsV2(instance: BlockInstanceV2, parentIds = blockModularParentIdsV2(instance)) {
+function visibleSemanticNodeIdsV2(
+  instance: BlockInstanceV2,
+  parentIds = blockGraphParentIdsV2(instance.effectiveGraph),
+) {
   const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
   const inactiveStructural = inactiveRegisteredStructuralNodeIdsV2(instance, parentIds);
   return new Set(
@@ -1453,6 +1683,7 @@ type ProjectedSemanticEndpointV2 = {
   direction: 'input' | 'output';
   nodeId: string;
   fieldOrPortId: string;
+  mirrorBindings?: { nodeId: string; fieldOrPortId: string }[];
 };
 
 type BlockProjectionSurfaceV2 = {
@@ -1498,12 +1729,27 @@ function connectorDirection(param: NodeParams | undefined) {
  * their canvas endpoints are lifted to the nearest collapsed ancestor.
  */
 function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSurfaceV2 {
-  const parentIds = blockModularParentIdsV2(instance);
+  const parentIds = blockGraphParentIdsV2(instance.effectiveGraph);
   const collapsedContainerIds = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
   const visibleNodeIds = visibleSemanticNodeIdsV2(instance, parentIds);
   const nodesById = new Map(instance.effectiveGraph.nodes.map((node) => [node.nodeId, node]));
   const paramsByNodeId = new Map<string, Record<string, NodeParams>>();
   const bindingsByNodeId = new Map<string, Record<string, ProjectedSemanticEndpointV2>>();
+  const mirroredSurfaces = new Map<string, BlockPortV2[]>();
+  if (
+    instance.effectiveInterface.boundary.inputs.some((port) => port.mirrorBindings?.length) ||
+    instance.effectiveGraph.nodes.some((node) =>
+      node.containerInterface?.boundary.inputs.some((port) => port.mirrorBindings?.length),
+    )
+  ) {
+    for (const nodeId of blockModularContainerNodeIdsV2(instance.effectiveGraph)) {
+      if (!visibleNodeIds.has(nodeId) || nodesById.get(nodeId)?.containerInterface) continue;
+      mirroredSurfaces.set(
+        nodeId,
+        blockContainerInterfaceV1(instance, nodeId).boundary.inputs.filter((port) => port.mirrorBindings?.length),
+      );
+    }
+  }
 
   const addEndpointAtNode = (
     representativeNodeId: string,
@@ -1512,10 +1758,30 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
   ) => {
     if (!visibleNodeIds.has(representativeNodeId))
       throw new Error(`Invalid Block V2 projection: ${endpoint.nodeId} has no visible representative.`);
-    const source = sourceParams(nodesById.get(endpoint.nodeId))[endpoint.fieldOrPortId];
+    const local = nodesById.get(representativeNodeId)?.containerInterface;
+    const declaredPorts = local?.boundary[endpoint.direction === 'input' ? 'inputs' : 'outputs'];
+    const candidatePorts =
+      declaredPorts ?? (endpoint.direction === 'input' ? mirroredSurfaces.get(representativeNodeId) : undefined);
+    const localPort = candidatePorts?.find((port) =>
+      blockContainerPortTargetsV1(port).some(
+        (binding) => binding.nodeId === endpoint.nodeId && binding.fieldOrPortId === endpoint.fieldOrPortId,
+      ),
+    );
+    const boundEndpoint = localPort
+      ? {
+          direction: endpoint.direction,
+          ...localPort.binding,
+          ...(localPort.mirrorBindings ? { mirrorBindings: cloneJson(localPort.mirrorBindings) } : {}),
+        }
+      : endpoint;
+    const source = sourceParams(nodesById.get(boundEndpoint.nodeId))[boundEndpoint.fieldOrPortId];
     const reusableOwnHandle =
-      representativeNodeId === endpoint.nodeId && connectorDirection(source) === endpoint.direction;
-    const handleId = reusableOwnHandle ? endpoint.fieldOrPortId : projectionBoundaryHandleIdV2(endpoint);
+      !local && representativeNodeId === endpoint.nodeId && connectorDirection(source) === endpoint.direction;
+    const handleId = localPort
+      ? `block-local-port:${localPort.portId.length}:${localPort.portId}`
+      : reusableOwnHandle
+        ? endpoint.fieldOrPortId
+        : projectionBoundaryHandleIdV2(endpoint);
     if (!reusableOwnHandle) {
       const params = paramsByNodeId.get(representativeNodeId) ?? {};
       const bindings = bindingsByNodeId.get(representativeNodeId) ?? {};
@@ -1523,30 +1789,54 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
       if (
         previous &&
         (previous.direction !== endpoint.direction ||
-          previous.nodeId !== endpoint.nodeId ||
-          previous.fieldOrPortId !== endpoint.fieldOrPortId)
+          previous.nodeId !== boundEndpoint.nodeId ||
+          previous.fieldOrPortId !== boundEndpoint.fieldOrPortId)
       )
         throw new Error(`Invalid Block V2 projection: boundary handle collision at ${handleId}.`);
       params[handleId] = {
         ...(source ?? {}),
+        // A boundary alias is another view of the owning instance's input,
+        // not an empty socket. Resolve its value just like the editable field
+        // so Fix/readiness do not invent missing-input repairs after expansion.
+        ...(endpoint.direction === 'input'
+          ? optionalValue(blockContainerFieldValueV1(instance, boundEndpoint.nodeId, boundEndpoint.fieldOrPortId))
+          : {}),
         type: source?.type ?? preferred?.valueType ?? 'any',
-        label: preferred?.label ?? source?.label ?? words(endpoint.fieldOrPortId),
+        label:
+          localPort?.label ??
+          preferred?.label ??
+          params[handleId]?.label ??
+          source?.label ??
+          words(endpoint.fieldOrPortId),
         display: endpoint.direction,
         isInput: endpoint.direction === 'input',
         hidden: false,
         disabled: false,
-        required: preferred?.required ?? source?.required ?? false,
+        required: localPort?.required ?? preferred?.required ?? source?.required ?? false,
         fieldOptions: {
           ...(isRecord(source?.fieldOptions) ? cloneJson(source.fieldOptions) : {}),
           suppressInitialFieldAction: true,
+          ...(!localPort && !preferred && params[handleId]?.fieldOptions?.blockConnectedCrossingV2 !== false
+            ? { blockConnectedCrossingV2: true }
+            : { blockConnectedCrossingV2: false }),
         },
       };
-      bindings[handleId] = endpoint;
+      bindings[handleId] = boundEndpoint;
       paramsByNodeId.set(representativeNodeId, params);
       bindingsByNodeId.set(representativeNodeId, bindings);
     }
     return { nodeId: representativeNodeId, handleId };
   };
+
+  // An explicit local surface is independent of current wires and of the
+  // root's public interface. Never infer it anew on collapse or refresh.
+  for (const node of instance.effectiveGraph.nodes) {
+    if (!visibleNodeIds.has(node.nodeId) || !node.containerInterface) continue;
+    for (const direction of ['input', 'output'] as const) {
+      for (const port of node.containerInterface.boundary[direction === 'input' ? 'inputs' : 'outputs'])
+        addEndpointAtNode(node.nodeId, { direction, ...port.binding });
+    }
+  }
   const addEndpoint = (
     endpoint: ProjectedSemanticEndpointV2,
     preferred?: { label?: string; valueType?: string; required?: boolean },
@@ -1601,7 +1891,26 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
     addEndpointToVisibleContainers(endpoint, preferred);
   });
 
-  const edges = instance.effectiveGraph.edges.flatMap((edge): Edge[] => {
+  // A nested Block's declared public sockets also remain available on its
+  // unopened descendants. Do not leak a local interface into ancestors above
+  // its owner or create any new wire while disclosing that interface.
+  for (const node of instance.effectiveGraph.nodes) {
+    if (!node.containerInterface) continue;
+    for (const direction of ['input', 'output'] as const) {
+      for (const port of node.containerInterface.boundary[direction === 'input' ? 'inputs' : 'outputs']) {
+        for (const binding of blockContainerPortTargetsV1(port)) {
+          const endpoint = { direction, ...binding };
+          let ancestorId: string | undefined = binding.nodeId;
+          while (ancestorId && ancestorId !== node.nodeId) {
+            if (visibleNodeIds.has(ancestorId)) addEndpointAtNode(ancestorId, endpoint, port);
+            ancestorId = parentIds.get(ancestorId);
+          }
+        }
+      }
+    }
+  }
+
+  const exposeCrossingEndpoints = (edge: BlockGraphEdgeV2, declared = false) => {
     const sourceEndpoint = {
       direction: 'output' as const,
       nodeId: edge.sourceNodeId,
@@ -1614,12 +1923,19 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
     };
     const sourceAncestors = new Set(visibleContainerAncestors(edge.sourceNodeId));
     const targetAncestors = new Set(visibleContainerAncestors(edge.targetNodeId));
-    // Expanded containers keep the same typed subtree boundary as collapsed
-    // Blocks. The canvas edge still targets the exact visible leaf, while the
-    // container socket is a second projection of that semantic endpoint for
-    // ordinary external connection/reconnection gestures.
-    addEndpointToVisibleContainers(sourceEndpoint, undefined, targetAncestors);
-    addEndpointToVisibleContainers(targetEndpoint, undefined, sourceAncestors);
+    const preferred = declared ? {} : undefined;
+    if (sourceParams(nodesById.get(edge.sourceNodeId))[edge.sourcePortId]?.display === 'output')
+      addEndpointToVisibleContainers(sourceEndpoint, preferred, targetAncestors);
+    const target = sourceParams(nodesById.get(edge.targetNodeId))[edge.targetPortId];
+    if (target && target.display !== 'output')
+      addEndpointToVisibleContainers(targetEndpoint, preferred, sourceAncestors);
+    return { sourceEndpoint, targetEndpoint };
+  };
+  // Existing registered interfaces stay available; newly authored crossing
+  // sockets below are derived only from current connections.
+  instance.definitionSnapshot.graph.edges.forEach((edge) => exposeCrossingEndpoints(edge, true));
+  const edges = instance.effectiveGraph.edges.flatMap((edge): Edge[] => {
+    const { sourceEndpoint, targetEndpoint } = exposeCrossingEndpoints(edge);
     const sourceRepresentativeNodeId = visibleRepresentativeNodeIdV2(
       edge.sourceNodeId,
       parentIds,
@@ -1637,6 +1953,8 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
     if (sourceRepresentativeNodeId === targetRepresentativeNodeId) return [];
     const source = addEndpoint(sourceEndpoint);
     const target = addEndpoint(targetEndpoint);
+    if (!source || !target)
+      throw new Error(`Cannot project Block edge ${edge.edgeId}: its internal interface omits a connected port.`);
     return [
       {
         id: blockProjectionEdgeIdV2(instance.instanceId, edge.edgeId),
@@ -1657,7 +1975,85 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
       },
     ];
   });
-  return { paramsByNodeId, bindingsByNodeId, edges };
+  // Several mirrors of one public input can cross the same container. Keep
+  // every exact socket (they are not interchangeable fan-out ports), but name
+  // its consumer so the user can tell which one they are connecting to.
+  for (const [nodeId, params] of paramsByNodeId) {
+    const bindings = bindingsByNodeId.get(nodeId)!;
+    const parentPath = nodesById.get(nodeId)?.modularDiffusers?.placementPath ?? [];
+    const connectors = Object.entries({
+      ...(nodesById.get(nodeId)?.containerInterface ? {} : sourceParams(nodesById.get(nodeId))),
+      ...params,
+    }).filter(([, param]) => connectorDirection(param));
+    const groups = new Map<string, typeof connectors>();
+    for (const [handleId, param] of connectors) {
+      const key = `${connectorDirection(param)}\0${param.label ?? words(handleId)}`;
+      groups.set(key, [...(groups.get(key) ?? []), [handleId, param]]);
+    }
+    const used = new Set<string>();
+    for (const [handleId, param] of connectors) {
+      const endpoint = bindings[handleId] ?? {
+        direction: connectorDirection(param)!,
+        nodeId,
+        fieldOrPortId: handleId,
+      };
+      const sourceNode = nodesById.get(endpoint.nodeId)!;
+      const path = sourceNode.modularDiffusers?.placementPath;
+      const base = param.label ?? words(handleId);
+      const direction = endpoint.direction;
+      const peers = groups.get(`${direction}\0${base}`)!;
+      const duplicates = peers.length > 1;
+      const relativePaths = peers.map(
+        ([peerHandle]) =>
+          nodesById
+            .get(bindings[peerHandle]?.nodeId ?? nodeId)
+            ?.modularDiffusers?.placementPath?.slice(parentPath.length) ?? [],
+      );
+      let commonPrefix = 0;
+      while (
+        relativePaths.every(
+          (parts) => parts.length > commonPrefix + 1 && parts[commonPrefix] === relativePaths[0]![commonPrefix],
+        )
+      )
+        commonPrefix += 1;
+      const relativePath = path
+        ?.slice(parentPath.length + commonPrefix)
+        .map(words)
+        .join(' / ');
+      const consumer = relativePath || words(sourceNode.nodeId);
+      let label = duplicates ? `${base} · ${consumer}` : base;
+      if (used.has(`${direction}\0${label}`)) label = `${label} · ${endpoint.fieldOrPortId}`;
+      if (used.has(`${direction}\0${label}`)) label = `${base} · ${endpoint.nodeId}.${endpoint.fieldOrPortId}`;
+      used.add(`${direction}\0${label}`);
+      // Copy even native connector metadata; definition params remain immutable.
+      params[handleId] = {
+        ...param,
+        label,
+        fieldOptions: {
+          ...param.fieldOptions,
+          connectionDescription: `${path?.join(' / ') ?? sourceNode.nodeId} · ${endpoint.fieldOrPortId} (${sourceNode.nodeId})`,
+          suppressInitialFieldAction: true,
+        },
+      };
+    }
+  }
+  const groupedEdges = new Map<string, Edge>();
+  for (const edge of edges) {
+    const key = canonicalBlockStringifyV2([edge.source, edge.sourceHandle, edge.target, edge.targetHandle]);
+    const existing = groupedEdges.get(key);
+    if (!existing) groupedEdges.set(key, edge);
+    else {
+      const previousIds = existing.data?.blockProjectionEdgeIds;
+      existing.data = {
+        ...existing.data,
+        blockProjectionEdgeIds: [
+          ...(Array.isArray(previousIds) ? previousIds : [existing.data?.blockProjectionEdgeId]),
+          edge.data?.blockProjectionEdgeId,
+        ],
+      };
+    }
+  }
+  return { paramsByNodeId, bindingsByNodeId, edges: [...groupedEdges.values()] };
 }
 
 /** Resolve a visible projected handle back to its exact semantic leaf socket. */
@@ -1666,6 +2062,10 @@ export function blockProjectionConnectionEndpointV2(
   handleId: string,
   direction: 'input' | 'output',
 ) {
+  const crossing = parseBlockCrossingHandleV2(handleId);
+  if (crossing)
+    return crossing.direction === direction ? { nodeId: crossing.nodeId, fieldOrPortId: crossing.fieldOrPortId } : null;
+  if (connectorDirection(node.data.params?.[handleId]) !== direction) return null;
   const projected = node.data.blockProjectionPortBindings?.[handleId];
   if (projected) {
     if (projected.direction !== direction) return null;
@@ -1675,24 +2075,49 @@ export function blockProjectionConnectionEndpointV2(
   return { nodeId: node.data.blockProjectionNodeId, fieldOrPortId: handleId };
 }
 
+/** Explicit local fan-out is one socket connected atomically to its complete target set. */
+export function blockProjectionConnectionEndpointsV2(
+  node: Pick<CustomNodeType, 'data'>,
+  handleId: string,
+  direction: 'input' | 'output',
+) {
+  const primary = blockProjectionConnectionEndpointV2(node, handleId, direction);
+  if (!primary) return [];
+  const mirrors = node.data.blockProjectionPortBindings?.[handleId]?.mirrorBindings ?? [];
+  return direction === 'input' ? [primary, ...mirrors] : [primary];
+}
+
 /** Number of ordinary internal nodes currently visible in an expanded projection. */
 export function blockProjectedChildCountV2(instanceValue: BlockInstanceV2) {
   const instance = normalizeBlockInstanceV2(instanceValue);
   return visibleSemanticNodeIdsV2(instance).size;
 }
 
-function projectedChildren(instance: BlockInstanceV2, absolute: boolean) {
+function projectedChildren(instance: BlockInstanceV2, absolute: boolean, included?: ReadonlySet<string>) {
   const values = projectedBindingValues(instance);
   const semanticOrder = semanticNodeOrder(instance);
   const semanticOrderIndex = new Map(semanticOrder.map((node, index) => [node.nodeId, index]));
-  const parentIds = blockModularParentIdsV2(instance);
-  const childCount = new Map<string, number>();
+  const parentIds = blockGraphParentIdsV2(instance.effectiveGraph);
+  const childCount = new Map(blockModularContainerNodeIdsV2(instance.effectiveGraph).map((id) => [id, 0]));
+  const disabledNodeIds = new Set(
+    semanticOrder
+      .filter((node) => isRecord(node.data.uiState) && node.data.uiState.disabled === true)
+      .map(({ nodeId }) => nodeId),
+  );
+  const disabledByAncestor = (nodeId: string) => {
+    let parent = parentIds.get(nodeId);
+    while (parent) {
+      if (disabledNodeIds.has(parent)) return true;
+      parent = parentIds.get(parent);
+    }
+    return false;
+  };
   parentIds.forEach((parentId) => childCount.set(parentId, (childCount.get(parentId) ?? 0) + 1));
   // React Flow requires every parent to precede its descendants.
   // Canvas disclosure is presentation-only. Execution always materializes the
   // complete effective graph, including descendants hidden by a container.
   const visibleNodeIds = absolute
-    ? new Set(instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId))
+    ? (included ?? new Set(instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId)))
     : visibleSemanticNodeIdsV2(instance, parentIds);
   const collapsedContainerIds = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
   const projectionSurface = absolute ? null : blockProjectionSurfaceV2(instance);
@@ -1722,20 +2147,66 @@ function projectedChildren(instance: BlockInstanceV2, absolute: boolean) {
         containerControls.set(parent, params);
       }
     }
+    for (const node of instance.effectiveGraph.nodes) {
+      let inheritedLocal = false;
+      let ancestorId = parentIds.get(node.nodeId);
+      while (ancestorId && !inheritedLocal) {
+        inheritedLocal = Boolean(
+          instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === ancestorId)?.containerInterface,
+        );
+        ancestorId = parentIds.get(ancestorId);
+      }
+      if (!node.containerInterface && !(childCount.has(node.nodeId) && inheritedLocal)) continue;
+      const surface = blockContainerInterfaceV1(instance, node.nodeId);
+      const params: Record<string, NodeParams> = {};
+      for (const control of surface.controls) {
+        // An executable loop already renders its own native fields. Only
+        // descendant aliases are needed unless this view was configured.
+        if (!node.containerInterface && control.binding.nodeId === node.nodeId) continue;
+        const base = sourceParam(instance, control.binding.nodeId, control.binding.fieldId);
+        const display = base?.display === 'input' || base?.display === 'output' ? undefined : base?.display;
+        const targets = blockContainerControlTargetsV1(control);
+        params[`block-local-control:${control.controlId.length}:${control.controlId}`] = {
+          ...base,
+          label: control.label,
+          type: control.valueType,
+          display,
+          value: blockContainerFieldValueV1(instance, control.binding.nodeId, control.binding.fieldId),
+          hidden: false,
+          isInput: false,
+          disabled: Boolean(control.sealed || base?.disabled),
+          ...(control.required === undefined ? {} : { required: control.required }),
+          fieldOptions: {
+            ...base?.fieldOptions,
+            suppressInitialFieldAction: true,
+            blockContainerControlV1: {
+              schemaVersion: 1,
+              ownerId: instance.instanceId,
+              containerNodeId: node.nodeId,
+              controlId: control.controlId,
+            },
+            connectionDescription: targets.map(({ nodeId, fieldId }) => `${nodeId}.${fieldId}`).join(', '),
+          },
+        };
+      }
+      containerControls.set(node.nodeId, params);
+    }
   }
   const orderedNodes = semanticOrder
     .filter(({ nodeId }) => visibleNodeIds.has(nodeId))
     .sort((left, right) => {
+      // React Flow's parent-first requirement is not execution order. Moving
+      // an ordinary child between containers must not reorder run paths.
+      if (absolute) return semanticOrderIndex.get(left.nodeId)! - semanticOrderIndex.get(right.nodeId)!;
       const depthDifference = hierarchyDepth(left.nodeId, parentIds) - hierarchyDepth(right.nodeId, parentIds);
       return depthDifference || semanticOrderIndex.get(left.nodeId)! - semanticOrderIndex.get(right.nodeId)!;
     });
   const storedLayouts = orderedNodes.map(
     (graphNode, index) => instance.presentation.internalLayout[graphNode.nodeId] ?? defaultChildLayout(index),
   );
-  const resolvedHierarchicalLayouts =
-    !absolute && instance.presentation.internalLayoutMode === 'hierarchical'
-      ? projectedHierarchicalLayoutsV2(instance, orderedNodes, parentIds)
-      : null;
+  const resolvedHierarchicalLayouts = !absolute
+    ? projectedHierarchicalLayoutsV2(instance, orderedNodes, parentIds, projectionSurface!.paramsByNodeId)
+    : null;
   const layouts = orderedNodes.map(
     (graphNode, index) => resolvedHierarchicalLayouts?.get(graphNode.nodeId) ?? storedLayouts[index]!,
   );
@@ -1776,7 +2247,8 @@ function projectedChildren(instance: BlockInstanceV2, absolute: boolean) {
       ? (instance.presentation.internalLayout[semanticParentId] ??
         defaultChildLayout(semanticOrderIndex.get(semanticParentId) ?? 0))
       : null;
-    const hierarchical = instance.presentation.internalLayoutMode === 'hierarchical';
+    const hierarchical =
+      Boolean(resolvedHierarchicalLayouts) || instance.presentation.internalLayoutMode === 'hierarchical';
     const projectedLayout = {
       ...layout,
       x: semanticParentId && !hierarchical && parentLayout ? layout.x - parentLayout.x : layout.x,
@@ -1790,8 +2262,22 @@ function projectedChildren(instance: BlockInstanceV2, absolute: boolean) {
       ? blockProjectionNodeIdV2(instance.instanceId, semanticParentId)
       : instance.instanceId;
     const projectedData = projectedNodeData(instance, graphNode, values);
-    const canvasParams = { ...projectedData.params, ...boundaryParams };
+    const canvasParams = {
+      ...Object.fromEntries(
+        Object.entries(projectedData.params).map(([key, param]) => [
+          key,
+          !absolute && graphNode.containerInterface && !param.display?.startsWith('ui_')
+            ? { ...param, hidden: true, isInput: false }
+            : param,
+        ]),
+      ),
+      ...boundaryParams,
+    };
     for (const [alias, control] of Object.entries(containerControls.get(graphNode.nodeId) ?? {})) {
+      if (control.fieldOptions?.blockContainerControlV1) {
+        canvasParams[alias] = control;
+        continue;
+      }
       const logicalId = (control.fieldOptions?.blockBindingV2 as { logicalId: string }).logicalId;
       const existing = Object.entries(projectedData.params).find(
         ([, param]) =>
@@ -1803,6 +2289,10 @@ function projectedChildren(instance: BlockInstanceV2, absolute: boolean) {
       // Executable containers can already own a bound field (for example the
       // denoise loop's guidance). Reuse its native field key, not a second row.
       canvasParams[existing?.[0] ?? alias] = control;
+    }
+    if (!absolute && graphNode.containerInterface?.previews) {
+      for (const preview of previewViewsForNormalizedInstanceV2(instance, graphNode.containerInterface.previews))
+        Object.assign(canvasParams, preview.params);
     }
     return {
       id: blockProjectionNodeIdV2(instance.instanceId, graphNode.nodeId),
@@ -1825,6 +2315,12 @@ function projectedChildren(instance: BlockInstanceV2, absolute: boolean) {
       zIndex: depth + 1,
       data: {
         ...projectedData,
+        // Execution deliberately has no canvas parentId. Carry the effective
+        // disabled state so a disabled nested container cannot still run its
+        // descendants through the top-level workflow Run button.
+        ...(absolute && disabledByAncestor(graphNode.nodeId)
+          ? { uiState: { ...projectedData.uiState, disabled: true } }
+          : {}),
         ...(absolute ? {} : { params: canvasParams }),
         ...(graphNode.modularDiffusers?.kind === 'upstream_block' ? { blockProjectionModular: true } : {}),
         ...(childCount.has(graphNode.nodeId)
@@ -1875,6 +2371,10 @@ export function blockExpandedProjectionSizeV2(
   projectedNodes?: readonly CustomNodeType[],
 ) {
   const instance = normalizeBlockInstanceV2(instanceValue);
+  return expandedSizeForNormalizedInstanceV2(instance, projectedNodes);
+}
+
+function expandedSizeForNormalizedInstanceV2(instance: BlockInstanceV2, projectedNodes?: readonly CustomNodeType[]) {
   const children = projectedNodes ?? projectedChildren(instance, false);
   // Collapsed/user-resized geometry and expanded/composition geometry are two
   // independent projections. Starting from presentation.size caused a resize
@@ -1884,6 +2384,10 @@ export function blockExpandedProjectionSizeV2(
   let width = DEFAULT_ROOT_WIDTH;
   let height = DEFAULT_ROOT_HEIGHT;
   const byId = new Map(children.map((child) => [child.id, child]));
+  const bottomInset = expandedConnectorInsetV2(
+    instance.effectiveInterface.boundary.inputs.length,
+    instance.effectiveInterface.boundary.outputs.length,
+  );
 
   children.forEach((child) => {
     if (child.data.blockProjectionOwnerId !== instance.instanceId) return;
@@ -1891,7 +2395,7 @@ export function blockExpandedProjectionSizeV2(
     const childWidth = child.measured?.width ?? child.width ?? EXPANDED_CHILD_FALLBACK_WIDTH;
     const childHeight = child.measured?.height ?? child.height ?? EXPANDED_CHILD_FALLBACK_HEIGHT;
     width = Math.max(width, position.x + childWidth + EXPANDED_RIGHT_PADDING);
-    height = Math.max(height, position.y + childHeight + EXPANDED_BOTTOM_PADDING);
+    height = Math.max(height, position.y + childHeight + bottomInset);
   });
 
   return { width: Math.ceil(width), height: Math.ceil(height) };
@@ -1919,7 +2423,7 @@ function projectedInternalEdges(instance: BlockInstanceV2, mode: 'canvas' | 'exe
 export function materializeBlockProjectionV2(rootValue: CustomNodeType): BlockFlowGraphV2 {
   const instance = normalizedRootInstance(rootValue);
   const root = {
-    ...createBlockRootNodeV2(instance),
+    ...rootNodeForNormalizedInstanceV2(instance),
     ...(rootValue.selected === undefined ? {} : { selected: rootValue.selected }),
   };
   if (!instance.presentation.expanded) return { nodes: [root], edges: [] };
@@ -2022,6 +2526,10 @@ function validatedProjectionInventory(
   });
 
   const edgeIds = new Set<string>();
+  // Call-local only: every owner above has just been validated. Rebuilding the
+  // entire visible surface per edge made Save/Run quadratic in graph links.
+  // Never retain this map across calls or cache caller-owned mutable authority.
+  const expectedEdgesByOwner = new Map<string, Map<string, Edge>>();
   edges.forEach((edge) => {
     const receipt = projectionEdgeReceipt(edge);
     if (!receipt) {
@@ -2039,9 +2547,17 @@ function validatedProjectionInventory(
       throw new Error(
         `Invalid Block V2 projection edge ${edge.id}: semantic edge ${receipt.semanticEdgeId} is not in the effective graph.`,
       );
-    const expected = projectedInternalEdges(owner, 'canvas').find(
-      (candidate) => candidate.data?.blockProjectionEdgeId === receipt.semanticEdgeId,
-    );
+    let expectedEdges = expectedEdgesByOwner.get(receipt.ownerId);
+    if (!expectedEdges) {
+      expectedEdges = new Map(
+        projectedInternalEdges(owner, 'canvas').map((candidate) => [
+          String(candidate.data?.blockProjectionEdgeId),
+          candidate,
+        ]),
+      );
+      expectedEdgesByOwner.set(receipt.ownerId, expectedEdges);
+    }
+    const expected = expectedEdges.get(receipt.semanticEdgeId);
     if (!expected)
       throw new Error(
         `Invalid Block V2 projection edge ${edge.id}: semantic edge ${receipt.semanticEdgeId} is hidden inside one collapsed subtree.`,
@@ -2052,6 +2568,8 @@ function validatedProjectionInventory(
       edge.target !== expected.target ||
       edge.sourceHandle !== expected.sourceHandle ||
       edge.targetHandle !== expected.targetHandle ||
+      canonicalBlockStringifyV2(edge.data?.blockProjectionEdgeIds ?? null) !==
+        canonicalBlockStringifyV2(expected.data?.blockProjectionEdgeIds ?? null) ||
       !nodeIds.has(expected.source) ||
       !nodeIds.has(expected.target)
     )
@@ -2071,26 +2589,49 @@ function effectiveParam(instance: BlockInstanceV2, nodeId: string, fieldId: stri
   return params[fieldId]!;
 }
 
-function mediaFileBoundaryIsCompatible(port: BlockPortV2, param: NodeParams) {
-  if (
-    param.display !== 'filebrowser' ||
-    !blockValueTypesAreCompatibleV2(param.type, 'string') ||
-    !param.fieldOptions ||
-    !Array.isArray(param.fieldOptions.fileTypes)
-  )
-    return false;
-  return (['image', 'video', 'audio'] as const).some(
-    (mediaType) =>
-      (param.fieldOptions!.fileTypes as unknown[]).some(
-        (fileType) => String(fileType).trim().toLowerCase() === mediaType,
-      ) && blockValueTypeMatchesMediaV2(port.valueType, mediaType),
+/** Validate a proposed wire against durable fields, never transient canvas metadata. */
+export function assertBlockInternalConnectionV2(
+  instance: BlockInstanceV2,
+  sourceEndpoint: { nodeId: string; fieldOrPortId: string },
+  targetEndpoint: { nodeId: string; fieldOrPortId: string },
+) {
+  const controls = [
+    ...instance.effectiveInterface.controls,
+    ...instance.effectiveGraph.nodes.flatMap((node) => node.containerInterface?.controls ?? []),
+  ];
+  const sealed = controls.find(
+    (control) =>
+      control.sealed &&
+      controlBindingTargetsV2(control).some(
+        (binding) => binding.nodeId === targetEndpoint.nodeId && binding.fieldId === targetEndpoint.fieldOrPortId,
+      ),
   );
+  if (sealed)
+    throw new Error(
+      `Cannot wire sealed Block control "${sealed.label}". Use the reviewed model/route selector or replace its owning node explicitly.`,
+    );
+  const source = effectiveParam(instance, sourceEndpoint.nodeId, sourceEndpoint.fieldOrPortId, 'connection source');
+  const target = effectiveParam(instance, targetEndpoint.nodeId, targetEndpoint.fieldOrPortId, 'connection target');
+  if (
+    source.display !== 'output' ||
+    target.display === 'output' ||
+    !blockValueTypesAreCompatibleV2(source.type, target.type)
+  )
+    throw new Error('Cannot connect these Block fields: their current semantic types or directions are incompatible.');
 }
 
-function validateEffectiveGraphForExecution(instance: BlockInstanceV2) {
-  instance.effectiveGraph.nodes.forEach(runtimeNodeType);
+function validateEffectiveGraphForExecution(instance: BlockInstanceV2, included?: ReadonlySet<string>) {
+  const inScope = (nodeId: string) => !included || included.has(nodeId);
+  const scopedEdges = instance.effectiveGraph.edges.filter(
+    (edge) => inScope(edge.sourceNodeId) && inScope(edge.targetNodeId),
+  );
+  const scoped = included
+    ? { ...instance, effectiveGraph: { ...instance.effectiveGraph, edges: scopedEdges } }
+    : instance;
+  instance.effectiveGraph.nodes.filter((node) => inScope(node.nodeId)).forEach(runtimeNodeType);
   instance.effectiveInterface.controls.forEach((control) => {
     controlBindingTargetsV2(control).forEach((binding) => {
+      if (!inScope(binding.nodeId)) return;
       const param = effectiveParam(instance, binding.nodeId, binding.fieldId, `control ${control.controlId}`);
       if (!blockValueTypesAreCompatibleV2(control.valueType, param.type) || param.display === 'output')
         throw new Error(
@@ -2101,6 +2642,7 @@ function validateEffectiveGraphForExecution(instance: BlockInstanceV2) {
   const validatePort = (port: BlockPortV2, direction: 'input' | 'output') => {
     const bindings = direction === 'input' ? blockInputPortBindingsV2(port) : [port.binding];
     bindings.forEach((binding) => {
+      if (!inScope(binding.nodeId)) return;
       const param = effectiveParam(
         instance,
         binding.nodeId,
@@ -2109,7 +2651,7 @@ function validateEffectiveGraphForExecution(instance: BlockInstanceV2) {
       );
       if (
         (!blockValueTypesAreCompatibleV2(port.valueType, param.type) &&
-          !(direction === 'input' && mediaFileBoundaryIsCompatible(port, param))) ||
+          !(direction === 'input' && blockMediaFileBoundaryIsCompatibleV2(port.valueType, param))) ||
         (direction === 'input' && param.display === 'output')
       )
         throw new Error(
@@ -2119,10 +2661,18 @@ function validateEffectiveGraphForExecution(instance: BlockInstanceV2) {
   };
   instance.effectiveInterface.boundary.inputs.forEach((port) => validatePort(port, 'input'));
   instance.effectiveInterface.boundary.outputs.forEach((port) => validatePort(port, 'output'));
-  instance.definitionSnapshot.previews.forEach((preview) => {
-    effectiveParam(instance, preview.nodeId, preview.outputPortId, `preview ${preview.nodeId}.${preview.outputPortId}`);
-  });
-  instance.effectiveGraph.edges.forEach((edge) => {
+  instance.previewStates
+    .map(({ binding }) => binding)
+    .forEach((preview) => {
+      if (!inScope(preview.nodeId)) return;
+      effectiveParam(
+        instance,
+        preview.nodeId,
+        preview.outputPortId,
+        `preview ${preview.nodeId}.${preview.outputPortId}`,
+      );
+    });
+  scopedEdges.forEach((edge) => {
     const source = effectiveParam(
       instance,
       edge.sourceNodeId,
@@ -2135,22 +2685,50 @@ function validateEffectiveGraphForExecution(instance: BlockInstanceV2) {
       edge.targetPortId,
       `internal edge ${edge.edgeId} target`,
     );
-    if (!blockValueTypesAreCompatibleV2(source.type, target.type))
+    if (
+      source.display !== 'output' ||
+      target.display === 'output' ||
+      !blockValueTypesAreCompatibleV2(source.type, target.type)
+    )
       throw new Error(
         `Cannot expand Block V2 instance ${instance.instanceId}: internal edge ${edge.edgeId} connects incompatible types.`,
       );
+    assertBlockInternalConnectionV2(
+      scoped,
+      { nodeId: edge.sourceNodeId, fieldOrPortId: edge.sourcePortId },
+      { nodeId: edge.targetNodeId, fieldOrPortId: edge.targetPortId },
+    );
   });
-}
-
-function effectiveBoundaryNodeId(instance: BlockInstanceV2, port: BlockPortV2) {
-  return blockProjectionNodeIdV2(instance.instanceId, port.binding.nodeId);
 }
 
 /**
  * Replace every V2 root with the same effective internal graph used by the
  * canvas projection and translate stable public boundary edges for execution.
  */
-export function expandBlockGraphV2ForExecution(nodesValue: CustomNodeType[], edgesValue: Edge[]): BlockFlowGraphV2 {
+export function expandBlockGraphV2ForExecution(
+  nodesValue: CustomNodeType[],
+  edgesValue: Edge[],
+  targetNodeId?: string,
+): BlockFlowGraphV2 {
+  const selected = nodesValue.find(({ id }) => id === targetNodeId);
+  const selectedOwnerId = selected?.data.blockInstanceV2
+    ? selected.id
+    : selected?.data.blockProjectionContainer
+      ? selected.data.blockProjectionOwnerId
+      : undefined;
+  const selectedInstance = nodesValue.find(({ id }) => id === selectedOwnerId)?.data.blockInstanceV2;
+  const selectedSemanticIds = selectedInstance
+    ? selected?.data.blockProjectionNodeId
+      ? blockGraphSubtreeNodeIdsV2(selectedInstance.effectiveGraph, selected.data.blockProjectionNodeId)
+      : new Set(selectedInstance.effectiveGraph.nodes.map(({ nodeId }) => nodeId))
+    : undefined;
+  if (selectedOwnerId) {
+    nodesValue = nodesValue.filter(
+      (node) => node.id === selectedOwnerId || node.data.blockProjectionOwnerId === selectedOwnerId,
+    );
+    const retained = new Set(nodesValue.map(({ id }) => id));
+    edgesValue = edgesValue.filter((edge) => retained.has(edge.source) && retained.has(edge.target));
+  }
   if (!containsBlockV2RuntimeData(nodesValue, edgesValue))
     return { nodes: cloneJson(nodesValue), edges: cloneJson(edgesValue) };
   assertUniqueGraphIds(nodesValue, edgesValue);
@@ -2158,11 +2736,15 @@ export function expandBlockGraphV2ForExecution(nodesValue: CustomNodeType[], edg
   const projection = validatedProjectionInventory(nodesValue, edgesValue, rootInstances);
   if (!rootInstances.size) return { nodes: cloneJson(nodesValue), edges: cloneJson(edgesValue) };
 
-  rootInstances.forEach(validateEffectiveGraphForExecution);
+  rootInstances.forEach((instance, id) =>
+    validateEffectiveGraphForExecution(instance, id === selectedOwnerId ? selectedSemanticIds : undefined),
+  );
   const externalNodes = nodesValue
     .filter((node) => !rootInstances.has(node.id) && !projection.nodeIds.has(node.id))
     .map(cloneJson);
-  const executionNodes = [...rootInstances.values()].flatMap((instance) => projectedChildren(instance, true));
+  const executionNodes = [...rootInstances.entries()].flatMap(([id, instance]) =>
+    projectedChildren(instance, true, id === selectedOwnerId ? selectedSemanticIds : undefined),
+  );
   const occupied = new Set(externalNodes.map(({ id }) => id));
   executionNodes.forEach(({ id }) => {
     if (occupied.has(id)) throw new Error(`Cannot expand Block V2 graph: projected node id ${id} already exists.`);
@@ -2179,21 +2761,48 @@ export function expandBlockGraphV2ForExecution(nodesValue: CustomNodeType[], edg
       const target = edge.target;
       const targetHandle = edge.targetHandle;
       if (sourceInstance) {
-        const port = sourceInstance.effectiveInterface.boundary.outputs.find(({ portId }) => portId === sourceHandle);
+        const crossing = parseBlockCrossingHandleV2(sourceHandle);
+        if (crossing) blockCrossingParamV2(sourceInstance, crossing);
+        const port =
+          crossing?.direction === 'output'
+            ? { binding: crossing }
+            : sourceInstance.effectiveInterface.boundary.outputs.find(({ portId }) => portId === sourceHandle);
         if (!port)
           throw new Error(
             `Cannot expand Block V2 instance ${sourceInstance.instanceId}: edge ${edge.id} references unknown output ${String(sourceHandle)}.`,
           );
-        source = effectiveBoundaryNodeId(sourceInstance, port);
+        source = blockProjectionNodeIdV2(sourceInstance.instanceId, port.binding.nodeId);
         sourceHandle = port.binding.fieldOrPortId;
       }
       if (targetInstance) {
-        const port = targetInstance.effectiveInterface.boundary.inputs.find(({ portId }) => portId === targetHandle);
+        const crossing = parseBlockCrossingHandleV2(targetHandle);
+        if (crossing) blockCrossingParamV2(targetInstance, crossing);
+        const port =
+          crossing?.direction === 'input'
+            ? { binding: crossing, mirrorBindings: undefined }
+            : targetInstance.effectiveInterface.boundary.inputs.find(({ portId }) => portId === targetHandle);
         if (!port)
           throw new Error(
             `Cannot expand Block V2 instance ${targetInstance.instanceId}: edge ${edge.id} references unknown input ${String(targetHandle)}.`,
           );
-        return blockInputPortBindingsV2(port).map((binding, index) => ({
+        const bindings = [port.binding, ...(port.mirrorBindings ?? [])];
+        for (const binding of bindings) {
+          const sealed = [
+            ...targetInstance.effectiveInterface.controls,
+            ...targetInstance.effectiveGraph.nodes.flatMap((node) => node.containerInterface?.controls ?? []),
+          ].find(
+            (control) =>
+              control.sealed &&
+              controlBindingTargetsV2(control).some(
+                (target) => target.nodeId === binding.nodeId && target.fieldId === binding.fieldOrPortId,
+              ),
+          );
+          if (sealed)
+            throw new Error(
+              `Cannot run connected sealed Block control "${sealed.label}". Disconnect its incoming wire or explicitly replace its owning node.`,
+            );
+        }
+        return bindings.map((binding, index) => ({
           ...cloneJson(edge),
           ...(index
             ? {
@@ -2226,12 +2835,33 @@ export function expandBlockGraphV2ForExecution(nodesValue: CustomNodeType[], edg
     if (edgeIds.has(id)) throw new Error(`Cannot expand Block V2 graph: projected edge id ${id} already exists.`);
     edgeIds.add(id);
   });
+  const internalNodeIds = new Set(executionNodes.map(({ id }) => id));
+  const incomingByField = new Map<string, string>();
+  for (const edge of [...translatedEdges, ...internalEdges]) {
+    if (!internalNodeIds.has(edge.target) || !edge.targetHandle) continue;
+    const key = `${edge.target}\0${edge.targetHandle}`;
+    const previous = incomingByField.get(key);
+    if (previous)
+      throw new Error(
+        `Cannot run Block input ${edge.targetHandle}: incoming edges ${previous} and ${edge.id} both drive the same field. Disconnect one source or combine them in an upstream node first.`,
+      );
+    incomingByField.set(key, edge.id);
+  }
+  if (selectedSemanticIds) {
+    const included = new Set(
+      [...selectedSemanticIds].map((nodeId) => blockProjectionNodeIdV2(selectedOwnerId!, nodeId)),
+    );
+    return {
+      nodes: executionNodes.filter(({ id }) => included.has(id)),
+      edges: internalEdges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
+    };
+  }
   return { nodes: [...externalNodes, ...executionNodes], edges: [...translatedEdges, ...internalEdges] };
 }
 
 /** Rebuild a durable root solely from its embedded instance authority. */
 export function canonicalizePersistedBlockRootV2(rootValue: CustomNodeType): CustomNodeType {
-  return createBlockRootNodeV2(normalizedRootInstance(rootValue));
+  return rootNodeForNormalizedInstanceV2(normalizedRootInstance(rootValue));
 }
 
 /**
@@ -2246,7 +2876,8 @@ export function canonicalizePersistedBlockGraphV2(nodesValue: CustomNodeType[], 
   const projection = validatedProjectionInventory(nodesValue, edgesValue, rootInstances);
   const nodes = nodesValue.flatMap((node) => {
     if (projection.nodeIds.has(node.id)) return [];
-    if (isV2Candidate(node)) return [canonicalizePersistedBlockRootV2(node)];
+    const instance = rootInstances.get(node.id);
+    if (instance) return [rootNodeForNormalizedInstanceV2(instance)];
     return [cloneJson(node)];
   });
   const retainedNodeIds = new Set(nodes.map(({ id }) => id));

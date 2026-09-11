@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { outputNumericInputValue } from '../../../src/studio/resolvedExecutionInputs';
 
 import {
   backendSourceIdentity,
@@ -10,13 +11,15 @@ import {
   sha256Value,
 } from '../../../scripts/live-proof-provenance.mjs';
 import { decodedMediaHash } from '../../../scripts/template-gallery-harness.mjs';
+import { waitForRecursiveDomGeometry } from './blockDomGeometry';
+import { decodedImageStatistics } from './imageProofStatistics';
 
 const QWEN_MANIFEST_DEFINITION_ID = 'diffusers.modular:QwenImageModularPipeline:text2image';
 const QWEN_DEFINITION_ID = 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image';
 const QWEN_REPOSITORY = 'Qwen/Qwen-Image-2512';
 const QWEN_REVISION = '25468b98e3276ca6700de15c6628e51b7de54a26';
-const QWEN_BLOCK_V2_CONTENT_HASH = 'block-definition-v2-bf9170d5';
-const QWEN_BLOCK_V2_CANONICAL_SHA256 = 'sha256:702d3b5ae0f1ee9a9dac0a80f8b09aef3590644cb23f66255d0853a53e5a5f93';
+const QWEN_BLOCK_V2_CONTENT_HASH = 'block-definition-v2-af4d765b';
+const QWEN_BLOCK_V2_CANONICAL_SHA256 = 'sha256:f3c85515a659cb3b72edfaff05cea98d589bafb8241fc2db161bbde340dd15b1';
 const QWEN_STUDIO_SPEC_CONTENT_HASH = 'studio-spec-v1-f4c15e0d';
 const QWEN_OPTIONAL_RUNTIME_ID = 'huggingface-transformers-main-96fe6dce-peft-0.20.0';
 const MINIMAX_MUSIC3_MANIFEST_DEFINITION_ID = 'diffusers.modular:MiniMaxMusic3ModularPipeline:default';
@@ -128,22 +131,31 @@ type BlockSnapshot = {
 };
 
 async function assertExpandedBlockContainsProjection(page: Page, rootId: string) {
-  const root = page.locator(`.react-flow__node-block[data-id="${rootId}"]`);
-  const rootBounds = await root.boundingBox();
-  expect(rootBounds).toBeTruthy();
-  const childIds = await page.evaluate(async (id) => {
+  await waitForRecursiveDomGeometry(page);
+  // Measure one coherent DOM frame. Sequential locator calls can straddle
+  // many progress renders under GPU load and compare unrelated layout times.
+  const { rootBounds, children } = await page.evaluate(async (id) => {
     const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
-    return useFlowStore
+    const bounds = (nodeId: string) => {
+      const rect = document
+        .querySelector(`.react-flow__node[data-id="${CSS.escape(nodeId)}"]`)
+        ?.getBoundingClientRect();
+      return rect && rect.width > 0 && rect.height > 0
+        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        : null;
+    };
+    const children = useFlowStore
       .getState()
       .nodes.filter((node) => node.data.blockProjectionOwnerId === id)
-      .map((node) => node.id);
+      .map((node) => ({ id: node.id, bounds: bounds(node.id) }));
+    return { rootBounds: bounds(id), children };
   }, rootId);
+  expect(rootBounds).toBeTruthy();
+  const childIds = children.map((child) => child.id);
   expect(childIds.length).toBeGreaterThan(0);
 
   const tolerance = 2;
-  for (const childId of childIds) {
-    const child = page.locator(`.react-flow__node[data-id="${childId}"]`);
-    const childBounds = await child.boundingBox();
+  for (const { id: childId, bounds: childBounds } of children) {
     expect(childBounds, `${childId} must be rendered and measurable`).toBeTruthy();
     expect(childBounds!.x, `${childId} starts left of its Block`).toBeGreaterThanOrEqual(rootBounds!.x - tolerance);
     expect(childBounds!.y, `${childId} starts above its Block`).toBeGreaterThanOrEqual(rootBounds!.y - tolerance);
@@ -669,6 +681,77 @@ async function findLiveStudioOutput(page: Page, taskId: string, displayType = 'i
   if (!response.ok()) return null;
   const body = (await response.json()) as { outputs?: LiveStudioOutput[] };
   return body.outputs?.find((item) => item.taskId === taskId && item.displayType === displayType) ?? null;
+}
+
+async function assertCapturedImageInGallery(
+  page: Page,
+  taskId: string,
+  expected: { prompt: string; width: number; height: number; steps: number; guidanceScale?: number; seed: number },
+  screenshot: string,
+  dimensionsDerivedFromMedia = false,
+) {
+  // Production deliberately has no debug state bridge. Its native Gallery
+  // assertions below still verify the captured inputs and exact task identity.
+  if (await page.evaluate(() => Boolean(window.__MODIFF_E2E__)))
+    await expect
+      .poll(
+        async () => {
+          const item = await page.evaluate(
+            (id) => window.__MODIFF_E2E__?.getState().studio.outputs.find((output) => output.taskId === id),
+            taskId,
+          );
+          if (!item) return null;
+          return {
+            prompt: item.prompt,
+            width: item.width,
+            height: item.height,
+            steps: item.steps,
+            ...(outputNumericInputValue(item, 'guidanceScale') === undefined
+              ? {}
+              : { guidanceScale: outputNumericInputValue(item, 'guidanceScale') }),
+            seed: item.seed,
+          };
+        },
+        { timeout: 120_000 },
+      )
+      .toEqual(expected);
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-view-grid').click();
+  const card = page
+    .locator('[data-testid^="gallery-output-"]')
+    .filter({ hasText: `Task ${taskId}` })
+    .first();
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByTestId('gallery-view-inspect').click();
+  const inspector = page.getByTestId('gallery-inspect-view');
+  await expect(inspector).toContainText(`Task ${taskId}`);
+  await expect(inspector.getByTestId('resolved-inputs-status')).toContainText('captured by the backend');
+  const metadata = JSON.parse((await inspector.locator('pre').textContent())!);
+  expect(metadata).toMatchObject({
+    seed: expected.seed,
+    size: `${expected.width}x${expected.height}`,
+    steps: expected.steps,
+    guidanceScale: expected.guidanceScale ?? 'Not uniquely captured — see resolved inputs',
+  });
+  const { width, height, ...expectedInputs } = expected;
+  expect(metadata.resolvedExecutionInputs).toMatchObject({
+    taskId,
+    summary: dimensionsDerivedFromMedia ? expectedInputs : { ...expectedInputs, width, height },
+  });
+  if (dimensionsDerivedFromMedia) {
+    expect(metadata.resolvedExecutionInputs.summary).not.toHaveProperty('width');
+    expect(metadata.resolvedExecutionInputs.summary).not.toHaveProperty('height');
+    expect(metadata.resolvedInputDimensions).toEqual({
+      width: 'Not uniquely captured — see resolved inputs',
+      height: 'Not uniquely captured — see resolved inputs',
+    });
+  }
+  if (expected.guidanceScale === undefined)
+    expect(metadata.resolvedExecutionInputs.summary).not.toHaveProperty('guidanceScale');
+  await inspector.locator('pre').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: screenshot, fullPage: false });
+  await page.keyboard.press('Escape');
 }
 
 async function findDurableCompletionReceipt(
@@ -1686,10 +1769,385 @@ test('exact Qwen schema-v6 catalog drag is one durable V2 Block and runs its edi
   expect(pageErrors).toEqual([]);
 });
 
+test('ordinary palette text inside a nested Qwen Block retains ownership, wiring, local interface and real execution', async ({
+  page,
+}) => {
+  test.skip(process.env.MODIFF_RUN_NESTED_ORDINARY !== '1', 'Select the nested ordinary-node lifecycle explicitly.');
+  const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!outputDirectory, 'An isolated review output directory is required.');
+  const generate = process.env.MODIFF_RUN_NESTED_ORDINARY_GENERATION === '1';
+  const switchModel = process.env.MODIFF_QWEN_NESTED_MODEL_VARIANT === 'base';
+  const started = Date.now();
+  const checkpoint = (label: string) => console.log(`[nested-ordinary] ${label}: ${Date.now() - started} ms`);
+  test.setTimeout(generate ? 30 * 60 * 1000 : 180_000);
+  page.setDefaultTimeout(15_000);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const evidenceRoot = `${outputDirectory}/qwen-nested-ordinary-node`;
+  await mkdir(evidenceRoot, { recursive: true });
+  const errors: string[] = [];
+  const handleWarnings: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.text().includes("[React Flow]: Couldn't create edge for")) handleWarnings.push(message.text());
+  });
+  const prompt =
+    'A photorealistic architectural editorial photograph of a two-storey circular clockmaker workshop inside a restored Victorian railway signal tower at blue hour. The entire building fits comfortably in frame. Its wide open brass-framed doors reveal an orderly oak workbench holding a disassembled astronomical clock with intricate gears, engraved silver rings and sapphire bearings. Warm practical lamps illuminate the workshop; the upper floor contains neatly arranged old astronomical charts and a small telescope beside a tall arched window. A narrow wet cobblestone path curves through ferns toward the doorway, with subtle physically coherent amber reflections. A small cream enamel sign above the entrance clearly reads "TIME ATELIER". Deep indigo sky, restrained amber and teal palette, realistic weathered brick and polished brass, fine mechanical detail, coherent perspective, balanced composition, natural 35mm photography, no people, no duplicate buildings.';
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('nested-ordinary-live')) return;
+    localStorage.clear();
+    sessionStorage.clear();
+    sessionStorage.setItem('nested-ordinary-live', '1');
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  await dismissRecoveredRunFailure(page);
+  await dismissTaskLauncher(page);
+  await ensureExpertMode(page);
+  await page.getByTestId('topbar-new-workflow').click();
+  await chooseAdvancedWorkflow(page, true);
+  await clearFinishedSessionActivity(page);
+  checkpoint('new empty workflow ready');
+  await page.getByTestId('left-tab-nodes').click();
+  const search = page.getByLabel('Search nodes');
+  await search.fill('Qwen Image — Text To Image');
+  const catalog = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  if ((await catalog.getByRole('button').first().getAttribute('aria-expanded')) !== 'true')
+    await catalog.getByRole('button').first().click();
+  await catalog
+    .locator('[data-testid^="hugging-face-node-row-"]')
+    .filter({ hasText: 'Qwen Image — Text To Image' })
+    .click();
+  const root = page.locator('.react-flow__node-block').filter({ has: page.locator('[data-block-schema-version="2"]') });
+  await expect(root).toHaveCount(1, { timeout: 60_000 });
+  const rootId = (await root.getAttribute('data-id'))!;
+  const inspect = () =>
+    page.evaluate(async (id) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const flow = useFlowStore.getState();
+      const instance = flow.nodes.find((n) => n.id === id)!.data.blockInstanceV2!;
+      return {
+        instance,
+        projection: flow.nodes
+          .filter((n) => n.data.blockProjectionOwnerId === id)
+          .map((n) => ({
+            id: n.id,
+            parentId: n.parentId,
+            semanticId: n.data.blockProjectionNodeId,
+            bindings: n.data.blockProjectionPortBindings ?? {},
+          })),
+        orphanUtilities: flow.nodes.filter((n) => !n.data.blockProjectionOwnerId && n.data.action === 'TextValue')
+          .length,
+      };
+    }, rootId);
+  const baseline = (await inspect()).instance;
+  checkpoint('Qwen inserted');
+  // Only the added Text Value supplies a new prompt. All registered generation
+  // defaults, negative prompt, model, precision and offload settings stay intact.
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  const encoder = () => page.locator('[data-block-semantic-node-id="container:text_encoder"]');
+  await encoder().getByRole('button', { name: 'Expand Qwen Image Auto Text Encoder Step', exact: true }).click();
+  await page.getByTestId('arrange-graph').click();
+  await search.fill('Text Value');
+  checkpoint('encoder expanded');
+  await expect(search).toHaveValue('Text Value');
+  const ordinaryGroup = page.getByTestId('node-group-primitive');
+  await expect(ordinaryGroup).toBeVisible();
+  if ((await ordinaryGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true')
+    await ordinaryGroup.getByRole('button').first().click();
+  // The expanded decorative frame is pointer-transparent. Its React Flow
+  // wrapper is the actual canvas drop surface; do not force events through it.
+  const encoderProjectionId = (await inspect()).projection.find((n) => n.semanticId === 'container:text_encoder')!.id;
+  await page
+    .getByTestId('node-row-modules-Primitive-TextValue')
+    .dragTo(page.getByTestId(`rf__node-${encoderProjectionId}`), { targetPosition: { x: 8, y: 35 } });
+  await expect
+    .poll(
+      async () => (await inspect()).instance.effectiveGraph.nodes.filter((n) => n.data.action === 'TextValue').length,
+    )
+    .toBe(1);
+  let current = await inspect();
+  checkpoint('ordinary palette node adopted');
+  const utilityId = current.instance.effectiveGraph.nodes.find((n) => n.data.action === 'TextValue')!.nodeId;
+  expect(current.instance.effectiveGraph.nodes.find((n) => n.nodeId === utilityId)).toMatchObject({
+    parentNodeId: 'container:text_encoder',
+  });
+  expect(current.instance.effectiveGraph.nodes.find((n) => n.nodeId === utilityId)!.modularDiffusers).toBeUndefined();
+  expect(current.orphanUtilities).toBe(0);
+  expect(current.instance.values).toEqual(baseline.values);
+  expect(current.instance.effectiveInterface).toEqual(baseline.effectiveInterface);
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () => (await inspect()).instance.effectiveGraph.nodes.length)
+    .toBe(baseline.effectiveGraph.nodes.length);
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(async () => (await inspect()).instance.effectiveGraph.nodes.some((n) => n.nodeId === utilityId))
+    .toBe(true);
+  const utilityProjectionId = (await inspect()).projection.find((n) => n.semanticId === utilityId)!.id;
+  const utility = () => page.locator(`.react-flow__node[data-id="${utilityProjectionId}"]`);
+  await utility().getByLabel('Text', { exact: true }).fill(prompt);
+  await utility().getByLabel('Text', { exact: true }).press('Tab');
+  await expect
+    .poll(
+      async () =>
+        (await inspect()).instance.effectiveGraph.nodes.find((n) => n.nodeId === utilityId)?.data.params?.text?.value,
+    )
+    .toBe(prompt);
+  await page.getByTestId('arrange-graph').click();
+  current = await inspect();
+  const source = current.projection.find((n) => n.semanticId === utilityId)!;
+  const target = current.projection.find((n) => n.semanticId === 'prompt')!;
+  const sourceHandle = page.getByTestId(`node-handle-${source.id}-output`);
+  const targetSocket = Object.entries(target.bindings).find(
+    ([, binding]) => binding.nodeId === 'prompt' && binding.fieldOrPortId === 'prompt' && binding.direction === 'input',
+  )?.[0];
+  expect(targetSocket).toBeTruthy();
+  const targetHandle = page.getByTestId(`node-handle-${target.id}-${targetSocket}`);
+  const reachable = async (locator: Locator) =>
+    locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      const hit = document.elementFromPoint(point.x, point.y);
+      if (!hit || (hit !== element && !element.contains(hit))) throw new Error('The nested wire endpoint is obscured.');
+      return point;
+    });
+  await expect(sourceHandle).toBeVisible();
+  await expect(targetHandle).toBeVisible();
+  const from = await reachable(sourceHandle),
+    to = await reachable(targetHandle);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 18 });
+  await page.mouse.up();
+  await expect
+    .poll(async () =>
+      (await inspect()).instance.effectiveGraph.edges.some(
+        (e) => e.sourceNodeId === utilityId && e.targetNodeId === 'prompt' && e.targetPortId === 'prompt',
+      ),
+    )
+    .toBe(true);
+  await encoder().getByRole('button', { name: 'Configure exposed inputs, outputs, and controls', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Configure Block interface', exact: true });
+  await expect(dialog.getByTestId('block-interface-scope')).toBeVisible();
+  await dialog
+    .getByLabel('control prompt label', { exact: true })
+    .fill('Fallback prompt (external Text Value takes priority)');
+  await dialog.getByRole('button', { name: 'Apply interface', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const modified = (await inspect()).instance;
+  checkpoint('wire and interface edited');
+  expect(
+    modified.effectiveGraph.nodes.find((n) => n.nodeId === 'container:text_encoder')?.containerInterface,
+  ).toBeTruthy();
+  expect(modified.definitionSnapshot).toEqual(baseline.definitionSnapshot);
+  expect(modified.effectiveInterface).toEqual(baseline.effectiveInterface);
+  expect(modified.values).toEqual(baseline.values);
+  for (const node of baseline.effectiveGraph.nodes.filter((n) => n.nodeId !== 'container:text_encoder'))
+    expect(modified.effectiveGraph.nodes.find((n) => n.nodeId === node.nodeId)).toEqual(node);
+  const assertNestedGeometry = async () => {
+    const nodes = (await inspect()).projection;
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            (projection) =>
+              projection.flatMap((node) => {
+                const child = document.querySelector<HTMLElement>(
+                  `.react-flow__node[data-id="${CSS.escape(node.id)}"]`,
+                );
+                const parent = document.querySelector<HTMLElement>(
+                  `.react-flow__node[data-id="${CSS.escape(node.parentId!)}"]`,
+                );
+                if (!child || !parent) return [`Missing visible node/parent for ${node.semanticId}`];
+                const childBox = child.getBoundingClientRect(),
+                  parentBox = parent.getBoundingClientRect();
+                const frame = parent.querySelector<HTMLElement>(
+                  `[data-testid="user-block-${CSS.escape(node.parentId!)}"]`,
+                );
+                const header = frame?.querySelector<HTMLElement>(':scope > header');
+                const tray = frame?.querySelector<HTMLElement>(
+                  `[data-testid="node-connector-tray-${CSS.escape(node.parentId!)}"]`,
+                );
+                const top = header?.getBoundingClientRect().bottom ?? parentBox.top;
+                const bottom = tray?.getBoundingClientRect().top ?? parentBox.bottom;
+                return childBox.left < parentBox.left - 2 ||
+                  childBox.top < top - 2 ||
+                  childBox.right > parentBox.right + 2 ||
+                  childBox.bottom > bottom + 2
+                  ? [`${node.semanticId} escapes the actual content area of ${node.parentId}`]
+                  : [];
+              }),
+            nodes,
+          ),
+        { timeout: 15_000 },
+      )
+      .toEqual([]);
+  };
+  await assertExpandedBlockContainsProjection(page, rootId);
+  await assertNestedGeometry();
+  await page.screenshot({ path: `${evidenceRoot}/nested-text-wired.png`, fullPage: false });
+  if (switchModel) {
+    const beforeSwitch = (await inspect()).instance;
+    const modelProjection = (await inspect()).projection.find((node) => node.semanticId === 'models')!;
+    const modelField = page.locator(`.react-flow__node[data-id="${modelProjection.id}"] [data-key="reviewed_variant"]`);
+    const choice = modelField.getByRole('button').first();
+    await expect(choice).toBeEnabled();
+    for (const repository of ['Qwen/Qwen-Image', QWEN_REPOSITORY, 'Qwen/Qwen-Image']) {
+      await choice.click();
+      await page.getByRole('option', { name: repository, exact: true }).click();
+      await expect.poll(async () => (await inspect()).instance.values.modelVariant).toBe(repository);
+      const switched = (await inspect()).instance;
+      // Public controls live in the instance's single value authority. The
+      // loader projection resolves that binding; it must not duplicate a value
+      // into the immutable graph or replace an otherwise compatible node.
+      expect(switched.effectiveGraph).toEqual(beforeSwitch.effectiveGraph);
+      expect(switched.values).toEqual({ ...beforeSwitch.values, modelVariant: repository });
+      expect(switched.effectiveInterface).toEqual(beforeSwitch.effectiveInterface);
+      expect(switched.definitionSnapshot).toEqual(beforeSwitch.definitionSnapshot);
+    }
+    await page.screenshot({ path: `${evidenceRoot}/same-family-model-selected.png`, fullPage: false });
+    checkpoint('same-family model switched both ways; only selected repository field changed');
+  }
+  const expandedExport = await exportFromBlock(page, rootId);
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  expect(await exportFromBlock(page, rootId)).toEqual(expandedExport);
+  const connectedPrompt = root.locator('[data-connected-control="prompt"]');
+  await expect(connectedPrompt).toContainText('Connected from');
+  await expect(connectedPrompt).toContainText('saved fallback, not the connected execution value');
+  await expect(connectedPrompt.locator('textarea')).toBeDisabled();
+  const storedFallback = String(
+    modified.values.prompt ??
+      modified.effectiveInterface.controls.find((control) => control.controlId === 'prompt')?.defaultValue ??
+      '',
+  );
+  await expect(connectedPrompt.locator('textarea')).toHaveValue(storedFallback);
+  await page.screenshot({ path: `${evidenceRoot}/connected-prompt-explained.png`, fullPage: false });
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  if (await saveDialog.isVisible()) {
+    await page.getByTestId('save-workflow-name').fill(`Qwen nested ordinary Text Value ${Date.now()}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(saveDialog).toHaveCount(0);
+  }
+  const beforeRefresh = (await inspect()).instance;
+  checkpoint('saved before refresh');
+  await writeFile(`${evidenceRoot}/before-refresh.json`, JSON.stringify(beforeRefresh, null, 2));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  await ensureExpertMode(page);
+  await expect(root).toHaveCount(1);
+  expect((await inspect()).instance).toEqual(beforeRefresh);
+  expect(await exportFromBlock(page, rootId)).toEqual(expandedExport);
+  await expect(connectedPrompt.locator('textarea')).toBeDisabled();
+  await expect(connectedPrompt.locator('textarea')).toHaveValue(storedFallback);
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await page.getByTestId('arrange-graph').click();
+  await assertExpandedBlockContainsProjection(page, rootId);
+  await assertNestedGeometry();
+  await page.screenshot({ path: `${evidenceRoot}/restored-nested-text.png`, fullPage: false });
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  const report: Record<string, unknown> = {
+    schemaVersion: 1,
+    rootId,
+    utilityId,
+    prompt,
+    parameters: Object.fromEntries(Object.entries(expandedExport.nodes).map(([id, node]) => [id, node.params])),
+    parameterSource: 'effective exported graph; connected inputs resolve at backend dispatch',
+    defaultChanges: false,
+    parentOwnership: 'container:text_encoder',
+    undoRedo: true,
+    localInterface: true,
+    refreshParity: true,
+    collapsedExpandedExecutionParity: true,
+    connectedControlFallbackExplained: true,
+    handleWarnings,
+    generated: false,
+    sameFamilyModelSwitch: switchModel,
+  };
+  await writeFile(`${evidenceRoot}/frontend-result.json`, JSON.stringify(report, null, 2));
+  if (generate) {
+    await root.locator('header').first().click();
+    const submitted = page.waitForResponse((r) => r.url().endsWith('/graph') && r.request().method() === 'POST', {
+      timeout: 120_000,
+    });
+    await page.getByTestId('selection-toolbar-run-from-node').click();
+    const response = await submitted;
+    expect(response.ok(), await response.text()).toBe(true);
+    const graph = response.request().postDataJSON() as ExecutionExport;
+    expect(Object.keys(graph.nodes)).toHaveLength(EXACT_QWEN_TEXT_TO_IMAGE_NODE_COUNT + 1);
+    expect(Object.values(graph.nodes).some((n) => n.params?.text?.value === prompt)).toBe(true);
+    await writeFile(`${evidenceRoot}/submitted-workflow.json`, JSON.stringify(graph, null, 2));
+    const taskId = ((await response.json()) as { task_id: string }).task_id;
+    await waitForTask(page, taskId);
+    await expect
+      .poll(() => findLiveStudioOutput(page, taskId), { timeout: 120_000 })
+      .toMatchObject({ taskId, displayType: 'image' });
+    const output = (await findLiveStudioOutput(page, taskId))!;
+    expect(output.prompt).toBe(prompt);
+    expect(output).toMatchObject({ width: 1328, height: 1328, steps: 50, guidanceScale: 4, seed: 42 });
+    expect(output.resolvedExecutionInputs).toMatchObject({
+      schemaVersion: 1,
+      source: 'backend-execution',
+      taskId,
+      summary: { prompt, width: 1328, height: 1328, steps: 50, guidanceScale: 4, seed: 42 },
+    });
+    if (switchModel)
+      expect(output.resolvedExecutionInputs).toMatchObject({
+        summary: {
+          repo: 'Qwen/Qwen-Image',
+          revision: '75e0b4be04f60ec59a75f475837eced720f823b6',
+        },
+      });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) => window.__MODIFF_E2E__!.getState().studio.outputs.find((item) => item.taskId === id)?.prompt,
+          taskId,
+        ),
+      )
+      .toBe(prompt);
+    const asset = await page.request.get(new URL(output.url!, LIVE_BACKEND_URL).toString());
+    expect(asset.ok()).toBe(true);
+    await writeFile(`${evidenceRoot}/qwen-nested-ordinary.webp`, await asset.body());
+    const receipt = await page.request.get(`${LIVE_BACKEND_URL}/runs/${encodeURIComponent(taskId)}`);
+    await writeFile(`${evidenceRoot}/run-receipt.json`, JSON.stringify(await receipt.json(), null, 2));
+    const expectedInputs = { prompt, width: 1328, height: 1328, steps: 50, guidanceScale: 4, seed: 42 };
+    await assertCapturedImageInGallery(page, taskId, expectedInputs, `${evidenceRoot}/gallery-resolved-inputs.png`);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForWorkspace(page);
+    await assertCapturedImageInGallery(
+      page,
+      taskId,
+      expectedInputs,
+      `${evidenceRoot}/gallery-resolved-inputs-after-refresh.png`,
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) => window.__MODIFF_E2E__!.getState().studio.outputs.find((item) => item.taskId === id)?.prompt,
+          taskId,
+        ),
+      )
+      .toBe(prompt);
+    await page.screenshot({ path: `${evidenceRoot}/frontend-after-run.png`, fullPage: false });
+    await writeFile(
+      `${evidenceRoot}/frontend-result.json`,
+      JSON.stringify({ ...report, generated: true, taskId, output }, null, 2),
+    );
+    await writeFile(
+      `${evidenceRoot}/PARAMETERS.md`,
+      `# Nested Qwen ordinary-node generation\n\nTask: ${taskId}\n\nSelected model: ${switchModel ? 'Qwen/Qwen-Image@75e0b4be04f60ec59a75f475837eced720f823b6' : `${QWEN_REPOSITORY}@${QWEN_REVISION}`}\n\n1328×1328, 50 steps, guidance 4, seed 42, maximum sequence length 512, BF16, model CPU offload, no quantization. Creator defaults unchanged. Prompt is supplied by an added, wired Text Value inside the text-encoder container.\n\n${prompt}\n\nGallery captured settings checked before and after refresh. Same-family picker both directions tested: ${switchModel}. Not publication approval.\n`,
+    );
+  }
+  expect(errors).toEqual([]);
+  expect(handleWarnings).toEqual([]);
+});
+
 test('a structurally edited current Qwen or FLUX V2 Block persists, reconnects, and executes through the frontend', async ({
   page,
 }) => {
   const flux = process.env.MODIFF_RUN_FLUX_V2_STRUCTURAL_EXECUTION === '1';
+  const qwenQuality = process.env.MODIFF_QWEN_V2_STRUCTURAL_QUALITY === '1';
   test.skip(
     !flux && process.env.MODIFF_RUN_QWEN_V2_STRUCTURAL_EXECUTION !== '1',
     'Select the real Qwen or FLUX structural execution proof explicitly.',
@@ -1712,9 +2170,9 @@ test('a structurally edited current Qwen or FLUX V2 Block persists, reconnects, 
         repository: QWEN_REPOSITORY,
         revision: QWEN_REVISION,
         definitionId: QWEN_DEFINITION_ID,
-        prompt: EDITED_PROMPT,
-        size: '256',
-        steps: '2',
+        prompt: qwenQuality ? SHOWCASE_PROMPT : EDITED_PROMPT,
+        size: qwenQuality ? '1328' : '256',
+        steps: qwenQuality ? '50' : '2',
         executableNodes: EXACT_QWEN_TEXT_TO_IMAGE_NODE_COUNT,
       };
   const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
@@ -2159,11 +2617,19 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
     'Qwen Image Edit Plus — Default',
     'Qwen Image Layered — Layer Decomposition',
   ];
+  const allAdmissions = allLabels.flatMap((label) =>
+    label === 'Qwen Image Edit Plus — Default'
+      ? [
+          { label, route: 'single-reference' },
+          { label, route: 'multi-reference' },
+        ]
+      : [{ label, route: 'default' }],
+  );
   const startAt = Number(process.env.MODIFF_QWEN_V2_FAMILY_START_AT ?? 0);
-  const limit = Number(process.env.MODIFF_QWEN_V2_FAMILY_LIMIT ?? allLabels.length);
-  const labels = allLabels
+  const limit = Number(process.env.MODIFF_QWEN_V2_FAMILY_LIMIT ?? allAdmissions.length);
+  const admissions = allAdmissions
     .slice(Number.isInteger(startAt) && startAt >= 0 ? startAt : 0)
-    .slice(0, Number.isInteger(limit) && limit > 0 ? limit : allLabels.length);
+    .slice(0, Number.isInteger(limit) && limit > 0 ? limit : allAdmissions.length);
   const proveLifecycle = process.env.MODIFF_QWEN_V2_FAMILY_LIFECYCLE === '1';
   const familyResults: Array<Record<string, unknown>> = [];
 
@@ -2175,6 +2641,7 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForWorkspace(page);
+  await dismissRecoveredRunFailure(page);
   await dismissTaskLauncher(page);
   await ensureExpertMode(page);
   await page.evaluate(async () => {
@@ -2188,8 +2655,8 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
     ]);
   });
 
-  for (const label of labels) {
-    console.log(`[qwen-v2-family] checking ${label}`);
+  for (const { label, route } of admissions) {
+    console.log(`[qwen-v2-family] checking ${label} (${route})`);
     // Startup recovery and a preceding Save/reload can remount the task
     // launcher after the initial dismissal. Always settle both gates before
     // asking the top bar to create the next empty workflow.
@@ -2246,7 +2713,7 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
         }, rootId),
       )
       .toBe('unchanged');
-    if (label === 'Qwen Image Edit Plus — Default') {
+    if (route === 'multi-reference') {
       const routeSelect = root.getByTestId(`block-v2-route-select-${rootId}`);
       await expect(routeSelect).toBeVisible();
       await expect(routeSelect).toContainText('Qwen Image Edit Plus — Single image');
@@ -2269,15 +2736,31 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
         .toBe('diffusers.cluster-admission:QwenImageEditPlusModularPipeline:default:mode:multi_image_reference_edit');
       await expect(routeSelect).toContainText('Qwen Image Edit Plus — Multi-reference');
     }
-    const lifecyclePrompt = `Qwen V2 persisted parameter proof — ${label}`;
+    const initialSnapshot = await blockSnapshot(page, rootId);
+    const suggestedPrompt = await page.evaluate(async (id) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().nodes.find((node) => node.id === id)!.data.blockInstanceV2!.definitionSnapshot
+        .suggestedInputs?.[0]?.values.prompt;
+    }, rootId);
+    if (typeof suggestedPrompt === 'string') expect(initialSnapshot.resolvedValues.prompt).toBe(suggestedPrompt);
+    const lifecyclePrompt = `Qwen V2 persisted parameter proof — ${label} (${route})`;
     if (proveLifecycle) {
-      await page.evaluate(
-        async ({ id, prompt }) => {
-          const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
-          useFlowStore.getState().setBlockInstanceValueV2(id, 'prompt', prompt);
-        },
-        { id: rootId, prompt: lifecyclePrompt },
+      await fillBlockValueAndAssert(
+        page,
+        rootId,
+        root.getByLabel('prompt', { exact: true }),
+        'prompt',
+        lifecyclePrompt,
+        lifecyclePrompt,
       );
+      const edited = await blockSnapshot(page, rootId);
+      const initialInstance = JSON.parse(initialSnapshot.instanceJson);
+      const editedInstance = JSON.parse(edited.instanceJson);
+      expect(editedInstance.effectiveGraph).toEqual(initialInstance.effectiveGraph);
+      expect(editedInstance.effectiveInterface).toEqual(initialInstance.effectiveInterface);
+      expect(editedInstance.presentation).toEqual(initialInstance.presentation);
+      expect(edited.definitionDefaults).toEqual(initialSnapshot.definitionDefaults);
+      expect({ ...edited.values, prompt: initialSnapshot.values.prompt }).toEqual(initialSnapshot.values);
       await expect
         .poll(() =>
           page.evaluate(async (id) => {
@@ -2290,30 +2773,20 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
         .toEqual({ prompt: lifecyclePrompt, state: 'parameters_changed' });
     }
     const contract = await page.evaluate(async (id) => {
-      const [{ useFlowStore }, { useHuggingFaceNodeLibraryStore }] = await Promise.all([
-        import('/src/stores/useFlowStore.ts'),
-        import('/src/stores/useHuggingFaceNodeLibraryStore.ts'),
-      ]);
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
       const instance = useFlowStore.getState().nodes.find((candidate) => candidate.id === id)?.data.blockInstanceV2;
       if (!instance) throw new Error(`Missing Qwen Block V2 instance ${id}.`);
-      const source = useHuggingFaceNodeLibraryStore
-        .getState()
-        .library?.definitions.find((definition) => definition.id === instance.definitionId);
-      const suggestedPrompt = source?.suggestedInputs.values.prompt;
       return {
         publicInputs: instance.effectiveInterface.boundary.inputs.length,
         publicOutputs: instance.effectiveInterface.boundary.outputs.length,
         internalNodes: instance.effectiveGraph.nodes.length,
         internalEdges: instance.effectiveGraph.edges.length,
-        suggestedPrompt: typeof suggestedPrompt === 'string' ? suggestedPrompt : null,
-        instancePrompt: typeof instance.values.prompt === 'string' ? instance.values.prompt : null,
       };
     }, rootId);
     expect(contract.publicInputs).toBeGreaterThan(0);
     expect(contract.publicOutputs).toBeGreaterThan(0);
     expect(contract.internalNodes).toBeGreaterThan(0);
     expect(contract.internalEdges).toBeGreaterThan(0);
-    if (contract.suggestedPrompt) expect(contract.instancePrompt).toBe(contract.suggestedPrompt);
     const before = await page.evaluate(async (id) => {
       const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
       const node = useFlowStore.getState().nodes.find((candidate) => candidate.id === id)!;
@@ -2490,7 +2963,8 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
       }, rootId);
       await page.getByTestId('topbar-save-workflow').click();
       const saveDialog = page.getByTestId('save-workflow-dialog');
-      if (await saveDialog.isVisible()) {
+      await expect(saveDialog).toBeVisible({ timeout: 120_000 });
+      {
         await page.getByTestId('save-workflow-name').fill(`Qwen V2 Lifecycle ${label} ${Date.now()}`);
         const confirmSave = page.getByTestId('confirm-save-workflow');
         // A preceding automatic persistence request may still own the save
@@ -2519,6 +2993,7 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
       });
       await page.reload({ waitUntil: 'domcontentloaded' });
       await waitForWorkspace(page);
+      await dismissRecoveredRunFailure(page);
       await dismissTaskLauncher(page);
       await ensureExpertMode(page);
       await expect(page.locator(`.react-flow__node-block[data-id="${rootId}"]`)).toHaveCount(1);
@@ -2541,13 +3016,34 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
       ).toBe(lifecyclePrompt);
       familyResults.push({
         label,
+        route,
+        definitionId: initialSnapshot.definitionId,
         rootId,
         ...workflowIdentity,
         prompt: lifecyclePrompt,
         instanceSha256: `sha256:${createHash('sha256').update(restored).digest('hex')}`,
         saveRefreshByteIdentical: true,
         expandedContainedAfterRefresh: true,
+        parameterLocality: true,
+        defaultsUnchanged: true,
       });
+      if (process.env.MODIFF_REVIEW_OUTPUT_DIR) {
+        const evidenceRoot = `${process.env.MODIFF_REVIEW_OUTPUT_DIR}/qwen-v2-family-lifecycle`;
+        await mkdir(evidenceRoot, { recursive: true });
+        await writeFile(
+          `${evidenceRoot}/frontend-result.json`,
+          `${JSON.stringify(
+            {
+              schemaVersion: 1,
+              expectedAdmissions: admissions.length,
+              complete: familyResults.length === admissions.length,
+              routes: familyResults,
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      }
     }
   }
 
@@ -2560,6 +3056,1182 @@ test('every Qwen catalog entry inserts on an empty graph and contains its expand
       'utf8',
     );
   }
+});
+
+test('Qwen executes an upstream step added from the palette after User Node save and reload', async ({ page }) => {
+  test.skip(process.env.MODIFF_QWEN_COMPOSED_DEMO !== '1', 'Select the real upstream-composition demo explicitly.');
+  const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!outputDirectory, 'A separate evidence directory is required.');
+  const generate = process.env.MODIFF_QWEN_COMPOSED_GENERATION === '1';
+  test.setTimeout(generate ? 30 * 60_000 : 240_000);
+  page.setDefaultTimeout(20_000);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const evidenceRoot = `${outputDirectory}/qwen-composed`;
+  await mkdir(evidenceRoot, { recursive: true });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('qwen-composed-demo')) return;
+    localStorage.clear();
+    sessionStorage.clear();
+    sessionStorage.setItem('qwen-composed-demo', '1');
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  await dismissRecoveredRunFailure(page);
+  await dismissTaskLauncher(page);
+  await ensureExpertMode(page);
+  await page.getByTestId('topbar-new-workflow').click();
+  await chooseAdvancedWorkflow(page, true);
+  await clearFinishedSessionActivity(page);
+  await page.getByTestId('left-tab-nodes').click();
+  const search = page.getByLabel('Search nodes');
+  await search.fill('Qwen Image — Text To Image');
+  const catalog = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  if ((await catalog.getByRole('button').first().getAttribute('aria-expanded')) !== 'true')
+    await catalog.getByRole('button').first().click();
+  await catalog
+    .locator('[data-testid^="hugging-face-node-row-"]')
+    .filter({ hasText: 'Qwen Image — Text To Image' })
+    .click();
+  const roots = page
+    .locator('.react-flow__node-block')
+    .filter({ has: page.locator('[data-block-schema-version="2"]') });
+  await expect(roots).toHaveCount(1, { timeout: 60_000 });
+  const rootId = (await roots.getAttribute('data-id'))!;
+  const root = page.locator(`.react-flow__node-block[data-id="${rootId}"]`);
+  const inspect = () =>
+    page.evaluate(async (id) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const nodes = useFlowStore.getState().nodes;
+      return {
+        instance: nodes.find((n) => n.id === id)!.data.blockInstanceV2!,
+        projection: nodes
+          .filter((n) => n.data.blockProjectionOwnerId === id)
+          .map((n) => ({
+            id: n.id,
+            semanticId: n.data.blockProjectionNodeId,
+            bindings: n.data.blockProjectionPortBindings ?? {},
+          })),
+      };
+    }, rootId);
+  const prompt =
+    'A meticulously composed architectural photograph of a compact circular clockmaker workshop in a restored Victorian railway signal tower at blue hour. Show the complete two-storey brick building, with space around the roof. Wide open brass-framed doors reveal a richly detailed oak workbench with an astronomical clock, exposed engraved gears and sapphire bearings. Warm practical lamps, framed astronomical charts and a telescope visible upstairs. A wet cobblestone path winds through ferns, reflecting restrained amber light against the deep indigo sky. A cream enamel sign clearly reads "TIME ATELIER". Realistic material textures, coherent perspective, fine mechanical detail, natural 35mm editorial photography, no people, no duplicate buildings.';
+  await root.getByLabel('prompt', { exact: true }).fill(prompt);
+  await root.getByLabel('prompt', { exact: true }).press('Tab');
+  const baseline = (await inspect()).instance;
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await page
+    .locator('[data-block-semantic-node-id="container:denoise"]')
+    .getByRole('button', { name: 'Expand Qwen Image Auto Core Denoise Step', exact: true })
+    .click();
+  await page
+    .locator('[data-block-semantic-node-id="container:denoise/text2image"]')
+    .getByRole('button', { name: 'Expand Qwen Image Core Denoise Step', exact: true })
+    .click();
+  await page.getByTestId('arrange-graph').click();
+  const coreId = (await inspect()).projection.find((n) => n.semanticId === 'container:denoise/text2image')!.id;
+  await search.fill('Qwen Image Text Inputs');
+  const row = page.locator('[data-testid^="hugging-face-node-row-"]').filter({ hasText: 'Qwen Image Text Inputs' });
+  await expect(row).toHaveCount(1);
+  await row.dragTo(page.getByTestId(`rf__node-${coreId}`), { targetPosition: { x: 8, y: 35 } });
+  await expect
+    .poll(async () => (await inspect()).instance.effectiveGraph.nodes.length)
+    .toBe(baseline.effectiveGraph.nodes.length + 1);
+  let current = await inspect();
+  const added = current.instance.effectiveGraph.nodes.find(
+    (n) => !baseline.effectiveGraph.nodes.some((b) => b.nodeId === n.nodeId),
+  )!;
+  await writeFile(`${evidenceRoot}/added-step.json`, JSON.stringify(added, null, 2));
+  expect(added.modularDiffusers?.parentPlacementPath).toEqual(['denoise', 'text2image']);
+  expect(added.modularDiffusers?.pipelineClass).toBe('QwenImageModularPipeline');
+  expect(current.instance.values).toEqual(baseline.values);
+  await page.getByTestId('arrange-graph').click();
+  const wire = async (
+    sourceSemantic: string,
+    targetSemantic: string,
+    sourcePort = 'state_out',
+    targetPort = 'state_in',
+  ) => {
+    current = await inspect();
+    const source = current.projection.find((n) => n.semanticId === sourceSemantic)!;
+    const target = current.projection.find((n) => n.semanticId === targetSemantic)!;
+    const socket = (node: typeof source, direction: string, port: string) =>
+      Object.entries(node.bindings).find(([, b]) => b.direction === direction && b.fieldOrPortId === port)?.[0] ?? port;
+    const from = page.getByTestId(`node-handle-${source.id}-${socket(source, 'output', sourcePort)}`);
+    const to = page.getByTestId(`node-handle-${target.id}-${socket(target, 'input', targetPort)}`);
+    const point = async (locator: Locator) => {
+      const hitEvidence = await locator.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hits = document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        const owner = el.closest('.react-flow__node')!;
+        const ancestors = [];
+        let ancestor = el.parentElement;
+        while (ancestor && ancestor !== owner) {
+          ancestors.push({
+            class: ancestor.className,
+            rect: ancestor.getBoundingClientRect().toJSON(),
+            style: ancestor.getAttribute('style'),
+            width: getComputedStyle(ancestor).width,
+          });
+          ancestor = ancestor.parentElement;
+        }
+        return {
+          target: el.outerHTML,
+          rect: r.toJSON(),
+          ancestors,
+          owner: { rect: owner.getBoundingClientRect().toJSON(), style: owner.getAttribute('style') },
+          hits: hits.slice(0, 6).map((hit) => ({
+            tag: hit.tagName,
+            class: hit.getAttribute('class'),
+            id: hit.getAttribute('data-id'),
+            testId: hit.getAttribute('data-testid'),
+            style: hit.getAttribute('style'),
+            owner: hit.closest('.react-flow__node')?.getBoundingClientRect().toJSON(),
+          })),
+        };
+      });
+      await writeFile(`${evidenceRoot}/socket-hit.json`, JSON.stringify(hitEvidence, null, 2));
+      await expect
+        .poll(
+          () =>
+            locator.evaluate((el) => {
+              const r = el.getBoundingClientRect();
+              const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+              return hit === el || Boolean(hit && el.contains(hit));
+            }),
+          { message: `Socket must be natively reachable: ${await locator.getAttribute('data-testid')}` },
+        )
+        .toBe(true);
+      return locator.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const p = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        const hit = document.elementFromPoint(p.x, p.y);
+        if (!hit || (hit !== el && !el.contains(hit)))
+          throw new Error(`The real composition socket is obscured by ${hit?.tagName}.${hit?.getAttribute('class')}.`);
+        return p;
+      });
+    };
+    const a = await point(from);
+    const b = await point(to);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x, b.y, { steps: 18 });
+    await page.mouse.up();
+    await expect
+      .poll(async () =>
+        (await inspect()).instance.effectiveGraph.edges.some(
+          (e) =>
+            e.sourceNodeId === sourceSemantic &&
+            e.sourcePortId === sourcePort &&
+            e.targetNodeId === targetSemantic &&
+            e.targetPortId === targetPort,
+        ),
+      )
+      .toBe(true);
+  };
+  await wire('upstream:denoise.input', added.nodeId);
+  await wire(added.nodeId, 'upstream:denoise.prepare_latents');
+  if (process.env.MODIFF_QWEN_TYPED_CONNECTIONS === '1') {
+    await wire('upstream:denoise.input', added.nodeId, 'state_output__prompt_embeds', 'prompt_embeds');
+    await wire('upstream:denoise.input', added.nodeId, 'state_output__prompt_embeds_mask', 'prompt_embeds_mask');
+  }
+  if (process.env.MODIFF_QWEN_ITERATION_CONNECTIONS === '1') {
+    const current = (await inspect()).instance;
+    const owner = current.effectiveGraph.nodes.find((node) => node.modularDiffusers?.blockKind === 'loop')!;
+    await page
+      .locator(`[data-block-semantic-node-id="${owner.nodeId}"]`)
+      .getByRole('button', { name: /^Expand /u })
+      .click();
+    await page.getByTestId('arrange-graph').click();
+    const source = current.effectiveGraph.nodes.find(
+      (node) => node.modularDiffusers?.blockClass === 'QwenImageLoopAfterDenoiser',
+    )!;
+    const target = current.effectiveGraph.nodes.find(
+      (node) => node.modularDiffusers?.blockClass === 'QwenImageLoopBeforeDenoiser',
+    )!;
+    expect(source && target).toBeTruthy();
+    await wire(source.nodeId, target.nodeId, 'iteration_previous__latents', 'iteration_input__latents');
+  }
+  await assertExpandedBlockContainsProjection(page, rootId);
+  await waitForRecursiveDomGeometry(page);
+  expect(
+    await page.locator('.react-flow__handle').evaluateAll((handles) =>
+      handles.flatMap((handle) => {
+        const box = handle.getBoundingClientRect();
+        const owner = handle.closest<HTMLElement>('.react-flow__node');
+        if (!owner || !box.width || !box.height) return [];
+        const bounds = owner.getBoundingClientRect();
+        const allowance = (12 * bounds.width) / owner.offsetWidth;
+        const center = box.x + box.width / 2;
+        return center < bounds.left - allowance || center > bounds.right + allowance
+          ? [handle.getAttribute('data-testid')]
+          : [];
+      }),
+    ),
+  ).toEqual([]);
+  await page.screenshot({ path: `${evidenceRoot}/palette-step-wired.png` });
+  const expanded = await exportFromBlock(page, rootId);
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  expect(await exportFromBlock(page, rootId)).toEqual(expanded);
+  const saved = await saveAndReinsertUserNodeForLiveProof(page, rootId, evidenceRoot);
+  // The demo's normal Run button must execute one graph, not both the source
+  // and the independently reinserted copy used by the persistence assertions.
+  await page.getByTestId('arrange-graph').click();
+  await root.locator('header').first().click();
+  await page.getByTestId('selection-toolbar-delete').click();
+  await expect(root).toHaveCount(0);
+  await page.getByTestId('topbar-save-workflow').click();
+  if (await page.getByTestId('save-workflow-dialog').isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Qwen demo — editable astronomical workshop');
+    await page.getByTestId('confirm-save-workflow').click();
+  }
+  const beforeReload = await blockSnapshot(page, saved.rootId);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  await ensureExpertMode(page);
+  expect((await blockSnapshot(page, saved.rootId)).instanceJson).toEqual(beforeReload.instanceJson);
+  const demoRoot = page.locator(`.react-flow__node-block[data-id="${saved.rootId}"]`);
+  await writeFile(`${evidenceRoot}/workflow-instance.json`, beforeReload.instanceJson);
+  if (generate) {
+    await demoRoot.locator('header').first().click();
+    const submitted = page.waitForResponse((r) => r.url().endsWith('/graph') && r.request().method() === 'POST', {
+      timeout: 120_000,
+    });
+    await page.getByTestId('selection-toolbar-run-from-node').click();
+    const response = await submitted;
+    expect(response.ok(), await response.text()).toBe(true);
+    const graph = response.request().postDataJSON() as ExecutionExport;
+    const inserted = Object.values(graph.nodes).find(
+      (n) => JSON.stringify(n.params?.placement_path?.value) === JSON.stringify(added.modularDiffusers?.placementPath),
+    );
+    expect(inserted?.params?.composition_recipe?.value).toMatchObject({ pipelineClass: 'QwenImageModularPipeline' });
+    expect(inserted?.params?.execution_scope?.value).toBe('unpruned_pipeline');
+    if (process.env.MODIFF_QWEN_ITERATION_CONNECTIONS === '1')
+      expect(Object.values(graph.nodes).some((node) => node.params?.iteration_bindings?.value)).toBe(true);
+    await writeFile(`${evidenceRoot}/submitted-workflow.json`, JSON.stringify(graph, null, 2));
+    const taskId = (await response.json()).task_id;
+    await waitForTask(page, taskId, 25 * 60_000);
+    await expect
+      .poll(() => findLiveStudioOutput(page, taskId), { timeout: 120_000 })
+      .toMatchObject({ taskId, displayType: 'image' });
+    const output = (await findLiveStudioOutput(page, taskId))!;
+    expect(output).toMatchObject({
+      prompt: saved.prompt,
+      width: 1328,
+      height: 1328,
+      steps: 50,
+      guidanceScale: 4,
+      seed: 42,
+    });
+    const asset = await page.request.get(new URL(output.url!, LIVE_BACKEND_URL).toString());
+    expect(asset.ok()).toBe(true);
+    await writeFile(`${evidenceRoot}/qwen-composed.webp`, await asset.body());
+    const receipt = await page.request.get(`${LIVE_BACKEND_URL}/runs/${encodeURIComponent(taskId)}`);
+    await writeFile(`${evidenceRoot}/run-receipt.json`, JSON.stringify(await receipt.json(), null, 2));
+    await assertCapturedImageInGallery(
+      page,
+      taskId,
+      { prompt: saved.prompt, width: 1328, height: 1328, steps: 50, guidanceScale: 4, seed: 42 },
+      `${evidenceRoot}/gallery.png`,
+    );
+    await writeFile(
+      `${evidenceRoot}/result.json`,
+      JSON.stringify(
+        { taskId, output, paletteInsertion: true, userNodeSaveReinsert: true, refresh: true, added },
+        null,
+        2,
+      ),
+    );
+  }
+  expect(errors).toEqual([]);
+});
+
+test('production portable demo preserves native edits, resize, nesting and Save across refresh', async ({ page }) => {
+  const packagePath = process.env.MODIFF_PORTABLE_DEMO_PACKAGE;
+  const directory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!packagePath || !directory, 'Select an existing one-root demo package and an isolated evidence directory.');
+  test.setTimeout(8 * 60_000);
+  await mkdir(directory!, { recursive: true });
+  const original = JSON.parse(await readFile(packagePath!, 'utf8'));
+  expect(original.graph.nodes).toHaveLength(1);
+  const errors: string[] = [];
+  const diagnostics: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      diagnostics.push(message.text());
+      console.log(`[portable demo console] ${message.text()}`);
+    }
+  });
+  page.on('response', (response) => {
+    if (
+      response.url().includes('/huggingface/') ||
+      response.url().includes('/assets/studio-templates.js') ||
+      response.status() >= 400
+    )
+      diagnostics.push(`${response.status()} ${response.url()}`);
+  });
+  page.on('requestfailed', (request) => diagnostics.push(`${request.url()}: ${request.failure()?.errorText}`));
+  page.on('pageerror', (error) => {
+    errors.push(error.message);
+    console.log(`[portable demo page error] ${error.stack}`);
+  });
+  page.setDefaultTimeout(20_000);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const ready = async () => {
+    await expect(page.getByTestId('topbar-new-workflow')).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+    await dismissRecoveredRunFailure(page);
+    await dismissTaskLauncher(page);
+  };
+  await page.goto(process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
+  await ready();
+  await page.getByTestId('workflow-tab-new').click();
+  await dismissTaskLauncher(page);
+  const transfer = await page.evaluateHandle((snapshot) => {
+    const data = new DataTransfer();
+    data.items.add(new File([JSON.stringify(snapshot)], 'Portable Demo.json', { type: 'application/json' }));
+    return data;
+  }, original);
+  await page.locator('.react-flow').dispatchEvent('drop', { dataTransfer: transfer });
+  await transfer.dispose();
+  const root = page.locator('.react-flow__node-block');
+  await expect(root).toHaveCount(1, { timeout: 60_000 });
+  const rootId = (await root.getAttribute('data-id'))!;
+  // Match the demo's import -> explicit Save sequence, waiting for the import's
+  // first durable document acknowledgement before exporting its composition.
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill(`Demo rehearsal ${Date.now()}`);
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  const exportPackage = async (name: string) => {
+    const inspect = async () => {
+      if (process.env.MODIFF_PORTABLE_DEMO_DIAGNOSTICS !== '1') return null;
+      return page.evaluate(async () => {
+        const bundleUrl = performance
+          .getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .find((url) => url.includes('/assets/studio-templates.js'));
+        if (bundleUrl) {
+          const exports = await import(/* @vite-ignore */ bundleUrl);
+          const store = Object.values(exports).find((candidate) => {
+            if (typeof candidate !== 'function' || !('getState' in candidate)) return false;
+            const state = (candidate as unknown as { getState: () => Record<string, unknown> }).getState();
+            return Array.isArray(state.nodes) && Array.isArray(state.edges);
+          }) as { getState: () => { nodes: unknown[]; edges: unknown[] } } | undefined;
+          if (!store) throw new Error('Could not identify the already-loaded read-only flow store.');
+          const { nodes, edges } = store.getState();
+          return { nodes, edges };
+        }
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const { captureWorkflowOperationContext } = await import('/src/stores/useStudioStore.ts');
+        const flow = useFlowStore.getState();
+        return { nodes: flow.nodes, edges: flow.edges, context: captureWorkflowOperationContext() };
+      });
+    };
+    const prior = await inspect();
+    await page.getByTestId('topbar-export').click();
+    const downloaded = page.waitForEvent('download');
+    await page.getByTestId('topbar-export-workflow-package').click();
+    const path = `${directory}/${name}.json`;
+    try {
+      const download = await Promise.race([
+        downloaded,
+        page
+          .getByRole('alert')
+          .first()
+          .waitFor({ state: 'visible' })
+          .then(async () => {
+            throw new Error(`Export notification: ${await page.getByRole('alert').first().textContent()}`);
+          }),
+      ]);
+      await download.saveAs(path);
+    } catch (error) {
+      await writeFile(`${directory}/export-diagnostics.json`, JSON.stringify(diagnostics, null, 2));
+      await writeFile(
+        `${directory}/loaded-state-modules.json`,
+        JSON.stringify(
+          await page.evaluate(() =>
+            performance
+              .getEntriesByType('resource')
+              .map((entry) => entry.name)
+              .filter((url) => url.includes('/assets/studio-templates.js')),
+          ),
+          null,
+          2,
+        ),
+      );
+      if (prior)
+        await writeFile(
+          `${directory}/export-state.json`,
+          JSON.stringify({ before: prior, after: await inspect() }, null, 2),
+        );
+      throw error;
+    }
+    return JSON.parse(await readFile(path, 'utf8'));
+  };
+  const imported = await exportPackage('imported');
+  expect(imported.apiGraph.nodes).toEqual(original.apiGraph.nodes);
+  expect(imported.apiGraph.paths).toEqual(original.apiGraph.paths);
+  const prompt = root.locator('textarea:not([disabled]):not([readonly])').first();
+  await expect(prompt).toBeVisible();
+  const originalPrompt = await prompt.inputValue();
+  const editedPrompt = `${originalPrompt} A single polished copper ruler lies beside the drawing.`;
+  await prompt.fill(editedPrompt);
+  await prompt.blur();
+  const edited = await exportPackage('edited');
+  const before = imported.graph.nodes[0].data.blockInstanceV2;
+  const after = edited.graph.nodes[0].data.blockInstanceV2;
+  expect(after.effectiveGraph).toEqual(before.effectiveGraph);
+  expect(after.effectiveInterface).toEqual(before.effectiveInterface);
+  expect(Object.keys(after.values).filter((key) => after.values[key] !== before.values[key])).toHaveLength(1);
+  expect(Object.values(after.values)).toContain(editedPrompt);
+  await page.getByTestId('topbar-save-workflow').click();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready();
+  await expect(prompt).toHaveValue(editedPrompt);
+  expect((await exportPackage('refreshed')).apiGraph.nodes).toEqual(edited.apiGraph.nodes);
+  // Restore the recorded generation recipe; this rehearsal submits no GPU task.
+  await prompt.fill(originalPrompt);
+  await prompt.blur();
+  await root.locator('header').first().click();
+  const grip = (await root.getByTestId('node-resize-grip').boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 100, Math.min(990, grip.y + grip.height / 2 + 80), { steps: 12 });
+  await page.mouse.up();
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await page.getByTestId('arrange-graph').click();
+  await waitForRecursiveDomGeometry(page);
+  await page.screenshot({ path: `${directory}/expanded.png` });
+  const nested = page.locator('[data-block-projection="modular-diffusers"]').getByRole('button', { name: /^Expand /u });
+  let expandedCount = 0;
+  for (let count = 0; count < 20 && (await nested.count()) > 0; count += 1) {
+    await nested.first().click();
+    expandedCount += 1;
+    await page.getByTestId('arrange-graph').click();
+    await waitForRecursiveDomGeometry(page);
+  }
+  expect(expandedCount).toBeGreaterThan(0);
+  await page.screenshot({ path: `${directory}/nested.png` });
+  await page.locator(`.react-flow__node[data-id="${rootId}"]`).getByTestId(`user-block-toggle-${rootId}`).click();
+  await page.getByTestId('topbar-save-workflow').click();
+  const finalPackage = await exportPackage('Demo');
+  expect(finalPackage.apiGraph.nodes).toEqual(imported.apiGraph.nodes);
+  expect(finalPackage.apiGraph.paths).toEqual(imported.apiGraph.paths);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready();
+  expect((await exportPackage('final-refresh')).apiGraph.nodes).toEqual(imported.apiGraph.nodes);
+  const stateModules = await page.evaluate(() => [
+    ...new Set(
+      performance
+        .getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .filter((url) => url.includes('/assets/studio-templates.js')),
+    ),
+  ]);
+  if (stateModules.length) {
+    expect(stateModules).toHaveLength(1);
+    expect(new URL(stateModules[0]!).searchParams.get('v')).toMatch(/^[a-f0-9]{16}$/u);
+  }
+  await page.screenshot({ path: `${directory}/ready.png` });
+  expect(errors).toEqual([]);
+  await writeFile(
+    `${directory}/result.json`,
+    JSON.stringify(
+      {
+        frontend: page.url(),
+        imported: true,
+        nativePromptEdit: true,
+        saved: true,
+        refreshed: true,
+        resizeBeforeExpand: true,
+        recursiveContainment: true,
+        restoredOriginalRecipe: true,
+        newInference: false,
+        errors,
+      },
+      null,
+      2,
+    ),
+  );
+});
+
+test('production Qwen demo imports, saves one editable User Node and runs from the normal toolbar', async ({
+  page,
+}) => {
+  test.skip(process.env.MODIFF_QWEN_DEMO_HANDOFF !== '1', 'Select the production handoff explicitly.');
+  const directory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!directory, 'An isolated review directory is required.');
+  test.setTimeout(35 * 60_000);
+  page.setDefaultTimeout(15_000);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const submitted = JSON.parse(await readFile(`${directory}/qwen-composed/submitted-workflow.json`, 'utf8'));
+  const lifecycle = JSON.parse(await readFile(`${directory}/qwen-composed/user-node-lifecycle.json`, 'utf8'));
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const ready = async () => {
+    await expect(page.getByTestId('topbar-new-workflow')).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+    await dismissRecoveredRunFailure(page);
+    await dismissTaskLauncher(page);
+    const auto = page.getByTestId('topbar-auto-switch');
+    if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+    await expect(auto).toHaveAttribute('aria-checked', 'false');
+  };
+  await page.goto(process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
+  await ready();
+  // Exercise the real file-drop importer, not a store setter or API submission.
+  const transfer = await page.evaluateHandle((snapshot) => {
+    const data = new DataTransfer();
+    data.items.add(new File([JSON.stringify(snapshot)], 'Qwen Workshop Demo.json', { type: 'application/json' }));
+    return data;
+  }, submitted.runtimeHints.workflowSnapshot);
+  await page.locator('.react-flow').dispatchEvent('drop', { dataTransfer: transfer });
+  await transfer.dispose();
+  const source = page.locator(`.react-flow__node-block[data-id="${lifecycle.originalRootId}"]`);
+  const demo = page.locator(`.react-flow__node-block[data-id="${lifecycle.reinsertedId}"]`);
+  await expect(demo).toBeVisible({ timeout: 60_000 });
+  await source.locator('header').first().click();
+  await page.getByTestId('selection-toolbar-delete').click();
+  await expect(source).toHaveCount(0);
+  await expect(page.locator('.react-flow__node-block')).toHaveCount(1);
+  // Make the demo's controls readable using the same resize gesture as a user.
+  // Layout is presentation-only; the assertions below still compare every
+  // effective node, connection, parameter and interface to the executed graph.
+  const headerBounds = (await demo.locator('header').first().boundingBox())!;
+  if (headerBounds.y < 120) {
+    await page.mouse.move(1800, 200);
+    await page.mouse.down();
+    await page.mouse.move(1600, 200 + 160 - headerBounds.y, { steps: 12 });
+    await page.mouse.up();
+  }
+  await demo.locator('header').first().click();
+  const grip = (await demo.getByTestId('node-resize-grip').boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 170, Math.min(1010, grip.y + grip.height / 2 + 350), { steps: 15 });
+  await page.mouse.up();
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Qwen Demo — Time Atelier');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  const exportPackage = async () => {
+    await page.getByTestId('topbar-export').click();
+    const downloaded = page.waitForEvent('download');
+    await page.getByTestId('topbar-export-workflow-package').click();
+    await (await downloaded).saveAs(`${directory}/Qwen-Demo.json`);
+    return JSON.parse(await readFile(`${directory}/Qwen-Demo.json`, 'utf8'));
+  };
+  const packaged = await exportPackage();
+  expect(packaged.graph.nodes).toHaveLength(1);
+  if (process.env.MODIFF_QWEN_DEMO_HANDOFF_GENERATE !== '1') {
+    const executed = JSON.parse(await readFile(`${directory}/production-submitted.json`, 'utf8'));
+    expect(packaged.apiGraph.nodes).toEqual(executed.nodes);
+    expect(packaged.apiGraph.paths).toEqual(executed.paths);
+  }
+  expect(
+    Object.values(packaged.apiGraph.nodes).some(
+      (node) => (node as { params?: { composition_recipe?: unknown } }).params?.composition_recipe,
+    ),
+  ).toBe(true);
+  const expectedInstance = submitted.runtimeHints.workflowSnapshot.nodes.find((n) => n.id === lifecycle.reinsertedId)
+    .data.blockInstanceV2;
+  const instance = packaged.graph.nodes[0].data.blockInstanceV2;
+  expect(instance.effectiveGraph).toEqual(expectedInstance.effectiveGraph);
+  expect(instance.values).toEqual(expectedInstance.values);
+  expect(instance.effectiveInterface).toEqual(expectedInstance.effectiveInterface);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready();
+  expect((await exportPackage()).graph.nodes[0].data.blockInstanceV2).toEqual(instance);
+  await demo.getByTestId(`user-block-toggle-${lifecycle.reinsertedId}`).click();
+  await page.getByTestId('arrange-graph').click();
+  await waitForRecursiveDomGeometry(page);
+  if (process.env.MODIFF_QWEN_DEMO_PRESENTATION === '1') {
+    // Author a readable demo layout with ordinary drag gestures. This is saved
+    // presentation only, not a replacement graph or a model/default change.
+    const bounds = (await demo.locator('header').first().boundingBox())!;
+    await page.mouse.move(1800, 140);
+    await page.mouse.down();
+    await page.mouse.move(1800 + 70 - bounds.x, 140 + 180 - bounds.y, { steps: 14 });
+    await page.mouse.up();
+    const ordinary = (label: string) =>
+      page
+        .locator('.react-flow__node-custom')
+        .filter({ has: page.locator('header').getByText(label, { exact: true }) });
+    const ordered = [
+      ordinary('Load Qwen Image Components'),
+      page.locator('[data-block-semantic-node-id="container:text_encoder"]'),
+      page.locator('[data-block-semantic-node-id="container:denoise"]'),
+      page.locator('[data-block-semantic-node-id="container:decode"]'),
+      ordinary('Preview Image'),
+    ];
+    for (const [index, node] of ordered.entries()) {
+      const header = node.locator('header').first();
+      const from = (await header.boundingBox())!;
+      await page.mouse.move(from.x + 30, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(130 + index * 300, 250 + from.height / 2, { steps: 18 });
+      await page.mouse.up();
+      await expect.poll(async () => Math.abs((await header.boundingBox())!.x - (100 + index * 300))).toBeLessThan(4);
+    }
+    await waitForRecursiveDomGeometry(page);
+  }
+  await page.screenshot({ path: `${directory}/demo-expanded.png` });
+  await demo.getByTestId(`user-block-toggle-${lifecycle.reinsertedId}`).click();
+  await page.screenshot({ path: `${directory}/demo-ready.png` });
+  await page.getByTestId('topbar-save-workflow').click();
+  const finalPackage = await exportPackage();
+  expect(finalPackage.apiGraph.nodes).toEqual(packaged.apiGraph.nodes);
+  expect(finalPackage.apiGraph.paths).toEqual(packaged.apiGraph.paths);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready();
+  expect((await exportPackage()).graph.nodes[0].data.blockInstanceV2).toEqual(
+    finalPackage.graph.nodes[0].data.blockInstanceV2,
+  );
+  if (process.env.MODIFF_QWEN_DEMO_HANDOFF_GENERATE === '1') {
+    const responsePromise = page.waitForResponse((r) => r.url().endsWith('/graph') && r.request().method() === 'POST', {
+      timeout: 120_000,
+    });
+    await page.getByRole('button', { name: 'Run current graph', exact: true }).click();
+    const response = await responsePromise;
+    expect(response.ok(), await response.text()).toBe(true);
+    const graph = response.request().postDataJSON();
+    expect(Object.values(graph.nodes).filter((n) => (n as { action?: string }).action === 'ModelsLoader')).toHaveLength(
+      1,
+    );
+    expect(
+      Object.values(graph.nodes).some(
+        (n) => (n as { params?: { composition_recipe?: unknown } }).params?.composition_recipe,
+      ),
+    ).toBe(true);
+    await writeFile(`${directory}/production-submitted.json`, JSON.stringify(graph, null, 2));
+    const taskId = (await response.json()).task_id;
+    await waitForTask(page, taskId, 30 * 60_000);
+    const output = (await findLiveStudioOutput(page, taskId))!;
+    expect(output).toMatchObject({
+      prompt: instance.values.prompt,
+      width: 1328,
+      height: 1328,
+      steps: 50,
+      guidanceScale: 4,
+      seed: 42,
+    });
+    const media = await page.request.get(new URL(output.url!, LIVE_BACKEND_URL).toString());
+    expect(media.ok()).toBe(true);
+    await writeFile(`${directory}/Qwen-Demo.webp`, await media.body());
+    await page.getByTestId('topbar-gallery').click();
+    await page.getByTestId('gallery-view-grid').click();
+    const card = page
+      .locator('[data-testid^="gallery-output-"]')
+      .filter({ hasText: `Task ${taskId}` })
+      .first();
+    await expect(card).toBeVisible({ timeout: 120_000 });
+    await card.getByRole('button', { name: 'Select', exact: true }).click();
+    await page.getByTestId('gallery-view-inspect').click();
+    const inspector = page.getByTestId('gallery-inspect-view');
+    await expect(inspector.getByTestId('resolved-inputs-status')).toContainText('captured by the backend');
+    const metadata = JSON.parse((await inspector.locator('pre').textContent())!);
+    expect(metadata.resolvedExecutionInputs).toMatchObject({
+      taskId,
+      summary: { prompt: instance.values.prompt, width: 1328, height: 1328, steps: 50, guidanceScale: 4, seed: 42 },
+    });
+    await page.screenshot({ path: `${directory}/demo-gallery.png` });
+    await page.keyboard.press('Escape');
+    await exportPackage();
+    await writeFile(
+      `${directory}/production-result.json`,
+      JSON.stringify(
+        { taskId, output, frontend: page.url(), imported: true, saved: true, refreshed: true, normalRun: true, errors },
+        null,
+        2,
+      ),
+    );
+  }
+  expect(errors).toEqual([]);
+});
+
+test('production Qwen removes an added upstream step, undoes, reconnects and executes after refresh', async ({
+  page,
+}) => {
+  test.skip(process.env.MODIFF_QWEN_REMOVAL_DEMO !== '1', 'Select the removal proof explicitly.');
+  const directory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!directory, 'An isolated review directory is required.');
+  test.setTimeout(35 * 60_000);
+  page.setDefaultTimeout(20_000);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const original = JSON.parse(await readFile(`${directory}/Qwen-Demo.json`, 'utf8'));
+  const added = JSON.parse(await readFile(`${directory}/qwen-composed/added-step.json`, 'utf8'));
+  const before = original.graph.nodes[0].data.blockInstanceV2;
+  const evidence = `${directory}/qwen-removed`;
+  await mkdir(evidence, { recursive: true });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const ready = async () => {
+    await expect(page.getByTestId('topbar-new-workflow')).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+    await dismissRecoveredRunFailure(page);
+    await dismissTaskLauncher(page);
+    const auto = page.getByTestId('topbar-auto-switch');
+    if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+  };
+  await page.goto(process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
+  await ready();
+  const transfer = await page.evaluateHandle((value) => {
+    const data = new DataTransfer();
+    data.items.add(new File([JSON.stringify(value)], 'Qwen Removal Check.json', { type: 'application/json' }));
+    return data;
+  }, original);
+  await page.locator('.react-flow').dispatchEvent('drop', { dataTransfer: transfer });
+  await transfer.dispose();
+  const root = page.locator(`.react-flow__node-block[data-id="${before.instanceId}"]`);
+  await expect(root).toBeVisible({ timeout: 60_000 });
+  const exportPackage = async (raw = false) => {
+    await page.getByTestId('topbar-export').click();
+    const downloaded = page.waitForEvent('download');
+    await page.getByTestId(raw ? 'topbar-export-raw-workflow' : 'topbar-export-workflow-package').click();
+    const destination = `${evidence}/${raw ? 'raw' : 'workflow'}.json`;
+    await (await downloaded).saveAs(destination);
+    const value = JSON.parse(await readFile(destination, 'utf8'));
+    return raw ? value : value.graph;
+  };
+  await root.getByTestId(`user-block-toggle-${before.instanceId}`).click();
+  await page
+    .locator('[data-block-semantic-node-id="container:denoise"]')
+    .getByRole('button', { name: 'Expand Qwen Image Auto Core Denoise Step', exact: true })
+    .click();
+  await page
+    .locator('[data-block-semantic-node-id="container:denoise/text2image"]')
+    .getByRole('button', { name: 'Expand Qwen Image Core Denoise Step', exact: true })
+    .click();
+  await page.getByTestId('arrange-graph').click();
+  const frame = (label: string) =>
+    page.locator('.react-flow__node-custom').filter({
+      has: page.locator('header').getByText(label, { exact: true }),
+    });
+  const addedFrame = frame(added.data.label);
+  await expect(addedFrame).toHaveCount(1);
+  await addedFrame.locator('header').click();
+  await page.getByTestId('selection-toolbar-delete').click();
+  await expect(addedFrame).toHaveCount(0);
+  const removed = (await exportPackage(true)).nodes[0].data.blockInstanceV2;
+  expect(removed.values).toEqual(before.values);
+  expect(removed.effectiveGraph.nodes).toEqual(before.effectiveGraph.nodes.filter((n) => n.nodeId !== added.nodeId));
+  await page.keyboard.press('Control+z');
+  await expect(addedFrame).toHaveCount(1);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(addedFrame).toHaveCount(0);
+  const sourceNode = before.effectiveGraph.nodes.find((n) => n.nodeId === 'upstream:denoise.input');
+  const targetNode = before.effectiveGraph.nodes.find((n) => n.nodeId === 'upstream:denoise.prepare_latents');
+  const source = frame(sourceNode.data.label).locator('[aria-label^="Output Pipeline State,"]');
+  const target = frame(targetNode.data.label).locator('[aria-label^="Input Pipeline State,"]');
+  const a = (await source.boundingBox())!;
+  const b = (await target.boundingBox())!;
+  for (const handle of [source, target]) {
+    expect(
+      await handle.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return hit === element || element.contains(hit);
+      }),
+    ).toBe(true);
+  }
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 18 });
+  await page.mouse.up();
+  const reconnected = (await exportPackage(true)).nodes[0].data.blockInstanceV2;
+  expect(reconnected.values).toEqual(before.values);
+  expect(reconnected.definitionSnapshot).toEqual(before.definitionSnapshot);
+  expect(
+    reconnected.effectiveGraph.edges.some(
+      (e) =>
+        e.sourceNodeId === sourceNode.nodeId && e.targetNodeId === targetNode.nodeId && e.targetPortId === 'state_in',
+    ),
+  ).toBe(true);
+  await waitForRecursiveDomGeometry(page);
+  await page.screenshot({ path: `${evidence}/reconnected.png` });
+  await root.getByTestId(`user-block-toggle-${before.instanceId}`).click();
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Qwen Demo — Removed Step Check');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  const saved = (await exportPackage()).nodes[0].data.blockInstanceV2;
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready();
+  expect((await exportPackage()).nodes[0].data.blockInstanceV2).toEqual(saved);
+  const responsePromise = page.waitForResponse((r) => r.url().endsWith('/graph') && r.request().method() === 'POST', {
+    timeout: 120_000,
+  });
+  await page.getByRole('button', { name: 'Run current graph', exact: true }).click();
+  const response = await responsePromise;
+  expect(response.ok(), await response.text()).toBe(true);
+  const graph = response.request().postDataJSON();
+  expect(
+    Object.values(graph.nodes).some(
+      (n) => (n as { params?: { composition_recipe?: unknown } }).params?.composition_recipe,
+    ),
+  ).toBe(false);
+  await writeFile(`${evidence}/submitted.json`, JSON.stringify(graph, null, 2));
+  const taskId = (await response.json()).task_id;
+  await waitForTask(page, taskId, 30 * 60_000);
+  const output = (await findLiveStudioOutput(page, taskId))!;
+  expect(output).toMatchObject({
+    prompt: before.values.prompt,
+    width: 1328,
+    height: 1328,
+    steps: 50,
+    guidanceScale: 4,
+    seed: 42,
+  });
+  const media = await page.request.get(new URL(output.url!, LIVE_BACKEND_URL).toString());
+  expect(media.ok()).toBe(true);
+  await writeFile(`${evidence}/qwen-removed.webp`, await media.body());
+  await writeFile(
+    `${evidence}/result.json`,
+    JSON.stringify(
+      {
+        taskId,
+        output,
+        errors,
+        removed: added.nodeId,
+        undoRedo: true,
+        reconnected: true,
+        saved: true,
+        refreshed: true,
+        frontend: page.url(),
+      },
+      null,
+      2,
+    ),
+  );
+  expect(errors).toEqual([]);
+});
+
+test('production FLUX reviews a retained completed image through Gallery and refresh', async ({ page }) => {
+  const taskId = process.env.MODIFF_FLUX_REVIEW_TASK;
+  const directory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!taskId || !directory, 'Select an existing completed FLUX task and a private review directory.');
+  test.setTimeout(5 * 60_000);
+  await mkdir(directory!, { recursive: true });
+  const receiptResponse = await page.request.get(`${LIVE_BACKEND_URL}/runs/${encodeURIComponent(taskId!)}`);
+  expect(receiptResponse.ok()).toBe(true);
+  const receipt = await receiptResponse.json();
+  expect(receipt.task).toMatchObject({ task_id: taskId, status: 'completed' });
+  const output = receipt.outputs.find(
+    (item: LiveStudioOutput) => item.taskId === taskId && item.displayType === 'image',
+  );
+  const compositeDirectory = process.env.MODIFF_FLUX_REVIEW_COMPOSITE_DIRECTORY;
+  const composite = compositeDirectory
+    ? JSON.parse(await readFile(`${compositeDirectory}/before.json`, 'utf8')).before
+    : null;
+  if (composite) {
+    const submitted = JSON.parse(await readFile(`${compositeDirectory}/submitted.json`, 'utf8'));
+    expect(submitted.taskId).toBe(taskId);
+    const nodes = Object.values(submitted.graph.nodes) as Array<{
+      action?: string;
+      params?: Record<string, { value?: unknown; default?: unknown }>;
+    }>;
+    const loader = nodes.find((node) => node.action === 'LoadPipeline');
+    expect(loader).toBeTruthy();
+    expect(nodes.some((node) => node.params?.prompt?.value === composite.values.prompt)).toBe(true);
+    expect(output).toMatchObject({
+      modelType: loader!.params!.pipeline_class.value,
+      prompt: composite.values.prompt,
+      width: composite.values.width,
+      height: composite.values.height,
+      steps: composite.values.num_inference_steps,
+      seed: composite.values.seed,
+      resolvedExecutionInputs: {
+        source: 'backend-execution',
+        taskId,
+        summary: {
+          repo: composite.definition.source.repository,
+          revision: composite.definition.source.repositoryRevision,
+          dtype: composite.values.dtype,
+          offloadMode: composite.values.offloadMode,
+          guidanceScale: composite.values.guidance_scale,
+        },
+      },
+    });
+  } else {
+    expect(output).toMatchObject({
+      modelType: 'Flux2ModularPipeline',
+      width: 1024,
+      height: 1024,
+      steps: 50,
+      seed: 20260905,
+      resolvedExecutionInputs: {
+        source: 'backend-execution',
+        taskId,
+        summary: {
+          repo: 'black-forest-labs/FLUX.2-dev',
+          revision: '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c',
+          dtype: 'bfloat16',
+          offloadMode: 'group_disk',
+          guidanceScale: 4,
+        },
+      },
+    });
+  }
+  const lifecyclePath = process.env.MODIFF_FLUX_REVIEW_USER_NODE_EVIDENCE;
+  const submittedPath = process.env.MODIFF_FLUX_REVIEW_SUBMITTED_GRAPH;
+  let expectedPrompt = output.prompt;
+  if (lifecyclePath || submittedPath) {
+    if (!lifecyclePath || !submittedPath)
+      throw new Error('Retained User Node review requires both pre-run evidence files.');
+    const lifecycle = JSON.parse(await readFile(lifecyclePath, 'utf8'));
+    const submitted = JSON.parse(await readFile(submittedPath, 'utf8'));
+    expect(lifecycle.checks).toEqual({
+      saveAs: true,
+      reinsert: true,
+      interfacePreserved: true,
+      instanceIsolation: true,
+      libraryIsolation: true,
+    });
+    expectedPrompt = lifecycle.edited.resolvedValues.prompt;
+    expect(typeof expectedPrompt).toBe('string');
+    expect(expectedPrompt.length).toBeGreaterThan(100);
+    const nodes = Object.values(submitted.nodes) as Array<{ params?: Record<string, { value?: unknown }> }>;
+    expect(nodes.some((node) => node.params?.prompt?.value === expectedPrompt)).toBe(true);
+    expect(output.prompt).toBe(expectedPrompt);
+  }
+  const expected = composite
+    ? {
+        prompt: composite.values.prompt,
+        width: Number(composite.values.width),
+        height: Number(composite.values.height),
+        steps: Number(composite.values.num_inference_steps),
+        guidanceScale: Number(composite.values.guidance_scale),
+        seed: Number(composite.values.seed),
+      }
+    : { prompt: expectedPrompt, width: 1024, height: 1024, steps: 50, guidanceScale: 4, seed: 20260905 };
+  await page.goto(process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+  await dismissRecoveredRunFailure(page);
+  await dismissTaskLauncher(page);
+  await assertCapturedImageInGallery(page, taskId!, expected, `${directory}/gallery.png`);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+  await dismissTaskLauncher(page);
+  await assertCapturedImageInGallery(page, taskId!, expected, `${directory}/gallery-after-refresh.png`);
+  const asset = await page.request.get(new URL(output.url, LIVE_BACKEND_URL).toString());
+  expect(asset.ok()).toBe(true);
+  const bytes = await asset.body();
+  const statistics = await decodedImageStatistics(page, bytes);
+  expect(statistics.maximum - statistics.minimum).toBeGreaterThan(16);
+  expect(statistics.standardDeviation).toBeGreaterThan(2);
+  await writeFile(`${directory}/image.webp`, bytes);
+  await writeFile(`${directory}/receipt.json`, JSON.stringify(receipt, null, 2));
+  await writeFile(
+    `${directory}/result.json`,
+    JSON.stringify(
+      {
+        taskId,
+        frontend: page.url(),
+        retainedGeneration: true,
+        newInference: false,
+        preRunUserNodeEvidenceChecked: Boolean(lifecyclePath),
+        preRunCompositeEvidenceChecked: Boolean(compositeDirectory),
+        galleryBeforeAndAfterRefresh: true,
+        expected,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        statistics,
+      },
+      null,
+      2,
+    ),
+  );
+});
+
+test('production Klein retains its generated image and captured settings after model cleanup', async ({ page }) => {
+  const taskId = process.env.MODIFF_KLEIN_RETAINED_TASK;
+  const directory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!taskId || !directory, 'Select a completed Klein task after idle model cleanup.');
+  test.setTimeout(3 * 60_000);
+  await mkdir(directory!, { recursive: true });
+  const response = await page.request.get(`${LIVE_BACKEND_URL}/runs/${encodeURIComponent(taskId!)}`);
+  expect(response.ok()).toBe(true);
+  const receipt = await response.json();
+  expect(receipt.task).toMatchObject({ task_id: taskId, status: 'completed' });
+  const output = receipt.outputs.find(
+    (item: LiveStudioOutput) => item.taskId === taskId && item.displayType === 'image',
+  );
+  expect(output).toMatchObject({
+    modelType: 'Flux2KleinModularPipeline',
+    repo: 'black-forest-labs/FLUX.2-klein-4B',
+    width: 1024,
+    height: 1024,
+    steps: 4,
+    seed: 20260905,
+  });
+  // Distilled Klein does not consume CFG. Its creator form may show 1, but
+  // the Gallery must not invent a backend-captured guidance input from that.
+  expect(output.resolvedExecutionInputs.summary).not.toHaveProperty('guidanceScale');
+  const expected = { prompt: output.prompt, width: 1024, height: 1024, steps: 4, seed: 20260905 };
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
+  for (const stage of ['cold', 'refresh']) {
+    if (stage === 'refresh') await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 60_000 });
+    await dismissRecoveredRunFailure(page);
+    await dismissTaskLauncher(page);
+    await assertCapturedImageInGallery(page, taskId!, expected, `${directory}/${stage}.png`);
+  }
+  const media = await page.request.get(new URL(output.url, LIVE_BACKEND_URL).toString());
+  expect(media.ok()).toBe(true);
+  expect(errors).toEqual([]);
+  await writeFile(
+    `${directory}/result.json`,
+    JSON.stringify(
+      {
+        taskId,
+        expected,
+        errors,
+        frontend: page.url(),
+        newInference: false,
+        afterCleanup: true,
+        sha256: createHash('sha256')
+          .update(await media.body())
+          .digest('hex'),
+      },
+      null,
+      2,
+    ),
+  );
+});
+
+test('production Qwen reviews the completed demo after historical recovery is dismissed', async ({ page }) => {
+  const taskId = process.env.MODIFF_QWEN_DEMO_REVIEW_TASK;
+  const directory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!taskId || !directory, 'Select the completed production task and isolated review directory.');
+  await page.goto(process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+  await expect(page.getByTestId('topbar-gallery')).toBeVisible({ timeout: 120_000 });
+  await dismissRecoveredRunFailure(page);
+  await dismissTaskLauncher(page);
+  await waitForTask(page, taskId!, 30_000);
+  const output = (await findLiveStudioOutput(page, taskId!))!;
+  const instance = JSON.parse(await readFile(`${directory}/Qwen-Demo.json`, 'utf8')).graph.nodes[0].data
+    .blockInstanceV2;
+  const expected = { prompt: instance.values.prompt, width: 1328, height: 1328, steps: 50, guidanceScale: 4, seed: 42 };
+  expect(output).toMatchObject(expected);
+  await assertCapturedImageInGallery(page, taskId!, expected, `${directory}/demo-gallery.png`);
+  const receipt = await page.request.get(`${LIVE_BACKEND_URL}/runs/${encodeURIComponent(taskId!)}`);
+  expect(receipt.ok()).toBe(true);
+  await writeFile(`${directory}/production-run-receipt.json`, JSON.stringify(await receipt.json(), null, 2));
+  await writeFile(
+    `${directory}/production-result.json`,
+    JSON.stringify(
+      {
+        taskId,
+        output,
+        frontend: page.url(),
+        reviewResumedAfterHistoricalDialog: true,
+        generationLifecycleLog: 'qwen-demo-final-production.log',
+        galleryReview: true,
+      },
+      null,
+      2,
+    ),
+  );
+});
+
+test('production Qwen releases a loaded graph without blocking status requests', async ({ page }) => {
+  test.skip(process.env.MODIFF_QWEN_LOADED_CLEANUP !== '1', 'Requires the completed removal-generation proof.');
+  const directory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!directory, 'An isolated review directory is required.');
+  test.setTimeout(5 * 60_000);
+  const evidence = `${directory}/qwen-removed`;
+  const workflow = JSON.parse(await readFile(`${evidence}/workflow.json`, 'utf8'));
+  const submitted = JSON.parse(await readFile(`${evidence}/submitted.json`, 'utf8'));
+  const loaderId = Object.keys(submitted.nodes).find((id) => submitted.nodes[id].action === 'ModelsLoader')!;
+  const url = process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL;
+  const cached = () => page.request.get(`${url}/cache/${encodeURIComponent(loaderId)}/repo_id`);
+  expect((await cached()).ok(), 'The real generation must leave a loaded model before this check').toBe(true);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('topbar-new-workflow')).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+  await dismissRecoveredRunFailure(page);
+  await dismissTaskLauncher(page);
+  const transfer = await page.evaluateHandle((value) => {
+    const data = new DataTransfer();
+    data.items.add(new File([JSON.stringify(value)], 'Qwen Loaded Cleanup Check.json', { type: 'application/json' }));
+    return data;
+  }, workflow);
+  await page.locator('.react-flow').dispatchEvent('drop', { dataTransfer: transfer });
+  await transfer.dispose();
+  const rootId = workflow.graph.nodes[0].id;
+  const root = page.locator(`.react-flow__node-block[data-id="${rootId}"]`);
+  await expect(root).toBeVisible({ timeout: 60_000 });
+  expect((await cached()).ok()).toBe(true);
+  const resources = async () => {
+    const response = await page.request.get(`${url}/runtime/resources`, { timeout: 5000 });
+    expect(response.ok()).toBe(true);
+    return response.json();
+  };
+  const beforeResources = await resources();
+  let peakRssBytes = beforeResources.process.rssBytes;
+  let finished = false;
+  const release = page
+    .waitForResponse(
+      (response) => {
+        if (new URL(response.url()).pathname !== '/cache' || response.request().method() !== 'DELETE') return false;
+        const nodes = response.request().postDataJSON()?.nodes;
+        return nodes === '*' || (Array.isArray(nodes) && nodes.includes(loaderId));
+      },
+      { timeout: 180_000 },
+    )
+    .then(async (response) => {
+      expect(response.ok()).toBe(true);
+      return response.json();
+    })
+    .finally(() => {
+      finished = true;
+    });
+  const samples: number[] = [];
+  const status = async () => {
+    while (!finished) {
+      const started = Date.now();
+      const response = await page.request.get(`${url}/queue`, { timeout: 5000 });
+      expect(response.ok()).toBe(true);
+      expect((await response.json()).current).toBeNull();
+      samples.push(Date.now() - started);
+      peakRssBytes = Math.max(peakRssBytes, (await resources()).process.rssBytes);
+      await page.waitForTimeout(250);
+    }
+  };
+  const responsive = status();
+  await root.locator('header').click();
+  await page.getByTestId('selection-toolbar-delete').click();
+  const [receipt] = await Promise.all([release, responsive]);
+  await expect(root).toHaveCount(0);
+  expect((await cached()).status()).toBe(404);
+  expect(samples.length).toBeGreaterThan(0);
+  expect(Math.max(...samples)).toBeLessThan(4000);
+  const afterResources = await resources();
+  expect(peakRssBytes - beforeResources.process.rssBytes).toBeLessThan(8 * 1024 ** 3);
+  await writeFile(
+    `${evidence}/loaded-cleanup.json`,
+    JSON.stringify(
+      {
+        loaderId,
+        receipt,
+        statusSamples: samples.length,
+        maximumStatusLatencyMs: Math.max(...samples),
+        peakRssBytes,
+        beforeResources,
+        afterResources,
+      },
+      null,
+      2,
+    ),
+  );
 });
 
 async function saveAndReinsertUserNodeForLiveProof(page: Page, rootId: string, evidenceRoot: string) {
@@ -2675,6 +4347,170 @@ async function saveAndReinsertUserNodeForLiveProof(page: Page, rootId: string, e
   };
 }
 
+test('FLUX Klein routes preserve independent drafts through native switching and refresh', async ({ page }) => {
+  test.skip(process.env.MODIFF_RUN_FLUX_KLEIN_ROUTE_LIFECYCLE !== '1', 'Select the FLUX route lifecycle explicitly.');
+  const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(!outputDirectory, 'A separate evidence directory is required.');
+  test.setTimeout(12 * 60 * 1000);
+  const textToImage = process.env.MODIFF_FLUX_ROUTE_MODE === 'text_to_image';
+  const execute = process.env.MODIFF_FLUX_ROUTE_EXECUTE === '1';
+  if (execute && !textToImage) throw new Error('The switch-execution proof requires text-to-image mode.');
+  const evidenceRoot = `${outputDirectory}/klein-${textToImage ? 't2i' : 'edit'}-route-switch`;
+  await mkdir(evidenceRoot, { recursive: true });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('klein-route-lifecycle')) return;
+    localStorage.clear();
+    sessionStorage.clear();
+    sessionStorage.setItem('klein-route-lifecycle', 'initialized');
+  });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  await dismissRecoveredRunFailure(page);
+  await ensureExpertMode(page);
+  const { root, rootId } = await insertV2Admission(page, {
+    id: `flux2-klein-base-${textToImage ? 'text-to-image' : 'edit-image'}`,
+    label: `Flux2 Klein Base — ${textToImage ? 'Text To Image' : 'Edit Image'}`,
+    values: {},
+  });
+  const basePrompt = textToImage
+    ? 'Editorial photograph of a museum conservation workshop at dawn. A brass astrolabe with engraved rings rests on navy velvet on an oak workbench. A white cotton glove, fine brush, technical drawing and red wax seal sit in the foreground. Arched windows show a misty city; cool daylight mixes with a warm articulated desk lamp. Detailed aged metal, natural fabric folds, coherent perspective and realistic shadows, no people.'
+    : 'Replace only the velvet with burgundy silk; preserve the brass astrolabe, tools and dawn lighting.';
+  const distilledPrompt = textToImage
+    ? `${basePrompt} A small round observatory miniature stands beside the astrolabe, with a balcony, telescope and illuminated clock workshop below.`
+    : 'Keep the astrolabe and silk; add one small ivory conservation tag beside the brush.';
+  await fillBlockValueAndAssert(
+    page,
+    rootId,
+    root.getByLabel('prompt', { exact: true }),
+    'prompt',
+    basePrompt,
+    basePrompt,
+  );
+  const base = await blockSnapshot(page, rootId);
+  const selector = root.getByTestId(`block-v2-route-select-${rootId}`);
+  const switchTo = async (name: string) => {
+    await selector.click();
+    await page.getByRole('option', { name, exact: true }).click();
+    const dialog = page.getByTestId(`switch-block-route-v1-${rootId}`);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Keep draft and switch', exact: true }).click();
+    // "FLUX.2 Klein" is also a substring of "FLUX.2 Klein Base". Wait for
+    // the committed exact model, not an old label that happens to match.
+    await expect(selector).toHaveText(name, { timeout: 180_000 });
+    await expect
+      .poll(async () => (await blockSnapshot(page, rootId)).repository, { timeout: 180_000 })
+      .toBe(name === 'FLUX.2 Klein' ? 'black-forest-labs/FLUX.2-klein-4B' : 'black-forest-labs/FLUX.2-klein-base-4B');
+  };
+  const assertRestored = async (before: BlockSnapshot) => {
+    const after = await blockSnapshot(page, rootId);
+    expect(after.definitionId).toBe(before.definitionId);
+    expect(after.values).toEqual(before.values);
+    expect(after.definitionDefaults).toEqual(before.definitionDefaults);
+    const previous = JSON.parse(before.instanceJson);
+    const restored = JSON.parse(after.instanceJson);
+    expect(restored.effectiveGraph).toEqual(previous.effectiveGraph);
+    expect(restored.effectiveInterface).toEqual(previous.effectiveInterface);
+    expect(after.internalLayout).toEqual(before.internalLayout);
+  };
+  await switchTo('FLUX.2 Klein');
+  await expect(root.getByLabel('prompt', { exact: true })).toHaveValue(basePrompt);
+  expect((await blockSnapshot(page, rootId)).repository).toBe('black-forest-labs/FLUX.2-klein-4B');
+  await fillBlockValueAndAssert(
+    page,
+    rootId,
+    root.getByLabel('prompt', { exact: true }),
+    'prompt',
+    distilledPrompt,
+    distilledPrompt,
+  );
+  const distilled = await blockSnapshot(page, rootId);
+  await switchTo('FLUX.2 Klein Base');
+  await assertRestored(base);
+  const saved = (await blockSnapshot(page, rootId)).instanceJson;
+  await page.getByTestId('topbar-save-workflow').click();
+  const dialog = page.getByTestId('save-workflow-dialog');
+  await expect(dialog).toBeVisible();
+  await page.getByTestId('save-workflow-name').fill(`FLUX Klein independent route drafts ${Date.now()}`);
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(dialog).toHaveCount(0, { timeout: 120_000 });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  expect((await blockSnapshot(page, rootId)).instanceJson).toBe(saved);
+  await switchTo('FLUX.2 Klein');
+  await assertRestored(distilled);
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await assertExpandedBlockContainsProjection(page, rootId);
+  await page.screenshot({ path: `${evidenceRoot}/distilled-restored-expanded.png`, fullPage: false });
+  if (execute) {
+    await root.getByTestId(`user-block-toggle-${rootId}`).click();
+    for (const [id, label, value] of [
+      ['width', 'width', '1024'],
+      ['height', 'height', '1024'],
+      ['num_inference_steps', 'num inference steps', '4'],
+    ]) {
+      await fillBlockValueAndAssert(page, rootId, root.getByLabel(label, { exact: true }), id, value, value);
+    }
+    await fillBlockValueAndAssert(page, rootId, root.getByLabel('Seed', { exact: true }), 'seed', '20260905', {
+      value: '20260905',
+      isRandom: false,
+    });
+    await root.locator('header').first().click();
+    const submitted = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/graph' && response.request().method() === 'POST',
+      { timeout: 120_000 },
+    );
+    await page.getByTestId('selection-toolbar-run-from-node').click();
+    const response = await submitted;
+    expect(response.ok(), await response.text()).toBe(true);
+    const graph = response.request().postDataJSON() as ExecutionExport;
+    const loader = Object.values(graph.nodes).find((node) => node.action === 'ModelsLoader');
+    expect(loader?.params).toMatchObject({
+      repo_id: { value: { source: 'hub', value: 'black-forest-labs/FLUX.2-klein-4B' } },
+      revision: { value: 'e7b7dc27f91deacad38e78976d1f2b499d76a294' },
+      dtype: { value: 'bfloat16' },
+      offload_mode: { value: 'model_cpu' },
+    });
+    expect((loader?.params?.quant_config as { value?: unknown } | undefined)?.value).toBeUndefined();
+    const { task_id: taskId } = (await response.json()) as { task_id: string };
+    await writeFile(`${evidenceRoot}/submitted-workflow.json`, `${JSON.stringify(graph, null, 2)}\n`);
+    await writeFile(`${evidenceRoot}/submitted-task.json`, `${JSON.stringify({ taskId })}\n`);
+    const task = await waitForTask(page, taskId, 20 * 60 * 1000);
+    const expected = { prompt: distilledPrompt, width: 1024, height: 1024, steps: 4, seed: 20260905 };
+    await assertCapturedImageInGallery(page, taskId, expected, `${evidenceRoot}/gallery-after-switch.png`);
+    const output = await findLiveStudioOutput(page, taskId);
+    expect(output?.url).toBeTruthy();
+    const image = await page.request.get(new URL(output!.url!, LIVE_BACKEND_URL).toString());
+    expect(image.ok()).toBe(true);
+    await writeFile(`${evidenceRoot}/after-switch.webp`, await image.body());
+    await writeFile(`${evidenceRoot}/execution.json`, `${JSON.stringify({ task, output }, null, 2)}\n`);
+  }
+  expect(errors).toEqual([]);
+  await writeFile(
+    `${evidenceRoot}/result.json`,
+    `${JSON.stringify(
+      {
+        checks: {
+          nativeSwitchBothDirections: true,
+          independentDrafts: true,
+          saveRefresh: true,
+          expandedContainment: true,
+        },
+        base,
+        distilled,
+        restored: await blockSnapshot(page, rootId),
+        execution: execute
+          ? 'See execution.json and after-switch.webp.'
+          : 'Separate generation proofs; no GPU work submitted.',
+      },
+      null,
+      2,
+    )}\n`,
+  );
+});
+
 test('cached FLUX V2 retains visible edits and generates with model-card settings', async ({ page }) => {
   test.skip(process.env.MODIFF_RUN_FLUX_KLEIN_V2_DEMO !== '1', 'Select the cached FLUX Klein V2 demo explicitly.');
   const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
@@ -2710,17 +4546,53 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
       steps: 28,
       guidance: 2.5,
     },
+    dev: {
+      label: 'Flux',
+      repository: 'black-forest-labs/FLUX.1-dev',
+      revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
+      pipelineClass: 'FluxModularPipeline',
+      steps: 50,
+      guidance: 3.5,
+    },
+    flux2: {
+      label: 'Flux2',
+      repository: 'black-forest-labs/FLUX.2-dev',
+      revision: '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c',
+      pipelineClass: 'Flux2ModularPipeline',
+      steps: 50,
+      guidance: 4,
+    },
   };
   const variant = process.env.MODIFF_FLUX_V2_VARIANT || 'klein';
+  // Match the reviewed resource default, not a Klein-only assumption. This
+  // assertion does not alter the instance or silently select a lighter recipe.
+  const creatorOffloadMode = ['kontext', 'dev'].includes(variant) ? 'group_disk' : 'model_cpu';
+  const expectedOffloadMode = process.env.MODIFF_FLUX_V2_OFFLOAD_MODE ?? creatorOffloadMode;
+  if (!['model_cpu', 'group_cpu', 'group_disk'].includes(expectedOffloadMode))
+    throw new Error('Select an explicit supported FLUX offload mode.');
   const editing = process.env.MODIFF_FLUX_V2_EDIT === '1';
   const inputImage = editing ? process.env.MODIFF_FLUX_V2_INPUT_IMAGE : undefined;
+  const inputImages: unknown = process.env.MODIFF_FLUX_V2_INPUT_IMAGES
+    ? JSON.parse(process.env.MODIFF_FLUX_V2_INPUT_IMAGES)
+    : inputImage
+      ? [inputImage]
+      : [];
   if (!variants[variant]) throw new Error(`Unknown cached FLUX variant: ${variant}`);
-  if (editing && !inputImage) throw new Error('An explicit existing image is required for the edit lifecycle.');
+  if (!Array.isArray(inputImages) || inputImages.some((value) => typeof value !== 'string' || !value.trim())) {
+    throw new Error('MODIFF_FLUX_V2_INPUT_IMAGES must be a JSON array of existing backend image paths.');
+  }
+  const references = inputImages as string[];
+  if (editing && !references.length) throw new Error('Explicit existing images are required for the edit lifecycle.');
+  if (!editing && references.length) throw new Error('Reference images require the edit lifecycle.');
+  if (references.length > 1 && ['kontext', 'dev'].includes(variant))
+    throw new Error('This multi-reference proof targets FLUX Klein.');
+  const uploadedReferences: Array<{ source: string; sha256: string; bytes: number }> = [];
+  let storedReferences: string[] = [];
   const selected = variants[variant]!;
   const scenario = {
     ...selected,
-    id: `${variant === 'kontext' ? 'flux-kontext' : `flux2-${variant}`}-${editing ? 'edit-image' : 'text-to-image'}`,
-    label: `${selected.label} — ${editing ? 'Edit Image' : 'Text To Image'}`,
+    id: `${variant === 'dev' ? 'flux' : variant === 'kontext' ? 'flux-kontext' : variant === 'flux2' ? 'flux2' : `flux2-${variant}`}-${editing ? (variant === 'dev' ? 'image-to-image' : 'edit-image') : 'text-to-image'}`,
+    label: `${selected.label} — ${editing ? (variant === 'dev' ? 'Image To Image' : 'Edit Image') : 'Text To Image'}`,
     values: {},
   };
   const evidenceRoot = `${outputDirectory}/${scenario.id}`;
@@ -2740,7 +4612,8 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
     );
   });
   // Creator/Diffusers recommendations: Klein distilled 4/1, Base 50/4,
-  // Kontext 28/2.5. Use full 1024-square instance settings, not smoke defaults.
+  // Kontext 28/2.5, FLUX.1 dev 50/3.5, full FLUX.2 50/4. These are explicit 1024-square
+  // test-instance settings; no stored creator defaults are modified.
   const modelCard = `https://huggingface.co/${scenario.repository}/blob/${scenario.revision}/README.md`;
   let prompt = editing
     ? 'Change only the dark blue velvet beneath the brass astrolabe to rich burgundy velvet. Preserve the exact astrolabe, all brass rings and engravings, the oak workbench, glove, tools, lamp, arched windows, camera position and lighting. Keep the original photograph realistic with detailed fabric folds; do not add or remove objects.'
@@ -2751,6 +4624,27 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
       'a misty old city; cool daylight mixes with one warm articulated desk lamp. A small cream label clearly ' +
       'reads "ORBIT 07". Coherent perspective, exquisite aged metal and fabric textures, realistic reflections, ' +
       'restrained navy and amber palette, layered depth, crisp product detail, natural photographic lighting, no people.';
+  if (editing && variant === 'dev') {
+    // FLUX.1 img2img is caption-conditioned denoising, not an instruction-edit
+    // model. Test its genuine capability rather than demanding Kontext-style
+    // "change only" preservation at the unchanged default strength.
+    prompt =
+      'Editorial photograph of a brass astronomical astrolabe on rich burgundy velvet in a museum ' +
+      'conservation workshop. The astrolabe stands at the center of an oak workbench with engraved brass rings, ' +
+      'a white cotton glove, fine brushes, tiny screws and a folded technical drawing. Tall arched windows ' +
+      'overlook a misty old city at dawn. Cool window light and a warm brass desk lamp illuminate the detailed ' +
+      'metal, deep wine-red fabric folds and polished wood. Coherent perspective, restrained burgundy and amber ' +
+      'palette, realistic photographic texture, no people.';
+  }
+  if (references.length > 1) {
+    prompt =
+      'Use image 1 as the base photograph: preserve its brass astrolabe, navy velvet, oak workbench, tools, ' +
+      'arched windows, ORBIT 07 label, camera position and dawn lighting. Add a detailed tabletop architectural ' +
+      'miniature of the clock tower from image 2 on the right side of the workbench, beside the astrolabe, not ' +
+      'replacing it. Reproduce the second reference’s tower silhouette, clock face, balcony, telescope and TIME ' +
+      'ATELIER sign at miniature scale. Ground both objects with coherent shadows on the same table. Natural ' +
+      'museum conservation photograph, precise brass and stone textures, no collage borders or split screen.';
+  }
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -2809,15 +4703,71 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
   expect(promptInstance.presentation).toEqual(beforeInstance.presentation);
   expect(afterPrompt.definitionDefaults).toEqual(before.definitionDefaults);
   expect({ ...afterPrompt.values, prompt: before.values.prompt }).toEqual(before.values);
-  if (inputImage) {
+  expect(before.resolvedValues.offloadMode).toBe(creatorOffloadMode);
+  if (expectedOffloadMode !== creatorOffloadMode) {
+    // Explicit test-instance resource selection, never a creator-default repair.
+    // Native prompt/numeric/Save gestures are tested separately below.
+    await page.evaluate(
+      async ({ id, mode }) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        useFlowStore.getState().setBlockInstanceValueV2(id, 'offloadMode', mode);
+      },
+      { id: rootId, mode: expectedOffloadMode },
+    );
+    const afterResource = await blockSnapshot(page, rootId);
+    expect(afterResource.resolvedValues.offloadMode).toBe(expectedOffloadMode);
+    expect(afterResource.definitionDefaults).toEqual(before.definitionDefaults);
+  }
+  if (references.length > 1) {
+    // Exercise the real multiple-file picker, not a store mutation or newline
+    // string masquerading as a list. Preserve ordered bytes and upload identity.
+    const fields = root.getByLabel('image', { exact: true });
+    for (let index = (await fields.count()) - 1; index >= 0; index -= 1) {
+      await fields.nth(index).fill('');
+      await fields.nth(index).press('Tab');
+    }
+    const files = [];
+    for (const [index, source] of references.entries()) {
+      const response = await page.request.get(`${LIVE_BACKEND_URL}/file?file=${encodeURIComponent(source)}`);
+      expect(response.ok(), `Reference image ${index + 1} must exist`).toBe(true);
+      const buffer = await response.body();
+      uploadedReferences.push({
+        source,
+        sha256: createHash('sha256').update(buffer).digest('hex'),
+        bytes: buffer.length,
+      });
+      const extension = /\.(png|jpe?g|webp)$/i.exec(source)?.[1]?.toLowerCase();
+      if (!extension) throw new Error(`Unsupported proof image extension: ${source}`);
+      files.push({
+        name: `flux-reference-${index + 1}.${extension}`,
+        mimeType: extension === 'jpg' ? 'image/jpeg' : `image/${extension}`,
+        buffer,
+      });
+    }
+    await root.locator('input[type="file"]').first().setInputFiles(files);
+    await expect
+      .poll(async () => (await blockSnapshot(page, rootId)).resolvedValues.image, { timeout: 60_000 })
+      .toHaveLength(references.length);
+    storedReferences = (await blockSnapshot(page, rootId)).resolvedValues.image as string[];
+    for (const [index, stored] of storedReferences.entries()) {
+      const response = await page.request.get(`${LIVE_BACKEND_URL}/file?file=${encodeURIComponent(stored)}`);
+      expect(response.ok()).toBe(true);
+      expect(
+        createHash('sha256')
+          .update(await response.body())
+          .digest('hex'),
+      ).toBe(uploadedReferences[index]!.sha256);
+    }
+  } else if (references[0]) {
     await fillBlockValueAndAssert(
       page,
       rootId,
       root.getByLabel('image', { exact: true }).first(),
       'image',
-      inputImage,
-      [inputImage],
+      references[0],
+      references,
     );
+    storedReferences = [...references];
   }
 
   for (const [control, label, temporary, final] of [
@@ -2854,11 +4804,13 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
       ? await saveAndReinsertUserNodeForLiveProof(page, rootId, evidenceRoot)
       : null;
   if (userNodeProof) ({ root, rootId, prompt } = userNodeProof);
+  if (editing) expect((await blockSnapshot(page, rootId)).resolvedValues.image).toEqual(storedReferences);
   const generationDefaults = (await blockSnapshot(page, rootId)).definitionDefaults;
   const collapsed = await exportFromBlock(page, rootId);
   await root.getByTestId(`user-block-toggle-${rootId}`).click();
   await assertExpandedBlockContainsProjection(page, rootId);
   expect(await exportFromBlock(page, rootId)).toEqual(collapsed);
+  if (editing) expect((await blockSnapshot(page, rootId)).resolvedValues.image).toEqual(storedReferences);
   await root.getByTestId(`user-block-toggle-${rootId}`).click();
   const savedInstance = (await blockSnapshot(page, rootId)).instanceJson;
   const workflowName = `${scenario.label} V2 Museum Workshop ${Date.now()}`;
@@ -2907,7 +4859,7 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
       dtype: 'bfloat16',
       quantizationMode: 'none',
       autoOffload: true,
-      offloadMode: 'model_cpu',
+      offloadMode: expectedOffloadMode,
     });
   }
   // User-owned graphs run concrete nodes, without borrowing registered-route
@@ -2918,13 +4870,20 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
   expect(loader?.params).toMatchObject({
     auto_offload: { value: true },
     dtype: { value: 'bfloat16' },
-    offload_mode: { value: 'model_cpu' },
+    offload_mode: { value: expectedOffloadMode },
     repo_id: { value: { source: 'hub', value: scenario.repository } },
     revision: { value: scenario.revision },
   });
   expect((loader?.params?.quant_config as { value?: unknown } | undefined)?.value).toBeUndefined();
   expect(JSON.stringify(graph.nodes)).toContain(JSON.stringify(prompt));
   expect(JSON.stringify(graph.nodes)).not.toContain('blockInstanceV2');
+  if (editing) {
+    const imageLoaders = Object.values(graph.nodes).filter(
+      (node) => node.module === 'modules.Image' && node.action === 'Load',
+    );
+    expect(imageLoaders).toHaveLength(1);
+    expect(imageLoaders[0]!.params?.file).toMatchObject({ value: storedReferences });
+  }
   console.log(
     `[flux-v2] ${scenario.id} submitted ${taskId}, 1024x1024, ${scenario.steps} steps, guidance ${scenario.guidance}, no quantization`,
   );
@@ -2955,6 +4914,36 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
   }
   const decoded = await decodedMediaHash(assetPath, 'image');
   expect(decoded).toMatchObject({ width: 1024, height: 1024 });
+  const statistics = await decodedImageStatistics(page, await readFile(assetPath));
+  await writeFile(`${evidenceRoot}/image-statistics.json`, JSON.stringify(statistics, null, 2));
+  // This proof asks for a detailed photograph: a black NaN-conversion output
+  // cannot pass simply because its encoded dimensions are correct.
+  expect(statistics.maximum - statistics.minimum).toBeGreaterThan(16);
+  expect(statistics.standardDeviation).toBeGreaterThan(2);
+  const expectedInputs = {
+    prompt,
+    width: 1024,
+    height: 1024,
+    steps: scenario.steps,
+    // Distilled Klein has no guider component and consumes no guidance_scale.
+    // Do not relabel a historical form default as an executed model argument.
+    ...(variant === 'klein' ? {} : { guidanceScale: scenario.guidance }),
+    seed: 20260905,
+  };
+  expect(output!.resolvedExecutionInputs).toMatchObject({
+    source: 'backend-execution',
+    taskId,
+    summary: { ...expectedInputs, offloadMode: expectedOffloadMode },
+  });
+  await assertCapturedImageInGallery(page, taskId, expectedInputs, `${evidenceRoot}/gallery-resolved-inputs.png`);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  await assertCapturedImageInGallery(
+    page,
+    taskId,
+    expectedInputs,
+    `${evidenceRoot}/gallery-resolved-inputs-after-refresh.png`,
+  );
   const finalInstance = await blockSnapshot(page, rootId);
   expect(finalInstance.values).toEqual(JSON.parse(savedInstance).values);
   expect(finalInstance.definitionDefaults).toEqual(generationDefaults);
@@ -2970,13 +4959,18 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
         modelCard,
         prompt,
         inputImage,
+        inputImages: references,
+        uploadedReferences,
+        storedReferences,
         settings: {
           width: 1024,
           height: 1024,
           steps: scenario.steps,
           guidance: scenario.guidance,
+          guidanceConsumed: variant !== 'klein',
           seed: 20260905,
           quantization: 'none',
+          offloadMode: expectedOffloadMode,
         },
         savedInstance: JSON.parse(savedInstance),
         task,
@@ -2990,6 +4984,8 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
           expandedContainment: true,
           frontendGeneration: true,
           userNodeSaveReinsertIsolation: Boolean(userNodeProof),
+          multiReferencePickerByteOrderAndPersistence: references.length > 1,
+          capturedNumericInputsInGalleryBeforeAndAfterRefresh: true,
         },
         showcaseCandidate: true,
         approved: false,
@@ -2999,10 +4995,10 @@ test('cached FLUX V2 retains visible edits and generates with model-card setting
       2,
     )}\n`,
   );
-  expect(errors.filter((message) => !message.startsWith('ResizeObserver loop'))).toEqual([]);
+  expect(errors).toEqual([]);
   await writeFile(
     `${evidenceRoot}/PARAMETERS.md`,
-    `# ${scenario.label}\n\nSaved workflow: ${workflowName}\n\nModel: ${scenario.repository}@${scenario.revision}\n\n1024×1024; ${scenario.steps} steps; guidance ${scenario.guidance}; fixed seed 20260905. BF16, model CPU offload, no quantization.\n\n${inputImage ? `Input: ${inputImage}\n\n` : ''}## Prompt\n\n${prompt}\n\n## Evidence\n\nPassed frontend insert/edit/expand/save/refresh/export parity/generate. See frontend-result.json and submitted-workflow.json for exact values and identity. Creator defaults were not changed.\n\nModel-card reference: ${modelCard}\n\nOutput is a review candidate, not approved publication.\n`,
+    `# ${scenario.label}\n\nSaved workflow: ${workflowName}\n\nModel: ${scenario.repository}@${scenario.revision}\n\n1024×1024; ${scenario.steps} steps; ${variant === 'klein' ? 'guidance is not consumed by this distilled route (form recommendation: 1)' : `guidance ${scenario.guidance}`}; fixed seed 20260905. BF16, offload: ${expectedOffloadMode} (checked against backend execution inputs), no quantization.\n\n${inputImage ? `Input: ${inputImage}\n\n` : ''}## Prompt\n\n${prompt}\n\n## Evidence\n\nPassed frontend insert/edit/expand/save/refresh/export parity/generate. See frontend-result.json and submitted-workflow.json for exact values and identity. Creator defaults were not changed.\n\nModel-card reference: ${modelCard}\n\nOutput is a review candidate, not approved publication.\n`,
   );
 });
 
@@ -3177,6 +5173,214 @@ const QWEN_V2_ADMISSION_EXECUTIONS: QwenV2AdmissionExecution[] = [
   },
 ];
 
+/** Acceptance recipes are explicit instance edits, never catalog default changes. */
+function qwenFullQualityScenario(scenario: QwenV2AdmissionExecution): QwenV2AdmissionExecution {
+  const layered = scenario.id === 'qwen-image-layered';
+  const control = scenario.id.includes('-control');
+  const editPlus = scenario.repository === 'Qwen/Qwen-Image-Edit-2511';
+  const strengthOverride = process.env.MODIFF_QWEN_QUALITY_STRENGTH;
+  if (
+    strengthOverride !== undefined &&
+    (!Number.isFinite(Number(strengthOverride)) || Number(strengthOverride) <= 0 || Number(strengthOverride) > 1)
+  ) {
+    throw new Error('The explicit quality-instance strength must be greater than zero and at most one.');
+  }
+  const prompts: Record<string, string> = {
+    'qwen-image-image-to-image':
+      'An architectural scale model of the reference interior made from glazed cobalt-blue ceramic. Preserve the reference composition: a narrow console with a rectangular lidded box on the right, a shallow bowl and folded cloth on the left, a wicker-shaped basket beneath, a tall open doorway at left and two wall hooks. All objects are carefully sculpted ceramic miniatures, with subtle glaze highlights, precise edges, soft window light and convincing shadows. No new furniture or text.',
+    'qwen-image-inpaint':
+      'A realistic photograph of a yellow room and an oak console. In the masked area on the right of the console stands a short round cobalt-blue ceramic vase, with a narrow neck, rich glossy glaze and soft reflected window light. No box in the masked area. Preserve the doorway, hooks, bowl, rust-red cloth, basket, furniture and the unmasked yellow wall. Natural contact shadow under the vase, consistent camera perspective.',
+    'qwen-image-edit':
+      'Replace only the black storage box on the wooden console with a glossy turquoise ceramic vase containing three delicate white magnolia branches. Preserve the yellow wall, doorway, hooks, ceramic bowl, rust-red folded cloth, wicker basket, wooden furniture, camera position and soft daylight. Realistic ceramic glaze, natural branches and grounded contact shadows. Do not add or remove other objects.',
+    'qwen-image-edit-inpaint':
+      'Replace only the masked black storage box with a short round red ceramic vase with a narrow neck. Keep the vase inside the masked region, with realistic glossy glaze and a natural contact shadow. Preserve the yellow wall, doorway, hooks, bowl, folded rust-red cloth, wicker basket, wood grain, camera angle and lighting outside the mask.',
+    'qwen-image-layered':
+      'A softly sunlit yellow interior. An oak console holds a black lidded storage box on the right, a white ceramic bowl and a folded rust-red cloth on the left. A woven wicker basket stands underneath. The background contains a doorway on the left and two small dark wall hooks.',
+    'qwen-image-control':
+      'A realistic interior photograph following the supplied edge geometry: a narrow oak console against a warm yellow wall, an open doorway at left, two dark hooks, a ceramic bowl and rust-red folded cloth on the left of the table, a rectangular blue lacquered storage box with a lid on the right and a woven basket beneath. Preserve the strong perspective lines, object silhouettes and placement. Soft daylight, natural shadows and detailed wood grain.',
+    'qwen-image-control-image-to-image':
+      'Restyle the reference interior as a sophisticated navy-blue study while following the supplied edge geometry. Change the wall to deep navy, the console to warm walnut and the rectangular storage box to polished brass. Preserve the doorway, hooks, bowl, folded cloth, basket, camera perspective, furniture silhouettes and exact object placement. Soft window light and realistic material reflections.',
+    'qwen-image-control-inpaint':
+      'Change only the masked black storage box into a cobalt-blue lacquered storage box with the same rectangular silhouette, hinged lid and front clasp. Keep its geometry aligned with the control edges. Preserve all unmasked room details, the yellow wall, doorway, bowl, red cloth, basket, wood grain and daylight. Realistic glossy blue lacquer and a subtle contact shadow.',
+  };
+  return {
+    ...scenario,
+    values: {
+      ...scenario.values,
+      ...(prompts[scenario.id] ? { prompt: prompts[scenario.id] } : {}),
+      num_inference_steps: editPlus ? 40 : control ? 30 : 50,
+      guidanceScale: 4,
+      ...('width' in scenario.values ? { width: 1024, height: 1024 } : {}),
+      ...(control
+        ? {
+            control_image: '@data/images/qwen_inpaint_object_replace.reference_image_1.webp',
+            controlnet_conditioning_scale: 0.9,
+            control_guidance_start: 0,
+            control_guidance_end: 1,
+          }
+        : {}),
+      ...(layered ? { layers: 4, resolution: 640 } : {}),
+      ...(strengthOverride !== undefined && 'strength' in scenario.values
+        ? { strength: Number(strengthOverride) }
+        : {}),
+    },
+    ...(layered ? { expectedMediaItems: 4 } : {}),
+  };
+}
+
+async function insertCannyIntoQwenControl(page: Page, rootId: string, root: Locator) {
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+  await page.getByTestId('arrange-graph').click();
+  await page.getByLabel('Search nodes').fill('Canny Edge Detection');
+  const group = page.getByTestId('node-group-image-filter');
+  await expect(group).toBeVisible();
+  if ((await group.getByRole('button').first().getAttribute('aria-expanded')) !== 'true')
+    await group.getByRole('button').first().click();
+  // Expanded root backgrounds are pointer-transparent. Drop on the actual
+  // canvas pane at a point inside its geometry, as the user's pointer does.
+  const pane = page.locator('.react-flow__pane');
+  let previousGeometry = '';
+  let stableSamples = 0;
+  await expect
+    .poll(
+      async () => {
+        const box = await root.boundingBox();
+        const geometry = JSON.stringify(box && Object.values(box).map((value) => Math.round(value)));
+        stableSamples = geometry === previousGeometry ? stableSamples + 1 : 0;
+        previousGeometry = geometry;
+        return stableSamples;
+      },
+      { intervals: [150], timeout: 15_000 },
+    )
+    .toBeGreaterThanOrEqual(3);
+  await expect(pane).toBeVisible();
+  const rootBox = (await root.boundingBox())!;
+  const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.className, {
+    x: rootBox.x + 8,
+    y: rootBox.y + 45,
+  });
+  expect(String(hit)).toContain('react-flow__pane');
+  await page.evaluate(() => {
+    const events: unknown[] = [];
+    Object.assign(window, { __qwenCannyDragEvents: events });
+    for (const type of ['dragstart', 'dragenter', 'dragover', 'drop', 'dragend']) {
+      document.addEventListener(
+        type,
+        (event) => {
+          const drag = event as DragEvent;
+          events.push({
+            type,
+            x: drag.clientX,
+            y: drag.clientY,
+            target: (drag.target as HTMLElement)?.className,
+            data: drag.dataTransfer?.getData('text/plain'),
+            types: [...(drag.dataTransfer?.types ?? [])],
+          });
+        },
+        { capture: true, passive: true },
+      );
+    }
+  });
+  const sourceBox = (await page.getByTestId('node-row-modules-ImageFilters-Canny').boundingBox())!;
+  const sourceX = sourceBox.x + sourceBox.width / 2;
+  const sourceY = sourceBox.y + sourceBox.height / 2;
+  await page.mouse.move(sourceX, sourceY);
+  await page.mouse.down();
+  await page.mouse.move(sourceX + 12, sourceY, { steps: 3 });
+  await page.mouse.move(rootBox.x + 8, rootBox.y + 45, { steps: 20 });
+  // HTML drag targets receive dragover only after a second pointer movement.
+  await page.mouse.move(rootBox.x + 9, rootBox.y + 45);
+  await page.mouse.up();
+  await test.info().attach('canny-native-drag', {
+    body: JSON.stringify(await page.evaluate(() => Reflect.get(window, '__qwenCannyDragEvents')), null, 2),
+    contentType: 'application/json',
+  });
+  const inspect = () =>
+    page.evaluate(async (id) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const flow = useFlowStore.getState();
+      const instance = flow.nodes.find((node) => node.id === id)!.data.blockInstanceV2!;
+      const canny = instance.effectiveGraph.nodes.find((node) => node.data.action === 'Canny');
+      const original = instance.definitionSnapshot.graph.edges.find(
+        (edge) => edge.targetNodeId === 'controlnet' && edge.targetPortId === 'control_image',
+      );
+      if (!canny || !original) return null;
+      const handle = (semanticId: string, field: string, direction: 'input' | 'output') => {
+        for (const node of flow.nodes.filter((node) => node.data.blockProjectionOwnerId === id)) {
+          const binding = Object.entries(node.data.blockProjectionPortBindings ?? {}).find(
+            ([, item]) => item.nodeId === semanticId && item.fieldOrPortId === field && item.direction === direction,
+          );
+          if (binding) return `node-handle-${node.id}-${binding[0]}`;
+          if (node.data.blockProjectionNodeId === semanticId && node.data.params?.[field])
+            return `node-handle-${node.id}-${field}`;
+        }
+        throw new Error(`Missing projected ${semanticId}.${field} ${direction}`);
+      };
+      return {
+        cannyId: canny.nodeId,
+        cannyProjectionId: flow.nodes.find((node) => node.data.blockProjectionNodeId === canny.nodeId)?.id,
+        cannyOutputMode: (canny.data.params?.output_mode as { value?: string } | undefined)?.value,
+        original,
+        source: handle(original.sourceNodeId, original.sourcePortId, 'output'),
+        cannyInput: handle(canny.nodeId, 'image', 'input'),
+        cannyOutput: handle(canny.nodeId, 'output', 'output'),
+        target: handle('controlnet', 'control_image', 'input'),
+        edges: instance.effectiveGraph.edges,
+      };
+    }, rootId);
+  await expect.poll(inspect).not.toBeNull();
+  await page.getByTestId('arrange-graph').click();
+  const state = (await inspect())!;
+  // The upstream ControlNet VAE expects RGB. Choose the ordinary processor's
+  // explicit format control; do not silently rewrite its grayscale default.
+  const outputMode = page.locator(`.react-flow__node[data-id="${state.cannyProjectionId}"] [data-key="output_mode"]`);
+  await outputMode.getByRole('button').first().click();
+  await page.getByRole('option', { name: 'RGB', exact: true }).click();
+  await expect.poll(async () => (await inspect())!.cannyOutputMode).toBe('RGB');
+  for (const [sourceId, targetId] of [
+    [state.source, state.cannyInput],
+    [state.cannyOutput, state.target],
+  ]) {
+    const source = page.getByTestId(sourceId!);
+    const target = page.getByTestId(targetId!);
+    await expect(source).toBeVisible();
+    await expect(target).toBeVisible();
+    const from = (await source.boundingBox())!;
+    const to = (await target.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 18 });
+    await page.mouse.up();
+  }
+  await expect
+    .poll(async () => (await inspect())!.edges)
+    .toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceNodeId: state.original.sourceNodeId,
+          targetNodeId: state.cannyId,
+          targetPortId: 'image',
+        }),
+        expect.objectContaining({
+          sourceNodeId: state.cannyId,
+          sourcePortId: 'output',
+          targetNodeId: 'controlnet',
+          targetPortId: 'control_image',
+        }),
+      ]),
+    );
+  expect(
+    (await inspect())!.edges.some(
+      (edge) =>
+        edge.sourceNodeId === state.original.sourceNodeId &&
+        edge.targetNodeId === 'controlnet' &&
+        edge.targetPortId === 'control_image',
+    ),
+  ).toBe(false);
+  await assertExpandedBlockContainsProjection(page, rootId);
+  await root.getByTestId(`user-block-toggle-${rootId}`).click();
+}
+
 async function insertV2Admission(page: Page, scenario: QwenV2AdmissionExecution) {
   await waitForWorkspace(page);
   await chooseAdvancedWorkflow(page, true);
@@ -3245,10 +5449,20 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
   await mkdir(evidenceRoot, { recursive: true });
   const startAt = Number(process.env.MODIFF_QWEN_V2_EXECUTION_START_AT ?? 0);
   const limit = Number(process.env.MODIFF_QWEN_V2_EXECUTION_LIMIT ?? QWEN_V2_ADMISSION_EXECUTIONS.length);
-  const scenarios = QWEN_V2_ADMISSION_EXECUTIONS.slice(Number.isInteger(startAt) && startAt >= 0 ? startAt : 0).slice(
-    0,
-    Number.isInteger(limit) && limit > 0 ? limit : QWEN_V2_ADMISSION_EXECUTIONS.length,
-  );
+  const fullQuality = process.env.MODIFF_QWEN_FULL_QUALITY === '1';
+  const offloadMode = process.env.MODIFF_QWEN_RESOURCE_OFFLOAD_MODE ?? 'model_cpu';
+  if (!['none', 'model_cpu', 'group_cpu', 'group_disk'].includes(offloadMode))
+    throw new Error('Invalid explicit Qwen qualification offload mode.');
+  const autoOffload = offloadMode !== 'none';
+  const scenarios = QWEN_V2_ADMISSION_EXECUTIONS.map((scenario) =>
+    fullQuality ? qwenFullQualityScenario(scenario) : scenario,
+  )
+    .slice(Number.isInteger(startAt) && startAt >= 0 ? startAt : 0)
+    .slice(0, Number.isInteger(limit) && limit > 0 ? limit : QWEN_V2_ADMISSION_EXECUTIONS.length);
+  const editPlusQuality = process.env.MODIFF_QWEN_EDIT_PLUS_QUALITY === '1';
+  if (editPlusQuality) {
+    expect(scenarios.every((scenario) => scenario.repository === 'Qwen/Qwen-Image-Edit-2511')).toBe(true);
+  }
   const resultPath = `${evidenceRoot}/frontend-result.json`;
   let results: Array<Record<string, unknown>> = [];
   try {
@@ -3285,8 +5499,18 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
     });
 
     const { rootId, root } = await insertV2Admission(page, scenario);
+    console.log(`[qwen-v2-execution] inserted ${scenario.id}`);
+    const creatorDefaults = (await blockSnapshot(page, rootId)).definitionDefaults;
+    const runValues = { ...scenario.values };
+    if (editPlusQuality || fullQuality) {
+      // Instance-only acceptance settings from the pinned creator example.
+      // Do not rewrite catalog defaults or silently upgrade the smoke recipe.
+      delete runValues.image;
+      delete runValues.prompt;
+      delete runValues.num_inference_steps;
+    }
     await page.evaluate(
-      async ({ id, values }) => {
+      async ({ id, values, offloadMode, autoOffload }) => {
         const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
         const flow = useFlowStore.getState();
         const instance = flow.nodes.find((node) => node.id === id)?.data.blockInstanceV2;
@@ -3300,15 +5524,149 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
         Object.entries(values).forEach(([logicalId, value]) => flow.setBlockInstanceValueV2(id, logicalId, value));
         for (const [logicalId, value] of [
           ['dtype', 'bfloat16'],
-          ['autoOffload', true],
-          ['offloadMode', 'model_cpu'],
+          ['autoOffload', autoOffload],
+          ['offloadMode', offloadMode],
         ] as const) {
           if (available.has(logicalId)) flow.setBlockInstanceValueV2(id, logicalId, value);
         }
       },
-      { id: rootId, values: scenario.values },
+      { id: rootId, values: runValues, offloadMode, autoOffload },
     );
+    const uploadedReferences: Array<{ source: string; stored: string; sha256: string }> = [];
+    if (editPlusQuality || fullQuality) {
+      const advanced = root.getByRole('button', { name: 'Advanced', exact: true });
+      if (await advanced.isVisible()) await advanced.click();
+      const prompt =
+        fullQuality && scenario.repository !== 'Qwen/Qwen-Image-Edit-2511'
+          ? String(scenario.values.prompt)
+          : scenario.route === 'multi-reference'
+            ? 'Use image 1 as the base photograph. Replace only the black storage box on the wooden console with a tabletop miniature of the brass observatory in image 2. Preserve the observatory’s domed roof, weather vane, glowing golden globe, exposed gears and circular balcony. Scale it to fit naturally on the console. Preserve the yellow wall, doorway, hooks, ceramic bowl, rust-red folded cloth, wicker basket, wooden furniture, camera angle and soft daylight from image 1. Realistic brass reflections and contact shadows; one coherent interior photograph, no collage, no extra furniture.'
+            : 'Replace only the black storage box on the wooden console with a glossy turquoise ceramic vase containing three delicate white magnolia branches. Preserve the yellow wall, doorway, hooks, ceramic bowl, rust-red folded cloth, wicker basket, wooden furniture, camera position and soft daylight exactly. Realistic ceramic glaze, natural branch shapes and grounded contact shadows. Do not add or remove any other objects.';
+      await fillBlockValueAndAssert(page, rootId, root.getByLabel('prompt', { exact: true }), 'prompt', prompt, prompt);
+      await fillBlockValueAndAssert(
+        page,
+        rootId,
+        root.getByLabel('num inference steps', { exact: true }),
+        'num_inference_steps',
+        String(fullQuality ? scenario.values.num_inference_steps : 40),
+        String(fullQuality ? scenario.values.num_inference_steps : 40),
+      );
+      const fields = root.getByLabel('image', { exact: true });
+      for (let index = (await fields.count()) - 1; index >= 0; index -= 1) {
+        await fields.nth(index).fill('');
+        await fields.nth(index).press('Tab');
+      }
+      const sources = (scenario.values.image ?? []) as string[];
+      const files = [];
+      for (const [index, source] of sources.entries()) {
+        const response = await page.request.get(`${LIVE_BACKEND_URL}/file?file=${encodeURIComponent(source)}`);
+        expect(response.ok()).toBe(true);
+        const buffer = await response.body();
+        files.push({ name: `qwen-reference-${index + 1}.webp`, mimeType: 'image/webp', buffer });
+        uploadedReferences.push({ source, stored: '', sha256: createHash('sha256').update(buffer).digest('hex') });
+      }
+      if (sources.length) {
+        // Inpainting exposes mask_image before image; never choose a picker by
+        // DOM order or a reference photo can silently become a second mask.
+        const imagePicker = root
+          .locator('.modiff-field')
+          .filter({ has: page.getByLabel('image', { exact: true }) })
+          .locator('input[type="file"]');
+        await expect(imagePicker).toHaveCount(1);
+        await imagePicker.setInputFiles(files);
+        await expect
+          .poll(async () => (await blockSnapshot(page, rootId)).resolvedValues.image)
+          .toHaveLength(sources.length);
+      }
+      const stored = ((await blockSnapshot(page, rootId)).resolvedValues.image ?? []) as string[];
+      for (const logicalId of ['mask_image', 'control_image']) {
+        if (logicalId in scenario.values) {
+          expect((await blockSnapshot(page, rootId)).resolvedValues[logicalId]).toEqual(scenario.values[logicalId]);
+        }
+      }
+      const maskFile = process.env.MODIFF_QWEN_QUALITY_MASK_FILE;
+      if (maskFile) {
+        expect(fullQuality && 'mask_image' in scenario.values).toBe(true);
+        const buffer = await readFile(maskFile);
+        const picker = root
+          .locator('.modiff-field')
+          .filter({ has: page.getByLabel('mask image', { exact: true }) })
+          .locator('input[type="file"]');
+        await expect(picker).toHaveCount(1);
+        const original = scenario.values.mask_image;
+        const maskFields = root.getByLabel('mask image', { exact: true });
+        for (let index = (await maskFields.count()) - 1; index >= 0; index -= 1) {
+          await maskFields.nth(index).fill('');
+          await maskFields.nth(index).press('Tab');
+        }
+        await picker.setInputFiles({ name: 'qwen-box-and-shadow-mask.png', mimeType: 'image/png', buffer });
+        await expect
+          .poll(async () => (await blockSnapshot(page, rootId)).resolvedValues.mask_image)
+          .not.toEqual(original);
+        const storedMask = (await blockSnapshot(page, rootId)).resolvedValues.mask_image;
+        const masks = Array.isArray(storedMask) ? storedMask : [storedMask];
+        expect(masks).toHaveLength(1);
+        expect(typeof masks[0]).toBe('string');
+        const response = await page.request.get(
+          `${LIVE_BACKEND_URL}/file?file=${encodeURIComponent(String(masks[0]))}`,
+        );
+        expect(response.ok()).toBe(true);
+        const sha256 = createHash('sha256').update(buffer).digest('hex');
+        expect(
+          createHash('sha256')
+            .update(await response.body())
+            .digest('hex'),
+        ).toBe(sha256);
+        scenario.values.mask_image = storedMask;
+        await writeFile(
+          `${evidenceRoot}/${scenario.id}-mask-upload.json`,
+          `${JSON.stringify({ original, source: maskFile, stored: storedMask, sha256 }, null, 2)}\n`,
+        );
+      }
+      for (const [index, reference] of uploadedReferences.entries()) {
+        reference.stored = stored[index]!;
+        const response = await page.request.get(
+          `${LIVE_BACKEND_URL}/file?file=${encodeURIComponent(reference.stored)}`,
+        );
+        expect(response.ok()).toBe(true);
+        expect(
+          createHash('sha256')
+            .update(await response.body())
+            .digest('hex'),
+        ).toBe(reference.sha256);
+      }
+      expect((await blockSnapshot(page, rootId)).definitionDefaults).toEqual(creatorDefaults);
+    }
+    if (fullQuality && scenario.id.includes('-control')) await insertCannyIntoQwenControl(page, rootId, root);
+    const controlScale = process.env.MODIFF_QWEN_QUALITY_CONTROL_SCALE;
+    if (controlScale !== undefined) {
+      expect(fullQuality && scenario.id.includes('-control')).toBe(true);
+      const value = Number(controlScale);
+      expect(Number.isFinite(value) && value >= 0 && value <= 2).toBe(true);
+      const field = root.getByLabel('controlnet conditioning scale', { exact: true });
+      if (!(await field.isVisible())) {
+        const advanced = root.getByRole('button', { name: 'Advanced', exact: true });
+        if ((await advanced.getAttribute('aria-expanded')) !== 'true') await advanced.click();
+      }
+      const before = (await blockSnapshot(page, rootId)).resolvedValues;
+      const formatted = value.toFixed(2);
+      await fillBlockValueAndAssert(page, rootId, field, 'controlnet_conditioning_scale', formatted, formatted);
+      const after = (await blockSnapshot(page, rootId)).resolvedValues;
+      expect(after).toEqual({ ...before, controlnet_conditioning_scale: formatted });
+      expect(Number(after.controlnet_conditioning_scale)).toBe(value);
+      scenario.values.controlnet_conditioning_scale = formatted;
+      expect((await blockSnapshot(page, rootId)).definitionDefaults).toEqual(creatorDefaults);
+    }
+    console.log(`[qwen-v2-execution] configured ${scenario.id}`);
     const collapsedExport = await exportFromBlock(page, rootId);
+    const modelLoader = Object.values(collapsedExport.nodes).find(
+      (node) => node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+    );
+    expect(modelLoader?.params).toMatchObject({
+      dtype: { value: 'bfloat16' },
+      auto_offload: { value: autoOffload },
+      offload_mode: { value: offloadMode },
+    });
     await root.getByTestId(`user-block-toggle-${rootId}`).click();
     await assertExpandedBlockContainsProjection(page, rootId);
     expect(await exportFromBlock(page, rootId)).toEqual(collapsedExport);
@@ -3317,9 +5675,21 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
 
     await page.getByTestId('topbar-save-workflow').click();
     const saveDialog = page.getByTestId('save-workflow-dialog');
-    if (await saveDialog.isVisible()) {
+    await expect(saveDialog).toBeVisible({ timeout: 120_000 });
+    {
       await page.getByTestId('save-workflow-name').fill(`Qwen V2 Execution ${scenario.id} ${Date.now()}`);
+      const saveStartedAt = Date.now();
+      const saveResponse = page.waitForResponse(
+        (response) => response.request().method() === 'PUT' && /\/workflows\/[^/]+$/u.test(response.url()),
+        { timeout: 60_000 },
+      );
       await page.getByTestId('confirm-save-workflow').click();
+      const response = await saveResponse;
+      await writeFile(
+        `${evidenceRoot}/${scenario.id}-save-response.json`,
+        `${JSON.stringify({ status: response.status(), elapsedMs: Date.now() - saveStartedAt, timing: response.request().timing() }, null, 2)}\n`,
+      );
+      expect(response.ok()).toBe(true);
       await expect(saveDialog).toHaveCount(0);
     }
     await expect
@@ -3343,6 +5713,14 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
     expect(await exportFromBlock(page, rootId)).toEqual(collapsedExport);
     await restoredRoot.getByTestId(`user-block-toggle-${rootId}`).click();
 
+    if (process.env.MODIFF_QWEN_PREPARE_ONLY === '1') {
+      await writeFile(
+        `${evidenceRoot}/${scenario.id}-prepared.json`,
+        `${JSON.stringify({ rootId, instance: (await blockSnapshot(page, rootId)).instanceJson, graph: collapsedExport }, null, 2)}\n`,
+      );
+      console.log(`[qwen-v2-execution] prepared without submission ${scenario.id}`);
+      continue;
+    }
     await restoredRoot.locator('header').first().click();
     const submission = page.waitForResponse(
       (response) => response.url().endsWith('/graph') && response.request().method() === 'POST',
@@ -3358,9 +5736,18 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
     const submittedGraph = response.request().postDataJSON() as ExecutionExport;
     expect(Object.keys(submittedGraph.nodes)).not.toContain(rootId);
     expect(JSON.stringify(submittedGraph.nodes)).not.toContain('blockInstanceV2');
+    await writeFile(
+      `${evidenceRoot}/${scenario.id}-submitted-graph.json`,
+      `${JSON.stringify(submittedGraph, null, 2)}\n`,
+    );
     const taskId = ((await response.json()) as { task_id?: string }).task_id;
     expect(taskId).toBeTruthy();
-    const task = await waitForTask(page, taskId!, 90 * 60 * 1000);
+    console.log(`[qwen-v2-execution] submitted ${scenario.id} as task ${taskId}`);
+    await writeFile(
+      `${evidenceRoot}/${scenario.id}-submission.json`,
+      `${JSON.stringify({ taskId, submittedAt: new Date().toISOString(), values: (await blockSnapshot(page, rootId)).resolvedValues }, null, 2)}\n`,
+    );
+    const task = await waitForTask(page, taskId!, (fullQuality ? 240 : 90) * 60 * 1000);
     const displayType = scenario.displayType ?? 'image';
     await expect
       .poll(() => findLiveStudioOutput(page, taskId!, displayType), {
@@ -3370,6 +5757,42 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
       .toMatchObject({ taskId, displayType });
     const output = await findLiveStudioOutput(page, taskId!, displayType);
     if (!output) throw new Error(`Qwen V2 ${scenario.id} completed without a ${displayType} output.`);
+    if (fullQuality || editPlusQuality) {
+      const values = (await blockSnapshot(page, rootId)).resolvedValues;
+      expect(output.resolvedExecutionInputs).toMatchObject({
+        source: 'backend-execution',
+        taskId,
+        summary: {
+          prompt: values.prompt,
+          steps: Number(values.num_inference_steps),
+          guidanceScale: 4,
+          seed: Number(values.seed),
+          dtype: 'bfloat16',
+          autoOffload,
+          offloadMode,
+          quantConfig: null,
+        },
+      });
+      // ControlNet graphs have multiple genuine repository/revision values.
+      // Inspect the primary loader, not a fabricated single-model summary.
+      const receipt = output.resolvedExecutionInputs as {
+        nodes: Array<{ module: string; action: string; fields: Record<string, { value: unknown }> }>;
+      };
+      const loaders = receipt.nodes.filter(
+        (node) => node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+      );
+      expect(loaders).toHaveLength(1);
+      expect(loaders[0]!.fields).toMatchObject({
+        repo_id: { value: scenario.repository },
+        revision: { value: scenario.revision },
+        dtype: { value: 'bfloat16' },
+        quant_config: { value: null },
+      });
+    }
+    const runRecord = await page.request.get(`${LIVE_BACKEND_URL}/runs/${encodeURIComponent(taskId!)}`);
+    expect(runRecord.ok()).toBe(true);
+    await writeFile(`${evidenceRoot}/${scenario.id}-run.json`, `${JSON.stringify(await runRecord.json(), null, 2)}\n`);
+    expect((await blockSnapshot(page, rootId)).definitionDefaults).toEqual(creatorDefaults);
     if (scenario.expectedMediaItems !== undefined) expect(output.mediaItems).toHaveLength(scenario.expectedMediaItems);
     const urls = output.mediaItems?.length
       ? output.mediaItems.flatMap((item) => (typeof item.url === 'string' && item.url ? [item.url] : []))
@@ -3391,7 +5814,14 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
       label: scenario.label,
       repository: scenario.repository,
       revision: scenario.revision,
-      values: scenario.values,
+      values: (await blockSnapshot(page, rootId)).resolvedValues,
+      recipeKind: fullQuality
+        ? 'full-setting-family-acceptance'
+        : editPlusQuality
+          ? 'creator-setting-edit-plus-acceptance'
+          : 'two-step-smoke',
+      uploadedReferences,
+      definitionDefaults: (await blockSnapshot(page, rootId)).definitionDefaults,
       rootId,
       definitionId: (await blockSnapshot(page, rootId)).definitionId,
       saveRefreshByteIdentical: true,
@@ -3403,6 +5833,53 @@ test('remaining Qwen V2 admissions persist edited inputs and execute through the
     await writeFile(resultPath, `${JSON.stringify({ schemaVersion: 1, routes: results }, null, 2)}\n`, 'utf8');
     console.log(`[qwen-v2-execution] completed ${scenario.id} as task ${taskId}`);
   }
+});
+
+test('completed Edit Plus quality proof exposes consumed inputs in the Gallery', async ({ page }) => {
+  const taskId = process.env.MODIFF_QWEN_EDIT_PLUS_INSPECT_TASK;
+  const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
+  test.skip(
+    !taskId || !outputDirectory,
+    'Select an existing Edit Plus quality task explicitly; never submit a new run.',
+  );
+  test.setTimeout(20 * 60 * 1000);
+  await waitForTask(page, taskId!, 18 * 60 * 1000);
+  const response = await page.request.get(`${LIVE_BACKEND_URL}/runs/${encodeURIComponent(taskId!)}`);
+  expect(response.ok()).toBe(true);
+  const record = await response.json();
+  const instance = record.workflow_snapshot.nodes.find(
+    (node: { data?: { blockInstanceV2?: unknown } }) => node.data?.blockInstanceV2,
+  ).data.blockInstanceV2;
+  expect(instance.definitionSnapshot.source.repository).toBe('Qwen/Qwen-Image-Edit-2511');
+  expect(instance.values.image).toHaveLength(2);
+  expect(Number(instance.values.num_inference_steps)).toBe(40);
+  expect(instance.values.seed).toBe(52009);
+  const output = record.outputs.find(
+    (item: LiveStudioOutput) => item.taskId === taskId && item.displayType === 'image',
+  );
+  expect(output).toBeTruthy();
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await waitForWorkspace(page);
+  await dismissTaskLauncher(page);
+  const analysis = await analyzeImageOutput(page, output);
+  expect(analysis.ok).toBe(true);
+  await mkdir(outputDirectory!, { recursive: true });
+  await writeFile(`${outputDirectory}/completed-run.json`, `${JSON.stringify(record, null, 2)}\n`);
+  await writeFile(`${outputDirectory}/image-analysis.json`, `${JSON.stringify(analysis, null, 2)}\n`);
+  await assertCapturedImageInGallery(
+    page,
+    taskId!,
+    {
+      prompt: instance.values.prompt,
+      width: analysis.analyses[0]!.width,
+      height: analysis.analyses[0]!.height,
+      steps: 40,
+      guidanceScale: 4,
+      seed: 52009,
+    },
+    `${outputDirectory}/gallery-consumed-inputs.png`,
+    true,
+  );
 });
 
 type MiniMaxRegisteredRuntimeExpectation = {

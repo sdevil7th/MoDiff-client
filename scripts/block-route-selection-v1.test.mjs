@@ -61,6 +61,7 @@ test('generic route sets bind unique exact admissions and retain a common media 
     'diffusers.route-set:control-image:v1',
     'diffusers.route-set:text-to-video:v1',
     'diffusers.route-set:image-to-video:v1',
+    'diffusers.route-set:klein-text-to-image:v1',
   ]);
 });
 
@@ -196,6 +197,37 @@ function fixtures() {
   };
 }
 
+test('Klein text-to-image Base and Distilled have an exact bounded route set and preserve drafts', () => {
+  const create = (pipelineClass, prompt) =>
+    instance(
+      definition({
+        definitionId: `diffusers.cluster-admission:${pipelineClass}:text2image:mode:text_to_image`,
+        pipelineClass,
+        prompt,
+      }),
+    );
+  const base = create('Flux2KleinBaseModularPipeline', 'A brass astrolabe on a velvet workbench.');
+  const distilled = create('Flux2KleinModularPipeline', 'Distilled creator prompt');
+  const before = structuredClone(base);
+  const switched = routes.switchBlockRouteInstanceV1(base, 'flux2-klein', distilled);
+  assert.equal(switched.routeSelection.routeSetId, 'diffusers.route-set:klein-text-to-image:v1');
+  assert.equal(switched.values.prompt, base.values.prompt);
+  assert.deepEqual(switched.values.seed, base.values.seed);
+  assert.deepEqual(base, before);
+  const edited = schema.normalizeBlockInstanceV2({
+    ...switched,
+    values: { ...switched.values, prompt: 'A miniature observatory beside the astrolabe.' },
+  });
+  const restoredBase = routes.switchBlockRouteInstanceV1(edited, 'flux2-klein-base', base);
+  assert.deepEqual(restoredBase.effectiveGraph, base.effectiveGraph);
+  assert.deepEqual(restoredBase.effectiveInterface, base.effectiveInterface);
+  assert.deepEqual(restoredBase.values, base.values);
+  const reloaded = schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(restoredBase)));
+  const restoredDistilled = routes.switchBlockRouteInstanceV1(reloaded, 'flux2-klein', distilled);
+  assert.deepEqual(restoredDistilled.values, edited.values);
+  assert.deepEqual(restoredDistilled.definitionSnapshot, distilled.definitionSnapshot);
+});
+
 test('Qwen to FLUX to Qwen keeps one root and restores independent exact route drafts', () => {
   const { qwen, flux, qwenInstance, fluxInstance } = fixtures();
   const editedQwen = schema.normalizeBlockInstanceV2({
@@ -248,6 +280,30 @@ test('an inactive route draft materializes as an independent validation-only com
   candidate.values.prompt = 'candidate-only edit';
   assert.equal(selectedFlux.routeSelection.inactiveDrafts['qwen-image-2512'].values.prompt, qwenInstance.values.prompt);
   assert.equal(routes.inactiveBlockRouteDraftInstanceV1(selectedFlux, 'missing-route'), null);
+});
+
+test('route switching preserves durable internal interfaces in the exact inactive draft without transplanting them', () => {
+  const { qwenInstance, fluxInstance } = fixtures();
+  const graph = structuredClone(qwenInstance.effectiveGraph);
+  graph.nodes[0].containerInterface = {
+    schemaVersion: 1,
+    boundary: structuredClone(qwenInstance.effectiveInterface.boundary),
+    controls: qwenInstance.effectiveInterface.controls.map((control) => {
+      const local = structuredClone(control);
+      delete local.defaultValue;
+      return local;
+    }),
+  };
+  graph.nodes[0].containerInterface.controls[0].label = 'My Qwen scene';
+  const edited = runtime.replaceBlockEffectiveGraphV2(qwenInstance, graph);
+  const flux = routes.switchBlockRouteInstanceV1(edited, 'flux-1-dev', fluxInstance);
+  assert.equal(flux.effectiveGraph.nodes[0].containerInterface, undefined);
+  assert.deepEqual(flux.routeSelection.inactiveDrafts['qwen-image-2512'].effectiveGraph, edited.effectiveGraph);
+  const reloaded = schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(flux)));
+  const restored = routes.switchBlockRouteInstanceV1(reloaded, 'qwen-image-2512', qwenInstance);
+  assert.deepEqual(restored.effectiveGraph, edited.effectiveGraph);
+  assert.deepEqual(restored.effectiveInterface, edited.effectiveInterface);
+  assert.deepEqual(restored.values, edited.values);
 });
 
 test('Qwen, FLUX, and SDXL retain three independent drafts on one canvas root', () => {

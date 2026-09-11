@@ -41,21 +41,6 @@ function rejected(
   return { eligible: false, code, reason, ...(rootId ? { rootId } : {}) };
 }
 
-function upstreamNodeIds(nodes: readonly CustomNodeType[], edges: readonly Edge[], targetNodeId: string) {
-  const known = new Set(nodes.map(({ id }) => id));
-  const included = new Set([targetNodeId]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    edges.forEach((edge) => {
-      if (!included.has(edge.target) || included.has(edge.source) || !known.has(edge.source)) return;
-      included.add(edge.source);
-      changed = true;
-    });
-  }
-  return included;
-}
-
 function safeCompanion(node: CustomNodeType) {
   if (
     node.data.blockInstanceV2 ||
@@ -80,11 +65,9 @@ export function inspectRegisteredBlockAutoEligibilityV2(
   targetNodeId?: string,
 ): RegisteredBlockAutoEligibilityV2 {
   let nodes: CustomNodeType[];
-  let edges: Edge[];
   try {
     const canonical = canonicalizePersistedBlockGraphV2([...nodesValue], [...edgesValue]);
     nodes = canonical.nodes;
-    edges = canonical.edges;
   } catch (error) {
     return rejected(
       'malformed_graph',
@@ -96,7 +79,8 @@ export function inspectRegisteredBlockAutoEligibilityV2(
   let scope = new Set(nodes.map(({ id }) => id));
   let selected: CustomNodeType | undefined;
   if (targetNodeId) {
-    scope = upstreamNodeIds(nodes, edges, targetNodeId);
+    // Run Block excludes all outside suppliers before planning, including other Blocks.
+    scope = new Set([targetNodeId]);
     selected = nodes.find(({ id }) => id === targetNodeId && scope.has(id));
     if (!selected?.data.blockInstanceV2) {
       return rejected('target_not_registered_root', 'Select an exact registered Block root before using Auto.');

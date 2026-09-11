@@ -680,10 +680,10 @@ export default function TemplateBrowserDialog() {
         return;
       }
       if (result.warnings.length > 0) {
-        enqueueSnackbar(
-          `${templateDisplayName(template)} template created with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}`,
-          { variant: 'warning', autoHideDuration: 7000 },
-        );
+        enqueueSnackbar(`${templateDisplayName(template)}: ${result.warnings.join(' ')}`, {
+          variant: 'warning',
+          autoHideDuration: 12000,
+        });
         return;
       }
       enqueueSnackbar(`${templateDisplayName(template)} template created`, {

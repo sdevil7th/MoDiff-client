@@ -326,7 +326,7 @@ test('fresh Qwen Block expands progressively and every visible upstream placemen
   // A separate socket label and all unrelated controls/ports remain unchanged.
   await encoder.getByRole('button', { name: 'Configure exposed inputs, outputs, and controls', exact: true }).click();
   const interfaceDialog = page.getByRole('dialog', { name: 'Configure Block interface', exact: true });
-  await expect(interfaceDialog.getByTestId('block-interface-scope')).toContainText('owning Block interface');
+  await expect(interfaceDialog.getByTestId('block-interface-scope')).toContainText('own ports and controls');
   await expect(interfaceDialog.getByLabel('control modelVariant label', { exact: true })).toHaveCount(0);
   await interfaceDialog.getByLabel('control prompt label', { exact: true }).fill('Scene prompt');
   await interfaceDialog.getByRole('button', { name: 'Apply interface', exact: true }).click();
@@ -334,15 +334,23 @@ test('fresh Qwen Block expands progressively and every visible upstream placemen
   await expect(encoder.getByLabel('Scene prompt', { exact: true })).toHaveValue(editedPrompt);
   const configured = await blockInstanceSnapshot(page, rootId);
   expect(configured.values).toEqual(afterNestedEdit.values);
-  expect(configured.effectiveGraph).toEqual(afterNestedEdit.effectiveGraph);
-  expect(configured.effectiveInterface.boundary).toEqual({
-    ...afterNestedEdit.effectiveInterface.boundary,
-    mode: 'explicit',
-    derivation: undefined,
-  });
-  expect(configured.effectiveInterface.controls.filter((c) => c.controlId !== 'prompt')).toEqual(
-    afterNestedEdit.effectiveInterface.controls.filter((c) => c.controlId !== 'prompt'),
+  expect(configured.effectiveInterface).toEqual(afterNestedEdit.effectiveInterface);
+  expect(configured.effectiveGraph.edges).toEqual(afterNestedEdit.effectiveGraph.edges);
+  const localOwner = configured.effectiveGraph.nodes.find((node) =>
+    node.containerInterface?.controls.some((control) => control.controlId === 'prompt'),
+  )!;
+  expect(localOwner.containerInterface!.controls.find((control) => control.controlId === 'prompt')?.label).toBe(
+    'Scene prompt',
   );
+  expect(configured.effectiveGraph.nodes.filter((node) => node.nodeId !== localOwner.nodeId)).toEqual(
+    afterNestedEdit.effectiveGraph.nodes.filter((node) => node.nodeId !== localOwner.nodeId),
+  );
+  await page.getByTestId('topbar-save-workflow').click();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await waitForWorkspaceStartup(page);
+  await expect.poll(() => blockInstanceSnapshot(page, rootId)).toEqual(configured);
+  await expect(encoder.getByLabel('Scene prompt', { exact: true })).toHaveValue(editedPrompt);
   // Return the field label/value through the same UI so existing subtree reuse
   // assertions continue to check the exact library interface and prompt.
   await encoder.getByRole('button', { name: 'Configure exposed inputs, outputs, and controls', exact: true }).click();
@@ -387,10 +395,12 @@ test('fresh Qwen Block expands progressively and every visible upstream placemen
   expect(saved.source.kind).toBe('user');
   expect(saved.graph.nodes).toHaveLength(2);
   expect(saved.controls.find(({ controlId }) => controlId === 'prompt')?.defaultValue).toBe(nestedPrompt);
-  expect(saved.boundary.inputs.some(({ portId }) => portId === 'pipeline_components')).toBe(true);
+  expect(saved.boundary).toEqual(
+    original.effectiveGraph.nodes.find((node) => node.nodeId === localOwner.nodeId)!.containerInterface!.boundary,
+  );
+  expect(saved.boundary.inputs.some(({ binding }) => binding.fieldOrPortId === 'pipeline_components')).toBe(true);
   expect(saved.boundary.outputs).toContainEqual(
     expect.objectContaining({
-      portId: 'state_out',
       valueType: 'modular_workflow_state',
       binding: { nodeId: 'prompt', fieldOrPortId: 'state_out' },
     }),

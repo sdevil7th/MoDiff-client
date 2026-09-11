@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
+import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
@@ -29,6 +30,14 @@ export function workflowConnectionParam<K extends keyof NodeParams>(
   handleId: string,
   key: K,
 ): NodeParams[K] | null {
+  const crossing = parseBlockCrossingHandleV2(handleId);
+  const node = nodes.find((candidate) => candidate.id === nodeId);
+  if (crossing) {
+    const instance =
+      node?.data.blockInstanceV2 ??
+      nodes.find((candidate) => candidate.id === node?.data.blockProjectionOwnerId)?.data.blockInstanceV2;
+    if (instance) return (blockCrossingParamV2(instance, crossing)[key] ?? null) as NodeParams[K] | null;
+  }
   const param = nodeConnectorParam(
     nodes.find((node) => node.id === nodeId),
     handleId,
@@ -49,14 +58,15 @@ export function captureWorkflowDropHandle(
   node: CustomNodeType | undefined,
   handleId: string | null | undefined,
   handleType: 'source' | 'target' | null,
+  dataType?: NodeParams['type'] | null,
 ): DropHandle | null {
   const param = nodeConnectorParam(node, handleId);
-  if (!node || !handleId || !param) return null;
+  if (!node || !handleId || (!param && !dataType)) return null;
   return {
     nodeId: node.id,
     handleId,
     handleType,
-    dataType: param.type ?? null,
+    dataType: dataType ?? param?.type ?? null,
   };
 }
 
@@ -71,24 +81,16 @@ type UseWorkflowConnectionsOptions = {
   connectionScopeIsValid?: (connection: Connection) => boolean;
 };
 
-function toTypeArray(value: unknown) {
-  return Array.isArray(value) ? value : [value];
-}
-
 function matchingHandleForDrop(node: NodeData, dropHandle: DropHandle) {
   return Object.entries(node.params || {}).find(([, param]) => {
-    const paramTypes = toTypeArray(param.type);
-    const dataTypes = toTypeArray(dropHandle.dataType ?? 'any');
-
-    if (paramTypes.includes('any') || dataTypes.includes('any')) {
-      return true;
-    }
-
     if (dropHandle.handleType === 'source') {
-      return param.display === 'input' && paramTypes.some((type) => dataTypes.includes(type ?? 'any'));
+      return (
+        (param.display === 'input' || param.isInput) &&
+        param.display !== 'output' &&
+        connectionTypesAreCompatible(dropHandle.dataType ?? 'any', param.type)
+      );
     }
-
-    return param.display === 'output' && dataTypes.some((type) => paramTypes.includes(type ?? 'any'));
+    return param.display === 'output' && connectionTypesAreCompatible(param.type, dropHandle.dataType ?? 'any');
   });
 }
 
@@ -140,7 +142,7 @@ export function useWorkflowConnections({
         y: anchorPosition.top,
       });
       const newNode: CustomNodeType = {
-        id: nanoid(),
+        id: `node-${nanoid()}`,
         type: node.type,
         position,
         data: node,
@@ -245,25 +247,29 @@ export function useWorkflowConnections({
     [getParam, handleMouseMove],
   );
 
-  const handleDropOnPane = useCallback((event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
-    const target = event.target as HTMLElement;
-    if (!target.classList.contains('react-flow__pane')) {
-      return false;
-    }
+  const handleDropOnPane = useCallback(
+    (event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
+      const target = event.target as HTMLElement;
+      if (!target.classList.contains('react-flow__pane')) {
+        return false;
+      }
 
-    const handleId = conn.fromHandle?.id;
-    if (handleId) {
-      const fromNode = conn.fromNode as unknown as CustomNodeType | undefined;
-      dropHandleRef.current = captureWorkflowDropHandle(
-        fromNode,
-        handleId,
-        conn.fromHandle?.type === 'source' ? 'source' : 'target',
-      );
-    }
+      const handleId = conn.fromHandle?.id;
+      if (handleId) {
+        const fromNode = conn.fromNode as unknown as CustomNodeType | undefined;
+        dropHandleRef.current = captureWorkflowDropHandle(
+          fromNode,
+          handleId,
+          conn.fromHandle?.type === 'source' ? 'source' : 'target',
+          fromNode ? getParam(fromNode.id, handleId, 'type') : null,
+        );
+      }
 
-    setAnchorPosition(pointerPosition(event));
-    return true;
-  }, []);
+      setAnchorPosition(pointerPosition(event));
+      return true;
+    },
+    [getParam],
+  );
 
   const handleDropOnField = useCallback(
     (event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {

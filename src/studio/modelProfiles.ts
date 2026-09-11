@@ -76,6 +76,8 @@ export const FLUX_REDUX_REPO = 'black-forest-labs/FLUX.1-Redux-dev';
 export const FLUX2_KLEIN_REPO = 'black-forest-labs/FLUX.2-klein-4B';
 export const FLUX2_KLEIN_REVISION = 'e7b7dc27f91deacad38e78976d1f2b499d76a294';
 export const FLUX2_KLEIN_BASE_REPO = 'black-forest-labs/FLUX.2-klein-base-4B';
+export const FLUX2_DEV_REPO = 'black-forest-labs/FLUX.2-dev';
+export const FLUX2_DEV_REVISION = '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c';
 export const FLUX2_KLEIN_BASE_REVISION = 'a3b4f4849157f664bdbc776fd7453c2783562f4d';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
@@ -385,6 +387,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'FLUX.1-Kontext-dev (Modular Cluster)',
   'FLUX.2-klein-4B (Modular Cluster)',
   'FLUX.2-klein-base-4B (Modular Cluster)',
+  'FLUX.2 dev (Modular Cluster)',
   'Stable Diffusion XL 1.0 (Modular Diffusers)',
   'Stable Diffusion XL 1.0',
   'Stable Diffusion XL Turbo',
@@ -2559,6 +2562,30 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     modeRequirements: { edit_image: { requiredImages: ['referenceImages'] } },
     revisionCandidates: [FLUX2_KLEIN_BASE_REVISION],
   },
+  Flux2ModularPipeline: {
+    ...EXPERT_WORKFLOW_PENDING,
+    family: 'FLUX Image',
+    defaultRepo: FLUX2_DEV_REPO,
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    offloadSupport: { ...MODULAR_OFFLOAD_SUPPORT, lowVram: 'group_disk' },
+    recommendedSteps: 50,
+    recommendedGuidance: 4,
+    recommendedMaxSequenceLength: 512,
+    supportFlags: 5,
+    lowVram: {
+      dtype: 'bfloat16',
+      autoOffload: true,
+      offloadMode: 'group_disk',
+      steps: 50,
+      width: 1024,
+      height: 1024,
+    },
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: { edit_image: { requiredImages: ['referenceImages'] } },
+    revisionCandidates: [FLUX2_DEV_REVISION],
+    downloadFiles: ['model_index.json', 'scheduler/*', 'text_encoder/*', 'tokenizer/*', 'transformer/*', 'vae/*'],
+  },
   StableDiffusionXLModularPipeline: {
     family: 'Stable Diffusion XL',
     catalogVisibility: 'workflowOnly',
@@ -3770,6 +3797,7 @@ function pendingPlanningRequirement(modelType: StudioModelType): StudioAutoModel
 }
 
 export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
+  Flux2ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux2ModularPipeline'),
   AnimaModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('AnimaModularPipeline'),
   HeliosModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('HeliosModularPipeline'),
   HeliosPyramidModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('HeliosPyramidModularPipeline'),
@@ -4673,7 +4701,10 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
     pagAdaptiveScale: profile.recommendedPagAdaptiveScale ?? DEFAULT_STUDIO_FORM.pagAdaptiveScale,
     maxSequenceLength: profile.recommendedMaxSequenceLength ?? DEFAULT_STUDIO_FORM.maxSequenceLength,
     resourceMode: DEFAULT_STUDIO_FORM.resourceMode,
-    strength: mode === 'outpaint' ? 0.85 : (profile.recommendedStrength ?? DEFAULT_STUDIO_FORM.strength),
+    // Newly exposed canvas pixels have no source detail to retain. Partial
+    // denoising can preserve the preparation fill instead of extending the
+    // image. This seeds new forms only; saved workflow values stay untouched.
+    strength: mode === 'outpaint' ? 1 : (profile.recommendedStrength ?? DEFAULT_STUDIO_FORM.strength),
     numFrames: modeDefaults?.numFrames ?? profile.recommendedFrames ?? DEFAULT_STUDIO_FORM.numFrames,
     fps: mode === 'frame_interpolation' ? 60 : (modeDefaults?.fps ?? profile.recommendedFps ?? DEFAULT_STUDIO_FORM.fps),
     conditioningScale: profile.conditioningScale ?? DEFAULT_STUDIO_FORM.conditioningScale,

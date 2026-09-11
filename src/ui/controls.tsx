@@ -382,6 +382,8 @@ export type ModiffComboboxOption = {
 };
 
 export type ModiffComboboxProps = {
+  openOnFocus?: boolean;
+  wrapOptions?: boolean;
   'aria-describedby'?: string;
   'aria-errormessage'?: string;
   'aria-label': string;
@@ -407,6 +409,8 @@ export type ModiffComboboxProps = {
 };
 
 export function ModiffCombobox({
+  openOnFocus = false,
+  wrapOptions = false,
   'aria-describedby': ariaDescribedBy,
   'aria-errormessage': ariaErrorMessage,
   'aria-label': ariaLabel,
@@ -442,7 +446,8 @@ export function ModiffCombobox({
   });
   const inputId = field.id ?? generatedId;
   const selectedValues = multiple ? (Array.isArray(value) ? value : []) : typeof value === 'string' ? [value] : [];
-  const visibleOptions = visibleModiffComboboxOptions(options, query, selectedValues, multiple);
+  const [editingQuery, setEditingQuery] = useState(false);
+  const visibleOptions = visibleModiffComboboxOptions(options, query, selectedValues, multiple, editingQuery);
 
   const content = (
     <div className={cx('relative min-w-0 flex-1', className)}>
@@ -492,8 +497,14 @@ export function ModiffCombobox({
           autoComplete="off"
           placeholder={selectedValues.length === 0 ? placeholder : undefined}
           value={query}
-          onChange={(event) => onQueryChange(event.currentTarget.value)}
-          onBlur={onBlur}
+          onChange={(event) => {
+            setEditingQuery(true);
+            onQueryChange(event.currentTarget.value);
+          }}
+          onBlur={(event) => {
+            onBlur?.(event);
+            setEditingQuery(false);
+          }}
           onFocus={onFocus}
           onKeyDown={onKeyDown}
           className="nodrag min-w-20 flex-1 bg-transparent p-0 text-modiff-control text-modiff-text outline-none placeholder:text-modiff-subtle-text disabled:cursor-not-allowed"
@@ -504,6 +515,7 @@ export function ModiffCombobox({
               {...tooltipProps}
               aria-label="Show options"
               disabled={field.disabled || field.readOnly}
+              onClick={() => setEditingQuery(false)}
               className="absolute right-0.5 top-0.5 grid size-7 place-items-center rounded-modiff-compact text-modiff-subtle-text transition hover:bg-modiff-surface-hover hover:text-modiff-text active:bg-modiff-surface-pressed disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-modiff-focus"
             >
               <ChevronDown size={14} aria-hidden="true" />
@@ -530,7 +542,12 @@ export function ModiffCombobox({
               <span className="grid size-4 shrink-0 place-items-center text-hf-yellow">
                 <Check size={13} className="invisible group-data-[selected]:visible" aria-hidden="true" />
               </span>
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              <span
+                title={option.label}
+                className={cx('min-w-0 flex-1', wrapOptions ? 'break-words whitespace-normal' : 'truncate')}
+              >
+                {option.label}
+              </span>
             </ComboboxOption>
           ))
         )}
@@ -541,9 +558,11 @@ export function ModiffCombobox({
   if (multiple) {
     return (
       <Combobox
+        immediate={openOnFocus}
         multiple
         value={[...selectedValues]}
         onChange={(nextValue) => {
+          setEditingQuery(false);
           if (!field.readOnly) onValueChange(nextValue);
         }}
         disabled={field.disabled}
@@ -555,8 +574,10 @@ export function ModiffCombobox({
 
   return (
     <Combobox
+      immediate={openOnFocus}
       value={selectedValues[0] ?? null}
       onChange={(nextValue) => {
+        setEditingQuery(false);
         if (!field.readOnly) onValueChange(nextValue);
       }}
       disabled={field.disabled}

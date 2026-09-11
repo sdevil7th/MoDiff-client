@@ -85,9 +85,9 @@ export function TreeChildrenPanel({
   return (
     <TreePanelContext.Provider value={true}>
       <div
+        data-tree-children-level={level}
         className={cx(
-          'mb-1 ml-2 mr-1 rounded-modiff-compact border-l border-modiff-border py-1 pl-1',
-          openClass(level),
+          'mb-1 ml-2 mr-1 rounded-modiff-compact border-l border-dashed border-modiff-border-subtle py-1 pl-2 transition-colors hover:border-modiff-subtle-text focus-within:border-modiff-subtle-text',
           className,
         )}
       >

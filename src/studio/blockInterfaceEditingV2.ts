@@ -1,9 +1,22 @@
-import type { BlockBoundaryV2, BlockControlV2, BlockInstanceV2, BlockPortV2 } from './blockSchemaV2';
+import type {
+  BlockBoundaryV2,
+  BlockControlV2,
+  BlockInstanceV2,
+  BlockPortV2,
+  BlockPreviewBindingV2,
+} from './blockSchemaV2';
 import { blockModularParentIdsV2 } from './blockRuntimeV2';
+import { normalizeBlockContainerInterfaceV1 } from './blockSchemaV2';
+import { blockContainerInterfaceV1, blockContainerFieldValueV1 } from './blockContainerInterfaceV1';
 
-export type BlockInterfaceDraftV2 = { boundary: BlockBoundaryV2; controls: BlockControlV2[] };
+export type BlockInterfaceDraftV2 = {
+  boundary: BlockBoundaryV2;
+  controls: BlockControlV2[];
+  /** Local surfaces only. Omitted preserves bindings; an explicit [] clears them. */
+  previews?: BlockPreviewBindingV2[];
+};
 
-/** Scope changes exposure through the owning Block, not its execution authority. */
+/** Scope selects a durable internal surface within the same execution graph. */
 export function blockInterfaceScopeNodeIdsV2(instance: BlockInstanceV2, subtreeId?: string): Set<string> {
   if (!subtreeId) return new Set(instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId));
   if (!instance.effectiveGraph.nodes.some((node) => node.nodeId === subtreeId))
@@ -25,6 +38,10 @@ function isScoped(entry: BlockPortV2 | BlockControlV2, included: ReadonlySet<str
 }
 
 export function blockInterfaceDraftV2(instance: BlockInstanceV2, subtreeId?: string): BlockInterfaceDraftV2 {
+  if (subtreeId) {
+    const { boundary, controls, previews } = blockContainerInterfaceV1(instance, subtreeId);
+    return structuredClone({ boundary, controls, previews: previews ?? [] });
+  }
   const included = blockInterfaceScopeNodeIdsV2(instance, subtreeId);
   return structuredClone({
     boundary: {
@@ -48,6 +65,30 @@ export function mergeBlockInterfaceDraftV2(
       throw new Error('This Block changed while Configure Interface was open. Reopen it before applying.');
   }
   const included = blockInterfaceScopeNodeIdsV2(current, subtreeId);
+  if (subtreeId) {
+    const previews = draft.previews ?? blockContainerInterfaceV1(current, subtreeId).previews;
+    const {
+      boundary,
+      controls,
+      previews: parsedPreviews,
+    } = normalizeBlockContainerInterfaceV1(
+      {
+        schemaVersion: 1,
+        boundary: draft.boundary,
+        controls: draft.controls.map((control) => {
+          const local = structuredClone(control);
+          delete local.defaultValue;
+          return local;
+        }),
+        ...(previews === undefined ? {} : { previews }),
+      },
+      current.effectiveGraph,
+      subtreeId,
+    );
+    return { boundary, controls, ...(parsedPreviews === undefined ? {} : { previews: parsedPreviews }) };
+  }
+  if (draft.previews !== undefined)
+    throw new Error('Root preview bindings belong to the Block definition, not its effective interface.');
   const merge = <T extends BlockPortV2 | BlockControlV2>(original: T[], edited: T[], id: (value: T) => string) => {
     const protectedIds = new Set(original.filter((entry) => !isScoped(entry, included)).map(id));
     if (edited.some((entry) => !isScoped(entry, included) || protectedIds.has(id(entry))))
@@ -74,22 +115,5 @@ export function mergeBlockInterfaceDraftV2(
 
 /** Exposing a previously edited field must not reset it to an empty value. */
 export function blockInterfaceFieldValueV2(instance: BlockInstanceV2, nodeId: string, fieldId: string) {
-  for (const control of instance.effectiveInterface.controls) {
-    if ([control.binding, ...(control.mirrorBindings ?? [])].some((b) => b.nodeId === nodeId && b.fieldId === fieldId))
-      return Object.prototype.hasOwnProperty.call(instance.values, control.controlId)
-        ? instance.values[control.controlId]
-        : control.defaultValue;
-  }
-  for (const port of instance.effectiveInterface.boundary.inputs) {
-    if (
-      [port.binding, ...(port.mirrorBindings ?? [])].some((b) => b.nodeId === nodeId && b.fieldOrPortId === fieldId) &&
-      Object.prototype.hasOwnProperty.call(instance.values, port.portId)
-    )
-      return instance.values[port.portId];
-  }
-  const params = instance.effectiveGraph.nodes.find((node) => node.nodeId === nodeId)?.data.params;
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return undefined;
-  const field = params[fieldId];
-  if (!field || typeof field !== 'object' || Array.isArray(field)) return undefined;
-  return Object.prototype.hasOwnProperty.call(field, 'value') ? field.value : field.default;
+  return blockContainerFieldValueV1(instance, nodeId, fieldId);
 }

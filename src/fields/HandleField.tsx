@@ -35,6 +35,8 @@ export default function HandleField(props: FieldProps) {
   const handleGradient = connectionTypeGradient(visualType);
   const typeLabel = connectionTypes(visualType).join(' or ') || 'untyped';
   const directionLabel = type === 'source' ? 'Output' : 'Input';
+  const endpointDescription = props.fieldOptions?.connectionDescription;
+  const labelTitle = typeof endpointDescription === 'string' ? `${props.label} · ${endpointDescription}` : props.label;
   const graphFixHighlighted = useGraphFixStore((state) =>
     Boolean(
       (state.dialogOpen &&
@@ -82,7 +84,7 @@ export default function HandleField(props: FieldProps) {
         type={type}
         position={position}
         aria-label={`${directionLabel} ${props.label}, ${typeLabel}`}
-        title={`${props.label} · ${typeLabel}`}
+        title={`${labelTitle} · ${typeLabel}`}
         data-connection-type={typeLabel}
         data-testid={`node-handle-${nodeId}-${props.fieldKey}`}
         connectionColor={handleColor}
@@ -98,7 +100,7 @@ export default function HandleField(props: FieldProps) {
       ) : (
         <div
           className={`text-modiff-control mx-0.5 truncate px-2 text-modiff-subtle-text ${textAlignClassName}`}
-          title={props.label}
+          title={labelTitle}
         >
           {props.label}
         </div>

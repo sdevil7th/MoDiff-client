@@ -22,10 +22,20 @@ This directory contains durable user, operator, and contributor documentation fo
 | [Client architecture](modiff-client-architecture.md)           | Frontend/backend contributors   | App shell, stores, graph/runtime boundaries, Studio, persistence, and extension points      |
 | [Frontend style guide](frontend-style-guide.md)                | UI contributors                 | Tokens, components, fields, accessibility, and style enforcement                            |
 | [Auto mode design](auto-mode-design.md)                        | Runtime and Studio contributors | Auto/Expert contract, readiness semantics, model recipe metadata, and onboarding checks     |
-| [Source provenance map](source-provenance.md)                  | Maintainers and legal reviewers | Inherited source baselines, modification headers, and commentless artifact treatment        |
+| [Third-party notices](../THIRD_PARTY_NOTICES.md)               | Maintainers and legal reviewers | Inherited source baseline, modification notices, and third-party licenses                   |
 | [Build and deployment](deployment.md)                          | Maintainers and deployers       | Production builds, backend static-file integration, same-origin hosting, and release checks |
 | [Template asset storage](template-gallery-assets.md)           | Gallery maintainers             | Public Hugging Face Dataset publication, pinned URLs, integrity checks, and offline cache   |
 | [Template quality schema](template-quality-review.schema.json) | Gallery maintainers             | Machine-readable quality-review record used by the Gallery verification tooling             |
+
+## Required Engineering Procedure
+
+See the [frontend style guide](frontend-style-guide.md#field-components) for
+numeric-field containment and [library accessibility](frontend-style-guide.md#accessibility)
+for readiness placement and nested disclosure guides. Recovery and output
+provenance are covered by the [client architecture](modiff-client-architecture.md).
+
+Read [Cluster engineering lessons](cluster-engineering-lessons.md) before
+node/Block, hierarchy, execution, qualification or cross-machine integration work.
 
 ## Documentation Standards
 

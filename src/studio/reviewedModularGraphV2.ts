@@ -10,6 +10,7 @@ import type {
   HuggingFaceNodeLibraryDefinition,
 } from './huggingFaceNodeLibrary';
 import type { RegisteredBlockV2ControlFanOut, RegisteredBlockV2Route } from './registeredBlockV2Routes';
+import { reviewedCallerInputOwnersV2 } from './reviewedControlOwnershipV2';
 import {
   reviewedConditionalParameterPlacement,
   type HuggingFaceModularConditionalPlacement,
@@ -19,8 +20,10 @@ import {
 export type ExactReviewedModularGraphV2 = {
   skeleton: HuggingFaceClusterExecutionSkeleton;
   metadataBySemanticRole: ReadonlyMap<string, BlockGraphNodeModularDiffusersV2>;
+  boundaryInputs?: RegisteredBlockV2Route['boundary']['inputs'];
   boundaryOutputs?: RegisteredBlockV2Route['boundary']['outputs'];
   controlFanOuts?: readonly RegisteredBlockV2ControlFanOut[];
+  routeControlFanOuts?: readonly RegisteredBlockV2ControlFanOut[];
 };
 
 type ReviewedWorkflowHierarchy = {
@@ -579,7 +582,7 @@ export function reviewedModularGraphV2(
     const aliases: Readonly<Record<string, readonly string[]>> = {
       image: ['images'],
       video: ['videos'],
-      audio: ['audios'],
+      audio: ['audios', 'sound'],
       sample_rate: ['sampling_rate'],
     };
     const candidateNames = [fieldId, ...(declaredName ? [declaredName] : []), ...(aliases[fieldId] ?? [])];
@@ -629,15 +632,29 @@ export function reviewedModularGraphV2(
     ...admission.executionParameterSources.map((source) => `execution_parameter\0${source}`),
   ]);
   const targetForField = (fieldId: string, sourceName?: string, sourceRole?: string) => {
+    // MoDiff's bounded seed is the adapter for upstream's Generator input,
+    // not a parameter consumed by every coarse denoiser. Initialize the shared
+    // PipelineState generator at its first selected consumer; later blocks
+    // inherit its advanced state instead of restarting the random sequence.
+    if (fieldId === 'seed') {
+      const consumer = placements
+        .filter(({ block }) => block.inputs.some(({ name }) => name === 'generator'))
+        .sort((left, right) => left.placement.order - right.placement.order)[0];
+      if (!consumer) invalid(`seed has no selected upstream Generator consumer.`);
+      return consumer;
+    }
+    const inputName = (sourceName && inputBySource.get(sourceName)) || fieldId;
+    const stateOwners = reviewedCallerInputOwnersV2(placements, inputName);
     const explicit = sourceName ? exact.controlPlacementPathBySource?.[sourceName] : undefined;
     if (explicit) {
       const target = placements.find(({ placement }) => pathKey(placement.path) === explicit);
       if (!target) invalid(`control ${sourceName} targets missing placement ${explicit}.`);
+      if (stateOwners && !stateOwners.includes(target)) return stateOwners[0]!;
       return target;
     }
     const roleTarget = sourceRole ? placementForSourceRole.get(sourceRole) : undefined;
+    if (stateOwners && (!roleTarget || !stateOwners.includes(roleTarget))) return stateOwners[0]!;
     if (roleTarget) return roleTarget;
-    const inputName = (sourceName && inputBySource.get(sourceName)) || fieldId;
     const targets = placements.filter(({ block }) => block.inputs.some(({ name }) => name === inputName));
     const target = targets[0];
     if (!target) invalid(`field ${sourceName ?? fieldId} has no exact upstream owner.`);
@@ -647,6 +664,17 @@ export function reviewedModularGraphV2(
     placement,
     block: blocks.get(placement.blockDefinitionId)!,
   }));
+  const boundaryInputs = route.boundary.inputs?.map((input) => {
+    const previous =
+      placementForSourceRole.get(input.role) ??
+      placements.find(({ placement }) => semanticRoleByPath.get(pathKey(placement.path)) === input.role);
+    if (!previous || !reviewedCallerInputOwnersV2(placements, input.fieldId)) return input;
+    const sourceName = admission.instanceInputBindings.find(
+      (binding) => binding.input === (input.inputName ?? input.portId),
+    )?.bindingSource;
+    const target = targetForField(input.fieldId, sourceName, input.role);
+    return { ...input, role: semanticRoleByPath.get(pathKey(target.placement.path))! };
+  });
 
   const paramsByPath = new Map<string, Record<string, NodeParams>>();
   placements.forEach(({ placement, block }) => {
@@ -708,6 +736,13 @@ export function reviewedModularGraphV2(
         }
       }
     }
+    addReviewedValuePortsV2(
+      params,
+      reviewedStepNodeData.params,
+      block.inputs,
+      block.outputs,
+      isLoopMember ? 'loop_member' : isLoopOwner ? 'loop_owner' : 'step',
+    );
     paramsByPath.set(key, params);
   });
 
@@ -730,6 +765,7 @@ export function reviewedModularGraphV2(
     if (!admittedMutableSourceKeys.has(sourceKey) || param.display === 'output') return;
     if (derivedControlSources.has(sourceKey)) return;
     derivedControlSources.add(sourceKey);
+    if (fieldId === 'seed') return;
 
     // A top-level ModularPipeline argument can be consumed by more than one
     // decomposed upstream leaf. The legacy execution skeleton carries the
@@ -739,6 +775,9 @@ export function reviewedModularGraphV2(
     // mirrorBindings instead of silently leaving an earlier leaf at its
     // upstream default (for example Qwen prepare_latents at 1024x1024).
     const upstreamInputName = inputBySource.get(receipt.source) ?? fieldId;
+    const stateOwnerPaths = reviewedCallerInputOwnersV2(placements, upstreamInputName)?.map(({ placement }) =>
+      pathKey(placement.path),
+    );
     const mirrorPaths = [
       ...(exact.controlMirrorPlacementPathsBySource?.[receipt.source] ?? []),
       ...placements
@@ -751,6 +790,7 @@ export function reviewedModularGraphV2(
     ]
       .filter((path, index, values) => values.indexOf(path) === index)
       .filter((mirrorPath) => mirrorPath !== pathKey(target.placement.path))
+      .filter((mirrorPath) => !stateOwnerPaths || stateOwnerPaths.includes(mirrorPath))
       .filter((mirrorPath) => {
         const owner = mutableBindingOwnerByTarget.get(`${mirrorPath}\0${fieldId}`);
         if (owner && owner !== sourceKey) return false;
@@ -832,6 +872,25 @@ export function reviewedModularGraphV2(
           .sort((left, right) => lexicalCompare(`${left.role}\0${left.fieldId}`, `${right.role}\0${right.fieldId}`)),
       },
     ];
+  });
+
+  // Coarse route fan-outs remain authoritative for infrastructure fields
+  // (such as an exporter FPS). Remap only their replaced execution roles to
+  // the exact reviewed field owner, deduplicating aliases that now name the
+  // same consumer (notably one seed/Generator initialization).
+  const routeControlFanOuts = (route.controlFanOuts ?? []).flatMap((fanOut) => {
+    const targets = [fanOut.primary, ...fanOut.mirrors]
+      .map((target) => {
+        if (!placementForSourceRole.has(target.role)) return target;
+        const owner = targetForField(target.fieldId, fanOut.source, target.role);
+        return { role: semanticRoleByPath.get(pathKey(owner.placement.path))!, fieldId: target.fieldId };
+      })
+      .filter(
+        (target, index, values) =>
+          values.findIndex((candidate) => candidate.role === target.role && candidate.fieldId === target.fieldId) ===
+          index,
+      );
+    return targets.length > 1 ? [{ ...fanOut, primary: targets[0]!, mirrors: targets.slice(1) }] : [];
   });
 
   const structuralRuntime = (hierarchy?.structuralPlacements ?? []).map(({ placement, block }) => {
@@ -1169,7 +1228,10 @@ export function reviewedModularGraphV2(
       ) as HuggingFaceClusterExecutionSkeleton['nodeIdsByRole'],
     },
     metadataBySemanticRole,
+    ...(boundaryInputs ? { boundaryInputs } : {}),
     boundaryOutputs,
     ...(verifiedDerivedControlFanOuts.length ? { controlFanOuts: verifiedDerivedControlFanOuts } : {}),
+    routeControlFanOuts,
   };
 }
+import { addReviewedValuePortsV2 } from './reviewedValuePortsV2';

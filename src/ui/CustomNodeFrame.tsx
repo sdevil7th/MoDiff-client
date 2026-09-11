@@ -7,6 +7,7 @@ export type CustomNodeFrameProps = {
   className?: string;
   headerColor?: string;
   id: string;
+  parentNodeId?: string;
   isError?: boolean;
   maxWidth: number;
   minWidth?: number;
@@ -16,7 +17,7 @@ export type CustomNodeFrameProps = {
 };
 
 export const CustomNodeFrame = forwardRef<HTMLDivElement, CustomNodeFrameProps>(function CustomNodeFrame(
-  { children, className, id, isError = false, maxWidth, minWidth, nodeStyle, onContextMenu, testId },
+  { children, className, id, parentNodeId, isError = false, maxWidth, minWidth, nodeStyle, onContextMenu, testId },
   ref,
 ) {
   const frameStyle: CSSProperties = {
@@ -31,6 +32,7 @@ export const CustomNodeFrame = forwardRef<HTMLDivElement, CustomNodeFrameProps>(
       ref={ref}
       id={id}
       data-testid={testId}
+      data-node-parent-id={parentNodeId}
       className={cx(
         'relative flex h-full min-h-0 w-full flex-col items-center justify-between border bg-modiff-surface outline outline-2 outline-offset-[5px] outline-transparent',
         isError

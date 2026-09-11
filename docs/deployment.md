@@ -103,6 +103,19 @@ a graph, qualify output, approve rights, or publish Gallery media. Remove
 `--dry-run` only on the approved qualification host when the campaign's
 long-running model execution is intentional.
 
+When resolving a template's byte-pinned default inputs, the Gallery runner
+prefers the selected backend's `web/template-gallery` installation. A restored
+`public/template-gallery` copy in the client checkout is only an offline
+fallback; it must not shadow the backend under qualification. The existing
+byte/hash and download-readiness checks still apply.
+
+The all-94 catalog inventory uses discovery schema version 2. Its
+`relatedEvidencePaths` and `workflowsWithRelatedEvidenceCount` fields locate
+JSON files containing exact workflow/admission identities, including failed or
+historical files. They do **not** establish current execution, model, resource,
+output-quality or publication qualification. Supply `--hierarchy-audit` to use
+the compiled hierarchy depth instead of the shallower catalog source paths.
+
 ## Inspect The Build
 
 For a static client-only inspection:
@@ -118,6 +131,24 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 ```bash
 npm run bundle:check
 ```
+
+That gate also checks emitted module identity: static imports, dynamic imports
+(including minified backtick strings), and preloads must use one versioned URL
+per module. Duplicate URLs create independent workflow stores and can break
+portable export. Shared Lucide dependencies initialize in `graph-vendor` so
+lazy panels cannot capture undefined icons through an entry-chunk cycle. The
+startup graph ceiling is 600 KiB gzip. The connected Block sockets, explicit
+ownership moves, and isolated Block execution add approximately 4 KiB to the
+previous 589.1 KiB startup graph. Their synchronous graph validation stays with
+the editor; the right-panel forms remain lazy. No dependency was added and
+individual/deferred chunk ceilings are unchanged. Test cold panel startup,
+native portable import/Save/export, and browser resource URLs on the built app.
+
+When updating selected loader field metadata, regenerate the paired
+`BlockDefinitionV2` catalog and frontend identity pins together. This metadata
+must not rewrite saved instance values, prompts, wiring, or layout. Deploy only
+after active runs finish, restart the worker, and compare the served bundle's
+hash with the tested build.
 
 ## Copy The Build Into The Backend
 

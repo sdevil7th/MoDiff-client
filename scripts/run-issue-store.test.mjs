@@ -7,6 +7,7 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let runIssueStoreModule;
+let modularRuntimeFailureIssue;
 let server;
 
 before(async () => {
@@ -22,6 +23,7 @@ before(async () => {
     appType: 'custom',
   });
   runIssueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');
+  ({ modularRuntimeFailureIssue } = await server.ssrLoadModule('/src/studio/modularRuntimeFailureIssue.ts'));
 });
 
 beforeEach(() => {
@@ -36,6 +38,26 @@ beforeEach(() => {
 
 after(async () => {
   await server?.close();
+});
+
+test('Modular runtime Fix advice is non-blocking and restricted to its active workflow and visible node', () => {
+  const failure = {
+    id: 'runtime-loop',
+    message: 'Loop member denoise/before: missing initial noise_pred',
+    createdAt: 1,
+  };
+  const advice = modularRuntimeFailureIssue(failure, true, 'visible-owner');
+  assert.equal(advice.code, 'modular_runtime_failure');
+  assert.equal(advice.blocking, false);
+  assert.equal(advice.nodeId, 'visible-owner');
+  assert.match(advice.message, /noise_pred/);
+  assert.equal(modularRuntimeFailureIssue(failure, false, 'visible-owner'), null);
+  assert.equal(modularRuntimeFailureIssue(failure, true, null), null);
+  assert.equal(modularRuntimeFailureIssue({ ...failure, oom: true }, true, 'visible-owner'), null);
+  assert.equal(
+    modularRuntimeFailureIssue({ ...failure, message: 'Network disconnected' }, true, 'visible-owner'),
+    null,
+  );
 });
 
 test('runtime failures can be selected and opened by their exact task identity', () => {
@@ -60,6 +82,22 @@ test('runtime failures can be selected and opened by their exact task identity',
   state = runIssueStoreModule.useRunIssueStore.getState();
   assert.equal(state.failure, null);
   assert.equal(state.failureDialogOpen, false);
+});
+
+test('late failure delivery cannot close or replace the failure dialog the user opened', () => {
+  const store = runIssueStoreModule.useRunIssueStore;
+  store.getState().reportFailure({ taskId: 'opened', message: 'early queue failure' }, false);
+  store.getState().openFailure('opened');
+  store.getState().reportFailure({ taskId: 'opened', message: 'late websocket detail' }, false);
+  assert.equal(store.getState().failureDialogOpen, true);
+  assert.equal(store.getState().failure.message, 'late websocket detail');
+  store.getState().reportFailure({ taskId: 'background', message: 'another workflow failed' }, false);
+  assert.equal(store.getState().failureDialogOpen, true);
+  assert.equal(store.getState().failure.taskId, 'opened');
+  assert.equal(store.getState().failuresByTaskId.background.message, 'another workflow failed');
+  store.getState().closeFailure();
+  store.getState().reportFailure({ taskId: 'opened', message: 'another repeated update' }, false);
+  assert.equal(store.getState().failureDialogOpen, false);
 });
 
 test('runtime failure history retains only the newest bounded task window', () => {

@@ -1,3 +1,4 @@
+import WorkflowResourcePanelV2 from './WorkflowResourcePanelV2';
 import { AlertTriangle, CheckCircle2, ChevronRight, Download, Gauge, HardDrive, Server } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -84,6 +85,8 @@ export default function CompatibilityPanel() {
     () => (plan?.candidates || []).filter((candidate) => candidate.id !== selected?.id),
     [plan?.candidates, selected?.id],
   );
+
+  if (!graphBinding) return <WorkflowResourcePanelV2 />;
 
   if (!selected) {
     return (
@@ -234,6 +237,15 @@ export default function CompatibilityPanel() {
   return (
     <>
       <div className="grid gap-3 p-3 text-sm text-modiff-text" data-testid="compatibility-panel">
+        <p className="text-xs text-modiff-subtle-text">
+          Auto selects a supported local resource recipe. Expert keeps your configured technical settings. Switching
+          preserves the workflow’s nodes, connections and creative controls.
+        </p>
+        <p className="text-xs text-modiff-subtle-text">
+          Auto Offload on a loader controls weight placement. Repeat/Loop controls repeated runs. These are separate
+          from Auto resource planning.
+        </p>
+
         <div className="flex items-start gap-2 rounded-modiff-compact border border-hf-yellow/50 bg-hf-yellow/10 p-3">
           <AlertTriangle size={17} className="mt-0.5 shrink-0 text-hf-yellow" />
           <div className="min-w-0">

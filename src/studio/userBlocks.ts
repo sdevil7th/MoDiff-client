@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { createDurableNodesSelector } from '../stores/flowDurableReferences';
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
@@ -636,7 +637,24 @@ export function blockPreviewTargetV2(
   return matches.length === 1 ? matches[0]! : null;
 }
 
+const selectProgressNodes = createDurableNodesSelector();
+let progressNodes: CustomNodeType[] | undefined;
+const progressTargets = new Map<string, string | null>();
 export function runtimeProgressTarget(nodes: CustomNodeType[], runtimeNodeId: string, currentNodeName?: string | null) {
+  const selected = selectProgressNodes(nodes);
+  if (selected !== progressNodes) {
+    progressNodes = selected;
+    progressTargets.clear();
+  }
+  const key = JSON.stringify([runtimeNodeId, currentNodeName]);
+  if (progressTargets.has(key)) return progressTargets.get(key)!;
+  const target = resolveRuntimeProgressTarget(nodes, runtimeNodeId, currentNodeName);
+  if (progressTargets.size >= 128) progressTargets.clear();
+  progressTargets.set(key, target);
+  return target;
+}
+
+function resolveRuntimeProgressTarget(nodes: CustomNodeType[], runtimeNodeId: string, currentNodeName?: string | null) {
   const directNode = nodes.find((node) => node.id === runtimeNodeId);
   if (directNode?.data.huggingFaceClusterRole === 'execution') {
     const root = nodes.find(
@@ -1287,7 +1305,10 @@ export function expandedUserBlockAtPosition(
   const candidates = nodes
     .filter(
       (node) =>
-        node.data.type === 'block' && !node.parentId && isUserBlockExpandedInstance({ nodes, edges: [] }, node.id),
+        node.data.type === 'block' &&
+        !node.data.blockInstanceV2 &&
+        !node.parentId &&
+        isUserBlockExpandedInstance({ nodes, edges: [] }, node.id),
     )
     .filter((node) => {
       const width = node.measured?.width ?? node.width ?? USER_BLOCK_COLLAPSED_WIDTH;
@@ -1597,6 +1618,9 @@ export function collapseUserBlockInstance(
   });
   const parent = {
     ...blockNode,
+    // Collapse replaces the child sockets with a different public handle set.
+    // Clear the old React Flow bounds until the new DOM ports are measured.
+    measured: undefined,
     width: blockNode.data.uiState?.blockCollapsedWidth ?? USER_BLOCK_COLLAPSED_WIDTH,
     height: blockNode.data.uiState?.blockCollapsedHeight ?? USER_BLOCK_COLLAPSED_HEIGHT,
     data: {
@@ -1743,6 +1767,9 @@ export function configureUserBlockInstance(
   };
   replacement.width = blockNode.width;
   replacement.height = blockNode.height;
+  // This remains the same mounted instance; keep its last known geometry
+  // until the observer reports the new layout after interface changes.
+  replacement.measured = blockNode.measured;
   replacement.selected = blockNode.selected;
   replacement.parentId = blockNode.parentId;
   replacement.extent = blockNode.extent;
@@ -1805,6 +1832,7 @@ export function applyUserBlockDefinitionToInstance(
   replacement.data.uiState = { ...blockNode.data.uiState };
   replacement.width = blockNode.width;
   replacement.height = blockNode.height;
+  replacement.measured = blockNode.measured;
   replacement.selected = blockNode.selected;
   replacement.parentId = blockNode.parentId;
   replacement.extent = blockNode.extent;

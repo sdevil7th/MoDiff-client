@@ -90,7 +90,7 @@ export function BlockNodeFrame({
           >
             {controls}
           </div>
-          <div ref={connectorRef} className="shrink-0">
+          <div ref={connectorRef} className="shrink-0 pb-7">
             {connectors}
           </div>
         </>

@@ -355,6 +355,19 @@ const SEALED_EXECUTION_BINDING_SOURCES = new Set([
   'oneFrame',
   'oneVideo',
   'sampleRate44100',
+  'sampleRate48000',
+  'sampleRate24000',
+  'sampleRate16000',
+  'numWaveforms3',
+  'text2audio',
+  'text2music',
+  'cover',
+  'continuation',
+  'repaint',
+  'referenceWindow15',
+  'targetPeakMinus1',
+  'maxAdjustment12',
+  'boundaryFade001',
 ]);
 const MAX_JSON_COLLECTION = 256;
 const MAX_JSON_DEPTH = 8;
@@ -850,6 +863,17 @@ function graphAdapterContracts(
     const actionSequence = uniqueStrings(item.actionSequence);
     const actions = new Set(actionSequence);
     if (!actionSequence.length || requiredInputs.some((name) => !inputNames.has(name))) invalid();
+    // A composite can use the same ordinary class at different unique roles
+    // (source, mask and control Image.Load nodes). This is an ordered class
+    // sequence, not a set of placement identities. Keep Modular paths unique.
+    let upstreamBlockSequence: string[];
+    if (standardDiffusersComposite || provider === 'transformers') {
+      if (!Array.isArray(item.upstreamBlockSequence) || item.upstreamBlockSequence.length > MAX_STEPS) invalid();
+      upstreamBlockSequence = item.upstreamBlockSequence.map((name) => boundedText(name, IDENTIFIER, 256));
+      if (upstreamBlockSequence.length && upstreamBlockSequence.length !== actionSequence.length) invalid();
+    } else {
+      upstreamBlockSequence = uniqueStrings(item.upstreamBlockSequence, IDENTIFIER, MAX_STEPS);
+    }
     if (!Array.isArray(item.stateEdges) || item.stateEdges.length > MAX_FIELDS) invalid();
     const stateEdges = item.stateEdges.map((edge) => {
       if (!record(edge) || !exactKeys(edge, ['producerAction', 'producerOutput', 'consumerAction', 'consumerInput']))
@@ -872,7 +896,7 @@ function graphAdapterContracts(
       requiredInputs,
       actionSequence,
       stateEdges,
-      upstreamBlockSequence: uniqueStrings(item.upstreamBlockSequence, IDENTIFIER, MAX_STEPS),
+      upstreamBlockSequence,
     };
   });
 }
@@ -960,7 +984,7 @@ function executionAdmissions(
           !SEALED_EXECUTION_BINDING_SOURCES.has(source) ||
           (typeof value !== 'boolean' &&
             (typeof value === 'number'
-              ? !Number.isSafeInteger(value)
+              ? !(Number.isSafeInteger(value) || (source === 'boundaryFade001' && value === 0.01))
               : typeof value !== 'string' || value.length > 512))
         )
           invalid();

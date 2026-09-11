@@ -105,15 +105,15 @@ export type NodeData = {
   blockProjectionNodeId?: string;
   /** Projected nodes are derived canvas/execution views, never persistence authority. */
   blockProjectionKind?: 'internal';
-  /** Presentation-only marker for an upstream Modular block that owns child placements. */
+  /** Presentation-only marker for a semantic container that owns child nodes. */
   blockProjectionContainer?: boolean;
   /** This projected node is one exact upstream Modular Diffusers block. */
   blockProjectionModular?: boolean;
-  /** Number of immediate projected Modular Diffusers children. */
+  /** Number of immediate projected children, including ordinary utilities. */
   blockProjectionChildCount?: number;
-  /** Whether this projected Modular Diffusers container currently shows its descendants. */
+  /** Whether this projected container currently shows its descendants. */
   blockProjectionContainerExpanded?: boolean;
-  /** Zero-based depth inside the owning Block's Modular Diffusers hierarchy. */
+  /** Zero-based depth inside the owning Block's shared semantic hierarchy. */
   blockProjectionDepth?: number;
   /**
    * Runtime-only handles exposed by a collapsed Modular subtree. The canvas
@@ -126,6 +126,7 @@ export type NodeData = {
       direction: 'input' | 'output';
       nodeId: string;
       fieldOrPortId: string;
+      mirrorBindings?: { nodeId: string; fieldOrPortId: string }[];
     }
   >;
   /** Pinned placement identity carried by a standalone catalog Modular block. */

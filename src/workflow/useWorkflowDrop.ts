@@ -3,7 +3,11 @@ import { useCallback } from 'react';
 import { nanoid } from 'nanoid';
 
 import config from '../../app.config';
-import { useStudioStore } from '../stores/useStudioStore';
+import {
+  assertWorkflowOperationContext,
+  captureWorkflowOperationContext,
+  useStudioStore,
+} from '../stores/useStudioStore';
 import type { NodeData } from '../stores/useNodeStore';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { WorkflowTab, WorkflowTabSnapshot } from '../studio/types';
@@ -33,6 +37,7 @@ import { HUGGING_FACE_CLUSTER_DRAG_PREFIX } from '../studio/huggingFaceClusterDr
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
 import { createBlockInstanceV2 } from '../studio/blockSchemaV2';
 import { createBlockRootNodeV2 } from '../studio/blockRuntimeV2';
+import { expandedBlockV2AtPosition, insertNodeAtBlockTargetV2 } from '../studio/blockDropTargetsV2';
 import { USER_BLOCK_V2_DRAG_PREFIX } from '../studio/blockPersistenceV2';
 import {
   beginBlockInsertionFeedbackV2,
@@ -182,42 +187,7 @@ export function useWorkflowDrop({
         try {
           prepareWorkflowForManualInsertion();
           const flow = useFlowStore.getState();
-          const nodeById = new Map(flow.nodes.map((node) => [node.id, node]));
-          const absolutePosition = (node: CustomNodeType) => {
-            let x = node.position.x;
-            let y = node.position.y;
-            let parentId = node.parentId;
-            const visited = new Set([node.id]);
-            while (parentId) {
-              if (visited.has(parentId)) break;
-              visited.add(parentId);
-              const parent = nodeById.get(parentId);
-              if (!parent) break;
-              x += parent.position.x;
-              y += parent.position.y;
-              parentId = parent.parentId;
-            }
-            return { x, y };
-          };
-          const target = flow.nodes
-            .filter((node) => {
-              if (node.data.blockInstanceV2?.presentation.expanded === true) return true;
-              return (
-                node.data.blockProjectionContainer === true && node.data.blockProjectionContainerExpanded !== false
-              );
-            })
-            .filter((node) => {
-              const width = node.measured?.width ?? node.width ?? 360;
-              const height = node.measured?.height ?? node.height ?? 320;
-              const origin = absolutePosition(node);
-              return (
-                position.x >= origin.x &&
-                position.x <= origin.x + width &&
-                position.y >= origin.y &&
-                position.y <= origin.y + height
-              );
-            })
-            .sort((left, right) => (right.data.blockProjectionDepth ?? -1) - (left.data.blockProjectionDepth ?? -1))[0];
+          const target = expandedBlockV2AtPosition(flow.nodes, position);
           const owner = target
             ? flow.nodes.find((node) => node.id === (target.data.blockProjectionOwnerId ?? target.id))
             : undefined;
@@ -234,15 +204,8 @@ export function useWorkflowDrop({
                 modularSnapshot,
               )
             : createModularDiffusersCatalogNode(contextualEntry, library, nodesRegistry, position, modularSnapshot);
-          addNode(modularNode);
-          if (target) {
-            const ownerId = target.data.blockProjectionOwnerId ?? target.id;
-            if (modularNode.data.blockInstanceV2) {
-              flow.adoptBlockFragmentIntoBlockV2(modularNode.id, ownerId, target.data.blockProjectionNodeId);
-            } else {
-              flow.adoptNodeIntoBlockV2(modularNode.id, ownerId, target.data.blockProjectionNodeId);
-            }
-          }
+          if (target) insertNodeAtBlockTargetV2(modularNode, target, flow, addNode);
+          else addNode(modularNode);
         } catch (error) {
           showGraphImportError(formatRequestError(error, 'Could not add the Modular Diffusers block.'));
         }
@@ -269,13 +232,31 @@ export function useWorkflowDrop({
           });
         }
         prepareWorkflowForManualInsertion();
+        const context = captureWorkflowOperationContext();
+        const target = expandedBlockV2AtPosition(useFlowStore.getState().nodes, position);
         const pendingId = beginBlockInsertionFeedbackV2(huggingFaceClusterDisplayLabel(definition), position);
         try {
           const { createHuggingFaceClusterForGraph } = await import('../studio/huggingFaceClusterInsertion');
+          assertWorkflowOperationContext(context, { includeForm: false });
           const cluster = await createHuggingFaceClusterForGraph(definition, position, useStudioStore.getState().form, {
             insert: false,
           });
-          completeBlockInsertionFeedbackV2(pendingId, cluster);
+          assertWorkflowOperationContext(context, { includeForm: false });
+          if (target) {
+            cancelBlockInsertionFeedbackV2(pendingId);
+            const current = useFlowStore.getState();
+            const destination = current.nodes.find((node) => node.id === target.id);
+            if (
+              !destination ||
+              (destination.data.blockInstanceV2
+                ? !destination.data.blockInstanceV2.presentation.expanded
+                : destination.data.blockProjectionContainerExpanded === false)
+            )
+              throw new Error(
+                'The destination Block changed while the Cluster loaded. Expand it and try the drop again.',
+              );
+            insertNodeAtBlockTargetV2(cluster, destination, current, addNode);
+          } else completeBlockInsertionFeedbackV2(pendingId, cluster);
         } catch (error) {
           showGraphImportError(formatRequestError(error, 'Could not add the Cluster Node.'));
         } finally {
@@ -304,15 +285,20 @@ export function useWorkflowDrop({
             autoHideDuration: 3000,
           });
         }
-        addNode(
-          createBlockRootNodeV2(
-            createBlockInstanceV2(definition, {
-              instanceId: `block-v2-${nanoid(16)}`,
-              position,
-              size: { width: 420, height: 480 },
-            }),
-          ),
+        const newBlock = createBlockRootNodeV2(
+          createBlockInstanceV2(definition, {
+            instanceId: `block-v2-${nanoid(16)}`,
+            position,
+            size: { width: 420, height: 480 },
+          }),
         );
+        const target = expandedBlockV2AtPosition(flow.nodes, position);
+        try {
+          if (target) insertNodeAtBlockTargetV2(newBlock, target, flow, addNode);
+          else addNode(newBlock);
+        } catch (error) {
+          showGraphImportError(formatRequestError(error, 'Could not add the saved User Node inside this Block.'));
+        }
         return;
       }
 
@@ -346,6 +332,16 @@ export function useWorkflowDrop({
 
       prepareWorkflowForManualInsertion();
       const flow = useFlowStore.getState();
+      const targetBlockV2 = expandedBlockV2AtPosition(flow.nodes, position);
+      if (targetBlockV2) {
+        try {
+          insertNodeAtBlockTargetV2(newNode, targetBlockV2, flow, addNode);
+          useStudioStore.getState().saveActiveWorkflowTab(true);
+        } catch (error) {
+          showGraphImportError(formatRequestError(error, 'Could not add this node inside the Block.'));
+        }
+        return;
+      }
       const expandedUserBlock = expandedUserBlockAtPosition(flow.nodes, position);
       const expandedCluster = expandedUserBlock ? null : expandedHuggingFaceClusterAtPosition(flow.nodes, position);
       if (expandedCluster) {

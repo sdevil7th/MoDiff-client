@@ -83,3 +83,38 @@ export function blockValueTypeMatchesMediaV2(value: unknown, mediaType: 'image' 
   };
   return values.some((entry) => tokenPattern[mediaType].test(String(entry ?? '').trim()));
 }
+
+/** A declared media input may bind the matching file picker's string path. */
+export function blockMediaFileBoundaryIsCompatibleV2(
+  valueType: unknown,
+  param: { display?: unknown; type?: unknown; fieldOptions?: unknown },
+) {
+  const options = param.fieldOptions;
+  if (
+    param.display !== 'filebrowser' ||
+    !blockValueTypesAreCompatibleV2(param.type, 'string') ||
+    !options ||
+    typeof options !== 'object' ||
+    Array.isArray(options) ||
+    !('fileTypes' in options) ||
+    !Array.isArray(options.fileTypes)
+  )
+    return false;
+  const fileTypes = options.fileTypes;
+  return (['image', 'video', 'audio'] as const).some(
+    (mediaType) =>
+      fileTypes.some(
+        (fileType: unknown) => typeof fileType === 'string' && fileType.trim().toLowerCase() === mediaType,
+      ) &&
+      (blockValueTypeMatchesMediaV2(valueType, mediaType) ||
+        // Official video loaders decode a video file into a sequence of PIL
+        // frames. This exception requires an explicitly video-only-capable
+        // picker; a single image never acquires video compatibility.
+        (mediaType === 'video' &&
+          (Array.isArray(valueType) ? valueType : [valueType]).some(
+            (type) =>
+              typeof type === 'string' &&
+              /^(?:typing\.)?(?:list|sequence)\[(?:PIL\.Image\.Image|image)\]$/iu.test(type.trim()),
+          ))),
+  );
+}

@@ -1,6 +1,7 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { Fragment, lazy, memo, ReactNode, Suspense } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { AlertTriangle, Pin, RotateCcw } from 'lucide-react';
 import type { Position } from '@xyflow/react';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -16,6 +17,9 @@ import { GraphControlButton } from '../ui/GraphControls';
 import { ModiffDisclosure, ModiffTooltip } from '../ui';
 import { cx } from '../utils/classNames';
 import { EncodeImageSummary } from './EncodeImageSummary';
+import { blockControlConnectionNotesV2 } from '../studio/blockControlConnectionsV2';
+import { FieldFrame } from '../ui/FieldFrame';
+import { PreviewEmptyState } from '../ui/PreviewFrame';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -28,7 +32,6 @@ import TextareaField from '../fields/TextareaField';
 import RadioField from '../fields/RadioField';
 import NumberField from '../fields/NumberField';
 import RangeField from '../fields/RangeField';
-import SplineField from '../fields/SplineField';
 import ModelSelectField from '../fields/ModelSelectField';
 import LayerConfigField from '../fields/LayerConfigField';
 import SelectDialogField from '../fields/SelectDialogField';
@@ -39,8 +42,9 @@ import UIButtonField from '../fields/UIButtonField';
 import UILabelFieldField from '../fields/UILabelField';
 import UIGroupField from '../fields/UIGroupField';
 import UIImagecompareField from '../fields/UIImagecompareField';
-import UIVideoField from '../fields/UIVideoField';
-import UIAudioField from '../fields/UIAudioField';
+const UIVideoField = lazy(() => import('../fields/UIVideoField'));
+const UIAudioField = lazy(() => import('../fields/UIAudioField'));
+const SplineField = lazy(() => import('../fields/SplineField'));
 
 export type FieldProps = {
   nodeId: string;
@@ -127,6 +131,16 @@ const NodeContent = memo(function NodeContent({
   const studioResourceMode = studioForm.resourceMode;
   const studioGraphBinding = useStudioStore((state) => state.graphBinding);
   const graphNode = useFlowStore((state) => state.nodes.find((node) => node.id === nodeId));
+  const connectionNotes = useFlowStore(
+    useShallow((state) =>
+      blockControlConnectionNotesV2(
+        state.nodes.find((node) => node.id === nodeId),
+        params,
+        state.nodes,
+        state.edges,
+      ),
+    ),
+  );
   const studioRole = graphNode?.data.studioRole;
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
@@ -165,7 +179,8 @@ const NodeContent = memo(function NodeContent({
   const controlledStudioNode = Boolean(
     studioGraphBinding && (studioGraphBinding.managedNodeIds?.includes(nodeId) || graphNode?.data.studioOwned === true),
   );
-  const autoModeActive = studioResourceMode === 'auto';
+  // Workflow Auto plans resources without hiding manually authored controls.
+  const autoModeActive = studioResourceMode === 'auto' && controlledStudioNode;
   const autoFormPatch = formPatchForAutoCandidate(selectedCandidate, studioForm);
   const fields = Object.entries(params).map(([key, data]: [string, NodeParams]) => {
     const label = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
@@ -216,11 +231,14 @@ const NodeContent = memo(function NodeContent({
       default: data.default,
       options,
       style: sanitizeModiffFieldStyle(data.style, `${nodeId}.${key}`),
-      disabled: data.disabled || false,
+      disabled: Boolean(data.disabled || connectionNotes[key]),
       min: data.min,
       max: data.max,
       step: data.step,
-      fieldOptions: data.fieldOptions || {},
+      fieldOptions: {
+        ...data.fieldOptions,
+        ...(connectionNotes[key] ? { connectedControlNote: connectionNotes[key] } : {}),
+      },
       artifacts: data.artifacts,
       executionStatus,
       progressMessage,
@@ -239,7 +257,12 @@ const NodeContent = memo(function NodeContent({
         updateStore(key, autoValue, 'value');
         resetAutoFieldOverride(nodeId, key);
       },
-      surface: autoModeActive && !isPreviewFieldType(fieldType) ? classification.surface : ('main' as const),
+      surface:
+        studioResourceMode === 'auto' &&
+        (controlledStudioNode || data.fieldOptions?.controlTier === 'advanced') &&
+        !isPreviewFieldType(fieldType)
+          ? classification.surface
+          : ('main' as const),
     };
   });
   const connectors = fields.filter(({ props }) => props.fieldType === 'input' || props.fieldType === 'output');
@@ -266,12 +289,12 @@ const NodeContent = memo(function NodeContent({
         data-testid={`node-connector-tray-${nodeId}`}
         role="group"
       >
-        <div className="grid min-w-0 content-start gap-1 pr-2">
+        <div className="grid min-w-0 grid-cols-1 content-start gap-1 pr-2">
           {inputs.map(({ key, props }) => (
             <FieldMemo key={key} {...props} compactHandle={compactConnectors} />
           ))}
         </div>
-        <div className="grid min-w-0 content-start gap-1 border-l border-modiff-border-subtle pl-2">
+        <div className="grid min-w-0 grid-cols-1 content-start gap-1 border-l border-modiff-border-subtle pl-2">
           {outputs.map(({ key, props }) => (
             <FieldMemo key={key} {...props} compactHandle={compactConnectors} />
           ))}
@@ -307,7 +330,7 @@ const NodeContent = memo(function NodeContent({
           data-testid={`node-advanced-controls-${nodeId}`}
           className="rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40"
           buttonClassName="min-h-7 text-xs"
-          panelClassName="grid gap-2 border-t border-modiff-border-subtle p-2"
+          panelClassName="grid min-w-0 grid-cols-1 gap-2 border-t border-modiff-border-subtle p-2"
         >
           {orderedAdvancedFields}
         </ModiffDisclosure>
@@ -372,6 +395,21 @@ function autoValueForField(
 
 function fieldElement(field: ClassifiedField) {
   const content = <FieldMemo {...field.props} />;
+  const connectionNote = field.props.fieldOptions?.connectedControlNote;
+  if (typeof connectionNote === 'string')
+    return (
+      <div
+        key={field.key}
+        role="group"
+        aria-label={`${field.props.label} uses a connected value`}
+        data-connected-control={field.key}
+      >
+        {content}
+        <p role="note" className="px-2 pb-2 text-xs text-modiff-subtle-text">
+          {connectionNote}
+        </p>
+      </div>
+    );
   if (!field.autoManaged) return <Fragment key={field.key}>{content}</Fragment>;
   return (
     <ModiffTooltip<HTMLDivElement>
@@ -479,7 +517,27 @@ const FieldMemo = memo((props: FieldProps) => {
     case 'range':
       return <RangeField {...props} />;
     case 'spline':
-      return <SplineField {...props} />;
+      return (
+        <Suspense
+          fallback={
+            <FieldFrame
+              dataKey={props.fieldKey}
+              hidden={props.hidden}
+              disabled={props.disabled}
+              layoutStyle={props.style}
+            >
+              <div
+                role="status"
+                className="nodrag nowheel grid min-h-32 place-items-center text-xs text-modiff-subtle-text"
+              >
+                Loading curve editor…
+              </div>
+            </FieldFrame>
+          }
+        >
+          <SplineField {...props} />
+        </Suspense>
+      );
     case 'modelselect':
       return <ModelSelectField {...props} />;
     case 'layerconfig':
@@ -491,9 +549,29 @@ const FieldMemo = memo((props: FieldProps) => {
     case 'ui_image':
       return <UIImageField {...props} />;
     case 'ui_video':
-      return <UIVideoField {...props} />;
     case 'ui_audio':
-      return <UIAudioField {...props} />;
+      return (
+        <Suspense
+          fallback={
+            <FieldFrame
+              dataKey={props.fieldKey}
+              hidden={props.hidden}
+              disabled={props.disabled}
+              layoutStyle={props.style}
+            >
+              <div role="status">
+                <PreviewEmptyState
+                  kind={props.fieldType === 'ui_audio' ? 'audio' : 'visual'}
+                  compact={props.fieldOptions?.compactPreview === true}
+                  message={`Loading ${props.fieldType === 'ui_audio' ? 'audio' : 'video'} preview…`}
+                />
+              </div>
+            </FieldFrame>
+          }
+        >
+          {props.fieldType === 'ui_audio' ? <UIAudioField {...props} /> : <UIVideoField {...props} />}
+        </Suspense>
+      );
     case 'ui_button':
       return <UIButtonField {...props} />;
     case 'ui_imagecompare':

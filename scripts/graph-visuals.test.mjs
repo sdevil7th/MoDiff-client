@@ -80,7 +80,10 @@ before(async () => {
   graphConnectionSurface = await server.ssrLoadModule('/src/ui/GraphConnectionSurface.tsx');
   graphBridge = await server.ssrLoadModule('/src/studio/graphBridge.ts');
   graphFinalization = await server.ssrLoadModule('/src/studio/graphFinalization.ts');
-  graphFixerModule = await server.ssrLoadModule('/src/studio/graphFixer.ts');
+  graphFixerModule = {
+    ...(await server.ssrLoadModule('/src/studio/graphFixer.ts')),
+    ...(await server.ssrLoadModule('/src/studio/graphFixMaterialization.ts')),
+  };
   graphControls = await server.ssrLoadModule('/src/ui/GraphControls.tsx');
   graphLayout = await server.ssrLoadModule('/src/workflow/graphLayout.ts');
   graphTypedHandle = await server.ssrLoadModule('/src/ui/GraphTypedHandle.tsx');
@@ -3346,6 +3349,27 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     );
     assert.equal(graphBridge.getStudioGraphRunBlockingMessage(qwenModularForm), null);
 
+    // A partial dynamic definition must not erase the component connections
+    // needed to finish loading it. Missing declared fields still block Run.
+    const completeFlow = flowStoreModule.useFlowStore.getState();
+    const completeStudio = studioStoreModule.useStudioStore.getState();
+    flowStoreModule.useFlowStore.setState({
+      nodes: completeFlow.nodes.map((node) => {
+        if (node.id !== qwenModularBinding.nodes.prompt) return node;
+        const params = { ...node.data.params };
+        delete params.negative_prompt;
+        return { ...node, data: { ...node.data, params } };
+      }),
+    });
+    assert.equal(graphBridge.syncStudioGraphDefinition(qwenModularForm), false);
+    assert.deepEqual(flowStoreModule.useFlowStore.getState().edges, completeFlow.edges);
+    assert.notEqual(graphBridge.getStudioGraphRunBlockingMessage(qwenModularForm), null);
+    flowStoreModule.useFlowStore.setState({ nodes: completeFlow.nodes, edges: completeFlow.edges });
+    studioStoreModule.useStudioStore.setState({
+      graphBinding: completeStudio.graphBinding,
+      graphFinalization: completeStudio.graphFinalization,
+    });
+
     for (const spec of [qwenEditPlusSpec, qwenEditPlusMultiSpec]) {
       const qwenEditPlusForm = {
         ...qwenModularForm,
@@ -3920,6 +3944,17 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(aceBinding.executionSpec.id, aceSpec.id);
     assert.equal(aceBinding.executionSpec.contentHash, aceSpec.contentHash);
     assert.deepEqual(topology(aceBinding), audioEdgeRows.map((row) => [...row]).sort());
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceForm), null);
+    // An exact non-image recipe uses its declared ports, but still requires
+    // the complete live edge/schema proof. Never bypass missing audio wires.
+    const validAudioEdges = flowStoreModule.useFlowStore.getState().edges;
+    flowStoreModule.useFlowStore.setState({ edges: validAudioEdges.slice(1) });
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(aceForm), /graph changed/i);
+    flowStoreModule.useFlowStore.setState({ edges: validAudioEdges });
+    studioStoreModule.useStudioStore.setState({ graphBinding: { ...aceBinding, finalizationProof: undefined } });
+    assert.match(graphBridge.getStudioGraphRunBlockingMessage(aceForm), /route pending/i);
+    studioStoreModule.useStudioStore.setState({ graphBinding: aceBinding });
+    assert.equal(graphBridge.getStudioGraphRunBlockingMessage(aceForm), null);
     assert.equal(
       aceNodes.find((item) => item.id === aceBinding.nodes.audioPipeline).data.params.pipeline_class.value,
       'AceStepPipeline',
@@ -6034,8 +6069,10 @@ test('existing canvas nodes move into expanded User Nodes while Cluster and User
     withCluster,
   );
 
+  adoptedGraph.nodes.find((item) => item.id === root.id).measured = { width: 1200, height: 850 };
   const collapsed = userBlocksModule.collapseUserBlockInstance(adoptedGraph, root.id, []);
   const collapsedRoot = collapsed.nodes.find((item) => item.id === root.id);
+  assert.equal(collapsedRoot.measured, undefined, 'changed public handles must not reuse expanded handle bounds');
   assert.equal(collapsedRoot.data.userBlockSnapshot.nodes.length, 3);
   const restored = userBlocksModule.expandUserBlockGraph(collapsed.nodes, collapsed.edges, []);
   assert.ok(restored.nodes.some((item) => item.id.endsWith(ordinary.id)));
@@ -6050,6 +6087,7 @@ test('existing canvas nodes move into expanded User Nodes while Cluster and User
   assert.equal(copied.id, 'new-user-node-definition');
   assert.equal(copied.name, 'Adoption target — Workflow Demo');
   const otherInstance = userBlocksModule.createUserBlockNode(created.block, { x: 1800, y: 0 }, 'other-instance');
+  adoptedGraph.nodes.find((item) => item.id === root.id).measured = { width: 790, height: 992 };
   const applied = userBlocksModule.applyUserBlockDefinitionToInstance(
     { nodes: [...adoptedGraph.nodes, otherInstance], edges: adoptedGraph.edges },
     root.id,
@@ -6060,6 +6098,7 @@ test('existing canvas nodes move into expanded User Nodes while Cluster and User
   assert.equal(updatedInstance.data.userBlockId, copied.id);
   assert.equal(updatedInstance.data.label, copied.name);
   assert.equal(updatedInstance.data.userBlockSnapshot.nodes.length, 3);
+  assert.deepEqual(updatedInstance.measured, { width: 790, height: 992 });
   assert.equal(unchangedInstance.data.userBlockId, created.block.id);
   assert.equal(unchangedInstance.data.userBlockSnapshot.nodes.length, 2);
 });
@@ -6326,7 +6365,7 @@ test('Block edits, expansion, deletion, and resize participate in graph undo and
 });
 
 test('collapsed blocks contain their connector rows and node height has no arbitrary upper cap', () => {
-  const blockSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'BlockNode.tsx'), 'utf8');
+  const blockSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'LegacyUserBlockNode.tsx'), 'utf8');
   const nodeSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'CustomNode.tsx'), 'utf8');
   const frameSource = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'CustomNodeFrame.tsx'), 'utf8');
 
@@ -6348,7 +6387,7 @@ test('Auto canvas renders the exact workflow graph instead of a projected facade
   assert.match(workflowSource, /edges=\{exactVisibleEdges\}/);
   assert.match(
     workflowSource,
-    /onlyRenderVisibleElements=\{!canvasSuspended && !workflowFocusRequest && !requiresCompleteCompositeMount\}/,
+    /onlyRenderVisibleElements=\{\s*nodes.length > 100 && !canvasSuspended && !workflowFocusRequest && !requiresCompleteCompositeMount\s*\}/,
   );
   assert.match(workflowSource, /isUserBlockExpandedInstance\(\{ nodes, edges \}, node\.id\)/);
   assert.match(workflowSource, /huggingFaceClusterInstance\?\.presentation\.expanded === true/);

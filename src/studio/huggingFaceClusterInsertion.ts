@@ -3,7 +3,7 @@ import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibr
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { captureWorkflowOperationContext, workflowOperationContextIsCurrent } from '../stores/useStudioStore';
-import { getFormDefaultsForRegisteredRoute } from './modelProfiles';
+import { getFormDefaultsForRegisteredRoute, STUDIO_MODEL_PROFILES } from './modelProfiles';
 import type { HuggingFaceNodeLibraryDefinition } from './huggingFaceNodeLibrary';
 import { createHuggingFaceClusterNode } from './huggingFaceClusterGraph';
 import { huggingFaceClusterOverridesForBindingValues } from './huggingFaceClusterInstance';
@@ -605,19 +605,26 @@ export async function createHuggingFaceClusterForGraph(
   // guidance-1 defaults while its model/mode labels already say Qwen. Seed the
   // selected route from its own profile and let creator starter values win
   // below; users can then edit this independent instance explicitly.
-  const bindingForm = selectedAdmission
-    ? getFormDefaultsForRegisteredRoute(
-        selectedAdmission.studioMode as StudioMode,
-        definition.pipelineClass as StudioModelType,
-      )
-    : studioForm;
-  const { parameterOverrides, executionParameterOverrides } = selectedAdmission
-    ? huggingFaceClusterOverridesForBindingValues(
-        definition,
-        selectedAdmission,
-        bindingForm as unknown as Record<string, unknown>,
-      )
-    : { parameterOverrides: {}, executionParameterOverrides: {} };
+  // Backend-defined routes need no model-specific frontend profile. When that
+  // legacy profile is absent, getFormDefaultsForRegisteredRoute falls back to
+  // another model's generic values. Do not let those overwrite the exact
+  // compiled creator values (e.g. ControlNet 28 steps becomes generic 8 steps).
+  const hasDeclaredProfile = Object.prototype.hasOwnProperty.call(STUDIO_MODEL_PROFILES, definition.pipelineClass);
+  const bindingForm =
+    selectedAdmission && hasDeclaredProfile
+      ? getFormDefaultsForRegisteredRoute(
+          selectedAdmission.studioMode as StudioMode,
+          definition.pipelineClass as StudioModelType,
+        )
+      : null;
+  const { parameterOverrides, executionParameterOverrides } =
+    selectedAdmission && bindingForm
+      ? huggingFaceClusterOverridesForBindingValues(
+          definition,
+          selectedAdmission,
+          bindingForm as unknown as Record<string, unknown>,
+        )
+      : { parameterOverrides: {}, executionParameterOverrides: {} };
   const suggestedValues = definition.suggestedInputs?.values ?? {};
   const seededParameterOverrides = Object.fromEntries(
     Object.entries(parameterOverrides).filter(

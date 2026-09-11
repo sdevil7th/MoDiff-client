@@ -1,6 +1,8 @@
+import type { StudioOutput } from './types';
 import config from '../../app.config';
 import { resolveTemplateAssetUrl } from './templateAssets';
 import { bundledTemplateInputPreviewUrl } from './templateInputPreview';
+import { outputMediaSizeLabel, outputNumericInputValue } from './resolvedExecutionInputs';
 
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|apng|webp|gif|bmp|ico|tiff|svg)(\?.*)?$/i;
 const VIDEO_EXTENSIONS = /\.(mp4|webm|mov|mkv|m4v)(\?.*)?$/i;
@@ -237,4 +239,38 @@ export function resolveStudioAudioUrl(value: string, nodeId?: string, fieldKey?:
   }
 
   return value;
+}
+
+/** Measured media is display evidence; it must never rewrite rerun settings. */
+export function encodedVideoMetadata(output: StudioOutput) {
+  const item =
+    output.mediaItems?.find((candidate) => candidate.url === output.url) ??
+    output.mediaItems?.find((candidate) => candidate.displayType === 'video');
+  return item?.mediaMetadata;
+}
+
+export function videoOutputSummary(output: StudioOutput) {
+  const metadata = encodedVideoMetadata(output);
+  if (metadata) {
+    const details = [
+      metadata.width && metadata.height ? `${metadata.width}x${metadata.height}` : undefined,
+      metadata.frame_count ? `${metadata.frame_count} frames` : undefined,
+      metadata.fps ? `${metadata.fps}fps` : undefined,
+    ].filter(Boolean);
+    if (details.length > 0) return details.join(' | ');
+    if (metadata.duration_seconds) return `${metadata.duration_seconds} sec`;
+  }
+  const size = outputMediaSizeLabel(output);
+  const frames = outputNumericInputValue(output, 'numFrames');
+  const fps = outputNumericInputValue(output, 'fps');
+  const details = [
+    size,
+    frames === undefined ? undefined : `${frames} frames`,
+    fps === undefined ? undefined : `${fps}fps`,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+  return details
+    ? `${output.resolvedExecutionInputs ? 'Resolved' : 'Requested'} ${details}`
+    : 'Video metadata not captured';
 }

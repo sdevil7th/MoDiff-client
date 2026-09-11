@@ -1,7 +1,11 @@
+import BlockFieldPickerV2 from './BlockFieldPickerV2';
+import { EditorPanel } from '../ui/EditorPanel';
+import { parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import type { BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { blockValueTypesAreCompatibleV2 } from '../studio/blockValueTypeCompatibilityV2';
+import { blockContainerInterfaceEdgeImpactsV1 } from '../studio/blockContainerEditingV1';
 import {
   blockInterfaceDraftV2,
   blockInterfaceScopeNodeIdsV2,
@@ -11,8 +15,9 @@ import {
 } from '../studio/blockInterfaceEditingV2';
 import { useFlowStore } from '../stores/useFlowStore';
 import { assertWorkflowOperationContext, type WorkflowOperationContext } from '../stores/useStudioStore';
-import { ModiffButton, ModiffDialog, ModiffIconButton, ModiffInput, ModiffSelect } from '../ui';
+import { ModiffButton, ModiffIconButton, ModiffInput } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
+import BlockInterfacePreviewsEditorV2 from './BlockInterfacePreviewsEditorV2';
 type InterfaceBindingOptionV2 = {
   key: string;
   nodeId: string;
@@ -96,7 +101,7 @@ function MirrorBindingsEditorV2({
         const key = interfaceBindingKeyV2(binding.nodeId, binding.fieldId);
         return (
           <div key={key} className="flex min-w-0 items-center gap-2 text-xs text-modiff-subtle-text">
-            <span className="min-w-0 flex-1 truncate">
+            <span className="min-w-0 flex-1 break-words">
               Additional consumer: {labelByKey.get(key) ?? `${binding.nodeId} / ${binding.fieldId}`}
             </span>
             <ModiffIconButton
@@ -112,7 +117,7 @@ function MirrorBindingsEditorV2({
         );
       })}
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-        <ModiffSelect
+        <BlockFieldPickerV2
           value={selected}
           disabled={disabled}
           onValueChange={onSelected}
@@ -213,25 +218,32 @@ export default function BlockInterfaceDialogContentV2({
   }
   const inputs = new Set(mergedDraft?.boundary.inputs.map(({ portId }) => portId));
   const outputs = new Set(mergedDraft?.boundary.outputs.map(({ portId }) => portId));
-  const impactedInterfaceEdges = edges.filter(
-    (edge) =>
-      (edge.target === snapshot.instanceId && (!edge.targetHandle || !inputs.has(edge.targetHandle))) ||
-      (edge.source === snapshot.instanceId && (!edge.sourceHandle || !outputs.has(edge.sourceHandle))),
-  );
+  const impactedInterfaceEdges =
+    subtreeId && mergedDraft
+      ? blockContainerInterfaceEdgeImpactsV1(snapshot, subtreeId, { schemaVersion: 1, ...mergedDraft })
+      : subtreeId
+        ? []
+        : edges.filter(
+            (edge) =>
+              (edge.target === snapshot.instanceId &&
+                !parseBlockCrossingHandleV2(edge.targetHandle) &&
+                (!edge.targetHandle || !inputs.has(edge.targetHandle))) ||
+              (edge.source === snapshot.instanceId &&
+                !parseBlockCrossingHandleV2(edge.sourceHandle) &&
+                (!edge.sourceHandle || !outputs.has(edge.sourceHandle))),
+          );
   function applyDraft() {
     assertWorkflowOperationContext(context, { includeForm: false });
     const current = useFlowStore.getState().nodes.find((node) => node.id === snapshot.instanceId)?.data.blockInstanceV2;
     if (!current || !interfaceDraft) throw new Error('This Block is no longer available. Reopen Configure Interface.');
     const merged = mergeBlockInterfaceDraftV2(snapshot, current, interfaceDraft, subtreeId);
-    useFlowStore.getState().configureBlockInterfaceV2(snapshot.instanceId, merged);
+    useFlowStore.getState().configureBlockInterfaceV2(snapshot.instanceId, merged, subtreeId);
   }
   return (
-    <ModiffDialog
-      open={Boolean(interfaceDraft)}
+    <EditorPanel
       onClose={() => onClose()}
       title="Configure Block interface"
       testId={`configure-block-v2-${nodeId}`}
-      panelClassName="max-w-3xl"
       footer={
         <>
           <ModiffButton onClick={() => onClose()}>Cancel</ModiffButton>
@@ -269,9 +281,9 @@ export default function BlockInterfaceDialogContentV2({
             >
               Editing{' '}
               {String(snapshot.effectiveGraph.nodes.find((node) => node.nodeId === subtreeId)?.data.label || subtreeId)}
-              's exposure through the owning Block interface. These controls appear on the containing Blocks. Other
-              branches and shared cross-branch consumers are preserved; edit shared consumers from the root Block.
-              Internal link sockets are derived from the graph's connections.
+              's own ports, controls, and previews. This interface is saved with the workflow and remains available
+              after disconnecting links, collapsing, or reloading. The root Block interface is unchanged. Controls keep
+              their existing values; shared controls continue to update their declared consumers together.
             </p>
           ) : null}
           {draftError ? (
@@ -307,7 +319,7 @@ export default function BlockInterfaceDialogContentV2({
                       key={port.portId}
                       className="grid gap-2 rounded-modiff-compact border border-modiff-border-subtle p-2"
                     >
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] gap-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 [&>input]:col-span-2">
                         <ModiffInput
                           aria-label={`${direction} ${port.portId} label`}
                           value={port.label}
@@ -328,7 +340,7 @@ export default function BlockInterfaceDialogContentV2({
                             );
                           }}
                         />
-                        <ModiffSelect
+                        <BlockFieldPickerV2
                           value={interfaceBindingKeyV2(port.binding.nodeId, port.binding.fieldOrPortId)}
                           onValueChange={(key) => {
                             const option = options.find((candidate) => candidate.key === key);
@@ -502,7 +514,7 @@ export default function BlockInterfaceDialogContentV2({
                   );
                 })}
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                  <ModiffSelect
+                  <BlockFieldPickerV2
                     value={newInterfaceBinding[direction]}
                     onValueChange={(value) => setNewInterfaceBinding((current) => ({ ...current, [direction]: value }))}
                     options={options.map((option) => ({ value: option.key, label: option.label }))}
@@ -543,6 +555,14 @@ export default function BlockInterfaceDialogContentV2({
               </section>
             );
           })}
+          {subtreeId ? (
+            <BlockInterfacePreviewsEditorV2
+              snapshot={snapshot}
+              subtreeId={subtreeId}
+              previews={interfaceDraft.previews ?? []}
+              onChange={(previews) => setInterfaceDraft((current) => (current ? { ...current, previews } : current))}
+            />
+          ) : null}
           <section className="grid gap-2">
             <h3 className="text-sm font-semibold text-modiff-text">Editable controls</h3>
             {interfaceDraft.controls.map((control, controlIndex) => {
@@ -553,7 +573,7 @@ export default function BlockInterfaceDialogContentV2({
                   key={control.controlId}
                   className="grid gap-2 rounded-modiff-compact border border-modiff-border-subtle p-2"
                 >
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] gap-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 [&>input]:col-span-2">
                     <ModiffInput
                       aria-label={`control ${control.controlId} label`}
                       value={control.label}
@@ -571,7 +591,7 @@ export default function BlockInterfaceDialogContentV2({
                         );
                       }}
                     />
-                    <ModiffSelect
+                    <BlockFieldPickerV2
                       value={interfaceBindingKeyV2(control.binding.nodeId, control.binding.fieldId)}
                       disabled={Boolean(control.sealed)}
                       onValueChange={(key) => {
@@ -714,7 +734,7 @@ export default function BlockInterfaceDialogContentV2({
               );
             })}
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <ModiffSelect
+              <BlockFieldPickerV2
                 value={newInterfaceBinding.control}
                 onValueChange={(value) => setNewInterfaceBinding((current) => ({ ...current, control: value }))}
                 options={controlBindingOptions.map((option) => ({ value: option.key, label: option.label }))}
@@ -758,6 +778,6 @@ export default function BlockInterfaceDialogContentV2({
           </section>
         </div>
       ) : null}
-    </ModiffDialog>
+    </EditorPanel>
   );
 }

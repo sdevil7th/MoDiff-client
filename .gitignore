@@ -13,6 +13,13 @@ dist-ssr
 artifacts
 output
 
+# Local review notes, evidence, recordings, and handoff checkpoints.
+/review/
+/reviews/
+/review-assets/
+/checkpoints/
+/maintenance/
+
 # Gallery binaries live in the pinned public Hugging Face Dataset. Keep only
 # the small runtime metadata that lets source code resolve and verify them.
 public/template-gallery/**

@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Linter } from 'eslint';
+import globals from 'globals';
 import {
   applyGalleryTemplate,
   argsForTemplateInputs,
@@ -50,6 +52,17 @@ import {
 } from './review-generation-campaign.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('gallery capture and resume paths have no unresolved variables', () => {
+  const messages = new Linter().verify(readFileSync(resolve(ROOT, 'scripts/template-gallery-runner.mjs'), 'utf8'), {
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: { ...globals.node, ...globals.browser } },
+    rules: { 'no-undef': 'error' },
+  });
+  assert.deepEqual(
+    messages.map(({ line, message }) => ({ line, message })),
+    [],
+  );
+});
 
 test('campaign keeps raw executions out of the human-review shortlist', () => {
   const destination = destinationStem('AnimateDiffPipeline:text_to_video');

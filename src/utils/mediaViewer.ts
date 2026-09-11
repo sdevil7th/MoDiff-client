@@ -1,4 +1,9 @@
-import type { MediaViewerItem } from '../stores/useSettingsStore';
+import type { LightboxOpener, MediaViewerItem } from '../stores/useSettingsStore';
+
+/** Resolved output URLs must not use the raw-base64 node image representation. */
+export function imageUrlLightboxOpener(images: string[], currentIndex = 0): NonNullable<LightboxOpener> {
+  return { images, currentIndex, dataType: 'url', mimeType: null };
+}
 
 export const MEDIA_PLACEHOLDER_DATA_URL =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'%3E%3Cpath fill='%2320252d' d='M0 0h2v2H0z'/%3E%3Cpath fill='%23343b47' d='M0 0h1v1H0zm1 1h1v1H1z'/%3E%3C/svg%3E";

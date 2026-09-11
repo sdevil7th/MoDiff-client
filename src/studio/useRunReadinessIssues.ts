@@ -1,10 +1,23 @@
 import { useMemo } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
+import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
-import { buildRunReadinessDecision, collectRunReadinessIssues } from './runReadiness';
+import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { buildRunReadinessDecision, collectRunReadinessIssues, runReadinessTaskFingerprint } from './runReadiness';
 import type { RunReadinessIssue } from './types';
+
+const blockValueFingerprints = new WeakMap<object, string>();
+function blockValuesFingerprint(values: object | undefined) {
+  if (!values) return '';
+  let fingerprint = blockValueFingerprints.get(values);
+  if (fingerprint === undefined) {
+    fingerprint = JSON.stringify(values);
+    blockValueFingerprints.set(values, fingerprint);
+  }
+  return fingerprint;
+}
 
 type RunReadinessOptions = {
   sid?: string | null;
@@ -49,7 +62,8 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
             .filter(([key]) => /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key))
             .map(([key, param]) => `${key}:${JSON.stringify(param.value ?? param.default ?? '')}`)
             .join(',');
-          return `${node.id}:${node.data.module}:${node.data.action}:${node.data.uiState?.disabled ? 'disabled' : 'enabled'}:${modelParams}`;
+          const instance = node.data.blockInstanceV2;
+          return `${node.id}:${node.hidden ? 'hidden' : 'visible'}:${node.data.module}:${node.data.action}:${node.data.uiState?.disabled ? 'disabled' : 'enabled'}:${modelParams}:${instance?.effectiveGraph.graphHash ?? ''}:${instance?.effectiveInterface.effectiveInterfaceHash ?? ''}:${blockValuesFingerprint(instance?.values)}`;
         })
         .join('|'),
       state.edges
@@ -64,6 +78,15 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
   const graphFinalization = useStudioStore((state) => state.graphFinalization);
   const canvasTransition = useStudioStore((state) => state.canvasTransition);
   const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const failure = useRunIssueStore((state) => state.failure);
+  const currentRunContext = useStudioStore((state) => state.currentRunContext);
+  const failureRunContext = useStudioStore((state) =>
+    failure?.taskId
+      ? state.runContextsByTaskId[failure.taskId]
+      : failure?.clientRunId
+        ? state.runContextsByClientRunId[failure.clientRunId]
+        : null,
+  );
   const isPreparing =
     canvasTransition?.type === 'template_graph_building' && canvasTransition.workflowTabId === activeWorkflowTabId;
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
@@ -77,13 +100,9 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
   const runtimeResources = useNodesStore((state) => state.runtimeResources);
   const queueRevision = useTaskStore((state) => state.queueRevision);
-  const currentTaskFingerprint = useTaskStore((state) => {
-    const task = state.currentTask;
-    return task
-      ? `${task.task_id ?? ''}:${task.status ?? 'running'}:${task.workflow_tab_id ?? ''}:${task.updated_at ?? ''}`
-      : 'idle';
-  });
+  const currentTaskFingerprint = useTaskStore((state) => runReadinessTaskFingerprint(state.currentTask));
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
+  const modularBlockDefinitions = useHuggingFaceNodeLibraryStore((state) => state.library?.blockDefinitions);
   const issues = useMemo(() => {
     // A template graph is assembled, finalized, and laid out as one atomic
     // transition. Do not classify its intentionally incomplete hidden states.
@@ -92,8 +111,12 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
     // The collector reads stores imperatively; selected snapshots below are intentional invalidation signals.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    activeWorkflowTabId,
     autoResourcePlan,
     currentTaskFingerprint,
+    currentRunContext,
+    failure,
+    failureRunContext,
     discoveryRequests,
     flowFingerprint,
     form,
@@ -105,6 +128,7 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
     isPreparing,
     localModels,
     modelCacheDiagnostics,
+    modularBlockDefinitions,
     nodesRegistry,
     optionalRuntimeCatalog,
     queueRevision,

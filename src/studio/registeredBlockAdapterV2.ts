@@ -838,7 +838,10 @@ export function compileRegisteredBlockV2(
   // replacement would lose legitimate Studio consumers (for example an
   // exporter FPS field); concatenation would create competing authorities.
   const reviewedFanOutGroups = new Map<string, RegisteredBlockV2ControlFanOut[]>();
-  for (const fanOut of [...(options.route?.controlFanOuts ?? []), ...(exact.controlFanOuts ?? [])]) {
+  for (const fanOut of [
+    ...(exact.routeControlFanOuts ?? options.route?.controlFanOuts ?? []),
+    ...(exact.controlFanOuts ?? []),
+  ]) {
     const key = `${fanOut.persistence}\0${fanOut.source}`;
     reviewedFanOutGroups.set(key, [...(reviewedFanOutGroups.get(key) ?? []), fanOut]);
   }
@@ -904,7 +907,10 @@ export function compileRegisteredBlockV2(
 
   const graph = blockGraph(skeleton, semanticIds, exact.metadataBySemanticRole);
   const reviewedInputBindings = new Map(
-    (options.route?.boundary.inputs ?? []).map((binding) => [binding.inputName ?? binding.portId, binding]),
+    (exact.boundaryInputs ?? options.route?.boundary.inputs ?? []).map((binding) => [
+      binding.inputName ?? binding.portId,
+      binding,
+    ]),
   );
   if (
     options.route &&

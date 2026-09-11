@@ -3,6 +3,9 @@ import type {
   HuggingFaceNodeLibraryExecutionAdmission,
 } from './huggingFaceNodeLibrary';
 import { REGISTERED_BLOCK_V2_FANOUT_ROUTES } from './registeredBlockV2FanOutRoutes';
+import { REGISTERED_BLOCK_V2_AUDIO_ROUTES } from './registeredBlockV2AudioRoutes';
+import { REGISTERED_BLOCK_V2_IMAGE_ROUTES } from './registeredBlockV2ImageRoutes';
+import { REGISTERED_BLOCK_V2_ORDINARY_FLUX_ROUTES } from './registeredBlockV2OrdinaryFluxRoutes';
 
 export type RegisteredBlockV2BoundaryInputBinding = Readonly<{
   portId: string;
@@ -164,6 +167,9 @@ function transformersRoute(fields: TransformersRouteFields): RegisteredBlockV2Ro
  * pipeline-class inference.
  */
 export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Object.freeze([
+  ...REGISTERED_BLOCK_V2_IMAGE_ROUTES,
+  ...REGISTERED_BLOCK_V2_ORDINARY_FLUX_ROUTES,
+  ...REGISTERED_BLOCK_V2_AUDIO_ROUTES,
   ...REGISTERED_BLOCK_V2_FANOUT_ROUTES.map((route) => diffusersRoute(route)),
   diffusersRoute({
     definitionId: 'diffusers.modular:AnimaModularPipeline:text2image',
@@ -171,8 +177,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'AnimaModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:AnimaModularPipeline:text2image:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-3ab06cb3',
-    compiledDefinitionCanonicalSha256: 'sha256:859b3ba25c47536e4127688f2e6675ec7a9769e505f17579e05c84eb602328e0',
+    compiledDefinitionContentHash: 'block-definition-v2-81fa3627',
+    compiledDefinitionCanonicalSha256: 'sha256:c2fa0b455fd1f4f01d6ead2a2d5a235dadb2b572a20d488c50c9b7b6d736ce33',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:AnimaModularPipeline:text2image:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -193,8 +199,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     workflowId: 'image2video',
     admissionId:
       'diffusers.cluster-admission:Cosmos3DistilledModularPipeline:image2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-3ee6bbbc',
-    compiledDefinitionCanonicalSha256: 'sha256:8a89509567a4d352cd1f059b8a9e50fdaa9c71b4278a3a4440621f62e45f962c',
+    compiledDefinitionContentHash: 'block-definition-v2-0b96c43e',
+    compiledDefinitionCanonicalSha256: 'sha256:d53fafb8b665ab28b87297db859d2dccf9efe3dc5735c9fc1c70094352bf6b3d',
     studioMode: 'image_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3DistilledModularPipeline:image2video:workflow:official_top_level_blocks',
@@ -242,8 +248,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     workflowId: 'text2image',
     admissionId:
       'diffusers.cluster-admission:Cosmos3DistilledModularPipeline:text2image:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-1a3b7de9',
-    compiledDefinitionCanonicalSha256: 'sha256:e6dc6767cd865337b49022dc18d15df075d2a471218d677359cb8716dee31692',
+    compiledDefinitionContentHash: 'block-definition-v2-39974904',
+    compiledDefinitionCanonicalSha256: 'sha256:50f9abe71bbeb66e520b24c7ddc004a17a116303ddda92dd823ca8e305b50b9a',
     studioMode: 'text_to_image',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3DistilledModularPipeline:text2image:workflow:official_top_level_blocks',
@@ -282,8 +288,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2image:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-fcddf6f9',
-    compiledDefinitionCanonicalSha256: 'sha256:ae018d99a6e9a8077bb5068bc55d583cfea39d4bbd1500c26a13662a7d816a3d',
+    compiledDefinitionContentHash: 'block-definition-v2-0e59faa7',
+    compiledDefinitionCanonicalSha256: 'sha256:a79e8e4d820485df84eb3ca83745971f7b8802c384b9f609f82c05043d60e414',
     studioMode: 'text_to_image',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:text2image:workflow:official_top_level_blocks',
@@ -323,8 +329,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'Cosmos3OmniModularPipeline',
     workflowId: 'text2video',
     admissionId: 'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-0f36cf36',
-    compiledDefinitionCanonicalSha256: 'sha256:6391817d72a354b61767c2a3468dc28ffeac0c3c6f450ac7dff3315ee186b9c8',
+    compiledDefinitionContentHash: 'block-definition-v2-38233d4d',
+    compiledDefinitionCanonicalSha256: 'sha256:1b21ce97f08e84c67d09676766f4267f09b5fe4beb53d67eea41c885735d36c4',
     studioMode: 'text_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:text2video:workflow:official_top_level_blocks',
@@ -367,8 +373,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     workflowId: 'image2video',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:image2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-921b978b',
-    compiledDefinitionCanonicalSha256: 'sha256:296235f52d1b8ebbd7306d5de81369572adea80517a8eefb1aca324600792808',
+    compiledDefinitionContentHash: 'block-definition-v2-6914efee',
+    compiledDefinitionCanonicalSha256: 'sha256:82d3baddb5dbec24aabfff7eaaae44c5017af041ecfb6d376c61d8f652ea2657',
     studioMode: 'image_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:image2video:workflow:official_top_level_blocks',
@@ -418,8 +424,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     workflowId: 'image2video_with_sound',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:image2video_with_sound:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-ce90ef0a',
-    compiledDefinitionCanonicalSha256: 'sha256:8b7e342cc5d5817102ba0988b52e25e0c7e373ae83acd2ff0620d7a983d27804',
+    compiledDefinitionContentHash: 'block-definition-v2-85ecbb95',
+    compiledDefinitionCanonicalSha256: 'sha256:3f6d652fd3d4f4df884d075570389b422f0834e9e2d9f982f29aa8237c710445',
     studioMode: 'image_to_video_with_audio',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:image2video_with_sound:workflow:official_top_level_blocks',
@@ -469,8 +475,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     workflowId: 'text2video_with_sound',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2video_with_sound:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-a3b3853f',
-    compiledDefinitionCanonicalSha256: 'sha256:7bafa079dc3b0fae022245ec47a4bfc51b185168f0aa7ca5cab33c1d65510cc5',
+    compiledDefinitionContentHash: 'block-definition-v2-a5afaec6',
+    compiledDefinitionCanonicalSha256: 'sha256:a4e7e8841dee6314250306b0727cb88acbf9211a93e69ec42d500feabc0ec195',
     studioMode: 'text_to_video_with_audio',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:text2video_with_sound:workflow:official_top_level_blocks',
@@ -519,8 +525,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     workflowId: 'video2video',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:video2video:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-f9ecba17',
-    compiledDefinitionCanonicalSha256: 'sha256:1925e3a1a44f12e5572fa93c17b60be3a953b2ccf955b196403ed6d04e4045b1',
+    compiledDefinitionContentHash: 'block-definition-v2-b3d05b43',
+    compiledDefinitionCanonicalSha256: 'sha256:e6c017806033bb4f2caf94f772ba70e832f80e7ac08b5613e1a9129e215d9baf',
     studioMode: 'video_to_video',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:video2video:workflow:official_top_level_blocks',
@@ -570,8 +576,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     workflowId: 'video2video_with_sound',
     admissionId:
       'diffusers.cluster-admission:Cosmos3OmniModularPipeline:video2video_with_sound:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-f15c02ae',
-    compiledDefinitionCanonicalSha256: 'sha256:8dfe59d6fac890cab0069f9668a8f69f7f2e913a51255e10c4342ccc0eb76fa1',
+    compiledDefinitionContentHash: 'block-definition-v2-34e65504',
+    compiledDefinitionCanonicalSha256: 'sha256:ce6a954035715ee44424ab783cd8246f015bf38697e037494f718dde269afb21',
     studioMode: 'video_to_video_with_audio',
     adapterContractId:
       'diffusers.modular-adapter:Cosmos3OmniModularPipeline:video2video_with_sound:workflow:official_top_level_blocks',
@@ -620,8 +626,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'Flux2KleinBaseModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:Flux2KleinBaseModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-81bdeaed',
-    compiledDefinitionCanonicalSha256: 'sha256:4fff29808cdd00d5c245caff31243219c12d7a59611fb55dce48c14361abe631',
+    compiledDefinitionContentHash: 'block-definition-v2-64f0a6d1',
+    compiledDefinitionCanonicalSha256: 'sha256:5637685377f2ab5f6a61f5f982081fb1fce4e6febc8ce23feb14b4d7e3737b88',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:Flux2KleinBaseModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -641,8 +647,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'Flux2KleinModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:Flux2KleinModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-ae9e4722',
-    compiledDefinitionCanonicalSha256: 'sha256:8e511199ea3c7d7f0d2fe791f2f10143921a3197e5e26be7064feb8989832146',
+    compiledDefinitionContentHash: 'block-definition-v2-b895083a',
+    compiledDefinitionCanonicalSha256: 'sha256:5a9ae842cebf3d004aee14efb6630b8e84057f70d982c9cac236ed72bc959d74',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:Flux2KleinModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -662,8 +668,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'FluxKontextModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:FluxKontextModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-74349ae0',
-    compiledDefinitionCanonicalSha256: 'sha256:70f79ac0a2b216fb387d04b4f2665f5b7b64360bd1d971e5a294aedb4ae2ce6e',
+    compiledDefinitionContentHash: 'block-definition-v2-66c2b578',
+    compiledDefinitionCanonicalSha256: 'sha256:e533497f224188068d59ff92ef20e4096e1a470d82ee8beb8279a5657b945367',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:FluxKontextModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -683,8 +689,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'FluxModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:FluxModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-55c945f2',
-    compiledDefinitionCanonicalSha256: 'sha256:1e577a5ce4252a3c4a5b90b32c4ff1248102e15e4910952bb3e9d6f035ffd06f',
+    compiledDefinitionContentHash: 'block-definition-v2-d913038d',
+    compiledDefinitionCanonicalSha256: 'sha256:9f123d33b30345d60651dfd5161158c6d9249d199932110907b03c2341fc8501',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:FluxModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -704,8 +710,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'MiniMaxMusic3ModularPipeline',
     workflowId: 'default',
     admissionId: 'diffusers.cluster-admission:MiniMaxMusic3ModularPipeline:default:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-0eb46d6b',
-    compiledDefinitionCanonicalSha256: 'sha256:4bcbbf9f71728a06adaa2bb98b87fc571c0b157aa72fb5d413b52e5641b213ce',
+    compiledDefinitionContentHash: 'block-definition-v2-811ddda1',
+    compiledDefinitionCanonicalSha256: 'sha256:950ca2f6fc2cd2912e71cccf5742674518cd2ea2d2f04424f21a2b760e47424d',
     studioMode: 'text_to_audio',
     adapterContractId:
       'diffusers.modular-adapter:MiniMaxMusic3ModularPipeline:default:workflow:official_top_level_blocks',
@@ -729,8 +735,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'MiniMaxH3ModularPipeline',
     workflowId: 't2va',
     admissionId: 'diffusers.cluster-admission:MiniMaxH3ModularPipeline:t2va:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-b89f4137',
-    compiledDefinitionCanonicalSha256: 'sha256:5d7651e08ea8b5530e5e4654a2ecfd7ffe539bc88523c30279943e5842ee48fa',
+    compiledDefinitionContentHash: 'block-definition-v2-6b11f513',
+    compiledDefinitionCanonicalSha256: 'sha256:f71bbb2874584c710a66d6c28006c19383591f6ffb75ccd58bd2fd07538c88d0',
     studioMode: 'text_to_video_with_audio',
     adapterContractId: 'diffusers.modular-adapter:MiniMaxH3ModularPipeline:t2va:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -764,8 +770,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'MiniMaxH3ModularPipeline',
     workflowId: 'fl2va',
     admissionId: 'diffusers.cluster-admission:MiniMaxH3ModularPipeline:fl2va:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-5b5f005d',
-    compiledDefinitionCanonicalSha256: 'sha256:b3778076aa9b05f24c9e3ec594630fce2e755eba6be42a3cb385fdbec13b0412',
+    compiledDefinitionContentHash: 'block-definition-v2-b977eab9',
+    compiledDefinitionCanonicalSha256: 'sha256:c8fe1fef214d695a77d2a6196b96e5e298b4714f9669e923440503c940a5c0dc',
     studioMode: 'first_last_frame_to_video_with_audio',
     adapterContractId: 'diffusers.modular-adapter:MiniMaxH3ModularPipeline:fl2va:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -801,8 +807,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'MiniMaxH3ModularPipeline',
     workflowId: 'ref2va',
     admissionId: 'diffusers.cluster-admission:MiniMaxH3ModularPipeline:ref2va:workflow:official_top_level_blocks',
-    compiledDefinitionContentHash: 'block-definition-v2-0cac36e5',
-    compiledDefinitionCanonicalSha256: 'sha256:8e5754fd061e18676aed42c5e46f13026e466b141e940e1a9e2b39ddf90eee1c',
+    compiledDefinitionContentHash: 'block-definition-v2-24bfdad3',
+    compiledDefinitionCanonicalSha256: 'sha256:99d5798c60c902551d1bf772a15158404bdeffe44ec70a8ff50df809a9fde581',
     studioMode: 'reference_to_video_with_audio',
     adapterContractId: 'diffusers.modular-adapter:MiniMaxH3ModularPipeline:ref2va:workflow:official_top_level_blocks',
     studioExecutionSpec: {
@@ -837,8 +843,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'QwenImageModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-bf9170d5',
-    compiledDefinitionCanonicalSha256: 'sha256:702d3b5ae0f1ee9a9dac0a80f8b09aef3590644cb23f66255d0853a53e5a5f93',
+    compiledDefinitionContentHash: 'block-definition-v2-6c7fe954',
+    compiledDefinitionCanonicalSha256: 'sha256:d9205881d12e10eefc06614002f623c4d4b804faef172f01fc23ce30babc4db6',
     studioMode: 'modular_text_to_image',
     adapterContractId: 'diffusers.modular-adapter:QwenImageModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -858,6 +864,10 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
       {
         repo: 'Qwen/Qwen-Image-2512',
         revision: '25468b98e3276ca6700de15c6628e51b7de54a26',
+      },
+      {
+        repo: 'unsloth/Qwen-Image-2512-unsloth-bnb-4bit',
+        revision: 'f50b8c24fe21e9265509b15113b7cca82d0a4443',
       },
     ],
     dynamicFieldActions: STANDARD_MODULAR_DYNAMIC_FIELD_ACTIONS,
@@ -884,8 +894,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'StableDiffusionXLModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:StableDiffusionXLModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-5bf77f77',
-    compiledDefinitionCanonicalSha256: 'sha256:35354353ce95ba45b84cf99580c595225b2ddd093864836bf1d96d00b53ab696',
+    compiledDefinitionContentHash: 'block-definition-v2-d860d51a',
+    compiledDefinitionCanonicalSha256: 'sha256:014b76ab8c7c4f48feb5b17fafe39befbdb5da4d5986d21ef325ea59294601bf',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:StableDiffusionXLModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -905,8 +915,8 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     pipelineClass: 'ZImageModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:ZImageModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-22e45496',
-    compiledDefinitionCanonicalSha256: 'sha256:bd471f2c0959e7980f22e6abe10f0083c59e9331add6869b50e4c77f8b729835',
+    compiledDefinitionContentHash: 'block-definition-v2-40299ffd',
+    compiledDefinitionCanonicalSha256: 'sha256:eabea76dab3ca31e7aa062eec4ba7679894df1c8ee3f1dcce0e8707d5f64d107',
     studioMode: 'modular_text_to_image',
     adapterContractId: 'diffusers.modular-adapter:ZImageModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {

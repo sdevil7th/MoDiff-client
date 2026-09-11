@@ -26,6 +26,7 @@ import {
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { imageUrlLightboxOpener } from '../utils/mediaViewer';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
 import {
@@ -670,7 +671,7 @@ export default function StudioPanel() {
     const state = useStudioStore.getState();
     const [latest, previous] = scopedOutputsForWorkflow(state.outputs, state.activeWorkflowTabId);
     if (!latest || !previous) return;
-    setLightboxOpener({ images: [previous.url, latest.url], currentIndex: 1, dataType: 'image', mimeType: null });
+    setLightboxOpener(imageUrlLightboxOpener([previous.url, latest.url], 1));
   }, [setLightboxOpener]);
 
   const handleReviewRunIssues = useCallback(() => {

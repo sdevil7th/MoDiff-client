@@ -9,8 +9,10 @@ import { normalizeStudioResourceMode } from './resourcePlanner';
 import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from './templates';
 import { CONTROLLED_GRAPH_CONTRACT_IDS, type ControlledGraphContractId } from './controlledWorkflowContracts';
 import { blockOutputRunFormV2 } from './blockRunFormV2';
+import { applyResolvedExecutionInputs } from './resolvedExecutionInputs';
 import type {
   StudioFormState,
+  StudioEncodedVideoMetadata,
   StudioGraphBinding,
   StudioGraphSnapshot,
   StudioMode,
@@ -349,6 +351,20 @@ export function coerceStudioTemplateId(value: unknown): StudioTemplateId | undef
   return optionalStringUnion(value, STUDIO_TEMPLATE_IDS);
 }
 
+function coerceEncodedVideoMetadata(value: unknown): StudioEncodedVideoMetadata | undefined {
+  if (!isRecord(value) || value.source !== 'encoded-file') return undefined;
+  const metadata: StudioEncodedVideoMetadata = { source: 'encoded-file' };
+  for (const key of ['width', 'height', 'frame_count'] as const) {
+    const number = value[key];
+    if (typeof number === 'number' && Number.isSafeInteger(number) && number > 0) metadata[key] = number;
+  }
+  for (const key of ['fps', 'duration_seconds'] as const) {
+    const number = value[key];
+    if (typeof number === 'number' && Number.isFinite(number) && number > 0) metadata[key] = number;
+  }
+  return Object.keys(metadata).length > 1 ? metadata : undefined;
+}
+
 function coerceStudioOutputMediaItem(value: unknown, fallbackIndex: number): StudioOutputMediaItem | undefined {
   if (!isRecord(value)) return undefined;
   const url = stringValue(value.url);
@@ -367,6 +383,7 @@ function coerceStudioOutputMediaItem(value: unknown, fallbackIndex: number): Stu
     width: optionalNumber(value.width),
     height: optionalNumber(value.height),
     durationSeconds: optionalNumber(value.durationSeconds),
+    mediaMetadata: coerceEncodedVideoMetadata(value.mediaMetadata),
     clientRunId: optionalString(value.clientRunId),
     runInputHash: optionalString(value.runInputHash),
     attemptIndex: optionalNumber(value.attemptIndex),
@@ -396,63 +413,66 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
   const profile = STUDIO_MODEL_PROFILES[modelType];
   const formSnapshot = registeredBlockRun?.form ?? coerceStudioFormState(value.formSnapshot);
 
-  return {
-    id,
-    clientRunId: optionalString(value.clientRunId),
-    runInputHash: optionalString(value.runInputHash),
-    workflowTabId: optionalNullableString(value.workflowTabId),
-    attemptIndex: optionalNumber(value.attemptIndex),
-    nodeId: stringValue(value.nodeId, 'studio-output'),
-    fieldKey: stringValue(value.fieldKey, 'output'),
-    value: safeCloneJson(value.value ?? url),
-    url,
-    mode,
-    modelType,
-    modelLabel: registeredBlockRun ? profile.label : stringValue(value.modelLabel, profile.label),
-    repo: registeredBlockRun?.form.modelRepo ?? stringValue(value.repo, profile.defaultRepo),
-    templateId: coerceStudioTemplateId(value.templateId),
-    templateLabel: optionalString(value.templateLabel),
-    runId: optionalString(value.runId),
-    taskId: optionalNullableString(value.taskId),
-    sid: optionalNullableString(value.sid),
-    prompt: registeredBlockRun ? formSnapshot.prompt : stringValue(value.prompt, formSnapshot.prompt),
-    negativePrompt: registeredBlockRun
-      ? formSnapshot.negativePrompt
-      : stringValue(value.negativePrompt, formSnapshot.negativePrompt),
-    seed: registeredBlockRun ? formSnapshot.seed : numberValue(value.seed, formSnapshot.seed),
-    width: registeredBlockRun ? formSnapshot.width : numberValue(value.width, formSnapshot.width),
-    height: registeredBlockRun ? formSnapshot.height : numberValue(value.height, formSnapshot.height),
-    steps: registeredBlockRun ? formSnapshot.steps : numberValue(value.steps, formSnapshot.steps),
-    guidanceScale: registeredBlockRun
-      ? formSnapshot.guidanceScale
-      : numberValue(value.guidanceScale, formSnapshot.guidanceScale),
-    referenceImages: registeredBlockRun
-      ? formSnapshot.referenceImages
-      : stringArrayValue(value.referenceImages, formSnapshot.referenceImages),
-    sourceOutputId: optionalString(value.sourceOutputId),
-    formSnapshot,
-    graphSnapshot: coerceStudioGraphSnapshot(value.graphSnapshot),
-    graphBindingSnapshot: coerceStudioGraphBinding(value.graphBindingSnapshot),
-    apiGraphSnapshot: safeCloneJson(value.apiGraphSnapshot),
-    createdAt: numberValue(value.createdAt, Date.now()),
-    favorite: booleanValue(value.favorite, false),
-    parentId: optionalString(value.parentId),
-    backendImagePath: optionalString(value.backendImagePath),
-    backendMediaPath: optionalString(value.backendMediaPath),
-    backendSyncedAt: optionalNumber(value.backendSyncedAt),
-    displayType: optionalStringUnion(value.displayType, STUDIO_OUTPUT_DISPLAY_TYPES),
-    mediaHash: optionalString(value.mediaHash),
-    mediaCollectionHash: optionalString(value.mediaCollectionHash),
-    mediaItems: coerceStudioOutputMediaItems(value.mediaItems),
-    templateLockHash: optionalString(value.templateLockHash),
-    promptSettingsHash: optionalString(value.promptSettingsHash),
-    exactTemplateCompatible:
-      typeof value.exactTemplateCompatible === 'boolean' ? value.exactTemplateCompatible : undefined,
-    variationGroupId: optionalString(value.variationGroupId),
-    variationLabel: optionalString(value.variationLabel),
-    provenance: safeCloneJson(value.provenance) as StudioOutput['provenance'],
-    backendProvenance: safeCloneJson(value.backendProvenance) as StudioOutput['backendProvenance'],
-  };
+  return applyResolvedExecutionInputs(
+    {
+      id,
+      clientRunId: optionalString(value.clientRunId),
+      runInputHash: optionalString(value.runInputHash),
+      workflowTabId: optionalNullableString(value.workflowTabId),
+      attemptIndex: optionalNumber(value.attemptIndex),
+      nodeId: stringValue(value.nodeId, 'studio-output'),
+      fieldKey: stringValue(value.fieldKey, 'output'),
+      value: safeCloneJson(value.value ?? url),
+      url,
+      mode,
+      modelType,
+      modelLabel: registeredBlockRun ? profile.label : stringValue(value.modelLabel, profile.label),
+      repo: registeredBlockRun?.form.modelRepo ?? stringValue(value.repo, profile.defaultRepo),
+      templateId: coerceStudioTemplateId(value.templateId),
+      templateLabel: optionalString(value.templateLabel),
+      runId: optionalString(value.runId),
+      taskId: optionalNullableString(value.taskId),
+      sid: optionalNullableString(value.sid),
+      prompt: registeredBlockRun ? formSnapshot.prompt : stringValue(value.prompt, formSnapshot.prompt),
+      negativePrompt: registeredBlockRun
+        ? formSnapshot.negativePrompt
+        : stringValue(value.negativePrompt, formSnapshot.negativePrompt),
+      seed: registeredBlockRun ? formSnapshot.seed : numberValue(value.seed, formSnapshot.seed),
+      width: registeredBlockRun ? formSnapshot.width : numberValue(value.width, formSnapshot.width),
+      height: registeredBlockRun ? formSnapshot.height : numberValue(value.height, formSnapshot.height),
+      steps: registeredBlockRun ? formSnapshot.steps : numberValue(value.steps, formSnapshot.steps),
+      guidanceScale: registeredBlockRun
+        ? formSnapshot.guidanceScale
+        : numberValue(value.guidanceScale, formSnapshot.guidanceScale),
+      referenceImages: registeredBlockRun
+        ? formSnapshot.referenceImages
+        : stringArrayValue(value.referenceImages, formSnapshot.referenceImages),
+      sourceOutputId: optionalString(value.sourceOutputId),
+      formSnapshot,
+      graphSnapshot: coerceStudioGraphSnapshot(value.graphSnapshot),
+      graphBindingSnapshot: coerceStudioGraphBinding(value.graphBindingSnapshot),
+      apiGraphSnapshot: safeCloneJson(value.apiGraphSnapshot),
+      createdAt: numberValue(value.createdAt, Date.now()),
+      favorite: booleanValue(value.favorite, false),
+      parentId: optionalString(value.parentId),
+      backendImagePath: optionalString(value.backendImagePath),
+      backendMediaPath: optionalString(value.backendMediaPath),
+      backendSyncedAt: optionalNumber(value.backendSyncedAt),
+      displayType: optionalStringUnion(value.displayType, STUDIO_OUTPUT_DISPLAY_TYPES),
+      mediaHash: optionalString(value.mediaHash),
+      mediaCollectionHash: optionalString(value.mediaCollectionHash),
+      mediaItems: coerceStudioOutputMediaItems(value.mediaItems),
+      templateLockHash: optionalString(value.templateLockHash),
+      promptSettingsHash: optionalString(value.promptSettingsHash),
+      exactTemplateCompatible:
+        typeof value.exactTemplateCompatible === 'boolean' ? value.exactTemplateCompatible : undefined,
+      variationGroupId: optionalString(value.variationGroupId),
+      variationLabel: optionalString(value.variationLabel),
+      provenance: safeCloneJson(value.provenance) as StudioOutput['provenance'],
+      backendProvenance: safeCloneJson(value.backendProvenance) as StudioOutput['backendProvenance'],
+    },
+    value.resolvedExecutionInputs,
+  );
 }
 
 export function parseBackendOutputsResponse(value: unknown): BackendOutputsResponse {

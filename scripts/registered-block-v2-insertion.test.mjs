@@ -49,6 +49,22 @@ let originalFetch;
 let storage;
 let compiledCatalogRequests;
 
+test('full FLUX.2 has an exact Expert Model Manager profile without Auto promotion', () => {
+  const profile = modelProfiles
+    .getCatalogModelProfiles({ includeWorkflowOnly: true })
+    .find((item) => item.modelType === 'Flux2ModularPipeline');
+  assert.ok(profile, 'A runnable registered cluster must not disappear from Model Manager');
+  assert.equal(profile.defaultRepo, 'black-forest-labs/FLUX.2-dev');
+  assert.deepEqual(profile.revisionCandidates, ['26afe3a78bb242c0a8bb181dcc8937bb16e5c66c']);
+  assert.deepEqual(profile.modes, ['text_to_image', 'edit_image']);
+  assert.equal(profile.autoEligible, false);
+  assert.equal(profile.galleryEligible, false);
+  assert.equal(profile.liveProof, false);
+  assert.equal(profile.recommendedSteps, 50);
+  assert.equal(profile.recommendedGuidance, 4);
+  assert.equal(modelProfiles.getFormDefaultsForMode('text_to_image', profile.modelType).modelType, profile.modelType);
+});
+
 before(async () => {
   storage = new Map();
   globalThis.localStorage = {
@@ -863,6 +879,23 @@ test('blank Auto workflow ignores an isolated compiler projection without changi
   assert.equal(studioAfter.workflowFormEpoch, studioBefore.workflowFormEpoch);
 });
 
+test('a template skeleton cannot force Expert before its managed binding is ready', () => {
+  const input = {
+    workflowCanvasHydrated: true,
+    graphBindingPresent: false,
+    graphBindingDiverged: false,
+    nodes: [baseNode()],
+    edges: [],
+  };
+  const building = topBarAutoPolicy.resolveTopBarAutoPolicyV2({ ...input, templateGraphBuilding: true });
+  assert.equal(building.graph.nodes.length, 1);
+  assert.equal(building.customGraphActive, false);
+  assert.equal(building.autoUnavailable, false);
+  const finished = topBarAutoPolicy.resolveTopBarAutoPolicyV2(input);
+  assert.equal(finished.customGraphActive, true);
+  assert.equal(finished.autoUnavailable, false);
+});
+
 test('Qwen text-to-image fetches one audited definition and inserts only one source-neutral V2 root', async () => {
   const { definition } = fixture();
   const observedTransientStates = [];
@@ -962,6 +995,34 @@ test('unqualified Modular workflows remain structurally insertable as exact V2 B
   assert.equal(instance.values.prompt, QWEN_2512_CREATOR_PROMPT);
   assert.ok(instance.effectiveInterface.boundary.inputs.some(({ portId }) => portId === 'prompt'));
   assert.ok(instance.effectiveInterface.boundary.outputs.some(({ portId }) => portId === 'images'));
+});
+
+test('palette loop members expose consumed iteration ports, not inert ordinary controls', () => {
+  const library = structuredClone(libraryStore.useHuggingFaceNodeLibraryStore.getState().library);
+  const block = library.blockDefinitions.find(({ className }) => className === 'QwenImageLoopBeforeDenoiser');
+  block.inputs = [{ name: 'latents', type: 'torch.Tensor', required: true, default: null, description: '' }];
+  block.outputs = [{ name: 'latents', type: 'torch.Tensor', required: true, default: null, description: '' }];
+  const entry = catalogModule
+    .buildHuggingFaceCatalogSections(library)
+    .flatMap(({ entries }) => entries)
+    .find(({ modularBlockPlacement }) => modularBlockPlacement?.placement.blockDefinitionId === block.id);
+  assert.ok(entry);
+  const nodesRegistry = structuredClone(nodeStore.useNodesStore.getState().nodesRegistry);
+  const params = nodesRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'].params;
+  params.iteration_input__latents = input('latent');
+  params.iteration_output__latents = output('latent');
+  params.iteration_previous__latents = output('latent');
+  const inserted = modularBlockInsertion.createModularDiffusersCatalogNode(entry, library, nodesRegistry, {
+    x: 0,
+    y: 0,
+  });
+  assert.equal(inserted.data.params.execution_kind.value, 'loop_member');
+  assert.equal(inserted.data.params.latents, undefined);
+  assert.equal(inserted.data.params.state_input__latents, undefined);
+  assert.ok(inserted.data.params.iteration_input__latents);
+  assert.ok(inserted.data.params.iteration_output__latents);
+  assert.ok(inserted.data.params.iteration_previous__latents);
+  assert.equal(inserted.data.params.iteration_input__latents.value, undefined);
 });
 
 test('a nested Modular catalog container inserts as a source-neutral V2 fragment of ordinary nodes', () => {
@@ -1212,6 +1273,34 @@ test('a fresh Qwen registered route rejects matching stale ambient defaults and 
     blockRuntime.blockViewModelV2(unchangedSibling.data.blockInstanceV2).controlParams.guidanceScale.value,
     4,
   );
+});
+
+test('a backend-defined route without a legacy Studio profile retains compiled creator defaults', async () => {
+  const configured = fixture();
+  const witness = configureFixture(configured);
+  const ambient = form();
+  const pipelineClass = configured.definition.pipelineClass;
+  const profile = modelProfiles.STUDIO_MODEL_PROFILES[pipelineClass];
+  // Simulate a newly admitted backend route absent from the legacy FE profile
+  // table. Its exact catalog/compiled authority is still present and unchanged.
+  delete modelProfiles.STUDIO_MODEL_PROFILES[pipelineClass];
+  try {
+    const root = await insertion.createHuggingFaceClusterForGraph(configured.definition, { x: 80, y: 90 }, ambient);
+    const accepted = new Set([
+      ...witness.compiled.definition.controls.map(({ controlId }) => controlId),
+      ...witness.compiled.definition.boundary.inputs.map(({ portId }) => portId),
+    ]);
+    const expected = Object.fromEntries(
+      Object.entries({
+        ...witness.compiled.instance.values,
+        ...(configured.definition.suggestedInputs?.values ?? {}),
+      }).filter(([key]) => accepted.has(key)),
+    );
+    assert.deepEqual(root.data.blockInstanceV2.values, expected);
+    assert.deepEqual(root.data.blockInstanceV2.definitionSnapshot, witness.compiled.definition);
+  } finally {
+    modelProfiles.STUDIO_MODEL_PROFILES[pipelineClass] = profile;
+  }
 });
 
 test('registered image-to-image aliases retain edit-oriented model profile identity', () => {

@@ -1138,9 +1138,12 @@ export function argsForTemplateInputs(args, template) {
           throw new Error(`Template ${template.id} has an invalid default runtime input path.`);
         }
         const relativePath = runtimePath.replace(/^\/+/, '');
+        // Qualify the chosen app installation's inputs. A developer may also
+        // have an offline Gallery in this checkout; it must not shadow the
+        // backend being tested. The public copy remains an offline fallback.
         const candidates = [
-          resolve(ROOT, 'public', relativePath),
           resolve(args.backendDir || DEFAULT_BACKEND_DIR, 'web', relativePath),
+          resolve(ROOT, 'public', relativePath),
         ];
         return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
       });
@@ -1599,8 +1602,6 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
       const modelEvidencePath = join(evidenceDir, `${evidenceBase}.model-fingerprint.json`);
       const websocketEvidencePath = join(evidenceDir, `${evidenceBase}.websocket-events.json`);
       const provenancePath = join(evidenceDir, `${evidenceBase}.provenance.json`);
-      const incompleteProvenancePath = join(evidenceDir, `${evidenceBase}.provenance.incomplete.json`);
-      const backendSourceAfterPath = join(evidenceDir, `${evidenceBase}.backend-source-after.json`);
       const fileName = readdirSync(mediaDir).find(
         (name) => name.startsWith(`${outputBase}.run${runIndex}.`) && !name.includes('.before.'),
       );
@@ -1888,6 +1889,8 @@ async function runTemplate(page, template, args, mediaDir, websocketEvents, temp
         analyses,
       };
       const provenancePath = join(evidenceDir, `${evidenceBase}.provenance.json`);
+      const incompleteProvenancePath = join(evidenceDir, `${evidenceBase}.provenance.incomplete.json`);
+      const backendSourceAfterPath = join(evidenceDir, `${evidenceBase}.backend-source-after.json`);
       // Retain backend receipts before deriving the stricter publication
       // provenance. If provenance validation uncovers a harness defect, the
       // successful and expensive model run must remain auditable/resumable.

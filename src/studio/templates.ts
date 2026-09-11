@@ -12,6 +12,7 @@ import type {
 } from './types';
 import {
   DEFAULT_STUDIO_FORM,
+  MINIMAX_MUSIC3_REVISION,
   QWEN_CONTROLNET_REQUIREMENT,
   QWEN_IMAGE_EDIT_INPAINT_CONTRACT,
   QWEN_LOW_VRAM_OFFLOAD_MODE,
@@ -3958,7 +3959,65 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
   };
 }
 
-const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow);
+const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
+  ...BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow),
+  // Keep new authored recipes independent of the legacy positional input/poster
+  // indexes. This recipe has no source media and no published example yet.
+  withTemplateRecipeDefaults(
+    {
+      id: 'minimax_music3_chamber_pop',
+      label: 'MiniMax Music 3 (Modular Cluster) — Text to Audio: Leave a Little Light',
+      mode: 'text_to_audio',
+      modelType: 'MiniMaxMusic3ModularPipeline',
+      category: 'audio_generation',
+      tags: ['audio', 'music', 'minimax', 'lyrics', 'chamber-pop'],
+      difficulty: 'intermediate',
+      requiredBackendCapabilities: [
+        'modules.ModularDiffusers.ModelsLoader',
+        'modules.ModularDiffusers.WorkflowSemanticGeneration',
+        'modules.ModularDiffusers.WorkflowDenoise',
+        'modules.ModularDiffusers.WorkflowDecodeAudio',
+        'modules.Audio.Export',
+      ],
+      vramEstimate: '27 GB weights plus execution memory; offload support is hardware-dependent',
+      runtimeEstimate: 'About 9–12 min for the tested 60-second recipe on the development ROCm host',
+      description:
+        'An original verse/chorus song with clear lead vocals, acoustic instruments and a quiet resolving outro.',
+      userGoal:
+        'Compose an original lyric song, then edit its semantic-generation and denoising stages in the visible graph.',
+      presetId: 'audio_balanced',
+      example: {
+        mediaType: 'audio',
+        status: 'unverified',
+        lockedSeed: 20260908,
+        modelRevision: MINIMAX_MUSIC3_REVISION,
+        thumbnailPath: '/assets/minimax-chamber-pop.card-poster.png',
+        lockedSettings: {
+          randomSeed: false,
+          audioDuration: 60,
+          steps: 30,
+          guidanceScale: 1,
+          dtype: 'bfloat16',
+          quantizationMode: 'none',
+          resourceMode: 'expert',
+          autoOffload: true,
+          offloadMode: 'model_cpu',
+          lyrics:
+            '[verse]\nSilver rails beneath the rain\nEvery window holds a flame\nI have carried maps of home\nThrough the miles I walked alone\n[chorus]\nLeave a little light for me\nWhere the river meets the sea\nThrough the dark the wheels will sing\nMorning waits on folded wings\n[outro]\nLeave a little light for me\nI am closer than I seem',
+        },
+        expectedOutput: { durationSeconds: 60, sampleRate: 44100 },
+        runtimeEstimate: 'About 9–12 min on the tested ROCm host',
+        notes:
+          'Duration is an upper bound; semantic generation may finish earlier. Local testing is not listening or publication approval.',
+      },
+    },
+    [
+      'An original English chamber-pop song, 96 BPM in D major, intimate clear female lead vocal. Begin with fingerpicked acoustic guitar and soft felt piano; add warm upright bass and brushed drums during the verse. The chorus opens into close three-part vocal harmonies, a lyrical cello countermelody and restrained tambourine. A brief instrumental answer follows the chorus, then the final line resolves gently with piano and cello. Hopeful late-night train journey atmosphere, natural breathing, intelligible lyrics, spacious stereo acoustic production, balanced dynamics, no audience or spoken introduction.',
+      '',
+    ],
+    -1,
+  ),
+];
 
 // Failed qualification contracts stay available to planning/reporting code, but
 // never appear as runnable browser templates. A template returns to the browser

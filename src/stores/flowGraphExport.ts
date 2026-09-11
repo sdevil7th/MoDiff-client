@@ -2,6 +2,7 @@ import { type Edge, getIncomers, getOutgoers, type Node } from '@xyflow/react';
 import type { ApiGraphExport, NodeParamValue } from '../types/api';
 import { studioOffloadPlanConflict } from '../studio/deviceOffload';
 import type { NodeData, NodeParams } from './useNodeStore';
+import { lowerReviewedLoopConnectionsV2 } from '../studio/reviewedLoopConnectionsV2';
 
 export type FlowGraphNode = Node<NodeData, NodeData['type']>;
 
@@ -13,10 +14,13 @@ type SetNodeParam = <K extends keyof NodeParams = 'value'>(
 ) => void;
 
 type BuildApiGraphExportOptions = {
+  randomizeSeeds?: boolean;
   nodes: FlowGraphNode[];
   edges: Edge[];
   sid: string;
   targetNodeId?: string;
+  /** Multiple terminal nodes of one selected nested Block, not unrelated workflow branches. */
+  targetNodeIds?: string[];
   setParam: SetNodeParam;
 };
 
@@ -119,12 +123,15 @@ function assertExecutableDeviceOffloadPlan(node: FlowGraphNode) {
 }
 
 export function buildApiGraphExport({
+  randomizeSeeds = true,
   nodes,
   edges,
   sid,
   targetNodeId,
+  targetNodeIds,
   setParam,
 }: BuildApiGraphExportOptions): ApiGraphExport {
+  ({ nodes, edges } = lowerReviewedLoopConnectionsV2(nodes, edges));
   const sessionId = sid || '';
 
   const executableNodes = executableFlowNodes(nodes);
@@ -137,13 +144,11 @@ export function buildApiGraphExport({
     };
   }
 
-  let targetNode: FlowGraphNode | undefined;
-  if (targetNodeId) {
-    targetNode = executableNodes.find((node) => node.id === targetNodeId);
-    if (!targetNode) {
-      throw new Error(`Target node with id ${targetNodeId} not found in executable nodes`);
-    }
-  }
+  const targets = [...new Set(targetNodeIds ?? (targetNodeId ? [targetNodeId] : []))];
+  if (targetNodeIds && !targets.length) throw new Error('The selected Block has no executable output path.');
+  for (const id of targets)
+    if (!executableNodes.some((node) => node.id === id))
+      throw new Error(`Target node with id ${id} not found in executable nodes`);
 
   const getIncomingNodes = (nodeId: string): FlowGraphNode[] => {
     const node = executableNodes.find((n) => n.id === nodeId);
@@ -175,8 +180,8 @@ export function buildApiGraphExport({
 
   let nodesToInclude: string[] = [];
 
-  if (targetNodeId && targetNode) {
-    nodesToInclude = walkBackwards(targetNodeId);
+  if (targets.length) {
+    nodesToInclude = [...new Set(targets.flatMap((id) => walkBackwards(id)))];
   } else {
     const outputNodes = executableNodes.filter((node) => {
       const outgoers = getOutgoingNodes(node.id);
@@ -210,7 +215,13 @@ export function buildApiGraphExport({
 
       const randomField =
         paramData.display === 'random'
-          ? resolveRandomFieldValue(node, paramName, paramData, setParam, sharedRandomValues)
+          ? randomizeSeeds
+            ? resolveRandomFieldValue(node, paramName, paramData, setParam, sharedRandomValues)
+            : {
+                isRandom: false,
+                value:
+                  isRecord(paramData.value) && 'value' in paramData.value ? paramData.value.value : paramData.value,
+              }
           : null;
       // The executable graph contains values, not the full registry schema.
       // Preserve backend-owned defaults when a field has not been edited;
@@ -251,10 +262,10 @@ export function buildApiGraphExport({
 
   const paths: string[][] = [];
 
-  if (targetNodeId && targetNode) {
-    const path = walkBackwards(targetNodeId);
-    if (path.length > 0) {
-      paths.push(path);
+  if (targets.length) {
+    for (const id of targets) {
+      const path = walkBackwards(id);
+      if (path.length > 0) paths.push(path);
     }
   } else {
     const outputNodes = executableNodes.filter((node) => {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
+import { applyResolvedExecutionInputs } from '../studio/resolvedExecutionInputs';
 import {
   DEFAULT_STUDIO_FORM,
   STUDIO_MODEL_PROFILES,
@@ -20,6 +21,7 @@ import {
   safeCloneJson,
 } from '../studio/outputContracts';
 import { deleteStudioOutput, fetchStudioOutputs, setStudioOutputFavorite, syncStudioOutput } from '../studio/outputApi';
+import { withDurableBlockPreviewsV2 } from '../studio/blockPreviewPersistenceV2';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
 import { normalizeStudioDeviceOffloadPlan } from '../studio/deviceOffload';
 import {
@@ -207,6 +209,7 @@ type StudioActions = {
       dataType?: string | string[];
       artifacts?: unknown;
       outputId?: string | null;
+      resolvedExecutionInputs?: unknown;
     },
   ) => void;
   attachRunResponse: (response: unknown, clientRunId?: string) => void;
@@ -227,7 +230,7 @@ type StudioActions = {
   switchWorkflowTab: (id: string) => void;
   closeWorkflowTab: (id: string) => void;
   renameWorkflowTab: (id: string, title: string) => void;
-  mergeBackendWorkflow: (tab: WorkflowTab) => void;
+  mergeBackendWorkflow: (tab: WorkflowTab, options?: { acknowledgement?: boolean }) => void;
   removeBackendWorkflow: (id: string) => void;
   createAppModeConfig: (workflowTabId?: string | null) => string | null;
   updateAppModeConfig: (
@@ -326,7 +329,7 @@ function preservePinnedAutoFormValues(
 function currentGraphSnapshot(): StudioGraphSnapshot {
   const flow = useFlowStore.getState().toObject();
   return cloneJson({
-    nodes: flow.nodes,
+    nodes: retainedBlockNodes(flow.nodes, useStudioStore.getState().activeWorkflowTabId),
     edges: flow.edges,
     viewport: flow.viewport,
   });
@@ -674,16 +677,28 @@ function normalizeWorkflowTabs(tabs: unknown[]) {
   return tabs.map(normalizeWorkflowTab).filter((tab): tab is WorkflowTab => Boolean(tab));
 }
 
-function applyWorkflowSnapshot(snapshot: WorkflowTabSnapshot) {
+function applyWorkflowSnapshot(snapshot: WorkflowTabSnapshot, workflowTabId: string) {
   const flow = useFlowStore.getState();
   flow.replaceGraph({
-    nodes: cloneJson(snapshot.nodes) as typeof flow.nodes,
+    nodes: retainedBlockNodes(cloneJson(snapshot.nodes) as typeof flow.nodes, workflowTabId),
     edges: cloneJson(snapshot.edges) as typeof flow.edges,
     viewport: (cloneJson(snapshot.viewport) as typeof flow.viewport) ?? flow.viewport,
   });
   // Undo/redo belongs to the document whose graph produced it. A canvas
   // replacement must never leave another tab's snapshots armed.
   flow.resetHistory();
+}
+
+function retainedBlockNodes(nodes: CustomNodeType[], workflowTabId: string | null) {
+  const studio = useStudioStore.getState();
+  return withDurableBlockPreviewsV2(nodes, studio.outputs, { workflowTabId, previewSlots: studio.previewSlots });
+}
+
+function retainActiveBlockPreviews() {
+  const flow = useFlowStore.getState();
+  const nodes = retainedBlockNodes(flow.nodes, useStudioStore.getState().activeWorkflowTabId);
+  // Media state is backend-owned; updating it must not create an undo entry.
+  if (nodes !== flow.nodes) useFlowStore.setState({ nodes });
 }
 
 function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
@@ -1677,7 +1692,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           // The active tab is the document authority. `modiff.flow` is only a
           // fast canvas cache and may belong to another tab if the page exited
           // between its immediate write and the tab snapshot's batched write.
-          applyWorkflowSnapshot(activeTab.snapshot);
+          applyWorkflowSnapshot(activeTab.snapshot, activeTab.id);
         }
         set({
           ...(activeSnapshot && !formIdentityMatchesActiveDocument
@@ -2271,6 +2286,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               ...galleryRequestPatch(state, 'history', -1, null),
             };
           });
+          retainActiveBlockPreviews();
         } catch (error) {
           if (!ticket.isLatest()) return;
           set((state) =>
@@ -2312,6 +2328,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               : {}),
             ...galleryRequestPatch(state, 'sync', -1, null),
           }));
+          retainActiveBlockPreviews();
         } catch (error) {
           set((state) =>
             galleryRequestPatch(
@@ -2424,106 +2441,109 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               : mediaItems && mediaItems.length > 1
                 ? 'image_collection'
                 : 'image';
-        const output: StudioOutput = {
-          id: outputId || nanoid(),
-          clientRunId: outputClientRunId,
-          runInputHash: outputRunInputHash,
-          workflowTabId: context.workflowTabId,
-          attemptIndex,
-          nodeId,
-          fieldKey,
-          value,
-          url,
-          mode: form.mode,
-          modelType: form.modelType,
-          modelLabel: profile.label,
-          repo: profile.defaultRepo,
-          templateId: context?.templateId,
-          templateLabel: template?.label,
-          runId: context?.run?.runId ?? context?.id,
-          taskId: outputTaskId,
-          sid: context?.run?.sid ?? null,
-          prompt: form.prompt,
-          negativePrompt: form.negativePrompt,
-          seed: form.seed,
-          width: form.width,
-          height: form.height,
-          steps: form.steps,
-          guidanceScale: form.guidanceScale,
-          referenceImages: [...form.referenceImages],
-          sourceOutputId: context?.sourceOutputId,
-          formSnapshot: cloneJson(form),
-          graphSnapshot: context?.graph,
-          graphBindingSnapshot: context?.binding,
-          apiGraphSnapshot: context?.apiGraph,
-          createdAt: Date.now(),
-          favorite: false,
-          parentId: context?.sourceOutputId ?? context?.variationGroupId,
-          displayType,
-          mediaItems,
-          templateLockHash,
-          promptSettingsHash,
-          exactTemplateCompatible,
-          variationGroupId: context?.variationGroupId,
-          variationLabel: context?.variationLabel,
-          provenance: {
-            schemaVersion: 1,
-            source: 'frontend-record',
-            capturedAt: new Date().toISOString(),
-            templateId: context?.templateId,
-            templateLockHash,
-            promptSettingsHash,
-            exactTemplateCompatible,
-            backendExecutionId: outputTaskId,
+        const output: StudioOutput = applyResolvedExecutionInputs(
+          {
+            id: outputId || nanoid(),
             clientRunId: outputClientRunId,
             runInputHash: outputRunInputHash,
             workflowTabId: context.workflowTabId,
             attemptIndex,
             nodeId,
-            graphBindingFingerprint: context?.binding?.fingerprint,
-            modelRevision: template?.example?.modelRevision,
-            runtimeFingerprint:
-              typeof runtimeFingerprint === 'string' ? runtimeFingerprint : template?.example?.runtimeFingerprint,
-            resourcePlan: runtimeHints
-              ? {
-                  resourceMode: runtimeHints.resourceMode,
-                  resolvedResourceMode: runtimeHints.resolvedResourceMode,
-                  executionPath: runtimeHints.executionPath,
-                  resolvedArtifact: runtimeHints.resolvedArtifact,
-                  quantizationMode: runtimeHints.quantizationMode,
-                  quantizedComponents: runtimeHints.quantizedComponents,
-                  offloadMode: runtimeHints.offloadMode,
-                  autoResourceCandidateId: runtimeHints.autoResourceCandidateId,
-                  autoResourceProofStatus: runtimeHints.autoResourceProofStatus,
-                  autoResourcePlan: safeCloneJson(runtimeHints.autoResourcePlan),
-                }
-              : undefined,
+            fieldKey,
+            value,
+            url,
+            mode: form.mode,
+            modelType: form.modelType,
+            modelLabel: profile.label,
+            repo: profile.defaultRepo,
+            templateId: context?.templateId,
+            templateLabel: template?.label,
+            runId: context?.run?.runId ?? context?.id,
+            taskId: outputTaskId,
+            sid: context?.run?.sid ?? null,
+            prompt: form.prompt,
+            negativePrompt: form.negativePrompt,
+            seed: form.seed,
+            width: form.width,
+            height: form.height,
+            steps: form.steps,
+            guidanceScale: form.guidanceScale,
+            referenceImages: [...form.referenceImages],
+            sourceOutputId: context?.sourceOutputId,
+            formSnapshot: cloneJson(form),
+            graphSnapshot: context?.graph,
+            graphBindingSnapshot: context?.binding,
+            apiGraphSnapshot: context?.apiGraph,
+            createdAt: Date.now(),
+            favorite: false,
+            parentId: context?.sourceOutputId ?? context?.variationGroupId,
+            displayType,
             mediaItems,
-            ...(isVideoOutput
-              ? {
-                  video: {
-                    sourceVideo: form.sourceVideo,
-                    maskVideo: form.maskVideo,
-                    controlVideo: form.controlVideo,
-                    numFrames: form.numFrames,
-                    fps: form.fps,
-                    conditioningScale: form.conditioningScale,
-                    guidanceScale2: form.guidanceScale2,
-                    outputType: form.outputType,
-                  },
-                }
-              : {}),
-            ...(isAudioOutput
-              ? {
-                  audio: {
-                    sourceAudio: form.sourceAudio,
-                    referenceAudio: form.referenceAudio,
-                    durationSeconds: form.audioDuration,
-                  },
-                }
-              : {}),
+            templateLockHash,
+            promptSettingsHash,
+            exactTemplateCompatible,
+            variationGroupId: context?.variationGroupId,
+            variationLabel: context?.variationLabel,
+            provenance: {
+              schemaVersion: 1,
+              source: 'frontend-record',
+              capturedAt: new Date().toISOString(),
+              templateId: context?.templateId,
+              templateLockHash,
+              promptSettingsHash,
+              exactTemplateCompatible,
+              backendExecutionId: outputTaskId,
+              clientRunId: outputClientRunId,
+              runInputHash: outputRunInputHash,
+              workflowTabId: context.workflowTabId,
+              attemptIndex,
+              nodeId,
+              graphBindingFingerprint: context?.binding?.fingerprint,
+              modelRevision: template?.example?.modelRevision,
+              runtimeFingerprint:
+                typeof runtimeFingerprint === 'string' ? runtimeFingerprint : template?.example?.runtimeFingerprint,
+              resourcePlan: runtimeHints
+                ? {
+                    resourceMode: runtimeHints.resourceMode,
+                    resolvedResourceMode: runtimeHints.resolvedResourceMode,
+                    executionPath: runtimeHints.executionPath,
+                    resolvedArtifact: runtimeHints.resolvedArtifact,
+                    quantizationMode: runtimeHints.quantizationMode,
+                    quantizedComponents: runtimeHints.quantizedComponents,
+                    offloadMode: runtimeHints.offloadMode,
+                    autoResourceCandidateId: runtimeHints.autoResourceCandidateId,
+                    autoResourceProofStatus: runtimeHints.autoResourceProofStatus,
+                    autoResourcePlan: safeCloneJson(runtimeHints.autoResourcePlan),
+                  }
+                : undefined,
+              mediaItems,
+              ...(isVideoOutput
+                ? {
+                    video: {
+                      sourceVideo: form.sourceVideo,
+                      maskVideo: form.maskVideo,
+                      controlVideo: form.controlVideo,
+                      numFrames: form.numFrames,
+                      fps: form.fps,
+                      conditioningScale: form.conditioningScale,
+                      guidanceScale2: form.guidanceScale2,
+                      outputType: form.outputType,
+                    },
+                  }
+                : {}),
+              ...(isAudioOutput
+                ? {
+                    audio: {
+                      sourceAudio: form.sourceAudio,
+                      referenceAudio: form.referenceAudio,
+                      durationSeconds: form.audioDuration,
+                    },
+                  }
+                : {}),
+            },
           },
-        };
+          metadata.resolvedExecutionInputs,
+        );
 
         set((state) => ({
           outputs: [
@@ -2667,7 +2687,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           sourceLabel,
           snapshot: cloneJson(nextSnapshot),
         };
-        applyWorkflowSnapshot(nextSnapshot);
+        applyWorkflowSnapshot(nextSnapshot, id);
         set({
           workflowTabs: [...savedTabs, tab],
           activeWorkflowTabId: id,
@@ -2702,7 +2722,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const targetSnapshot = normalizeWorkflowSnapshot(target.snapshot);
         const nextCanvasEpoch = state.workflowCanvasEpoch + 1;
         const resumedRunContexts = rebaseRunContextsForRestoredWorkflow(state, id, targetSnapshot, nextCanvasEpoch);
-        applyWorkflowSnapshot(targetSnapshot);
+        applyWorkflowSnapshot(targetSnapshot, id);
         set({
           workflowTabs: savedTabs,
           activeWorkflowTabId: id,
@@ -2737,7 +2757,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         if (tabs.length === 0) {
           const snapshot = normalizeWorkflowSnapshot(blankWorkflowSnapshot());
           const newId = nanoid();
-          applyWorkflowSnapshot(snapshot);
+          applyWorkflowSnapshot(snapshot, newId);
           set({
             workflowTabs: [
               {
@@ -2782,7 +2802,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           nextSnapshot,
           nextCanvasEpoch,
         );
-        applyWorkflowSnapshot(nextSnapshot);
+        applyWorkflowSnapshot(nextSnapshot, nextActive.id);
         set({
           workflowTabs: tabs,
           activeWorkflowTabId: nextActive.id,
@@ -2814,7 +2834,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         }));
       },
 
-      mergeBackendWorkflow: (incoming) => {
+      mergeBackendWorkflow: (incoming, options = {}) => {
         const normalized = normalizeWorkflowTab(incoming);
         if (!normalized) return;
         const state = get();
@@ -2853,10 +2873,13 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const hasUnsavedLocalDocument = Boolean(
           existing &&
           localDocument &&
-          (existing.dirty || !sameWorkflowDocument(existing, localDocument)) &&
+          (options.acknowledgement || existing.dirty || !sameWorkflowDocument(existing, localDocument)) &&
           !sameWorkflowDocument(localDocument, normalized),
         );
         if (existing && localDocument && hasUnsavedLocalDocument) {
+          // An own-save acknowledgement is metadata, never a remote edit.
+          // Undo/Redo may restore an already-clean local document while an
+          // older PUT remains in flight, so dirty alone is not sufficient.
           // A websocket broadcast can race the response for an older PUT (or a
           // save from another browser) while this tab has newer local content.
           // Advance the observed backend revision without replacing that
@@ -2896,7 +2919,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           ? state.workflowTabs.map((tab) => (tab.id === normalized.id ? { ...normalized, dirty: false } : tab))
           : [...state.workflowTabs, { ...normalized, dirty: false }];
         if (state.activeWorkflowTabId === normalized.id) {
-          applyWorkflowSnapshot(normalized.snapshot);
+          applyWorkflowSnapshot(normalized.snapshot, normalized.id);
           set({
             workflowTabs: tabs,
             workflowCanvasEpoch: state.workflowCanvasEpoch + 1,

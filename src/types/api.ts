@@ -79,6 +79,7 @@ export type ApiGraphRuntimeHints = {
   resourcePlan?: JsonObject;
   clusterRuntimeQualification?: JsonObject;
   autoResourcePlan?: JsonObject;
+  workflowAutoPlan?: { schemaVersion: number; graphHash: string };
   autoResourceCandidates?: JsonObject[];
   autoResourceProofStatus?: string;
   autoResourceCandidateId?: string;
@@ -172,6 +173,7 @@ export type NodeWebsocketMessage = BaseWebsocketMessage<
   workflow_canvas_epoch?: number;
   node_id?: string;
   output_id?: string;
+  resolved_execution_inputs?: unknown;
   backend_persisted?: boolean;
   preview_slot?: StudioPreviewSlot;
   preview_state_revision?: number;
@@ -330,6 +332,12 @@ export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
   candidateId?: string;
   message?: string;
   updatedNodes?: string[];
+  resourceUpdates?: {
+    nodeId: string;
+    field: 'offload_mode' | 'auto_offload';
+    value: string | boolean;
+    previousValue?: string | boolean | null;
+  }[];
   retryPlans?: JsonObject[];
   performed?: boolean;
   reasons?: string[];
@@ -664,7 +672,27 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
     case 'workflow_deleted':
       return typeof value.workflow_id === 'string';
     case 'auto_resource_plan_applied':
-      return optionalField(value, 'candidateId', (field) => typeof field === 'string');
+      return (
+        optionalField(value, 'candidateId', (field) => typeof field === 'string') &&
+        optionalField(
+          value,
+          'resourceUpdates',
+          (field) =>
+            Array.isArray(field) &&
+            field.length <= 4096 &&
+            field.every(
+              (item) =>
+                isRecord(item) &&
+                typeof item.nodeId === 'string' &&
+                ((item.field === 'offload_mode' && typeof item.value === 'string') ||
+                  (item.field === 'auto_offload' && typeof item.value === 'boolean')) &&
+                (item.previousValue == null ||
+                  typeof item.previousValue === 'string' ||
+                  typeof item.previousValue === 'boolean'),
+            ),
+        )
+      );
+
     case 'auto_retry_requires_approval':
       return typeof value.message === 'string' && isRecordArray(value.retryPlans);
     case 'runtime_loader_reused':

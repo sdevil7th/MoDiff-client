@@ -390,6 +390,42 @@ test('graph replacement restores missing live UI preview contracts without repla
   assert.equal(preview.value, '/file?file=previous.mp4');
 });
 
+test('graph replacement preserves dynamic visibility and required inputs even when registry defaults hide them', () => {
+  nodeStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      'modules.Test.Preview': {
+        type: 'custom',
+        module: 'modules.Test',
+        action: 'Preview',
+        label: 'Preview',
+        category: 'Test',
+        params: {
+          source: { type: 'audio', display: 'input', hidden: true, required: false, onSignal: 'current_contract' },
+          strength: { type: 'float', hidden: true, default: 0.75 },
+          missing_identity: { type: 'string', hidden: true, default: '' },
+        },
+      },
+    },
+  });
+  flowStoreModule.useFlowStore.getState().replaceGraph({
+    nodes: [
+      node('Preview', {
+        source: { type: 'audio', display: 'input', hidden: false, required: true, onSignal: 'untrusted_saved_action' },
+        strength: { type: 'float', hidden: false, value: 0.65, min: 0, max: 1 },
+      }),
+    ],
+    edges: [],
+  });
+  const params = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
+  assert.equal(params.source.hidden, false);
+  assert.equal(params.source.required, true);
+  assert.equal(params.source.onSignal, 'current_contract');
+  assert.equal(params.strength.hidden, false);
+  assert.equal(params.strength.value, 0.65);
+  assert.equal(params.strength.max, 1);
+  assert.equal(params.missing_identity.hidden, true);
+});
+
 test('pre-registry graph replacement strips stored behavior and restores only the arriving live contract', () => {
   flowStoreModule.useFlowStore.getState().replaceGraph({
     nodes: [
@@ -923,6 +959,43 @@ test('deleting a V2 root removes the complete composite instead of structurally 
   const deletedCacheIds = JSON.parse(cacheRequests()[0].init.body).nodes;
   assert.deepEqual(
     deletedCacheIds.sort(),
+    [fixture.rootId, fixture.generateId, fixture.utilityId, fixture.previewId].sort(),
+  );
+});
+
+test('collapsed V2 deletion clears hidden runtime nodes and preserves unrelated cache owners', () => {
+  const fixture = blockV2DeletionFixture('collapsed-cache-owner');
+  const root = fixture.nodes.find((item) => item.id === fixture.rootId);
+  const instance = blockRuntimeModule.setBlockPresentationV2(root.data.blockInstanceV2, { expanded: false });
+  flowStoreModule.useFlowStore.setState({
+    nodes: [blockRuntimeModule.createBlockRootNodeV2(instance), node('unrelated', {})],
+    edges: [],
+  });
+  flowStoreModule.useFlowStore.getState().removeNodes(fixture.rootId);
+  assert.deepEqual(
+    JSON.parse(cacheRequests()[0].init.body).nodes.sort(),
+    [fixture.rootId, fixture.generateId, fixture.utilityId, fixture.previewId].sort(),
+  );
+  assert.deepEqual(
+    flowStoreModule.useFlowStore.getState().nodes.map(({ id }) => id),
+    ['unrelated'],
+  );
+});
+
+test('graph replacement clears removed hidden V2 runtimes but not a retained collapsed instance', () => {
+  const fixture = blockV2DeletionFixture('replacement-cache-owner');
+  const root = fixture.nodes.find((item) => item.id === fixture.rootId);
+  const instance = blockRuntimeModule.setBlockPresentationV2(root.data.blockInstanceV2, { expanded: false });
+  const collapsed = blockRuntimeModule.createBlockRootNodeV2(instance);
+  flowStoreModule.useFlowStore.setState({
+    nodes: fixture.nodes.filter((item) => !item.id.startsWith('outside-')),
+    edges: [],
+  });
+  flowStoreModule.useFlowStore.getState().replaceGraph({ nodes: [collapsed], edges: [] }, { clearRemovedCache: true });
+  assert.equal(cacheRequests().length, 0);
+  flowStoreModule.useFlowStore.getState().replaceGraph({ nodes: [], edges: [] }, { clearRemovedCache: true });
+  assert.deepEqual(
+    JSON.parse(cacheRequests()[0].init.body).nodes.sort(),
     [fixture.rootId, fixture.generateId, fixture.utilityId, fixture.previewId].sort(),
   );
 });

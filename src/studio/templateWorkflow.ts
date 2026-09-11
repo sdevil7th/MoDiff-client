@@ -1,5 +1,6 @@
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useFlowStore } from '../stores/useFlowStore';
+import { useNodesStore } from '../stores/useNodeStore';
 import {
   advanceWorkflowOperationContext,
   assertWorkflowOperationContext,
@@ -129,6 +130,15 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
   let warnings: string[] = [];
 
   try {
+    // Do not construct a legacy skeleton while initial backend execution
+    // definitions are still loading. Their arrival would invalidate it.
+    if (useNodesStore.getState().discoveryRequests.capabilities.status !== 'success') {
+      await useNodesStore.getState().fetchStudioModelCapabilities();
+      assertWorkflowOperationContext(context);
+      const discovery = useNodesStore.getState().discoveryRequests.capabilities;
+      if (discovery.status !== 'success')
+        throw new Error(discovery.error || 'Model capabilities are not ready. Retry opening the template.');
+    }
     const inputDefaults = await materializeTemplateDefaultInputs(template);
     assertWorkflowOperationContext(context);
     useStudioStore.getState().applyTemplate(template, inputDefaults);

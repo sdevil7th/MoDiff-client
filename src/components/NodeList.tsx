@@ -1,3 +1,4 @@
+import RuntimeNodeGroupsV2 from './RuntimeNodeGroupsV2';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -17,7 +18,6 @@ import {
   Boxes,
   ChevronDown,
   CloudDownload,
-  FlaskConical,
   Filter,
   Image,
   LayoutGrid,
@@ -58,14 +58,7 @@ import {
 } from '../studio/userBlockLibrary';
 import { createBlockRootNodeV2 } from '../studio/blockRuntimeV2';
 import { USER_BLOCK_V2_DRAG_PREFIX } from '../studio/blockPersistenceV2';
-import {
-  compareNodeSurfaceCategories,
-  nodeGroupForCatalogEntry,
-  nodeCatalogEntries,
-  type NodeCatalogEntry,
-  type NodeCatalogVisibility,
-  type NodeSurfaceCategory,
-} from '../studio/nodeCatalog';
+import { nodeGroupForCatalogEntry, nodeCatalogEntries, type NodeCatalogEntry } from '../studio/nodeCatalog';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import {
   buildHuggingFaceCatalogSections,
@@ -867,6 +860,8 @@ function entryMatchesSearch(entry: NodeCatalogEntry, search: string) {
     entry.label,
     entry.description,
     entry.surfaceCategory,
+    ...entry.groupPath,
+    ...(entry.aliases ?? []),
     entry.node.label,
     entry.node.module,
     entry.node.action,
@@ -876,13 +871,6 @@ function entryMatchesSearch(entry: NodeCatalogEntry, search: string) {
     .join(' ')
     .toLowerCase()
     .includes(query);
-}
-
-function visibilityLabel(visibility: NodeCatalogVisibility) {
-  if (visibility === 'essential') return null;
-  if (visibility === 'advanced') return 'Advanced';
-  if (visibility === 'experimental') return 'Experimental';
-  return 'Internal';
 }
 
 function normalizedTestId(value: string) {
@@ -960,15 +948,18 @@ function HuggingFaceCatalogEntryRow({
       <span className="mt-0.5 grid size-4 shrink-0 self-start place-items-center text-hf-yellow">
         {entry.kind === 'cluster' ? <LayoutGrid size={15} /> : <BoxIcon size={15} />}
       </span>
-      <span className="min-w-0 flex-1">
+      <span className="min-w-[min(100%,6rem)] flex-1">
         <span className="block break-words whitespace-normal" data-catalog-entry-label>
           {entry.label}
         </span>
         <span className="block truncate text-xs text-modiff-subtle-text">{entry.detail}</span>
-        <span className="mt-1 inline-flex items-center gap-1 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text">
-          {inserting ? <LoaderCircle size={12} className="animate-spin" aria-hidden="true" /> : null}
-          {inserting ? 'Adding…' : entry.readinessLabel}
-        </span>
+      </span>
+      <span
+        data-catalog-entry-readiness
+        className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text"
+      >
+        {inserting ? <LoaderCircle size={12} className="animate-spin" aria-hidden="true" /> : null}
+        {inserting ? 'Adding…' : entry.readinessLabel}
       </span>
     </>
   );
@@ -982,7 +973,7 @@ function HuggingFaceCatalogEntryRow({
   return entry.insertable ? (
     <TreeButtonRow
       aria-label={`${entry.label}. ${entry.readinessLabel}; insert ${entry.kind === 'cluster' ? 'Cluster Node' : 'Modular Diffusers block'}.`}
-      className="cursor-pointer py-1 hover:bg-modiff-surface-hover"
+      className="cursor-pointer flex-wrap gap-y-1 py-1 hover:bg-modiff-surface-hover"
       data-readiness={entry.readiness}
       data-testid={`hugging-face-node-row-${normalizedTestId(entry.id)}`}
       aria-busy={inserting || undefined}
@@ -1007,7 +998,7 @@ function HuggingFaceCatalogEntryRow({
     <div
       aria-disabled="true"
       aria-label={`${entry.label}. ${entry.readinessLabel}; insertion unavailable.`}
-      className="flex min-h-10 min-w-0 items-center gap-2 rounded-modiff-compact py-1 pl-8 pr-2 text-sm text-modiff-text"
+      className="flex min-h-10 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-modiff-compact py-1 pl-2 pr-2 text-sm text-modiff-text"
       data-readiness={entry.readiness}
       data-testid={`hugging-face-node-row-${normalizedTestId(entry.id)}`}
       role="listitem"
@@ -1375,11 +1366,7 @@ function NodeGroupList({
       );
   }, [expertMode, nodes, search, view]);
 
-  const orderedGroups = Object.entries(groups).sort(([left], [right]) =>
-    expertMode
-      ? left.localeCompare(right)
-      : compareNodeSurfaceCategories(left as NodeSurfaceCategory, right as NodeSurfaceCategory),
-  );
+  const orderedGroups = Object.entries(groups).sort(([left], [right]) => left.localeCompare(right));
   const userBlockGrouping = useSettingsStore((state) => state.userBlockGrouping);
   const setUserBlockGrouping = useSettingsStore((state) => state.setUserBlockGrouping);
   const matchingUserBlocks = useMemo(() => {
@@ -1481,7 +1468,7 @@ function NodeGroupList({
         </div>
       ) : (
         orderedGroups.map(([group, entries]) => {
-          const isOpen = activeNodeGroups.includes(group);
+          const isOpen = Boolean(search.trim()) || activeNodeGroups.includes(group);
           return (
             <div
               key={group}
@@ -1513,50 +1500,13 @@ function NodeGroupList({
               </TreeButtonRow>
               {isOpen ? (
                 <TreeChildrenPanel level={1}>
-                  {[...entries]
-                    .sort((a, b) =>
-                      (expertMode ? a.node.label || a.key : a.label).localeCompare(
-                        expertMode ? b.node.label || b.key : b.label,
-                      ),
-                    )
-                    .map((entry) => {
-                      const rowLabel = expertMode
-                        ? entry.node.label || `${entry.node.module}.${entry.node.action}`
-                        : entry.label;
-                      return (
-                        <TreeButtonRow
-                          key={entry.key}
-                          data-testid={`node-row-${normalizedTestId(entry.key)}`}
-                          onClick={() => onInsertNode(entry.dragKey)}
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('text/plain', entry.dragKey);
-                            e.dataTransfer.effectAllowed = 'move';
-                          }}
-                          draggable
-                          level={1}
-                          title={
-                            entry.specializedReason || entry.description || `${entry.node.module}.${entry.node.action}`
-                          }
-                          className={cx(`category-${entry.node.category}`, 'cursor-grab hover:bg-modiff-surface-hover')}
-                        >
-                          <span className="grid size-4 shrink-0 place-items-center text-hf-yellow">
-                            {entry.runtimeKind === 'diffusers_accelerated' ? (
-                              <Boxes size={15} />
-                            ) : entry.visibility === 'experimental' ? (
-                              <FlaskConical size={15} />
-                            ) : (
-                              getIcon(entry.surfaceCategory)
-                            )}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate">{rowLabel}</span>
-                          {visibilityLabel(entry.visibility) ? (
-                            <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text">
-                              {visibilityLabel(entry.visibility)}
-                            </span>
-                          ) : null}
-                        </TreeButtonRow>
-                      );
-                    })}
+                  <RuntimeNodeGroupsV2
+                    entries={entries}
+                    search={search}
+                    openGroups={activeNodeGroups}
+                    toggle={setActiveNodeGroups}
+                    insert={onInsertNode}
+                  />
                 </TreeChildrenPanel>
               ) : null}
             </div>

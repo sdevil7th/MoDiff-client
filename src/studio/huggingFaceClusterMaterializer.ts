@@ -183,7 +183,10 @@ export function resolveHuggingFaceClusterBindingValues(
     (Object.prototype.hasOwnProperty.call(admission.sealedBindingValues, 'pipelineClass') &&
       definition.provider === 'diffusers' &&
       definition.integrationStatus !== 'equivalent_standard_route' &&
-      admission.sealedBindingValues.pipelineClass !== definition.pipelineClass) ||
+      admission.sealedBindingValues.pipelineClass !==
+        (definition.definitionKind === 'studio_execution_composite'
+          ? definition.blocksClass
+          : definition.pipelineClass)) ||
     (Object.prototype.hasOwnProperty.call(admission.sealedBindingValues, 'pipelineClass') &&
       definition.provider === 'diffusers' &&
       definition.integrationStatus === 'equivalent_standard_route' &&
@@ -480,8 +483,9 @@ export function materializeHuggingFaceClusterExecutionSkeleton({
           executionSpec.executionPath === 'modular-diffusers'
         : definition.integrationStatus === 'reviewed_diffusers_composite'
           ? (executionSpec.executionPath === 'direct-diffusers-image' ||
-              executionSpec.executionPath === 'direct-diffusers-video') &&
-            executionSpec.pipelineClass === definition.pipelineClass
+              executionSpec.executionPath === 'direct-diffusers-video' ||
+              executionSpec.executionPath === 'direct-diffusers-audio') &&
+            executionSpec.pipelineClass === definition.blocksClass
           : definition.integrationStatus === 'equivalent_standard_route' &&
             (executionSpec.executionPath === 'direct-diffusers-image' ||
               executionSpec.executionPath === 'direct-diffusers-video') &&

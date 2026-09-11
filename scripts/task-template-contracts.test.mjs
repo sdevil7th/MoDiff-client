@@ -33,6 +33,23 @@ after(async () => {
   await server?.close();
 });
 
+test('new outpaint forms fully repaint the extension without changing saved or inpaint settings', () => {
+  for (const model of ['FluxFillPipeline', 'FluxKontextInpaintPipeline', 'Flux2KleinInpaintPipeline']) {
+    const saved = { ...modelProfilesModule.getFormDefaultsForMode('outpaint', model), strength: 0.85 };
+    const before = structuredClone(saved);
+    const fresh = modelProfilesModule.getFormDefaultsForMode('outpaint', model);
+    assert.equal(fresh.strength, 1);
+    assert.equal(fresh.steps, 32);
+    assert.deepEqual(saved, before);
+    const inpaint = modelProfilesModule.getFormDefaultsForMode('inpaint', model);
+    assert.equal(
+      inpaint.strength,
+      modelProfilesModule.STUDIO_MODEL_PROFILES[model].recommendedStrength ??
+        modelProfilesModule.DEFAULT_STUDIO_FORM.strength,
+    );
+  }
+});
+
 test('Cosmos 3 Nano remains an exact manual-only profile behind its mandatory guardrail', () => {
   const profile = modelProfilesModule.STUDIO_MODEL_PROFILES.Cosmos3OmniModularPipeline;
   assert.equal(profile.defaultRepo, modelProfilesModule.COSMOS3_NANO_REPO);

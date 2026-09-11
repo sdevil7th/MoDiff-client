@@ -1,3 +1,4 @@
+import { blockSelectionDropTargetV2, moveBlockSelectionPreparedV2 } from '../studio/blockSelectionMovesV2';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import {
@@ -18,7 +19,6 @@ import { useShallow } from 'zustand/react/shallow';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Network } from 'lucide-react';
 
-import NodeSearchDialog from './NodeSearchDialog';
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -35,15 +35,13 @@ import { useGraphFixStore } from '../stores/useGraphFixStore';
 
 import CustomNode from './CustomNode';
 import AnyNode from './AnyNode';
-import LoopNode from './LoopNode';
-import GroupNode from './GroupNode';
 import BlockNode from './BlockNode';
-import HuggingFaceClusterNode from './HuggingFaceClusterNode';
 import ProjectedBlockNodeV2 from './ProjectedBlockNodeV2';
+import { expandedBlockV2AtPosition } from '../studio/blockDropTargetsV2';
 
-import { SelectionToolbar } from './SelectionToolbar';
 import { modiffOverlays, reactFlowCss } from '../theme';
 import { useWorkflowAltDrag } from '../workflow/useWorkflowAltDrag';
+import { createNodeMeasurementDispatch } from '../workflow/nodeMeasurementDispatch';
 import { useWorkflowConnections, workflowConnectionParam } from '../workflow/useWorkflowConnections';
 import { useWorkflowDrop } from '../workflow/useWorkflowDrop';
 import { enqueueSnackbar } from '../ui/snackbar';
@@ -53,17 +51,19 @@ import {
   expandedUserBlockAtPosition,
   isUserBlockExpandedInstance,
   runtimeProgressTarget,
-  type BlockSelectionResult,
   userBlockConnectionIsAllowed,
   validateUserBlockSelection,
   workflowBlueprintToUserBlock,
 } from '../studio/userBlocks';
-import { buildGraphFixPreview } from '../studio/graphFixer';
+import { useGraphFixModule } from '../studio/useGraphFixModule';
+import { rejectedBlockDragPresentationPatchV2 } from '../studio/blockRuntimeV2';
 import { connectionColor, decorateConnectionEdges } from '../theme/connectionTypes';
-import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffFieldShell, ModiffIconButton, ModiffInput } from '../ui';
+import { ModiffDialog, ModiffIconButton, ModiffPopover } from '../ui';
 import { GraphConnectionSurface } from '../ui/GraphConnectionSurface';
+import type { PendingBlock } from './CreateUserBlockDialog';
 import { executionProgressFrom } from '../studio/executionProgress';
 import { blockV2ConnectionScopeIsAllowed } from '../studio/nodeConnectorResolution';
+import { blockCrossingSurfaceV2 } from '../studio/blockCrossingConnectionsV2';
 import { expandedHuggingFaceClusterAtPosition } from '../studio/huggingFaceClusterGraph';
 import { customizeHuggingFaceClusterInstance } from '../studio/huggingFaceClusterCustomization';
 import {
@@ -76,15 +76,63 @@ const ModelManagerDialog = lazy(() => import('./ModelManagerDialog'));
 const AlertDialog = lazy(() => import('./AlertDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
 const LightboxDialog = lazy(() => import('./LightboxDialog'));
+const NodeSearchDialog = lazy(() => import('./NodeSearchDialog'));
+const CreateUserBlockDialog = lazy(() => import('./CreateUserBlockDialog'));
+const LegacyHuggingFaceClusterNode = lazy(() => import('./HuggingFaceClusterNode'));
+const GroupNode = lazy(() => import('./GroupNode'));
+const LoopNode = lazy(() => import('./LoopNode'));
+const SelectionToolbar = lazy(() =>
+  import('./SelectionToolbar').then((module) => ({ default: module.SelectionToolbar })),
+);
+
+const DeferredNodeFallback = () => (
+  <div
+    role="status"
+    aria-live="polite"
+    className="rounded-modiff-compact border border-modiff-border-subtle bg-modiff-panel p-3 text-sm text-modiff-subtle-text"
+  >
+    Loading node…
+  </div>
+);
+
+// Current registered admissions use BlockNode. Load the recovery renderer only
+// when a workflow actually contains a legacy Cluster; never suspend the canvas.
+const HuggingFaceClusterNode = (node: NodeProps<CustomNodeType>) => (
+  <Suspense
+    fallback={
+      <div
+        role="status"
+        aria-live="polite"
+        className="rounded-modiff-compact border border-modiff-border-subtle bg-modiff-panel p-3 text-sm text-modiff-subtle-text"
+      >
+        Loading legacy cluster…
+      </div>
+    }
+  >
+    <LegacyHuggingFaceClusterNode {...node} />
+  </Suspense>
+);
 
 const CustomNodeRenderer = (node: NodeProps<CustomNodeType>) =>
   node.data.blockProjectionModular === true ? <ProjectedBlockNodeV2 {...node} /> : <CustomNode {...node} />;
 const AnyNodeRenderer = (node: NodeProps<CustomNodeType>) =>
   node.data.blockProjectionModular === true ? <ProjectedBlockNodeV2 {...node} /> : <AnyNode {...node} />;
 const LoopNodeRenderer = (node: NodeProps<CustomNodeType>) =>
-  node.data.blockProjectionModular === true ? <ProjectedBlockNodeV2 {...node} /> : <LoopNode {...node} />;
+  node.data.blockProjectionModular === true ? (
+    <ProjectedBlockNodeV2 {...node} />
+  ) : (
+    <Suspense fallback={<DeferredNodeFallback />}>
+      <LoopNode {...node} />
+    </Suspense>
+  );
 const GroupNodeRenderer = (node: NodeProps<CustomNodeType>) =>
-  node.data.blockProjectionModular === true ? <ProjectedBlockNodeV2 {...node} /> : <GroupNode {...node} />;
+  node.data.blockProjectionKind === 'internal' ? (
+    <ProjectedBlockNodeV2 {...node} />
+  ) : (
+    <Suspense fallback={<DeferredNodeFallback />}>
+      <GroupNode {...node} />
+    </Suspense>
+  );
 
 const nodeTypes = {
   custom: CustomNodeRenderer,
@@ -94,88 +142,6 @@ const nodeTypes = {
   block: BlockNode,
   cluster: HuggingFaceClusterNode,
 };
-
-type PendingBlock = {
-  result: Extract<BlockSelectionResult, { ok: true }>;
-  name: string;
-  inputLabels: Record<string, string>;
-  outputLabels: Record<string, string>;
-  exposedParamIds: Set<string>;
-};
-
-function expandedBlockV2AtPosition(nodes: CustomNodeType[], position: CustomNodeType['position']) {
-  const candidates = nodes
-    .filter(
-      (node) =>
-        !node.parentId &&
-        node.data.blockInstanceV2?.presentation.expanded === true &&
-        node.data.blockProjectionOwnerId === undefined,
-    )
-    .filter((node) => {
-      const width = node.width ?? node.measured?.width ?? node.data.blockInstanceV2?.presentation.size.width ?? 360;
-      const height = node.height ?? node.measured?.height ?? node.data.blockInstanceV2?.presentation.size.height ?? 320;
-      return (
-        position.x >= node.position.x &&
-        position.x <= node.position.x + width &&
-        position.y >= node.position.y &&
-        position.y <= node.position.y + height
-      );
-    })
-    .sort((left, right) => {
-      const leftArea =
-        (left.width ?? left.measured?.width ?? left.data.blockInstanceV2?.presentation.size.width ?? 360) *
-        (left.height ?? left.measured?.height ?? left.data.blockInstanceV2?.presentation.size.height ?? 320);
-      const rightArea =
-        (right.width ?? right.measured?.width ?? right.data.blockInstanceV2?.presentation.size.width ?? 360) *
-        (right.height ?? right.measured?.height ?? right.data.blockInstanceV2?.presentation.size.height ?? 320);
-      return leftArea - rightArea;
-    });
-  return candidates[0] ?? null;
-}
-
-function blockV2ProjectionAtPosition(nodes: CustomNodeType[], position: CustomNodeType['position']) {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const absolutePosition = (node: CustomNodeType) => {
-    let x = node.position.x;
-    let y = node.position.y;
-    let parentId = node.parentId;
-    const visited = new Set<string>([node.id]);
-    while (parentId) {
-      if (visited.has(parentId)) return null;
-      visited.add(parentId);
-      const parent = byId.get(parentId);
-      if (!parent) return null;
-      x += parent.position.x;
-      y += parent.position.y;
-      parentId = parent.parentId;
-    }
-    return { x, y };
-  };
-  return (
-    nodes
-      .filter((node) => node.data.blockProjectionOwnerId && node.data.blockProjectionNodeId)
-      .filter((node) => {
-        const owner = byId.get(node.data.blockProjectionOwnerId!);
-        if (!owner?.data.blockInstanceV2?.presentation.expanded) return false;
-        const absolute = absolutePosition(node);
-        if (!absolute) return false;
-        const width = node.measured?.width ?? node.width ?? 220;
-        const height = node.measured?.height ?? node.height ?? 120;
-        return (
-          position.x >= absolute.x &&
-          position.x <= absolute.x + width &&
-          position.y >= absolute.y &&
-          position.y <= absolute.y + height
-        );
-      })
-      .sort((left, right) => {
-        const leftArea = (left.measured?.width ?? left.width ?? 220) * (left.measured?.height ?? left.height ?? 120);
-        const rightArea =
-          (right.measured?.width ?? right.width ?? 220) * (right.measured?.height ?? right.height ?? 120);
-        return leftArea - rightArea;
-      })[0] ?? null
-  );
-}
 
 function pointInsideNode(node: CustomNodeType, point: CustomNodeType['position']) {
   const width = node.width ?? node.measured?.width ?? node.data.blockInstanceV2?.presentation.size.width ?? 360;
@@ -220,6 +186,18 @@ function Workflow() {
   const addNode = useFlowStore((state) => state.addNode);
   const arrangeGraph = useFlowStore((state) => state.arrangeGraph);
   const onNodesChange = useFlowStore((state) => state.onNodesChange);
+  const measuredNodeChanges = useMemo(
+    () =>
+      createNodeMeasurementDispatch({
+        apply: onNodesChange,
+        epoch: () => useStudioStore.getState().workflowCanvasEpoch,
+        node: (id) => useFlowStore.getState().nodes.find((candidate) => candidate.id === id),
+        schedule: (callback) => window.requestAnimationFrame(callback),
+        cancel: (frame) => window.cancelAnimationFrame(frame),
+      }),
+    [onNodesChange],
+  );
+  useEffect(() => () => measuredNodeChanges.clear(), [measuredNodeChanges]);
   const onEdgesChange = useFlowStore((state) => state.onEdgesChange);
   const onConnect = useFlowStore((state) => state.onConnect);
   const onReconnect = useFlowStore((state) => state.onReconnect);
@@ -244,12 +222,20 @@ function Workflow() {
   const blueprints = useStudioStore((state) => state.blueprints);
   const saveActiveWorkflowTab = useStudioStore((state) => state.saveActiveWorkflowTab);
   const workflowFocusRequest = useSettingsStore((state) => state.workflowFocusRequest);
+  const edgeType = useSettingsStore((state) => state.edgeType);
   const setWorkflowFocusRequest = useSettingsStore((state) => state.setWorkflowFocusRequest);
   const userBlocks = useUserBlockStore((state) => state.blocks);
   const userBlocksLoaded = useUserBlockStore((state) => state.loaded);
   const fetchUserBlocks = useUserBlockStore((state) => state.fetchBlocks);
   const saveUserBlock = useUserBlockStore((state) => state.saveBlock);
   const [selectionDragging, setSelectionDragging] = useState(false);
+  const draggedBlockBoundary = useRef<{ nodeId: string; owner: CustomNodeType } | null>(null);
+  const structuralDragIntent = useRef(false);
+  const draggedSelectionIds = useRef<string[]>([]);
+  const [blockDragTarget, setBlockDragTarget] = useState<string | null>(null);
+  const [blockDragActive, setBlockDragActive] = useState(false);
+  const cancelledBlockDrag = useRef<Pick<ReturnType<typeof useFlowStore.getState>, 'nodes' | 'edges'> | null>(null);
+
   const [pendingBlock, setPendingBlock] = useState<PendingBlock | null>(null);
   const migratedBlueprintIds = useRef<Set<string>>(new Set());
   const updateNodeInternals = useUpdateNodeInternals();
@@ -264,12 +250,31 @@ function Workflow() {
       node.data.blockInstanceV2?.presentation.expanded === true ||
       (node.data.type === 'block' && isUserBlockExpandedInstance({ nodes, edges }, node.id)),
   );
+  const graphFix = useGraphFixModule(Boolean(graphFixPreviewCandidate));
   const graphFixPreview = useMemo(
-    () => buildGraphFixPreview({ nodes, registry: nodesRegistry }, graphFixPreviewCandidate),
-    [graphFixPreviewCandidate, nodes, nodesRegistry],
+    () =>
+      graphFix.module?.buildGraphFixPreview({ nodes, registry: nodesRegistry }, graphFixPreviewCandidate) ?? {
+        nodes: [],
+        edges: [],
+      },
+    [graphFix.module, graphFixPreviewCandidate, nodes, nodesRegistry],
   );
   const exactVisibleNodes = [...nodes, ...graphFixPreview.nodes];
-  const decoratedEdges = useMemo(() => decorateConnectionEdges(nodes, edges), [edges, nodes]);
+  // Mount on first selection, then retain dialog/menu state when focus changes.
+  // An untouched empty graph does not need selection-only action code.
+  const [selectionToolsRequested, setSelectionToolsRequested] = useState(false);
+  const hasSelection = exactVisibleNodes.some((node) => node.selected);
+  useEffect(() => {
+    if (hasSelection) setSelectionToolsRequested(true);
+  }, [hasSelection]);
+  const decoratedEdges = useMemo(
+    () =>
+      blockCrossingSurfaceV2(nodes, decorateConnectionEdges(nodes, edges)).edges.map((edge) => ({
+        ...edge,
+        type: edgeType,
+      })),
+    [edges, nodes, edgeType],
+  );
   const clusterInstanceByExecutionNode = new Map(
     nodes.flatMap((node) =>
       node.data.huggingFaceClusterRole === 'execution' && node.data.huggingFaceClusterInstanceId
@@ -341,7 +346,6 @@ function Workflow() {
   }, [activeWorkflowTabId, currentTask, nodes]);
 
   const {
-    edgeType,
     fileBrowserOpener,
     setFileBrowserOpener,
     modelManagerOpener,
@@ -354,7 +358,6 @@ function Workflow() {
     setLightboxOpener,
   } = useSettingsStore(
     useShallow((state) => ({
-      edgeType: state.edgeType,
       fileBrowserOpener: state.fileBrowserOpener,
       setFileBrowserOpener: state.setFileBrowserOpener,
       modelManagerOpener: state.modelManagerOpener,
@@ -398,6 +401,19 @@ function Workflow() {
       workflowConnectionParam(nodes, getParam, id, param, key),
     [getParam, nodes],
   );
+  const connectWithFeedback = useCallback(
+    (connection: Parameters<typeof onConnect>[0]) => {
+      try {
+        onConnect(connection);
+      } catch (error) {
+        enqueueSnackbar(error instanceof Error ? error.message : 'Could not connect these nodes.', {
+          variant: 'error',
+          autoHideDuration: 5200,
+        });
+      }
+    },
+    [onConnect],
+  );
   const { handleNodeDragStart, handleNodeDrag, handleNodeDragStop } = useWorkflowAltDrag({
     nodes,
     edges,
@@ -428,7 +444,7 @@ function Workflow() {
     addNode,
     edgeType,
     getParam: getConnectionParam,
-    onConnect,
+    onConnect: connectWithFeedback,
     screenToFlowPosition,
     setParam,
     updateNodeInternals,
@@ -488,6 +504,9 @@ function Workflow() {
   }, [fitView, layoutRevision]);
 
   const handleArrangeGraph = useCallback(async () => {
+    // Explicit Arrange is a viewport request, even immediately after insertion
+    // or a focused-node gesture temporarily suppresses automatic fitting.
+    suppressAutomaticFitUntil.current = 0;
     await arrangeGraph();
     saveActiveWorkflowTab(true);
   }, [arrangeGraph, saveActiveWorkflowTab]);
@@ -517,6 +536,29 @@ function Workflow() {
 
   const handleTrackedNodeDragStart = useCallback(
     (...args: Parameters<typeof handleNodeDragStart>) => {
+      const dragged = args[1];
+      structuralDragIntent.current = 'ctrlKey' in args[0] && (args[0].ctrlKey || args[0].metaKey);
+      cancelledBlockDrag.current = null;
+      draggedSelectionIds.current = [
+        ...new Set([
+          dragged.id,
+          ...useFlowStore
+            .getState()
+            .nodes.filter((node) => node.selected)
+            .map((node) => node.id),
+        ]),
+      ];
+      setBlockDragActive(structuralDragIntent.current);
+      setBlockDragTarget(null);
+      const owner = useFlowStore
+        .getState()
+        .nodes.find(
+          (candidate) => candidate.id === dragged.data.blockProjectionOwnerId && candidate.data.blockInstanceV2,
+        );
+      // Freeze the gesture boundary before React Flow's final position and
+      // measurement notifications can refit it. Transient layout is not a
+      // change of ownership until this gesture has been resolved.
+      draggedBlockBoundary.current = owner ? { nodeId: dragged.id, owner } : null;
       setSelectionDragging(true);
       beginHistoryTransaction('Move node');
       handleNodeDragStart(...args);
@@ -526,14 +568,24 @@ function Workflow() {
 
   const handleTrackedNodeDrag = useCallback(
     (...args: Parameters<typeof handleNodeDrag>) => {
+      if (cancelledBlockDrag.current) return;
       handleNodeDrag(...args);
       const dragged = args[1];
       const current = useFlowStore.getState().nodes.find((node) => node.id === dragged.id);
+      if (structuralDragIntent.current) {
+        const state = useFlowStore.getState();
+        setBlockDragTarget(
+          blockSelectionDropTargetV2(state.nodes, draggedSelectionIds.current, dragged.id)?.id ?? null,
+        );
+      }
+      if (!structuralDragIntent.current)
+        for (const id of draggedSelectionIds.current) {
+          const state = useFlowStore.getState();
+          if (state.nodes.find((node) => node.id === id)?.data.blockProjectionOwnerId)
+            state.growBlockContainersForDragV2(id);
+        }
       if (current?.parentId) {
         const parent = useFlowStore.getState().nodes.find((node) => node.id === current.parentId);
-        // Legacy User Blocks grow while a child is dragged. A V2 Block decides
-        // containment on drag-stop instead; growing it here would chase the
-        // dragged projection and make moving an internal node out impossible.
         if (parent?.data.type === 'block' && !parent.data.blockInstanceV2) {
           useFlowStore.getState().fitUserBlockToChildren(parent.id);
         }
@@ -545,7 +597,75 @@ function Workflow() {
   const handleTrackedNodeDragStop = useCallback(
     async (...args: Parameters<typeof handleNodeDragStop>) => {
       handleNodeDragStop(...args);
+      setBlockDragTarget(null);
+      setBlockDragActive(false);
+      if (cancelledBlockDrag.current) {
+        useFlowStore.setState(cancelledBlockDrag.current);
+        cancelledBlockDrag.current = null;
+        structuralDragIntent.current = false;
+        draggedSelectionIds.current = [];
+        setSelectionDragging(false);
+        return;
+      }
       const dragged = args[1];
+      const movingBetweenBlocks = structuralDragIntent.current;
+      structuralDragIntent.current = false;
+      if (movingBetweenBlocks) {
+        const state = useFlowStore.getState();
+        const selected = state.nodes.filter((node) => draggedSelectionIds.current.includes(node.id));
+        const destination = blockSelectionDropTargetV2(state.nodes, draggedSelectionIds.current, dragged.id);
+        const modern =
+          (destination ||
+            selected.some((node) => node.data.blockInstanceV2 || node.data.blockProjectionKind === 'internal')) &&
+          selected.every(
+            (node) =>
+              node.data.blockInstanceV2 ||
+              node.data.blockProjectionKind === 'internal' ||
+              (!node.parentId && node.data.type === 'custom'),
+          );
+        if (
+          modern ||
+          destination ||
+          selected.length > 1 ||
+          selected.some((node) => node.data.userBlockInstanceId || node.data.huggingFaceClusterRole === 'execution')
+        ) {
+          try {
+            await moveBlockSelectionPreparedV2(draggedSelectionIds.current, destination?.id ?? null);
+            enqueueSnackbar(
+              selected.length > 1
+                ? `Moved ${selected.length} selected items ${destination ? 'into the Block' : 'to the outer workflow'}.`
+                : destination
+                  ? 'The existing node was moved into this Block.'
+                  : 'The internal node was moved out of this Block.',
+              { variant: 'success', autoHideDuration: 3000 },
+            );
+            state.commitHistoryTransaction();
+            useStudioStore.getState().saveActiveWorkflowTab(true);
+          } catch (error) {
+            useFlowStore.getState().cancelHistoryTransaction();
+            enqueueSnackbar(error instanceof Error ? error.message : 'Could not move this selection.', {
+              variant: 'error',
+            });
+          }
+          draggedBlockBoundary.current = null;
+          draggedSelectionIds.current = [];
+          setSelectionDragging(false);
+          return;
+        }
+      }
+      const originalBoundary =
+        draggedBlockBoundary.current?.nodeId === dragged.id ? draggedBlockBoundary.current.owner : undefined;
+      draggedBlockBoundary.current = null;
+      const restoreRejectedBlockDrag = (ownerId: string) => {
+        const state = useFlowStore.getState();
+        const before = originalBoundary?.data.blockInstanceV2?.presentation;
+        const current = state.nodes.find((node) => node.id === ownerId)?.data.blockInstanceV2?.presentation;
+        if (before && current) {
+          // React Flow already emitted the final outside position. Merely
+          // rematerializing would retain that invalid drop in durable layout.
+          state.setBlockPresentationV2(ownerId, rejectedBlockDragPresentationPatchV2(before, current));
+        } else state.ensureBlockProjectionV2(ownerId);
+      };
       if (dragged && (dragged.data.type !== 'group' || dragged.data.blockProjectionKind === 'internal')) {
         const state = useFlowStore.getState();
         let current = state.nodes.find((node) => node.id === dragged.id);
@@ -585,38 +705,68 @@ function Workflow() {
             ? state.nodes.find((node) => node.id === current?.data.blockProjectionOwnerId && node.data.blockInstanceV2)
             : undefined;
           if (blockV2OwnedChild && blockV2Owner?.data.blockInstanceV2) {
-            if (!pointInsideNode(blockV2Owner, center)) {
-              if (current.data.blockProjectionContainer) {
-                state.ensureBlockProjectionV2(blockV2Owner.id);
+            if (movingBetweenBlocks && !pointInsideNode(originalBoundary ?? blockV2Owner, center)) {
+              try {
+                const wasContainer = current.data.blockProjectionContainer;
+                const movedId = state.moveNodeOutOfBlockV2(current.id, absolute);
+                movedOutBlockV2OwnerId = blockV2Owner.id;
+                useStudioStore.getState().saveActiveWorkflowTab(true);
+                current = useFlowStore.getState().nodes.find((node) => node.id === movedId);
+                blockV2OwnedChild = false;
                 enqueueSnackbar(
-                  'A Modular container owns nested blocks. Keep it inside this Block or save the subtree as a User Node.',
-                  { variant: 'warning', autoHideDuration: 5000 },
-                );
-                current = useFlowStore.getState().nodes.find((node) => node.id === dragged.id);
-              } else
-                try {
-                  const movedId = state.moveNodeOutOfBlockV2(current.id, absolute);
-                  movedOutBlockV2OwnerId = blockV2Owner.id;
-                  useStudioStore.getState().saveActiveWorkflowTab(true);
-                  current = useFlowStore.getState().nodes.find((node) => node.id === movedId);
-                  blockV2OwnedChild = false;
-                  enqueueSnackbar('The internal node was moved out of this Block.', {
+                  wasContainer
+                    ? 'The subtree is now a separate Block in this workflow. Use Save as User Node to add it to the library.'
+                    : 'The internal node was moved out of this Block.',
+                  {
                     variant: 'success',
                     autoHideDuration: 3000,
-                  });
-                } catch (error) {
-                  state.ensureBlockProjectionV2(blockV2Owner.id);
-                  enqueueSnackbar(
-                    error instanceof Error ? error.message : 'Could not move this node out of the Block.',
-                    {
-                      variant: 'error',
-                      autoHideDuration: 6000,
-                    },
-                  );
-                  current = useFlowStore.getState().nodes.find((node) => node.id === dragged.id);
-                }
+                  },
+                );
+              } catch (error) {
+                restoreRejectedBlockDrag(blockV2Owner.id);
+                enqueueSnackbar(error instanceof Error ? error.message : 'Could not move this node out of the Block.', {
+                  variant: 'error',
+                  autoHideDuration: 6000,
+                });
+                current = useFlowStore.getState().nodes.find((node) => node.id === dragged.id);
+              }
             } else {
-              state.persistBlockCanvasPresentationV2(current.id);
+              const semantic = blockV2Owner.data.blockInstanceV2.effectiveGraph.nodes.find(
+                (node) => node.nodeId === current?.data.blockProjectionNodeId,
+              );
+              const descendants = new Set([current.id]);
+              let grew = true;
+              while (grew) {
+                grew = false;
+                for (const node of state.nodes) {
+                  if (node.parentId && descendants.has(node.parentId) && !descendants.has(node.id)) {
+                    descendants.add(node.id);
+                    grew = true;
+                  }
+                }
+              }
+              const destination =
+                semantic && movingBetweenBlocks
+                  ? expandedBlockV2AtPosition(
+                      state.nodes.filter(
+                        (node) =>
+                          !descendants.has(node.id) &&
+                          (node.id === blockV2Owner.id || node.data.blockProjectionOwnerId === blockV2Owner.id),
+                      ),
+                      center,
+                    )
+                  : null;
+              if (destination && destination.id !== current.parentId) {
+                try {
+                  state.reparentNodeInBlockV2(current.id, destination.data.blockProjectionNodeId, absolute);
+                } catch (error) {
+                  restoreRejectedBlockDrag(blockV2Owner.id);
+                  enqueueSnackbar(error instanceof Error ? error.message : 'Could not move this internal node.', {
+                    variant: 'error',
+                    autoHideDuration: 6500,
+                  });
+                }
+              } else state.persistBlockCanvasPresentationV2(current.id);
               useStudioStore.getState().saveActiveWorkflowTab(true);
               current = useFlowStore.getState().nodes.find((node) => node.id === dragged.id) ?? current;
             }
@@ -626,7 +776,7 @@ function Workflow() {
             current = useFlowStore.getState().nodes.find((node) => node.id === dragged.id) ?? current;
           }
           const targetUserBlock =
-            clusterOwnedExecutionChild || blockV2OwnedChild || !current
+            !movingBetweenBlocks || clusterOwnedExecutionChild || blockV2OwnedChild || !current
               ? null
               : expandedUserBlockAtPosition(
                   useFlowStore.getState().nodes.filter((node) => node.id !== movedOutBlockV2OwnerId),
@@ -649,36 +799,8 @@ function Workflow() {
               current = useFlowStore.getState().nodes.find((node) => node.id === dragged.id);
             }
           }
-          const replacementTarget =
-            targetUserBlock || clusterOwnedExecutionChild || blockV2OwnedChild || !current
-              ? null
-              : blockV2ProjectionAtPosition(
-                  useFlowStore
-                    .getState()
-                    .nodes.filter((node) => node.data.blockProjectionOwnerId !== movedOutBlockV2OwnerId),
-                  center,
-                );
-          if (replacementTarget && current && replacementTarget.id !== current.id) {
-            const currentId = current.id;
-            try {
-              useFlowStore.getState().replaceNodeInBlockV2(currentId, replacementTarget.id);
-              useStudioStore.getState().saveActiveWorkflowTab(true);
-              current = undefined;
-              enqueueSnackbar('The internal node was replaced in this workflow Block.', {
-                variant: 'success',
-                autoHideDuration: 3200,
-              });
-            } catch (error) {
-              useFlowStore.getState().cancelHistoryTransaction();
-              enqueueSnackbar(error instanceof Error ? error.message : 'Could not replace this Block node.', {
-                variant: 'error',
-                autoHideDuration: 6000,
-              });
-              current = useFlowStore.getState().nodes.find((node) => node.id === currentId);
-            }
-          }
           const targetBlockV2 =
-            targetUserBlock || clusterOwnedExecutionChild || blockV2OwnedChild || replacementTarget
+            !movingBetweenBlocks || targetUserBlock || clusterOwnedExecutionChild || blockV2OwnedChild
               ? null
               : expandedBlockV2AtPosition(
                   useFlowStore.getState().nodes.filter((node) => node.id !== movedOutBlockV2OwnerId),
@@ -687,7 +809,15 @@ function Workflow() {
           if (targetBlockV2 && current && targetBlockV2.id !== current.id) {
             const currentId = current.id;
             try {
-              useFlowStore.getState().adoptNodeIntoBlockV2(currentId, targetBlockV2.id);
+              const ownerId = targetBlockV2.data.blockProjectionOwnerId ?? targetBlockV2.id;
+              if (current.data.blockInstanceV2)
+                useFlowStore
+                  .getState()
+                  .adoptBlockFragmentIntoBlockV2(currentId, ownerId, targetBlockV2.data.blockProjectionNodeId);
+              else
+                useFlowStore
+                  .getState()
+                  .adoptNodeIntoBlockV2(currentId, ownerId, targetBlockV2.data.blockProjectionNodeId);
               useStudioStore.getState().saveActiveWorkflowTab(true);
               current = undefined;
               enqueueSnackbar('The existing node was moved into this Block.', {
@@ -705,7 +835,7 @@ function Workflow() {
             }
           }
           const targetCluster =
-            targetUserBlock || targetBlockV2 || clusterOwnedExecutionChild || blockV2OwnedChild
+            !movingBetweenBlocks || targetUserBlock || targetBlockV2 || clusterOwnedExecutionChild || blockV2OwnedChild
               ? null
               : expandedHuggingFaceClusterAtPosition(state.nodes, center);
           if (targetCluster && current) {
@@ -745,7 +875,7 @@ function Workflow() {
           const currentParent = current?.parentId
             ? useFlowStore.getState().nodes.find((node) => node.id === current?.parentId)
             : undefined;
-          if (current && (!currentParent || currentParent.data.type === 'loop')) {
+          if (movingBetweenBlocks && current && (!currentParent || currentParent.data.type === 'loop')) {
             const currentId = current.id;
             const currentAbsolute = currentParent
               ? {
@@ -785,6 +915,28 @@ function Workflow() {
     },
     [commitHistoryTransaction, handleNodeDragStop],
   );
+
+  useEffect(() => {
+    if (!selectionDragging) return;
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !structuralDragIntent.current) return;
+      event.preventDefault();
+      const state = useFlowStore.getState();
+      state.cancelHistoryTransaction();
+      for (const node of useFlowStore.getState().nodes)
+        if (node.data.blockInstanceV2) useFlowStore.getState().ensureBlockProjectionV2(node.id);
+      const restored = useFlowStore.getState();
+      const selected = new Set(draggedSelectionIds.current);
+      cancelledBlockDrag.current = {
+        nodes: restored.nodes.map((node) => ({ ...node, selected: selected.has(node.id) })),
+        edges: restored.edges,
+      };
+      setBlockDragTarget(null);
+      setBlockDragActive(false);
+    };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, [selectionDragging]);
 
   const handleMoveEnd = useCallback(
     (_event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
@@ -942,9 +1094,29 @@ function Workflow() {
       connectionColor={connectionLineColor}
       className="relative h-full w-full"
     >
+      {blockDragActive ? (
+        <div
+          role="status"
+          data-testid="block-drag-destination"
+          className="pointer-events-none absolute left-1/2 top-3 z-50 -translate-x-1/2 rounded-modiff-compact border border-hf-yellow bg-modiff-panel px-3 py-2 text-xs text-modiff-text"
+        >
+          Move to {nodes.find((node) => node.id === blockDragTarget)?.data.label ?? 'outer workflow'} · Esc to cancel
+        </div>
+      ) : null}
       <ReactFlow
         nodeTypes={nodeTypes}
-        nodes={exactVisibleNodes}
+        nodes={
+          blockDragTarget
+            ? exactVisibleNodes.map((node) =>
+                node.id === blockDragTarget
+                  ? {
+                      ...node,
+                      className: `${node.className ?? ''} ring-2 ring-hf-yellow ring-offset-2 ring-offset-modiff-bg`,
+                    }
+                  : node,
+              )
+            : exactVisibleNodes
+        }
         edges={exactVisibleEdges}
         defaultViewport={defaultViewport}
         connectionLineType={edgeType as ConnectionLineType}
@@ -958,11 +1130,16 @@ function Workflow() {
         // their root is collapsed. Their retained graph edges still require
         // registered handles. Mount the complete composite projection so its
         // internal links remain stable across collapse, expansion, and pan.
-        onlyRenderVisibleElements={!canvasSuspended && !workflowFocusRequest && !requiresCompleteCompositeMount}
+        // Small ordinary workflows also stay mounted: measuring one node can
+        // otherwise reveal and observe a sibling in the same browser resize
+        // delivery. Reserve viewport culling for genuinely large flat graphs.
+        onlyRenderVisibleElements={
+          nodes.length > 100 && !canvasSuspended && !workflowFocusRequest && !requiresCompleteCompositeMount
+        }
         zoomOnDoubleClick={false}
         isValidConnection={handleIsValidConnection as IsValidConnection}
         onDoubleClick={handleDoubleClick}
-        onNodesChange={onNodesChange}
+        onNodesChange={measuredNodeChanges.dispatch}
         onEdgesChange={onEdgesChange}
         onEdgeDoubleClick={handleEdgeDoubleClick}
         onReconnect={handleEdgeReconnect}
@@ -1021,23 +1198,53 @@ function Workflow() {
           </div>
         </div>
       )}
-      <SelectionToolbar
-        canvasSuspended={canvasSuspended}
-        createBlockDisabledReason={createBlockDisabledReason}
-        nodes={exactVisibleNodes}
-        onCreateBlockFromSelection={() => {
-          void handleCreateBlockFromSelection();
-        }}
-        selectionDragging={selectionDragging}
-      />
-      <NodeSearchDialog
-        anchorPosition={anchorPosition}
-        onClose={closeNodeSearchDialog}
-        onSelect={handleNodeSearchSelect}
-        nodes={nodesRegistry}
-        dataType={nodeSearchDataType}
-        handleType={nodeSearchHandleType}
-      />
+      {(hasSelection || selectionToolsRequested) && (
+        <Suspense
+          fallback={
+            <div
+              role="status"
+              className="pointer-events-none absolute bottom-3 right-3 rounded-modiff-compact bg-modiff-panel p-2 text-sm text-modiff-subtle-text"
+            >
+              Loading node actions…
+            </div>
+          }
+        >
+          <SelectionToolbar
+            canvasSuspended={canvasSuspended}
+            createBlockDisabledReason={createBlockDisabledReason}
+            nodes={exactVisibleNodes}
+            onCreateBlockFromSelection={() => {
+              void handleCreateBlockFromSelection();
+            }}
+            selectionDragging={selectionDragging}
+          />
+        </Suspense>
+      )}
+      {anchorPosition ? (
+        <Suspense
+          fallback={
+            <ModiffPopover
+              open
+              anchor={anchorPosition}
+              ariaLabel="Search nodes"
+              modal
+              onClose={closeNodeSearchDialog}
+              panelClassName="p-3"
+            >
+              <span role="status">Loading node search…</span>
+            </ModiffPopover>
+          }
+        >
+          <NodeSearchDialog
+            anchorPosition={anchorPosition}
+            onClose={closeNodeSearchDialog}
+            onSelect={handleNodeSearchSelect}
+            nodes={nodesRegistry}
+            dataType={nodeSearchDataType}
+            handleType={nodeSearchHandleType}
+          />
+        </Suspense>
+      ) : null}
       <Suspense fallback={null}>
         {fileBrowserOpener && (
           <FileBrowserDialog
@@ -1080,119 +1287,21 @@ function Workflow() {
           />
         )}
       </Suspense>
-      <ModiffDialog
-        open={Boolean(pendingBlock)}
-        onClose={() => setPendingBlock(null)}
-        title="Create block"
-        testId="create-user-block-dialog"
-        panelClassName="max-w-xl"
-        footer={
-          <>
-            <ModiffButton onClick={() => setPendingBlock(null)}>Cancel</ModiffButton>
-            <ModiffButton
-              tone="primary"
-              disabled={!pendingBlock?.name.trim()}
-              onClick={() => {
-                void handleConfirmBlockCreation();
-              }}
-              data-testid="confirm-create-user-block"
-            >
-              Create block
-            </ModiffButton>
-          </>
-        }
-      >
-        {pendingBlock ? (
-          <div className="grid gap-4">
-            <ModiffFieldShell label="Name" required>
-              <ModiffInput
-                autoFocus
-                value={pendingBlock.name}
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  setPendingBlock((current) => (current ? { ...current, name: value } : current));
-                }}
-              />
-            </ModiffFieldShell>
-
-            {pendingBlock.result.block.inputs.length > 0 ? (
-              <section className="grid gap-2">
-                <h3 className="text-sm font-semibold text-modiff-text">Inputs</h3>
-                {pendingBlock.result.block.inputs.map((port) => (
-                  <ModiffFieldShell key={port.id} label={port.label}>
-                    <ModiffInput
-                      value={pendingBlock.inputLabels[port.id] ?? port.label}
-                      onChange={(event) => {
-                        const value = event.currentTarget.value;
-                        setPendingBlock((current) =>
-                          current
-                            ? {
-                                ...current,
-                                inputLabels: {
-                                  ...current.inputLabels,
-                                  [port.id]: value,
-                                },
-                              }
-                            : current,
-                        );
-                      }}
-                    />
-                  </ModiffFieldShell>
-                ))}
-              </section>
-            ) : null}
-
-            {pendingBlock.result.block.outputs.length > 0 ? (
-              <section className="grid gap-2">
-                <h3 className="text-sm font-semibold text-modiff-text">Outputs</h3>
-                {pendingBlock.result.block.outputs.map((port) => (
-                  <ModiffFieldShell key={port.id} label={port.label}>
-                    <ModiffInput
-                      value={pendingBlock.outputLabels[port.id] ?? port.label}
-                      onChange={(event) => {
-                        const value = event.currentTarget.value;
-                        setPendingBlock((current) =>
-                          current
-                            ? {
-                                ...current,
-                                outputLabels: {
-                                  ...current.outputLabels,
-                                  [port.id]: value,
-                                },
-                              }
-                            : current,
-                        );
-                      }}
-                    />
-                  </ModiffFieldShell>
-                ))}
-              </section>
-            ) : null}
-
-            {pendingBlock.result.block.exposedParams.length > 0 ? (
-              <section className="grid gap-2">
-                <h3 className="text-sm font-semibold text-modiff-text">Editable parameters</h3>
-                {pendingBlock.result.block.exposedParams.map((input) => (
-                  <ModiffCheckbox
-                    key={input.id}
-                    label={input.label}
-                    checked={pendingBlock.exposedParamIds.has(input.id)}
-                    onCheckedChange={(checked) =>
-                      setPendingBlock((current) => {
-                        if (!current) return current;
-                        const exposedParamIds = new Set(current.exposedParamIds);
-                        if (checked) exposedParamIds.add(input.id);
-                        else exposedParamIds.delete(input.id);
-                        return { ...current, exposedParamIds };
-                      })
-                    }
-                  />
-                ))}
-              </section>
-            ) : null}
-          </div>
-        ) : null}
-      </ModiffDialog>
+      {pendingBlock ? (
+        <Suspense
+          fallback={
+            <ModiffDialog open onClose={() => setPendingBlock(null)} title="Create block">
+              <span role="status">Loading block options…</span>
+            </ModiffDialog>
+          }
+        >
+          <CreateUserBlockDialog
+            pendingBlock={pendingBlock}
+            setPendingBlock={setPendingBlock}
+            handleConfirmBlockCreation={handleConfirmBlockCreation}
+          />
+        </Suspense>
+      ) : null}
     </GraphConnectionSurface>
   );
 }

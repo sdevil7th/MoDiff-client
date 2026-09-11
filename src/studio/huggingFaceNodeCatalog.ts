@@ -212,7 +212,7 @@ function blockContextKey(context: HuggingFaceCatalogBlockContext) {
   ].join('\u0000');
 }
 
-function deduplicateBlockEntries(entries: HuggingFaceCatalogEntry[]) {
+function deduplicateBlockEntries(entries: HuggingFaceCatalogEntry[], library: HuggingFaceNodeLibrary) {
   const byDefinition = new Map<string, HuggingFaceCatalogEntry>();
   entries.forEach((entry) => {
     const context = entry.modularBlockPlacement;
@@ -249,7 +249,20 @@ function deduplicateBlockEntries(entries: HuggingFaceCatalogEntry[]) {
       return {
         ...entry,
         detail: `${entry.detail} · ${contexts.length} context${contexts.length === 1 ? '' : 's'} · ${families.join(', ')}`,
-        groupPath: [families.length === 1 ? families[0]! : 'Shared Across Families', role],
+        groupPath: [
+          (() => {
+            const modalities = uniqueSorted(
+              contexts.flatMap((context) =>
+                library.definitions
+                  .filter((definition) => definition.pipelineClass === context.pipelineClass)
+                  .map(definitionModality),
+              ),
+            );
+            return modalities.length === 1 ? modalities[0]! : 'Shared Across Modalities';
+          })(),
+          role,
+          families.length === 1 ? families[0]! : 'Shared Across Families',
+        ],
       };
     })
     .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
@@ -313,6 +326,7 @@ function selectedWorkflowBlockEntries(library: HuggingFaceNodeLibrary): HuggingF
           };
         }),
       ),
+    library,
   );
 }
 
@@ -378,6 +392,7 @@ function unprunedBlockEntries(
         };
       });
     }),
+    library,
   );
 }
 
@@ -416,7 +431,24 @@ function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEn
         searchText: [component.name, component.type, component.creationMethod, ...component.reuseKey, ...definitionIds]
           .join(' ')
           .toLowerCase(),
-        groupPath: [words(typeLabel)],
+        groupPath: [
+          /scheduler/iu.test(component.type)
+            ? 'Schedulers'
+            : /tokenizer/iu.test(component.type)
+              ? 'Tokenizers'
+              : /vae|autoencoder/iu.test(component.type)
+                ? 'Image & Video Decoders'
+                : /text|clip|t5|bert/iu.test(component.type)
+                  ? 'Text Encoders'
+                  : /processor|extractor/iu.test(component.type)
+                    ? 'Processors'
+                    : /controlnet|adapter/iu.test(component.type)
+                      ? 'Conditioning & Adapters'
+                      : /unet|transformer/iu.test(component.type)
+                        ? 'Denoise Models'
+                        : 'Other Components',
+          words(typeLabel),
+        ],
         readiness: 'catalog_only' as const,
         readinessLabel: 'Catalog only' as const,
         insertable: false,
@@ -455,7 +487,9 @@ export function filterHuggingFaceCatalogSections(
     .map((section) => ({
       ...section,
       entries: section.entries.filter((entry) =>
-        `${entry.label} ${entry.description} ${entry.searchText}`.includes(query),
+        `${entry.label} ${entry.description} ${(entry.groupPath ?? []).join(' ')} ${entry.searchText}`
+          .toLowerCase()
+          .includes(query),
       ),
     }))
     .filter((section) => section.entries.length > 0);

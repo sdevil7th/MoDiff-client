@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { outputInputDisplay, outputMediaSizeLabel, outputNumericInputValue } from '../studio/resolvedExecutionInputs';
 import {
   ArrowLeftRight,
   Copy,
@@ -24,6 +25,7 @@ import {
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { STUDIO_MODE_LABELS } from '../studio/modelProfiles';
+import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
@@ -36,6 +38,7 @@ import {
 } from '../studio/workflowPackage';
 import { ImageFrame, ModiffBadge, ModiffButton, ModiffChip, ModiffFileInput, ModiffIconButton } from '../ui';
 import { cx } from '../utils/classNames';
+import { imageUrlLightboxOpener } from '../utils/mediaViewer';
 
 type FilterId = 'all' | 'favorites' | StudioModelType;
 type GalleryView = 'grid' | 'inspect' | 'compare' | 'lineage';
@@ -61,13 +64,16 @@ async function downloadOutputPngPackage(output: StudioOutput) {
 function outputSubtitle(output: StudioOutput) {
   const template = output.templateLabel ? ` | ${output.templateLabel}` : '';
   const audioDuration =
-    output.mediaItems?.find((item) => item.durationSeconds)?.durationSeconds ?? output.formSnapshot.audioDuration;
+    output.mediaItems?.find((item) => item.durationSeconds)?.durationSeconds ??
+    (output.resolvedExecutionInputs ? undefined : output.formSnapshot.audioDuration);
+  const size = outputMediaSizeLabel(output);
+  const seed = outputNumericInputValue(output, 'seed');
   const media = isAudioOutput(output)
     ? ` | ${audioDuration ? `${audioDuration.toFixed(1)} sec` : 'audio'}`
     : isVideoOutput(output)
-      ? ` | ${output.width}x${output.height} | ${output.formSnapshot.numFrames} frames | ${output.formSnapshot.fps}fps`
-      : ` | ${output.width}x${output.height}`;
-  return `${output.modelLabel}${template} | ${STUDIO_MODE_LABELS[output.mode]}${media} | Seed ${output.seed}`;
+      ? ` | ${videoOutputSummary(output)}`
+      : ` | ${size || 'image'}`;
+  return `${output.modelLabel}${template} | ${STUDIO_MODE_LABELS[output.mode]}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
 }
 
 function isAudioOutput(output: StudioOutput) {
@@ -500,12 +506,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                           setSelectedOutputIds([output.id]);
                           setView('inspect');
                         } else {
-                          setLightboxOpener({
-                            images: [output.url],
-                            currentIndex: 0,
-                            dataType: 'image',
-                            mimeType: null,
-                          });
+                          setLightboxOpener(imageUrlLightboxOpener([output.url]));
                         }
                       }}
                     >
@@ -521,13 +522,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                       }
                       data-testid={`gallery-compare-${index}`}
                       onClick={() =>
-                        previous &&
-                        setLightboxOpener({
-                          images: [previous.url, output.url],
-                          currentIndex: 1,
-                          dataType: 'image',
-                          mimeType: null,
-                        })
+                        previous && setLightboxOpener(imageUrlLightboxOpener([previous.url, output.url], 1))
                       }
                     >
                       <Search size={15} />
@@ -656,7 +651,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                     setSelectedOutputIds([output.id]);
                     setView('inspect');
                   } else {
-                    setLightboxOpener({ images: [output.url], currentIndex: 0, dataType: 'image', mimeType: null });
+                    setLightboxOpener(imageUrlLightboxOpener([output.url]));
                   }
                 }}
               />
@@ -860,6 +855,25 @@ function GalleryMeta({ output }: { output: StudioOutput }) {
 }
 
 function GalleryInspect({ output }: { output: StudioOutput }) {
+  const mediaDetails = isVideoOutput(output)
+    ? {
+        requestedSize: `${output.formSnapshot.width}x${output.formSnapshot.height}`,
+        requestedNumFrames: output.formSnapshot.numFrames,
+        requestedFps: output.formSnapshot.fps,
+        resolvedSize: output.resolvedExecutionInputs
+          ? `${outputInputDisplay(output, 'width')}x${outputInputDisplay(output, 'height')}`
+          : undefined,
+        encodedVideo: encodedVideoMetadata(output),
+      }
+    : {
+        // Image-edit routes can derive geometry from references without width/height
+        // call arguments. Keep actual asset geometry separate from input evidence.
+        size: outputMediaSizeLabel(output) ?? 'Not captured',
+        resolvedInputDimensions: {
+          width: outputInputDisplay(output, 'width'),
+          height: outputInputDisplay(output, 'height'),
+        },
+      };
   return (
     <article data-testid="gallery-inspect-view" className="border border-modiff-border bg-modiff-surface">
       <GalleryMedia output={output} maxHeight={460} />
@@ -873,13 +887,19 @@ function GalleryInspect({ output }: { output: StudioOutput }) {
           Repo: {output.repo} | Node: {output.nodeId}:{output.fieldKey}
         </p>
         <p className="mt-2 text-sm text-modiff-text">{output.prompt || 'No prompt recorded'}</p>
+        <p className="mt-2 text-xs text-modiff-subtle-text" data-testid="resolved-inputs-status">
+          {output.resolvedExecutionInputs
+            ? 'Resolved node inputs captured by the backend. Connected values take precedence over saved field fallbacks. These are call arguments, not inferred library defaults.'
+            : 'Legacy form/graph settings only: resolved node inputs were not captured for this output.'}
+        </p>
         <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2 font-mono text-xs text-modiff-subtle-text">
           {JSON.stringify(
             {
-              seed: output.seed,
-              size: `${output.width}x${output.height}`,
-              steps: output.steps,
-              guidanceScale: output.guidanceScale,
+              seed: outputInputDisplay(output, 'seed'),
+              ...mediaDetails,
+              steps: outputInputDisplay(output, 'steps'),
+              guidanceScale: outputInputDisplay(output, 'guidanceScale'),
+              resolvedExecutionInputs: output.resolvedExecutionInputs,
               templateLockHash: output.templateLockHash,
               promptSettingsHash: output.promptSettingsHash,
               exactTemplateCompatible: output.exactTemplateCompatible,
@@ -897,8 +917,8 @@ function GalleryInspect({ output }: { output: StudioOutput }) {
               sourceAudio: output.formSnapshot.sourceAudio,
               referenceAudio: output.formSnapshot.referenceAudio,
               audioDuration: output.formSnapshot.audioDuration,
-              numFrames: output.formSnapshot.numFrames,
-              fps: output.formSnapshot.fps,
+              numFrames: outputInputDisplay(output, 'numFrames'),
+              fps: outputInputDisplay(output, 'fps'),
               backendImagePath: output.backendImagePath,
               backendMediaPath: output.backendMediaPath,
             },
@@ -914,11 +934,15 @@ function GalleryInspect({ output }: { output: StudioOutput }) {
 function GallerySettingsDiff({ left, right }: { left: StudioOutput; right: StudioOutput }) {
   const rows = [
     ['Prompt', left.prompt || 'No prompt', right.prompt || 'No prompt'],
-    ['Seed', String(left.seed), String(right.seed)],
+    ['Seed', String(outputInputDisplay(left, 'seed')), String(outputInputDisplay(right, 'seed'))],
     ['Model', left.modelLabel, right.modelLabel],
-    ['Steps', String(left.steps), String(right.steps)],
-    ['Guidance', String(left.guidanceScale), String(right.guidanceScale)],
-    ['Size', `${left.width}x${left.height}`, `${right.width}x${right.height}`],
+    ['Steps', String(outputInputDisplay(left, 'steps')), String(outputInputDisplay(right, 'steps'))],
+    ['Guidance', String(outputInputDisplay(left, 'guidanceScale')), String(outputInputDisplay(right, 'guidanceScale'))],
+    [
+      'Size',
+      `${outputInputDisplay(left, 'width')}x${outputInputDisplay(left, 'height')}`,
+      `${outputInputDisplay(right, 'width')}x${outputInputDisplay(right, 'height')}`,
+    ],
     ['Template', left.templateLabel || 'Manual', right.templateLabel || 'Manual'],
     [
       'Source',

@@ -192,6 +192,7 @@ export function huggingFaceClusterExecutionParameterValues(
     candidate?.attentionBackend ?? (form.device.startsWith('cuda') ? '_native_flash' : 'auto');
   const values: Record<string, unknown> = {
     ...form,
+    bpmNormalized: form.bpm > 0 ? form.bpm : 0,
     // A reviewed same-pipeline model variant is an instance value. Default it
     // to the admission artifact so a newly inserted Block has a complete
     // executable binding without making the repository identity user-editable.

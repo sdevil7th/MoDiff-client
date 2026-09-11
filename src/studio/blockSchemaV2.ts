@@ -1,6 +1,10 @@
 import type { AppModeInput, UserBlockDefinition, UserBlockPort } from './types';
 import { hashString } from './stableHash';
-import { blockValueTypesAreCompatibleV2 } from './blockValueTypeCompatibilityV2';
+import {
+  blockMediaFileBoundaryIsCompatibleV2,
+  blockValueTypeMatchesMediaV2,
+  blockValueTypesAreCompatibleV2,
+} from './blockValueTypeCompatibilityV2';
 
 /**
  * Canonical persisted contract for every composite node shown by Studio.
@@ -59,6 +63,10 @@ export type BlockGraphNodeV2 = {
   semanticRole?: string;
   upstreamBlockPath?: string;
   modularDiffusers?: BlockGraphNodeModularDiffusersV2;
+  /** Durable local surface over this semantic node and its descendants; never another graph or value store. */
+  containerInterface?: BlockContainerInterfaceV1;
+  /** Explicit customized ownership in this flat graph; never a second nested instance. */
+  parentNodeId?: string;
 };
 
 /** Hash-bound semantic identity for one expanded Modular Diffusers node. */
@@ -93,22 +101,58 @@ function modularPlacementKeyV2(path: readonly string[] | undefined) {
  * loop/sequential blocks while still being ordinary `custom` runtime nodes.
  */
 export function blockModularContainerNodeIdsV2(graph: Pick<BlockGraphV2, 'nodes'>): string[] {
+  return [
+    ...new Set([
+      ...blockGraphParentIdsV2(graph).values(),
+      ...graph.nodes.filter((node) => node.nodeType === 'group' && !node.modularDiffusers).map(({ nodeId }) => nodeId),
+    ]),
+  ].sort();
+}
+
+/** Source-neutral ownership, with untouched catalog placement as the legacy default. */
+export function blockGraphParentIdsV2(graph: Pick<BlockGraphV2, 'nodes'>): Map<string, string> {
   const nodeIdByPlacement = new Map<string, string>();
+  const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
   graph.nodes.forEach((node) => {
     const metadata = node.modularDiffusers;
     if (metadata?.kind !== 'upstream_block' || !metadata.placementPath?.length) return;
-    nodeIdByPlacement.set(modularPlacementKeyV2(metadata.placementPath), node.nodeId);
+    const key = modularPlacementKeyV2(metadata.placementPath);
+    if (nodeIdByPlacement.has(key)) throw new Error(`Ambiguous Block V2 subtree placement ${key}.`);
+    nodeIdByPlacement.set(key, node.nodeId);
   });
-  return [
-    ...new Set(
-      graph.nodes.flatMap((node) => {
-        const metadata = node.modularDiffusers;
-        if (metadata?.kind !== 'upstream_block' || !metadata.parentPlacementPath?.length) return [];
-        const parentId = nodeIdByPlacement.get(modularPlacementKeyV2(metadata.parentPlacementPath));
-        return parentId ? [parentId] : [];
-      }),
-    ),
-  ].sort();
+  const parents = new Map<string, string>();
+  for (const node of graph.nodes) {
+    const metadata = node.modularDiffusers;
+    const upstreamParent =
+      metadata?.kind === 'upstream_block' && metadata.parentPlacementPath?.length
+        ? nodeIdByPlacement.get(modularPlacementKeyV2(metadata.parentPlacementPath))
+        : undefined;
+    const parentId = node.parentNodeId ?? upstreamParent;
+    if (!parentId) continue;
+    if (node.parentNodeId !== undefined) {
+      const parent = nodesById.get(parentId);
+      if (!parent) throw new Error(`Block V2 node ${node.nodeId} references unknown parent ${parentId}.`);
+      const parentMetadata = parent.modularDiffusers;
+      if (
+        parent.nodeType !== 'group' &&
+        !(parentMetadata?.kind === 'upstream_block' && parentMetadata.blockKind !== 'block')
+      )
+        throw new Error(`Block V2 parent ${parentId} is not a container.`);
+      if (upstreamParent && upstreamParent !== parentId)
+        throw new Error(`Block V2 node ${node.nodeId} has conflicting explicit and upstream parents.`);
+    }
+    parents.set(node.nodeId, parentId);
+  }
+  for (const nodeId of parents.keys()) {
+    const seen = new Set<string>();
+    let current: string | undefined = nodeId;
+    while (current && parents.has(current)) {
+      if (seen.has(current)) throw new Error(`Cyclic Block V2 subtree at ${current}.`);
+      seen.add(current);
+      current = parents.get(current);
+    }
+  }
+  return parents;
 }
 
 export type BlockGraphEdgeV2 = {
@@ -173,6 +217,34 @@ export type BlockControlV2 = {
   group?: string;
   help?: string;
 };
+
+/** Optional, hash-covered interface of an internal semantic container. */
+export type BlockContainerInterfaceV1 = {
+  schemaVersion: 1;
+  boundary: BlockBoundaryV2;
+  /** Values/defaults remain on the original fields or owning instance controls. */
+  controls: Omit<BlockControlV2, 'defaultValue'>[];
+  /** Local preview selection; run state remains in the owning instance inventory. */
+  previews?: BlockPreviewBindingV2[];
+};
+
+/** Same semantic hierarchy used by rendering, independent of disclosure or canvas IDs. */
+export function blockGraphSubtreeNodeIdsV2(graph: Pick<BlockGraphV2, 'nodes'>, rootNodeId: string): Set<string> {
+  if (!graph.nodes.some(({ nodeId }) => nodeId === rootNodeId))
+    throw new Error(`Unknown Block V2 subtree ${rootNodeId}.`);
+  const children = new Map<string, string[]>();
+  for (const [nodeId, parentId] of blockGraphParentIdsV2(graph))
+    children.set(parentId, [...(children.get(parentId) ?? []), nodeId]);
+  const included = new Set<string>();
+  const visit = (nodeId: string, ancestors: Set<string>) => {
+    if (ancestors.has(nodeId)) throw new Error(`Cyclic Block V2 subtree at ${nodeId}.`);
+    if (included.has(nodeId)) return;
+    included.add(nodeId);
+    for (const child of children.get(nodeId) ?? []) visit(child, new Set([...ancestors, nodeId]));
+  };
+  visit(rootNodeId, new Set());
+  return included;
+}
 
 export type SuggestedInputSetV2 = {
   suggestionId: string;
@@ -586,9 +658,15 @@ const NESTED_COMPOSITE_MARKERS = new Set([
 
 function graphNodeAt(value: unknown, label: string): BlockGraphNodeV2 {
   const node = objectAt(value, label);
-  keysAt(node, label, ['nodeId', 'nodeType', 'data'], ['semanticRole', 'upstreamBlockPath', 'modularDiffusers']);
+  keysAt(
+    node,
+    label,
+    ['nodeId', 'nodeType', 'data'],
+    ['semanticRole', 'upstreamBlockPath', 'modularDiffusers', 'containerInterface', 'parentNodeId'],
+  );
   textAt(node.nodeId, `${label}.nodeId`, ID, 384);
   textAt(node.nodeType, `${label}.nodeType`, undefined, 512);
+  if (node.parentNodeId !== undefined) textAt(node.parentNodeId, `${label}.parentNodeId`, ID, 384);
   const data = objectAt(node.data, `${label}.data`);
   finiteJson(data, `${label}.data`);
   const nodeType = String(node.nodeType).toLowerCase();
@@ -708,6 +786,39 @@ function graphAt(value: unknown, label = 'Block graph V2'): BlockGraphV2 {
   }
   textAt(graph.graphHash, `${label}.graphHash`, HASH, 512);
   const parsed = { nodes, edges, ...(executionOrder ? { executionOrder } : {}), graphHash: String(graph.graphHash) };
+  blockGraphParentIdsV2(parsed);
+  nodes.forEach((node) => {
+    if (node.containerInterface !== undefined) {
+      const local = normalizeBlockContainerInterfaceV1(node.containerInterface, parsed, node.nodeId);
+      const included = blockGraphSubtreeNodeIdsV2(parsed, node.nodeId);
+      for (const edge of edges) {
+        for (const direction of ['input', 'output'] as const) {
+          const endpointId = direction === 'input' ? edge.targetNodeId : edge.sourceNodeId;
+          const oppositeId = direction === 'input' ? edge.sourceNodeId : edge.targetNodeId;
+          const fieldId = direction === 'input' ? edge.targetPortId : edge.sourcePortId;
+          if (!included.has(endpointId) || (endpointId !== node.nodeId && included.has(oppositeId))) continue;
+          if (
+            !local.boundary[direction === 'input' ? 'inputs' : 'outputs'].some((port) =>
+              [port.binding, ...(port.mirrorBindings ?? [])].some(
+                (binding) => binding.nodeId === endpointId && binding.fieldOrPortId === fieldId,
+              ),
+            )
+          ) {
+            // Connected-only sockets are views of real internal fields, not
+            // mandatory declarations in the reusable container interface.
+            const endpoint = nodes.find((candidate) => candidate.nodeId === endpointId)!;
+            const params = objectAt(endpoint.data.params, `${label} crossing endpoint params`);
+            const field = objectAt(params[fieldId], `${label} crossing endpoint field`);
+            if ((field.display === 'output') !== (direction === 'output'))
+              invalid(
+                label,
+                `container ${node.nodeId} has an invalid connected ${direction} ${endpointId}.${fieldId}.`,
+              );
+          }
+        }
+      }
+    }
+  });
   const expectedHash = blockGraphHashV2(parsed);
   if (parsed.graphHash !== expectedHash) invalid(label, `graphHash must be ${expectedHash}.`);
   return parsed;
@@ -749,7 +860,10 @@ function portAt(value: unknown, label: string, graph: BlockGraphV2, direction: '
       const params = objectAt(node.data.params, `${mirrorLabel} target params`);
       const param = objectAt(params[mirrorFieldId], `${mirrorLabel} target field`);
       if (param.display === 'output') invalid(mirrorLabel, 'cannot target an output field.');
-      if (!blockValueTypesAreCompatibleV2(port.valueType, param.type))
+      if (
+        !blockValueTypesAreCompatibleV2(port.valueType, param.type) &&
+        !blockMediaFileBoundaryIsCompatibleV2(port.valueType, param)
+      )
         invalid(mirrorLabel, 'targets an incompatible field type.');
       seen.add(key);
       previousKey = key;
@@ -874,6 +988,136 @@ function controlsAt(value: unknown, graph: BlockGraphV2): BlockControlV2[] {
   return controls;
 }
 
+/** Strict reusable/workflow contract; declarations cannot reach a sibling or create hidden values. */
+export function normalizeBlockContainerInterfaceV1(
+  value: unknown,
+  graph: BlockGraphV2,
+  ownerNodeId: string,
+): BlockContainerInterfaceV1 {
+  const label = `Block container interface V1 (${ownerNodeId})`;
+  const raw = objectAt(value, label);
+  keysAt(raw, label, ['schemaVersion', 'boundary', 'controls'], ['previews']);
+  if (raw.schemaVersion !== 1) invalid(label, 'schemaVersion must be 1.');
+  const included = blockGraphSubtreeNodeIdsV2(graph, ownerNodeId);
+  const scopedGraph = { ...graph, nodes: graph.nodes.filter(({ nodeId }) => included.has(nodeId)) };
+  const boundary = boundaryAt(raw.boundary, scopedGraph, { kind: 'user' });
+  if (boundary.mode !== 'explicit') invalid(label, 'the boundary must be explicit.');
+  const controls = controlsAt(raw.controls, scopedGraph);
+  const nodesById = new Map(scopedGraph.nodes.map((node) => [node.nodeId, node]));
+  const validateField = (
+    entry: { valueType: string },
+    binding: { nodeId: string; fieldId?: string; fieldOrPortId?: string },
+    direction: 'input' | 'output' | 'control',
+  ) => {
+    const fieldId = binding.fieldId ?? binding.fieldOrPortId!;
+    const params = objectAt(nodesById.get(binding.nodeId)?.data.params, `${label} target params`);
+    const param = objectAt(params[fieldId], `${label} target field ${binding.nodeId}.${fieldId}`);
+    if ((direction === 'output') !== (param.display === 'output'))
+      invalid(label, `field ${binding.nodeId}.${fieldId} has incompatible direction.`);
+    if (
+      !blockValueTypesAreCompatibleV2(entry.valueType, param.type) &&
+      !(direction === 'input' && blockMediaFileBoundaryIsCompatibleV2(entry.valueType, param))
+    )
+      invalid(label, `field ${binding.nodeId}.${fieldId} has incompatible type.`);
+  };
+  const occupiedInputs = new Set<string>();
+  for (const direction of ['input', 'output'] as const) {
+    for (const port of boundary[direction === 'input' ? 'inputs' : 'outputs']) {
+      for (const binding of [port.binding, ...(port.mirrorBindings ?? [])]) {
+        validateField(port, binding, direction);
+        const key = `${binding.nodeId}\0${binding.fieldOrPortId}`;
+        if (direction === 'input' && occupiedInputs.has(key))
+          invalid(label, 'an internal input cannot be exposed by multiple local ports.');
+        if (direction === 'input') occupiedInputs.add(key);
+      }
+    }
+  }
+  const occupiedControls = new Set<string>();
+  for (const control of controls) {
+    if (Object.prototype.hasOwnProperty.call(control, 'defaultValue'))
+      invalid(label, 'control defaults belong to the bound fields, not this view.');
+    for (const binding of [control.binding, ...(control.mirrorBindings ?? [])]) {
+      validateField(control, binding, 'control');
+      const key = `${binding.nodeId}\0${binding.fieldId}`;
+      if (occupiedControls.has(key)) invalid(label, 'a field cannot have multiple local controls.');
+      occupiedControls.add(key);
+    }
+    const shared = boundary.inputs.find(({ portId }) => portId === control.controlId);
+    if (shared) {
+      const portTargets = [shared.binding, ...(shared.mirrorBindings ?? [])]
+        .map(({ nodeId, fieldOrPortId }) => `${nodeId}\0${fieldOrPortId}`)
+        .sort();
+      const controlTargets = [control.binding, ...(control.mirrorBindings ?? [])]
+        .map(({ nodeId, fieldId }) => `${nodeId}\0${fieldId}`)
+        .sort();
+      const mediaPathControl =
+        blockValueTypesAreCompatibleV2(control.valueType, 'string') &&
+        [shared.binding, ...(shared.mirrorBindings ?? [])].every((binding) => {
+          const params = nodesById.get(binding.nodeId)?.data.params as Record<string, Record<string, unknown>>;
+          const param = params[binding.fieldOrPortId];
+          return Boolean(param && blockMediaFileBoundaryIsCompatibleV2(shared.valueType, param));
+        });
+      if (
+        canonicalBlockStringifyV2(portTargets) !== canonicalBlockStringifyV2(controlTargets) ||
+        (shared.valueType !== control.valueType && !mediaPathControl)
+      )
+        invalid(label, 'a shared input/control ID must bind the same complete field set and type.');
+    }
+  }
+  const previews = raw.previews === undefined ? undefined : previewsAt(raw.previews, scopedGraph);
+  for (const preview of previews ?? []) {
+    const params = objectAt(nodesById.get(preview.nodeId)?.data.params, `${label} preview params`);
+    const field = objectAt(params[preview.outputPortId], `${label} preview field`);
+    const expectedDisplay = preview.mediaType === 'file' ? 'ui_text' : `ui_${preview.mediaType}`;
+    // Backend preview widgets transport media as URLs/base64, not image tensors.
+    // An explicitly declared media widget supplies the modality of that transport.
+    const transportedPreview =
+      field.display === expectedDisplay &&
+      (field.type === undefined ||
+        (Array.isArray(field.type) ? field.type : [field.type]).some(
+          (type) => typeof type === 'string' && /^(url|uri|path|string|str|base64)$/iu.test(type),
+        ));
+    if (
+      (!transportedPreview && !blockValueTypeMatchesMediaV2(field.type, preview.mediaType)) ||
+      (field.display !== 'output' && field.display !== expectedDisplay)
+    )
+      invalid(label, `preview ${preview.nodeId}.${preview.outputPortId} has incompatible type or display.`);
+  }
+  return jsonClone(
+    { schemaVersion: 1, boundary, controls, ...(previews === undefined ? {} : { previews }) },
+    label,
+    MAX_DEFINITION_BYTES,
+  );
+}
+
+/** One inventory, root bindings first, then first-seen local bindings in graph
+ * order. Primary selection belongs to each surface; shared sources have one
+ * state. Callers validate definitions/graphs before using this helper.
+ */
+export function blockInstancePreviewBindingsV2(
+  definition: Pick<BlockDefinitionV2, 'previews'>,
+  graph: BlockGraphV2,
+): BlockPreviewBindingV2[] {
+  const nodeIds = new Set(graph.nodes.map(({ nodeId }) => nodeId));
+  const bindings = definition.previews
+    .filter((binding) => nodeIds.has(binding.nodeId))
+    .map((binding) => ({ ...binding }));
+  const bySource = new Map(bindings.map((binding) => [`${binding.nodeId}\0${binding.outputPortId}`, binding]));
+  for (const node of graph.nodes)
+    for (const preview of node.containerInterface?.previews ?? []) {
+      const key = `${preview.nodeId}\0${preview.outputPortId}`;
+      const existing = bySource.get(key);
+      if (existing && existing.mediaType !== preview.mediaType)
+        invalid('Block preview inventory V2', `conflicting media types for ${preview.nodeId}.${preview.outputPortId}.`);
+      if (existing) continue;
+      const binding = { ...preview };
+      delete binding.primary;
+      bindings.push(binding);
+      bySource.set(key, binding);
+    }
+  return bindings;
+}
+
 function suggestionsAt(value: unknown, controls: BlockControlV2[]): SuggestedInputSetV2[] {
   if (!Array.isArray(value)) invalid('Block suggested inputs V2', 'must be an array.');
   const controlIds = new Set(controls.map(({ controlId }) => controlId));
@@ -981,7 +1225,7 @@ export function normalizeBlockDefinitionV2(value: unknown): BlockDefinitionV2 {
       );
   });
   if (definition.suggestedInputs !== undefined) suggestionsAt(definition.suggestedInputs, controls);
-  previewsAt(definition.previews, graph);
+  blockInstancePreviewBindingsV2({ previews: previewsAt(definition.previews, graph) }, graph);
   ownershipAt(definition.ownership, source);
   const candidate = definition as unknown as BlockDefinitionV2;
   const expectedHash = blockDefinitionContentHashV2(candidate);
@@ -1233,15 +1477,17 @@ export function normalizeBlockInstanceV2(value: unknown): BlockInstanceV2 {
   // A structural edit may break the effective source and must then surface a
   // composition/runtime issue; it must not make the workflow unloadable or
   // silently rewrite the binding.
-  const previewStates = instance.previewStates.map((preview) => previewStateAt(preview, definitionSnapshot.graph));
+  const expectedPreviews = blockInstancePreviewBindingsV2(definitionSnapshot, effectiveGraph);
+  const previewGraph = { ...effectiveGraph, nodes: [...definitionSnapshot.graph.nodes, ...effectiveGraph.nodes] };
+  const previewStates = instance.previewStates.map((preview) => previewStateAt(preview, previewGraph));
   if (
-    previewStates.length !== definitionSnapshot.previews.length ||
+    previewStates.length !== expectedPreviews.length ||
     previewStates.some(
       (preview, index) =>
-        canonicalBlockStringifyV2(preview.binding) !== canonicalBlockStringifyV2(definitionSnapshot.previews[index]),
+        canonicalBlockStringifyV2(preview.binding) !== canonicalBlockStringifyV2(expectedPreviews[index]),
     )
   )
-    invalid('Block Instance V2.previewStates', 'must preserve the ordered definition preview bindings.');
+    invalid('Block Instance V2.previewStates', 'must preserve the ordered definition and local preview bindings.');
 
   if (!Array.isArray(instance.authorities)) invalid('Block Instance V2.authorities', 'must be an array.');
   const authorityContext = {
@@ -1301,7 +1547,9 @@ export function normalizeBlockInstanceV2(value: unknown): BlockInstanceV2 {
             draftDefinition.source.kind !== 'transformers_catalog')
         )
           invalid(`Block route draft V1 ${draftKey}`, 'must contain one immutable registered definition.');
-        const draftPreviews = draftDefinition.previews.map((binding) => ({ binding, status: 'idle' as const }));
+        const draftPreviews = blockInstancePreviewBindingsV2(draftDefinition, graphAt(draft.effectiveGraph)).map(
+          (binding) => ({ binding, status: 'idle' as const }),
+        );
         const validated = normalizeBlockInstanceV2({
           schemaVersion: 2,
           instanceId: draftKey,
@@ -1423,7 +1671,10 @@ export function createBlockInstanceV2(
       ...(collapsedContainerNodeIds.length ? { collapsedContainerNodeIds } : {}),
       internalLayout: options.internalLayout ?? {},
     },
-    previewStates: definition.previews.map((binding) => ({ binding, status: 'idle' })),
+    previewStates: blockInstancePreviewBindingsV2(definition, definition.graph).map((binding) => ({
+      binding,
+      status: 'idle',
+    })),
     authorities: [],
   });
 }

@@ -120,6 +120,12 @@ Do not import `@headlessui/react` directly in feature components unless the chan
 
 Unsupported backend style keys are ignored in development with a console warning.
 
+Advanced panels use a zero-minimum grid track (`grid-cols-1`) and `min-w-0` so
+numeric fields fit a narrow scrolling node. Check the value and both step buttons,
+not just the outer node rectangle. Advanced toggling and automatic size
+measurement must preserve values, ownership, and Undo/Redo. Test ordinary leaves
+and nested Blocks after resizing before expansion, editing, Save, and refresh.
+
 ## Accessibility
 
 - Icon-only buttons need an `aria-label`, `title`, or primitive prop that supplies both.
@@ -135,8 +141,17 @@ Unsupported backend style keys are ignored in development with a console warning
 
 Nested library trees indent once: `TreeChildrenPanel` supplies the ancestry offset, and contained `TreeButtonRow`
 or `TreeStaticRow` uses only local row padding. Do not add depth-sized padding again inside a nested panel.
-Catalog entry names wrap at narrow library widths; metadata/readiness belongs below the name, not in a fixed-width
-column that can squeeze the name to zero. Test actual label width and overflow, not just DOM presence.
+Catalog titles and task details stay together, with readiness in a separate trailing
+item. At narrow widths, readiness wraps to the trailing edge below the text; it
+must not squeeze the title to zero. Nested children use decorative dashed guides
+with hover/focus contrast. These guides do not change graph ownership or saved
+layout. Test label width, overflow, filtering, and keyboard disclosure navigation.
+
+The library uses native disclosure buttons and expanded-state semantics. Do not
+give it an ARIA tree role without implementing the full tree keyboard/focus
+contract. Follow the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+Graph-qualified readiness describes graph admission, not model quality or hardware
+qualification.
 
 ## Enforcement
 

@@ -42,6 +42,8 @@ function shellPublicAssetsPlugin(): Plugin {
     ['assets/modiff-icon-64.png', 'image/png'],
     ['assets/modiff-icon-128.png', 'image/png'],
     ['assets/modiff-icon-256.png', 'image/png'],
+    // Locally authored editorial card, not a Gallery generation/publication.
+    ['assets/minimax-chamber-pop.card-poster.png', 'image/png'],
   ]);
   return {
     name: 'modiff-shell-public-assets',
@@ -129,8 +131,15 @@ function shellAssetVersionPlugin(): Plugin {
         digest.update('\0');
       }
       const version = digest.digest('hex').slice(0, 16);
+      const shellPaths = new Set(shellFiles.map(([fileName]) => fileName));
       const versionReference = (source: string) =>
-        source.replace(/((?:\.\/|\/assets\/)[^"'?]+\.(?:css|js))(?=["'])/g, `$1?v=${version}`);
+        source.replace(
+          /(["'`])((?:\.\/|\/?assets\/)[^"'`?$\s\\]+\.(?:css|js))\1/g,
+          (original, quote: string, url: string) => {
+            const fileName = url.startsWith('./') ? `assets/${url.slice(2)}` : url.replace(/^\//, '');
+            return shellPaths.has(fileName) ? `${quote}${url}?v=${version}${quote}` : original;
+          },
+        );
 
       for (const [, item] of shellFiles) {
         if (item.type === 'chunk') item.code = versionReference(item.code);
@@ -209,6 +218,9 @@ const backendProxy = Object.fromEntries(
 );
 
 const baseConfig: UserConfig = {
+  // Concurrent qualification frontends must not replace each other's
+  // optimized dependency files and trigger navigation during a gesture.
+  cacheDir: process.env.MODIFF_VITE_CACHE_DIR || 'node_modules/.vite',
   plugins: [react(), tailwindcss(), compactProductionChunksPlugin(), shellAssetVersionPlugin()],
   // Keep the browser's process-external recovery endpoint aligned with the
   // backend proxy even when the caller relies on MoDiff's default 8088 port.
@@ -240,31 +252,63 @@ const baseConfig: UserConfig = {
     rollupOptions: {
       treeshake: true,
       output: {
-        manualChunks: (moduleId) => {
-          // Keep stable static Studio catalogs/contracts together so their
-          // repeated vocabulary compresses once within the bundle budget,
-          // without changing load timing.
-          if (
-            moduleId.endsWith('/src/studio/templates.ts') ||
-            moduleId.endsWith('/src/studio/modelUsagePolicies.ts') ||
-            moduleId.endsWith('/src/studio/nodeCatalog.ts') ||
-            moduleId.endsWith('/src/studio/templateBackendCapabilities.ts') ||
-            moduleId.endsWith('/src/studio/managedControlPolicy.ts') ||
-            moduleId.endsWith('/src/studio/graphFixer.ts')
-          ) {
-            return 'studio-templates';
-          }
-          if (
-            moduleId.includes('/node_modules/@xyflow/') ||
-            moduleId.includes('/node_modules/react/') ||
-            moduleId.includes('/node_modules/react-dom/') ||
-            moduleId.includes('/node_modules/scheduler/') ||
-            moduleId.includes('/node_modules/@headlessui/') ||
-            moduleId.includes('/node_modules/@floating-ui/')
-          ) {
-            return 'graph-vendor';
-          }
-          return undefined;
+        codeSplitting: {
+          groups: [
+            {
+              // These related composition surfaces stay deferred. Share their
+              // small chunk overhead without pulling their eager store dependencies.
+              name: 'block-composition-tools',
+              test: /\/src\/(?:studio\/(?:graphFixer|workflowAutoExecutionV2|workflowResourceAssessmentV2)\.ts|components\/(?:GraphFixDialog|WorkspacePanel|BlockDetailDialogV2|BlockInterfaceDialogContentV2|BlockSaveDialogContentV2|CreateUserBlockDialog|LegacyUserBlockNode)\.tsx)$/,
+              includeDependenciesRecursively: false,
+              priority: 10,
+            },
+            {
+              name: (moduleId) => {
+                // Keep already-eager Studio catalogs/contracts and graph stores together so their
+                // repeated vocabulary compresses once within the bundle budget,
+                // without changing load timing.
+                if (
+                  moduleId.endsWith('/src/App.tsx') ||
+                  moduleId.endsWith('/src/studio/templates.ts') ||
+                  moduleId.endsWith('/src/studio/huggingFaceClusterFork.ts') ||
+                  moduleId.endsWith('/src/studio/legacyBlockMovementV2.ts') ||
+                  moduleId.endsWith('/src/studio/blockSelectionMovesV2.ts') ||
+                  moduleId.endsWith('/src/types/api.ts') ||
+                  moduleId.endsWith('/src/stores/websocketMessageHandler.ts') ||
+                  moduleId.endsWith('/src/studio/modelUsagePolicies.ts') ||
+                  moduleId.endsWith('/src/studio/nodeCatalog.ts') ||
+                  moduleId.endsWith('/src/studio/templateBackendCapabilities.ts') ||
+                  moduleId.endsWith('/src/studio/managedControlPolicy.ts') ||
+                  moduleId.endsWith('/src/stores/useFlowStore.ts') ||
+                  moduleId.endsWith('/src/stores/useWebsocketStore.ts') ||
+                  moduleId.endsWith('/src/studio/modularComposition.ts') ||
+                  moduleId.endsWith('/src/components/NodeContent.tsx') ||
+                  moduleId.endsWith('/src/studio/graphFixMaterialization.ts') ||
+                  /\/src\/studio\/reviewed(?:BlockContext|LoopConnections|LoopDiagnostics|LoopRepair|StateContract|StateDiagnostics|StateRepair|ValuePorts)V2\.ts$/.test(
+                    moduleId,
+                  ) ||
+                  moduleId.endsWith('/src/studio/reviewedModularGraphV2.ts')
+                ) {
+                  return 'studio-templates';
+                }
+                if (
+                  moduleId.includes('/node_modules/@xyflow/') ||
+                  moduleId.includes('/node_modules/react/') ||
+                  moduleId.includes('/node_modules/react-dom/') ||
+                  // Lazy panels keep module-level icon descriptors. Icons must
+                  // initialize with vendor dependencies, not be hoisted into
+                  // an application entry that imports those panels cyclically.
+                  moduleId.includes('/node_modules/lucide-react/') ||
+                  moduleId.includes('/node_modules/scheduler/') ||
+                  moduleId.includes('/node_modules/@headlessui/') ||
+                  moduleId.includes('/node_modules/@floating-ui/')
+                ) {
+                  return 'graph-vendor';
+                }
+                return undefined;
+              },
+            },
+          ],
         },
         chunkFileNames: (chunkInfo) => {
           const customFieldPath = path.resolve(__dirname, 'src/custom-fields');

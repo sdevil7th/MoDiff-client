@@ -260,15 +260,32 @@ export default function App() {
   // The execution worker can be busy inside a native model load and unable to
   // serve websocket/HTTP requests. Read the process-external supervisor once
   // at startup and restore the running workflow snapshot before relying on the
-  // normal websocket lifecycle. This is intentionally a one-shot restoration:
-  // later disconnects must not pull a user away from the tab they chose.
+  // normal websocket lifecycle, but only when there is no selected document to
+  // restore. Queue recovery is not authority to replace a saved editing tab.
   useEffect(() => {
     if (initialActiveRunRestoreRequestedRef.current) return;
     initialActiveRunRestoreRequestedRef.current = true;
     const restoreActiveRun = async () => {
+      const initialStudio = useStudioStore.getState();
+      const initialTabId = initialStudio.activeWorkflowTabId;
+      const initialCanvasEpoch = initialStudio.workflowCanvasEpoch;
+      const initialFormEpoch = initialStudio.workflowFormEpoch;
       setSupervisorStartupStatus('loading');
       try {
         await boundedSupervisorStartup(fetchSupervisorTasks);
+        const studio = useStudioStore.getState();
+        const selectedTab = studio.workflowTabs.find((tab) => tab.id === studio.activeWorkflowTabId);
+        if (
+          studio.activeWorkflowTabId !== initialTabId ||
+          studio.workflowCanvasEpoch !== initialCanvasEpoch ||
+          studio.workflowFormEpoch !== initialFormEpoch ||
+          (selectedTab &&
+            (selectedTab.snapshot.nodes.length > 0 || selectedTab.dirty || (selectedTab.backendRevision ?? 0) > 0))
+        ) {
+          // Keep reporting the run in the activity shelf. Opening it is an
+          // explicit action, including when the run belongs to another client.
+          return;
+        }
         const task = useTaskStore.getState().currentTask;
         if (
           !task?.task_id ||

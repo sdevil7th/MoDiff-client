@@ -882,6 +882,7 @@ function seedStudioOutputsForTest(outputs: Array<Partial<StudioOutput> & { id: s
       variationLabel: output.variationLabel,
       provenance: output.provenance,
       backendProvenance: output.backendProvenance,
+      resolvedExecutionInputs: output.resolvedExecutionInputs,
       backendImagePath: output.backendImagePath,
       backendMediaPath: output.backendMediaPath,
       mediaHash: output.mediaHash,
@@ -959,6 +960,7 @@ export function installE2EHooks() {
               Object.entries(node.data.params).map(([key, param]) => [
                 key,
                 {
+                  label: param.label,
                   value: param.value,
                   artifacts: param.artifacts,
                   display: param.display,
@@ -986,6 +988,7 @@ export function installE2EHooks() {
             blockInstanceV2: node.data.blockInstanceV2,
             blockProjectionOwnerId: node.data.blockProjectionOwnerId,
             blockProjectionNodeId: node.data.blockProjectionNodeId,
+            blockProjectionPortBindings: node.data.blockProjectionPortBindings,
           })),
           edges: useFlowStore.getState().edges.map((edge) => ({
             id: edge.id,

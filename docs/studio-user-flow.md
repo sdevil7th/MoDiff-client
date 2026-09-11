@@ -79,17 +79,39 @@ Workflow tabs sit above the canvas and are local-first:
 Browser local storage is not a backup. Save important workflows to **My workflows** or export a JSON/package before
 clearing site data or switching browser profiles.
 
+### Connect And Move Across Blocks
+
+A compatible outside node can connect directly to an internal input, and an internal
+output can connect outside. Expanded Blocks show curved links to the visible internal
+node. Collapsed Blocks show an additional **Connected internal ports** section at the
+bottom. Removing the last crossing connection removes that temporary socket. Explicitly
+configured inputs and outputs stay available. Existing Step link preferences are retained.
+
+Ordinary dragging only repositions nodes; an internal move grows its container when
+needed. Hold **Ctrl** (Windows/Linux) or **Cmd** (macOS) while dragging to move a node or
+Block into, out of, or between Blocks. Overlap alone never changes ownership. Select an
+internal node or Block and use **Move out of Block** to move up one level. Toolbar tooltips
+show the available shortcuts or gestures, including **Delete / Backspace**.
+
+**Run Block** executes contained nodes and their internal dependencies only, including
+all enabled terminal branches. Outside sources are ignored even when attached to a
+configured input: the Block uses its stored fallback or reports a missing input. The
+whole-workflow Run includes connected outside sources. Move a source inside when it
+should be part of a Block-only run. This behavior applies to modern clusters and Blocks.
+
 ### Save A Block Or An Internal Modular Block
 
 Use the Block header's Save button, or select an internal Modular Block and
-use Save in its selection toolbar. Both open **Save block changes**:
+use Save in its selection toolbar. Both open **Save block changes** in the right workspace, with an editable name
+prefilled from the selected Block:
 
 - **Keep only in this workflow** retains the current local workflow snapshot;
   it does not create or update a User Node. Use the top-bar Save as well when
   you want a named backend workflow file.
 - **Save as new User Node** copies the selected Block with its current prompts
-  and settings. For an internal Block it copies only that subtree; connections
-  crossing the subtree become public input/output sockets. Its parent and
+  and settings. For an internal Block it copies only that subtree and its
+  explicitly configured interface. Outside nodes and wires are omitted;
+  temporary connected-only sockets are not saved as reusable ports. Its parent and
   other workflow instances are unchanged.
 - **Update existing User Node** appears on a user-owned reusable Block root.
   Internal projections do not have independent library definitions to overwrite.
@@ -100,11 +122,11 @@ same prompt or parameter at the root, an intermediate Block, or its internal
 node changes one workflow value; it does not rebuild the graph or reset defaults.
 
 Use the settings icon on a Block header to configure exposed inputs, outputs and
-controls. On an internal Block, the dialog edits that subtree's exposure through
+controls. On an internal Block, the right panel edits that subtree's exposure through
 the owning Block interface and preserves other branches. Consumers shared across
 branches must be edited from the root. Internal connection sockets are derived
 from the actual links, not independently stored nested interfaces. Disconnect a
-public port before removing it. If the Block changes while the dialog is open,
+public port before removing it. If the Block changes while the panel is open,
 cancel and reopen it to avoid overwriting newer edits. Apply is undoable; Cancel
 does not change the workflow.
 
@@ -139,6 +161,15 @@ save operation rather than allowing it to save a different instance.
 9. Press one-shot **Run**.
 
 Studio adopts a compatible existing graph when possible. If you manually change a managed graph until it no longer matches its binding, Studio treats it as a custom graph rather than silently replacing it. You can still select nodes and edit their exposed parameters from the Studio panel.
+
+For a Block's explicitly required image/audio/video file input, an empty picker
+with no enabled incoming source blocks Run in both Auto and Expert. **Fix → Open
+required input** selects the affected controls; it does not invent a mask or
+change the graph. Upload a file or connect a compatible source, then save normally.
+Optional inputs and disabled branches are not treated as missing required media.
+Selected-node Run and branch preview check media in that node's actual execution
+path, including upstream dependencies. An unrelated unfinished Block does not
+block the selected media path; whole-workflow Run still checks all enabled paths.
 
 ## Auto And Expert
 

@@ -18,6 +18,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+/** A broadcast of this browser's PUT is a save receipt, not a remote edit. */
+export function isOwnWorkflowAcknowledgement(value: unknown) {
+  return (
+    isRecord(value) &&
+    typeof value.clientId === 'string' &&
+    value.clientId.length > 0 &&
+    value.clientId === sessionStorage.getItem('modiff-workflow-client-id')
+  );
+}
+
 export function backendWorkflowTab(value: unknown): WorkflowTab | null {
   if (!isRecord(value) || typeof value.id !== 'string' || !isRecord(value.snapshot)) return null;
   return {
@@ -147,17 +157,31 @@ export async function saveDetachedWorkflowNow(tab: WorkflowTab) {
  * this path so the UI can confirm only after the backend owns the exact
  * snapshot the user asked to save.
  */
-export async function saveWorkflowNow(tab: WorkflowTab, options: { merge?: boolean } = {}) {
-  const pending = saveChains.get(tab.id);
-  if (pending) await pending.catch(() => undefined);
-  const current = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
-  if (!current || isWorkflowTabClosed(tab.id)) throw new Error(`Workflow ${tab.title} is no longer open.`);
-  const saved = await saveDetachedWorkflowNow(current);
-  const stillOpen = useStudioStore.getState().workflowTabs.some((item) => item.id === tab.id);
-  if (options.merge !== false && stillOpen && !isWorkflowTabClosed(tab.id)) {
-    useStudioStore.getState().mergeBackendWorkflow(saved);
-  }
-  return saved;
+export function saveWorkflowNow(tab: WorkflowTab, options: { merge?: boolean } = {}) {
+  const pending = saveChains.get(tab.id) ?? Promise.resolve();
+  const queued = pending
+    .catch(() => undefined)
+    .then(async () => {
+      const current = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
+      if (!current || isWorkflowTabClosed(tab.id)) throw new Error(`Workflow ${tab.title} is no longer open.`);
+      const saved = await saveDetachedWorkflowNow(current);
+      const stillOpen = useStudioStore.getState().workflowTabs.some((item) => item.id === tab.id);
+      if (options.merge !== false && stillOpen && !isWorkflowTabClosed(tab.id)) {
+        useStudioStore.getState().mergeBackendWorkflow(saved, { acknowledgement: true });
+      }
+      return saved;
+    });
+  // Explicit saves must own the same chain as autosave, not merely wait for
+  // its previous tail. Otherwise a new autosave can overtake an explicit PUT.
+  const completed = queued.then(
+    () => undefined,
+    () => undefined,
+  );
+  saveChains.set(tab.id, completed);
+  void completed.then(() => {
+    if (saveChains.get(tab.id) === completed) saveChains.delete(tab.id);
+  });
+  return queued;
 }
 
 export async function deleteWorkflowNow(id: string) {
@@ -184,7 +208,7 @@ function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => void) {
         markBackendWorkflow(saved);
         const latest = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
         if (latest && !isWorkflowTabClosed(tab.id) && contentSignature(latest) === signature) {
-          useStudioStore.getState().mergeBackendWorkflow(saved);
+          useStudioStore.getState().mergeBackendWorkflow(saved, { acknowledgement: true });
         }
       } catch (error) {
         if (pendingSignatures.get(tab.id) === signature) pendingSignatures.delete(tab.id);
@@ -253,7 +277,8 @@ export function useWorkflowBackendSync() {
           if (cancelled || !saved) continue;
           markBackendWorkflow(saved);
           const latest = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
-          if (latest && !isWorkflowTabClosed(tab.id)) useStudioStore.getState().mergeBackendWorkflow(saved);
+          if (latest && !isWorkflowTabClosed(tab.id))
+            useStudioStore.getState().mergeBackendWorkflow(saved, { acknowledgement: true });
         }
         if (!cancelled) setHydrated(true);
       } catch (error) {
