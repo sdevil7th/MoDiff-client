@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { registeredCatalogBytesMatch } from './registered-block-v2-catalog-bytes.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BACKEND_ROOT = path.resolve(ROOT, '..', 'MoDiff');
@@ -44,7 +45,7 @@ try {
   const candidate = await readFile(generatedOutput);
   if (check) {
     const current = await readFile(OUTPUT).catch(() => null);
-    if (!current || !candidate.equals(current)) {
+    if (!current || !registeredCatalogBytesMatch(current, candidate)) {
       throw new Error('The checked-in registered Block V2 catalog is stale. Run npm run catalog:block-v2:generate.');
     }
     process.stdout.write(`Registered Block V2 catalog is current: ${OUTPUT}\n`);

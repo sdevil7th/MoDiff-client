@@ -291,6 +291,13 @@ gate. Update the backend commit in `.github/workflows/ci.yml` when a coordinated
 contract change requires it. This setup does not download model weights or
 qualify accelerator execution; platform smoke jobs remain client-only.
 
+The registered Block catalog audit uses a fixed Linux runtime target and mocked
+device/package probes to reproduce the reviewed catalog on any host. Backend
+schemas, field actions, capability generation, and compiler validation remain real;
+the audit checks the existing definition hashes and complete decoded catalog bytes
+(gzip packaging varies across operating systems and zlib versions). This
+is contract evidence, not live hardware or model qualification.
+
 Run the mocked browser gate for behavior or layout-sensitive changes:
 
 ```bash

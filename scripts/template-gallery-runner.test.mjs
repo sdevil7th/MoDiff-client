@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Linter } from 'eslint';
 import globals from 'globals';
@@ -52,6 +52,7 @@ import {
 } from './review-generation-campaign.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const portablePath = (value) => value.split(sep).join('/');
 
 test('gallery capture and resume paths have no unresolved variables', () => {
   const messages = new Linter().verify(readFileSync(resolve(ROOT, 'scripts/template-gallery-runner.mjs'), 'utf8'), {
@@ -66,7 +67,7 @@ test('gallery capture and resume paths have no unresolved variables', () => {
 
 test('campaign keeps raw executions out of the human-review shortlist', () => {
   const destination = destinationStem('AnimateDiffPipeline:text_to_video');
-  assert.match(destination, /review-pending\/raw-campaign\/AnimateDiffPipeline__text_to_video\//);
+  assert.match(portablePath(destination), /review-pending\/raw-campaign\/AnimateDiffPipeline__text_to_video\//);
 });
 
 test('campaign excludes workflows whose reviewed research dossier marks quality blocked', () => {
@@ -122,14 +123,14 @@ test('image upscaling uses its detailed provenance-tracked low-resolution fixtur
     { field: 'referenceImages', minimumCount: 1 },
   ]);
   assert.equal(overrides.referenceImages.length, 1);
-  assert.match(overrides.referenceImages[0], /input-fixtures\/upscaling\/aura-rain-stop-lowres-q72\.jpg$/);
+  assert.match(portablePath(overrides.referenceImages[0]), /input-fixtures\/upscaling\/aura-rain-stop-lowres-q72\.jpg$/);
 });
 
 test('Sana Sprint editing uses the reviewed full-resolution AuraFlow source', () => {
   const overrides = fixtureOverrides('SanaSprintPipeline:edit_image', [{ field: 'referenceImages', minimumCount: 1 }]);
   assert.equal(overrides.referenceImages.length, 1);
   assert.match(
-    overrides.referenceImages[0],
+    portablePath(overrides.referenceImages[0]),
     /AuraFlowPipeline__text_to_image\/campaign-auraflowpipeline__text_to_image-gpu-v1\.png$/,
   );
 });
@@ -140,7 +141,7 @@ test('SmolVLM image understanding uses the user-approved detailed AuraFlow sourc
   ]);
   assert.equal(overrides.referenceImages.length, 1);
   assert.match(
-    overrides.referenceImages[0],
+    portablePath(overrides.referenceImages[0]),
     /AuraFlowPipeline__text_to_image\/campaign-auraflowpipeline__text_to_image-gpu-v1\.png$/,
   );
 });
@@ -151,7 +152,7 @@ test('JoyAI editing uses the shortlisted native violin workshop source', () => {
   ]);
   assert.equal(overrides.referenceImages.length, 1);
   assert.match(
-    overrides.referenceImages[0],
+    portablePath(overrides.referenceImages[0]),
     /JoyImageEditPipeline__text_to_image\/campaign-joyimageeditpipeline__text_to_image-gpu-v1\.webp$/,
   );
 });
@@ -160,7 +161,7 @@ test('OmniGen editing uses the reviewed full-resolution LongCat tram source', ()
   const overrides = fixtureOverrides('OmniGenPipeline:edit_image', [{ field: 'referenceImages', minimumCount: 1 }]);
   assert.equal(overrides.referenceImages.length, 1);
   assert.match(
-    overrides.referenceImages[0],
+    portablePath(overrides.referenceImages[0]),
     /LongCatImagePipeline__text_to_image\/campaign-longcatimagepipeline__text_to_image-gpu-v1\.png$/,
   );
 });
@@ -171,18 +172,18 @@ test('OmniGen multi-reference generation preserves both reviewed source roles in
   ]);
   assert.equal(overrides.referenceImages.length, 2);
   assert.match(
-    overrides.referenceImages[0],
+    portablePath(overrides.referenceImages[0]),
     /QwenImageModularPipeline__text_to_image\/campaign-qwenimagemodularpipeline__text_to_image-gpu-v1\.png$/,
   );
   assert.match(
-    overrides.referenceImages[1],
+    portablePath(overrides.referenceImages[1]),
     /FluxSchnellPipeline__text_to_image__gguf_q4_0\/campaign-fluxschnellpipeline__text_to_image__gguf_q4_0-gpu-v1\.webp$/,
   );
 });
 
 test('video upscaling uses its motion-rich provenance-tracked low-resolution fixture', () => {
   const overrides = fixtureOverrides('SpandrelVideoUpscale:video_upscale', [{ field: 'sourceVideo', minimumCount: 1 }]);
-  assert.match(overrides.sourceVideo, /input-fixtures\/upscaling\/sana-greenhouse-motion-lowres\.mp4$/);
+  assert.match(portablePath(overrides.sourceVideo), /input-fixtures\/upscaling\/sana-greenhouse-motion-lowres\.mp4$/);
 });
 
 test('gallery runner waits for the same background graph finalizer after a caller timeout', async () => {

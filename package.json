@@ -14,7 +14,7 @@
     "build": "npm run theme:tokens:check && tsc -b && vite build",
     "bundle:check": "node scripts/bundle-budget.mjs && node --test scripts/shell-module-identity.test.mjs",
     "catalog:block-v2:generate": "node scripts/regenerate-registered-block-v2-catalog.mjs",
-    "catalog:block-v2:check": "node scripts/regenerate-registered-block-v2-catalog.mjs --check",
+    "catalog:block-v2:check": "node --test scripts/registered-block-v2-catalog-bytes.test.mjs && node scripts/regenerate-registered-block-v2-catalog.mjs --check",
     "catalog:diffusers-94:manifest": "node scripts/diffusers-94-qualification-manifest.mjs",
     "check": "npm run lock:integrity && npm run licenses:check && npm run format:check && npm run lint && npm run typecheck && npm run catalog:block-v2:check && npm run style:audit && npm run test:unit && npm run build && npm run bundle:check",
     "check:acceptance": "npm run lock:integrity && npm run licenses:check && npm run format:check && npm run theme:tokens:check && npm run lint && npm run typecheck && npm run catalog:block-v2:check && npm run style:audit && npm run test:unit && npm run gallery:verify && npm run gallery:coverage:check && npm run workflows:verify && npm run release:contract:verify && npm run release:qualification:gate && npm run check:ui && npm run release:assets:gate && npm run bundle:check",

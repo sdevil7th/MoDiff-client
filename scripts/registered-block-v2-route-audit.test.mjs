@@ -38,7 +38,28 @@ import json
 import os
 from copy import deepcopy
 from importlib import import_module
-from types import MethodType
+from types import MethodType, SimpleNamespace
+
+# Catalog reproduction is a static contract audit. Its reviewed device defaults
+# and option labels must not depend on the runner's hardware or optional packages.
+# Keep the real schemas, capability builder, field actions and compiler below.
+# This fixture does not qualify accelerator execution or install optional runtimes.
+from utils import torch_utils
+
+torch_utils.DEVICE_LIST = {
+    "cuda:0": {"label": ["cuda:0"]},
+    "cpu:0": {"label": ["cpu:0"]},
+}
+torch_utils.DEFAULT_DEVICE = "cuda:0"
+torch_utils.CPU_DEVICE = "cpu:0"
+
+from modiff import diffusers_profiles
+
+runtime_target = diffusers_profiles.optional_runtime_target
+diffusers_profiles.optional_runtime_target = lambda **kwargs: runtime_target(
+    platform_name=kwargs.get("platform_name") or "linux",
+    machine=kwargs.get("machine") or "x86_64",
+)
 
 from modules import MODULE_MAP
 from modiff.huggingface_cluster_promotions import build_post_promotion_node_library_candidate
@@ -55,6 +76,18 @@ library = (
 )
 specs = validate_studio_execution_specs(MODULE_MAP)
 web = WebServer(modules=MODULE_MAP)
+from modules.DiffusersRuntime.main import build_runtime_capabilities
+
+web._available_runtime_devices = lambda: ["cuda:0", "cpu:0", "cpu"]
+web._runtime_choice_capabilities_cache = build_runtime_capabilities(
+    {"devices": [{"type": "cuda", "device": "cuda:0"}]},
+    torch_module=SimpleNamespace(
+        version=SimpleNamespace(hip="reviewed-contract", cuda=None),
+        cuda=SimpleNamespace(is_bf16_supported=lambda: True),
+        nn=SimpleNamespace(attention=object()),
+    ),
+    package_available=lambda _name: False,
+)
 registries = {}
 base_registry = {}
 for spec in specs:
@@ -979,7 +1012,7 @@ after(async () => {
   delete globalThis.localStorage;
 });
 
-test('every explicitly routed admission is an exact live schema-v6 compiler success', () => {
+test('every explicitly routed admission is an exact backend schema-v6 compiler success with fixed runtime probes', () => {
   const specs = new Map(snapshot.specs.map((spec) => [spec.id, spec]));
   const eligibleAdmissions = snapshot.library.definitions.flatMap((definition) =>
     definition.executionAdmissions.filter(eligibleAdmission).map((admission) => ({ definition, admission })),
