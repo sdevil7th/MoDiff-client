@@ -53,6 +53,8 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const portablePath = (value) => value.split(sep).join('/');
+// Unit tests check fixture selection without requiring local review media.
+const availableFixtureOverrides = (workflowId, media) => fixtureOverrides(workflowId, media, () => true);
 
 test('gallery capture and resume paths have no unresolved variables', () => {
   const messages = new Linter().verify(readFileSync(resolve(ROOT, 'scripts/template-gallery-runner.mjs'), 'utf8'), {
@@ -105,21 +107,23 @@ test('campaign refuses generic two-second audio fixtures for showcase workflows'
     'template-gallery',
     'ace_step_text_to_audio.current.wav',
   );
-  if (existsSync(reviewedFixture)) {
-    const overrides = fixtureOverrides('AceStepAudioPipeline:audio_variation', [
-      { field: 'sourceAudio', minimumCount: 1 },
-    ]);
-    assert.equal(overrides.sourceAudio, reviewedFixture);
-  } else {
-    assert.throws(
-      () => fixtureOverrides('AceStepAudioPipeline:audio_variation', [{ field: 'sourceAudio', minimumCount: 1 }]),
-      /reviewed workflow-specific sourceAudio fixture/,
-    );
-  }
+  const overrides = availableFixtureOverrides('AceStepAudioPipeline:audio_variation', [
+    { field: 'sourceAudio', minimumCount: 1 },
+  ]);
+  assert.equal(overrides.sourceAudio, reviewedFixture);
+  assert.throws(
+    () =>
+      fixtureOverrides(
+        'AceStepAudioPipeline:audio_variation',
+        [{ field: 'sourceAudio', minimumCount: 1 }],
+        () => false,
+      ),
+    /reviewed workflow-specific sourceAudio fixture/,
+  );
 });
 
 test('image upscaling uses its detailed provenance-tracked low-resolution fixture', () => {
-  const overrides = fixtureOverrides('SpandrelImageUpscale:image_upscale', [
+  const overrides = availableFixtureOverrides('SpandrelImageUpscale:image_upscale', [
     { field: 'referenceImages', minimumCount: 1 },
   ]);
   assert.equal(overrides.referenceImages.length, 1);
@@ -130,7 +134,9 @@ test('image upscaling uses its detailed provenance-tracked low-resolution fixtur
 });
 
 test('Sana Sprint editing uses the reviewed full-resolution AuraFlow source', () => {
-  const overrides = fixtureOverrides('SanaSprintPipeline:edit_image', [{ field: 'referenceImages', minimumCount: 1 }]);
+  const overrides = availableFixtureOverrides('SanaSprintPipeline:edit_image', [
+    { field: 'referenceImages', minimumCount: 1 },
+  ]);
   assert.equal(overrides.referenceImages.length, 1);
   assert.match(
     portablePath(overrides.referenceImages[0]),
@@ -139,7 +145,7 @@ test('Sana Sprint editing uses the reviewed full-resolution AuraFlow source', ()
 });
 
 test('SmolVLM image understanding uses the user-approved detailed AuraFlow source', () => {
-  const overrides = fixtureOverrides('HuggingFaceImageTextToTextModel:image_to_text', [
+  const overrides = availableFixtureOverrides('HuggingFaceImageTextToTextModel:image_to_text', [
     { field: 'referenceImages', minimumCount: 1 },
   ]);
   assert.equal(overrides.referenceImages.length, 1);
@@ -150,7 +156,7 @@ test('SmolVLM image understanding uses the user-approved detailed AuraFlow sourc
 });
 
 test('JoyAI editing uses the shortlisted native violin workshop source', () => {
-  const overrides = fixtureOverrides('JoyImageEditPipeline:edit_image', [
+  const overrides = availableFixtureOverrides('JoyImageEditPipeline:edit_image', [
     { field: 'referenceImages', minimumCount: 1 },
   ]);
   assert.equal(overrides.referenceImages.length, 1);
@@ -161,7 +167,9 @@ test('JoyAI editing uses the shortlisted native violin workshop source', () => {
 });
 
 test('OmniGen editing uses the reviewed full-resolution LongCat tram source', () => {
-  const overrides = fixtureOverrides('OmniGenPipeline:edit_image', [{ field: 'referenceImages', minimumCount: 1 }]);
+  const overrides = availableFixtureOverrides('OmniGenPipeline:edit_image', [
+    { field: 'referenceImages', minimumCount: 1 },
+  ]);
   assert.equal(overrides.referenceImages.length, 1);
   assert.match(
     portablePath(overrides.referenceImages[0]),
@@ -170,7 +178,7 @@ test('OmniGen editing uses the reviewed full-resolution LongCat tram source', ()
 });
 
 test('OmniGen multi-reference generation preserves both reviewed source roles in order', () => {
-  const overrides = fixtureOverrides('OmniGenPipeline:multi_image_reference_edit', [
+  const overrides = availableFixtureOverrides('OmniGenPipeline:multi_image_reference_edit', [
     { field: 'referenceImages', minimumCount: 2 },
   ]);
   assert.equal(overrides.referenceImages.length, 2);
@@ -185,8 +193,37 @@ test('OmniGen multi-reference generation preserves both reviewed source roles in
 });
 
 test('video upscaling uses its motion-rich provenance-tracked low-resolution fixture', () => {
-  const overrides = fixtureOverrides('SpandrelVideoUpscale:video_upscale', [{ field: 'sourceVideo', minimumCount: 1 }]);
+  const overrides = availableFixtureOverrides('SpandrelVideoUpscale:video_upscale', [
+    { field: 'sourceVideo', minimumCount: 1 },
+  ]);
   assert.match(portablePath(overrides.sourceVideo), /input-fixtures\/upscaling\/sana-greenhouse-motion-lowres\.mp4$/);
+});
+
+test('reviewed media selection fails closed when a required local source is missing', () => {
+  for (const workflowId of [
+    'SpandrelImageUpscale:image_upscale',
+    'SanaSprintPipeline:edit_image',
+    'HuggingFaceImageTextToTextModel:image_to_text',
+    'JoyImageEditPipeline:edit_image',
+    'OmniGenPipeline:edit_image',
+    'OmniGenPipeline:multi_image_reference_edit',
+    'SpandrelVideoUpscale:video_upscale',
+  ]) {
+    const field = workflowId.startsWith('SpandrelVideo') ? 'sourceVideo' : 'referenceImages';
+    assert.throws(
+      () => fixtureOverrides(workflowId, [{ field, minimumCount: 1 }], () => false),
+      /requires the reviewed workflow-specific/,
+    );
+  }
+  assert.throws(
+    () =>
+      fixtureOverrides(
+        'OmniGenPipeline:multi_image_reference_edit',
+        [{ field: 'referenceImages', minimumCount: 2 }],
+        (path) => path.includes('QwenImageModularPipeline'),
+      ),
+    /requires the reviewed workflow-specific referenceImages fixture/,
+  );
 });
 
 test('gallery runner waits for the same background graph finalizer after a caller timeout', async () => {

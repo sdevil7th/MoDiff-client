@@ -206,14 +206,14 @@ function workflowIdForSkeleton(skeleton) {
   return `${skeleton.modelType}:${skeleton.mode}`;
 }
 
-export function fixtureOverrides(workflowId, requiredMedia) {
+export function fixtureOverrides(workflowId, requiredMedia, fileExists = existsSync) {
   const overrides = {};
   for (const item of requiredMedia || []) {
     const reviewedAudioPath = WORKFLOW_AUDIO_FIXTURES[workflowId]?.[item.field];
     const reviewedImagePath = WORKFLOW_IMAGE_FIXTURES[workflowId]?.[item.field];
     const reviewedVideoPath = WORKFLOW_VIDEO_FIXTURES[workflowId]?.[item.field];
     if (reviewedVideoPath) {
-      if (!existsSync(reviewedVideoPath)) {
+      if (!fileExists(reviewedVideoPath)) {
         throw new Error(`${workflowId} requires the reviewed workflow-specific ${item.field} fixture.`);
       }
       overrides[item.field] = item.field.endsWith('s') ? [reviewedVideoPath] : reviewedVideoPath;
@@ -223,7 +223,7 @@ export function fixtureOverrides(workflowId, requiredMedia) {
       const reviewedImagePaths = Array.isArray(reviewedImagePath) ? reviewedImagePath : [reviewedImagePath];
       if (
         reviewedImagePaths.length < (item.minimumCount || 1) ||
-        reviewedImagePaths.some((path) => !existsSync(path))
+        reviewedImagePaths.some((path) => !fileExists(path))
       ) {
         throw new Error(`${workflowId} requires the reviewed workflow-specific ${item.field} fixture.`);
       }
@@ -231,7 +231,7 @@ export function fixtureOverrides(workflowId, requiredMedia) {
       continue;
     }
     if (item.field === 'sourceAudio' || item.field === 'referenceAudio') {
-      if (!reviewedAudioPath || !existsSync(reviewedAudioPath)) {
+      if (!reviewedAudioPath || !fileExists(reviewedAudioPath)) {
         throw new Error(
           `${workflowId} requires a reviewed workflow-specific ${item.field} fixture; ` +
             'the two-second synthetic campaign tones are technical canaries and cannot be used for showcase generation.',
