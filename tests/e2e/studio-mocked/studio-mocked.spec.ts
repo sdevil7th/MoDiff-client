@@ -20814,17 +20814,29 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   expect(ordinaryBounds).toBeTruthy();
   expect(ordinaryHeader).toBeTruthy();
   expect(blockBounds).toBeTruthy();
-  await page.mouse.move(ordinaryHeader!.x + ordinaryHeader!.width / 2, ordinaryHeader!.y + ordinaryHeader!.height / 2);
+  const pointer = {
+    x: ordinaryHeader!.x + ordinaryHeader!.width / 2,
+    y: ordinaryHeader!.y + ordinaryHeader!.height / 2,
+  };
+  await page.mouse.move(pointer.x, pointer.y);
   await page.keyboard.down('Control');
   await page.mouse.down();
-  await page.waitForTimeout(100);
+  // XYFlow establishes the grab offset at the drag threshold. Measure it
+  // before the long move, then land in the frame's empty insertion lane.
+  const primed = { x: pointer.x + 4, y: pointer.y + 4 };
+  await page.mouse.move(primed.x, primed.y, { steps: 4 });
+  const dragging = await ordinaryNode.boundingBox();
+  expect(dragging).toBeTruthy();
+  const destination = { x: blockBounds!.x + blockBounds!.width * 0.98, y: blockBounds!.y + blockBounds!.height * 0.58 };
   await page.mouse.move(
-    blockBounds!.x + blockBounds!.width / 2,
-    blockBounds!.y + blockBounds!.height / 2 - (ordinaryBounds!.height - ordinaryHeader!.height) / 2,
-    {
-      steps: 25,
-    },
+    destination.x - dragging!.width / 2 + primed.x - dragging!.x,
+    destination.y - dragging!.height / 2 + primed.y - dragging!.y,
+    { steps: 12 },
   );
+  const beforeRelease = await ordinaryNode.boundingBox();
+  expect(beforeRelease).toBeTruthy();
+  expect(Math.abs(beforeRelease!.x + beforeRelease!.width / 2 - destination.x)).toBeLessThan(2);
+  expect(Math.abs(beforeRelease!.y + beforeRelease!.height / 2 - destination.y)).toBeLessThan(2);
   await expect(page.getByTestId('block-drag-destination')).toBeVisible();
   await page.mouse.up();
   await page.keyboard.up('Control');
@@ -20880,6 +20892,13 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
     )
     .toEqual({ instanceId: ids.blockId, sourceId: ids.ordinaryId });
 
+  // Legacy definitions keep their library identity when adoption adapts a
+  // punctuation-prefixed ID for the workflow's V2 snapshot.
+  const originalLibraryDefinitions = await page.evaluate(async () => {
+    const { useUserBlockStore } = await import('/src/stores/useUserBlockStore.ts');
+    return useUserBlockStore.getState().blocks;
+  });
+  expect(originalLibraryDefinitions).toHaveLength(1);
   const originalBlockId = await page.evaluate(async () => {
     const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
     return (
@@ -20896,7 +20915,7 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   choices = page.locator('[data-testid^="save-user-block-choices-"]');
   await choices.getByRole('button', { name: 'Save as new User Node' }).click();
   await expect(choices).toHaveCount(0);
-  const afterSaveAsNew = await page.evaluate(async (previousId) => {
+  const afterSaveAsNew = await page.evaluate(async () => {
     const [{ useFlowStore }, { useUserBlockStore }] = await Promise.all([
       import('/src/stores/useFlowStore.ts'),
       import('/src/stores/useUserBlockStore.ts'),
@@ -20904,7 +20923,7 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
     const current = useFlowStore.getState().nodes.find((node) => node.data.type === 'block');
     const studio = window.__MODIFF_E2E__!.getState().studio;
     return {
-      previousStillExists: useUserBlockStore.getState().blocks.some((definition) => definition.id === previousId),
+      previousDefinitions: useUserBlockStore.getState().blocks,
       currentId: current?.data.blockInstanceV2?.definitionRef.definitionId ?? null,
       currentName: current?.data.label ?? '',
       workflowTitle:
@@ -20915,8 +20934,8 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
           (definition) => definition.definitionId === current?.data.blockInstanceV2?.definitionRef.definitionId,
         ),
     };
-  }, originalBlockId);
-  expect(afterSaveAsNew.previousStillExists).toBe(true);
+  });
+  expect(afterSaveAsNew.previousDefinitions).toEqual(originalLibraryDefinitions);
   expect(afterSaveAsNew.currentId).not.toBe(originalBlockId);
   expect(afterSaveAsNew.currentSaved).toBe(true);
   expect(afterSaveAsNew.currentName).toContain(`— ${afterSaveAsNew.workflowTitle}`);
