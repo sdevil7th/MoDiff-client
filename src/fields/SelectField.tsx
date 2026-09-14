@@ -116,7 +116,7 @@ export default function SelectField(props: FieldProps) {
       className="modiff-field relative"
     >
       <ModiffFieldShell
-        htmlFor={props.nodeId + '-' + props.fieldKey}
+        htmlFor={props.inputId ?? props.nodeId + '-' + props.fieldKey}
         label={props.label}
         layout="inline"
         disabled={props.disabled}
@@ -125,7 +125,7 @@ export default function SelectField(props: FieldProps) {
       >
         {multiple ? (
           <ModiffMultiSelect
-            id={props.nodeId + '-' + props.fieldKey}
+            id={props.inputId ?? props.nodeId + '-' + props.fieldKey}
             value={Array.isArray(fieldValue) ? fieldValue : []}
             onValueChange={handleMultiChange}
             options={selectOptions}
@@ -150,14 +150,14 @@ export default function SelectField(props: FieldProps) {
           />
         ) : optionEntries.length === 1 ? (
           <span
-            id={props.nodeId + '-' + props.fieldKey}
+            id={props.inputId ?? props.nodeId + '-' + props.fieldKey}
             className="min-w-0 flex-1 truncate px-1 py-1 text-sm text-modiff-text"
           >
             {optionEntries[0]?.label}
           </span>
         ) : (
           <ModiffSelect
-            id={props.nodeId + '-' + props.fieldKey}
+            id={props.inputId ?? props.nodeId + '-' + props.fieldKey}
             value={String(fieldValue)}
             disabled={props.disabled}
             onValueChange={handleOnChange}

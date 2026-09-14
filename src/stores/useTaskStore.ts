@@ -329,6 +329,15 @@ function mergeSessionRun(runs: SessionRun[], patch: Partial<SessionRun> & { id: 
     durationMs,
   };
   const nextRuns = [merged, ...runs.filter((run) => run.id !== patch.id)];
+  // Queue snapshots can contain more history than the visible list, in either
+  // order. Rehydrating an older item must not promote it above newer work or
+  // evict the active run before that run's next progress event arrives.
+  const activityTime = (run: SessionRun) => run.completedAtMs ?? run.startedAtMs ?? run.queuedAtMs ?? run.createdAtMs;
+  const activityPriority = (run: SessionRun) =>
+    run.status === 'running' ? 2 : TERMINAL_TASK_STATUSES.has(run.status) ? 0 : 1;
+  nextRuns.sort((first, second) => {
+    return activityPriority(second) - activityPriority(first) || activityTime(second) - activityTime(first);
+  });
   return nextRuns.slice(0, MAX_SESSION_RUNS);
 }
 

@@ -150,7 +150,7 @@ function normalizeOptions(options: unknown, idKey?: string, labelKey?: string, v
 
 export default function AutocompleteField(props: FieldProps) {
   const [inputValue, setInputValue] = useState('');
-  const inputId = `${props.nodeId}-${props.fieldKey}`;
+  const inputId = props.inputId ?? `${props.nodeId}-${props.fieldKey}`;
 
   const idKey = stringOption(props.fieldOptions?.optionKey);
   const labelKey = stringOption(props.fieldOptions?.optionLabel);

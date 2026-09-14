@@ -1,3 +1,4 @@
+import { useSettingsStore } from './useSettingsStore';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
@@ -2706,6 +2707,8 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           launcherDismissed: nextSnapshot.nodes.length > 0,
           lastError: null,
         });
+        useSettingsStore.getState().setRightPanelTab('studio');
+        useSettingsStore.getState().setRightPanelOpen(true);
         return id;
       },
 

@@ -41,6 +41,9 @@ The model list is filtered by task. A model profile being visible means the clie
 ### Top Bar
 
 - **New** opens a clean local workflow tab.
+- **Open workspace / Collapse workspace** toggles the right panel. New workflows, including Advanced workflows,
+  open Studio. Adding or selecting nodes reopens a collapsed workspace; selecting on the canvas preserves an
+  already-open Queue, Setup, or Block tool. Refresh preserves your explicit open/collapsed choice.
 - **Save** writes the active snapshot to the backend **My workflows** library. Its menu provides Save as and a JSON
   file copy; `Ctrl+S` saves the current name and `Ctrl+Shift+S` opens Save as.
 - **Export** provides a workflow package, latest-output package, and Gallery shortcut. Expert also exposes raw workflow/API graph JSON.
@@ -161,6 +164,13 @@ save operation rather than allowing it to save a different instance.
 9. Press one-shot **Run**.
 
 Studio adopts a compatible existing graph when possible. If you manually change a managed graph until it no longer matches its binding, Studio treats it as a custom graph rather than silently replacing it. You can still select nodes and edit their exposed parameters from the Studio panel.
+
+For a custom graph, **Node controls** shows the selected ordinary node, Cluster Node, or User Node's declared
+controls with the same values and connections as the canvas. Expand a Block and select an internal node to edit
+its controls. Edits use the normal workflow undo/redo and save behavior. **Pin inputs** keeps chosen controls in
+that workflow's panel after deselection. Pins inside collapsed Blocks remain readable; **Reveal in Block to edit**
+opens their containing Blocks. Custom graph model install/repair actions come from the graph's own requirements,
+including multiple models; guided task/model selectors and prompt tools appear only for a managed workflow.
 
 For a Block's explicitly required image/audio/video file input, an empty picker
 with no enabled incoming source blocks Run in both Auto and Expert. **Fix → Open

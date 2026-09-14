@@ -172,7 +172,7 @@ const defaultState: SettingsState = {
   isLeftPanelOpen: false,
   leftPanelWidth: LEFT_PANEL_WIDTH_MIN,
   leftPanelTabIndex: -1,
-  isRightPanelOpen: false,
+  isRightPanelOpen: true,
   rightPanelWidth: RIGHT_PANEL_WIDTH_MIN,
   rightPanelTab: 'studio',
   executeButtonIndex: 0,

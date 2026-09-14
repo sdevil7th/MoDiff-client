@@ -2904,7 +2904,16 @@ const mockRegistry = {
         value: 'transformer',
         options: ['transformer', 'text_encoder', 'qwen_low_vram'],
       },
-      quant_type: { label: 'Quant Type', type: 'string', options: ['bnb_4bit', 'bnb_8bit'], value: 'bnb_4bit' },
+      quant_type: {
+        label: 'Quant Type',
+        type: 'string',
+        options: ['bnb_4bit', 'bnb_8bit'],
+        value: 'bnb_4bit',
+        onChange: {
+          bnb_4bit: ['bnb_4bit_quant_type', 'bnb_4bit_compute_dtype', 'bnb_4bit_use_double_quant'],
+          bnb_8bit: ['llm_int8_threshold', 'llm_int8_has_fp16_weight'],
+        },
+      },
       bnb_4bit_quant_type: { label: '4-bit Quant Type', type: 'string', options: ['nf4', 'fp4'], value: 'nf4' },
       bnb_4bit_compute_dtype: {
         label: 'Compute Dtype',
@@ -2913,6 +2922,8 @@ const mockRegistry = {
         value: 'bfloat16',
       },
       bnb_4bit_use_double_quant: { label: 'Double Quant', type: 'boolean', value: true },
+      llm_int8_threshold: { label: 'Int8 Threshold', type: 'float', value: 6 },
+      llm_int8_has_fp16_weight: { label: 'Int8 FP16 Weight', type: 'boolean', value: false },
       quantization_config: { label: 'Quantization Config', type: 'quant_config', display: 'output' },
     },
   ),
@@ -5547,6 +5558,338 @@ async function findQwenCatalogRow(page: Page) {
   return row;
 }
 
+test('custom workspace opens for a new Advanced workflow without visiting a template', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  await expect(page.getByTestId('workspace-panel')).toBeVisible();
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+  await page.getByTestId('topbar-toggle-workspace').click();
+  await expect(page.getByTestId('workspace-panel')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated), null, {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await expect(page.getByTestId('workspace-panel')).toHaveCount(0);
+  await page.getByTestId('topbar-toggle-workspace').click();
+  await expect(page.getByTestId('workspace-panel')).toBeVisible();
+  await page.getByTestId('workspace-tab-queue').click();
+  await page.getByTestId('topbar-toggle-workspace').click();
+  await page.getByTestId('topbar-new-workflow').click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  await expect(page.getByTestId('workspace-tab-studio')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+});
+
+test('custom workspace inspector changes quantization visibility through native controls', async ({ page }) => {
+  mockIncludeQuantizationNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  const nodeId = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.addCustomNodeForTest('modules.ModularDiffusers.QuantizationConfigNode');
+    window.__MODIFF_E2E__!.setFirstNodePositionByAction('QuantizationConfigNode', { x: 420, y: 180 });
+    return window.__MODIFF_E2E__!.getState().flow.nodes.find(({ action }) => action === 'QuantizationConfigNode')!.id;
+  });
+  const canvasNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  await canvasNode.locator('header').click();
+  const inspector = page.getByTestId('studio-custom-graph-inspector');
+  await expect(inspector.getByLabel('4-bit Quant Type', { exact: true })).toBeVisible();
+  await expect(inspector.getByLabel('Int8 Threshold', { exact: true })).toHaveCount(0);
+  for (const value of ['bnb_8bit', 'bnb_4bit', 'bnb_8bit']) {
+    await inspector.getByLabel('Quant Type', { exact: true }).click();
+    await page.getByRole('option', { name: value, exact: true }).click();
+    if (value === 'bnb_8bit') {
+      await expect(inspector.getByLabel('Int8 Threshold', { exact: true })).toBeVisible();
+      await expect(inspector.getByLabel('4-bit Quant Type', { exact: true })).toHaveCount(0);
+      await expect(canvasNode.getByLabel('Int8 Threshold', { exact: true })).toBeVisible();
+    } else {
+      await expect(inspector.getByLabel('4-bit Quant Type', { exact: true })).toBeVisible();
+      await expect(inspector.getByLabel('Int8 Threshold', { exact: true })).toHaveCount(0);
+    }
+  }
+});
+
+test('session activity keeps the running cluster when more than thirty tasks are waiting', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/queue', async (route) => {
+    const queued = Object.fromEntries(
+      Array.from({ length: 40 }, (_, index) => [
+        `waiting-${index}`,
+        { task_id: `waiting-${index}`, name: `Waiting ${index}`, queued_at: 1100 + index },
+      ]),
+    );
+    await route.fulfill({
+      json: {
+        current: {
+          task_id: 'running-cluster',
+          name: 'Running cluster',
+          status: 'running',
+          queued_at: 1000,
+          started_at: 1001,
+          progress: 50,
+        },
+        queued,
+      },
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  const running = page.getByTestId('session-run-running-cluster');
+  await running.scrollIntoViewIfNeeded();
+  await expect(running).toBeVisible();
+  await expect(running).toContainText('Running');
+  await expect(page.getByTestId('run-session-shelf').locator('[data-testid^="session-run-"]')).toHaveCount(30);
+});
+
+test('custom workspace inspects registered Qwen cluster controls using the canvas values', async ({ page }) => {
+  test.slow();
+  page.setDefaultTimeout(15_000);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Qwen/Qwen-Image-2512');
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  const detachedFieldRequests: unknown[] = [];
+  page.on('request', (request) => {
+    if (!request.url().endsWith('/fields/action') || request.method() !== 'POST') return;
+    const body = request.postDataJSON();
+    if (body.module === 'modules.DiffusersImage' && Object.keys(body.values ?? {}).length === 0) {
+      detachedFieldRequests.push(body);
+    }
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  // Warm Studio through its real launcher entry so this test isolates the
+  // missing Block control path from the independent visibility defect.
+  await page.getByTestId('launcher-open-template-browser').click();
+  await page
+    .getByRole('dialog', { name: 'Templates', exact: true })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
+  await page.getByTestId('left-tab-nodes').click();
+  await pinCurrentQwenRouteToMockRegistry(page, 'workspace-qwen-controls');
+  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  await group.getByRole('button').first().click();
+  await (await findQwenCatalogRow(page)).click();
+  const root = page.locator('.react-flow__node-block').filter({ has: page.locator('[data-block-schema-version="2"]') });
+  await expect(root).toHaveCount(1, { timeout: 30_000 });
+  await root.locator('header').first().click();
+  const inspector = page.getByTestId('studio-custom-graph-inspector');
+  await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue(
+    await root.getByLabel('prompt', { exact: true }).inputValue(),
+  );
+  await expect(inspector.getByText('No editable params', { exact: true })).toHaveCount(0);
+  const rootId = (await root.getAttribute('data-id'))!;
+  const workflowId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  const originalPrompt = await inspector.getByLabel('prompt', { exact: true }).inputValue();
+  const before = await page.evaluate(async (id) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    return useFlowStore.getState().nodes.find((node) => node.id === id)!.data.blockInstanceV2!;
+  }, rootId);
+  await inspector.getByLabel('prompt', { exact: true }).fill('Copper observatory at sunrise');
+  await inspector.getByLabel('prompt', { exact: true }).blur();
+  await expect(root.getByLabel('prompt', { exact: true })).toHaveValue('Copper observatory at sunrise');
+  await root.locator('header').first().click();
+  await page.keyboard.press('Control+z');
+  await root.locator('header').first().click();
+  await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue(originalPrompt);
+  await page.keyboard.press('Control+Shift+z');
+  await root.locator('header').first().click();
+  await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Copper observatory at sunrise');
+  const edited = await page.evaluate(async (id) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    return useFlowStore.getState().nodes.find((node) => node.id === id)!.data.blockInstanceV2!;
+  }, rootId);
+  expect(edited.definitionSnapshot).toEqual(before.definitionSnapshot);
+  expect(edited.effectiveGraph).toEqual(before.effectiveGraph);
+  expect(edited.effectiveInterface).toEqual(before.effectiveInterface);
+  await inspector.getByRole('button', { name: 'Pin inputs', exact: true }).click();
+  await inspector.getByRole('button', { name: /\/ prompt$/ }).click();
+
+  // A native node click reopens a collapsed workspace. Explicit Queue/Setup
+  // choices survive canvas selection while the workspace is already open.
+  await page.getByTestId('topbar-toggle-workspace').click();
+  await expect(page.getByTestId('workspace-panel')).toHaveCount(0);
+  await root.locator('header').first().click();
+  await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Copper observatory at sunrise');
+  for (const tab of ['queue', 'setup']) {
+    await page.getByTestId(`workspace-tab-${tab}`).click();
+    await root.locator('header').first().click();
+    await expect(page.getByTestId(`workspace-tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
+  }
+  await page.getByTestId('workspace-tab-studio').click();
+  await root.getByRole('button', { name: 'Expand block', exact: true }).click();
+  await page.getByRole('button', { name: 'Expand Qwen Image Denoise Step', exact: true }).click();
+  await page.mouse.move(950, 400);
+  await page.mouse.wheel(0, 1800);
+  const promptNode = page
+    .locator('.react-flow__node:not(.react-flow__node-block)')
+    .filter({ has: page.getByLabel(/^prompt(?: \*)?$/i) })
+    .first();
+  await promptNode.locator('header').first().click();
+  const projectedId = (await promptNode.getAttribute('data-id'))!;
+  const projectedDisclosure = page.getByTestId(`studio-node-disclosure-${projectedId}`);
+  await expect(projectedDisclosure.getByLabel(/^prompt(?: \*)?$/i)).toHaveValue('Copper observatory at sunrise');
+  await projectedDisclosure.getByLabel(/^prompt(?: \*)?$/i).fill('Nested observatory edit');
+  await projectedDisclosure.getByLabel(/^prompt(?: \*)?$/i).blur();
+  await expect(promptNode.getByLabel(/^prompt(?: \*)?$/i)).toHaveValue('Nested observatory edit');
+  const nestedPinLabel = await page.evaluate(async (id) => {
+    const [{ useFlowStore }, { graphParamInputCandidates }] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/studio/graphNodeControls.ts'),
+    ]);
+    return graphParamInputCandidates(useFlowStore.getState().nodes).find(
+      (input) => input.nodeId === id && input.param.value === 'Nested observatory edit',
+    )!.label;
+  }, projectedId);
+  const pinToggle = inspector.getByRole('button', { name: 'Pin inputs', exact: true });
+  if ((await pinToggle.getAttribute('aria-expanded')) !== 'true') await pinToggle.click();
+  await inspector.getByRole('button', { name: nestedPinLabel, exact: true }).click();
+  await root.getByRole('button', { name: 'Collapse block', exact: true }).click();
+  await expect(root.getByLabel('prompt', { exact: true })).toHaveValue('Nested observatory edit');
+  const hiddenPin = page.getByTestId(`studio-node-disclosure-${projectedId}`);
+  if ((await hiddenPin.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
+    await hiddenPin.getByRole('button').first().click();
+  }
+  await expect(hiddenPin).toContainText('Nested observatory edit');
+  await hiddenPin.getByRole('button', { name: 'Reveal in Block to edit' }).click();
+  await expect(promptNode).toBeVisible();
+  await expect(hiddenPin.getByLabel(/^prompt(?: \*)?$/i)).toHaveValue('Nested observatory edit');
+  await root.getByRole('button', { name: 'Collapse block', exact: true }).click();
+  await root.locator('header').first().click();
+
+  // Save the edited registered cluster as a User Node through the real menu.
+  await root.getByRole('button', { name: 'Save block changes', exact: true }).click();
+  await page.getByLabel('User Node name', { exact: false }).fill('Workspace cluster saved');
+  await page
+    .locator('[data-testid^="save-user-block-choices-"]')
+    .getByRole('button', { name: 'Save as new User Node' })
+    .click();
+  await expect(page.locator('[data-testid^="save-user-block-choices-"]')).toHaveCount(0);
+  await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Nested observatory edit');
+
+  await page.getByTestId('workflow-tab-new').click();
+  await page.getByTestId('launcher-open-template-browser').click();
+  await page.getByTestId('template-browser-search').fill('Product Mockup');
+  await page.getByTestId('template-browser-create-card-z_image_product_mockup').click();
+  await expect(page.getByTestId('studio-model-select')).toBeVisible();
+  await page.getByTestId(`workflow-tab-${workflowId}`).click();
+  await expect(page.getByTestId('studio-model-select')).toHaveCount(0);
+  await expect(page.getByTestId(`studio-node-disclosure-${rootId}`).getByLabel('prompt', { exact: true })).toHaveValue(
+    'Nested observatory edit',
+  );
+  await expect(page.getByRole('button', { name: 'Install Z-Image Turbo', exact: true })).toHaveCount(0);
+  expect(detachedFieldRequests).toEqual([]);
+  await page.getByTestId('topbar-save-workflow').click();
+  if (await page.getByTestId('save-workflow-dialog').isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Workspace cluster regression');
+    await page.getByTestId('confirm-save-workflow').click();
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByTestId('workspace-panel')).toBeVisible();
+  await expect(page.getByTestId(`studio-node-disclosure-${rootId}`).getByLabel('prompt', { exact: true })).toHaveValue(
+    'Nested observatory edit',
+  );
+  await page.screenshot({ path: test.info().outputPath('custom-workspace-cluster.png') });
+  // Reinsert the saved User Node into a separate empty document. Its controls
+  // and values survive reuse; the first document's pins and edits stay local.
+  await page.getByTestId('workflow-tab-new').click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  if (!(await page.getByLabel('Search nodes').isVisible())) await page.getByTestId('left-tab-nodes').click();
+  await page.getByLabel('Search nodes').fill('Workspace cluster saved');
+  const savedRow = page.locator('[data-testid^="user-block-row-"]').filter({ hasText: 'Workspace cluster saved' });
+  await expect(savedRow).toBeVisible();
+  await page.getByTestId('topbar-toggle-workspace').click();
+  await savedRow.click();
+  await expect(page.getByTestId('workspace-panel')).toBeVisible();
+  await root.locator('header').first().click();
+  await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Nested observatory edit');
+  await inspector.getByLabel('prompt', { exact: true }).fill('Only the reused User Node changes');
+  await inspector.getByLabel('prompt', { exact: true }).blur();
+  await page.getByTestId(`workflow-tab-${workflowId}`).click();
+  await expect(page.getByTestId(`studio-node-disclosure-${rootId}`).getByLabel('prompt', { exact: true })).toHaveValue(
+    'Nested observatory edit',
+  );
+});
+
+test('custom workspace installs graph models without applying hidden form state after a tab switch', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockDownloadCalls = 0;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('missing_model');
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const node = structuredClone(useFlowStore.getState().nodes.find(({ id }) => id === 'scenario-model')!);
+    node.id = 'second-graph-model';
+    node.position = { x: 500, y: 200 };
+    node.data.params.repo_id.value = 'missing/SecondGraphModel';
+    useFlowStore.getState().addNode(node);
+  });
+  const install = page.getByTestId('studio-install-graph-model-missing/GraphModel');
+  await expect(install).toBeVisible();
+  await expect(page.getByTestId('studio-install-graph-model-missing/SecondGraphModel')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Install Z-Image Turbo', exact: true })).toHaveCount(0);
+  if ((await page.getByTestId('topbar-auto-switch').getAttribute('aria-checked')) === 'true') {
+    await page.getByTestId('topbar-auto-switch').click();
+  }
+  await expect(install).toBeVisible();
+  const calls: Array<Record<string, unknown>> = [];
+  let releaseDownload!: () => void;
+  const downloadReleased = new Promise<void>((resolve) => {
+    releaseDownload = resolve;
+  });
+  await page.route('**/hf_download', async (route) => {
+    calls.push(route.request().postDataJSON() as Record<string, unknown>);
+    await downloadReleased;
+    await route.fallback();
+  });
+  await install.click();
+  await expect.poll(() => calls.length).toBe(1);
+  expect(calls[0].repo_id).toBe('missing/GraphModel');
+  await expect(install).toBeDisabled();
+  await page.getByTestId('workflow-tab-new').click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  const before = await page.evaluate(() => ({
+    flow: window.__MODIFF_E2E__!.getState().flow,
+    form: window.__MODIFF_E2E__!.getState().studio.form,
+    tab: window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId,
+  }));
+  releaseDownload();
+  await expect.poll(() => mockDownloadCalls).toBe(1);
+  await expect
+    .poll(async () =>
+      mockHfCacheContains(
+        (await page.evaluate(() => window.__MODIFF_E2E__!.getState())).nodes.hfCache,
+        'missing/GraphModel',
+      ),
+    )
+    .toBe(true);
+  const after = await page.evaluate(() => ({
+    flow: window.__MODIFF_E2E__!.getState().flow,
+    form: window.__MODIFF_E2E__!.getState().studio.form,
+    tab: window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId,
+  }));
+  expect(after).toEqual(before);
+  await expect(page.getByTestId('studio-empty-workflow')).toBeVisible();
+});
+
 test.afterAll(() => {
   for (const child of managedProcesses.reverse()) {
     if (!child.killed) child.kill();
@@ -6382,7 +6725,7 @@ test('selection toolbar shows rejected Block preparation without changing values
   expect(await snapshot()).toBe(before);
 });
 
-test('a current registered Qwen V2 Block visibly requests instance-local Auto authority before concrete submission', async ({
+test('a current registered Qwen V2 Block requires source authority and a graph Auto plan before concrete submission', async ({
   page,
 }) => {
   mockInstalledRepos.clear();
@@ -6392,6 +6735,28 @@ test('a current registered Qwen V2 Block visibly requests instance-local Auto au
 
   const authorityRequests: Array<Record<string, unknown>> = [];
   const graphRequests: Array<Record<string, unknown>> = [];
+  const workflowPlanRequests: Array<{ graph: { nodes: unknown; paths: unknown } }> = [];
+  let workflowPlanReady = true;
+  await page.route('**/auto_resource/workflow', async (route) => {
+    workflowPlanRequests.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 1,
+        graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+        plannedGraphHash: `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+        canAutoRun: workflowPlanReady,
+        issues: workflowPlanReady ? [] : ['Insufficient memory for the preserved precision'],
+        message: 'Workflow Auto',
+        patches: [],
+        loaders: [],
+        requirements: {},
+        available: {},
+        sharedMemory: false,
+      }),
+    });
+  });
   await page.route('**/huggingface/cluster/auto-authority', async (route) => {
     const body = (route.request().postDataJSON() ?? {}) as {
       schemaVersion?: unknown;
@@ -6557,6 +6922,13 @@ test('a current registered Qwen V2 Block visibly requests instance-local Auto au
   expect(afterAuto.autoReceiptCount).toBe(1);
 
   const submitted = graphRequests[0]!;
+  expect(workflowPlanRequests).toHaveLength(1);
+  expect(workflowPlanRequests[0]!.graph.nodes).toEqual(submitted.nodes);
+  expect(workflowPlanRequests[0]!.graph.paths).toEqual(submitted.paths);
+  expect(submitted.runtimeHints).toMatchObject({
+    resourceMode: 'auto',
+    workflowAutoPlan: { graphHash: `sha256:workflow-auto-v1:${'b'.repeat(64)}` },
+  });
   const executablePayload = JSON.stringify({ nodes: submitted.nodes, paths: submitted.paths });
   expect(executablePayload).not.toContain('blockInstanceV2');
   expect(executablePayload).not.toContain('blockCompilationTransientV2');
@@ -6588,6 +6960,12 @@ test('a current registered Qwen V2 Block visibly requests instance-local Auto au
   expect(recoveryRoot?.presentation.position).toEqual({ x: 500, y: 320 });
   expect(recoveryRoot?.presentation.internalLayout).toBeTruthy();
   expect(recoveryRoot?.authorities).toEqual([]);
+
+  workflowPlanReady = false;
+  await runButton.click();
+  await expect.poll(() => workflowPlanRequests.length).toBe(2);
+  await expect(page.getByRole('alert')).toContainText('Auto cannot run this workflow: Insufficient memory');
+  expect(graphRequests).toHaveLength(1);
 });
 
 test('Hub import installs, translates, previews, and persists a pinned remote-code-disabled User Node', async ({
@@ -16994,6 +17372,24 @@ test('graph field controls commit without moving or scrolling nodes and preserve
   await expect(stepsInput).toBeVisible();
   await expect(stepsInput).toHaveClass(/nodrag/);
   await stepsInput.dblclick();
+  // The node and its inspector are distinct DOM surfaces over one value.
+  await expect(stepsInput).toHaveCount(1);
+  const inspectorSteps = page.locator(`[id="studio-inspector:${ids.generate}:num_inference_steps"]`);
+  await expect(inspectorSteps).toBeVisible();
+  await expect(inspectorSteps).toHaveAccessibleName('Num_inference_steps');
+  const inspector = page.getByTestId('studio-custom-graph-inspector');
+  const fieldBounds = await inspector.evaluate((element) => {
+    const panel = element.getBoundingClientRect();
+    return [...element.querySelectorAll<HTMLElement>('[data-key]')]
+      .filter((field) => field.offsetParent !== null)
+      .map((field) => ({
+        key: field.dataset.key,
+        right: field.getBoundingClientRect().right,
+        panelRight: panel.right,
+      }));
+  });
+  expect(fieldBounds.length).toBeGreaterThan(0);
+  for (const field of fieldBounds) expect(field.right, field.key).toBeLessThanOrEqual(field.panelRight);
   await stepsInput.fill('7');
   await stepsInput.press('Enter');
   await expect

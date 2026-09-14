@@ -24,7 +24,7 @@ export default function NumberField(props: FieldProps) {
   const maxValue = props.max !== undefined ? props.max : Number.MAX_SAFE_INTEGER;
   const decimals = props.dataType === 'float' ? getDecimalPlaces(props.step) : 0;
   const increment = props.step !== undefined ? props.step : props.dataType === 'float' ? 0.1 : 1;
-  const inputId = `${props.nodeId}-${props.fieldKey}`;
+  const inputId = props.inputId ?? `${props.nodeId}-${props.fieldKey}`;
 
   const formatValue = useCallback(
     (value: number | string, force: boolean = false) => {

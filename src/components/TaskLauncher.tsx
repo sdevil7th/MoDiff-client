@@ -53,7 +53,7 @@ export default function TaskLauncher() {
     setLauncherDismissed(true);
 
     if (mode === 'advanced_workflow') {
-      setRightPanelOpen(false);
+      prepareWorkflowForManualInsertion();
       return;
     }
 
@@ -76,7 +76,7 @@ export default function TaskLauncher() {
   return (
     <ModiffDialog
       open
-      onClose={prepareWorkflowForManualInsertion}
+      onClose={() => prepareWorkflowForManualInsertion({ revealWorkspace: false })}
       title="Start with a task"
       panelClassName="max-w-[920px]"
       bodyClassName="max-h-[78vh]"

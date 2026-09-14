@@ -1,11 +1,16 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { Fragment, lazy, memo, ReactNode, Suspense } from 'react';
+import { Fragment, lazy, memo, ReactNode, Suspense, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { AlertTriangle, Pin, RotateCcw } from 'lucide-react';
 import type { Position } from '@xyflow/react';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { autoFieldOverrideKey, useStudioStore } from '../stores/useStudioStore';
+import {
+  autoFieldOverrideKey,
+  captureWorkflowOperationContext,
+  useStudioStore,
+  type WorkflowOperationContext,
+} from '../stores/useStudioStore';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from '../studio/autoResource';
 import { NodeParams, type NodeParamOptions, type NodeParamSignal } from '../stores/useNodeStore';
 import { useFlowStore } from '../stores/useFlowStore';
@@ -48,6 +53,10 @@ const SplineField = lazy(() => import('../fields/SplineField'));
 
 export type FieldProps = {
   nodeId: string;
+  /** Owning canvas when this field contract was rendered. */
+  workflowContext?: WorkflowOperationContext;
+  /** DOM identity for an alternate view; graph actions always use nodeId. */
+  inputId?: string;
   fieldKey: string;
   label: string;
   display: string;
@@ -62,6 +71,8 @@ export type FieldProps = {
   connectionType?: string | string[];
   fieldType: string;
   updateStore: (param: string, value: unknown, key?: keyof NodeParams) => void;
+  /** Declared actions can target fields omitted from an alternate control view. */
+  updateFieldActionStore?: FieldProps['updateStore'];
   module: string;
   action: string;
   isConnected?: boolean;
@@ -83,8 +94,10 @@ export type FieldProps = {
 
 type NodeContentProps = {
   nodeId: string;
+  controlIdPrefix?: string;
   params: Record<string, NodeParams>;
   updateStore: (param: string, value: unknown, key?: keyof NodeParams) => void;
+  updateFieldActionStore?: (origin: string, param: string, value: unknown, key?: keyof NodeParams) => void;
   module: string;
   action: string;
   mode?: 'all' | 'controls' | 'connectors';
@@ -113,8 +126,10 @@ function liveFieldOptions(module: string, fieldKey: string, display: string, opt
 
 const NodeContent = memo(function NodeContent({
   nodeId,
+  controlIdPrefix,
   params,
   updateStore,
+  updateFieldActionStore,
   module,
   action,
   mode = 'all',
@@ -124,6 +139,9 @@ const NodeContent = memo(function NodeContent({
   progressMessage,
   uiStateMessage,
 }: NodeContentProps) {
+  // A Studio-only rerender during navigation must not reassign an old canvas
+  // contract to the incoming workflow. A new immutable schema gets a new owner.
+  const renderedContract = useMemo(() => ({ params, context: captureWorkflowOperationContext() }), [params]);
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
   const studioForm = useStudioStore((state) => state.form);
   const autoFieldOverrides = useStudioStore((state) => state.autoFieldOverrides);
@@ -149,7 +167,11 @@ const NodeContent = memo(function NodeContent({
   const isModelNode =
     /load|pipeline|model/i.test(`${module}.${action}`) &&
     Object.keys(params).some((key) => /model|repo|checkpoint|pipeline/i.test(key));
+  const controlledStudioNode = Boolean(
+    studioGraphBinding && (studioGraphBinding.managedNodeIds?.includes(nodeId) || graphNode?.data.studioOwned === true),
+  );
   const showResolution = Boolean(
+    controlledStudioNode &&
     isModelNode &&
     selectedCandidate &&
     (selectedCandidate.artifactResolution?.substituted ||
@@ -176,9 +198,6 @@ const NodeContent = memo(function NodeContent({
       </span>
     </GraphControlButton>
   ) : null;
-  const controlledStudioNode = Boolean(
-    studioGraphBinding && (studioGraphBinding.managedNodeIds?.includes(nodeId) || graphNode?.data.studioOwned === true),
-  );
   // Workflow Auto plans resources without hiding manually authored controls.
   const autoModeActive = studioResourceMode === 'auto' && controlledStudioNode;
   const autoFormPatch = formPatchForAutoCandidate(selectedCandidate, studioForm);
@@ -215,6 +234,8 @@ const NodeContent = memo(function NodeContent({
 
     const props = {
       nodeId,
+      workflowContext: renderedContract.context,
+      inputId: controlIdPrefix ? `${controlIdPrefix}:${nodeId}:${key}` : undefined,
       value,
       label,
       display,
@@ -224,6 +245,10 @@ const NodeContent = memo(function NodeContent({
       fieldType,
       hidden,
       updateStore,
+      updateFieldActionStore: updateFieldActionStore
+        ? (param: string, nextValue: unknown, property?: keyof NodeParams) =>
+            updateFieldActionStore(key, param, nextValue, property)
+        : undefined,
       module,
       action,
       onChange: data.onChange,

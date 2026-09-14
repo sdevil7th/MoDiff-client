@@ -1,3 +1,4 @@
+import { revealWorkspaceForGraphEditing } from '../studio/workspaceVisibility';
 import { blockSelectionDropTargetV2, moveBlockSelectionPreparedV2 } from '../studio/blockSelectionMovesV2';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
@@ -170,6 +171,7 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
 }
 
 function Workflow() {
+  const workspaceSelectionStarted = useRef(false);
   const { nodesRegistry } = useNodesStore(
     useShallow((state) => ({
       nodesRegistry: state.nodesRegistry,
@@ -1139,6 +1141,16 @@ function Workflow() {
         zoomOnDoubleClick={false}
         isValidConnection={handleIsValidConnection as IsValidConnection}
         onDoubleClick={handleDoubleClick}
+        onNodeClick={revealWorkspaceForGraphEditing}
+        onSelectionStart={() => {
+          workspaceSelectionStarted.current = true;
+        }}
+        onSelectionEnd={() => {
+          if (workspaceSelectionStarted.current && useFlowStore.getState().nodes.some((node) => node.selected)) {
+            revealWorkspaceForGraphEditing();
+          }
+          workspaceSelectionStarted.current = false;
+        }}
         onNodesChange={measuredNodeChanges.dispatch}
         onEdgesChange={onEdgesChange}
         onEdgeDoubleClick={handleEdgeDoubleClick}

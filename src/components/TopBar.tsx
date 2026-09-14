@@ -16,6 +16,8 @@ import {
   ListPlus,
   LoaderCircle,
   Package,
+  PanelRightClose,
+  PanelRightOpen,
   Play,
   Repeat,
   RotateCw,
@@ -236,6 +238,8 @@ const selectPolicyNodes = createDurableNodesSelector();
 
 function TopBar() {
   const {
+    isRightPanelOpen,
+    setRightPanelOpen,
     executeButtonIndex,
     runningState,
     studioViewMode,
@@ -909,6 +913,13 @@ function TopBar() {
       </div>
 
       <div className="flex flex-none items-center gap-2">
+        <TopBarButton
+          icon={isRightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+          title={isRightPanelOpen ? 'Collapse workspace' : 'Open workspace'}
+          testId="topbar-toggle-workspace"
+          onClick={() => setRightPanelOpen(!isRightPanelOpen)}
+          tone={isRightPanelOpen ? 'active' : 'quiet'}
+        />
         <RuntimeResourceMonitor active={Boolean(currentTask)} connected={isConnected} />
         {(activeDownloadCount > 0 || failedDownloadCount > 0) && (
           <TopBarButton

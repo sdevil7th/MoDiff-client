@@ -1454,6 +1454,71 @@ test('Qwen Auto preparation posts the exact instance once and attaches its recei
   assert.equal(JSON.stringify(unchangedSibling), siblingBefore);
 });
 
+test('an exact Qwen cluster always submits a workflow Auto plan from top-bar and selected-Block Run', async () => {
+  const configured = fixture();
+  configureFixture(configured);
+  libraryStore.useHuggingFaceNodeLibraryStore.setState({
+    library: fixtureLibrary([configured.definition], configured.blockDefinitions),
+    loaded: true,
+    error: null,
+  });
+  const root = await insertion.createHuggingFaceClusterForGraph(configured.definition, { x: 320, y: 180 }, form(), {
+    insert: true,
+  });
+  flowStore.useFlowStore.setState({ nodes: [root], edges: [] });
+  const eligibility = await server.ssrLoadModule('/src/studio/blockAutoEligibilityV2.ts');
+  assert.equal(eligibility.inspectRegisteredBlockAutoEligibilityV2([root], []).eligible, true);
+  const before = structuredClone(root.data.blockInstanceV2);
+  const requests = [];
+  let ready = true;
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(String(init.body));
+    requests.push({ url: String(url), body });
+    const response = String(url).endsWith('/auto_resource/workflow')
+      ? {
+          schemaVersion: 1,
+          graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+          plannedGraphHash: `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+          canAutoRun: ready,
+          issues: ready ? [] : ['Insufficient memory for the preserved precision'],
+          message: 'Workflow Auto',
+          patches: [],
+          loaders: [],
+          requirements: {},
+          available: {},
+          sharedMemory: false,
+        }
+      : String(url).endsWith('/huggingface/cluster/auto-authority')
+        ? { error: false, receipt: autoReceipt(body.instance) }
+        : { task_id: `exact-qwen-${requests.length}`, sid: 'session-1' };
+    return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } });
+  };
+  for (const targetNodeId of [undefined, root.id]) {
+    requests.length = 0;
+    const result = await runCoordinator.coordinateGraphRun({ sid: 'session-1', targetNodeId });
+    assert.match(requests[0].url, /\/auto_resource\/workflow$/u);
+    assert.equal(requests.length, 2);
+    assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
+    assert.equal(
+      result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash,
+      `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(result.submittedGraph.nodes)), requests[0].body.graph.nodes);
+    assert.deepEqual(flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.values, before.values);
+    assert.deepEqual(
+      flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot,
+      before.definitionSnapshot,
+    );
+  }
+  ready = false;
+  requests.length = 0;
+  await assert.rejects(
+    runCoordinator.coordinateGraphRun({ sid: 'session-1' }),
+    /Auto cannot run this workflow: Insufficient memory/u,
+  );
+  assert.equal(requests.length, 1, 'a rejected plan must never fall through to Expert submission');
+});
+
 test('Qwen Auto preparation failure is atomic and Expert mode bypasses the request boundary', async () => {
   const configured = fixture();
   libraryStore.useHuggingFaceNodeLibraryStore.setState({

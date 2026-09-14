@@ -1,17 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useShallow } from 'zustand/react/shallow';
-import {
-  AlertTriangle,
-  ClipboardCopy,
-  GalleryVerticalEnd,
-  Info,
-  Pin,
-  PinOff,
-  Save,
-  Trash2,
-  WandSparkles,
-} from 'lucide-react';
+import { AlertTriangle, ClipboardCopy, GalleryVerticalEnd, Info, Save, Trash2, WandSparkles } from 'lucide-react';
 
 import {
   advanceWorkflowOperationContext,
@@ -24,10 +14,10 @@ import {
   workflowOperationContextIsCurrent,
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
+import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { imageUrlLightboxOpener } from '../utils/mediaViewer';
-import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
+import { useFlowStore } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
 import {
   createOrUpdateStudioGraph,
@@ -47,7 +37,9 @@ import { StudioPromptDiffPanel } from './StudioPromptDiffPanel';
 import { StudioPromptEnhancer } from './StudioPromptEnhancer';
 import { StudioVariationPlanner, type StudioVariationOption } from './StudioVariationPlanner';
 import { TemplateUsageTermsDialog } from './TemplateUsageTermsDialog';
-import NodeContent from './NodeContent';
+import { GraphNodeInputs } from './GraphNodeInputs';
+import { GraphArtifactActions } from './GraphArtifactActions';
+import { graphParamInputCandidates } from '../studio/graphNodeControls';
 import {
   DEFAULT_STUDIO_FORM,
   STUDIO_MODEL_LABELS,
@@ -81,7 +73,6 @@ import {
   selectedAutoCandidate,
 } from '../studio/autoResource';
 import type {
-  AppModeInput,
   StudioAspectRatio,
   StudioFormState,
   StudioMode,
@@ -101,7 +92,6 @@ import { requestExecutionStop } from '../utils/serverActions';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun, useStudioRunActions } from '../studio/useStudioRunActions';
-import { syncManagedNodeControlChange } from '../studio/managedControlSync';
 import { diffStudioFormValues, formatStudioFieldValue, publishStudioChange } from '../studio/presetDiff';
 import {
   ActionStatusRow,
@@ -119,7 +109,6 @@ import {
   StudioSelect,
   StudioSection,
   StudioSlider,
-  StatusLine,
   StudioTextInput,
 } from '../ui';
 import { cx } from '../utils/classNames';
@@ -376,8 +365,8 @@ export default function StudioPanel() {
   const selectedGraphNodes = useMemo(() => graphNodes.filter((node) => node.selected), [graphNodes]);
   const inspectExactNode = showExactNodeInspector || selectedGraphNodes.length > 0;
   const graphInputCandidates = useMemo(
-    () => (inspectExactNode ? graphParamInputCandidates(graphNodes) : []),
-    [graphNodes, inspectExactNode],
+    () => (inspectExactNode ? graphParamInputCandidates(graphNodes, pinnedGraphInputIds) : []),
+    [graphNodes, inspectExactNode, pinnedGraphInputIds],
   );
   const effectivePinnedGraphInputIds = pinnedGraphInputIds.filter((id) =>
     graphInputCandidates.some((input) => input.id === id),
@@ -962,6 +951,7 @@ export default function StudioPanel() {
           isWorking={isWorking}
           runBlocked={runControlsBlocked}
           expertMode={expertResourceMode}
+          hasManagedForm={showFullStudioForm}
           hasGalleryItems={activeWorkflowOutputs.length > 0}
           hasComparePair={activeWorkflowOutputs.length > 1}
           onRun={() => {
@@ -1110,7 +1100,8 @@ export default function StudioPanel() {
                 />
               </>
             )}
-            {missingInstallTarget ? (
+            {customGraphMode ? <GraphArtifactActions issues={runReadiness.issues} /> : null}
+            {showFullStudioForm && missingInstallTarget ? (
               <StudioButton
                 fullWidth
                 tone="secondary"
@@ -1143,6 +1134,7 @@ export default function StudioPanel() {
             )}
             {inspectExactNode && graphNodes.length > 0 ? (
               <GraphNodeInputs
+                key={activeWorkflowTabId}
                 candidates={graphInputCandidates}
                 nodes={graphNodes}
                 pinnedInputs={pinnedGraphInputs}
@@ -2082,196 +2074,6 @@ export default function StudioPanel() {
         onCancel={modelUsageTerms.cancel}
         onConfirm={modelUsageTerms.confirm}
       />
-    </div>
-  );
-}
-
-type GraphInputCandidate = AppModeInput & {
-  node: CustomNodeType;
-  param: NodeParams;
-};
-
-const INSPECTOR_PREVIEW_DISPLAYS = new Set(['ui_image', 'ui_video', 'ui_audio', 'ui_text', 'ui_imagecompare']);
-const inspectorDisclosureMemory = new Map<string, boolean>();
-
-function isInspectorEditableParam(key: string, param: NodeParams) {
-  const display = param.isInput ? 'input' : param.display || '';
-  return (
-    display !== 'input' &&
-    display !== 'output' &&
-    !INSPECTOR_PREVIEW_DISPLAYS.has(display) &&
-    !param.hidden &&
-    !param.isInput &&
-    !['output', 'images', 'latents'].includes(key)
-  );
-}
-
-function graphParamInputCandidates(nodes: CustomNodeType[]): GraphInputCandidate[] {
-  return nodes.flatMap((node) =>
-    Object.entries(node.data.params ?? {})
-      .filter(([key, param]) => isInspectorEditableParam(key, param))
-      .map(([key, param]) => ({
-        id: `graph:${node.id}:${key}`,
-        kind: 'graph-param' as const,
-        label: `${node.data.label || node.id} / ${param.label || key}`,
-        nodeId: node.id,
-        paramKey: key,
-        node,
-        param,
-      })),
-  );
-}
-
-function GraphNodeInputs({
-  candidates,
-  nodes,
-  onTogglePin,
-  pinnedIds,
-  pinnedInputs,
-  selectedNodes,
-  workflowId,
-}: {
-  candidates: GraphInputCandidate[];
-  nodes: CustomNodeType[];
-  onTogglePin: (id: string) => void;
-  pinnedIds: string[];
-  pinnedInputs: GraphInputCandidate[];
-  selectedNodes: CustomNodeType[];
-  workflowId: string | null;
-}) {
-  const [disclosureState, setDisclosureState] = useState<Record<string, boolean>>({});
-  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
-  const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
-  const groups = useMemo(() => {
-    const byNode = new Map<string, { node: CustomNodeType; params: Record<string, NodeParams> }>();
-    pinnedInputs.forEach((input) => {
-      if (!input.nodeId || !input.paramKey) return;
-      const group = byNode.get(input.nodeId) ?? { node: input.node, params: {} };
-      group.params[input.paramKey] = input.param;
-      byNode.set(input.nodeId, group);
-    });
-
-    if (selectedNode) {
-      const selectedParams = Object.fromEntries(
-        Object.entries(selectedNode.data.params ?? {}).filter(([key, param]) => isInspectorEditableParam(key, param)),
-      );
-      byNode.set(selectedNode.id, { node: selectedNode, params: selectedParams });
-    }
-
-    const orderedNodeIds = [
-      ...(selectedNode ? [selectedNode.id] : []),
-      ...nodes.map((node) => node.id).filter((id) => id !== selectedNode?.id),
-    ];
-    return orderedNodeIds.flatMap((id) => {
-      const group = byNode.get(id);
-      return group ? [group] : [];
-    });
-  }, [nodes, pinnedInputs, selectedNode]);
-
-  const updateParam = useCallback((nodeId: string, param: string, value: unknown, key?: keyof NodeParams) => {
-    useFlowStore.getState().setParamWithHistory(nodeId, param, value, key);
-    syncManagedNodeControlChange(nodeId, param, value, key);
-  }, []);
-
-  return (
-    <div
-      className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2"
-      data-testid={selectedNodes.length > 0 ? 'studio-custom-graph-inspector' : 'studio-pinned-graph-inputs'}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-modiff-text">Node controls</span>
-      </div>
-      {selectedNodes.length > 1 ? <StatusLine>One node at a time</StatusLine> : null}
-      {groups.length > 0 ? (
-        groups.map(({ node, params }, index) => {
-          const selected = selectedNode?.id === node.id;
-          const disclosureKey = `${workflowId ?? 'unscoped'}:${node.id}`;
-          const rememberedOpen = disclosureState[disclosureKey] ?? inspectorDisclosureMemory.get(disclosureKey);
-          const defaultOpen = selected || (rememberedOpen ?? index === 0);
-          const label = node.data.label || `${node.data.module}.${node.data.action}`;
-          const fieldCount = Object.keys(params).length;
-
-          return (
-            <ModiffDisclosure
-              key={`${disclosureKey}:${selected ? 'selected' : 'idle'}`}
-              aria-label={`Node controls: ${label}`}
-              className={cx(
-                'overflow-hidden rounded-modiff-compact border bg-modiff-bg',
-                selected ? 'border-hf-yellow/60' : 'border-modiff-border',
-              )}
-              data-testid={`studio-node-disclosure-${node.id}`}
-              defaultOpen={defaultOpen}
-              label={
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate" title={label}>
-                    {label}
-                  </span>
-                  <span className="text-xs font-normal text-modiff-subtle-text">{fieldCount}</span>
-                </span>
-              }
-              onOpenChange={(open) => {
-                inspectorDisclosureMemory.set(disclosureKey, open);
-                setDisclosureState((current) =>
-                  current[disclosureKey] === open ? current : { ...current, [disclosureKey]: open },
-                );
-              }}
-              panelClassName="border-t border-modiff-border-subtle p-3"
-            >
-              {fieldCount > 0 ? (
-                <div className="grid gap-3 [&>[data-key]]:m-0">
-                  <NodeContent
-                    nodeId={node.id}
-                    params={params}
-                    updateStore={(param, value, key) => updateParam(node.id, param, value, key)}
-                    module={node.data.module}
-                    action={node.data.action}
-                    mode="controls"
-                    hidePreviews
-                    executionStatus={node.data.executionStatus}
-                    progressMessage={node.data.progressMessage}
-                    uiStateMessage={node.data.uiState?.validationMessage ?? node.data.uiState?.errorMessage}
-                  />
-                </div>
-              ) : (
-                <StatusLine tone="secondary">No editable params</StatusLine>
-              )}
-            </ModiffDisclosure>
-          );
-        })
-      ) : (
-        <StatusLine tone="secondary">No pinned inputs</StatusLine>
-      )}
-      {candidates.length > 0 ? (
-        <ModiffDisclosure
-          className="border-t border-modiff-border pt-2"
-          label="Pin inputs"
-          buttonClassName="min-h-0 justify-start p-0 text-xs text-modiff-subtle-text hover:bg-transparent"
-          panelClassName="mt-2 grid gap-1"
-        >
-          {candidates.map((input) => {
-            const pinned = pinnedSet.has(input.id);
-            return (
-              <StudioButton
-                key={input.id}
-                tone="ghost"
-                align="left"
-                fullWidth
-                className="min-h-8 px-2 text-xs"
-                onClick={() => onTogglePin(input.id)}
-                icon={
-                  pinned ? (
-                    <PinOff size={14} className="text-hf-yellow" />
-                  ) : (
-                    <Pin size={14} className="text-modiff-subtle-text" />
-                  )
-                }
-              >
-                <span className="min-w-0 flex-1 truncate">{input.label}</span>
-              </StudioButton>
-            );
-          })}
-        </ModiffDisclosure>
-      ) : null}
     </div>
   );
 }

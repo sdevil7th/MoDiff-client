@@ -733,10 +733,11 @@ function adoptTopLevelNodeIntoBlockV2(
   const retainedCrossings: Edge[] = [];
   const crossingEdges = incidentEdges.flatMap((edge) => {
     if (!edge.sourceHandle || !edge.targetHandle) throw new Error('Cannot move an incomplete connection.');
+    const adoptedEdgeId = /^[_-]/u.test(edge.id) ? `edge-${edge.id}` : edge.id;
     if (edge.source === source.id && edge.target === source.id)
       return [
         {
-          edgeId: edge.id,
+          edgeId: adoptedEdgeId,
           sourceNodeId: adoptedId,
           sourcePortId: edge.sourceHandle,
           targetNodeId: adoptedId,
@@ -747,7 +748,7 @@ function adoptTopLevelNodeIntoBlockV2(
       const targets = blockConnectionTargetsV2(target, edge.targetHandle ?? '', 'input');
       if (!targets.length) throw new Error('The connected Block input is no longer available.');
       return targets.map((binding, index) => ({
-        edgeId: index ? `workflow-edge-${nanoid()}` : edge.id,
+        edgeId: index ? `workflow-edge-${nanoid()}` : adoptedEdgeId,
         sourceNodeId: adoptedId,
         sourcePortId: edge.sourceHandle!,
         targetNodeId: binding.nodeId,
@@ -759,7 +760,7 @@ function adoptTopLevelNodeIntoBlockV2(
       if (!binding) throw new Error('The connected Block output is no longer available.');
       return [
         {
-          edgeId: edge.id,
+          edgeId: adoptedEdgeId,
           sourceNodeId: binding.nodeId,
           sourcePortId: binding.fieldOrPortId,
           targetNodeId: adoptedId,

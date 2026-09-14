@@ -93,7 +93,7 @@ export default function LayerConfigField(props: FieldProps) {
       className="modiff-field"
     >
       <ModiffFieldShell
-        htmlFor={`${props.nodeId}-${props.fieldKey}`}
+        htmlFor={props.inputId ?? `${props.nodeId}-${props.fieldKey}`}
         label={props.label}
         disabled={props.disabled}
         labelClassName="font-normal text-modiff-text"
@@ -116,7 +116,7 @@ export default function LayerConfigField(props: FieldProps) {
 
         <div className="flex w-full items-center">
           <GraphControlInput
-            id={`${props.nodeId}-${props.fieldKey}`}
+            id={props.inputId ?? `${props.nodeId}-${props.fieldKey}`}
             value={draftIndices}
             onChange={(event) => setDraftIndices(event.target.value)}
             onBlur={(event) => {
