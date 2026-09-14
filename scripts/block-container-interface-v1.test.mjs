@@ -2241,3 +2241,64 @@ test('nested legacy definitions migrate without manual expansion and preserve lo
   );
   assert.equal(converted.ids[0], runtime.blockProjectionNodeIdV2(root.id, 'nested::leaf'));
 });
+
+test('new User Node interfaces from punctuation-prefixed nodes remain adoptable without changing saved definitions', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const moves = await server.ssrLoadModule('/src/studio/blockSelectionMovesV2.ts');
+  for (const id of ['_preview', '-preview']) {
+    const node = {
+      id,
+      type: 'custom',
+      selected: true,
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'custom',
+        module: 'modules.Text',
+        action: 'TextToList',
+        label: 'Text',
+        params: { text: { type: 'string', value: 'preserved text' }, output: { type: 'string', display: 'output' } },
+      },
+    };
+    const created = users.createUserBlockFromSelection({ nodes: [node], edges: [] }, 'Punctuation ID');
+    assert.equal(created.ok, true);
+    for (const binding of [...created.block.inputs, ...created.block.outputs, ...created.block.exposedParams])
+      assert.match(binding.id, /^[A-Za-z0-9]/u);
+    const definition = structuredClone(created.block);
+    const target = {
+      ...node,
+      id: 'outside',
+      selected: false,
+      data: { ...node.data, params: { text: { type: 'string', value: 'outside' } } },
+    };
+    const get = flowStore.useFlowStore.getState;
+    get().replaceGraph({
+      nodes: [...created.nodes, target],
+      edges: [
+        {
+          id: 'public-output',
+          source: created.blockNode.id,
+          sourceHandle: created.block.outputs[0].id,
+          target: target.id,
+          targetHandle: 'text',
+        },
+      ],
+    });
+    get().replaceGraph(
+      users.expandUserBlockInstance({ nodes: get().nodes, edges: get().edges }, created.blockNode.id, []),
+    );
+    get().resetHistory();
+    const before = get().toObject();
+    moves.moveBlockSelectionV2([target.id], created.blockNode.id);
+    const expanded = runtime.expandBlockGraphV2ForExecution(get().nodes, get().edges);
+    assert.ok(expanded.nodes.some((item) => item.data.params.text?.value === 'preserved text'));
+    assert.ok(expanded.edges.some((edge) => edge.sourceHandle === 'output' && edge.targetHandle === 'text'));
+    assert.deepEqual(created.block, definition);
+    get().undo();
+    assert.deepEqual(get().toObject(), before);
+    get().redo();
+    assert.doesNotThrow(() => runtime.expandBlockGraphV2ForExecution(get().nodes, get().edges));
+    const old = structuredClone(definition);
+    old.exposedParams[0].id = `${id}__text`;
+    assert.equal(users.userBlockAvailableExposedParams(old).find((item) => item.paramKey === 'text').id, `${id}__text`);
+  }
+});

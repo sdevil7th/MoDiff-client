@@ -20840,7 +20840,12 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   await expect(page.getByTestId('block-drag-destination')).toBeVisible();
   await page.mouse.up();
   await page.keyboard.up('Control');
-  await page.waitForTimeout(150);
+  // Adoption migrates legacy instance IDs that begin with punctuation. Read
+  // the resulting canvas identity before checking its exact child ownership.
+  await expect(block).toHaveAttribute('data-id', /^[A-Za-z0-9]/u);
+  ids.blockId = await block.getAttribute('data-id');
+  expect(ids.blockId).toBeTruthy();
+  if (/^[_-]/u.test(ids.ordinaryId!)) ids.ordinaryId = `node-${ids.ordinaryId}`;
   await expect
     .poll(() =>
       page.evaluate(async ({ ordinaryId, blockId }) => {
