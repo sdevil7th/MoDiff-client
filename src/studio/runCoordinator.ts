@@ -96,13 +96,10 @@ export async function coordinateGraphRun({
     } else await prepareHuggingFaceClustersForRun(clusterInstanceIds);
   }
   const manualMode = useStudioStore.getState().form.resourceMode === 'expert';
-  const registeredEligibility = inspectRegisteredBlockAutoEligibilityV2(
-    useFlowStore.getState().nodes,
-    useFlowStore.getState().edges,
-    requestedTarget?.data.blockInstanceV2 ? requestedTarget.id : undefined,
-  );
-  const workflowAuto =
-    !manualMode && (!studioContext || studioContext.applyRuntimeMetadata === false) && !registeredEligibility.eligible;
+  // An exact catalog/source receipt does not carry executable resource hints.
+  // Every custom graph, including one untouched registered Block, must plan
+  // the lowered execution scope before it can submit in Auto.
+  const workflowAuto = !manualMode && (!studioContext || studioContext.applyRuntimeMetadata === false);
   const registeredInstanceIds = useFlowStore
     .getState()
     .nodes.filter(

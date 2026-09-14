@@ -16,6 +16,11 @@ let workflowConnections;
 let interfaceEditing;
 let controlPolicy;
 let durableReferences;
+let inspector;
+let studioStore;
+let settingsStore;
+let visibility;
+let fieldActions;
 let server;
 
 before(async () => {
@@ -52,6 +57,11 @@ before(async () => {
   interfaceEditing = await server.ssrLoadModule('/src/studio/blockInterfaceEditingV2.ts');
   controlPolicy = await server.ssrLoadModule('/src/studio/managedControlPolicy.ts');
   durableReferences = await server.ssrLoadModule('/src/stores/flowDurableReferences.ts');
+  inspector = await server.ssrLoadModule('/src/studio/graphNodeControls.ts');
+  studioStore = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  settingsStore = await server.ssrLoadModule('/src/stores/useSettingsStore.ts');
+  visibility = await server.ssrLoadModule('/src/studio/workspaceVisibility.ts');
+  fieldActions = await server.ssrLoadModule('/src/utils/fieldAction.ts');
 });
 
 after(async () => {
@@ -184,6 +194,171 @@ function root(id = 'block-v2-one') {
       size: { width: 420, height: 480 },
     }),
   );
+}
+
+test('workspace inspector resolves and edits declared Block controls without root params or cross-tab writes', () => {
+  const block = root();
+  const sibling = root('inspector-sibling');
+  const before = structuredClone(block.data.blockInstanceV2);
+  studioStore.useStudioStore.setState({ activeWorkflowTabId: 'inspector-workflow' });
+  flowStore.useFlowStore.setState({ nodes: [block, sibling], edges: [] });
+  const fields = inspector.graphNodeControlParams(block);
+  assert.deepEqual(Object.keys(fields), ['prompt']);
+  assert.equal(fields.prompt.value, 'creator prompt');
+  assert.equal(fields.prompt.fieldOptions.suppressInitialFieldAction, true);
+  assert.deepEqual(block.data.params, {});
+  inspector.updateGraphNodeControl('another-workflow', block.id, 'prompt', 'stale edit');
+  assert.equal(flowStore.useFlowStore.getState().historyPast.length, 0);
+  inspector.updateGraphNodeControl('inspector-workflow', block.id, 'prompt', 'inspector edit');
+  let state = flowStore.useFlowStore.getState();
+  const edited = state.nodes.find(({ id }) => id === block.id);
+  assert.equal(inspector.graphNodeControlParams(edited).prompt.value, 'inspector edit');
+  assert.deepEqual(edited.data.params, {});
+  assert.deepEqual(edited.data.blockInstanceV2.definitionSnapshot, before.definitionSnapshot);
+  assert.deepEqual(edited.data.blockInstanceV2.effectiveGraph, before.effectiveGraph);
+  assert.deepEqual(
+    state.nodes.find(({ id }) => id === sibling.id),
+    sibling,
+  );
+  assert.equal(state.historyPast.length, 1);
+  state.undo();
+  assert.equal(
+    inspector.graphNodeControlParams(flowStore.useFlowStore.getState().nodes[0]).prompt.value,
+    'creator prompt',
+  );
+  flowStore.useFlowStore.getState().redo();
+  state = flowStore.useFlowStore.getState();
+  const saved = runtime.canonicalizePersistedBlockGraphV2(state.nodes, state.edges);
+  assert.equal(inspector.graphNodeControlParams(saved.nodes[0]).prompt.value, 'inspector edit');
+  const pin = inspector.graphParamInputCandidates(saved.nodes).find(({ nodeId }) => nodeId === block.id).id;
+  state.setBlockPresentationV2(block.id, { expanded: true });
+  assert.ok(inspector.graphParamInputCandidates(flowStore.useFlowStore.getState().nodes).some(({ id }) => id === pin));
+  flowStore.useFlowStore.getState().setBlockPresentationV2(block.id, { expanded: false });
+  assert.ok(inspector.graphParamInputCandidates(flowStore.useFlowStore.getState().nodes).some(({ id }) => id === pin));
+});
+
+test('workspace inspector filters connectors and previews while retaining ordinary control contracts', () => {
+  const node = ordinaryNode();
+  node.data.params = {
+    zero: { type: 'int', value: 0, min: 0, max: 100, step: 2 },
+    off: { type: 'bool', value: false },
+    locked: { type: 'string', value: '', disabled: true, onChange: 'schema_action' },
+    secret: { hidden: true, value: 'hidden' },
+    input: { isInput: true },
+    output: { display: 'output' },
+    preview: { display: 'ui_image' },
+  };
+  const before = structuredClone(node);
+  const fields = inspector.graphNodeControlParams(node);
+  assert.deepEqual(Object.keys(fields), ['zero', 'off', 'locked']);
+  assert.equal(fields.zero.value, 0);
+  assert.equal(fields.off.value, false);
+  assert.equal(fields.locked.disabled, true);
+  assert.equal(fields.locked.onChange, 'schema_action');
+  assert.equal(fields.locked.fieldOptions.suppressInitialFieldAction, true);
+  assert.deepEqual(node, before);
+});
+
+test('workspace reveal preserves explicit open tools and only reopens Studio when collapsed', () => {
+  for (const tab of ['studio', 'queue', 'setup', 'block', 'compatibility']) {
+    settingsStore.useSettingsStore.setState({ isRightPanelOpen: true, rightPanelTab: tab });
+    visibility.revealWorkspaceForGraphEditing();
+    assert.equal(settingsStore.useSettingsStore.getState().rightPanelTab, tab);
+  }
+  settingsStore.useSettingsStore.setState({ isRightPanelOpen: false, rightPanelTab: 'queue' });
+  visibility.revealWorkspaceForGraphEditing();
+  assert.equal(settingsStore.useSettingsStore.getState().isRightPanelOpen, true);
+  assert.equal(settingsStore.useSettingsStore.getState().rightPanelTab, 'studio');
+});
+
+for (const clustered of [false, true]) {
+  test(`inspector field actions update hidden controls and connector signals (${clustered ? 'nested Block' : 'ordinary node'})`, async () => {
+    studioStore.useStudioStore.setState({ activeWorkflowTabId: 'field-actions', graphBinding: null });
+    const params = {
+      quant_type: {
+        type: 'string',
+        value: 'bnb_4bit',
+        onChange: { bnb_4bit: ['bnb_4bit_quant_type'], bnb_8bit: ['llm_int8_threshold'] },
+      },
+      bnb_4bit_quant_type: { type: 'string', value: 'nf4', hidden: false },
+      llm_int8_threshold: { type: 'float', value: 6, hidden: true },
+      model_type: { type: 'string', value: 'transformer', onChange: { action: 'signal', target: 'model' } },
+      model: { type: 'string', display: 'output' },
+    };
+    let node = { ...ordinaryNode(), data: { ...ordinaryNode().data, params } };
+    let originalDefinition;
+    let sibling;
+    if (clustered) {
+      const candidate = structuredClone(nestedModularRoot().data.blockInstanceV2.definitionSnapshot);
+      candidate.graph.nodes.find(({ nodeId }) => nodeId === 'generate').data.params = params;
+      candidate.graph.graphHash = schema.blockGraphHashV2(candidate.graph);
+      candidate.contentHash = schema.blockDefinitionContentHashV2(candidate);
+      originalDefinition = structuredClone(candidate);
+      const makeRoot = (id) =>
+        runtime.createBlockRootNodeV2(
+          runtime.setBlockPresentationV2(
+            schema.createBlockInstanceV2(candidate, {
+              instanceId: id,
+              position: { x: 0, y: 0 },
+              size: { width: 980, height: 760 },
+              collapsedContainerNodeIds: [],
+            }),
+            { expanded: true },
+          ),
+        );
+      const block = makeRoot('actions-block');
+      sibling = makeRoot('actions-sibling');
+      const projection = runtime.materializeBlockProjectionV2(block);
+      flowStore.useFlowStore.setState({ nodes: [...projection.nodes, sibling], edges: projection.edges });
+      node = projection.nodes.find(({ data }) => data.blockProjectionNodeId === 'generate');
+    } else {
+      flowStore.useFlowStore.setState({ nodes: [node], edges: [] });
+    }
+    const read = () => flowStore.useFlowStore.getState().nodes.find(({ id }) => id === node.id).data.params;
+    const actionProps = (fieldKey) => ({
+      ...fieldActions.buildFieldActionProps(node.id, fieldKey),
+      updateStore: (...args) => inspector.updateGraphNodeControl('field-actions', node.id, ...args),
+      updateFieldActionStore: (param, value, key) =>
+        inspector.updateGraphNodeControl('field-actions', node.id, param, value, key, fieldKey),
+    });
+    inspector.updateGraphNodeControl('field-actions', node.id, 'llm_int8_threshold', 99);
+    assert.equal(read().llm_int8_threshold.value, 6, 'hidden controls cannot be edited directly');
+    for (const value of ['bnb_8bit', 'bnb_4bit', 'bnb_8bit']) {
+      const props = actionProps('quant_type');
+      props.updateStore('quant_type', value);
+      await fieldActions.default(props, value);
+      assert.equal(read().llm_int8_threshold.hidden, value !== 'bnb_8bit');
+      assert.equal(read().bnb_4bit_quant_type.hidden, value !== 'bnb_4bit');
+    }
+    await fieldActions.default(actionProps('model_type'), 'transformer');
+    assert.deepEqual(read().model.signal, { direction: 'output', origin: 'model_type', value: 'transformer' });
+    await fieldActions.default(
+      { ...actionProps('model_type'), onChange: { action: 'value', target: 'bnb_4bit_quant_type' } },
+      'fp4',
+    );
+    assert.equal(read().bnb_4bit_quant_type.value, 'fp4', 'declared actions can update hidden values');
+    inspector.updateGraphNodeControl('field-actions', node.id, 'absent', 1, 'value', 'quant_type');
+    inspector.updateGraphNodeControl('field-actions', node.id, 'quant_type', 'bad', 'value', 'absent');
+    assert.equal(read().absent, undefined);
+    assert.equal(read().quant_type.value, 'bnb_8bit');
+    const stale = actionProps('quant_type');
+    const beforeSwitch = structuredClone(read());
+    studioStore.useStudioStore.setState({ activeWorkflowTabId: 'other-workflow' });
+    await fieldActions.default(stale, 'bnb_4bit');
+    inspector.updateGraphNodeControl('field-actions', node.id, 'quant_type', 'bad', 'value', 'quant_type');
+    assert.deepEqual(read(), beforeSwitch);
+    if (clustered) {
+      const nodes = flowStore.useFlowStore.getState().nodes;
+      assert.deepEqual(
+        nodes.find(({ id }) => id === sibling.id),
+        sibling,
+      );
+      assert.deepEqual(
+        nodes.find(({ id }) => id === 'actions-block').data.blockInstanceV2.definitionSnapshot,
+        originalDefinition,
+      );
+    }
+  });
 }
 
 function inputFanoutRoot(id = 'block-v2-input-fanout') {
@@ -375,6 +550,43 @@ test('nested declared controls edit one logical value, preserve siblings and exe
   assert.equal(
     flowStore.useFlowStore.getState().nodes.find((node) => node.id === block.id).data.blockInstanceV2.values.prompt,
     'Intricate copper observatory',
+  );
+});
+
+test('workspace pins survive nested Block collapse and reveal without rewriting execution or definitions', () => {
+  const block = nestedModularRoot('pinned-nested');
+  const materialized = runtime.materializeBlockProjectionV2(block);
+  studioStore.useStudioStore.setState({ activeWorkflowTabId: 'pinned-workflow' });
+  flowStore.useFlowStore.setState({ nodes: materialized.nodes, edges: materialized.edges });
+  const pin = inspector
+    .graphParamInputCandidates(materialized.nodes)
+    .find(({ node, paramKey }) => node.data.blockProjectionNodeId === 'generate' && paramKey === 'prompt');
+  assert.ok(pin);
+  const before = structuredClone(block.data.blockInstanceV2);
+  flowStore.useFlowStore.getState().setBlockPresentationV2(block.id, {
+    expanded: false,
+    collapsedContainerNodeIds: ['denoise'],
+  });
+  const collapsed = flowStore.useFlowStore.getState();
+  const beforeRead = structuredClone(collapsed.nodes);
+  const resolved = inspector.graphParamInputCandidates(collapsed.nodes, [pin.id]).find(({ id }) => id === pin.id);
+  assert.ok(resolved);
+  assert.equal(resolved.param.value, pin.param.value);
+  assert.deepEqual(flowStore.useFlowStore.getState().nodes, beforeRead);
+  inspector.updateGraphNodeControl('pinned-workflow', pin.nodeId, pin.paramKey, 'cannot edit absent node');
+  assert.deepEqual(flowStore.useFlowStore.getState().nodes, beforeRead);
+  inspector.revealPinnedGraphInput('other-workflow', resolved.node);
+  assert.deepEqual(flowStore.useFlowStore.getState().nodes, beforeRead);
+  inspector.revealPinnedGraphInput('pinned-workflow', resolved.node);
+  const revealed = flowStore.useFlowStore.getState();
+  assert.ok(revealed.nodes.some(({ id }) => id === pin.nodeId));
+  const instance = revealed.nodes.find(({ id }) => id === block.id).data.blockInstanceV2;
+  for (const key of ['definitionSnapshot', 'effectiveGraph', 'effectiveInterface', 'values'])
+    assert.deepEqual(instance[key], before[key]);
+  inspector.updateGraphNodeControl('pinned-workflow', pin.nodeId, pin.paramKey, 'nested inspector edit');
+  assert.equal(
+    flowStore.useFlowStore.getState().nodes.find(({ id }) => id === block.id).data.blockInstanceV2.values.prompt,
+    'nested inspector edit',
   );
 });
 
@@ -1065,6 +1277,31 @@ test('public-input fan-out adoption materializes every declared target and move-
       .map(({ sourceHandle, targetHandle }) => `${sourceHandle}>${targetHandle}`),
     ['text>prompt'],
   );
+});
+
+test('adopting a connected node normalizes legacy edge IDs without changing its definition or undo snapshot', () => {
+  for (const edgeId of ['-legacy-edge', '_legacy-edge']) {
+    const block = inputFanoutRoot();
+    const projection = runtime.materializeBlockProjectionV2(
+      runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(block.data.blockInstanceV2, { expanded: true })),
+    );
+    const source = ordinaryNode('legacy-edge-source');
+    source.data.params = { text: { type: 'string', display: 'output' } };
+    const edge = { id: edgeId, source: source.id, sourceHandle: 'text', target: block.id, targetHandle: 'prompt' };
+    flowStore.useFlowStore.setState({
+      nodes: [...projection.nodes, source],
+      edges: [...projection.edges, edge],
+      historyPast: [],
+    });
+    flowStore.useFlowStore.getState().adoptNodeIntoBlockV2(source.id, block.id);
+    const instance = flowStore.useFlowStore.getState().nodes.find(({ id }) => id === block.id).data.blockInstanceV2;
+    assert.deepEqual(instance.definitionSnapshot, block.data.blockInstanceV2.definitionSnapshot);
+    assert.equal(instance.effectiveGraph.edges.filter(({ sourceNodeId }) => sourceNodeId === source.id).length, 2);
+    assert.ok(instance.effectiveGraph.edges.some((edge) => edge.edgeId === `edge-${edgeId}`));
+    flowStore.useFlowStore.getState().undo();
+    const restored = flowStore.useFlowStore.getState().edges.find(({ id }) => id === edgeId);
+    assert.deepEqual(Object.fromEntries(Object.keys(edge).map((key) => [key, restored[key]])), edge);
+  }
 });
 
 test('move-out preserves a partial fan-out through its exact internal input', () => {

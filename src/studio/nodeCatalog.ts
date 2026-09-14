@@ -1,5 +1,6 @@
 import { runtimeNodeIdentityV2 } from './nodeLibraryAuditV2';
 import type { NodeData } from '../stores/useNodeStore';
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 
 export type NodeCatalogVisibility = 'essential' | 'advanced' | 'experimental' | 'internal';
 
@@ -211,6 +212,20 @@ export function nodeCatalogEntries(nodes: Record<string, NodeData>) {
     else unique.set(identity, getNodeCatalogEntry(node, key));
   }
   return [...unique.values()];
+}
+
+export function nodeCatalogEntryMatchesSearch(entry: NodeCatalogEntry, search: string) {
+  return matchesSearchKeywords(search, [
+    entry.key,
+    entry.label,
+    entry.surfaceCategory,
+    ...entry.groupPath,
+    ...(entry.aliases ?? []),
+    entry.node.label,
+    entry.node.module,
+    entry.node.action,
+    entry.node.category,
+  ]);
 }
 
 export function compareNodeSurfaceCategories(left: NodeSurfaceCategory, right: NodeSurfaceCategory) {

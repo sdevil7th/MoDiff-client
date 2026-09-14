@@ -27,6 +27,7 @@ type StudioCommandPaletteProps = {
   isWorking: boolean;
   runBlocked: boolean;
   expertMode?: boolean;
+  hasManagedForm?: boolean;
   onRun: () => void;
   onInterrupt: () => void;
   onUpdateGraph: () => void;
@@ -46,6 +47,7 @@ export function StudioCommandPalette({
   isWorking,
   runBlocked,
   expertMode = false,
+  hasManagedForm = true,
   hasComparePair,
   hasGalleryItems,
   onCompareLatest,
@@ -73,7 +75,7 @@ export function StudioCommandPalette({
         disabled: isWorking || runBlocked,
         run: onRun,
       },
-      ...(expertMode
+      ...(expertMode && hasManagedForm
         ? ([
             {
               id: 'update',
@@ -92,13 +94,17 @@ export function StudioCommandPalette({
         icon: <Octagon size={15} />,
         run: onInterrupt,
       },
-      {
-        id: 'save-prompt',
-        label: 'Save prompt',
-        detail: 'Store the current prompt as a reusable snippet.',
-        icon: <Save size={15} />,
-        run: onSavePrompt,
-      },
+      ...(hasManagedForm
+        ? [
+            {
+              id: 'save-prompt',
+              label: 'Save prompt',
+              detail: 'Store the current prompt as a reusable snippet.',
+              icon: <Save size={15} />,
+              run: onSavePrompt,
+            },
+          ]
+        : []),
       ...(expertMode
         ? ([
             {
@@ -158,6 +164,7 @@ export function StudioCommandPalette({
     ],
     [
       expertMode,
+      hasManagedForm,
       hasComparePair,
       hasGalleryItems,
       isWorking,

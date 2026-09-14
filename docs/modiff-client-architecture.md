@@ -648,6 +648,12 @@ reject late or unrelated updates that would overwrite another workflow tab,
 replacement canvas, or newer attempt. Identity-less legacy field messages are
 accepted only when a single open workflow leaves no tab ambiguity.
 
+Rendered canvas fields retain the workflow context that owns their immutable
+parameter schema. Before dispatch, a field action must still match that context
+and a live node, module/action pair, and field. Delayed option updates and errors
+also check ownership. This prevents an unmounting template control from sending
+an empty request or changing controls in the incoming custom workflow.
+
 ## Studio Domain
 
 The `src/studio` directory contains domain logic rather than one monolithic component:
@@ -674,6 +680,22 @@ API. Local tabs remain the editing surface; a successful explicit Save creates o
 while Save JSON copy is a browser download.
 
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
+
+`graphNodeControls.ts` resolves inspector fields from ordinary parameters or the same `blockControlParamsV2`
+contract used by the canvas. Inspector mounts suppress initial field actions: canvas insertion/finalization owns
+schema discovery, while explicit field edits retain their normal actions. Writes check the originating workflow
+ID and use existing history-aware flow mutations. Missing pinned projection nodes may be read from a temporary
+fully expanded projection; revealing them changes presentation explicitly, never the execution graph or definition.
+`updateFieldActionStore` keeps declared action writes separate from direct field edits: actions can reveal hidden
+parameters and signal connectors omitted from the inspector, but both source and target must belong to the live node.
+`GraphNodeInputs` remounts per workflow to avoid carrying field-local state across documents. `GraphArtifactActions`
+uses graph readiness issues, including exact revision/file/repair options, and never reconciles a guided form when
+an asynchronous download completes. `workspaceVisibility.ts` reopens a collapsed workspace for deliberate graph
+editing without replacing an already-open tool. Creation opens Studio; refresh retains the persisted visibility.
+
+Alternate control views supply `NodeContent.controlIdPrefix` for DOM input/label and radio-group identity.
+The field's `nodeId` and `fieldKey` remain the graph/action identity; they must never be replaced with an inspector
+DOM ID. Inspector field grids use one bounded column so native input widths cannot overflow a narrow workspace.
 
 Registered-route metadata uses a reserved
 `provenance.registeredBlockV2RouteBinding` field. `runCoordinator.ts` always
@@ -797,6 +819,16 @@ User selects Run
 ```
 
 `src/studio/runCoordinator.ts` owns submission identity and output attribution. `src/utils/runGraph.ts` owns transport. Callers own readiness and user feedback.
+
+Every custom graph in Auto, including an untouched registered Cluster, plans its
+lowered execution scope through `/auto_resource/workflow`. Source-authority
+receipts do not replace that executable resource plan. A rejected plan prevents
+submission; it cannot silently fall through to Expert. Planning preserves the
+instance's creative settings and immutable source definition.
+
+Session activity merges queue history by execution timestamps before applying
+its 30-entry limit, retaining running work ahead of waiting tasks and finished history. Repeated or
+reordered history snapshots must not evict a new submission or promote old runs.
 
 Saved User Nodes retain model/prompt/settings provenance independently of
 registered-route authority. For an unambiguous Modular Diffusers User Node,

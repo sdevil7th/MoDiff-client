@@ -438,7 +438,8 @@ function portIdentity(port: Pick<UserBlockPort, 'nodeId' | 'paramKey'>) {
 }
 
 function uniquePortId(nodeId: string, paramKey: string, direction: 'input' | 'output', usedIds: Set<string>) {
-  const base = `${safeHandle(nodeId, direction)}__${safeHandle(paramKey, direction)}`;
+  const raw = `${safeHandle(nodeId, direction)}__${safeHandle(paramKey, direction)}`;
+  const base = /^[A-Za-z0-9]/u.test(raw) ? raw : `${direction}-${raw}`;
   let id = base;
   let suffix = 2;
   while (usedIds.has(id)) {
@@ -829,7 +830,7 @@ function exposedParamsForNodes(nodes: CustomNodeType[], includeAdvanced = false)
         return surface === 'main' || (includeAdvanced && surface === 'advanced');
       })
       .map(([key, param]) => ({
-        id: `${node.id}__${key}`,
+        id: `${/^[_-]/u.test(node.id) ? 'control-' : ''}${node.id}__${key}`,
         kind: 'graph-param' as const,
         label: `${nodeLabel(node)} / ${param.label || key}`,
         nodeId: node.id,
@@ -1673,7 +1674,13 @@ export function userBlockAvailableExposedParams(definition: UserBlockDefinition)
   return exposedParamsForNodes(
     definition.nodes.filter(isFlowNodeLike).map((node) => node as CustomNodeType),
     true,
-  );
+  ).map((input) => {
+    // Existing saved controls retain their IDs and field values when configured.
+    const saved = definition.exposedParams.find(
+      (item) => item.kind === input.kind && item.nodeId === input.nodeId && item.paramKey === input.paramKey,
+    );
+    return saved ? { ...input, id: saved.id } : input;
+  });
 }
 
 export function connectionCrossesUserBlockBoundary(nodes: CustomNodeType[], sourceId: string, targetId: string) {

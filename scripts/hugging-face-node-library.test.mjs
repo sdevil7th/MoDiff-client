@@ -30,6 +30,90 @@ let nodeCatalogModule;
 let nodeListModule;
 let nodeStoreModule;
 let originalFetch;
+test('runtime node search requires every keyword and preserves exact registry keys and aliases', () => {
+  const entry = nodeCatalogModule.getNodeCatalogEntry(
+    {
+      module: 'modules.Image',
+      action: 'Load',
+      label: 'Open picture',
+      category: 'image',
+      description: 'Read a picture from disk',
+      params: {},
+    },
+    'custom.registry.ImageLoader',
+  );
+  entry.aliases = ['legacy.Image.Open'];
+  for (const query of [
+    '  IMAGE   load ',
+    'load-image',
+    'custom.registry.ImageLoader',
+    'legacy.Image.Open',
+    'picture',
+  ]) {
+    assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, query), true, query);
+  }
+  for (const query of ['image audio', 'disk image', 'missing', '---']) {
+    assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, query), false, query);
+  }
+  assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, ''), true);
+  assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, '  '), true);
+});
+
+test('catalog keyword search handles spacing, punctuation and word order without admitting partial queries', () => {
+  const sections = [
+    {
+      id: 'modular_diffusers_block_nodes',
+      label: 'Modular Diffusers Block Nodes',
+      entries: [
+        {
+          id: 'text-inputs',
+          label: 'Qwen Image Text Inputs',
+          description: 'Batch embeddings',
+          groupPath: ['Image'],
+          searchText: 'qwenimagetextinputsstep',
+        },
+        {
+          id: 'decode',
+          label: 'Qwen Image Decode',
+          description: 'Decode latents',
+          groupPath: ['Image'],
+          searchText: 'qwenimagedecodestep',
+        },
+        {
+          id: 'flux',
+          label: 'Flux Text Inputs',
+          description: 'Batch embeddings',
+          groupPath: ['Image'],
+          searchText: 'fluxtextinputsstep',
+        },
+      ],
+    },
+  ];
+  for (const query of [
+    '  QWEN   inputs  ',
+    'inputs qwen',
+    'qwen text-inputs',
+    'qwen text_inputs',
+    'qwenimagetextinputsstep',
+  ]) {
+    assert.deepEqual(
+      libraryCatalogModule
+        .filterHuggingFaceCatalogSections(sections, query)
+        .flatMap(({ entries }) => entries.map(({ id }) => id)),
+      ['text-inputs'],
+      query,
+    );
+  }
+  for (const query of ['qwen missing', 'nothing-matches']) {
+    assert.deepEqual(libraryCatalogModule.filterHuggingFaceCatalogSections(sections, query), [], query);
+  }
+  assert.equal(libraryCatalogModule.filterHuggingFaceCatalogSections(sections, '   '), sections);
+  assert.equal(
+    libraryCatalogModule.filterHuggingFaceCatalogSections(sections, 'Modular Diffusers')[0]?.entries.length,
+    3,
+  );
+});
+
 test('catalog search matches readable mixed-case internal node labels', () => {
   const sections = [
     {
@@ -45,11 +129,12 @@ test('catalog search matches readable mixed-case internal node labels', () => {
       ],
     },
   ];
-  for (const query of ['Qwen Image Text Inputs', 'qwen image text inputs', 'Batch Embeddings'])
+  for (const query of ['Qwen Image Text Inputs', 'qwen image text inputs'])
     assert.equal(
       libraryCatalogModule.filterHuggingFaceCatalogSections(sections, query)[0]?.entries[0]?.id,
       'text-inputs',
     );
+  assert.deepEqual(libraryCatalogModule.filterHuggingFaceCatalogSections(sections, 'Batch Embeddings'), []);
 });
 let server;
 let studioStoreModule;
@@ -3032,6 +3117,85 @@ test('catalog projections use Cluster Node terminology and retain exact family d
   const qwenClusters = qwenResults.find((section) => section.id === 'diffusers_cluster_nodes');
   assert.equal(qwenClusters.entries.length, 1);
   assert.match(qwenClusters.entries[0].label, /Qwen Image/);
+});
+
+test('Qwen search does not return Anima workflows just because they use Qwen components', () => {
+  const parsed = libraryModule.parseHuggingFaceNodeLibrary(payload());
+  const qwen = parsed.definitions.find((definition) => definition.pipelineClass.includes('Qwen'));
+  const anima = {
+    ...qwen,
+    id: 'diffusers:AnimaPipeline:text_to_image',
+    label: 'Anima — Text To Image',
+    pipelineClass: 'AnimaPipeline',
+    blocksClass: null,
+    description: 'Generate images with Anima using Qwen states.',
+    components: [
+      {
+        name: 'text_encoder',
+        type: 'transformers.Qwen3Model',
+        creationMethod: 'from_pretrained',
+        reuseKey: ['Qwen/Qwen3-0.6B'],
+      },
+    ],
+    steps: [{ path: 'encode', className: 'QwenTextEncoderStep', kind: 'step', description: 'Encode text with Qwen' }],
+  };
+  const sections = libraryCatalogModule.buildHuggingFaceCatalogSections({ ...parsed, definitions: [qwen, anima] });
+  const results = libraryCatalogModule.filterHuggingFaceCatalogSections(sections, 'qwen');
+  assert.deepEqual(
+    results.find(({ id }) => id === 'diffusers_cluster_nodes').entries.map(({ id }) => id),
+    [qwen.id],
+  );
+  assert.ok(
+    results.find(({ id }) => id === 'diffusers_component_nodes').entries.some(({ label }) => label.includes('Qwen3')),
+  );
+  const animaResults = libraryCatalogModule.filterHuggingFaceCatalogSections(sections, 'anima');
+  assert.deepEqual(
+    animaResults.find(({ id }) => id === 'diffusers_cluster_nodes').entries.map(({ id }) => id),
+    [anima.id],
+  );
+});
+
+test('selected and unpruned Anima blocks do not match Qwen in descriptions, sockets or dependencies', () => {
+  const parsed = libraryModule.parseHuggingFaceNodeLibrary(payload());
+  const source = parsed.definitions[0];
+  const block = {
+    ...parsed.blockDefinitions[0],
+    id: 'diffusers.modular-block:AnimaTextEncoderStep',
+    className: 'AnimaTextEncoderStep',
+    description: 'Encodes Anima prompts into Qwen states and T5 token ids.',
+    inputs: [{ name: 'qwen_prompt_embeds', type: 'QwenStates', description: 'Qwen inputs' }],
+    components: [{ name: 'text_encoder', type: 'Qwen3Model', description: 'Qwen model' }],
+  };
+  const placement = {
+    ...source.blockPlacements[0],
+    blockDefinitionId: block.id,
+    path: ['text_encoder'],
+    legacyPath: 'text_encoder',
+  };
+  const anima = {
+    ...source,
+    id: 'anima:text2image',
+    label: 'Anima — Text To Image',
+    pipelineClass: 'AnimaModularPipeline',
+    blocksClass: 'AnimaAutoBlocks',
+    blockPlacements: [placement],
+  };
+  const library = { ...parsed, definitions: [anima], blockDefinitions: [block] };
+  const snapshot = {
+    diffusersRevision: library.diffusersRevision,
+    blockDefinitions: [block],
+    pipelines: [{ pipelineClass: anima.pipelineClass, placements: [placement] }],
+  };
+  for (const conditionalSnapshot of [undefined, snapshot]) {
+    const sections = libraryCatalogModule.buildHuggingFaceCatalogSections(library, conditionalSnapshot);
+    const matches = (query) =>
+      libraryCatalogModule
+        .filterHuggingFaceCatalogSections(sections, query)
+        .find(({ id }) => id === 'modular_diffusers_block_nodes')?.entries ?? [];
+    assert.equal(matches('qwen').length, 0);
+    assert.equal(matches('anima encoder').length, 1);
+    assert.equal(matches('AnimaTextEncoderStep').length, 1);
+  }
 });
 
 test('catalog projections preserve a reviewed human family label for standard Diffusers composites', () => {

@@ -1,3 +1,4 @@
+import { revealWorkspaceForGraphEditing } from './workspaceVisibility';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
 
@@ -6,7 +7,8 @@ import { useStudioStore } from '../stores/useStudioStore';
  * is inserted. A restored Studio receipt can otherwise outlive the canvas it
  * described and incorrectly govern the new graph.
  */
-export function prepareWorkflowForManualInsertion() {
+export function prepareWorkflowForManualInsertion({ revealWorkspace = true }: { revealWorkspace?: boolean } = {}) {
+  if (revealWorkspace) revealWorkspaceForGraphEditing();
   const studio = useStudioStore.getState();
   if (useFlowStore.getState().nodes.length === 0 && studio.graphBinding) {
     studio.detachManagedGraph();

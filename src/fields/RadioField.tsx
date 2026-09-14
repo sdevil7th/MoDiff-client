@@ -35,7 +35,7 @@ export default function RadioField(props: FieldProps) {
       <ModiffRadioGroup
         className={cx('flex gap-2', props.fieldOptions?.row ? 'flex-row flex-wrap items-center' : 'flex-col')}
         aria-label={props.label}
-        name={`${props.nodeId}-${props.fieldKey}`}
+        name={props.inputId ?? `${props.nodeId}-${props.fieldKey}`}
         options={options}
         value={String(props.value)}
         disabled={props.disabled}

@@ -3,7 +3,7 @@
 import type { FieldProps } from '../components/NodeContent';
 import { useFlowStore } from '../stores/useFlowStore';
 import { type NodeParamSignal, type NodeParams, useNodesStore } from '../stores/useNodeStore';
-import { captureWorkflowOperationContext } from '../stores/useStudioStore';
+import { captureWorkflowOperationContext, workflowOperationContextIsCurrent } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { enqueueSnackbar } from '../ui/snackbar';
 import config from '../../app.config';
@@ -91,6 +91,7 @@ export function buildFieldActionProps(nodeId: string, fieldKey: string): FieldPr
   const dataType = String(Array.isArray(param.type) ? (param.type[0] ?? 'string') : (param.type ?? 'string'));
   return {
     nodeId,
+    workflowContext: captureWorkflowOperationContext(),
     fieldKey,
     label: param.label ?? fieldKey.charAt(0).toUpperCase() + fieldKey.slice(1),
     display,
@@ -147,6 +148,17 @@ export default async function fieldAction(
   event: string = 'onChange',
   options: FieldActionOptions = {},
 ) {
+  const workflowContext = props.workflowContext ?? captureWorkflowOperationContext();
+  const isCurrent = () => workflowOperationContextIsCurrent(workflowContext, { includeForm: false });
+  if (!isCurrent()) return;
+  const updateStore = props.updateFieldActionStore ?? props.updateStore;
+  props = {
+    ...props,
+    workflowContext,
+    updateStore: (...args) => {
+      if (isCurrent()) updateStore(...args);
+    },
+  };
   const onEvent = event === 'onChange' ? props.onChange : event === 'onSignal' ? props.onSignal : null;
   if (!onEvent) {
     return;
@@ -195,6 +207,16 @@ export default async function fieldAction(
   }
 
   if (action === 'exec') {
+    // React can flush a departing canvas's passive effects after the new graph
+    // is installed. Never turn an absent/replaced node into an empty request.
+    const node = flowState.nodes.find((candidate) => candidate.id === props.nodeId);
+    if (
+      !node ||
+      node.data.module !== props.module ||
+      node.data.action !== props.action ||
+      !nodeConnectorParam(node, props.fieldKey)
+    )
+      return;
     props.updateStore(props.fieldKey, true, 'disabled');
     try {
       await execAction(
@@ -318,6 +340,7 @@ export default async function fieldAction(
       const filterValue = normTargetValue.filter((opt) => validOptions.includes(String(opt)));
 
       queueMicrotask(() => {
+        if (!isCurrent()) return;
         props.updateStore(targetField, targetIsMultiple ? filterValue : (filterValue[0] ?? ''), 'value');
         // force a refresh by triggering the disabled state
         props.updateStore(targetField, false, 'disabled');
@@ -450,6 +473,9 @@ async function execAction(
       },
     });
   } catch (error) {
+    // The originating graph owns the result, including its error notification.
+    // Backend websocket schema updates carry the same ownership receipt.
+    if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: workflowScope !== 'canvas' })) return;
     const err = `Error running node action: ${formatRequestError(error, 'Request failed.')}`;
     enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
     throw new Error(err);

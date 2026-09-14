@@ -36,7 +36,7 @@ export default function RangeField(props: FieldProps) {
       className="modiff-field"
     >
       <ModiffFieldShell
-        htmlFor={`${props.nodeId}-${props.fieldKey}`}
+        htmlFor={props.inputId ?? `${props.nodeId}-${props.fieldKey}`}
         label={props.label}
         disabled={props.disabled}
         labelClassName="px-2 pt-1 font-normal"
@@ -51,7 +51,7 @@ export default function RangeField(props: FieldProps) {
           <output className="text-modiff-control leading-none text-modiff-text">{valueText.end}</output>
         </div>
         <RangeSliderFrame
-          id={`${props.nodeId}-${props.fieldKey}`}
+          id={props.inputId ?? `${props.nodeId}-${props.fieldKey}`}
           aria-label={props.label}
           className="nodrag nowheel"
           disabled={props.disabled}

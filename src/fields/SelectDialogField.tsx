@@ -86,7 +86,7 @@ export default function SelectDialogField(props: FieldProps) {
       className="modiff-field"
     >
       <ModiffFieldShell
-        htmlFor={`${props.nodeId}-${props.fieldKey}`}
+        htmlFor={props.inputId ?? `${props.nodeId}-${props.fieldKey}`}
         label={props.label}
         layout="inline"
         disabled={props.disabled}
@@ -98,7 +98,7 @@ export default function SelectDialogField(props: FieldProps) {
       >
         <div className="relative max-h-[898px] min-w-0 flex-1 overflow-y-auto">
           <GraphControlButton
-            id={`${props.nodeId}-${props.fieldKey}`}
+            id={props.inputId ?? `${props.nodeId}-${props.fieldKey}`}
             type="button"
             disabled={props.disabled}
             aria-haspopup="dialog"

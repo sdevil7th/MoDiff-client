@@ -30,6 +30,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import { cx } from '../utils/classNames';
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 import {
   ModiffButton,
   ModiffCheckbox,
@@ -58,7 +59,12 @@ import {
 } from '../studio/userBlockLibrary';
 import { createBlockRootNodeV2 } from '../studio/blockRuntimeV2';
 import { USER_BLOCK_V2_DRAG_PREFIX } from '../studio/blockPersistenceV2';
-import { nodeGroupForCatalogEntry, nodeCatalogEntries, type NodeCatalogEntry } from '../studio/nodeCatalog';
+import {
+  nodeGroupForCatalogEntry,
+  nodeCatalogEntries,
+  nodeCatalogEntryMatchesSearch,
+  type NodeCatalogEntry,
+} from '../studio/nodeCatalog';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import {
   buildHuggingFaceCatalogSections,
@@ -853,26 +859,6 @@ function entryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
   return entry.visibility === 'experimental';
 }
 
-function entryMatchesSearch(entry: NodeCatalogEntry, search: string) {
-  const query = search.trim().toLowerCase();
-  if (!query) return true;
-  return [
-    entry.label,
-    entry.description,
-    entry.surfaceCategory,
-    ...entry.groupPath,
-    ...(entry.aliases ?? []),
-    entry.node.label,
-    entry.node.module,
-    entry.node.action,
-    entry.node.category,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-    .includes(query);
-}
-
 function normalizedTestId(value: string) {
   return value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -1352,7 +1338,7 @@ function NodeGroupList({
   const groups = useMemo(() => {
     return nodeCatalogEntries(nodes)
       .filter((entry) => entryMatchesView(entry, view))
-      .filter((entry) => entryMatchesSearch(entry, search))
+      .filter((entry) => nodeCatalogEntryMatchesSearch(entry, search))
       .reduce(
         (acc, entry) => {
           const group = nodeGroupForCatalogEntry(entry, expertMode);
@@ -1370,13 +1356,16 @@ function NodeGroupList({
   const userBlockGrouping = useSettingsStore((state) => state.userBlockGrouping);
   const setUserBlockGrouping = useSettingsStore((state) => state.setUserBlockGrouping);
   const matchingUserBlocks = useMemo(() => {
-    const query = search.trim().toLowerCase();
     const unique = uniqueStoredUserBlocks(userBlocks);
-    if (!query) return unique;
     return unique.filter((block) =>
-      `${storedUserBlockName(block)} ${storedUserBlockId(block)} ${storedUserBlockGroupPath(block).join(' ')} ${storedUserBlockGroupPath(block, 'workflow').join(' ')} ${storedUserBlockRevision(block)}`
-        .toLowerCase()
-        .includes(query),
+      matchesSearchKeywords(search, [
+        'User Nodes',
+        storedUserBlockName(block),
+        storedUserBlockId(block),
+        ...storedUserBlockGroupPath(block),
+        ...storedUserBlockGroupPath(block, 'workflow'),
+        storedUserBlockRevision(block),
+      ]),
     );
   }, [search, userBlocks]);
   const userBlocksOpen = activeNodeGroups.includes('User Nodes') || Boolean(search.trim() && matchingUserBlocks.length);

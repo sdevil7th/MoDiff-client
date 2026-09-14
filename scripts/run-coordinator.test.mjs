@@ -328,6 +328,80 @@ test('a fresh supervisor-recovered worker crash opens an actionable failure with
   assert.equal(runIssueStoreModule.useRunIssueStore.getState().failureDialogOpen, false);
 });
 
+test('queue hydration retains newest activity and never evicts an active submission with older history', () => {
+  const tasks = taskStoreModule.useTaskStore.getState();
+  const recent = Array.from({ length: 40 }, (_, index) => ({
+    task_id: `history-${index}`,
+    name: `Historical run ${index}`,
+    status: 'completed',
+    queued_at: 1000 - index * 10,
+    started_at: 1001 - index * 10,
+    completed_at: 1002 - index * 10,
+  }));
+  tasks.setTasks(undefined, {}, recent);
+  assert.deepEqual(
+    taskStoreModule.useTaskStore.getState().sessionRuns.map(({ id }) => id),
+    recent.slice(0, 30).map(({ task_id }) => task_id),
+  );
+  tasks.recordTaskSnapshot({ task_id: 'new-submission', name: 'Qwen cluster', status: 'queued' });
+  tasks.setTasks(undefined, {}, recent);
+  assert.equal(taskStoreModule.useTaskStore.getState().sessionRuns[0].id, 'new-submission');
+  tasks.setTasks(undefined, {}, [...recent].reverse());
+  assert.equal(taskStoreModule.useTaskStore.getState().sessionRuns[0].id, 'new-submission');
+  tasks.recordTaskSnapshot({ task_id: 'new-submission', name: 'Qwen cluster', status: 'failed', completed_at: 2000 });
+  tasks.setTasks(undefined, {}, recent);
+  const runs = taskStoreModule.useTaskStore.getState().sessionRuns;
+  assert.equal(runs[0].id, 'new-submission');
+  assert.equal(runs[0].status, 'failed');
+  assert.equal(runs.length, 30);
+  assert.deepEqual(
+    runs.slice(1).map(({ id }) => id),
+    recent.slice(0, 29).map(({ task_id }) => task_id),
+  );
+});
+
+test('queue overflow retains the running task ahead of newer waiting tasks across repeated snapshots', () => {
+  const tasks = taskStoreModule.useTaskStore.getState();
+  const current = {
+    task_id: 'running-now',
+    name: 'Running cluster',
+    status: 'running',
+    queued_at: 1000,
+    started_at: 1001,
+  };
+  const waiting = Array.from({ length: 40 }, (_, index) => ({
+    task_id: `waiting-${index}`,
+    name: `Waiting ${index}`,
+    queued_at: 1100 + index,
+  }));
+  const queue = (items) => Object.fromEntries(items.map((task) => [task.task_id, task]));
+  tasks.setTasks(undefined, queue(waiting));
+  assert.deepEqual(
+    taskStoreModule.useTaskStore.getState().sessionRuns.map(({ id }) => id),
+    waiting
+      .slice(-30)
+      .reverse()
+      .map(({ task_id }) => task_id),
+  );
+  for (const items of [waiting, [...waiting].reverse(), waiting]) {
+    tasks.setTasks(current, queue(items));
+    const state = taskStoreModule.useTaskStore.getState();
+    assert.equal(state.currentTask.task_id, current.task_id);
+    assert.equal(state.taskCount, 41);
+    assert.equal(state.sessionRuns.length, 30);
+    assert.equal(state.sessionRuns[0].id, current.task_id);
+    assert.deepEqual(
+      state.sessionRuns.slice(1).map(({ id }) => id),
+      waiting
+        .slice(-29)
+        .reverse()
+        .map(({ task_id }) => task_id),
+    );
+  }
+  tasks.recordTaskSnapshot({ ...current, progress: 50 });
+  assert.equal(taskStoreModule.useTaskStore.getState().sessionRuns[0].progress, 50);
+});
+
 test('submission rejects an invalid User Node composition with an actionable socket error', async () => {
   const source = {
     id: 'source',
@@ -3475,4 +3549,74 @@ test('Modular preparation still rejects live edits while lowering a virtual grap
     catalog.setState(original[0]);
     hierarchy.setState(original[1]);
   }
+});
+
+test('field actions reject detached canvas controls before dispatch and before late updates', async () => {
+  const updates = [];
+  const calls = [];
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse({ error: false });
+  };
+  const props = {
+    nodeId: 'preview',
+    fieldKey: 'output',
+    module: 'modules.Test',
+    action: 'Preview',
+    onChange: 'refresh',
+    updateStore: (...args) => updates.push(args),
+    workflowContext: studioStoreModule.captureWorkflowOperationContext(),
+  };
+  flowStoreModule.useFlowStore.setState({ nodes: [] });
+  await fieldActionModule.default(props, 'late mount');
+  assert.deepEqual(calls, [], 'a detached template field must not send empty values to the backend');
+  assert.deepEqual(updates, []);
+
+  flowStoreModule.useFlowStore.setState({
+    nodes: [
+      {
+        id: 'preview',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: { module: 'modules.Test', action: 'Preview', params: { output: { value: 'new workflow' } } },
+      },
+    ],
+  });
+  studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: 'workflow-other', workflowCanvasEpoch: 1 });
+  await fieldActionModule.default(props, 'same id in another workflow');
+  assert.deepEqual(calls, []);
+  assert.deepEqual(updates, []);
+
+  const currentProps = { ...props, workflowContext: studioStoreModule.captureWorkflowOperationContext() };
+  const pending = deferredResponse();
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return pending.promise;
+  };
+  const action = fieldActionModule.default(currentProps, 'current');
+  assert.equal(calls.length, 1, 'current explicit actions still dispatch');
+  assert.deepEqual(calls[0].values, { output: 'new workflow' });
+  const beforeSwitch = structuredClone(updates);
+  studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: 'workflow-origin', workflowCanvasEpoch: 2 });
+  pending.resolve(jsonResponse({ error: false }));
+  await action;
+  assert.deepEqual(updates, beforeSwitch, 'a completed action may not enable fields in another workflow');
+});
+
+test('queued option updates retain their originating canvas ownership', async () => {
+  const updates = [];
+  const props = {
+    nodeId: 'preview',
+    fieldKey: 'output',
+    module: 'modules.Test',
+    action: 'Preview',
+    workflowContext: studioStoreModule.captureWorkflowOperationContext(),
+    onSignal: { action: 'value', target: 'output', prop: 'options', data: { yes: ['new'] } },
+    updateStore: (...args) => updates.push(args),
+  };
+  const action = fieldActionModule.default(props, 'yes', 'onSignal');
+  const immediate = structuredClone(updates);
+  studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: 'workflow-other', workflowCanvasEpoch: 1 });
+  await action;
+  assert.deepEqual(updates, immediate);
 });

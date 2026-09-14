@@ -5,6 +5,7 @@ import type {
   HuggingFaceNodeLibraryIntegrationStatus,
 } from './huggingFaceNodeLibrary';
 import { registeredBlockV2Route } from './registeredBlockV2Routes';
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 import type { HuggingFaceModularConditionalSnapshot } from './huggingFaceModularConditionals';
 
 export type HuggingFaceCatalogSectionId =
@@ -102,30 +103,15 @@ function definitionModality(definition: HuggingFaceNodeLibraryDefinition) {
 }
 
 function definitionSearchText(definition: HuggingFaceNodeLibraryDefinition) {
+  // Search the workflow's own identity. Component/step metadata can mention
+  // another family (for example Anima's Qwen encoder); those have their own rows.
   return [
     definition.label,
-    definition.description,
     definition.pipelineClass,
     definition.blocksClass,
     definition.workflowId,
     definition.taskId,
     definition.taskContractId,
-    ...definition.inputs.flatMap((field) => [field.name, field.type, field.description]),
-    ...definition.outputs.flatMap((field) => [field.name, field.type, field.description]),
-    ...definition.steps.flatMap((step) => [step.path, step.className, step.kind, step.description]),
-    ...definition.components.flatMap((component) => [
-      component.name,
-      component.type,
-      component.creationMethod,
-      ...component.reuseKey,
-    ]),
-    ...definition.graphAdapterContracts.flatMap((adapter) => [
-      adapter.adapterId,
-      adapter.source,
-      ...adapter.requiredInputs,
-      ...adapter.actionSequence,
-      ...adapter.upstreamBlockSequence,
-    ]),
   ]
     .join(' ')
     .toLowerCase();
@@ -296,20 +282,7 @@ function selectedWorkflowBlockEntries(library: HuggingFaceNodeLibrary): HuggingF
             label: words(block.className),
             description,
             detail: `${words(definition.pipelineClass)} · ${words(definition.workflowId)} · ${placement.legacyPath}`,
-            searchText: [
-              block.className,
-              description,
-              block.kind,
-              placement.legacyPath,
-              ...definitionIds,
-              ...block.inputs.flatMap((field) => [field.name, field.type, field.description, field.kwargsType ?? '']),
-              ...block.variadicInputs.flatMap((field) => [field.kwargsType, field.type, field.description]),
-              ...block.outputs.flatMap((field) => [field.name, field.type, field.description, field.kwargsType ?? '']),
-              ...block.components.flatMap((component) => [component.name, component.type, component.description]),
-              ...block.configs.flatMap((config) => [config.name, config.description]),
-            ]
-              .join(' ')
-              .toLowerCase(),
+            searchText: [block.className, block.kind, placement.legacyPath, ...definitionIds].join(' ').toLowerCase(),
             groupPath: [words(definition.pipelineClass), modularBlockRole(block.className, block.kind)],
             readiness: 'composable' as const,
             readinessLabel: 'Composable' as const,
@@ -362,17 +335,11 @@ function unprunedBlockEntries(
           detail: `${words(pipeline.pipelineClass)} · ${block.kind} · ${placement.legacyPath}`,
           searchText: [
             block.className,
-            description,
             block.kind,
             placement.legacyPath,
             pipeline.pipelineClass,
             context.blocksClass,
             ...definitions.map(({ id, workflowId }) => `${id} ${workflowId}`),
-            ...block.inputs.flatMap((field) => [field.name, field.type, field.description, field.kwargsType ?? '']),
-            ...block.variadicInputs.flatMap((field) => [field.kwargsType, field.type, field.description]),
-            ...block.outputs.flatMap((field) => [field.name, field.type, field.description, field.kwargsType ?? '']),
-            ...block.components.flatMap((component) => [component.name, component.type, component.description]),
-            ...block.configs.flatMap((config) => [config.name, config.description]),
           ]
             .join(' ')
             .toLowerCase(),
@@ -428,7 +395,7 @@ function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEn
         label,
         description,
         detail: `${component.creationMethod || 'runtime'} · ${definitionIds.length} cluster${definitionIds.length === 1 ? '' : 's'}`,
-        searchText: [component.name, component.type, component.creationMethod, ...component.reuseKey, ...definitionIds]
+        searchText: [component.name, component.type, component.creationMethod, ...component.reuseKey]
           .join(' ')
           .toLowerCase(),
         groupPath: [
@@ -487,9 +454,14 @@ export function filterHuggingFaceCatalogSections(
     .map((section) => ({
       ...section,
       entries: section.entries.filter((entry) =>
-        `${entry.label} ${entry.description} ${(entry.groupPath ?? []).join(' ')} ${entry.searchText}`
-          .toLowerCase()
-          .includes(query),
+        matchesSearchKeywords(search, [
+          section.label,
+          entry.id,
+          entry.label,
+          entry.detail,
+          ...(entry.groupPath ?? []),
+          entry.searchText,
+        ]),
       ),
     }))
     .filter((section) => section.entries.length > 0);
