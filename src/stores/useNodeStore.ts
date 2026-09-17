@@ -15,6 +15,7 @@ import {
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
+import type { OperationContract } from '../workflow/operationContracts';
 import {
   buildTaskTemplateSkeleton,
   parseTaskTemplateContracts,
@@ -426,6 +427,7 @@ type NodesStore = {
   localModels: unknown[];
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
   studioModelCapabilities: StudioModelProfile[];
+  operationContracts: OperationContract[];
   studioModelCapabilitiesAuthoritative: boolean;
   studioExecutionSpecInvalid: boolean;
   studioTaskTemplateContracts: StudioTaskTemplateContract[];
@@ -1073,6 +1075,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   localModels: [],
   modelCacheDiagnostics: null,
   studioModelCapabilities: [],
+  operationContracts: [],
   studioModelCapabilitiesAuthoritative: false,
   studioExecutionSpecInvalid: false,
   studioTaskTemplateContracts: [],
@@ -1440,22 +1443,36 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     const request = runDiscoveryRequest(
       'capabilities',
       set,
-      (signal) =>
-        requestJson(`${config.serverAddress}/model_capabilities`, {
+      async (signal) => {
+        const { parseOperationContracts } = await import('../workflow/operationContracts');
+        return requestJson(`${config.serverAddress}/model_capabilities`, {
           method: 'GET',
           signal,
           timeoutMs: 120_000,
-          parse: parseStudioModelCapabilities,
-        }),
-      ({ authoritative, capabilities, taskTemplateContracts }) => ({
+          parse: (value) => {
+            const capabilities = parseStudioModelCapabilities(value);
+            const payload = payloadRecord(value, 'Invalid model-capabilities response.');
+            return {
+              ...capabilities,
+              operationContracts: parseOperationContracts(
+                payload.operationContracts,
+                payload.operationContractSchemaVersion,
+              ),
+            };
+          },
+        });
+      },
+      ({ authoritative, capabilities, taskTemplateContracts, operationContracts }) => ({
+        operationContracts,
         studioModelCapabilities: capabilities,
         studioModelCapabilitiesAuthoritative: authoritative,
         studioExecutionSpecInvalid: false,
         studioTaskTemplateContracts: taskTemplateContracts,
         studioTaskTemplateSkeletons: taskTemplateContracts.map(buildTaskTemplateSkeleton),
       }),
-      (message) =>
-        message.includes('Studio execution specification')
+      (message) => ({
+        operationContracts: [],
+        ...(message.includes('Studio execution specification')
           ? {
               studioModelCapabilities: [],
               studioModelCapabilitiesAuthoritative: false,
@@ -1463,7 +1480,8 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
               studioTaskTemplateContracts: [],
               studioTaskTemplateSkeletons: [],
             }
-          : {},
+          : {}),
+      }),
       'Could not read model capabilities.',
     );
     inFlightStudioCapabilitiesDiscovery = request;

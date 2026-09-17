@@ -579,6 +579,24 @@ executable. It is never an automatic definition update or silent graph reset.
 - `/model_capabilities` Studio profile compatibility
 - `/hf_download` install/repair tasks
 
+The additive `operationContracts` catalog on `/model_capabilities` describes the
+existing generic Modular stage adapters. `src/workflow/operationContracts.ts`
+validates schema version 1, finite identifiers/arrays, unique operations and
+ports, and explicit declaration/decomposition states before `useNodesStore`
+retains it. The parser loads on demand when capability discovery starts, keeping
+it out of the static startup module graph. Unlike Studio model profiles, pipeline names are not narrowed through
+a frontend family union. Older backends without this catalog produce an empty
+list; failed discovery clears these declarations instead of reusing stale data.
+
+Each port retains its pipeline scope, original semantic name, direction, declared
+types, requiredness and value/component roles. A conditioning bundle can have both
+roles on one socket. These are adapter declarations, not compatibility verdicts,
+runtime readiness, installation consent or graph recipes. Existing dynamic field
+signals, graph validation, optional-runtime and resource planning remain their
+respective authorities. This foundation does not yet change node insertion,
+model switching, visible controls or execution. Loader, standard-pipeline and
+specialized-stage contracts and richer task support remain tracked under M3.
+
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
 
 Node discovery uses a shared `NodeCatalogView` policy. Expert defaults to `stages`,

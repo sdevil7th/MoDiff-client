@@ -7,6 +7,7 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let nodesStoreModule;
+let operationContractsModule;
 let optionalRuntimesModule;
 let requestModule;
 let runReadinessModule;
@@ -48,6 +49,7 @@ before(async () => {
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  operationContractsModule = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   optionalRuntimesModule = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
   runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
   stableHashModule = await server.ssrLoadModule('/src/studio/stableHash.ts');
@@ -64,6 +66,7 @@ beforeEach(() => {
     localModels: [],
     modelCacheDiagnostics: null,
     studioModelCapabilities: [],
+    operationContracts: [],
     studioModelCapabilitiesAuthoritative: false,
     runtimeStatus: null,
     runtimeError: null,
@@ -1285,13 +1288,16 @@ test('a malformed capability refresh preserves the last authoritative runtime co
 
 test('concurrent model-capability callers join one authoritative discovery request', async () => {
   const calls = [];
+  const requested = deferred();
   globalThis.fetch = () => {
     const call = deferred();
     calls.push(call);
+    requested.resolve();
     return call.promise;
   };
   const first = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
   const second = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  await requested.promise;
   assert.equal(calls.length, 1);
   calls[0].resolve(
     jsonResponse({
@@ -1302,6 +1308,7 @@ test('concurrent model-capability callers join one authoritative discovery reque
     }),
   );
   await Promise.all([first, second]);
+  assert.equal(calls.length, 1);
   const state = nodesStoreModule.useNodesStore.getState();
   assert.equal(state.discoveryRequests.capabilities.status, 'success');
   assert.equal(state.studioModelCapabilitiesAuthoritative, true);
@@ -2263,4 +2270,156 @@ test('download reconciliation clears stale active installs and refreshes model i
   assert.equal(progress['public/completed-model'], undefined);
   assert.equal(progress['public/retained-error'].status, 'error');
   assert.equal(refreshCount, 1);
+});
+
+function parseOperationPayload(payload) {
+  return {
+    ...nodesStoreModule.parseStudioModelCapabilities(payload),
+    operationContracts: operationContractsModule.parseOperationContracts(
+      payload.operationContracts,
+      payload.operationContractSchemaVersion,
+    ),
+  };
+}
+
+function operationCapabilityPayload() {
+  return {
+    schemaVersion: 2,
+    capabilities: [],
+    operationContractSchemaVersion: 1,
+    operationContracts: [
+      {
+        pipelineClass: 'FutureModularPipeline',
+        operationId: 'diffusion.denoise',
+        nodeKey: 'modules.ModularDiffusers.Denoise',
+        nodeType: 'denoise',
+        blockName: 'denoise',
+        decomposition: 'block',
+        support: 'declared',
+        ports: [
+          {
+            name: 'embeddings',
+            semanticName: 'embeddings',
+            direction: 'input',
+            roles: ['value'],
+            types: ['embeddings'],
+            required: true,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+test('operation discovery accepts new backend pipelines without a client model-family branch', () => {
+  const payload = operationCapabilityPayload();
+  const parsed = parseOperationPayload(payload);
+  assert.deepEqual(parsed.operationContracts, payload.operationContracts);
+  assert.deepEqual(parsed.capabilities, []);
+  assert.deepEqual(parseOperationPayload({ capabilities: [] }).operationContracts, []);
+});
+
+test('operation discovery rejects malformed, ambiguous and unsupported declarations', () => {
+  const mutations = [
+    (p) => {
+      p.operationContractSchemaVersion = 2;
+    },
+    (p) => {
+      delete p.operationContractSchemaVersion;
+    },
+    (p) => {
+      p.operationContracts = null;
+    },
+    (p) => {
+      p.operationContracts.push(structuredClone(p.operationContracts[0]));
+    },
+    (p) => {
+      p.operationContracts[0].support = 'runnable';
+    },
+    (p) => {
+      p.operationContracts[0].pipelineClass = '__proto__';
+    },
+    (p) => {
+      p.operationContracts[0].pipelineClass = 'Pipeline\n';
+    },
+    (p) => {
+      p.operationContracts[0].nodeKey = 'https://example.com/node';
+    },
+    (p) => {
+      p.operationContracts[0].blockName = null;
+    },
+    (p) => {
+      p.operationContracts[0].unknown = true;
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].types = [];
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].types = ['embeddings', 'embeddings'];
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].direction = 'output';
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].required = 'true';
+    },
+    (p) => {
+      p.operationContracts[0].ports.push(structuredClone(p.operationContracts[0].ports[0]));
+    },
+  ];
+  for (const mutate of mutations) {
+    const payload = operationCapabilityPayload();
+    mutate(payload);
+    assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+  }
+});
+
+test('capability refresh replaces operation declarations and clears them on invalid responses', async () => {
+  const payload = operationCapabilityPayload();
+  globalThis.fetch = async () => new Response(JSON.stringify(payload), { status: 200 });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().operationContracts, payload.operationContracts);
+  payload.operationContracts[0].support = 'runnable';
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().operationContracts, []);
+  assert.equal(nodesStoreModule.useNodesStore.getState().discoveryRequests.capabilities.status, 'error');
+});
+
+test('operation ports preserve combined bundle roles and independent input/output names', () => {
+  const payload = operationCapabilityPayload();
+  const contract = payload.operationContracts[0];
+  contract.ports[0].roles = ['value', 'component'];
+  contract.ports.push({
+    ...structuredClone(contract.ports[0]),
+    direction: 'output',
+    roles: ['value'],
+    required: false,
+  });
+  const parsed = parseOperationPayload(payload).operationContracts[0];
+  assert.deepEqual(parsed.ports, contract.ports);
+  parsed.ports[0].roles.push('value');
+  assert.deepEqual(contract.ports[0].roles, ['value', 'component']);
+  contract.ports[0].roles = ['component', 'component'];
+  assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+});
+
+test('operation contract size limits apply to every discovery boundary', () => {
+  for (const mutate of [
+    (p) => {
+      p.operationContracts = Array(4097).fill(p.operationContracts[0]);
+    },
+    (p) => {
+      p.operationContracts[0].ports = Array(129).fill(p.operationContracts[0].ports[0]);
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].types = Array(17).fill('int');
+    },
+    (p) => {
+      p.operationContracts[0].pipelineClass = 'P'.repeat(129);
+    },
+  ]) {
+    const payload = operationCapabilityPayload();
+    mutate(payload);
+    assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+  }
 });
