@@ -471,8 +471,8 @@ authoring support alone does not qualify model execution.
 To repeat computation, open a node's context menu or **More node actions** and
 choose **Recompute on next Run**. This retains loaded models and current previews;
 the next Run recomputes the selected results and affected descendants. **Release
-node cache** destroys that node's runtime cache and releases its unshared model
-components. Neither action deletes downloaded model files. For a Block,
+node cache** releases that node and cached consumers holding its pipelines or
+state. Other model owners keep their shared components and hooks. Neither action deletes downloaded model files. For a Block,
 recomputation includes its cached descendants while retaining model owners.
 Node status explains whether inputs changed, results were invalidated, or cached
 results were reused. Automatic resource management retains independent model
