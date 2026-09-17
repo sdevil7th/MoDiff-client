@@ -8259,7 +8259,6 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
   const e2eHooksSource = fs.readFileSync(path.join(ROOT, 'src', 'utils', 'e2eHooks.ts'), 'utf8');
   const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
-  const studioPanelSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'StudioPanel.tsx'), 'utf8');
   const topBarSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'TopBar.tsx'), 'utf8');
   const handleFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'HandleField.tsx'), 'utf8');
   const numberFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'NumberField.tsx'), 'utf8');
@@ -8273,17 +8272,13 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   const autoRunPreparation = runActionsSource.match(
     /export async function ensureStudioAutoPlanReadyForRun[\s\S]*?\n\}\n\ntype MissingInstallTarget/,
   )?.[0];
-  const resourceModeChange = runActionsSource.match(
-    /const handleResourceModeChange = useCallback\([\s\S]*?\n  \);/,
-  )?.[0];
   const topBarResourceModeChange = topBarSource.match(
-    /const handleStudioViewModeChange = \(mode: StudioViewMode\) => \{[\s\S]*?\n  \};/,
+    /const handleResourceModeChange = \(mode: StudioResourceMode\) => \{[\s\S]*?\n  \};/,
   )?.[0];
 
   assert.ok(createGraph);
   assert.ok(waitForFinalization);
   assert.ok(autoRunPreparation);
-  assert.ok(resourceModeChange);
   assert.ok(topBarResourceModeChange);
   assert.equal((createGraph.match(/await waitForStudioGraphFinalization/g) ?? []).length, 1);
   assert.match(createGraph, /finalizationTimeout = 15_000/);
@@ -8322,12 +8317,7 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
     autoRunPreparation,
     /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*await createOrUpdateStudioGraph\(nextForm, context\)/,
   );
-  assert.match(
-    studioPanelSource,
-    /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*createOrUpdateStudioGraph\(nextForm, context\)/,
-  );
-  assert.match(resourceModeChange, /updateAndSync\(\{ resourceMode \}\)/);
-  assert.doesNotMatch(resourceModeChange, /syncStudioGraphValues/);
+  assert.doesNotMatch(topBarResourceModeChange, /setStudioViewMode/);
   assert.match(topBarResourceModeChange, /previousShapeKey = getStudioGraphShapeKey/);
   assert.match(
     topBarResourceModeChange,

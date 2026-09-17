@@ -218,7 +218,7 @@ See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas
 
 ## Auto And Expert
 
-**Auto** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
+**Resources → Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
 
 The backend planner is the compatibility authority. Template cards, Setup,
 Models, and Run readiness render the same structured assessment and do not
@@ -227,10 +227,13 @@ show **Checking compatibility** instead of guessing from a device label or a
 dedicated-VRAM number. This is important for Apple unified memory, AMD shared
 memory, and Intel integrated/XPU devices.
 
-This resource-mode Auto switch is separate from the **Auto** item inside the
-Run menu. Resource Auto selects a hardware-aware recipe. Run-menu Auto repeats
-execution after graph parameter changes; keep it off when you want a single
-generation.
+The **Auto view / Expert view** switch controls editing tools independently of
+**Resources → Automatic / Expert overrides**. Changing views preserves the graph
+and saved execution policy. Expert view can keep automatic resource management;
+choose Expert overrides explicitly to run with your configured settings.
+Each workflow saves its own resource policy; the editing preference is global.
+The Run menu's **Auto** item separately repeats execution after parameter changes;
+keep it off when you want a single generation.
 
 **Expert** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Expert is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
 

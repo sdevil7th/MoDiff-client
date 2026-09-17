@@ -1599,12 +1599,15 @@ export type ModiffDisclosureProps = {
   buttonClassName?: string;
   children: ReactNode;
   className?: string;
+  /** Keep the same panel mounted when switching to an always-visible presentation. */
+  collapsible?: boolean;
   defaultOpen?: boolean;
   disabled?: boolean;
   id?: string;
   label: ReactNode;
   onOpenChange?: (open: boolean) => void;
   panelClassName?: string;
+  unmount?: boolean;
 };
 
 export function ModiffDisclosure({
@@ -1614,12 +1617,14 @@ export function ModiffDisclosure({
   buttonClassName,
   children,
   className,
+  collapsible = true,
   defaultOpen = false,
   disabled,
   id,
   label,
   onOpenChange,
   panelClassName,
+  unmount = true,
 }: ModiffDisclosureProps) {
   const field = useModiffFieldControl({ ariaDescribedBy, disabled, id });
   return (
@@ -1627,6 +1632,7 @@ export function ModiffDisclosure({
       {({ open }) => (
         <>
           <DisclosureButton
+            hidden={!collapsible}
             id={field.id}
             aria-label={ariaLabel}
             aria-describedby={field.ariaDescribedBy}
@@ -1644,7 +1650,9 @@ export function ModiffDisclosure({
               aria-hidden="true"
             />
           </DisclosureButton>
-          <DisclosurePanel className={panelClassName}>{children}</DisclosurePanel>
+          <DisclosurePanel static={!collapsible} unmount={unmount} className={panelClassName}>
+            {children}
+          </DisclosurePanel>
         </>
       )}
     </Disclosure>

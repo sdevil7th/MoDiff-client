@@ -90,8 +90,8 @@ export default function WorkflowResourcePanelV2() {
         Workflow resources
       </h2>
       <p className="text-xs text-modiff-subtle-text">
-        Auto chooses supported technical settings for the model and runtime. Expert keeps your configured settings.
-        Switching modes preserves your nodes, links and creative controls.
+        Resources → Automatic chooses supported technical settings. Expert overrides keeps your configured settings. The
+        Auto/Expert view switch only changes editing tools; either view can use either resource policy.
       </p>
       <p className="text-xs text-modiff-subtle-text">
         A loader’s Auto Offload controls where its weights reside. Repeat/Loop controls repeated runs. They are separate

@@ -219,7 +219,8 @@ export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custo
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
 export type StudioOffloadMode = 'none' | 'model_cpu' | 'sequential_cpu' | 'group_cpu' | 'group_disk';
 export type StudioResourceMode = 'auto' | 'expert';
-export type StudioViewMode = StudioResourceMode;
+/** Global editing preference; independent of the workflow's execution policy. */
+export type StudioViewMode = 'auto' | 'expert';
 
 export type StudioPresetId =
   | 'fast'

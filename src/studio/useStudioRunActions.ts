@@ -32,7 +32,7 @@ import { materializeTemplateDefaultInputs } from './templateInputs';
 import { STUDIO_TEMPLATES } from './templates';
 import { exactStudioExecutionProfileForForm } from './executionSpecs';
 import { DEFAULT_STUDIO_FORM, STUDIO_MODEL_PROFILES } from './modelProfiles';
-import type { StudioFormState, StudioMode, StudioModelType, StudioResourceMode } from './types';
+import type { StudioFormState, StudioMode, StudioModelType } from './types';
 
 export async function ensureStudioAutoPlanReadyForRun(
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
@@ -242,18 +242,6 @@ export function useStudioRunActions({
     [handleCreateGraph],
   );
 
-  const handleResourceModeChange = useCallback(
-    (resourceMode: StudioResourceMode) => {
-      // Resource mode participates in the managed graph fingerprint. In
-      // particular, switching Auto off can replace an Auto-selected facade
-      // pipeline with the user's Expert Modular Diffusers model. Use the same
-      // shape-aware synchronization path as every other graph-bearing form
-      // control so the visible canvas cannot retain the previous Auto graph.
-      updateAndSync({ resourceMode });
-    },
-    [updateAndSync],
-  );
-
   const ensureAutoPlanReady = useCallback(async (context?: WorkflowOperationContext) => {
     return ensureStudioAutoPlanReadyForRun(context);
   }, []);
@@ -359,7 +347,6 @@ export function useStudioRunActions({
     handleCreateGraph,
     handleModeChange,
     handleModelTypeChange,
-    handleResourceModeChange,
     handleRun,
     handleInstallMissingModel,
     isInstallingMissingModel,

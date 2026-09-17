@@ -2,7 +2,10 @@
 
 Auto is MoDiff's evidence-aware resource planner. It chooses a known local model/runtime recipe for the current task and machine. It is not a hidden benchmark, an automatic quality reducer, a background model probe, or a generic "use less VRAM" switch.
 
-This document is the contributor contract for Auto and the corresponding Expert escape hatch.
+This document describes the **Resources → Automatic** planner and **Expert
+overrides** execution policy. These are independent of the Auto/Expert authoring
+view: developers can use Expert tools with automatic resource management, and
+Auto view can present a workflow with explicit resource overrides.
 
 ## User Contract
 
@@ -39,7 +42,10 @@ Expert exposes lower-level choices for graph authors and experimental model path
 - Raw graph/runtime fields
 - Lower-level workflow and API graph exports
 
-Expert remains subject to graph, required-input, connection, and obvious backend capability validation. It is allowed to submit combinations without an Auto proof, but the UI must not describe those combinations as validated or safe for the machine.
+The **Expert overrides** resource policy remains subject to graph, required-input,
+connection, and backend capability validation. It can submit without an Auto
+resource proof; opening Expert view alone cannot bypass planning or a rejection.
+The UI must not describe unqualified combinations as validated for the machine.
 
 Do not use "Manual" in user-facing documentation or new code. The current product term is **Expert**.
 
@@ -170,7 +176,7 @@ If any step is missing, keep the profile visible as Expert-only or blocked with 
 
 ## Custom and multiple-Block workflow Auto
 
-The information button beside Auto opens Workflow resources in the right panel.
+The information button beside Resources opens Workflow resources in the right panel.
 The existing source-recipe assessment remains read-only. **Check Auto execution
 plan** also validates the actual executable graph through
 `POST /auto_resource/workflow` (`schemaVersion: 1`, `graph` containing the existing
@@ -225,19 +231,26 @@ Run checks the graph again after planning and updates only supported visible
 resource controls. A `workflowAutoPlan` receipt binds the resulting API graph by
 hash. At dispatch the backend verifies the hash and re-plans against current
 artifacts and memory before model allocation (after required data-only preparation). Editing a workflow, switching tabs
-or changing mode while planning invalidates the client request. This receipt does
+or changing resource policy while planning invalidates the client request. This receipt does
 not grant registered-source, catalog, publication or model qualification authority.
 There is one graph execution attempt; this path adds no automatic whole-graph
 retry or silent reduction of quality.
 
-Switching to Expert preserves the graph and explicit settings. Loader Auto
+Selecting Expert overrides preserves the graph and explicit settings. Loader Auto
 Offload and Repeat/Loop remain separate controls. A successful combined plan is
 resource eligibility, not live output proof for every possible composition.
 
-The Auto switch follows the active workflow form on reopen, including custom
-workflows without a Studio binding. A global view preference cannot make an
-Expert workflow appear to be in Auto. App runs that opt out of Studio metadata
-still use the workflow Auto planner when Auto is selected.
+The Resources control follows the active workflow form on reopen, including
+custom workflows without a Studio binding. The separate view switch follows the
+global editing preference. Neither restoration nor inspector navigation mirrors
+one setting into the other. App runs that opt out of Studio metadata still use
+the workflow Auto planner when automatic resources are selected.
+
+Presentation switches preserve nodes, edges, effective inputs, graph history and
+resource authority. They do not synchronize schemas or request a new Auto plan.
+Advanced-field disclosure follows authoring mode; Auto-managed field indicators
+and pinned overrides follow resource policy. Invalid automatic planning remains
+explicit and never forces a different authoring view or silent execution fallback.
 
 Auto accounts for reviewed Modular state-input aliases and constant iteration
 resource inputs. Resource values computed within an iteration need a reviewed

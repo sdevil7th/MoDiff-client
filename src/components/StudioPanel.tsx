@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { useShallow } from 'zustand/react/shallow';
-import { AlertTriangle, ClipboardCopy, GalleryVerticalEnd, Info, Save, Trash2, WandSparkles } from 'lucide-react';
+import { ClipboardCopy, GalleryVerticalEnd, Info, Save, Trash2, WandSparkles } from 'lucide-react';
 
 import {
   advanceWorkflowOperationContext,
@@ -23,7 +23,6 @@ import {
   createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
   getStudioGraphRunBlockingMessage,
-  getStudioGraphShapeKey,
   inspectStudioGraphBindingDivergence,
   syncStudioGraphValues,
 } from '../studio/graphBridge';
@@ -54,31 +53,12 @@ import {
   getStudioModelDisplayName,
   getStudioModelRuntimeLabel,
 } from '../studio/modelProfiles';
-import {
-  getStudioResourceExecutionPathLabel,
-  resolveStudioResourcePlan,
-  studioLowMemoryFormValues,
-  STUDIO_RESOURCE_LABELS,
-  STUDIO_RESOURCE_MODES,
-} from '../studio/resourcePlanner';
+import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
 import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies';
 import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
-import {
-  autoPlanIsReady,
-  controlledArtifactProofNotice,
-  fetchAutoResourcePlan,
-  formPatchForAutoCandidate,
-  selectedAutoCandidate,
-} from '../studio/autoResource';
-import type {
-  StudioAspectRatio,
-  StudioFormState,
-  StudioMode,
-  StudioModelType,
-  StudioResourceMode,
-} from '../studio/types';
+import type { StudioAspectRatio, StudioFormState, StudioMode, StudioModelType } from '../studio/types';
 import {
   getPreferredRuntimeDevice,
   inspectCurrentGraph,
@@ -99,7 +79,6 @@ import {
   ModiffFieldShell,
   SectionHeader,
   StatusBox,
-  StatusActionChip,
   StudioButton,
   StudioCheckbox,
   StudioChip,
@@ -134,7 +113,6 @@ function copyText(value: string, label: string) {
 export default function StudioPanel() {
   const [isWorking, setIsWorking] = useState(false);
   const modelUsageTerms = useModelUsageTermsGate();
-  const [autoPlanChecking, setAutoPlanChecking] = useState(false);
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
   const [stickyHeaderHeight, setStickyHeaderHeight] = useState(0);
@@ -177,7 +155,6 @@ export default function StudioPanel() {
   const {
     form,
     autoResourcePlan,
-    autoResourceCheck,
     promptHistory,
     savedSnippets,
     negativePromptPresets,
@@ -199,7 +176,6 @@ export default function StudioPanel() {
   } = useStudioStore(
     useShallow((state) => ({
       form: state.form,
-      autoResourceCheck: state.autoResourceCheck,
       promptHistory: state.promptHistory,
       savedSnippets: state.savedSnippets,
       negativePromptPresets: state.negativePromptPresets,
@@ -254,27 +230,7 @@ export default function StudioPanel() {
     !isPerceptionMode &&
     !isSpeechMode &&
     STUDIO_MODEL_PROFILES[form.modelType].supportsPrompt !== false;
-  const resourcePlan = useMemo(() => resolveStudioResourcePlan(form), [form]);
-  const expertResourceMode = studioViewMode === 'expert';
-  const autoPlanExecution = useMemo(
-    () => ({
-      device: form.device,
-      autoOffload: form.autoOffload,
-      offloadMode: form.offloadMode,
-    }),
-    [form.autoOffload, form.device, form.offloadMode],
-  );
-  const selectedAutoPlanCandidate = selectedAutoCandidate(autoResourcePlan, autoPlanExecution);
-  const resourcePathLabel = getStudioResourceExecutionPathLabel({
-    resourceMode: resourcePlan.resourceMode,
-    executionPath: selectedAutoPlanCandidate?.executionPath ?? resourcePlan.executionPath,
-  });
-  const autoResourceChecking = autoPlanChecking || autoResourceCheck.status !== 'idle';
-  const autoPlanReady = form.resourceMode !== 'auto' || autoPlanIsReady(autoResourcePlan, autoPlanExecution);
-  const autoPlanStatusLabel =
-    form.resourceMode === 'auto'
-      ? (autoResourceCheck.message ?? autoResourcePlan?.statusLabel ?? 'Checking hardware')
-      : 'Expert controls active';
+  const expertAuthoringMode = studioViewMode === 'expert';
   const selectedModelName = getStudioModelDisplayName(STUDIO_MODEL_PROFILES[form.modelType]);
   const selectedModelRuntimeLabel = getStudioModelRuntimeLabel(STUDIO_MODEL_PROFILES[form.modelType], form);
   const selectedModelArtifactNote = getStudioModelArtifactNote(STUDIO_MODEL_PROFILES[form.modelType]);
@@ -288,14 +244,7 @@ export default function StudioPanel() {
     exactExecutionProfile?.expert_quantization_modes ??
     [];
   const selectedModelInfo = `${selectedModelRuntimeLabel}. ${selectedModelName} defaults to ${STUDIO_MODEL_PROFILES[form.modelType].recommendedSteps} steps, ${STUDIO_MODEL_PROFILES[form.modelType].guidanceLabel.toLowerCase()} ${STUDIO_MODEL_PROFILES[form.modelType].recommendedGuidance}, ${STUDIO_MODEL_PROFILES[form.modelType].defaultDtype}. ${selectedModelArtifactNote}`;
-  const selectedAutoPlanSummary = selectedAutoPlanCandidate
-    ? `${selectedAutoPlanCandidate.resolvedArtifact ?? selectedAutoPlanCandidate.artifact ?? selectedAutoPlanCandidate.modelRepo} | ${selectedAutoPlanCandidate.qualityTier ?? 'quality plan'} | ${selectedAutoPlanCandidate.generation?.width ?? form.width}x${selectedAutoPlanCandidate.generation?.height ?? form.height} | ${selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps | ${selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}`
-    : null;
   const graphBinding = useStudioStore((state) => state.graphBinding);
-  const controlledProofNotice = controlledArtifactProofNotice(
-    selectedAutoPlanCandidate,
-    graphBinding?.controlled?.contractIds,
-  );
   const graphFinalization = useStudioStore((state) => state.graphFinalization);
   const managedGraphRunBlockingMessage = graphBinding ? getStudioGraphRunBlockingMessage(form) : null;
   const displayedGraphFinalization =
@@ -402,13 +351,11 @@ export default function StudioPanel() {
   const runBlockedReason = runReadiness.blockingIssues[0]?.message ?? '';
   const runControlsBlocked = !runReadiness.canRun;
   const showFullStudioForm = !customGraphMode && !emptyWorkflow;
-  const showStudioResourceHeader = false;
   const {
     updateAndSync,
     handleCreateGraph,
     handleModeChange,
     handleModelTypeChange,
-    handleResourceModeChange,
     handleRun,
     handleInstallMissingModel,
     isInstallingMissingModel,
@@ -482,53 +429,6 @@ export default function StudioPanel() {
     const aspect = ASPECT_OPTIONS.find((item) => item.label === aspectRatio);
     updateAndSync(aspect ? { aspectRatio, width: aspect.width, height: aspect.height } : { aspectRatio });
   };
-
-  const applyAutoCandidateToGraph = useCallback(async () => {
-    if (form.resourceMode !== 'auto') return null;
-    const context = captureWorkflowOperationContext();
-    setAutoPlanChecking(true);
-    try {
-      const liveForm = useStudioStore.getState().form;
-      const currentPlan = autoPlanIsReady(useStudioStore.getState().autoResourcePlan, liveForm)
-        ? useStudioStore.getState().autoResourcePlan
-        : await fetchAutoResourcePlan(liveForm);
-      assertWorkflowOperationContext(context);
-
-      if (!currentPlan || !autoPlanIsReady(currentPlan, liveForm)) {
-        useStudioStore.getState().setAutoResourcePlan(currentPlan);
-        const message =
-          currentPlan?.blockingReason || currentPlan?.message || 'Auto could not choose a runnable local plan yet.';
-        useStudioStore.getState().setLastError(message);
-        enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
-        return null;
-      }
-
-      const currentForm = useStudioStore.getState().form;
-      const previousShapeKey = getStudioGraphShapeKey(currentForm);
-      const candidate = selectedAutoCandidate(currentPlan, currentForm);
-      const patch = formPatchForAutoCandidate(candidate, currentForm);
-      useStudioStore.getState().applyAutoResourcePlan(currentPlan, patch);
-      advanceWorkflowOperationContext(context);
-      const nextForm = useStudioStore.getState().form;
-      syncStudioGraphValues(nextForm);
-      if (previousShapeKey !== getStudioGraphShapeKey(nextForm)) {
-        await createOrUpdateStudioGraph(nextForm, context);
-      } else {
-        await ensureStudioGraphReadyForRun(nextForm, context);
-      }
-      assertWorkflowOperationContext(context);
-      enqueueSnackbar('Auto plan refreshed.', { variant: 'success', autoHideDuration: 2200 });
-      return currentPlan;
-    } catch (error) {
-      if (isWorkflowOperationCancelled(error)) return null;
-      const message = String(error);
-      useStudioStore.getState().setLastError(message);
-      enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
-      return null;
-    } finally {
-      setAutoPlanChecking(false);
-    }
-  }, [form.resourceMode]);
 
   const handlePresetApply = useCallback(
     (preset: (typeof STUDIO_PRESETS)[number]) => {
@@ -770,187 +670,10 @@ export default function StudioPanel() {
         className="sticky top-0 z-20 -mx-3 -mt-3 grid gap-2 border-b border-modiff-border bg-modiff-bg p-3 shadow-modiff-node"
         data-testid="studio-sticky-header"
       >
-        {showStudioResourceHeader &&
-          !customGraphMode &&
-          (expertResourceMode ? (
-            <ModiffFieldShell
-              htmlFor="studio-header-resource-mode"
-              className="grid gap-1.5 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2"
-              label={
-                <span className="flex items-center justify-between gap-2">
-                  <span>Resource mode</span>
-                  <span
-                    data-testid="studio-resource-path-badge"
-                    className="shrink-0 rounded-modiff-compact border border-modiff-border bg-modiff-bg px-2 py-1 text-xs font-semibold text-modiff-subtle-text"
-                  >
-                    {resourcePathLabel}
-                  </span>
-                </span>
-              }
-              labelClassName="block uppercase"
-            >
-              <div className="flex items-center gap-2">
-                <StudioSelect
-                  id="studio-header-resource-mode"
-                  aria-label="Resource mode"
-                  className="flex-1"
-                  data-testid="studio-header-resource-mode-select"
-                  value={form.resourceMode}
-                  onValueChange={(value) => {
-                    void handleResourceModeChange(value as StudioResourceMode);
-                  }}
-                  options={STUDIO_RESOURCE_MODES.map((mode) => ({
-                    value: mode,
-                    label: STUDIO_RESOURCE_LABELS[mode],
-                  }))}
-                />
-                <StudioButton
-                  tone="ghost"
-                  className="min-h-8 px-2 text-xs"
-                  onClick={() => {
-                    void handleCreateGraph();
-                  }}
-                  disabled={isWorking}
-                  data-testid="studio-update-graph"
-                  title="Sync Studio values into the managed graph."
-                >
-                  Sync
-                </StudioButton>
-              </div>
-              {form.resourceMode === 'auto' ? (
-                <div className="grid gap-1 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={autoPlanReady ? 'text-modiff-green' : 'text-modiff-subtle-text'}>
-                      {autoPlanStatusLabel}
-                    </span>
-                    <StudioButton
-                      tone="ghost"
-                      className="min-h-7 px-2 text-xs"
-                      onClick={() => {
-                        void applyAutoCandidateToGraph();
-                      }}
-                      disabled={autoResourceChecking || isWorking}
-                      data-testid="studio-auto-plan-check"
-                    >
-                      {autoResourceChecking ? 'Checking...' : autoPlanReady ? 'Refresh' : 'Refresh Auto plan'}
-                    </StudioButton>
-                  </div>
-                  {selectedAutoPlanCandidate ? (
-                    <>
-                      <p className="sr-only" data-testid="studio-auto-plan-summary-details">
-                        {selectedAutoPlanCandidate.resolvedArtifact ??
-                          selectedAutoPlanCandidate.artifact ??
-                          selectedAutoPlanCandidate.modelRepo}{' '}
-                        · {selectedAutoPlanCandidate.qualityTier ?? 'quality plan'} ·{' '}
-                        {selectedAutoPlanCandidate.generation?.width ?? form.width}x
-                        {selectedAutoPlanCandidate.generation?.height ?? form.height} ·{' '}
-                        {selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps ·{' '}
-                        {selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}
-                      </p>
-                      <div className="flex flex-wrap gap-1.5" data-testid="studio-auto-plan-summary">
-                        <ReadinessPill
-                          tone={controlledProofNotice ? 'warning' : 'success'}
-                          title={controlledProofNotice?.message ?? selectedAutoPlanSummary ?? undefined}
-                        >
-                          {controlledProofNotice?.label ?? 'Auto plan'}
-                        </ReadinessPill>
-                        <ReadinessPill
-                          title={
-                            selectedAutoPlanCandidate.resolvedArtifact ??
-                            selectedAutoPlanCandidate.artifact ??
-                            selectedAutoPlanCandidate.modelRepo
-                          }
-                        >
-                          Artifact
-                        </ReadinessPill>
-                        <ReadinessPill title={selectedAutoPlanSummary ?? undefined}>
-                          {selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps
-                        </ReadinessPill>
-                        {selectedAutoPlanCandidate.artifactResolution?.substituted ||
-                        selectedAutoPlanCandidate.compatibilityEvidence?.level !== 'ran_here' ||
-                        controlledProofNotice ? (
-                          <StudioIconButton
-                            size="compact"
-                            className="rounded-full border border-hf-yellow/60 bg-hf-yellow/10 text-hf-yellow hover:bg-hf-yellow/20 hover:text-hf-yellow"
-                            title="Open model compatibility details"
-                            data-testid="studio-compatibility-warning"
-                            onClick={() => {
-                              setRightPanelOpen(true);
-                              setRightPanelTab('compatibility');
-                            }}
-                          >
-                            <AlertTriangle size={13} />
-                          </StudioIconButton>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : (
-                    <ReadinessPill
-                      tone={autoResourcePlan?.blockingReason ? 'warning' : 'default'}
-                      title={
-                        autoResourcePlan?.blockingReason ||
-                        'Auto chooses the best local recipe after checking hardware, resources, and installed artifacts.'
-                      }
-                    >
-                      {autoResourcePlan?.blockingReason ? 'Auto needs setup' : 'Auto plan'}
-                    </ReadinessPill>
-                  )}
-                </div>
-              ) : null}
-            </ModiffFieldShell>
-          ) : (
-            <div
-              className="flex flex-wrap items-center gap-1.5 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2"
-              data-testid="studio-auto-status-strip"
-            >
-              <ReadinessPill
-                tone={autoPlanReady ? 'success' : 'warning'}
-                title={autoResourcePlan?.blockingReason || autoPlanStatusLabel}
-              >
-                Auto
-              </ReadinessPill>
-              <ReadinessPill title={resourcePathLabel}>Recipe</ReadinessPill>
-              {selectedAutoPlanCandidate ? (
-                <>
-                  <p className="sr-only" data-testid="studio-auto-plan-summary-details">
-                    {selectedAutoPlanCandidate.resolvedArtifact ??
-                      selectedAutoPlanCandidate.artifact ??
-                      selectedAutoPlanCandidate.modelRepo}{' '}
-                    | {selectedAutoPlanCandidate.qualityTier ?? 'quality plan'} |{' '}
-                    {selectedAutoPlanCandidate.generation?.width ?? form.width}x
-                    {selectedAutoPlanCandidate.generation?.height ?? form.height} |{' '}
-                    {selectedAutoPlanCandidate.generation?.steps ?? form.steps} steps |{' '}
-                    {selectedAutoPlanCandidate.offloadMode ?? form.offloadMode}
-                  </p>
-                  <ReadinessPill
-                    title={
-                      selectedAutoPlanCandidate.resolvedArtifact ??
-                      selectedAutoPlanCandidate.artifact ??
-                      selectedAutoPlanCandidate.modelRepo
-                    }
-                  >
-                    Artifact
-                  </ReadinessPill>
-                </>
-              ) : null}
-              <StudioButton
-                tone="ghost"
-                className="ml-auto min-h-7 px-2 text-xs"
-                onClick={() => {
-                  void applyAutoCandidateToGraph();
-                }}
-                disabled={autoResourceChecking || isWorking}
-                data-testid="studio-auto-plan-check"
-                title={selectedAutoPlanSummary ?? autoPlanStatusLabel}
-              >
-                {autoResourceChecking ? 'Checking...' : 'Refresh'}
-              </StudioButton>
-            </div>
-          ))}
         <StudioCommandPalette
           isWorking={isWorking}
           runBlocked={runControlsBlocked}
-          expertMode={expertResourceMode}
+          expertMode={expertAuthoringMode}
           hasManagedForm={showFullStudioForm}
           hasGalleryItems={activeWorkflowOutputs.length > 0}
           hasComparePair={activeWorkflowOutputs.length > 1}
@@ -1316,7 +1039,7 @@ export default function StudioPanel() {
             </div>
           )}
 
-          <StudioSection id="advanced-generation" title={expertResourceMode ? 'Advanced generation' : 'Generation'}>
+          <StudioSection id="advanced-generation" title={expertAuthoringMode ? 'Advanced generation' : 'Generation'}>
             <section>
               <SectionHeader
                 title={
@@ -1567,7 +1290,7 @@ export default function StudioPanel() {
                           onChange={(value) => updateAndSync({ conditioningScale: value })}
                         />
                       </ModiffFieldShell>
-                      {expertResourceMode ? (
+                      {expertAuthoringMode ? (
                         <>
                           <ModiffFieldShell label={`Guidance 2: ${form.guidanceScale2}`}>
                             <StudioSlider
@@ -1759,7 +1482,7 @@ export default function StudioPanel() {
                   onChange={(value) => updateAndSync({ lyrics: value })}
                   multiline
                 />
-                <div className={cx('grid gap-2', expertResourceMode && 'grid-cols-2')}>
+                <div className={cx('grid gap-2', expertAuthoringMode && 'grid-cols-2')}>
                   <ModiffFieldShell label={`Duration ${form.audioDuration}s`}>
                     <StudioSlider
                       value={form.audioDuration}
@@ -1769,7 +1492,7 @@ export default function StudioPanel() {
                       onChange={(value) => updateAndSync({ audioDuration: value })}
                     />
                   </ModiffFieldShell>
-                  {expertResourceMode ? (
+                  {expertAuthoringMode ? (
                     <ModiffFieldShell label={`Shift ${form.shift}`}>
                       <StudioSlider
                         value={form.shift}
@@ -1894,7 +1617,7 @@ export default function StudioPanel() {
             </StudioSection>
           )}
 
-          {expertResourceMode && (
+          {expertAuthoringMode && (
             <StudioSection id="runtime" title="Runtime">
               <section className="grid gap-2" data-testid="studio-expert-runtime-controls">
                 <SectionHeader title="Expert runtime" />
@@ -2058,7 +1781,7 @@ export default function StudioPanel() {
             </StudioSection>
           )}
 
-          {expertResourceMode ? (
+          {expertAuthoringMode ? (
             <p className="border-t border-modiff-border pt-3 text-xs text-modiff-subtle-text">
               {graphBinding
                 ? 'Studio is linked to graph nodes. Expert graph edits remain visible on the canvas.'
@@ -2075,48 +1798,5 @@ export default function StudioPanel() {
         onConfirm={modelUsageTerms.confirm}
       />
     </div>
-  );
-}
-
-function ReadinessPill({
-  children,
-  disabled,
-  onClick,
-  progress,
-  testId,
-  title,
-  tone = 'default',
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onClick?: () => void;
-  progress?: number | null;
-  testId?: string;
-  title?: string;
-  tone?: 'default' | 'success' | 'warning' | 'error';
-}) {
-  const label = typeof children === 'string' ? children : undefined;
-  return (
-    <StatusActionChip
-      action={
-        label === 'Installing'
-          ? 'installing'
-          : onClick
-            ? 'install'
-            : tone === 'success'
-              ? 'ready'
-              : tone === 'warning' || tone === 'error'
-                ? 'missing'
-                : 'details'
-      }
-      className="min-h-7 px-2 py-0.5 text-xs"
-      disabled={disabled}
-      label={children}
-      onClick={onClick}
-      progress={progress}
-      testId={testId}
-      title={title}
-      tone={tone === 'default' ? 'neutral' : tone}
-    />
   );
 }

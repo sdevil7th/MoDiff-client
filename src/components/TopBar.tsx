@@ -59,7 +59,7 @@ import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { getDownloadPercent, hasHfDownloadFailed, isHfDownloadActive } from '../studio/modelInstall';
 import { buildOutputWorkflowPackage, buildWorkflowPackage } from '../studio/workflowPackage';
 import { cx } from '../utils/classNames';
-import type { StudioViewMode } from '../studio/types';
+import type { StudioResourceMode } from '../studio/types';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
 import { useGraphFixModule } from '../studio/useGraphFixModule';
@@ -74,6 +74,7 @@ import {
   ModiffMenuSurface,
   ModiffMenuTrigger,
   ModiffSwitch,
+  ModiffSelect,
 } from '../ui';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
 import type { WorkflowSaveDestination } from './WorkflowSaveDialog';
@@ -141,29 +142,6 @@ function TopBarButton({
     >
       {children && <span className="truncate">{children}</span>}
     </ModiffButton>
-  );
-}
-
-type AutoModeSwitchProps = {
-  checked: boolean;
-  disabled?: boolean;
-  unavailableReason?: string;
-  onCheckedChange: (checked: boolean) => void;
-};
-
-function AutoModeSwitch({ checked, disabled, unavailableReason, onCheckedChange }: AutoModeSwitchProps) {
-  const disabledLabel = unavailableReason || 'Auto is unavailable for this custom graph.';
-  return (
-    <ModiffSwitch
-      checked={checked}
-      disabled={disabled}
-      onCheckedChange={onCheckedChange}
-      label={<span className="text-xs font-bold text-modiff-text">Auto</span>}
-      className="h-9 flex-row-reverse px-1"
-      aria-label={disabled ? disabledLabel : checked ? 'Turn Auto off' : 'Turn Auto on'}
-      title={disabled ? disabledLabel : checked ? 'Auto is on' : 'Auto is off'}
-      data-testid="topbar-auto-switch"
-    />
   );
 }
 
@@ -340,7 +318,7 @@ function TopBar() {
   );
   const customGraphAutoUnavailable = topBarAutoPolicy.autoUnavailable;
   const customGraphAutoUnavailableReason = graphBindingDivergence
-    ? 'This managed graph changed. Review it in Expert before using Auto.'
+    ? 'This managed graph changed. Review its resource requirements before using automatic planning.'
     : topBarAutoPolicy.registeredBlockEligibility.reason;
   const latestWorkflowOutput = useMemo(
     () => latestOutputForWorkflow(studioOutputs, activeWorkflowTabId, { includeUnscopedFallback: false }),
@@ -518,9 +496,9 @@ function TopBar() {
     }
   };
 
-  const handleStudioViewModeChange = (mode: StudioViewMode) => {
+  const handleResourceModeChange = (mode: StudioResourceMode) => {
+    if (mode === formResourceMode || (mode === 'auto' && customGraphAutoUnavailable)) return;
     const previousShapeKey = getStudioGraphShapeKey(useStudioStore.getState().form);
-    setStudioViewMode(mode);
     updateStudioForm({ resourceMode: mode });
     const nextForm = useStudioStore.getState().form;
     syncStudioGraphValues(nextForm);
@@ -537,10 +515,6 @@ function TopBar() {
         enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
       });
     }
-  };
-
-  const handleAutoSwitchChange = (checked: boolean) => {
-    handleStudioViewModeChange(checked ? 'auto' : 'expert');
   };
 
   const handleExecuteClick = async () => {
@@ -639,28 +613,7 @@ function TopBar() {
 
   useEffect(() => {
     if (graphBindingDivergence) detachManagedGraph();
-    if (customGraphAutoUnavailable) {
-      if (studioViewMode !== 'expert') {
-        setStudioViewMode('expert');
-      }
-      if (formResourceMode !== 'expert') {
-        updateStudioForm({ resourceMode: 'expert' });
-      }
-      return;
-    }
-    if (formResourceMode !== studioViewMode) {
-      setStudioViewMode(formResourceMode);
-    }
-  }, [
-    customGraphAutoUnavailable,
-    detachManagedGraph,
-    formResourceMode,
-    graphBinding,
-    graphBindingDivergence,
-    setStudioViewMode,
-    studioViewMode,
-    updateStudioForm,
-  ]);
+  }, [detachManagedGraph, graphBindingDivergence]);
 
   return (
     <div className="flex h-full w-full items-center justify-between gap-3 overflow-x-auto overflow-y-hidden px-4 py-2 text-modiff-text">
@@ -795,8 +748,8 @@ function TopBar() {
 
       <div className="flex flex-none items-center gap-2">
         <ModiffIconButton
-          label="Auto mode and workflow resources"
-          title="Explain Auto and assess this workflow’s resources"
+          label="Workflow resources"
+          title="Assess this workflow’s resources"
           data-testid="topbar-workflow-resources"
           onClick={() => {
             useSettingsStore.getState().setRightPanelTab('compatibility');
@@ -805,12 +758,36 @@ function TopBar() {
         >
           <Info size={15} />
         </ModiffIconButton>
-        <AutoModeSwitch
-          checked={formResourceMode === 'auto'}
-          disabled={customGraphAutoUnavailable}
-          unavailableReason={customGraphAutoUnavailableReason}
-          onCheckedChange={handleAutoSwitchChange}
+        <ModiffSwitch
+          checked={studioViewMode === 'auto'}
+          onCheckedChange={(checked) => setStudioViewMode(checked ? 'auto' : 'expert')}
+          label={
+            <span className="text-xs font-bold text-modiff-text">
+              {studioViewMode === 'auto' ? 'Auto view' : 'Expert view'}
+            </span>
+          }
+          className="h-9 flex-row-reverse px-1"
+          aria-label={studioViewMode === 'auto' ? 'Use Expert view' : 'Use Auto view'}
+          title="Change editing tools while keeping this workflow’s resource policy."
+          data-testid="topbar-auto-switch"
         />
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-modiff-subtle-text">Resources</span>
+          <ModiffSelect
+            aria-label="Workflow resource policy"
+            data-testid="topbar-resource-policy"
+            className="w-36"
+            value={formResourceMode}
+            title={customGraphAutoUnavailable ? customGraphAutoUnavailableReason : 'Resource policy for this workflow'}
+            onValueChange={(value) => {
+              if (value === 'auto' || value === 'expert') handleResourceModeChange(value);
+            }}
+            options={[
+              { value: 'auto', label: 'Automatic', disabled: customGraphAutoUnavailable },
+              { value: 'expert', label: 'Expert overrides' },
+            ]}
+          />
+        </div>
         <TopBarButton
           disabled={graphFixPlan.issues.length === 0}
           icon={

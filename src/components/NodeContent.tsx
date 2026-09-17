@@ -147,6 +147,7 @@ const NodeContent = memo(function NodeContent({
   const autoFieldOverrides = useStudioStore((state) => state.autoFieldOverrides);
   const resetAutoFieldOverride = useStudioStore((state) => state.resetAutoFieldOverride);
   const studioResourceMode = studioForm.resourceMode;
+  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const studioGraphBinding = useStudioStore((state) => state.graphBinding);
   const graphNode = useFlowStore((state) => state.nodes.find((node) => node.id === nodeId));
   const connectionNotes = useFlowStore(
@@ -283,9 +284,7 @@ const NodeContent = memo(function NodeContent({
         resetAutoFieldOverride(nodeId, key);
       },
       surface:
-        studioResourceMode === 'auto' &&
-        (controlledStudioNode || data.fieldOptions?.controlTier === 'advanced') &&
-        !isPreviewFieldType(fieldType)
+        (controlledStudioNode || data.fieldOptions?.controlTier === 'advanced') && !isPreviewFieldType(fieldType)
           ? classification.surface
           : ('main' as const),
     };
@@ -329,11 +328,15 @@ const NodeContent = memo(function NodeContent({
   }
 
   const renderFields = mode === 'controls' ? controls : [...controls, ...connectors];
+  // Keep field ownership stable across presentations. Moving a control between
+  // parents remounts its initialization hook and can repeat backend actions.
   const mainFields = renderFields.filter(({ surface }) => surface === 'main');
   const advancedFields = renderFields.filter(({ surface }) => surface === 'advanced');
 
   const orderedMainFields = orderedFieldElements(mainFields);
   const orderedAdvancedFields = orderedFieldElements(advancedFields);
+  const orderedInternalFields = orderedFieldElements(renderFields.filter(({ surface }) => surface === 'hidden'));
+  const autoPresentation = studioViewMode === 'auto';
   const encodeImageSummary =
     /ModularDiffusers/.test(module) && action === 'ImageEncode' ? (
       <EncodeImageSummary
@@ -349,13 +352,22 @@ const NodeContent = memo(function NodeContent({
       {encodeImageSummary}
       {resolutionNotice}
       {orderedMainFields}
+      {orderedInternalFields.length > 0 && (
+        <div className={autoPresentation ? 'hidden' : 'contents'}>{orderedInternalFields}</div>
+      )}
       {orderedAdvancedFields.length > 0 ? (
         <ModiffDisclosure
           label="Advanced"
-          data-testid={`node-advanced-controls-${nodeId}`}
-          className="rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40"
+          data-testid={autoPresentation ? `node-advanced-controls-${nodeId}` : undefined}
+          collapsible={autoPresentation}
+          unmount={false}
+          className={
+            autoPresentation ? 'rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40' : 'contents'
+          }
           buttonClassName="min-h-7 text-xs"
-          panelClassName="grid min-w-0 grid-cols-1 gap-2 border-t border-modiff-border-subtle p-2"
+          panelClassName={
+            autoPresentation ? 'grid min-w-0 grid-cols-1 gap-2 border-t border-modiff-border-subtle p-2' : 'contents'
+          }
         >
           {orderedAdvancedFields}
         </ModiffDisclosure>

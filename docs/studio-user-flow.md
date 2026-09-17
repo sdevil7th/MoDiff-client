@@ -47,7 +47,8 @@ The model list is filtered by task. A model profile being visible means the clie
 - **Save** writes the active snapshot to the backend **My workflows** library. Its menu provides Save as and a JSON
   file copy; `Ctrl+S` saves the current name and `Ctrl+Shift+S` opens Save as.
 - **Export** provides a workflow package, latest-output package, and Gallery shortcut. Expert also exposes raw workflow/API graph JSON.
-- The **Auto** switch changes the resource/control surface between Auto and Expert.
+- **Auto view / Expert view** changes editing tools and node discovery. It preserves the graph and execution settings.
+- **Resources → Automatic / Expert overrides** selects this workflow's execution policy in either view.
 - **Fix** opens a review dialog only when the client has deterministic graph repairs. Inspect the proposed changes
   before applying them; the tool does not guess at model or creative intent.
 - **Run** validates and submits the current graph. While any work is active or waiting, the same one-shot action is labeled **Queue** and appends an immutable graph snapshot without interrupting the current run. Its menu also contains continuous **Auto** and **Loop** behaviors; use those only when repeated execution is intentional.
@@ -57,7 +58,7 @@ The model list is filtered by task. A model profile being visible means the clie
   evidence, not proof that the selected model will fit.
 - **Models**, **Templates**, **Settings**, **Gallery**, and the connection button open their respective tools.
 
-The Auto switch and the Run menu's Auto item have different roles: the switch selects a hardware-aware resource recipe, while the run item reruns after graph parameter edits. Prefer one-shot **Run** until you understand the repeated modes.
+The view switch controls presentation; Resources controls planning. The Run menu's **Auto** item reruns after graph parameter edits. Prefer one-shot **Run** until you understand the repeated modes.
 
 ### Left Rail
 
@@ -176,7 +177,7 @@ save operation rather than allowing it to save a different instance.
 
 1. Choose a task or template.
 2. In Studio, select a compatible model.
-3. Keep Auto enabled unless you are deliberately testing an experimental configuration.
+3. Keep **Resources → Automatic** selected unless you are deliberately testing an experimental configuration.
 4. Enter the prompt and mode-specific media inputs.
 5. Adjust generation settings that the selected recipe permits.
 6. Use **Sync** when you want to explicitly reconcile Studio values into the managed graph. Most guided changes also synchronize automatically.
@@ -204,9 +205,9 @@ block the selected media path; whole-workflow Run still checks all enabled paths
 
 ## Auto And Expert
 
-### Auto
+### Automatic resources
 
-Auto requests a backend plan for the current form. A ready plan can select:
+In either authoring view, **Resources → Automatic** requests a backend plan for the current form. A ready plan can select:
 
 - A specific installed model artifact or repository revision
 - Safe spatial/temporal defaults
@@ -232,7 +233,11 @@ runtime qualification.
 
 ### Expert
 
-Expert exposes model artifact, dtype, quantization, offload, device, graph, and output fields. It is intended for contributors, advanced users, and explicitly unproven paths. Expert validates obvious graph and input failures but cannot prove that an arbitrary combination fits memory or matches a model's runtime contract.
+Expert exposes model artifact, dtype, quantization, offload, device, graph, and output fields. It is intended for contributors, advanced users, and explicitly unproven paths. Opening Expert view keeps automatic resource planning enabled when that is the workflow's saved policy. To use your configured execution settings, choose **Resources → Expert overrides** explicitly. Graph and required-input validation still apply; the override policy does not prove that a combination fits memory or matches a model's runtime contract.
+
+Your editing preference is global; each workflow tab saves its own resource
+policy. Refresh and reopening preserve them independently. Switching views does
+not rebuild the graph, reset parameters, or change the graph's Undo history.
 
 See [Auto mode design](auto-mode-design.md) for the contributor-level contract.
 

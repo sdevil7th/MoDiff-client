@@ -41,7 +41,7 @@ test('Advanced numeric values and step buttons fit a narrow scrolling node', asy
   await node.getByRole('button', { name: 'Increase Maximum Sequence Length' }).click();
   await expect(value).toHaveValue('513');
   await advanced.click();
-  await expect(value).toHaveCount(0);
+  await expect(value).toBeHidden();
   await advanced.focus();
   await page.keyboard.press('Enter');
   await expect(value).toHaveValue('513');
@@ -5284,6 +5284,17 @@ async function setStudioViewMode(page: Page, mode: 'auto' | 'expert') {
   await expect(toggle).toHaveAttribute('aria-checked', expected);
 }
 
+async function setWorkflowResourceMode(page: Page, mode: 'auto' | 'expert') {
+  const control = page.getByTestId('topbar-resource-policy');
+  const label = mode === 'auto' ? 'Automatic' : 'Expert overrides';
+  if ((await control.textContent())?.trim() !== label) {
+    await control.click();
+    await page.getByRole('option', { name: label, exact: true }).click();
+  }
+  await expect(control).toHaveText(label);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.resourceMode)).toBe(mode);
+}
+
 async function dismissTaskLauncher(page: Page) {
   const launcher = page.getByTestId('task-launcher');
   if (await launcher.isVisible()) {
@@ -6716,8 +6727,8 @@ test('selection toolbar shows rejected Block preparation without changing values
       id,
     );
   const before = await snapshot();
-  const auto = page.getByTestId('topbar-auto-switch');
-  if ((await auto.getAttribute('aria-checked')) !== 'true') await auto.click();
+  await setStudioViewMode(page, 'expert');
+  await setWorkflowResourceMode(page, 'auto');
   await root.locator('header').first().click();
   await page.getByTestId('selection-toolbar-run-from-node').click();
   await expect.poll(() => requests).toBe(1);
@@ -6878,12 +6889,10 @@ test('a current registered Qwen V2 Block requires source authority and a graph A
   expect(beforeAuto.definitionHash).toBe(fixturePin.contentHash);
   expect(beforeAuto.authorities.filter(({ kind }: { kind: string }) => kind === 'auto')).toEqual([]);
 
-  const autoSwitch = page.getByTestId('topbar-auto-switch');
-  await expect(autoSwitch).toBeEnabled();
-  if ((await autoSwitch.getAttribute('aria-checked')) === 'true') await autoSwitch.click();
-  await expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
-  await autoSwitch.click();
-  await expect(autoSwitch).toHaveAttribute('aria-checked', 'true');
+  await setWorkflowResourceMode(page, 'expert');
+  await setWorkflowResourceMode(page, 'auto');
+  await setStudioViewMode(page, 'expert');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
   expect(authorityRequests).toHaveLength(0);
 
   const runButton = page.getByTestId('studio-run');
@@ -9234,6 +9243,7 @@ test('workflow and API exports preserve random seeds beside a Modular Block', as
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
   await dismissTaskLauncher(page);
   await setStudioViewMode(page, 'expert');
+  await setWorkflowResourceMode(page, 'expert');
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   const definition = JSON.parse(
     await fs.readFile(path.resolve('../MoDiff/tests/fixtures/block_container_interface_v1.json'), 'utf8'),
@@ -10397,6 +10407,7 @@ test('mocked custom graph inspector blocks invalid graphs in Auto and Expert', a
 
   for (const mode of ['auto', 'expert'] as const) {
     await setStudioViewMode(page, mode);
+    await setWorkflowResourceMode(page, mode);
 
     for (const item of scenarios) {
       await page.evaluate((scenario) => {
@@ -11682,6 +11693,7 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
     });
 
   await setStudioViewMode(page, 'auto');
+  await setWorkflowResourceMode(page, 'auto');
   await expect
     .poll(
       async () => {
@@ -12638,6 +12650,8 @@ test('backend declarative bindings synchronize both generic Layered actions afte
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
   await page.evaluate(() => {
     window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
     window.__MODIFF_E2E__!.setStudioFormForTest({ resourceMode: 'expert' });
@@ -13100,6 +13114,8 @@ test('mocked Studio builds the exact Marigold depth prediction-map workflow', as
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -13206,6 +13222,8 @@ test('mocked Studio builds the exact prompt-free Whisper translation workflow', 
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
     window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
     window.__MODIFF_E2E__!.setStudioFormForTest({
@@ -13352,7 +13370,52 @@ test('mocked Studio consumes the exact execution-profile Expert MPS policy', asy
   await expect(issues).toContainText('limited Apple Silicon qualification');
 });
 
-test('mocked Studio preserves the exact Qwen graph across Auto and Expert on a 16GB CUDA device', async ({ page }) => {
+test('workbench resource overrides survive view changes, tabs, refresh and graph Undo', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'auto');
+  await setWorkflowResourceMode(page, 'expert');
+  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'true');
+  await page.getByTestId('left-tab-nodes').click();
+  await page.getByLabel('Search nodes', { exact: true }).fill('Preview');
+  await page.getByTestId('node-row-modules-Image-Preview').click();
+  await expect(page.locator('.react-flow__node-custom')).toHaveCount(1);
+  const snapshot = () =>
+    page.evaluate(() => {
+      const { flow, studio } = window.__MODIFF_E2E__!.getState();
+      return { flow, form: studio.form, tab: studio.activeWorkflowTabId };
+    });
+  const before = await snapshot();
+  await setStudioViewMode(page, 'expert');
+  await setStudioViewMode(page, 'auto');
+  expect(await snapshot()).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 10, y: 10 } });
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('.react-flow__node-custom')).toHaveCount(0);
+  await setStudioViewMode(page, 'expert');
+  await page.locator('.react-flow__pane').click({ position: { x: 10, y: 10 } });
+  await page.keyboard.press('Control+Shift+z');
+  await expect(page.locator('.react-flow__node-custom')).toHaveCount(1);
+  expect((await snapshot()).flow.nodes.map(({ id }) => id)).toEqual(before.flow.nodes.map(({ id }) => id));
+  await page.getByTestId('workflow-tab-new').click();
+  await dismissTaskLauncher(page);
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
+  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'false');
+  await page.getByTestId(`workflow-tab-${before.tab}`).click();
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Expert overrides');
+  await setStudioViewMode(page, 'auto');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Expert overrides');
+  expect((await snapshot()).form).toEqual(before.form);
+  expect((await snapshot()).flow.nodes.map(({ id }) => id)).toEqual(before.flow.nodes.map(({ id }) => id));
+});
+
+test('workbench authoring modes preserve the exact Qwen graph and automatic resources', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
@@ -13453,6 +13516,22 @@ test('mocked Studio preserves the exact Qwen graph across Auto and Expert on a 1
     graphBindingRole: true,
   });
 
+  const invariant = () =>
+    page.evaluate(() => {
+      const { flow, studio } = window.__MODIFF_E2E__!.getState();
+      return { flow, form: studio.form, binding: studio.graphBinding, plan: studio.autoResourcePlan };
+    });
+  const beforeViewChange = await invariant();
+  const preparationRequests: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (
+      request.method() === 'POST' &&
+      (url.pathname === '/fields/action' || url.pathname.startsWith('/auto_resource/'))
+    ) {
+      preparationRequests.push(url.pathname);
+    }
+  });
   await setStudioViewMode(page, 'expert');
   await expect
     .poll(
@@ -13470,7 +13549,7 @@ test('mocked Studio preserves the exact Qwen graph across Auto and Expert on a 1
       { timeout: 30_000 },
     )
     .toEqual({
-      resourceMode: 'expert',
+      resourceMode: 'auto',
       ...exactGraph.signature,
     });
 
@@ -13494,6 +13573,23 @@ test('mocked Studio preserves the exact Qwen graph across Auto and Expert on a 1
       resourceMode: 'auto',
       ...exactGraph.signature,
     });
+  expect(await invariant()).toEqual(beforeViewChange);
+  expect(preparationRequests).toEqual([]);
+  await setStudioViewMode(page, 'expert');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
+  await page.screenshot({ path: test.info().outputPath('expert-automatic-resources.png'), animations: 'disabled' });
+  await page.getByTestId('topbar-save-workflow').click();
+  if (await page.getByTestId('save-workflow-dialog').isVisible()) {
+    await page.getByTestId('save-workflow-name').fill('Independent workbench modes');
+    await page.getByTestId('confirm-save-workflow').click();
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form))
+    .toEqual(beforeViewChange.form);
 });
 
 test('mocked Auto Run atomically submits the selected resident Qwen recipe and records the same form', async ({
@@ -20587,7 +20683,7 @@ test('managed Auto keeps the exact interactive graph and only contains advanced 
     .poll(() =>
       page.evaluate(() => {
         const current = window.__MODIFF_E2E__!.getState();
-        return current.studio.form.resourceMode === 'expert' && !current.studio.canvasTransition;
+        return current.studio.form.resourceMode === 'auto' && !current.studio.canvasTransition;
       }),
     )
     .toBe(true);
@@ -20604,7 +20700,7 @@ test('managed Auto keeps the exact interactive graph and only contains advanced 
   expect(expertTopology).toEqual(autoTopology);
   await expect(page.locator(`.react-flow__node[data-id="${autoGenerate!.id}"]`)).toBeVisible();
   await expect(page.getByTestId(`node-advanced-controls-${autoGenerate!.id}`)).toHaveCount(0);
-  await expect(pipeline.locator('[data-auto-managed-control]')).toHaveCount(0);
+  await expect(pipeline.locator('[data-auto-managed-control="dtype"]')).toBeVisible();
   await page.locator('.react-flow__pane').click({ position: { x: 8, y: 8 } });
   await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
   await expect(page.getByTestId('studio-section-toggle-runtime')).toBeVisible();
@@ -23844,4 +23940,71 @@ test('mocked Gallery keeps effective image overrides and favorite identity after
     if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
   }
   expect(patches).toBe(1);
+});
+
+test('workbench keeps advanced custom field initialization stable across views', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let actions = 0;
+  await page.route('**/fields/action', async (route) => {
+    actions += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"error":false}' });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.setState({
+      nodes: [
+        {
+          id: 'advanced-custom-probe',
+          type: 'custom',
+          position: { x: 80, y: 80 },
+          data: {
+            type: 'custom',
+            module: 'custom.Probe',
+            action: 'Probe',
+            label: 'Custom probe',
+            params: {
+              mode: {
+                label: 'Probe mode',
+                type: 'string',
+                default: 'first',
+                options: ['first', 'second'],
+                onChange: 'update_node',
+                fieldOptions: { controlTier: 'advanced' },
+              },
+            },
+          },
+        },
+      ],
+      edges: [],
+    });
+  });
+  const field = page.locator('.react-flow__node[data-id="advanced-custom-probe"] [data-key="mode"]');
+  await expect(field.getByRole('button')).toBeEnabled();
+  await expect.poll(() => actions).toBe(1);
+  await expect(field.getByRole('button')).toBeEnabled();
+  await setStudioViewMode(page, 'auto');
+  await setStudioViewMode(page, 'expert');
+  await expect(field.getByRole('button')).toBeVisible();
+  await expect(field.getByRole('button')).toBeEnabled();
+  expect(actions).toBe(1);
+  await setStudioViewMode(page, 'auto');
+  const advanced = page
+    .getByTestId('node-scroll-body-advanced-custom-probe')
+    .getByTestId('node-advanced-controls-advanced-custom-probe')
+    .getByRole('button', { name: 'Advanced', exact: true });
+  await advanced.click();
+  await expect(field.getByRole('button')).toBeVisible();
+  await advanced.click();
+  await expect(field).toBeHidden();
+  await setStudioViewMode(page, 'expert');
+  await field.getByRole('button').click();
+  await page.getByRole('option', { name: 'second', exact: true }).click();
+  await expect.poll(() => actions).toBe(2);
+  await expect(field.getByRole('button')).toContainText('second');
 });

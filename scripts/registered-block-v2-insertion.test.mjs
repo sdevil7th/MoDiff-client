@@ -1493,23 +1493,27 @@ test('an exact Qwen cluster always submits a workflow Auto plan from top-bar and
         : { task_id: `exact-qwen-${requests.length}`, sid: 'session-1' };
     return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } });
   };
-  for (const targetNodeId of [undefined, root.id]) {
-    requests.length = 0;
-    const result = await runCoordinator.coordinateGraphRun({ sid: 'session-1', targetNodeId });
-    assert.match(requests[0].url, /\/auto_resource\/workflow$/u);
-    assert.equal(requests.length, 2);
-    assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
-    assert.equal(
-      result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash,
-      `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
-    );
-    assert.deepEqual(JSON.parse(JSON.stringify(result.submittedGraph.nodes)), requests[0].body.graph.nodes);
-    assert.deepEqual(flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.values, before.values);
-    assert.deepEqual(
-      flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot,
-      before.definitionSnapshot,
-    );
+  for (const viewMode of ['auto', 'expert']) {
+    settingsStore.useSettingsStore.setState({ studioViewMode: viewMode });
+    for (const targetNodeId of [undefined, root.id]) {
+      requests.length = 0;
+      const result = await runCoordinator.coordinateGraphRun({ sid: 'session-1', targetNodeId });
+      assert.match(requests[0].url, /\/auto_resource\/workflow$/u);
+      assert.equal(requests.length, 2);
+      assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
+      assert.equal(
+        result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash,
+        `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+      );
+      assert.deepEqual(JSON.parse(JSON.stringify(result.submittedGraph.nodes)), requests[0].body.graph.nodes);
+      assert.deepEqual(flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.values, before.values);
+      assert.deepEqual(
+        flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot,
+        before.definitionSnapshot,
+      );
+    }
   }
+  assert.equal(studioStore.useStudioStore.getState().form.resourceMode, 'auto');
   ready = false;
   requests.length = 0;
   await assert.rejects(
@@ -1519,7 +1523,31 @@ test('an exact Qwen cluster always submits a workflow Auto plan from top-bar and
   assert.equal(requests.length, 1, 'a rejected plan must never fall through to Expert submission');
 });
 
-test('Qwen Auto preparation failure is atomic and Expert mode bypasses the request boundary', async () => {
+test('legacy authoring and resource settings retain independent meanings on restore', () => {
+  const settings = settingsStore.useSettingsStore;
+  for (const [savedView, view] of [
+    ['manual', 'expert'],
+    ['expert', 'expert'],
+    ['auto', 'auto'],
+  ]) {
+    const restored = settings.persist.getOptions().merge({ studioViewMode: savedView }, settings.getState());
+    assert.equal(restored.studioViewMode, view);
+    for (const [savedResource, resource] of [
+      ['manual', 'expert'],
+      ['expert', 'expert'],
+      ['auto', 'auto'],
+      ['prefer_speed', 'auto'],
+      ['prefer_low_memory', 'auto'],
+      ['maximum_compatibility', 'auto'],
+    ]) {
+      const restoredForm = outputContracts.coerceStudioFormState({ ...form(), resourceMode: savedResource });
+      assert.equal(restoredForm.resourceMode, resource);
+      assert.equal(restored.studioViewMode, view);
+    }
+  }
+});
+
+test('Qwen Auto preparation uses resource policy independently of authoring mode and preserves atomic failure', async () => {
   const configured = fixture();
   libraryStore.useHuggingFaceNodeLibraryStore.setState({
     library: fixtureLibrary([configured.definition], configured.blockDefinitions),
@@ -1556,14 +1584,16 @@ test('Qwen Auto preparation failure is atomic and Expert mode bypasses the reque
     before,
   );
 
-  // A restored graph can momentarily disagree with the visibly-off top-bar
-  // switch. The user's explicit Expert choice wins, repairs the stale form,
-  // and still performs no planner request.
+  // Expert authoring must keep the restored automatic execution policy and
+  // its planner rejection. Opening an inspector is not a policy override.
   studioStore.useStudioStore.setState((state) => ({ form: { ...state.form, resourceMode: 'auto' } }));
   settingsStore.useSettingsStore.setState({ studioViewMode: 'expert' });
-  await blockAutoAuthority.prepareRegisteredBlockAutoAuthoritiesV2([root.id]);
-  assert.equal(requests, 1);
-  assert.equal(studioStore.useStudioStore.getState().form.resourceMode, 'expert');
+  await assert.rejects(
+    blockAutoAuthority.prepareRegisteredBlockAutoAuthoritiesV2([root.id]),
+    /bounded planner rejection/u,
+  );
+  assert.equal(requests, 2);
+  assert.equal(studioStore.useStudioStore.getState().form.resourceMode, 'auto');
   assert.equal(
     JSON.stringify(flowStore.useFlowStore.getState().nodes.find(({ id }) => id === root.id).data.blockInstanceV2),
     before,

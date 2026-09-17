@@ -2,19 +2,6 @@ import { STUDIO_MODEL_PROFILES, STUDIO_OFFLOAD_RUNTIME_LABELS } from './modelPro
 import { normalizeStudioDeviceOffloadPlan, supportsStudioCpuOffload } from './deviceOffload';
 import type { StudioFormState, StudioOffloadMode, StudioResourceMode } from './types';
 
-export const STUDIO_RESOURCE_MODES = ['auto', 'expert'] as const;
-
-export const STUDIO_RESOURCE_LABELS: Record<StudioResourceMode, string> = {
-  auto: 'Auto',
-  expert: 'Expert',
-};
-
-export const STUDIO_RESOURCE_DESCRIPTIONS: Record<StudioResourceMode, string> = {
-  auto: 'MoDiff checks local hardware, available resources, model requirements, and installed artifacts, then chooses the best known local recipe.',
-  expert:
-    'Expose precision, quantization, offload, device, and scheduler-level controls for debugging or custom graph work.',
-};
-
 const RESOURCE_RETRY_ORDER: StudioOffloadMode[] = ['model_cpu', 'sequential_cpu', 'group_disk'];
 export const AUTO_RESOURCE_TARGET_KEYS = [
   'executionProfileId',

@@ -590,7 +590,24 @@ task clusters; HF implementation blocks and component references remain in
 Advanced. Experimental is separate, and saved User Nodes remain accessible in
 all views. These filters do not rewrite backend identities or add execution
 support. Catalog-tab changes are local presentation state; the Auto/Expert
-control still also selects resource policy until the planned mode separation.
+control now updates only the persisted global `useSettingsStore.studioViewMode`.
+The workflow's `useStudioStore.form.resourceMode` independently owns execution
+planning, including registered-Block authority preparation and selected-node Run.
+The top-bar Resources control is available in both views. Managed resource-policy
+edits use the existing form/graph synchronization; presentation changes never call
+that path. `NodeContent` uses authoring mode for advanced-field disclosure and
+resource policy for Auto-managed/override indicators. Field groups keep their
+mounted identity across presentation changes and disclosure toggles, so revealing
+an unchanged advanced control cannot repeat its initial backend schema action.
+The permanently disabled
+Studio resource header and its unused refresh handler were removed; the top bar
+is the single policy selector.
+
+Both storage keys and legacy normalizers remain unchanged. A restored workflow
+keeps its own resource settings while tabs share the global editing preference.
+Graph Fix and Run Issues may open Expert tools without changing execution policy.
+Older clients can read the same workflow fields but still couple their controls;
+independent behavior requires the matching updated client bundle.
 
 An optional runtime requirement is discovery data, not permission to mutate the Python environment. Template browsing/opening, registry refresh, and Auto planning must remain non-installing. Installation begins only from an explicit user action against a reviewed backend runtime profile, and the client keeps Run blocked until a later backend status confirms the compatible installation.
 
@@ -863,7 +880,7 @@ from its immutable graph snapshot and exact preview-node ownership, including
 outputs previously mislabeled using unrelated Studio state.
 
 A Studio-owned run carries its exact resource receipt in both Auto and Expert
-mode. Expert mode removes Auto admission requirements; it does not remove the
+mode. The Expert overrides resource policy removes Auto admission requirements; it does not remove the
 executed model, dtype, quantization, placement, or offload provenance. A raw or
 imported graph without a Studio run context still receives correlation and
 workflow-origin metadata only, so the client never labels an arbitrary manual
