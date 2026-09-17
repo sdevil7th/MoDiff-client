@@ -29,6 +29,10 @@ This directory contains durable user, operator, and contributor documentation fo
 
 ## Required Engineering Procedure
 
+The [generic Diffusers workbench plan](generic-diffusers-workbench-plan.md)
+defines the staged Auto/Expert authoring redesign, compatibility requirements,
+and acceptance criteria. Planned behavior is not a current support claim.
+
 See the [frontend style guide](frontend-style-guide.md#field-components) for
 numeric-field containment and [library accessibility](frontend-style-guide.md#accessibility)
 for readiness placement and nested disclosure guides. Recovery and output
