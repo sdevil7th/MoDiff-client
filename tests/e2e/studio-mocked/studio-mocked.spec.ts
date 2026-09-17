@@ -24526,3 +24526,118 @@ test('workbench keeps advanced custom field initialization stable across views',
   await expect.poll(() => actions).toBe(2);
   await expect(field.getByRole('button')).toContainText('second');
 });
+
+test('custom source review requires consent and enabled nodes join typed search in both views', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const definition = {
+    ...nodeDef('custom.Example', 'Echo', 'custom', {
+      text: { label: 'Text', type: 'string', isInput: true, default: 'Keep my text' },
+      out: { label: 'Text', type: 'string', display: 'output' },
+    }),
+    label: 'M6 Echo',
+  };
+  const extension = {
+    name: 'Example',
+    moduleKey: 'custom.Example',
+    source: 'custom',
+    kind: 'local',
+    runtimeRole: 'data',
+    enabled: false,
+    status: 'disabled',
+    path: 'custom/Example',
+    codeHash: 'sha256:' + 'a'.repeat(64),
+    nodeCount: 0,
+    nodes: ['Echo'],
+    canDisable: false,
+    canEnable: true,
+    files: [{ name: 'main.py', bytes: 100, sha256: 'b'.repeat(64) }],
+    dependencies: [],
+    preview: { kind: 'python', diagnostics: [], nodes: { Echo: definition } },
+  };
+  let staged = false;
+  let enabled = false;
+  const approvals: Array<Record<string, unknown>> = [];
+  const calls: string[] = [];
+  await page.route('**/custom_modules**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    calls.push(path);
+    if (path.endsWith('/install')) {
+      expect(route.request().postDataJSON()).toEqual({ kind: 'local', source: 'examples/Example', name: 'Example' });
+      staged = true;
+    }
+    if (path.endsWith('/enable')) {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      approvals.push(body);
+      expect(body).toEqual({ codeHash: extension.codeHash, consent: true });
+      enabled = true;
+    }
+    const current = {
+      ...extension,
+      enabled,
+      status: enabled ? 'enabled' : 'disabled',
+      nodeCount: enabled ? 1 : 0,
+      canDisable: enabled,
+      canEnable: !enabled,
+    };
+    await route.fulfill({ json: { modules: staged ? [current] : [], module: current } });
+  });
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        instance: enabled ? 'enabled' : 'initial',
+        nodes: { ...mockRegistry, ...(enabled ? { 'custom.Example.Echo': definition } : {}) },
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  await page.getByRole('button', { name: 'Custom nodes', exact: true }).click();
+  const dialog = page.getByTestId('custom-extensions-dialog');
+  await dialog.getByLabel('Extension source', { exact: true }).fill('examples/Example');
+  await dialog.getByLabel('Extension module name').fill('Example');
+  await dialog.getByRole('button', { name: 'Stage source', exact: true }).click();
+  const review = dialog.getByRole('region', { name: 'Extension review' });
+  await expect(review).toContainText('M6 Echo');
+  await expect(review).toContainText('text: string');
+  await expect(review.getByRole('button', { name: 'Enable code', exact: true })).toBeDisabled();
+  await review.getByRole('button', { name: 'Cancel review' }).click();
+  expect(approvals).toEqual([]);
+  expect(calls.filter((path) => path.endsWith('/install'))).toHaveLength(1);
+  await dialog.getByRole('button', { name: 'Inspect source' }).click();
+  await review.getByRole('checkbox').check();
+  await review.getByRole('button', { name: 'Enable code', exact: true }).click();
+  await expect.poll(() => approvals.length).toBe(1);
+  await expect(dialog.getByRole('button', { name: 'Review reload' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Review reload' }).click();
+  await expect(review.getByRole('checkbox')).not.toBeChecked();
+  await expect(review.getByRole('button', { name: 'Enable and reload code' })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByLabel('Search nodes', { exact: true }).fill('M6 Echo');
+  await page.getByTestId('node-row-custom-Example-Echo').click();
+  const node = page.locator('.react-flow__node-custom').first();
+  const id = (await node.getAttribute('data-id'))!;
+  const handle = node.getByTestId(`node-handle-${id}-out`);
+  await expect(handle).toBeVisible();
+  const start = (await handle.boundingBox())!;
+  const pane = (await page.locator('.react-flow__pane').boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pane.x + pane.width - 70, pane.y + 70, { steps: 18 });
+  await page.mouse.up();
+  const suggestions = page.getByRole('listbox', { name: 'Matching nodes' });
+  await expect(suggestions.getByRole('option', { name: 'M6 Echo', exact: true })).toBeVisible();
+  await suggestions.getByRole('option', { name: 'M6 Echo', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
+  await setStudioViewMode(page, 'auto');
+  await expect(page.getByTestId('node-row-custom-Example-Echo')).toBeVisible();
+  expect(approvals).toHaveLength(1);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: test.info().outputPath('custom-nodes-auto.png'), animations: 'disabled' });
+});

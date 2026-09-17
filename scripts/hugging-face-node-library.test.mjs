@@ -50,6 +50,7 @@ test('workbench catalog starts with generic stages and keeps implementation node
   }
   assert.equal(matches(entry('modules.Image', 'Preview'), 'stages'), true);
   assert.equal(matches(entry('custom.my_nodes', 'PromptProcessor'), 'stages'), true);
+  assert.equal(matches(entry('custom.my_nodes', 'PromptProcessor'), 'essential'), true);
   assert.equal(matches(entry('modules.ModularDiffusers', 'Denoise', { type: 'group' }), 'stages'), false);
   assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'stages'), false);
   assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'experimental'), true);

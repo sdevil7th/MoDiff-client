@@ -99,6 +99,7 @@ import {
   modularDiffusersCatalogEntryHasDescendants,
 } from '../studio/modularDiffusersBlockInsertion';
 
+const CustomExtensionsPanel = lazy(() => import('./CustomExtensionsPanel'));
 const OperationCatalogPanel = lazy(() => import('./OperationCatalogPanel'));
 
 function NodeList() {
@@ -132,6 +133,7 @@ function NodeList() {
   } | null>(null);
   const [blockPendingDelete, setBlockPendingDelete] = useState<StoredUserBlockDefinition | null>(null);
   const [hubImportOpen, setHubImportOpen] = useState(false);
+  const [extensionsOpen, setExtensionsOpen] = useState(false);
   const [hubImportRepo, setHubImportRepo] = useState('');
   const [hubImportRevision, setHubImportRevision] = useState('');
   const [hubImportReviewed, setHubImportReviewed] = useState(false);
@@ -537,6 +539,24 @@ function NodeList() {
         />
       ) : null}
 
+      {expertMode ? (
+        <div className="px-3 pb-2">
+          <ModiffButton onClick={() => setExtensionsOpen(true)}>Custom nodes</ModiffButton>
+        </div>
+      ) : null}
+      <ModiffDialog
+        open={extensionsOpen}
+        onClose={() => setExtensionsOpen(false)}
+        title="Custom nodes"
+        panelClassName="max-w-2xl"
+        testId="custom-extensions-dialog"
+      >
+        {extensionsOpen ? (
+          <Suspense fallback={null}>
+            <CustomExtensionsPanel />
+          </Suspense>
+        ) : null}
+      </ModiffDialog>
       <p className="px-3 pb-2 text-xs text-modiff-subtle-text">
         {effectiveCatalogView === 'stages'
           ? 'Generic stages, common operations, and installed custom nodes. Find implementation details in Advanced.'
@@ -786,6 +806,17 @@ function NodeList() {
               ) : null}
             </div>
           )}
+          {hubImportInspection?.remoteCode.requiredForExecution ? (
+            <ModiffButton
+              disabled={hubImportBusy}
+              onClick={() => {
+                resetHubImport();
+                setExtensionsOpen(true);
+              }}
+            >
+              Manage executable custom nodes
+            </ModiffButton>
+          ) : null}
           {hubImportError ? (
             <div
               className="rounded-modiff-compact border border-modiff-red/40 bg-modiff-red/5 p-3 text-xs text-modiff-text"

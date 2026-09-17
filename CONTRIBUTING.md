@@ -274,6 +274,10 @@ npm run gallery:coverage
 
 Do not publish a local artifact, private input, personal path, access token, or source revision through a Gallery bundle.
 
+## Custom extension changes
+
+Keep the Custom nodes review panel, strict response parser and backend code-hash approval in sync. Test cancellation before approval, stale inspections, import failure, typed search and registry refresh. Installed nodes retain the normal graph executor and Auto never grants new code permissions. Backend examples and complete API/resource contracts are documented in its `docs/custom-nodes.md`.
+
 ## Testing
 
 Run the complete local CI-equivalent gate before requesting review:

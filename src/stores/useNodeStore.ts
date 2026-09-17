@@ -1,3 +1,4 @@
+import { parseExtensionInfo, type ExtensionInfo, type ExtensionSource } from '../studio/customExtensions';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
@@ -297,25 +298,7 @@ export type HfInstallResult = {
   repo_id?: string;
 };
 
-export type CustomModuleInfo = {
-  name: string;
-  moduleKey: string;
-  source: 'custom';
-  enabled: boolean;
-  status: 'enabled' | 'disabled';
-  path: string;
-  hasInit: boolean;
-  hasMain: boolean;
-  nodeCount: number;
-  nodes: string[];
-  hasGit: boolean;
-  canUpdate: boolean;
-  canDisable: boolean;
-  canEnable: boolean;
-  remote?: string;
-  branch?: string;
-  commit?: string;
-};
+export type CustomModuleInfo = ExtensionInfo;
 
 export type CustomModuleActionResult = {
   error?: boolean | string;
@@ -458,9 +441,9 @@ type NodesStore = {
   ) => Promise<HfInstallResult>;
   fetchCustomModules: () => Promise<void>;
   refreshCustomModules: () => Promise<CustomModuleActionResult>;
-  installCustomModule: (source: string, name?: string) => Promise<CustomModuleActionResult>;
+  installCustomModule: (source: ExtensionSource) => Promise<CustomModuleActionResult>;
   updateCustomModule: (name: string) => Promise<CustomModuleActionResult>;
-  setCustomModuleEnabled: (name: string, enabled: boolean) => Promise<CustomModuleActionResult>;
+  setCustomModuleEnabled: (name: string, enabled: boolean, codeHash?: string) => Promise<CustomModuleActionResult>;
   fetchRuntimeStatus: () => Promise<void>;
   fetchOptionalRuntimes: () => Promise<void>;
   setRuntimeResources: (snapshot: RuntimeResourceSnapshot | null) => void;
@@ -1026,19 +1009,13 @@ function parseHfDownloadStatus(value: unknown) {
   });
 }
 
-function parseCustomModuleInfo(value: unknown, index: number) {
-  if (!isRecord(value) || typeof value.name !== 'string' || typeof value.moduleKey !== 'string') {
-    throw new Error(`Custom module entry ${index + 1} is invalid.`);
-  }
-  return value as CustomModuleInfo;
-}
-
 function parseCustomModules(value: unknown, fallbackMessage: string) {
   const payload = payloadRecord(value, fallbackMessage);
   if (!Array.isArray(payload.modules)) throw new Error('The custom-module response has no modules array.');
   return {
     ...payload,
-    modules: payload.modules.map(parseCustomModuleInfo),
+    modules: payload.modules.map(parseExtensionInfo),
+    ...(payload.module !== undefined && payload.module !== null ? { module: parseExtensionInfo(payload.module) } : {}),
   } as CustomModuleActionResult & { modules: CustomModuleInfo[] };
 }
 
@@ -1057,6 +1034,8 @@ async function runCustomModuleAction(
   init: Omit<RequestInit, 'signal'>,
   fallbackMessage: string,
 ): Promise<CustomModuleActionResult> {
+  const pendingRead = discoveryRequestGate.begin('customModules');
+  pendingRead.finish();
   try {
     const data = await requestJson<CustomModuleActionResult & { modules: CustomModuleInfo[] }>(url, {
       ...init,
@@ -1064,9 +1043,10 @@ async function runCustomModuleAction(
       parse: (value) => parseCustomModules(value, fallbackMessage),
     });
     applyCustomModuleResult(set, get, data);
-    await get().fetchNodes();
+    await Promise.all([get().fetchNodes(), get().fetchCustomModules()]);
     return data;
   } catch (error) {
+    await Promise.all([get().fetchNodes(), get().fetchCustomModules()]);
     set({ customModuleError: formatRequestError(error, fallbackMessage) });
     throw error;
   }
@@ -1289,7 +1269,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       'Could not refresh custom modules.',
     );
   },
-  installCustomModule: async (source, name) => {
+  installCustomModule: async (source) => {
     return runCustomModuleAction(
       set,
       get,
@@ -1297,7 +1277,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, name }),
+        body: JSON.stringify(source),
       },
       'Could not install custom module.',
     );
@@ -1311,13 +1291,17 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       `Could not update ${name}.`,
     );
   },
-  setCustomModuleEnabled: async (name, enabled) => {
+  setCustomModuleEnabled: async (name, enabled, codeHash) => {
     const action = enabled ? 'enable' : 'disable';
     return runCustomModuleAction(
       set,
       get,
       `${config.serverAddress}/custom_modules/${encodeURIComponent(name)}/${action}`,
-      { method: 'POST' },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(enabled ? { codeHash, consent: true } : {}),
+      },
       `Could not ${action} ${name}.`,
     );
   },

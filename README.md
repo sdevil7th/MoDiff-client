@@ -271,6 +271,10 @@ unqualified until a retained real-run receipt proves them.
 
 The durable planner contract and model-onboarding checklist are documented in [Auto mode design](docs/auto-mode-design.md).
 
+## Custom nodes
+
+Expert exposes **Nodes → Custom nodes** (also in the Models environment panel). Stage a local Python folder, pinned Git source or pinned Hub Modular block, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Auto and Expert. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Auto accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use remains in Expert. Staging/inspection never imports submitted Python or installs dependencies.
+
 ## Interface Map
 
 | Area       | Purpose                                                                                     |

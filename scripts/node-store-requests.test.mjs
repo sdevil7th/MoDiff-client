@@ -7,6 +7,7 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let nodesStoreModule;
+let extensionsModule;
 let operationContractsModule;
 let optionalRuntimesModule;
 let requestModule;
@@ -46,6 +47,7 @@ before(async () => {
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
+  extensionsModule = await server.ssrLoadModule('/src/studio/customExtensions.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
@@ -111,6 +113,10 @@ function customModule(name, enabled = true) {
     enabled,
     status: enabled ? 'enabled' : 'disabled',
     path: `C:/custom/${name}`,
+    codeHash: 'sha256:' + 'a'.repeat(64),
+    dependencies: [],
+    files: [],
+    preview: null,
     hasInit: true,
     hasMain: false,
     nodeCount: 0,
@@ -2087,7 +2093,7 @@ test('custom-module discovery validates entries and recovers without sticky glob
   await nodesStoreModule.useNodesStore.getState().fetchCustomModules();
   let state = nodesStoreModule.useNodesStore.getState();
   assert.equal(state.discoveryRequests.customModules.status, 'error');
-  assert.match(state.customModuleError, /entry 1 is invalid/);
+  assert.match(state.customModuleError, /invalid custom extension record/);
   assert.equal(state.error, null);
 
   globalThis.fetch = async () => jsonResponse({ modules: [customModule('recovered')] });
@@ -2104,7 +2110,12 @@ test('custom-module mutations use normalized errors and never erase the last val
   globalThis.fetch = async () => jsonResponse({ error: true, message: 'Source is not trusted.' }, 403);
 
   await assert.rejects(
-    nodesStoreModule.useNodesStore.getState().installCustomModule('https://example.invalid/module.git'),
+    nodesStoreModule.useNodesStore.getState().installCustomModule({
+      kind: 'git',
+      source: 'https://example.invalid/module.git',
+      name: 'Example',
+      revision: 'a'.repeat(40),
+    }),
     (error) => error.kind === 'http' && error.status === 403 && error.message === 'Source is not trusted.',
   );
 
@@ -2121,18 +2132,24 @@ test('successful custom-module mutations validate the payload and refresh the no
     if (String(url).endsWith('/custom_modules/install')) {
       return jsonResponse({ error: false, modules: [installed], instance: 'modules-v2' });
     }
+    if (String(url).endsWith('/custom_modules')) return jsonResponse({ modules: [installed] });
     return jsonResponse({ nodes: {}, instance: 'nodes-v2' });
   };
 
-  await nodesStoreModule.useNodesStore
-    .getState()
-    .installCustomModule('https://example.invalid/installed.git', 'installed');
+  await nodesStoreModule.useNodesStore.getState().installCustomModule({
+    kind: 'git',
+    source: 'https://example.invalid/installed.git',
+    name: 'installed',
+    revision: 'a'.repeat(40),
+  });
 
   const state = nodesStoreModule.useNodesStore.getState();
   assert.equal(calls[0].init.method, 'POST');
   assert.deepEqual(JSON.parse(calls[0].init.body), {
+    kind: 'git',
     source: 'https://example.invalid/installed.git',
     name: 'installed',
+    revision: 'a'.repeat(40),
   });
   assert.match(calls[1].url, /\/nodes$/);
   assert.equal(state.customModules[0].name, 'installed');
@@ -2588,4 +2605,33 @@ test('operation resolution uses the exact backend binding without a template or 
     nodesStoreModule.useNodesStore.getState().resolveOperation({ ...op, task: 'text_to_image' }),
     /selection/i,
   );
+});
+
+test('extension approval parser rejects malformed identity, dependency and preview data', () => {
+  const valid = customModule('Example');
+  assert.equal(extensionsModule.parseExtensionInfo(valid).name, 'Example');
+  for (const invalid of [
+    { ...valid, moduleKey: 'modules.Text.ProcessText' },
+    { ...valid, codeHash: 'mutable' },
+    { ...valid, revision: {} },
+    { ...valid, kind: [] },
+    { ...valid, codeHash: null },
+    { ...valid, status: 'disabled' },
+    { ...valid, dependencies: [{ requirement: 'foo', status: 'installed' }] },
+    { ...valid, files: [{ name: 'main.py', bytes: -1, sha256: 'a'.repeat(64) }] },
+    { ...valid, preview: { kind: 'python', diagnostics: [], nodes: { Echo: { label: 'Echo', params: [] } } } },
+  ])
+    assert.throws(() => extensionsModule.parseExtensionInfo(invalid));
+});
+
+test('enable sends the reviewed code hash and preserves boolean consent', async () => {
+  let submitted;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).endsWith('/enable')) submitted = JSON.parse(init.body);
+    return jsonResponse(
+      String(url).endsWith('/nodes') ? { nodes: {}, instance: 'enabled' } : { modules: [customModule('Example')] },
+    );
+  };
+  await nodesStoreModule.useNodesStore.getState().setCustomModuleEnabled('Example', true, 'sha256:' + 'b'.repeat(64));
+  assert.deepEqual(submitted, { codeHash: 'sha256:' + 'b'.repeat(64), consent: true });
 });

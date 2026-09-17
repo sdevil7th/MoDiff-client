@@ -186,7 +186,7 @@ function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
   if (MODEL_SPECIFIC_MODULES.has(node.module)) return 'advanced';
   if (node.module === 'modules.ModularDiffusers') return 'advanced';
   if (node.module === 'modules.ModelArtifact') return 'advanced';
-  if (node.module.startsWith('custom.')) return 'advanced';
+  if (node.module.startsWith('custom.')) return 'essential';
   return 'advanced';
 }
 

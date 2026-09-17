@@ -22,7 +22,10 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // individual-chunk and deferred limits unchanged.
 // Shared operation seed editing/export adds 1.1 KiB to startup (603.0 KiB
 // measured). Bound it at 604 KiB; retain both individual chunk ceilings.
-const MAX_STARTUP_GZIP_BYTES = 604 * 1024;
+// M6 validates custom-extension identity and dependency responses in the shared
+// store. Startup measures 604.1 KiB; bound it at 605 KiB without increasing the
+// individual chunk limit. The extension review panel is loaded on demand.
+const MAX_STARTUP_GZIP_BYTES = 605 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -39,7 +42,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup and individual chunk ceilings remain unchanged.
 // Separate recompute/release controls add 0.2 KiB (204.1 KiB measured).
 // Bound this addition at 205 KiB; startup and per-chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 205 * 1024;
+// M6 replaces the old module manager with one lazy source/approval/reload panel.
+// The deferred graph measures 206.2 KiB; bound it at 207 KiB while retaining the
+// per-chunk ceiling and requiring a cold production browser check.
+const MAX_DEFERRED_GZIP_BYTES = 207 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -41,6 +41,11 @@ These rules apply to Codex, Copilot-style agents, and any AI tool editing this r
 - Treat network, websocket, localStorage, and backend dynamic-node data as `unknown` until narrowed by guards.
 - Preserve MoDiff localStorage keys and legacy migrations.
 
+## Custom extensions
+
+- Keep staging and inspection distinct from enabling code. Expert mode is not consent. Bind enable/reload to the inspected backend code hash, clear consent after any new inspection, and refresh registry state after either success or import failure.
+- Render declared extension fields using the existing registry, node factory and typed suggestions. Never give a workflow import permission to install or execute new source.
+
 ## Required Checks
 
 Run these before claiming a maintainability or UI change is complete:
