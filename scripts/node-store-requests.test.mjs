@@ -2286,10 +2286,11 @@ function operationCapabilityPayload() {
   return {
     schemaVersion: 2,
     capabilities: [],
-    operationContractSchemaVersion: 1,
+    operationContractSchemaVersion: 2,
     operationContracts: [
       {
         pipelineClass: 'FutureModularPipeline',
+        task: null,
         operationId: 'diffusion.denoise',
         nodeKey: 'modules.ModularDiffusers.Denoise',
         nodeType: 'denoise',
@@ -2304,6 +2305,7 @@ function operationCapabilityPayload() {
             roles: ['value'],
             types: ['embeddings'],
             required: true,
+            hidden: false,
           },
         ],
       },
@@ -2322,7 +2324,7 @@ test('operation discovery accepts new backend pipelines without a client model-f
 test('operation discovery rejects malformed, ambiguous and unsupported declarations', () => {
   const mutations = [
     (p) => {
-      p.operationContractSchemaVersion = 2;
+      p.operationContractSchemaVersion = 3;
     },
     (p) => {
       delete p.operationContractSchemaVersion;
@@ -2422,4 +2424,80 @@ test('operation contract size limits apply to every discovery boundary', () => {
     mutate(payload);
     assert.throws(() => parseOperationPayload(payload), /operation contract/i);
   }
+});
+
+test('operation discovery normalizes the previous stage-only schema', () => {
+  const payload = operationCapabilityPayload();
+  const expected = structuredClone(payload.operationContracts);
+  payload.operationContractSchemaVersion = 1;
+  delete payload.operationContracts[0].task;
+  delete payload.operationContracts[0].ports[0].hidden;
+  assert.deepEqual(parseOperationPayload(payload).operationContracts, expected);
+});
+
+test('task-scoped pipeline operations retain handles and hidden inputs without declaring stages', () => {
+  const payload = operationCapabilityPayload();
+  const base = {
+    pipelineClass: 'FutureImagePipeline',
+    task: 'text_to_image',
+    operationId: 'diffusion.load_models',
+    nodeKey: 'modules.DiffusersImage.LoadPipeline',
+    nodeType: 'loader',
+    blockName: null,
+    decomposition: 'loader',
+    support: 'declared',
+    ports: [
+      {
+        name: 'pipeline',
+        semanticName: 'pipeline',
+        direction: 'output',
+        roles: ['pipeline'],
+        types: ['image_diffusion_pipeline'],
+        required: false,
+        hidden: false,
+      },
+    ],
+  };
+  payload.operationContracts = [
+    base,
+    { ...structuredClone(base), task: 'edit_image' },
+    {
+      ...structuredClone(base),
+      operationId: 'diffusion.generate_image',
+      nodeType: 'pipeline',
+      decomposition: 'pipeline',
+      nodeKey: 'modules.DiffusersImage.Generate',
+      ports: [{ ...base.ports[0], direction: 'input', required: true, hidden: true }],
+    },
+  ];
+  assert.deepEqual(parseOperationPayload(payload).operationContracts, payload.operationContracts);
+  for (const mutate of [
+    (p) => {
+      p.task = null;
+    },
+    (p) => {
+      p.task = '__proto__';
+    },
+    (p) => {
+      p.nodeType = 'denoise';
+    },
+    (p) => {
+      p.blockName = 'denoise';
+    },
+    (p) => {
+      p.ports[0].hidden = 'false';
+    },
+    (p) => {
+      p.ports[0].roles = ['pipeline', 'value'];
+    },
+    (p) => {
+      p.ports[0].required = true;
+    },
+  ]) {
+    const invalid = structuredClone(payload);
+    mutate(invalid.operationContracts[0]);
+    assert.throws(() => parseOperationPayload(invalid), /operation contract/i);
+  }
+  payload.operationContractSchemaVersion = 1;
+  assert.throws(() => parseOperationPayload(payload), /operation contract/i);
 });

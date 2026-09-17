@@ -580,17 +580,22 @@ executable. It is never an automatic definition update or silent graph reset.
 - `/hf_download` install/repair tasks
 
 The additive `operationContracts` catalog on `/model_capabilities` describes the
-existing generic Modular stage adapters. `src/workflow/operationContracts.ts`
-validates schema version 1, finite identifiers/arrays, unique operations and
-ports, and explicit declaration/decomposition states before `useNodesStore`
-retains it. The parser loads on demand when capability discovery starts, keeping
+existing generic Modular stages and task-scoped standard image/video/audio/3D
+adapters. `src/workflow/operationContracts.ts` validates versions 1 and 2,
+bounded identifiers/arrays, unique `(pipelineClass, operationId, task)` operations
+and ports, and explicit declaration/decomposition states before `useNodesStore`
+retains them. Version 1 is normalized with null tasks and visible ports. The parser loads on demand when capability discovery starts, keeping
 it out of the static startup module graph. Unlike Studio model profiles, pipeline names are not narrowed through
 a frontend family union. Older backends without this catalog produce an empty
 list; failed discovery clears these declarations instead of reusing stale data.
 
 Each port retains its pipeline scope, original semantic name, direction, declared
-types, requiredness and value/component roles. A conditioning bundle can have both
-roles on one socket. These are adapter declarations, not compatibility verdicts,
+types, requiredness, visibility and value/component/pipeline roles. A conditioning
+bundle can have both value and component roles on one socket. Whole-pipeline
+actions and loaders are distinguished from Modular blocks/bundles; their task
+identity preserves conditioning requirements and specialized outputs. Hidden
+fields are presentation metadata, not execution permission. These are adapter
+declarations, not compatibility verdicts,
 runtime readiness, installation consent or graph recipes. Existing dynamic field
 signals, graph validation, optional-runtime and resource planning remain their
 respective authorities. This foundation does not yet change node insertion,
