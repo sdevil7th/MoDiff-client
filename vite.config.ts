@@ -180,6 +180,7 @@ const backendProxyPaths = [
   '/runtime',
   '/health',
   '/model_capabilities',
+  '/operations',
   '/media',
   '/auto_resource',
   '/studio_outputs',

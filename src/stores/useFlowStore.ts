@@ -1,3 +1,4 @@
+import { sharedOperationInput } from '../workflow/operationSharedInputs';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
@@ -1697,6 +1698,14 @@ export const useFlowStore = create<FlowStore>()(
           if (node.data.huggingFaceClusterInstanceId) {
             useHuggingFaceClusterRuntimeStore.getState().clearAuthority(node.data.huggingFaceClusterInstanceId);
           }
+          return;
+        }
+        const shared =
+          key === undefined || key === 'value' ? sharedOperationInput(get().nodes, get().edges, id, param) : null;
+        if (shared) {
+          get().withHistory(`Edit shared ${shared.name}`, () => {
+            for (const member of shared.members) writeNodeParam(member.node.id, member.field, value, key, set);
+          });
           return;
         }
         if (key && ['disabled', 'hidden', 'isConnected', 'isInput', 'signal'].includes(key)) {

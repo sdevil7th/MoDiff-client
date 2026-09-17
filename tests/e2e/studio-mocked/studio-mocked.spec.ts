@@ -8668,6 +8668,348 @@ for (const direction of ['source', 'target'] as const) {
   });
 }
 
+async function operationStarterFixtures() {
+  const python = path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
+  const command = process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
+  const args = process.platform === 'win32' ? [script] : [python, script];
+  return new Promise<import('../../../src/workflow/operationAuthoring').OperationStarter[]>((resolve, reject) => {
+    const child = spawn(command, args, { cwd: BACKEND_ROOT, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
+    let stdout = '',
+      stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) reject(new Error(stderr));
+      else {
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (error) {
+          reject(error);
+        }
+      }
+    });
+  });
+}
+
+async function installOperationAuthoringRoutes(page: Page) {
+  await installMockRoutes(page);
+  const starters = await operationStarterFixtures();
+  const operations = starters.flatMap((s) => s.nodes.map((n) => n.operation));
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: mockStudioExecutionCapabilities(),
+        operationContractSchemaVersion: 3,
+        operationContracts: operations,
+        pipelineSupportSchemaVersion: 1,
+        pipelineSupport: [...new Set(starters.map((s) => s.pipelineClass))].map((pipelineClass) => ({
+          pipelineClass,
+          coverage: 'local-adapter',
+          reason: 'Native authoring fixture; execution unqualified',
+          equivalentTo: [],
+          upstreamTasks: [],
+          tasks: starters
+            .filter((s) => s.pipelineClass === pipelineClass)
+            .map((s) => ({
+              task: s.task,
+              execution: 'declared',
+              decomposition: s.nodes.some((n) => n.operation.decomposition === 'pipeline') ? 'pipeline' : 'stages',
+              operationIds: s.nodes.map((n) => n.operation.operationId),
+              executionProfileIds: [],
+              dependencies: 'unknown',
+              runtimeRequirements: [],
+            })),
+        })),
+      }),
+    }),
+  );
+  await page.unroute('**/nodes');
+  const registry = Object.fromEntries(starters.flatMap((s) => s.nodes.map((n) => [n.operation.nodeKey, n.node])));
+  await page.route('**/nodes', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: registry }) }),
+  );
+  await page.route('**/operations/starter', (route) => {
+    const selection = route.request().postDataJSON();
+    const value = starters.find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task);
+    return route.fulfill({
+      status: value ? 200 : 400,
+      contentType: 'application/json',
+      body: JSON.stringify(value ?? { error: 'Unknown selection' }),
+    });
+  });
+  await page.route('**/operations/resolve', (route) => {
+    const selection = route.request().postDataJSON();
+    const value = starters
+      .find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task)
+      ?.nodes.find((n) => n.operation.operationId === selection.operationId);
+    return route.fulfill({
+      status: value ? 200 : 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 1, ...value }),
+    });
+  });
+  // Schema comes from the genuine backend describer. This mocked UI test does
+  // not execute field callbacks, install dependencies, or claim model output.
+  await page.unroute('**/fields/action');
+  await page.route('**/fields/action', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) }),
+  );
+  return starters;
+}
+
+async function selectOperationPipeline(page: Page, pipeline: string, task?: string) {
+  const panel = page.getByRole('region', { name: 'Diffusers operations' });
+  await panel.getByLabel('Operation pipeline').click();
+  await page.getByRole('option', { name: pipeline, exact: true }).click();
+  if (task) {
+    await panel.getByLabel('Operation task').click();
+    await page.getByRole('option', { name: task.replaceAll('_', ' '), exact: true }).click();
+  }
+  return panel;
+}
+
+test('operation starters preserve native edits through model/task preview, Undo and Save/reopen', async ({ page }) => {
+  page.setDefaultTimeout(15_000);
+  await page.setViewportSize({ width: 1680, height: 1050 });
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  let panel = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+  await panel.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Connected starter', exact: true });
+  await expect(dialog.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+  await dialog.getByRole('button', { name: 'Inspect implementation', exact: true }).click();
+  await expect(dialog).toContainText('text2image');
+  await dialog.getByRole('button', { name: 'Add starter to canvas', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(4);
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const promptId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')!.id,
+  );
+  const promptNode = page.locator(`.react-flow__node[data-id="${promptId}"]`);
+  const promptField = promptNode.locator('[data-key="prompt"] textarea');
+  await promptField.fill('Copper observatory at sunrise');
+  await promptField.blur();
+  await promptNode.locator('[data-key="negative_prompt"] textarea').fill('watermark');
+  await promptNode.locator('[data-key="negative_prompt"] textarea').blur();
+  const loaderId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'ModelsLoader')!.id,
+  );
+  panel = await selectOperationPipeline(page, 'FluxModularPipeline');
+  await panel.getByLabel('Operation graph to change').click();
+  await page.getByRole('option', { name: new RegExp(loaderId.slice(-6)) }).click();
+  await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+  await expect(dialog.getByRole('heading', { level: 2 })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await promptNode.locator('header').first().click();
+  await panel.getByRole('button', { name: 'Inspect selected stage', exact: true }).click();
+  const stageInspector = page.getByRole('dialog', { name: 'Stage implementation and settings', exact: true });
+  await expect(stageInspector).toContainText('Retained settings');
+  await expect(stageInspector).toContainText('watermark');
+  await stageInspector.getByRole('button', { name: 'Close', exact: true }).click();
+  const inspect = () =>
+    page.evaluate(() => {
+      const nodes = window.__MODIFF_E2E__!.getState().flow.nodes;
+      return {
+        pipeline: nodes.find((n) => n.action === 'ModelsLoader')?.params.model_type.value,
+        prompt: nodes.find((n) => n.action === 'EncodePrompt')?.params.prompt.value,
+        count: nodes.length,
+      };
+    });
+  await expect
+    .poll(inspect)
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 4 });
+  await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(inspect)
+    .toEqual({ pipeline: 'QwenImageModularPipeline', prompt: 'Copper observatory at sunrise', count: 4 });
+  await page.keyboard.press('Control+Shift+z');
+  await expect
+    .poll(inspect)
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 4 });
+  expect(
+    await page.evaluate(
+      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')?.id,
+    ),
+  ).toBe(promptId);
+  panel = await selectOperationPipeline(page, 'FluxModularPipeline', 'image_to_image');
+  await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+  await expect(dialog).toContainText('encode image · image');
+  await dialog.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(inspect)
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 5 });
+  await page.keyboard.press('Control+Shift+s');
+  await expect(page.getByTestId('save-workflow-dialog')).toBeVisible();
+  await page.getByTestId('save-workflow-name').fill('Operation authoring');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect
+    .poll(inspect)
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 5 });
+  await page.screenshot({ path: test.info().outputPath('operation-authoring.png'), animations: 'disabled' });
+  expect(errors).toEqual([]);
+});
+
+test('stateful task changes share native seed edits and preserve them through Undo and reload', async ({ page }) => {
+  page.setDefaultTimeout(15_000);
+  await page.setViewportSize({ width: 1680, height: 1050 });
+  await ensureFrontend();
+  const starters = await installOperationAuthoringRoutes(page);
+  expect(
+    starters.find((s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'image_to_image')!
+      .sharedInputs,
+  ).toHaveLength(1);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  let panel = await selectOperationPipeline(page, 'StableDiffusionXLModularPipeline', 'text_to_image');
+  await panel.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Connected starter', exact: true })
+    .getByRole('button', { name: 'Add starter to canvas', exact: true })
+    .click();
+  const ids = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes);
+  const denoiseId = ids.find((n) => n.action === 'Denoise')!.id;
+  const loaderId = ids.find((n) => n.action === 'ModelsLoader')!.id;
+  await page.locator(`.react-flow__node[data-id="${denoiseId}"] [data-key="seed"] input`).fill('4109');
+  await page.locator(`.react-flow__node[data-id="${denoiseId}"] [data-key="seed"] input`).blur();
+  panel = await selectOperationPipeline(page, 'StableDiffusionXLModularPipeline', 'image_to_image');
+  await panel.getByLabel('Operation graph to change').click();
+  await page.getByRole('option', { name: new RegExp(loaderId.slice(-6)) }).click();
+  await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+  await expect(preview).toContainText('Shared seed:');
+  await preview.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+  const inspect = () =>
+    page.evaluate(() =>
+      window
+        .__MODIFF_E2E__!.getState()
+        .flow.nodes.filter((n) => n.action === 'ImageEncode' || n.action === 'Denoise')
+        .map((n) => n.params.seed.value),
+    );
+  await expect.poll(inspect).toEqual([
+    { value: '4109', isRandom: false },
+    { value: '4109', isRandom: false },
+  ]);
+  const encoderId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'ImageEncode')!.id,
+  );
+  const field = page.locator(`.react-flow__node[data-id="${encoderId}"] [data-key="seed"] input`);
+  await field.fill('4111');
+  await field.blur();
+  await expect.poll(inspect).toEqual([
+    { value: '4111', isRandom: false },
+    { value: '4111', isRandom: false },
+  ]);
+  await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(inspect).toEqual([
+    { value: '4109', isRandom: false },
+    { value: '4109', isRandom: false },
+  ]);
+  await page.keyboard.press('Control+Shift+z');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect.poll(inspect).toEqual([
+    { value: '4111', isRandom: false },
+    { value: '4111', isRandom: false },
+  ]);
+});
+
+for (const pipeline of ['QwenImageModularPipeline', 'AnimaModularPipeline', 'StableAudioPipeline']) {
+  test(`operation stages can be wired manually for ${pipeline}`, async ({ page }) => {
+    page.setDefaultTimeout(15_000);
+    await page.setViewportSize({ width: 1680, height: 1050 });
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find((s) => s.pipelineClass === pipeline)!;
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, 'expert');
+    await page.getByTestId('left-tab-nodes').click();
+    const panel = await selectOperationPipeline(page, pipeline);
+    for (const entry of starter.nodes) {
+      const label = entry.operation.operationId.split('.')[1]!.replaceAll('_', ' ');
+      await panel.getByRole('button', { name: new RegExp(`^${label}`, 'i') }).click();
+    }
+    await expect
+      .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length))
+      .toBe(starter.nodes.length);
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    const nodes = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes);
+    const ids = new Map(
+      starter.nodes.map((entry) => [
+        entry.operation.operationId,
+        nodes.find((n) => `${n.module}.${n.action}` === entry.operation.nodeKey)!.id,
+      ]),
+    );
+    for (const edge of starter.edges) {
+      const source = page.getByTestId(`node-handle-${ids.get(edge.source)}-${edge.sourceHandle}`);
+      const target = page.getByTestId(`node-handle-${ids.get(edge.target)}-${edge.targetHandle}`);
+      await expect(source).toBeVisible();
+      await expect(target).toBeVisible();
+      const a = (await source.boundingBox())!,
+        b = (await target.boundingBox())!;
+      await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 15 });
+      await page.mouse.up();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            ({ source, target, sourceHandle, targetHandle }) =>
+              window
+                .__MODIFF_E2E__!.getState()
+                .flow.edges.some(
+                  (e) =>
+                    e.source === source &&
+                    e.target === target &&
+                    e.sourceHandle === sourceHandle &&
+                    e.targetHandle === targetHandle,
+                ),
+            { ...edge, source: ids.get(edge.source)!, target: ids.get(edge.target)! },
+          ),
+        )
+        .toBe(true);
+    }
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(starter.edges.length);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect
+      .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length))
+      .toBe(starter.edges.length);
+  });
+}
+
 test('Expert resolves canonical operations as ordinary nodes and cancels stale selection requests', async ({
   page,
 }) => {

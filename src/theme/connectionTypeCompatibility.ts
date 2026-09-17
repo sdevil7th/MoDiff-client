@@ -6,7 +6,23 @@ export function connectionTypes(value: unknown): string[] {
   return Array.from(
     new Set(
       values
-        .map((item) => normalizeDataType(item).toLowerCase())
+        .map((item) => {
+          const type = normalizeDataType(item).toLowerCase();
+          // Backend field schemas use both Python and UI scalar spellings.
+          // Collections and model-owned objects retain their exact type.
+          return (
+            (
+              {
+                str: 'string',
+                text: 'string',
+                boolean: 'bool',
+                integer: 'int',
+                double: 'float',
+                number: 'float',
+              } as Record<string, string>
+            )[type] ?? type
+          );
+        })
         .filter((item) => item && item !== 'default' && item !== 'missing'),
     ),
   ).sort();

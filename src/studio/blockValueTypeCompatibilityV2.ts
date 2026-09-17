@@ -5,8 +5,8 @@ import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibili
  *
  * Modular Diffusers metadata uses Python spellings such as `builtins.str`,
  * while MoDiff runtime fields use names such as `text`. This compatibility is
- * intentionally scoped to Block V2 compilation/execution. Ordinary graph
- * connectors keep their existing, exact visual/editor semantics.
+ * used by Block V2 compilation/execution. Ordinary graph connectors also
+ * normalize plain scalar spelling aliases; collections retain exact identities.
  *
  * Collection spellings are deliberately left intact: a declaration such as
  * `list[str]` carries shape information and must not be collapsed to `string`.

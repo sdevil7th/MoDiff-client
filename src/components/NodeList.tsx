@@ -504,7 +504,9 @@ function NodeList() {
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Nodes</h2>
               <p className="truncate text-xs text-modiff-subtle-text">
-                {runtimeNodeCount} nodes · {huggingFaceCatalogCount} catalog entries
+                {effectiveCatalogView === 'stages' && pipelineSupport.length
+                  ? 'Pipeline operations and common utilities'
+                  : `${runtimeNodeCount} nodes · ${huggingFaceCatalogCount} catalog entries`}
               </p>
             </div>
           </div>

@@ -20,7 +20,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // Automatic nested legacy preparation and validated runtime resource updates
 // measure 600.6 KiB together. Bound this feature addition at 602 KiB; keep
 // individual-chunk and deferred limits unchanged.
-const MAX_STARTUP_GZIP_BYTES = 602 * 1024;
+// Shared operation seed editing/export adds 1.1 KiB to startup (603.0 KiB
+// measured). Bound it at 604 KiB; retain both individual chunk ceilings.
+const MAX_STARTUP_GZIP_BYTES = 604 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -32,7 +34,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Canonical operation/coverage validation and the lazy operation picker/resolver
 // add about 4.4 KiB to the previous 193.7 KiB deferred graph. Measured total is
 // 198.1 KiB; bound the added feature at 199 KiB. Startup and per-chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 199 * 1024;
+// Connected starters, atomic graph adaptation and implementation inspection add
+// 5.8 KiB of deferred code. Measured total is 203.9 KiB; bound M4 at 204 KiB.
+// Startup and individual chunk ceilings remain unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 204 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -15,6 +15,7 @@ import {
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
+import type { OperationAuthoring } from '../workflow/operationAuthoring';
 import type { OperationContract } from '../workflow/operationContracts';
 import type { PipelineSupport } from '../workflow/operationCatalog';
 import {
@@ -89,6 +90,8 @@ export type NodeData = {
     recentChangeLabel?: string;
     recentChangeAt?: number;
   };
+  /** Authoring hints only; runtime still consumes params and ordinary edges. */
+  operationAuthoring?: OperationAuthoring;
   studioRole?: string;
   studioOwned?: boolean;
   studioAuxiliary?: boolean;

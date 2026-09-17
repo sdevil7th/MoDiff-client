@@ -99,6 +99,41 @@ view; it cannot infer semantic model compatibility from a tensor type. New node
 data is cloned so edits cannot mutate a registry definition. Catalog enumeration
 stays in the popup's lazy `nodeConnectionSearch` module, outside canvas startup.
 
+Expert's Stages panel also resolves connected starters from `POST /operations/starter`.
+The backend supplies ordinary node schemas and reviewed connections; the client
+assigns canvas IDs through the normal node factory. The result is a normal graph,
+with no template receipt or additional execution representation. Users can build
+the same stages manually with native typed wires and add an output Preview, Save
+or Export node. Plain scalar aliases such as `text`/`string` and `bool`/`boolean`
+match in native connections; media collections and model objects remain distinct.
+
+`operationAuthoring` is a versioned, advisory annotation on those ordinary nodes.
+It stores the selected operation, initial visible defaults and retained unsupported
+settings. It does not grant execution permission or replace node params.
+Backend-declared `sharedInputs` bind seed controls of stages that continue one
+generator. `operationSharedInputs` validates their loader scope and membership;
+ordinary parameter edits update the group under one history transaction. Export
+uses one random draw per group and rejects inconsistent literals or input sources.
+New stages inherit the existing shared value; a connected custom source is wired
+to every member. Distinct loader branches remain independent. No additional
+execution representation or model-family dispatch is introduced. The lazy
+`operationAuthoring` planner walks one loader's connected canonical stages,
+retains compatible user overrides and custom branches, and previews incompatible
+wires and retained settings. Required conditioning comes from the exact upstream
+task; instruction editing and image-to-image remain distinct choices.
+Changing a Python action assigns a fresh runtime ID and reconnects compatible
+edges, while unchanged actions retain their IDs and positions. Unmatched canonical
+stages remain disabled with their saved data. Existing nested Blocks are left
+intact and use their composition inspector and structural editing commands.
+
+The change applies through `operationGraphTransaction`, using the existing history
+transaction, rollback and connection reconciliation. It rejects concurrent canvas
+edits, tab changes, active gestures and ambiguous/shared loader ownership. One
+Undo/Redo restores the complete edit. Imported hints are validated before use;
+legacy graphs are not converted on open. Stage inspection shows defaults,
+overrides, connected fallbacks and retained settings separately. Retained settings
+are not automatically restored or included in execution parameters.
+
 `blockControlConnectionsV2` resolves root and nested control aliases against the
 owning effective graph and external public-input wires. Connected body controls
 show their saved fallback read-only, with the source node/port and an explicit
@@ -581,7 +616,7 @@ executable. It is never an automatic definition update or silent graph reset.
 
 The additive `operationContracts` catalog on `/model_capabilities` describes the
 existing generic Modular stages and task-scoped standard image/video/audio/3D
-adapters. `src/workflow/operationContracts.ts` validates versions 1 and 2,
+adapters. `src/workflow/operationContracts.ts` validates versions 1, 2 and 3,
 bounded identifiers/arrays, unique `(pipelineClass, operationId, task)` operations
 and ports, and explicit declaration/decomposition states before `useNodesStore`
 retains them. Version 1 is normalized with null tasks and visible ports. The parser loads on demand when capability discovery starts, keeping
@@ -598,9 +633,10 @@ fields are presentation metadata, not execution permission. These are adapter
 declarations, not compatibility verdicts,
 runtime readiness, installation consent or graph recipes. Existing dynamic field
 signals, graph validation, optional-runtime and resource planning remain their
-respective authorities. This foundation does not yet change node insertion,
-model switching, visible controls or execution. Loader, standard-pipeline and
-specialized-stage contracts and richer task support remain tracked under M3.
+respective authorities. Version 3 adds exact executable bindings and the task
+support inventory. The Stages panel uses these contracts for ordinary node
+insertion and reviewed starter/model/task changes, as described in the stage
+authoring section above.
 
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
 

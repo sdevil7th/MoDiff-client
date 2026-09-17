@@ -6,6 +6,8 @@ import type { OperationContract } from '../workflow/operationContracts';
 import { ModiffFieldShell, ModiffSelect, TreeButtonRow } from '../ui';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
 import { formatRequestError } from '../utils/requestJson';
+import OperationGraphControls from './OperationGraphControls';
+import { withOperationAuthoring } from '../workflow/operationAuthoring';
 
 /** A bound operation inserts one ordinary node. It does not create a template. */
 export default function OperationCatalogPanel({
@@ -55,7 +57,7 @@ export default function OperationCatalogPanel({
     try {
       const node = await resolve(operation, request.signal);
       if (!request.signal.aborted && useStudioStore.getState().activeWorkflowTabId === workflow)
-        onInsert(`${node.module}.${node.action}`, node);
+        onInsert(`${node.module}.${node.action}`, withOperationAuthoring(node, operation));
     } catch (error) {
       if (!request.signal.aborted) setError(formatRequestError(error, 'Could not resolve the selected operation.'));
     } finally {
@@ -126,6 +128,7 @@ export default function OperationCatalogPanel({
           </p>
         ) : null}
       </div>
+      {selected?.operationIds.length ? <OperationGraphControls pipeline={pipeline} task={selected.task} /> : null}
       {entries.map((operation) => (
         <TreeButtonRow
           key={operation.operationId}

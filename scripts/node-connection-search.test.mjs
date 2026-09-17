@@ -36,7 +36,12 @@ test('connection search and insertion agree on direction, enabled inputs, normal
   assert.equal(search.matchingNodeHandleForDrop(node, ' STRING ', 'source')?.[0], 'input');
   assert.equal(search.matchingNodeHandleForDrop(node, 'string', 'target')?.[0], 'output');
   assert.equal(search.matchingNodeHandleForDrop(node, 'audio', 'source'), undefined);
-  assert.equal(search.matchingNodeHandleForDrop(node, 'str', 'source'), undefined, 'Do not invent type aliases.');
+  assert.equal(
+    search.matchingNodeHandleForDrop(node, 'str', 'source')?.[0],
+    'input',
+    'Declared scalar aliases share the same connector.',
+  );
+  assert.equal(search.matchingNodeHandleForDrop(node, 'list[str]', 'source'), undefined);
   assert.equal(search.matchingNodeHandleForDrop(node, undefined, 'source')?.[0], 'input');
   assert.equal(search.matchingNodeHandleForDrop(node, ['any', 'audio'], 'target')?.[0], 'output');
   assert.equal(search.matchingNodeHandleForDrop(node, 'string', null), undefined);

@@ -495,7 +495,13 @@ test('every declared concrete backend connection type has a non-neutral stable c
     assert.ok(contrastRatio(color, '#0B0F19') >= 3, `${type} must remain legible on the graph canvas`);
     return color;
   });
-  assert.equal(new Set(colors).size, colors.length, 'concrete connection types must have pairwise-distinct colors');
+  assert.equal(
+    new Set(colors).size,
+    new Set(concreteTypes.flatMap((type) => connectionTypes.connectionTypes(type))).size,
+    'distinct normalized connection types must have pairwise-distinct colors',
+  );
+  for (const alias of ['str', 'text'])
+    assert.equal(connectionTypes.connectionColor(alias), connectionTypes.connectionColor('string'));
   const primitiveColor = connectionTypes.connectionColor('primitive');
   assert.notEqual(primitiveColor, connectionTypes.NEUTRAL_CONNECTION_COLOR);
   assert.equal(colors.includes(primitiveColor), false);
@@ -552,7 +558,7 @@ test('union connections resolve their exact payload and decorate stroke plus arr
   assert.equal(connectionTypes.connectionTypesAreCompatible(['image', 'video'], 'video'), true);
   assert.equal(connectionTypes.connectionTypesAreCompatible('image', 'audio'), false);
   assert.equal(connectionTypes.connectionTypesAreCompatible('Text', 'text'), true);
-  assert.equal(connectionTypes.connectionTypesAreCompatible('str', 'string'), false);
+  assert.equal(connectionTypes.connectionTypesAreCompatible('str', 'string'), true);
   assert.equal(connectionTypes.resolveConnectionType('any', 'audio'), 'audio');
   assert.deepEqual(connectionTypes.connectionTypes([' IMAGE ', 'image', 'DEFAULT', 'missing', 'Any', 'ANY']), [
     'any',

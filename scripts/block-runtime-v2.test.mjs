@@ -245,7 +245,7 @@ test('runtime public projections revalidate each call and never reuse authority 
   }
 });
 
-test('Block V2 aliases scalar upstream types without broadening ordinary graph or collection semantics', () => {
+test('Block V2 and ordinary graphs share scalar aliases while retaining collection and numeric boundaries', () => {
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('builtins.str', 'text'), true);
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('str', 'string'), true);
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('builtins.boolean', 'bool'), true);
@@ -256,8 +256,10 @@ test('Block V2 aliases scalar upstream types without broadening ordinary graph o
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('builtins.str', 'dropdown'), true);
   assert.equal(blockValueTypes.normalizeBlockValueTypeV2('list[str]'), 'list[str]');
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('list[str]', 'string'), false);
-  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('str', 'string'), false);
-  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('text', 'string'), false);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('str', 'string'), true);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('text', 'string'), true);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('list[str]', 'string'), false);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('int', 'float'), false);
 });
 
 test('registered Block V2 Auto authority is exact and Expert/manual readiness never requires it', () => {

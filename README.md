@@ -447,3 +447,23 @@ font software redistributed with the client are in
 distribution also ships a generated, lock-derived
 [dependency license inventory](public/THIRD_PARTY_LICENSES.txt); regenerate it
 with `npm run licenses:generate` after dependency changes.
+
+### Authoring with generic stages
+
+In **Expert → Nodes → Stages**, select a pipeline and task. Use **Preview connected
+starter** to inspect its ordinary stages, required inputs and upstream implementation,
+then add it to the canvas. You can also insert the stages individually and wire their
+ports. Connect the final result to a Preview, Save or Export node before running.
+
+To change a graph, select its loader under **Graph to change**, choose the new
+pipeline/task and use **Preview model / task change**. Review retained settings and
+connections before applying. Compatible prompt and parameter overrides survive;
+new defaults come from the selected backend contract. Undo restores the whole
+change. When stages share a seed, editing either control updates both; random mode
+uses one draw per run for that group. Select a stage and choose **Inspect selected stage** to see its defaults,
+connected fallbacks, overrides and unsupported settings retained outside execution.
+
+These controls use the same saved canvas graph in Auto and Expert. Existing Blocks
+keep their current structure and composition inspector. A declared stage graph can
+still require runtime installation, model files, conditioning or resource setup;
+authoring support alone does not qualify model execution.
