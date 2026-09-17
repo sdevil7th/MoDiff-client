@@ -6,6 +6,8 @@ import { NodeData } from '../stores/useNodeStore';
 import { ModiffPopover, ModiffSearchInput } from '../ui';
 import { GraphControlButton } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
+import { connectionSearchEntries } from '../workflow/nodeConnectionSearch';
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 
 interface NodeSearchDialogProps {
   anchorPosition: { top: number; left: number } | null;
@@ -40,42 +42,14 @@ const NodeSearchDialog = ({
     }
   }, [anchorPosition]);
 
-  // Memoize the data type filtering
-  const dataTypeFilteredNodes = useMemo(() => {
-    if (!dataType) {
-      return Object.entries(nodes);
-    }
-
-    const dataTypes = Array.isArray(dataType) ? dataType : [dataType];
-
-    return Object.entries(nodes).filter(([, node]) => {
-      // Check if any param has display "input" and matches the dataType
-      return Object.values(node.params).some((param) => {
-        if (handleType === 'source' && param.display !== 'input') {
-          return false;
-        }
-
-        if (handleType === 'target' && param.display !== 'output') {
-          return false;
-        }
-
-        // Get the param type (could be string or array of strings)
-        const paramType = param.type || 'default';
-        const paramTypes = Array.isArray(paramType) ? paramType : [paramType];
-
-        // Check if any of the param types match dataType or is "any"
-        return (
-          paramTypes.includes('any') || dataTypes.includes('any') || paramTypes.some((type) => dataTypes.includes(type))
-        );
-      });
-    });
-  }, [nodes, dataType, handleType]);
+  const dataTypeFilteredNodes = useMemo(
+    () => connectionSearchEntries(nodes, dataType, handleType),
+    [nodes, dataType, handleType],
+  );
 
   // Apply search query filter directly to the memoized results
-  const filteredNodes = dataTypeFilteredNodes.filter(
-    ([, node]) =>
-      node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (node.description ?? '').toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredNodes = dataTypeFilteredNodes.filter(([key, node]) =>
+    matchesSearchKeywords(searchQuery, [key, node.label, node.description, node.module, node.action]),
   );
 
   const handleClose = useCallback(() => {
@@ -129,10 +103,10 @@ const NodeSearchDialog = ({
       modal
       onClose={handleClose}
       open
-      panelClassName="w-[368px] max-h-[512px] overflow-hidden border-4 border-modiff-bg bg-modiff-panel"
+      panelClassName="flex max-h-[512px] w-[368px] flex-col overflow-hidden border-4 border-modiff-bg bg-modiff-panel"
       placement="bottom-start"
     >
-      <div className="p-2">
+      <div className="shrink-0 p-2">
         <ModiffSearchInput
           ref={inputRef}
           aria-label="Search nodes"
@@ -154,11 +128,20 @@ const NodeSearchDialog = ({
         />
       </div>
 
-      <div className="max-h-[456px] overflow-auto" role="listbox" aria-label="Matching nodes">
+      {handleType ? (
+        <p className="shrink-0 px-3 pb-2 text-xs text-modiff-subtle-text">
+          {handleType === 'source' ? 'Nodes with compatible inputs' : 'Nodes with compatible outputs'}
+        </p>
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-auto" role="listbox" aria-label="Matching nodes">
         {filteredNodes.length === 0 ? (
           <div className="px-4 py-6 text-center">
-            <div className="text-sm font-semibold text-modiff-text">No results found</div>
-            <div className="text-xs text-modiff-subtle-text">Try a different search query</div>
+            <div className="text-sm font-semibold text-modiff-text">
+              {handleType ? 'No compatible nodes found' : 'No results found'}
+            </div>
+            <div className="text-xs text-modiff-subtle-text">
+              {handleType ? 'Try another search or start from a different port.' : 'Try a different search query'}
+            </div>
           </div>
         ) : (
           filteredNodes.map(([key, node], index) => (

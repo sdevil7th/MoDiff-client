@@ -97,6 +97,14 @@ clearing site data or switching browser profiles.
 
 ### Connect And Move Across Blocks
 
+Drag an input or output onto empty canvas to add a compatible node. Dragging an
+output suggests nodes with matching inputs; dragging an input suggests matching
+outputs. Installed custom nodes participate through their declared port types,
+including controls already exposed as inputs. Search narrows those compatible
+results, and selecting a node inserts and connects it. These suggestions use the
+full executable node registry, independently of the left library's catalog tab.
+They do not install custom code or establish model-family compatibility.
+
 A compatible outside node can connect directly to an internal input, and an internal
 output can connect outside. Expanded Blocks show curved links to the visible internal
 node. Collapsed Blocks show an additional **Connected internal ports** section at the

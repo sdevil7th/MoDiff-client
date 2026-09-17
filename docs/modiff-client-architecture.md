@@ -89,6 +89,16 @@ The store persists only nodes, edges, and viewport under `modiff.flow`. Runtime,
 
 Connections are validated against handle/input rules. A normal input accepts one incoming edge unless the backend definition exposes spawn/multi-input behavior. `exportGraph(sid, targetNodeId?)` converts the visible graph into the backend graph payload.
 
+`nodeConnectionMatching` shares direction and type matching between the drag-to-add
+popup and the inserted connection. It uses the same normalized type compatibility
+as ordinary wires, includes `isInput` controls, and respects direction even when
+the dragged port is untyped. Suggestions retain installed custom nodes and
+deduplicate exact registry aliases while excluding structural groups/loops.
+The popup searches the executable registry independently of the left library's
+view; it cannot infer semantic model compatibility from a tensor type. New node
+data is cloned so edits cannot mutate a registry definition. Catalog enumeration
+stays in the popup's lazy `nodeConnectionSearch` module, outside canvas startup.
+
 `blockControlConnectionsV2` resolves root and nested control aliases against the
 owning effective graph and external public-input wires. Connected body controls
 show their saved fallback read-only, with the source node/port and an explicit

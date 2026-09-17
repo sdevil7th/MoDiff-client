@@ -8546,6 +8546,119 @@ test('canonical saved modular imports are adopted as managed and real topology e
   await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
 });
 
+for (const direction of ['source', 'target'] as const) {
+  test(`workbench typed drag-to-add connects custom nodes from a ${direction} handle`, async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const producerKey = 'custom.Workbench.Producer';
+    const consumerKey = 'custom.Workbench.Consumer';
+    const producer = {
+      ...nodeDef('custom.Workbench', 'Producer', 'custom', {
+        output: { label: 'Text', display: 'output', type: ' STRING ' },
+      }),
+      label: 'Workbench producer',
+    };
+    const consumer = {
+      ...nodeDef('custom.Workbench', 'Consumer', 'custom', {
+        input: { label: 'Text', display: 'text', type: 'string', isInput: true, value: 'Keep my text' },
+      }),
+      label: 'Workbench consumer',
+    };
+    const wildcard = {
+      ...nodeDef('custom.Workbench', 'Wildcard', 'custom', {
+        port: { display: direction === 'source' ? 'input' : 'output', type: 'default' },
+      }),
+      label: 'Workbench wildcard',
+    };
+    const incompatible = {
+      ...nodeDef('custom.Workbench', 'Image', 'custom', {
+        port: { display: direction === 'source' ? 'input' : 'output', type: 'image' },
+      }),
+      label: 'Workbench image',
+    };
+    await page.route('**/nodes**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          instance: 'mock',
+          nodes: {
+            ...mockRegistry,
+            [producerKey]: producer,
+            [consumerKey]: consumer,
+            'custom.Workbench.Wildcard': wildcard,
+            'custom.Workbench.Image': incompatible,
+          },
+        }),
+      });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, 'expert');
+    await page.getByTestId('left-tab-nodes').click();
+    await page
+      .getByLabel('Search nodes', { exact: true })
+      .fill(direction === 'source' ? 'Workbench producer' : 'Workbench consumer');
+    await page.getByTestId(`node-row-custom-Workbench-${direction === 'source' ? 'Producer' : 'Consumer'}`).click();
+    const original = page.locator('.react-flow__node-custom').first();
+    const originalId = (await original.getAttribute('data-id'))!;
+    const handle = original.getByTestId(`node-handle-${originalId}-${direction === 'source' ? 'output' : 'input'}`);
+    await expect(handle).toBeVisible();
+    const pane = page.locator('.react-flow__pane');
+    const bounds = (await pane.boundingBox())!;
+    const destination = { x: bounds.x + bounds.width - 60, y: bounds.y + 60 };
+    await handle.hover();
+    const start = (await handle.boundingBox())!;
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(destination.x, destination.y, { steps: 15 });
+    await page.mouse.up();
+    const suggestions = page.getByRole('listbox', { name: 'Matching nodes' });
+    await expect(suggestions).toBeVisible();
+    const wanted = direction === 'source' ? 'Workbench consumer' : 'Workbench producer';
+    const wrongDirection = direction === 'source' ? 'Workbench producer' : 'Workbench consumer';
+    await expect(suggestions.getByRole('option', { name: wanted, exact: true })).toBeVisible();
+    await expect(suggestions.getByRole('option', { name: 'Workbench wildcard', exact: true })).toBeVisible();
+    await expect(suggestions.getByRole('option', { name: wrongDirection, exact: true })).toHaveCount(0);
+    await expect(suggestions.getByRole('option', { name: 'Workbench image', exact: true })).toHaveCount(0);
+    const popupSearch = page.getByLabel('Search nodes', { exact: true }).last();
+    await popupSearch.fill('Workbench image');
+    await expect(page.getByText('No compatible nodes found', { exact: true })).toBeVisible();
+    await expect(suggestions.getByRole('option')).toHaveCount(0);
+    await popupSearch.fill(direction === 'source' ? 'consumer Workbench' : 'producer Workbench');
+    await expect(suggestions.getByRole('option', { name: wanted, exact: true })).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath(`typed-${direction}-suggestions.png`),
+      animations: 'disabled',
+    });
+    if (direction === 'source') await popupSearch.press('Enter');
+    else await suggestions.getByRole('option', { name: wanted, exact: true }).click();
+    const inspect = () =>
+      page.evaluate(() => {
+        const graph = window.__MODIFF_E2E__!.getState().flow;
+        const producer = graph.nodes.find((node) => node.action === 'Producer');
+        const consumer = graph.nodes.find((node) => node.action === 'Consumer');
+        return {
+          nodes: graph.nodes.length,
+          connected: graph.edges.some(
+            (edge) =>
+              edge.source === producer?.id &&
+              edge.sourceHandle === 'output' &&
+              edge.target === consumer?.id &&
+              edge.targetHandle === 'input',
+          ),
+          text: consumer?.params.input.value,
+        };
+      });
+    await expect.poll(inspect).toEqual({ nodes: 2, connected: true, text: 'Keep my text' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect.poll(inspect).toEqual({ nodes: 2, connected: true, text: 'Keep my text' });
+  });
+}
+
 test('workbench catalog defaults Expert to stages and makes implementation discovery explicit', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);

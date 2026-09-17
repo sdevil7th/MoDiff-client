@@ -7,6 +7,8 @@ import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
+import { matchingNodeHandleForDrop } from './nodeConnectionMatching';
+import { cloneNodeData } from './nodeFactory';
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
 type GetParam = <K extends keyof NodeParams>(id: string, param: string, key: K) => NodeParams[K] | null;
@@ -81,19 +83,6 @@ type UseWorkflowConnectionsOptions = {
   connectionScopeIsValid?: (connection: Connection) => boolean;
 };
 
-function matchingHandleForDrop(node: NodeData, dropHandle: DropHandle) {
-  return Object.entries(node.params || {}).find(([, param]) => {
-    if (dropHandle.handleType === 'source') {
-      return (
-        (param.display === 'input' || param.isInput) &&
-        param.display !== 'output' &&
-        connectionTypesAreCompatible(dropHandle.dataType ?? 'any', param.type)
-      );
-    }
-    return param.display === 'output' && connectionTypesAreCompatible(param.type, dropHandle.dataType ?? 'any');
-  });
-}
-
 function pointerPosition(event: MouseEvent | TouchEvent) {
   return {
     top: 'touches' in event ? (event.touches[0]?.clientY ?? 0) : event.clientY,
@@ -137,6 +126,12 @@ export function useWorkflowConnections({
         return;
       }
 
+      const dropHandle = dropHandleRef.current;
+      const matchingHandle = dropHandle
+        ? matchingNodeHandleForDrop(node, dropHandle.dataType, dropHandle.handleType)
+        : undefined;
+      if (dropHandle && !matchingHandle) return;
+
       const position = screenToFlowPosition({
         x: anchorPosition.left,
         y: anchorPosition.top,
@@ -145,17 +140,15 @@ export function useWorkflowConnections({
         id: `node-${nanoid()}`,
         type: node.type,
         position,
-        data: node,
+        data: cloneNodeData(node),
       };
 
       addNode(newNode);
 
-      const dropHandle = dropHandleRef.current;
       if (!dropHandle) {
         return;
       }
 
-      const matchingHandle = matchingHandleForDrop(node, dropHandle);
       if (matchingHandle) {
         const [newHandleId] = matchingHandle;
         const connection =
