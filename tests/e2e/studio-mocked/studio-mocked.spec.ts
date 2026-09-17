@@ -5928,6 +5928,8 @@ test('Hugging Face catalog uses Cluster Node terminology and fail-closed readine
     await page.getByTestId('task-launcher').getByRole('button', { name: 'Close' }).click();
   }
   await page.getByTestId('left-tab-nodes').click();
+  await setStudioViewMode(page, 'expert');
+  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
 
   const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
   await expect(clusterGroup).toBeVisible();
@@ -8542,6 +8544,50 @@ test('canonical saved modular imports are adopted as managed and real topology e
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
   await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+});
+
+test('workbench catalog defaults Expert to stages and makes implementation discovery explicit', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveAttribute('aria-selected', 'true');
+  const search = page.getByLabel('Search nodes', { exact: true });
+  await search.fill('Encode Prompt');
+  const prompt = page.getByTestId('node-row-modules-ModularDiffusers-EncodePrompt');
+  await expect(prompt).toBeVisible();
+  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toHaveCount(0);
+  await search.fill('');
+  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toBeVisible();
+  await expect(page.getByTestId('node-group-Diffusers-Component-Nodes')).toBeVisible();
+  await page.getByRole('tab', { name: 'Stages', exact: true }).click();
+  await search.fill('Encode Prompt');
+  await prompt.click();
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () => window.__MODIFF_E2E__!.getState().flow.nodes.filter((node) => node.action === 'EncodePrompt').length,
+      ),
+    )
+    .toBe(1);
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.id));
+  await search.fill('');
+  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('tab', { name: 'Stages', exact: true }).click();
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.id))).toEqual(
+    before,
+  );
+  await setStudioViewMode(page, 'auto');
+  await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toHaveCount(0);
+  await expect(page.getByTestId('node-group-Diffusers-Component-Nodes')).toHaveCount(0);
+  await setStudioViewMode(page, 'expert');
+  await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.screenshot({ path: test.info().outputPath('expert-stages-catalog.png'), animations: 'disabled' });
 });
 
 test('mocked Studio keeps model health contextual while exposing every authored FLUX template', async ({ page }) => {

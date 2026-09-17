@@ -63,7 +63,10 @@ import {
   nodeGroupForCatalogEntry,
   nodeCatalogEntries,
   nodeCatalogEntryMatchesSearch,
+  nodeCatalogEntryMatchesView,
+  defaultNodeCatalogView,
   type NodeCatalogEntry,
+  type NodeCatalogView,
 } from '../studio/nodeCatalog';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import {
@@ -96,7 +99,6 @@ import {
   modularDiffusersCatalogEntryHasDescendants,
 } from '../studio/modularDiffusersBlockInsertion';
 
-type NodeCatalogView = 'essential' | 'advanced' | 'experimental';
 function NodeList() {
   const { hfDownloadProgress, installHfModel, nodesRegistry } = useNodesStore();
   const studioViewMode = useSettingsStore((state) => state.studioViewMode);
@@ -133,13 +135,12 @@ function NodeList() {
   const [hubImportError, setHubImportError] = useState<string | null>(null);
   const [hubImportInspection, setHubImportInspection] = useState<CustomModularHubInspection | null>(null);
   const [clusterInsertionIds, setClusterInsertionIds] = useState<Set<string>>(() => new Set());
-  const [catalogView, setCatalogView] = useState<NodeCatalogView>(
-    studioViewMode === 'expert' ? 'advanced' : 'essential',
-  );
+  const [catalogView, setCatalogView] = useState<NodeCatalogView>(defaultNodeCatalogView(studioViewMode));
   const expertMode = studioViewMode === 'expert';
+  const effectiveCatalogView = expertMode ? catalogView : 'essential';
 
   useEffect(() => {
-    setCatalogView(studioViewMode === 'expert' ? 'advanced' : 'essential');
+    setCatalogView(defaultNodeCatalogView(studioViewMode));
   }, [studioViewMode]);
 
   useEffect(() => {
@@ -163,12 +164,22 @@ function NodeList() {
     [huggingFaceLibrary, modularConditionalSnapshot],
   );
   const huggingFaceSections = useMemo(
-    () => filterHuggingFaceCatalogSections(allHuggingFaceSections, search),
-    [allHuggingFaceSections, search],
+    () => filterHuggingFaceCatalogSections(allHuggingFaceSections, search, effectiveCatalogView),
+    [allHuggingFaceSections, search, effectiveCatalogView],
   );
   const huggingFaceCatalogCount = useMemo(
-    () => allHuggingFaceSections.reduce((total, section) => total + section.entries.length, 0),
-    [allHuggingFaceSections],
+    () =>
+      filterHuggingFaceCatalogSections(allHuggingFaceSections, '', effectiveCatalogView).reduce(
+        (total, section) => total + section.entries.length,
+        0,
+      ),
+    [allHuggingFaceSections, effectiveCatalogView],
+  );
+  const runtimeNodeCount = useMemo(
+    () =>
+      nodeCatalogEntries(nodesRegistry).filter((entry) => nodeCatalogEntryMatchesView(entry, effectiveCatalogView))
+        .length,
+    [nodesRegistry, effectiveCatalogView],
   );
 
   const handleInsertUserBlock = useCallback(
@@ -478,7 +489,7 @@ function NodeList() {
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Nodes</h2>
               <p className="truncate text-xs text-modiff-subtle-text">
-                {Object.keys(nodesRegistry).length} runtime · {huggingFaceCatalogCount} HF catalog
+                {runtimeNodeCount} nodes · {huggingFaceCatalogCount} catalog entries
               </p>
             </div>
           </div>
@@ -498,6 +509,7 @@ function NodeList() {
           aria-label="Node catalog level"
           className="mb-0.5 border-y border-modiff-border bg-modiff-surface p-0.5"
           options={[
+            { value: 'stages', label: 'Stages' },
             { value: 'essential', label: 'Essentials' },
             { value: 'advanced', label: 'Advanced' },
             { value: 'experimental', label: 'Experimental' },
@@ -508,11 +520,21 @@ function NodeList() {
         />
       ) : null}
 
+      <p className="px-3 pb-2 text-xs text-modiff-subtle-text">
+        {effectiveCatalogView === 'stages'
+          ? 'Generic stages, common operations, and installed custom nodes. Find implementation details in Advanced.'
+          : effectiveCatalogView === 'essential'
+            ? 'Task blocks and common operations. More nodes are available in Expert.'
+            : effectiveCatalogView === 'advanced'
+              ? 'Node entries, upstream blocks, and component references. Check each entry’s readiness.'
+              : 'Experimental operations. Model and runtime support vary.'}
+      </p>
+
       <div className="min-h-0 flex-1 select-none overflow-y-auto p-1">
         <NodeGroupList
           nodes={nodesRegistry}
           search={search}
-          view={expertMode ? catalogView : 'essential'}
+          view={effectiveCatalogView}
           expertMode={expertMode}
           userBlocks={[...userBlockDefinitionsV2, ...userBlocks]}
           huggingFaceSections={huggingFaceSections}
@@ -850,13 +872,6 @@ function getIcon(category: string) {
     default:
       return <Webhook size={16} />;
   }
-}
-
-function entryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
-  if (entry.visibility === 'internal') return false;
-  if (view === 'essential') return entry.visibility === 'essential';
-  if (view === 'advanced') return entry.visibility === 'essential' || entry.visibility === 'advanced';
-  return entry.visibility === 'experimental';
 }
 
 function normalizedTestId(value: string) {
@@ -1337,7 +1352,7 @@ function NodeGroupList({
 
   const groups = useMemo(() => {
     return nodeCatalogEntries(nodes)
-      .filter((entry) => entryMatchesView(entry, view))
+      .filter((entry) => nodeCatalogEntryMatchesView(entry, view))
       .filter((entry) => nodeCatalogEntryMatchesSearch(entry, search))
       .reduce(
         (acc, entry) => {
@@ -1372,17 +1387,19 @@ function NodeGroupList({
 
   return (
     <>
-      <HuggingFaceNodeGroups
-        activeGroupIds={activeNodeGroups}
-        error={huggingFaceError}
-        insertingDefinitionIds={insertingHuggingFaceDefinitionIds}
-        loading={huggingFaceLoading}
-        onToggleGroup={setActiveNodeGroups}
-        onRetry={onRetryHuggingFaceLibrary}
-        onInsertCluster={onInsertHuggingFaceCluster}
-        searching={Boolean(search.trim())}
-        sections={huggingFaceSections}
-      />
+      {view === 'essential' || view === 'advanced' ? (
+        <HuggingFaceNodeGroups
+          activeGroupIds={activeNodeGroups}
+          error={huggingFaceError}
+          insertingDefinitionIds={insertingHuggingFaceDefinitionIds}
+          loading={huggingFaceLoading}
+          onToggleGroup={setActiveNodeGroups}
+          onRetry={onRetryHuggingFaceLibrary}
+          onInsertCluster={onInsertHuggingFaceCluster}
+          searching={Boolean(search.trim())}
+          sections={huggingFaceSections}
+        />
+      ) : null}
       <div
         data-testid="node-group-User-Nodes"
         className={cx(

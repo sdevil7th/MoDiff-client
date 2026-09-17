@@ -30,6 +30,86 @@ let nodeCatalogModule;
 let nodeListModule;
 let nodeStoreModule;
 let originalFetch;
+
+test('workbench catalog starts with generic stages and keeps implementation nodes opt-in', () => {
+  const entry = (module, action, extra = {}) =>
+    nodeCatalogModule.getNodeCatalogEntry({ module, action, label: action, category: 'Test', params: {}, ...extra });
+  const matches = nodeCatalogModule.nodeCatalogEntryMatchesView;
+  assert.equal(nodeCatalogModule.defaultNodeCatalogView('expert'), 'stages');
+  assert.equal(nodeCatalogModule.defaultNodeCatalogView('auto'), 'essential');
+  for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents', 'ImageEncode']) {
+    const node = entry('modules.ModularDiffusers', action);
+    assert.equal(matches(node, 'stages'), true, action);
+    assert.equal(matches(node, 'essential'), false, action);
+    assert.equal(matches(node, 'advanced'), true, action);
+  }
+  for (const action of ['ReviewedModularWorkflowStep', 'WorkflowKrea2Denoise', 'DynamicBlockNode']) {
+    const node = entry('modules.ModularDiffusers', action);
+    assert.equal(matches(node, 'stages'), false, action);
+    assert.equal(matches(node, 'advanced'), true, action);
+  }
+  assert.equal(matches(entry('modules.Image', 'Preview'), 'stages'), true);
+  assert.equal(matches(entry('custom.my_nodes', 'PromptProcessor'), 'stages'), true);
+  assert.equal(matches(entry('modules.ModularDiffusers', 'Denoise', { type: 'group' }), 'stages'), false);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'stages'), false);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'experimental'), true);
+});
+
+test('workbench catalog scope filters HF internals and catalog-only blocks before search', () => {
+  const sections = [
+    {
+      id: 'diffusers_cluster_nodes',
+      label: 'Diffusers Cluster Nodes',
+      entries: [
+        {
+          id: 'ready',
+          kind: 'cluster',
+          readiness: 'graph_qualified',
+          insertable: true,
+          label: 'Ready task',
+          searchText: '',
+        },
+        {
+          id: 'draft',
+          kind: 'cluster',
+          readiness: 'catalog_only',
+          insertable: true,
+          label: 'Draft task',
+          searchText: '',
+        },
+        {
+          id: 'blocked',
+          kind: 'cluster',
+          readiness: 'graph_qualified',
+          insertable: false,
+          label: 'Blocked task',
+          searchText: '',
+        },
+      ],
+    },
+    {
+      id: 'modular_diffusers_block_nodes',
+      label: 'Modular blocks',
+      entries: [{ id: 'internal', kind: 'block', label: 'Denoise internals', searchText: '', insertable: true }],
+    },
+    {
+      id: 'diffusers_component_nodes',
+      label: 'Components',
+      entries: [{ id: 'component', kind: 'component', label: 'VAE reference', searchText: '', insertable: false }],
+    },
+  ];
+  const before = JSON.stringify(sections);
+  const filter = libraryCatalogModule.filterHuggingFaceCatalogSections;
+  const ids = (view, query = '') => filter(sections, query, view).flatMap(({ entries }) => entries.map(({ id }) => id));
+  assert.deepEqual(ids('essential'), ['ready']);
+  assert.deepEqual(ids('essential', 'Draft'), []);
+  assert.deepEqual(ids('stages'), []);
+  assert.deepEqual(ids('experimental'), []);
+  assert.deepEqual(ids('advanced'), ['ready', 'draft', 'blocked', 'internal', 'component']);
+  assert.deepEqual(ids('advanced', 'Denoise'), ['internal']);
+  assert.equal(JSON.stringify(sections), before, 'Discovery must not mutate catalog contracts.');
+});
+
 test('runtime node search requires every keyword and preserves exact registry keys and aliases', () => {
   const entry = nodeCatalogModule.getNodeCatalogEntry(
     {

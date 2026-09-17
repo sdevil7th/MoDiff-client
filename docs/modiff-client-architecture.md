@@ -571,6 +571,17 @@ executable. It is never an automatic definition update or silent graph reset.
 
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
 
+Node discovery uses a shared `NodeCatalogView` policy. Expert defaults to `stages`,
+which includes existing generic Modular operations, essential operations, and
+installed custom nodes. Auto uses `essential`. `NodeList` applies the effective
+view to both ordinary registry entries and the separate Hugging Face catalog
+before keyword search. HF Essentials includes only insertable, graph-qualified
+task clusters; HF implementation blocks and component references remain in
+Advanced. Experimental is separate, and saved User Nodes remain accessible in
+all views. These filters do not rewrite backend identities or add execution
+support. Catalog-tab changes are local presentation state; the Auto/Expert
+control still also selects resource policy until the planned mode separation.
+
 An optional runtime requirement is discovery data, not permission to mutate the Python environment. Template browsing/opening, registry refresh, and Auto planning must remain non-installing. Installation begins only from an explicit user action against a reviewed backend runtime profile, and the client keeps Run blocked until a later backend status confirms the compatible installation.
 
 The Setup surface renders install or repair only when the exact profile is

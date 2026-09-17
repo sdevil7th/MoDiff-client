@@ -7,6 +7,7 @@ import type {
 import { registeredBlockV2Route } from './registeredBlockV2Routes';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
 import type { HuggingFaceModularConditionalSnapshot } from './huggingFaceModularConditionals';
+import type { NodeCatalogView } from './nodeCatalog';
 
 export type HuggingFaceCatalogSectionId =
   | 'diffusers_cluster_nodes'
@@ -447,10 +448,23 @@ export function buildHuggingFaceCatalogSections(
 export function filterHuggingFaceCatalogSections(
   sections: HuggingFaceCatalogSection[],
   search: string,
+  view: NodeCatalogView = 'advanced',
 ): HuggingFaceCatalogSection[] {
+  if (view === 'stages' || view === 'experimental') return [];
+  const visibleSections =
+    view === 'essential'
+      ? sections
+          .map((section) => ({
+            ...section,
+            entries: section.entries.filter(
+              (entry) => entry.kind === 'cluster' && entry.insertable && entry.readiness === 'graph_qualified',
+            ),
+          }))
+          .filter((section) => section.entries.length > 0)
+      : sections;
   const query = search.trim().toLowerCase();
-  if (!query) return sections;
-  return sections
+  if (!query) return visibleSections;
+  return visibleSections
     .map((section) => ({
       ...section,
       entries: section.entries.filter((entry) =>

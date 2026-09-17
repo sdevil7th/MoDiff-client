@@ -3,6 +3,11 @@ import type { NodeData } from '../stores/useNodeStore';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
 
 export type NodeCatalogVisibility = 'essential' | 'advanced' | 'experimental' | 'internal';
+export type NodeCatalogView = 'essential' | 'stages' | 'advanced' | 'experimental';
+
+export function defaultNodeCatalogView(mode: 'auto' | 'expert'): NodeCatalogView {
+  return mode === 'expert' ? 'stages' : 'essential';
+}
 
 export type NodeSurfaceCategory =
   | 'Load'
@@ -52,6 +57,40 @@ const SURFACE_CATEGORY_ORDER: NodeSurfaceCategory[] = [
 ];
 
 const MODEL_SPECIFIC_MODULES = new Set<string>();
+
+// Discovery only: these existing generic operations keep their backend schemas
+// and execution identities. Inclusion does not add model/task support.
+const GENERIC_STAGE_NODE_KEYS = new Set([
+  'modules.ModularDiffusers.ModelsLoader',
+  'modules.ModularDiffusers.AutoModelLoader',
+  'modules.ModularDiffusers.EncodePrompt',
+  'modules.ModularDiffusers.ImageEncode',
+  'modules.ModularDiffusers.ImageEmbeddings',
+  'modules.ModularDiffusers.Denoise',
+  'modules.ModularDiffusers.DecodeLatents',
+  'modules.ModularDiffusers.LatentsPreview',
+  'modules.ModularDiffusers.Lora',
+  'modules.ModularDiffusers.Controlnet',
+  'modules.ModularDiffusers.IPAdapter',
+  'modules.ModularDiffusers.Scheduler',
+  'modules.ModularDiffusers.Guider',
+  'modules.ModularDiffusers.QuantizationConfigNode',
+]);
+
+export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
+  if (entry.visibility === 'internal') return false;
+  if (view === 'essential') return entry.visibility === 'essential';
+  if (view === 'stages') {
+    return (
+      entry.visibility !== 'experimental' &&
+      (entry.visibility === 'essential' ||
+        GENERIC_STAGE_NODE_KEYS.has(nodeKey(entry.node)) ||
+        entry.node.module.startsWith('custom.'))
+    );
+  }
+  if (view === 'advanced') return entry.visibility === 'essential' || entry.visibility === 'advanced';
+  return entry.visibility === 'experimental';
+}
 
 const ESSENTIAL_NODE_KEYS = new Set([
   'modules.DiffusersImage.LoadPipeline',

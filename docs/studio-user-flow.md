@@ -67,6 +67,19 @@ The Auto switch and the Run menu's Auto item have different roles: the switch se
 - **Models** summarizes supported, installed, missing, and downloading artifacts.
 - **Workflows** browses backend workflow files.
 
+In Auto, **Nodes** shows common task/media operations, graph-qualified task Blocks,
+and saved User Nodes. Expert opens the **Stages** view with generic Modular
+operations such as Load model, Encode prompt, Denoise, and Decode latents, alongside
+common operations and installed custom nodes. Their available fields and supported
+models still come from the backend.
+
+Expert's **Essentials** tab returns to the task-oriented catalog. **Advanced** adds
+implementation nodes, upstream Modular blocks, catalog-only tasks, and component
+references; check each entry's readiness before using it. **Experimental** contains
+experimental operations. Search applies within the selected view, and saved User
+Nodes remain available in each view. Changing catalog tabs does not change the
+workflow or execution settings. Returning to Expert selects Stages again.
+
 ### Canvas And Workflow Tabs
 
 The canvas is the executable workflow. You can move and resize nodes, connect compatible ports, select multiple nodes, import graphs, and use node context actions.
