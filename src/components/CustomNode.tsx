@@ -54,7 +54,7 @@ import { cx } from '../utils/classNames';
 import ErrorBoundary from './ErrorBoundary';
 import NodeContent from './NodeContent';
 import { enqueueSnackbar } from '../ui/snackbar';
-import { deleteNodeCache } from '../utils/serverActions';
+import { deleteNodeCache, recomputeNodeOutputs } from '../utils/serverActions';
 import { syncManagedNodeControlChange } from '../studio/managedControlSync';
 import {
   GraphMenuAction,
@@ -189,11 +189,26 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     [setParam, node.id, sid],
   );
 
+  const handleRecompute = useCallback(async () => {
+    try {
+      const result = await recomputeNodeOutputs([node.id]);
+      if (result.nodes.length) setNodeCached(node.id, false);
+      enqueueSnackbar(
+        result.nodes.length
+          ? 'Outputs will recompute on the next Run. Loaded models are retained.'
+          : 'Loaded models retained; no computed outputs to invalidate.',
+        { variant: 'success', autoHideDuration: 3500 },
+      );
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: 'error' });
+    }
+  }, [node.id, setNodeCached]);
+
   const handleClearCache = useCallback(async () => {
     try {
       await deleteNodeCache([node.id]);
       setNodeCached(node.id, false);
-      enqueueSnackbar('Cache cleared', { variant: 'success', autoHideDuration: 1500 });
+      enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
       console.error('Failed to delete cache', error);
     }
@@ -417,8 +432,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
                 size="compact"
                 className="nodrag text-modiff-subtle-text"
                 disabled={!node.data.isCached}
-                label={node.data.isCached ? 'Clear node cache' : 'Node is not cached'}
-                title={node.data.isCached ? 'Click to clear cache' : 'Not cached'}
+                label={node.data.isCached ? 'Release node cache' : 'Node is not cached'}
+                title={node.data.isCached ? 'Release this node and its loaded components' : 'Not cached'}
                 onClick={() => {
                   void handleClearCache();
                 }}
@@ -571,6 +586,16 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             Reset size
           </ContextMenuItem>
           <ContextMenuItem
+            data-testid="node-menu-recompute"
+            icon={<RefreshCcw size={15} />}
+            onClick={() => {
+              closeContextMenu();
+              void handleRecompute();
+            }}
+          >
+            Recompute on next Run
+          </ContextMenuItem>
+          <ContextMenuItem
             data-testid="node-menu-clear-cache"
             icon={<Circle size={15} />}
             onClick={() => {
@@ -578,7 +603,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
               void handleClearCache();
             }}
           >
-            Clear cache
+            Release node cache
           </ContextMenuItem>
           <ContextMenuDivider />
           <ContextMenuItem data-testid="node-menu-copy-info" icon={<Copy size={15} />} onClick={handleCopyNodeInfo}>

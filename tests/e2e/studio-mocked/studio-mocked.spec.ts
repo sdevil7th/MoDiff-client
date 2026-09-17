@@ -8778,6 +8778,61 @@ async function selectOperationPipeline(page: Page, pipeline: string, task?: stri
   return panel;
 }
 
+test('node cache controls separate recomputation from model release without editing the graph', async ({ page }) => {
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page);
+  const requests: unknown[] = [];
+  await page.unroute('**/cache');
+  await page.route('**/cache', async (route) => {
+    const body = route.request().postDataJSON() as { nodes: string[]; scope?: string };
+    requests.push(body);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: false,
+        nodes: body.nodes,
+        ...(body.scope === 'outputs' ? { scope: 'outputs', retainedModelNodes: [] } : {}),
+      }),
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  const panel = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+  await panel.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Connected starter', exact: true })
+    .getByRole('button', { name: 'Add starter to canvas', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const readNodes = () =>
+    page.evaluate(() =>
+      window.__MODIFF_E2E__!.getState().flow.nodes.map((n) => ({
+        id: n.id,
+        action: n.action,
+        params: n.params,
+      })),
+    );
+  const before = await readNodes();
+  const promptId = before.find((n) => n.action === 'EncodePrompt')!.id;
+  const header = page.locator(`.react-flow__node[data-id="${promptId}"] [data-testid^="graph-node-action-"]`);
+  await header.click({ button: 'right' });
+  await page.getByTestId('node-menu-recompute').click();
+  await expect(
+    page.getByText('Outputs will recompute on the next Run. Loaded models are retained.', { exact: true }),
+  ).toBeVisible();
+  expect(requests).toEqual([{ nodes: [promptId], scope: 'outputs' }]);
+  expect(await readNodes()).toEqual(before);
+  await header.click({ button: 'right' });
+  await page.getByTestId('node-menu-clear-cache').click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests[1]).toEqual({ nodes: [promptId] });
+  expect(await readNodes()).toEqual(before);
+});
+
 test('operation starters preserve native edits through model/task preview, Undo and Save/reopen', async ({ page }) => {
   page.setDefaultTimeout(15_000);
   await page.setViewportSize({ width: 1680, height: 1050 });

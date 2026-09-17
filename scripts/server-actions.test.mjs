@@ -249,3 +249,17 @@ test('Hugging Face deletion rejects malformed runtime-release receipts', async (
     return true;
   });
 });
+
+test('output recomputation is explicit, preserves model owners, and rejects an older backend response', async () => {
+  let request;
+  globalThis.fetch = async (url, init) => {
+    request = { url: String(url), init };
+    return jsonResponse({ error: false, scope: 'outputs', nodes: ['encode'], retainedModelNodes: ['load'] });
+  };
+  const result = await actionsModule.recomputeNodeOutputs(['load', 'encode', 'encode']);
+  assert.equal(request.init.method, 'DELETE');
+  assert.deepEqual(JSON.parse(request.init.body), { nodes: ['load', 'encode'], scope: 'outputs' });
+  assert.deepEqual(result.retainedModelNodes, ['load']);
+  globalThis.fetch = async () => jsonResponse({ error: false, nodes: ['encode'] });
+  await assert.rejects(actionsModule.recomputeNodeOutputs(['encode']), /response is invalid/);
+});

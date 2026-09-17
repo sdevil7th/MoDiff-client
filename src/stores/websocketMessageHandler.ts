@@ -135,13 +135,15 @@ function applyNodeExecutionStatus(message: WebsocketMessage) {
   );
   if (!targetNodeId) return;
   const statusMessage =
-    message.status === 'running'
-      ? 'Running'
-      : message.status === 'cached'
-        ? 'Cached result reused'
-        : message.status === 'failed'
-          ? 'Failed'
-          : 'Completed';
+    message.type === 'executed' && message.message
+      ? message.message
+      : message.status === 'running'
+        ? 'Running'
+        : message.status === 'cached'
+          ? 'Cached result reused'
+          : message.status === 'failed'
+            ? 'Failed'
+            : 'Completed';
   flow.setNodeUiState(targetNodeId, {
     validationSeverity: message.status === 'failed' ? 'error' : message.status === 'running' ? 'info' : 'success',
     validationMessage: statusMessage,

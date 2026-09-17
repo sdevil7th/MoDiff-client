@@ -467,3 +467,14 @@ These controls use the same saved canvas graph in Auto and Expert. Existing Bloc
 keep their current structure and composition inspector. A declared stage graph can
 still require runtime installation, model files, conditioning or resource setup;
 authoring support alone does not qualify model execution.
+
+To repeat computation, open a node's context menu or **More node actions** and
+choose **Recompute on next Run**. This retains loaded models and current previews;
+the next Run recomputes the selected results and affected descendants. **Release
+node cache** destroys that node's runtime cache and releases its unshared model
+components. Neither action deletes downloaded model files. For a Block,
+recomputation includes its cached descendants while retaining model owners.
+Node status explains whether inputs changed, results were invalidated, or cached
+results were reused. Automatic resource management retains independent model
+owners when their combined memory estimate fits; otherwise it uses the existing
+release schedule where safe.

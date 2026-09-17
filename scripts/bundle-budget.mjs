@@ -37,7 +37,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Connected starters, atomic graph adaptation and implementation inspection add
 // 5.8 KiB of deferred code. Measured total is 203.9 KiB; bound M4 at 204 KiB.
 // Startup and individual chunk ceilings remain unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 204 * 1024;
+// Separate recompute/release controls add 0.2 KiB (204.1 KiB measured).
+// Bound this addition at 205 KiB; startup and per-chunk caps stay fixed.
+const MAX_DEFERRED_GZIP_BYTES = 205 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

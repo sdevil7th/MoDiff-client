@@ -16,6 +16,11 @@ export type CacheDeletionResult = ServerActionResult & {
   nodes: string[];
 };
 
+export type OutputRecomputeResult = CacheDeletionResult & {
+  scope: 'outputs';
+  retainedModelNodes: string[];
+};
+
 export type GpuCleanupResult = ServerActionResult & {
   cleanup_errors?: string[];
   released_diffusers_component_count?: number;
@@ -156,6 +161,39 @@ export function deleteNodeCache(nodeIds: string[]) {
 
 export function cleanupGpuMemory() {
   return serverAction<GpuCleanupResult>('/runtime/gpu_cleanup', 'Accelerator cleanup failed.', { method: 'POST' });
+}
+
+/** Invalidate results on the next Run while retaining model owners and previews. */
+export function recomputeNodeOutputs(nodeIds: string[]) {
+  const nodes = [...new Set(nodeIds.filter(Boolean))];
+  if (!nodes.length) {
+    return Promise.resolve<OutputRecomputeResult>({
+      error: false,
+      scope: 'outputs',
+      nodes: [],
+      retainedModelNodes: [],
+    });
+  }
+  return serverAction<OutputRecomputeResult>(
+    '/cache',
+    'Could not request output recomputation.',
+    {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nodes, scope: 'outputs' }),
+    },
+    (payload) => {
+      if (
+        payload.scope !== 'outputs' ||
+        !Array.isArray(payload.nodes) ||
+        payload.nodes.some((node) => typeof node !== 'string') ||
+        !Array.isArray(payload.retainedModelNodes) ||
+        payload.retainedModelNodes.some((node) => typeof node !== 'string')
+      ) {
+        throw new Error('The output recomputation response is invalid. Update the backend and retry.');
+      }
+    },
+  );
 }
 
 export function cleanupTemporaryMedia() {
