@@ -29,7 +29,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // The custom-workspace inspector now resolves declared Block controls and hidden
 // pins, and exposes graph-owned artifact actions. Measured deferred code is
 // 192.9 KiB. Bound this correctness fix at 194 KiB; startup and chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 194 * 1024;
+// Canonical operation/coverage validation and the lazy operation picker/resolver
+// add about 4.4 KiB to the previous 193.7 KiB deferred graph. Measured total is
+// 198.1 KiB; bound the added feature at 199 KiB. Startup and per-chunk caps stay fixed.
+const MAX_DEFERRED_GZIP_BYTES = 199 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

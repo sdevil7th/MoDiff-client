@@ -69,10 +69,23 @@ The view switch controls presentation; Resources controls planning. The Run menu
 - **Workflows** browses backend workflow files.
 
 In Auto, **Nodes** shows common task/media operations, graph-qualified task Blocks,
-and saved User Nodes. Expert opens the **Stages** view with generic Modular
-operations such as Load model, Encode prompt, Denoise, and Decode latents, alongside
-common operations and installed custom nodes. Their available fields and supported
-models still come from the backend.
+and saved User Nodes. Expert opens the **Stages** view. Select a pipeline and task
+in **Diffusers operations**, then click **Load models**, **Encode prompt**,
+**Denoise**, **Decode latents**, or another declared operation to add one ordinary
+node to the canvas. Whole-pipeline routes show a **Pipeline** label. Specialized
+video, audio, media preparation and conditioning operations keep their own entries.
+
+The picker reports execution adapters and runtime requirements separately.
+A declared stage can be inspected and authored without an executable adapter;
+its visibility does not mean Run is available. Runtime availability still leaves
+model artifacts and resource checks to the backend. Install required packages
+explicitly through Setup. Changing the picker does not change existing graph
+nodes. Changing its selection or leaving the workflow cancels pending insertion.
+
+Stages consolidates the underlying bound implementations and keeps common media
+utilities and installed custom nodes available. Older backends without the
+operation catalog retain the previous generic-node discovery. Saved action names
+and graphs remain compatible.
 
 Expert's **Essentials** tab returns to the task-oriented catalog. **Advanced** adds
 implementation nodes, upstream Modular blocks, catalog-only tasks, and component

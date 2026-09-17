@@ -16,6 +16,7 @@ import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runt
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
 import type { OperationContract } from '../workflow/operationContracts';
+import type { PipelineSupport } from '../workflow/operationCatalog';
 import {
   buildTaskTemplateSkeleton,
   parseTaskTemplateContracts,
@@ -428,6 +429,8 @@ type NodesStore = {
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
   studioModelCapabilities: StudioModelProfile[];
   operationContracts: OperationContract[];
+  pipelineSupport: PipelineSupport[];
+  resolveOperation: (operation: OperationContract, signal?: AbortSignal) => Promise<NodeData>;
   studioModelCapabilitiesAuthoritative: boolean;
   studioExecutionSpecInvalid: boolean;
   studioTaskTemplateContracts: StudioTaskTemplateContract[];
@@ -601,11 +604,11 @@ function notifyHfDownloadTransition(previous: HfDownloadProgress | undefined, ne
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function payloadRecord(value: unknown, fallbackMessage: string) {
+export function payloadRecord(value: unknown, fallbackMessage: string) {
   if (!isRecord(value)) throw new Error(fallbackMessage);
   if (value.error) {
     throw new Error(
@@ -619,7 +622,7 @@ function payloadRecord(value: unknown, fallbackMessage: string) {
   return value;
 }
 
-function parseNodesResponse(value: unknown) {
+export function parseNodesResponse(value: unknown) {
   const payload = payloadRecord(value, 'The node registry response is invalid.');
   if (!isRecord(payload.nodes)) throw new Error('The node registry response has no nodes object.');
   Object.entries(payload.nodes).forEach(([key, definition]) => {
@@ -1076,6 +1079,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   modelCacheDiagnostics: null,
   studioModelCapabilities: [],
   operationContracts: [],
+  pipelineSupport: [],
   studioModelCapabilitiesAuthoritative: false,
   studioExecutionSpecInvalid: false,
   studioTaskTemplateContracts: [],
@@ -1435,6 +1439,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     );
   },
 
+  resolveOperation: async (operation, signal) => {
+    const { resolveOperation } = await import('../workflow/operationResolution');
+    return resolveOperation(operation, signal);
+  },
+
   fetchStudioModelCapabilities: async () => {
     if (inFlightStudioCapabilitiesDiscovery) {
       await inFlightStudioCapabilitiesDiscovery;
@@ -1444,7 +1453,10 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       'capabilities',
       set,
       async (signal) => {
-        const { parseOperationContracts } = await import('../workflow/operationContracts');
+        const [{ parseOperationContracts }, { parsePipelineSupport }] = await Promise.all([
+          import('../workflow/operationContracts'),
+          import('../workflow/operationCatalog'),
+        ]);
         return requestJson(`${config.serverAddress}/model_capabilities`, {
           method: 'GET',
           signal,
@@ -1452,18 +1464,25 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           parse: (value) => {
             const capabilities = parseStudioModelCapabilities(value);
             const payload = payloadRecord(value, 'Invalid model-capabilities response.');
+            const operationContracts = parseOperationContracts(
+              payload.operationContracts,
+              payload.operationContractSchemaVersion,
+            );
             return {
               ...capabilities,
-              operationContracts: parseOperationContracts(
-                payload.operationContracts,
-                payload.operationContractSchemaVersion,
+              operationContracts,
+              pipelineSupport: parsePipelineSupport(
+                payload.pipelineSupport,
+                payload.pipelineSupportSchemaVersion,
+                operationContracts,
               ),
             };
           },
         });
       },
-      ({ authoritative, capabilities, taskTemplateContracts, operationContracts }) => ({
+      ({ authoritative, capabilities, taskTemplateContracts, operationContracts, pipelineSupport }) => ({
         operationContracts,
+        pipelineSupport,
         studioModelCapabilities: capabilities,
         studioModelCapabilitiesAuthoritative: authoritative,
         studioExecutionSpecInvalid: false,
@@ -1472,6 +1491,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       }),
       (message) => ({
         operationContracts: [],
+        pipelineSupport: [],
         ...(message.includes('Studio execution specification')
           ? {
               studioModelCapabilities: [],

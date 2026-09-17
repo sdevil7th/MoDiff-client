@@ -1,7 +1,7 @@
 import RuntimeNodeGroupsV2 from './RuntimeNodeGroupsV2';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { nanoid } from 'nanoid';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -99,8 +99,12 @@ import {
   modularDiffusersCatalogEntryHasDescendants,
 } from '../studio/modularDiffusersBlockInsertion';
 
+const OperationCatalogPanel = lazy(() => import('./OperationCatalogPanel'));
+
 function NodeList() {
   const { hfDownloadProgress, installHfModel, nodesRegistry } = useNodesStore();
+  const operationContracts = useNodesStore((state) => state.operationContracts);
+  const pipelineSupport = useNodesStore((state) => state.pipelineSupport);
   const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const addNode = useFlowStore((state) => state.addNode);
   const viewport = useFlowStore((state) => state.viewport);
@@ -138,6 +142,13 @@ function NodeList() {
   const [catalogView, setCatalogView] = useState<NodeCatalogView>(defaultNodeCatalogView(studioViewMode));
   const expertMode = studioViewMode === 'expert';
   const effectiveCatalogView = expertMode ? catalogView : 'essential';
+  const catalogNodes = useMemo(() => {
+    if (effectiveCatalogView !== 'stages' || !pipelineSupport.length) return nodesRegistry;
+    const bound = new Set(operationContracts.filter((op) => op.task !== null && op.binding).map((op) => op.nodeKey));
+    return Object.fromEntries(
+      Object.entries(nodesRegistry).filter(([, node]) => !bound.has(`${node.module}.${node.action}`)),
+    );
+  }, [effectiveCatalogView, nodesRegistry, operationContracts, pipelineSupport]);
 
   useEffect(() => {
     setCatalogView(defaultNodeCatalogView(studioViewMode));
@@ -177,9 +188,9 @@ function NodeList() {
   );
   const runtimeNodeCount = useMemo(
     () =>
-      nodeCatalogEntries(nodesRegistry).filter((entry) => nodeCatalogEntryMatchesView(entry, effectiveCatalogView))
+      nodeCatalogEntries(catalogNodes).filter((entry) => nodeCatalogEntryMatchesView(entry, effectiveCatalogView))
         .length,
-    [nodesRegistry, effectiveCatalogView],
+    [catalogNodes, effectiveCatalogView],
   );
 
   const handleInsertUserBlock = useCallback(
@@ -214,9 +225,13 @@ function NodeList() {
   );
 
   const handleInsertNode = useCallback(
-    (key: string) => {
+    (key: string, definition?: NodeData) => {
       prepareWorkflowForManualInsertion();
-      const node = createNodeFromRegistry(key, nodesRegistry, insertPositionForViewport(viewport, nodeCount));
+      const node = createNodeFromRegistry(
+        key,
+        definition ? { [key]: definition } : nodesRegistry,
+        insertPositionForViewport(viewport, nodeCount),
+      );
       if (!node) {
         enqueueSnackbar(`Node ${key} is no longer available. Reload the node list and try again.`, {
           variant: 'error',
@@ -531,8 +546,13 @@ function NodeList() {
       </p>
 
       <div className="min-h-0 flex-1 select-none overflow-y-auto p-1">
+        {effectiveCatalogView === 'stages' ? (
+          <Suspense fallback={null}>
+            <OperationCatalogPanel search={search} onInsert={handleInsertNode} />
+          </Suspense>
+        ) : null}
         <NodeGroupList
-          nodes={nodesRegistry}
+          nodes={catalogNodes}
           search={search}
           view={effectiveCatalogView}
           expertMode={expertMode}

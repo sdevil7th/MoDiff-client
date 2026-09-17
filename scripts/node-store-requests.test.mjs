@@ -67,6 +67,7 @@ beforeEach(() => {
     modelCacheDiagnostics: null,
     studioModelCapabilities: [],
     operationContracts: [],
+    pipelineSupport: [],
     studioModelCapabilitiesAuthoritative: false,
     runtimeStatus: null,
     runtimeError: null,
@@ -2500,4 +2501,91 @@ test('task-scoped pipeline operations retain handles and hidden inputs without d
   }
   payload.operationContractSchemaVersion = 1;
   assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+});
+
+function boundOperationPayload() {
+  const payload = operationCapabilityPayload();
+  payload.operationContractSchemaVersion = 3;
+  const op = payload.operationContracts[0];
+  Object.assign(op, {
+    task: 'text_to_image',
+    workflowId: 'text2image',
+    binding: { pipelineClass: op.pipelineClass, values: { pipeline_class: op.pipelineClass } },
+  });
+  op.ports[0].semantics = {
+    kind: 'conditioning',
+    scope: op.pipelineClass,
+    state: null,
+    owner: 'same_loader',
+    members: [],
+  };
+  payload.pipelineSupportSchemaVersion = 1;
+  payload.pipelineSupport = [
+    {
+      pipelineClass: op.pipelineClass,
+      coverage: 'local-adapter',
+      reason: 'Existing adapter',
+      equivalentTo: [],
+      upstreamTasks: [],
+      tasks: [
+        {
+          task: op.task,
+          execution: 'declared',
+          decomposition: 'stages',
+          operationIds: [op.operationId],
+          executionProfileIds: [],
+          dependencies: 'unknown',
+          runtimeRequirements: [],
+        },
+      ],
+    },
+  ];
+  return payload;
+}
+
+test('operation capability refresh stores support atomically and rejects stale references', async () => {
+  const payload = boundOperationPayload();
+  globalThis.fetch = async () => jsonResponse(payload);
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().pipelineSupport, payload.pipelineSupport);
+  payload.pipelineSupport[0].tasks[0].operationIds = ['diffusion.absent'];
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().pipelineSupport, []);
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().operationContracts, []);
+});
+
+test('operation resolution uses the exact backend binding without a template or install request', async () => {
+  const op = boundOperationPayload().operationContracts[0];
+  const node = {
+    module: 'modules.ModularDiffusers',
+    action: 'Denoise',
+    type: 'custom',
+    label: 'Denoise',
+    category: 'Diffusion',
+    params: { pipeline_class: { type: 'string', value: op.pipelineClass } },
+  };
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls++;
+    assert.match(String(url), /\/operations\/resolve$/);
+    assert.equal(options.method, 'POST');
+    assert.deepEqual(JSON.parse(options.body), {
+      pipelineClass: op.pipelineClass,
+      task: 'text_to_image',
+      operationId: op.operationId,
+    });
+    return jsonResponse({ schemaVersion: 1, operation: op, node });
+  };
+  assert.deepEqual(await nodesStoreModule.useNodesStore.getState().resolveOperation(op), node);
+  assert.equal(calls, 1);
+  node.params.pipeline_class.value = 'WrongPipeline';
+  await assert.rejects(nodesStoreModule.useNodesStore.getState().resolveOperation(op), /binding/i);
+  node.params.pipeline_class.value = op.pipelineClass;
+  node.action = 'OtherAction';
+  await assert.rejects(nodesStoreModule.useNodesStore.getState().resolveOperation(op), /binding/i);
+  op.task = 'different_task';
+  await assert.rejects(
+    nodesStoreModule.useNodesStore.getState().resolveOperation({ ...op, task: 'text_to_image' }),
+    /selection/i,
+  );
 });

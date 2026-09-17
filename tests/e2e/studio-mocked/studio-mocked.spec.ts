@@ -8668,6 +8668,127 @@ for (const direction of ['source', 'target'] as const) {
   });
 }
 
+test('Expert resolves canonical operations as ordinary nodes and cancels stale selection requests', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const pipelineClass = 'FutureModularPipeline';
+  const operation = {
+    pipelineClass,
+    task: 'text_to_image',
+    operationId: 'diffusion.denoise',
+    nodeKey: 'modules.ModularDiffusers.Denoise',
+    nodeType: 'denoise',
+    blockName: 'denoise',
+    decomposition: 'block',
+    support: 'declared',
+    workflowId: 'text2image',
+    binding: { pipelineClass, values: {} },
+    ports: [],
+  };
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 2,
+        capabilities: mockStudioExecutionCapabilities(),
+        operationContractSchemaVersion: 3,
+        operationContracts: [operation],
+        pipelineSupportSchemaVersion: 1,
+        pipelineSupport: [
+          {
+            pipelineClass,
+            coverage: 'local-adapter',
+            reason: 'Test adapter',
+            equivalentTo: [],
+            upstreamTasks: [],
+            tasks: [
+              {
+                task: 'pipeline_call',
+                execution: 'unavailable',
+                decomposition: 'none',
+                operationIds: [],
+                executionProfileIds: [],
+                dependencies: 'unknown',
+                runtimeRequirements: [],
+              },
+              {
+                task: operation.task,
+                execution: 'declared',
+                decomposition: 'stages',
+                operationIds: [operation.operationId],
+                executionProfileIds: [],
+                dependencies: 'unknown',
+                runtimeRequirements: [],
+              },
+            ],
+          },
+        ],
+      }),
+    }),
+  );
+  let calls = 0;
+  let release: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/operations/resolve', async (route) => {
+    calls++;
+    expect(route.request().postDataJSON()).toEqual({
+      pipelineClass,
+      task: operation.task,
+      operationId: operation.operationId,
+    });
+    if (calls === 2) await held;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schemaVersion: 1,
+        operation,
+        node: {
+          module: 'modules.ModularDiffusers',
+          action: 'Denoise',
+          type: 'custom',
+          label: 'Denoise',
+          category: 'Diffusion',
+          params: { num_inference_steps: { type: 'int', value: 12, label: 'Steps' } },
+        },
+      }),
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  const panel = page.getByRole('region', { name: 'Diffusers operations' });
+  await panel.getByLabel('Operation pipeline').click();
+  await page.getByRole('option', { name: pipelineClass, exact: true }).click();
+  await expect(panel).toContainText('no execution adapter');
+  await expect(page.getByTestId('node-row-modules-ModularDiffusers-Denoise')).toHaveCount(0);
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length);
+  await panel.getByRole('button', { name: /^Denoise/ }).click();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(before + 1);
+  const inserted = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.slice(-1)[0]);
+  expect(inserted?.action).toBe('Denoise');
+  await panel.getByRole('button', { name: /^Denoise/ }).click();
+  await expect.poll(() => calls).toBe(2);
+  await panel.getByLabel('Operation pipeline').click();
+  await page.getByRole('option', { name: 'Select a pipeline', exact: true }).click();
+  release!();
+  await expect(panel.getByRole('button', { name: /^Denoise/ })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(before + 1);
+  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
+  await page.getByLabel('Search nodes', { exact: true }).fill('Denoise');
+  await expect(page.getByTestId('node-row-modules-ModularDiffusers-Denoise')).toBeVisible();
+  await setStudioViewMode(page, 'auto');
+  await expect(panel).toHaveCount(0);
+});
+
 test('workbench catalog defaults Expert to stages and makes implementation discovery explicit', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
