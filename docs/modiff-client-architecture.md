@@ -638,6 +638,25 @@ support inventory. The Stages panel uses these contracts for ordinary node
 insertion and reviewed starter/model/task changes, as described in the stage
 authoring section above.
 
+`runtimeCatalogNodes` suppresses raw discovery entries only when an exact bound
+operation is present in the corresponding pipeline/task support record. Incomplete
+or absent support preserves ordinary discovery; Advanced and the execution registry
+remain intact. Text/primitive utilities and installed custom nodes stay accessible
+in Stages. No label-based implementation deduplication or graph migration occurs.
+
+`OperationStageInspector` is shared by the Stages panel and the lazy canvas
+selection action. It is scoped to the opening workflow/epoch and selected node,
+closes on invalidation or leaving Expert, and only reads local declarations,
+parameters and edges. It does not require the pipeline picker to remain mounted.
+
+Registered composition labels use Blocks; the reusable group displays Saved Blocks.
+The persisted `User Nodes` group key, runtime categories and legacy `cluster`/`block`
+identities remain unchanged. Names in saved definitions are never rewritten.
+Distinct workflow stages and historical renderers remain compatibility paths;
+`DiffusersVideo.GenerateLTX2` is already a hidden subclass of `GenerateVideoAudio`,
+with the exact inherited callable and field contract verified in backend tests.
+No further backend implementation is removed without execution equivalence.
+
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
 
 Node discovery uses a shared `NodeCatalogView` policy. Expert defaults to `stages`,
@@ -645,8 +664,8 @@ which includes existing generic Modular operations, essential operations, and
 installed custom nodes. Auto uses `essential`. `NodeList` applies the effective
 view to both ordinary registry entries and the separate Hugging Face catalog
 before keyword search. HF Essentials includes only insertable, graph-qualified
-task clusters; HF implementation blocks and component references remain in
-Advanced. Experimental is separate, and saved User Nodes remain accessible in
+task Blocks; HF implementation blocks and component references remain in
+Advanced. Experimental is separate, and Saved Blocks remain accessible in
 all views. These filters do not rewrite backend identities or add execution
 support. Catalog-tab changes are local presentation state; the Auto/Expert
 control now updates only the persisted global `useSettingsStore.studioViewMode`.

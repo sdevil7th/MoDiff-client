@@ -65,6 +65,7 @@ import {
   nodeCatalogEntryMatchesSearch,
   nodeCatalogEntryMatchesView,
   defaultNodeCatalogView,
+  runtimeCatalogNodes,
   type NodeCatalogEntry,
   type NodeCatalogView,
 } from '../studio/nodeCatalog';
@@ -144,13 +145,10 @@ function NodeList() {
   const [catalogView, setCatalogView] = useState<NodeCatalogView>(defaultNodeCatalogView(studioViewMode));
   const expertMode = studioViewMode === 'expert';
   const effectiveCatalogView = expertMode ? catalogView : 'essential';
-  const catalogNodes = useMemo(() => {
-    if (effectiveCatalogView !== 'stages' || !pipelineSupport.length) return nodesRegistry;
-    const bound = new Set(operationContracts.filter((op) => op.task !== null && op.binding).map((op) => op.nodeKey));
-    return Object.fromEntries(
-      Object.entries(nodesRegistry).filter(([, node]) => !bound.has(`${node.module}.${node.action}`)),
-    );
-  }, [effectiveCatalogView, nodesRegistry, operationContracts, pipelineSupport]);
+  const catalogNodes = useMemo(
+    () => runtimeCatalogNodes(nodesRegistry, operationContracts, pipelineSupport, effectiveCatalogView),
+    [effectiveCatalogView, nodesRegistry, operationContracts, pipelineSupport],
+  );
 
   useEffect(() => {
     setCatalogView(defaultNodeCatalogView(studioViewMode));
@@ -280,13 +278,10 @@ function NodeList() {
       if (entry.kind !== 'cluster') return;
       const definition = huggingFaceLibrary.definitions.find((candidate) => candidate.id === entry.id);
       if (!definition) {
-        enqueueSnackbar(
-          'The exact reviewed Cluster Node definition is unavailable. Reload the catalog and try again.',
-          {
-            variant: 'error',
-            autoHideDuration: 5000,
-          },
-        );
+        enqueueSnackbar('The exact reviewed Block definition is unavailable. Reload the catalog and try again.', {
+          variant: 'error',
+          autoHideDuration: 5000,
+        });
         return;
       }
       prepareWorkflowForManualInsertion();
@@ -481,13 +476,13 @@ function NodeList() {
       resetHubImport();
       enqueueSnackbar(
         executable
-          ? `Imported executable User Node: ${saved.name}`
-          : `Saved remote-code-disabled preview to User Nodes: ${saved.name}`,
+          ? `Imported executable Block: ${saved.name}`
+          : `Saved remote-code-disabled preview to Saved Blocks: ${saved.name}`,
         { variant: 'success', autoHideDuration: 4600 },
       );
     } catch (error) {
       setHubImportError(
-        formatRequestError(error, 'Could not install the pinned components or save the imported User Node.'),
+        formatRequestError(error, 'Could not install the pinned components or save the imported Block.'),
       );
     } finally {
       setHubImportBusy(false);
@@ -611,7 +606,7 @@ function NodeList() {
             setBlockContextMenu(null);
           }}
         >
-          Delete from User Nodes
+          Delete from Saved Blocks
         </ModiffButton>
       </ModiffPopover>
       <ModiffDialog
@@ -646,7 +641,7 @@ function NodeList() {
       <ModiffDialog
         open={hubImportOpen}
         onClose={resetHubImport}
-        title="Import User Node from Hugging Face Hub"
+        title="Import Block from Hugging Face Hub"
         description="Inspect an exact commit before saving it to your library. Repository Python stays disabled."
         dismissible={!hubImportBusy}
         testId="import-hugging-face-user-node-dialog"
@@ -682,7 +677,7 @@ function NodeList() {
                 >
                   {hubImportInspection.admission.executable
                     ? 'Install pinned components, save and add'
-                    : 'Save to User Nodes and add'}
+                    : 'Save to Saved Blocks and add'}
                 </ModiffButton>
               </>
             ) : (
@@ -708,7 +703,7 @@ function NodeList() {
               <ModiffFieldShell label="Repository">
                 <ModiffInput
                   autoFocus
-                  aria-label="Hugging Face User Node repository"
+                  aria-label="Hugging Face Block repository"
                   disabled={hubImportBusy}
                   placeholder="owner/repository"
                   value={hubImportRepo}
@@ -721,7 +716,7 @@ function NodeList() {
               </ModiffFieldShell>
               <ModiffFieldShell label="Exact commit revision">
                 <ModiffInput
-                  aria-label="Hugging Face User Node revision"
+                  aria-label="Hugging Face Block revision"
                   disabled={hubImportBusy}
                   placeholder="40-character commit SHA"
                   value={hubImportRevision}
@@ -771,7 +766,7 @@ function NodeList() {
                 <div className="rounded-modiff-compact border border-hf-yellow/40 bg-hf-yellow/5 p-3 text-xs text-modiff-text">
                   {hubImportInspection.admission.executable
                     ? 'The official Mellon sidecar was translated into a bounded MoDiff contract. No repository Python was detected or executed.'
-                    : 'The official Mellon sidecar was translated for visual inspection. Its repository Python remains disabled, so this import is saved as a non-runnable User Node preview.'}
+                    : 'The official Mellon sidecar was translated for visual inspection. Its repository Python remains disabled, so this import is saved as a non-runnable Block preview.'}
                 </div>
               ) : null}
               {hubImportInspection.admission.reasons.length > 0 ? (
@@ -1022,11 +1017,11 @@ function HuggingFaceCatalogEntryRow({
       ? `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Add this exact pinned Modular Diffusers definition from ${entry.modularBlockContexts?.length ?? 1} compatible context${(entry.modularBlockContexts?.length ?? 1) === 1 ? '' : 's'} as an ordinary composable node.`
       : entry.readiness === 'graph_qualified'
         ? `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Runs directly in Expert mode; Auto checks the exact runtime, installed artifacts, and available resources before submission.`
-        : `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Insert the reviewed structural Cluster Node; execution remains unavailable until its exact graph, artifact, runtime, and resource admission completes.`
+        : `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Insert the reviewed structural Block; execution remains unavailable until its exact graph, artifact, runtime, and resource admission completes.`
     : `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Catalog metadata only; insertion is unavailable until its exact graph compiler is admitted.`;
   return entry.insertable ? (
     <TreeButtonRow
-      aria-label={`${entry.label}. ${entry.readinessLabel}; insert ${entry.kind === 'cluster' ? 'Cluster Node' : 'Modular Diffusers block'}.`}
+      aria-label={`${entry.label}. ${entry.readinessLabel}; insert ${entry.kind === 'cluster' ? 'Block' : 'Modular Diffusers block'}.`}
       className="cursor-pointer flex-wrap gap-y-1 py-1 hover:bg-modiff-surface-hover"
       data-readiness={entry.readiness}
       data-testid={`hugging-face-node-row-${normalizedTestId(entry.id)}`}
@@ -1168,7 +1163,7 @@ export function HuggingFaceNodeGroups({
         data-testid="hugging-face-node-catalog-error"
         role="alert"
       >
-        <span>Hugging Face node catalog unavailable. Runtime nodes and User Nodes are unaffected.</span>
+        <span>Hugging Face node catalog unavailable. Runtime nodes and Saved Blocks are unaffected.</span>
         <ModiffButton align="left" className="h-8 px-2 text-xs" onClick={() => void onRetry()} tone="secondary">
           Retry catalog
         </ModiffButton>
@@ -1336,7 +1331,7 @@ function UserBlockCatalogTree({
                 data-testid={`user-block-row-${normalizedTestId(storedUserBlockId(block))}`}
                 draggable
                 level={level + 1}
-                title={`Add User Node · ${storedUserBlockId(block)} · ${storedUserBlockRevision(block)}`}
+                title={`Add Block · ${storedUserBlockId(block)} · ${storedUserBlockRevision(block)}`}
                 className="cursor-grab"
                 onClick={() => onInsertUserBlock(block)}
                 onContextMenu={(event) => {
@@ -1427,7 +1422,8 @@ function NodeGroupList({
     const unique = uniqueStoredUserBlocks(userBlocks);
     return unique.filter((block) =>
       matchesSearchKeywords(search, [
-        'User Nodes',
+        'Saved Blocks',
+        'User Nodes', // Historical search term; persisted group identity is unchanged.
         storedUserBlockName(block),
         storedUserBlockId(block),
         ...storedUserBlockGroupPath(block),
@@ -1470,7 +1466,7 @@ function NodeGroupList({
             <span className="grid size-4 shrink-0 place-items-center text-hf-yellow">
               <Boxes size={15} />
             </span>
-            <span className="min-w-0 truncate leading-none">User Nodes</span>
+            <span className="min-w-0 truncate leading-none">Saved Blocks</span>
           </span>
           <span className="flex shrink-0 items-center gap-2">
             <span className="rounded-modiff-compact border border-modiff-border bg-modiff-bg px-1.5 py-0.5 text-xs font-semibold text-modiff-subtle-text">
@@ -1486,7 +1482,7 @@ function NodeGroupList({
           <TreeChildrenPanel level={1}>
             <div className="grid gap-1 px-2 py-2">
               <ModiffSelect
-                aria-label="Group User Nodes by"
+                aria-label="Group Saved Blocks by"
                 value={userBlockGrouping}
                 options={[
                   { value: 'source', label: 'By source and family' },

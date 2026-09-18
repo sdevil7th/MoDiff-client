@@ -106,7 +106,7 @@ const HuggingFaceClusterNode = (node: NodeProps<CustomNodeType>) => (
         aria-live="polite"
         className="rounded-modiff-compact border border-modiff-border-subtle bg-modiff-panel p-3 text-sm text-modiff-subtle-text"
       >
-        Loading legacy cluster…
+        Loading legacy Block…
       </div>
     }
   >
@@ -717,7 +717,7 @@ function Workflow() {
                 blockV2OwnedChild = false;
                 enqueueSnackbar(
                   wasContainer
-                    ? 'The subtree is now a separate Block in this workflow. Use Save as User Node to add it to the library.'
+                    ? 'The subtree is now a separate Block in this workflow. Use Save as Block to add it to the library.'
                     : 'The internal node was moved out of this Block.',
                   {
                     variant: 'success',
@@ -791,7 +791,7 @@ function Workflow() {
             targetUserBlock.id !== current.data.userBlockInstanceId
           ) {
             if (current.data.type === 'block' || current.data.type === 'cluster') {
-              enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested.', {
+              enqueueSnackbar('Legacy Blocks cannot be nested directly.', {
                 variant: 'warning',
                 autoHideDuration: 2600,
               });
@@ -843,14 +843,14 @@ function Workflow() {
           if (targetCluster && current) {
             const clusterDropDisposition = classifyExpandedClusterDrop(current, targetCluster.id);
             if (clusterDropDisposition === 'reject-composite') {
-              enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested.', {
+              enqueueSnackbar('Legacy Blocks cannot be nested directly.', {
                 variant: 'warning',
                 autoHideDuration: 2600,
               });
             } else if (clusterDropDisposition === 'customize-and-adopt') {
               const currentId = current.id;
               const customizationFlow = useFlowStore.getState();
-              customizationFlow.beginHistoryTransaction('Customize Cluster and adopt node');
+              customizationFlow.beginHistoryTransaction('Customize Block and adopt node');
               try {
                 const { blockNodeId } = await customizeHuggingFaceClusterInstance(targetCluster.id);
                 const customizedFlow = useFlowStore.getState();
@@ -858,17 +858,17 @@ function Workflow() {
                 useFlowStore.getState().placeNodeInUserBlock(currentId, blockNodeId);
                 useStudioStore.getState().saveActiveWorkflowTab(true);
                 current = useFlowStore.getState().nodes.find((node) => node.id === currentId);
-                enqueueSnackbar('Cluster customized as a User Node and the existing node was moved inside it.', {
+                enqueueSnackbar('Created an editable Block copy and the existing node was moved inside it.', {
                   variant: 'success',
                   autoHideDuration: 3000,
                 });
               } catch (error) {
                 useFlowStore.getState().cancelHistoryTransaction();
-                console.error('Could not customize the Cluster as a User Node.', error);
-                enqueueSnackbar(
-                  error instanceof Error ? error.message : 'Could not customize the Cluster as a User Node.',
-                  { variant: 'error', autoHideDuration: 4200 },
-                );
+                console.error('Could not create an editable Block copy.', error);
+                enqueueSnackbar(error instanceof Error ? error.message : 'Could not create an editable Block copy.', {
+                  variant: 'error',
+                  autoHideDuration: 4200,
+                });
               } finally {
                 useFlowStore.getState().commitHistoryTransaction();
               }

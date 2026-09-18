@@ -1,6 +1,8 @@
 import { moveBlockSelectionPreparedV2, topLevelBlockSelectionV2 } from '../studio/blockSelectionMovesV2';
 import {
   forwardRef,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -33,6 +35,7 @@ import {
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
+import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { isUserBlockExpandedInstance } from '../studio/userBlocks';
 import { isHuggingFaceClusterExpanded } from '../studio/huggingFaceClusterGraph';
@@ -45,6 +48,8 @@ import { GraphIconButton } from '../ui/GraphControls';
 import { ModiffMenuAction, ModiffMenuRoot, ModiffMenuSurface, ModiffMenuTrigger } from '../ui';
 import { deleteNodeCache, recomputeNodeOutputs } from '../utils/serverActions';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
+
+const OperationStageInspector = lazy(() => import('./OperationStageInspector'));
 
 const TOOLBAR_MARGIN = 8;
 const TOOLBAR_SELECTION_GAP = 12;
@@ -109,6 +114,8 @@ export function SelectionToolbar({
   const viewport = useViewport();
   const { flowToScreenPosition, getNodesBounds } = useReactFlow<CustomNodeType>();
   const [saveNodeId, setSaveNodeId] = useState<string | null>(null);
+  const [inspectNodeId, setInspectNodeId] = useState<string | null>(null);
+  const expertMode = useSettingsStore((state) => state.studioViewMode) === 'expert';
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const removeNodes = useFlowStore((state) => state.removeNodes);
@@ -477,6 +484,15 @@ export function SelectionToolbar({
       {showSingleNodeActions && (
         <>
           <ToolbarDivider />
+          {expertMode && singleActionNode?.data.operationAuthoring ? (
+            <ToolbarActionButton
+              label="Inspect stage implementation"
+              onClick={() => setInspectNodeId(singleActionNode.id)}
+              data-testid="selection-toolbar-inspect-stage"
+            >
+              <Blocks size={16} />
+            </ToolbarActionButton>
+          ) : null}
           <ToolbarActionButton
             label="Duplicate node"
             onClick={handleDuplicateNode}
@@ -499,10 +515,10 @@ export function SelectionToolbar({
                 isCompositeNode
                   ? isCompositeExpanded
                     ? isHuggingFaceCluster
-                      ? 'Collapse Cluster Node'
+                      ? 'Collapse Block'
                       : 'Collapse block'
                     : isHuggingFaceCluster
-                      ? 'Expand Cluster Node to view internal nodes'
+                      ? 'Expand Block to view internal nodes'
                       : 'Expand block to edit internal nodes'
                   : isCollapsed
                     ? 'Expand node'
@@ -591,11 +607,11 @@ export function SelectionToolbar({
                 >
                   {isCompositeExpanded
                     ? isHuggingFaceCluster
-                      ? 'Fit Cluster Node to contents'
+                      ? 'Fit Block to contents'
                       : 'Fit block to contents'
                     : isCompositeNode
                       ? isHuggingFaceCluster
-                        ? 'Reset Cluster Node size'
+                        ? 'Reset Block size'
                         : 'Reset block size'
                       : 'Reset automatic size'}
                 </ModiffMenuAction>
@@ -612,6 +628,11 @@ export function SelectionToolbar({
       )}
       {saveNodeId ? (
         <BlockSaveDialogV2 key={saveNodeId} nodeId={saveNodeId} onClose={() => setSaveNodeId(null)} />
+      ) : null}
+      {inspectNodeId ? (
+        <Suspense fallback={null}>
+          <OperationStageInspector key={inspectNodeId} nodeId={inspectNodeId} onClose={() => setInspectNodeId(null)} />
+        </Suspense>
       ) : null}
     </div>
   );

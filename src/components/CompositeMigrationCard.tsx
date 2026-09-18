@@ -67,8 +67,8 @@ export function LegacyClusterRecoveryEvidencePanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs leading-5 text-modiff-subtle-text">
           This read-only audit reports historical recovery evidence and checked-in compiler-mapping coverage. It does
-          not compile, convert, execute, approve, or mutate a Cluster by itself. Mapping-ready instances still require
-          an exact compiler supplement, reviewed preview, and explicit apply confirmation.
+          not compile, convert, execute, approve, or mutate a Block by itself. Mapping-ready instances still require an
+          exact compiler supplement, reviewed preview, and explicit apply confirmation.
         </p>
         <ModiffButton
           size="compact"
@@ -91,7 +91,7 @@ export function LegacyClusterRecoveryEvidencePanel({
       {audit ? (
         <>
           <div className="flex flex-wrap gap-2" data-testid="legacy-cluster-recovery-evidence-summary">
-            <StatusActionChip label={`${audit.summary.legacyClusterInstanceCount} saved Clusters`} tone="neutral" />
+            <StatusActionChip label={`${audit.summary.legacyClusterInstanceCount} saved Blocks`} tone="neutral" />
             <StatusActionChip
               label={`${audit.summary.compilerMappingEligibleInstanceCount} mapping-ready instances`}
               tone={audit.summary.compilerMappingEligibleInstanceCount ? 'success' : 'neutral'}
@@ -258,7 +258,7 @@ export function CompositeMigrationPreviewDetails({ preview }: { preview: Composi
         />
         {preview.compilerSupplement ? (
           <StatusActionChip
-            label={`${preview.summary.registeredClusterConvertibleCount ?? 0} registered Clusters compiled`}
+            label={`${preview.summary.registeredClusterConvertibleCount ?? 0} registered Blocks compiled`}
             tone={preview.compilerSupplement.provided ? 'success' : 'neutral'}
           />
         ) : null}
@@ -432,8 +432,8 @@ export function CompositeMigrationApplyReview({
   return (
     <div className="grid gap-4" data-testid="composite-migration-apply-review">
       <div className="rounded-modiff-compact border border-hf-orange/40 bg-hf-orange/5 p-3 text-xs leading-5 text-modiff-text">
-        This action creates exact backups and replaces only the listed safe User Node or workflow files. It never
-        deletes, renames, or merges records. Blocked candidates remain unchanged.
+        This action creates exact backups and replaces only the listed safe Block or workflow files. It never deletes,
+        renames, or merges records. Blocked candidates remain unchanged.
       </div>
       <CompositeMigrationPreviewDetails preview={preview} />
       {preview.summary.blockedCandidateCount > 0 ? (
@@ -678,7 +678,7 @@ export function CompositeMigrationCard() {
     } catch (requestError) {
       if (revision === recoveryAuditRevision.current)
         setRecoveryAuditError(
-          formatCompositeMigrationError(requestError, 'Could not inspect historical Cluster recovery evidence.'),
+          formatCompositeMigrationError(requestError, 'Could not inspect historical Block recovery evidence.'),
         );
     } finally {
       if (revision === recoveryAuditRevision.current) setRecoveryAuditLoading(false);
@@ -738,7 +738,7 @@ export function CompositeMigrationCard() {
       setPreview(next);
       setCompilerError(null);
       setError(null);
-      enqueueSnackbar('Exact registered-Cluster compiler supplement previewed; no files were changed.', {
+      enqueueSnackbar('Exact registered-Block compiler supplement previewed; no files were changed.', {
         variant: 'success',
       });
     });
@@ -776,8 +776,8 @@ export function CompositeMigrationCard() {
           setCompilerSupplement(null);
           setPreview(sourcePreview);
           const message = generated.candidateCount
-            ? `No legacy registered Cluster matched an exact current compiler route. Review ${generated.diagnostics.length} blocker${generated.diagnostics.length === 1 ? '' : 's'} below.`
-            : 'No legacy registered Cluster candidates are present in saved workflows.';
+            ? `No legacy registered Block matched an exact current compiler route. Review ${generated.diagnostics.length} blocker${generated.diagnostics.length === 1 ? '' : 's'} below.`
+            : 'No legacy registered Block candidates are present in saved workflows.';
           setCompilerError(message);
           enqueueSnackbar(message, { variant: 'warning' });
           return;
@@ -790,7 +790,7 @@ export function CompositeMigrationCard() {
         setPreview(next);
         setError(null);
         enqueueSnackbar(
-          `Generated and previewed ${generated.conversionCount} exact registered-Cluster conversion${generated.conversionCount === 1 ? '' : 's'}; no files were changed.`,
+          `Generated and previewed ${generated.conversionCount} exact registered-Block conversion${generated.conversionCount === 1 ? '' : 's'}; no files were changed.`,
           { variant: 'success' },
         );
       } catch (generationError) {
@@ -940,7 +940,7 @@ export function CompositeMigrationCard() {
         />
       </ModiffDisclosure>
       <ModiffDisclosure
-        label="Registered Cluster compiler supplement"
+        label="Registered Block compiler supplement"
         className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-2"
         buttonClassName="p-0"
         panelClassName="mt-3"
@@ -948,7 +948,7 @@ export function CompositeMigrationCard() {
       >
         <div className="grid gap-3">
           <p className="text-xs leading-5 text-modiff-subtle-text">
-            Generate exact compiler evidence from saved legacy Clusters, or paste externally produced evidence below.
+            Generate exact compiler evidence from saved legacy Blocks, or paste externally produced evidence below.
             Generation and preview are read-only. The exact parsed supplement is retained only for this reviewed preview
             and resent unchanged on Apply.
           </p>
@@ -988,7 +988,7 @@ export function CompositeMigrationCard() {
             ) : null}
             {compilerProgress ? (
               <span className="text-xs text-modiff-subtle-text" data-testid="composite-migration-compiler-progress">
-                Reviewed {compilerProgress.completed}/{compilerProgress.total} saved Cluster candidates
+                Reviewed {compilerProgress.completed}/{compilerProgress.total} saved Block candidates
               </span>
             ) : null}
           </div>

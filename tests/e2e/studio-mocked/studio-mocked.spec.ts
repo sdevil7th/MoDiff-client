@@ -5556,7 +5556,7 @@ async function pinCurrentQwenRouteToMockRegistry(page: Page, compilerInstanceId:
 }
 
 async function findQwenCatalogRow(page: Page) {
-  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const group = page.getByTestId('node-group-Diffusers-Blocks');
   const row = group.locator('[data-testid^="hugging-face-node-row-"]').filter({ hasText: 'Qwen Image' });
   // Walk the rendered tree using its controls, just as a user browsing the
   // library does. Only descendants of this catalog group may be expanded.
@@ -5688,7 +5688,7 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
     .click();
   await page.getByTestId('left-tab-nodes').click();
   await pinCurrentQwenRouteToMockRegistry(page, 'workspace-qwen-controls');
-  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const group = page.getByTestId('node-group-Diffusers-Blocks');
   await group.getByRole('button').first().click();
   await (await findQwenCatalogRow(page)).click();
   const root = page.locator('.react-flow__node-block').filter({ has: page.locator('[data-block-schema-version="2"]') });
@@ -5780,10 +5780,10 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
 
   // Save the edited registered cluster as a User Node through the real menu.
   await root.getByRole('button', { name: 'Save block changes', exact: true }).click();
-  await page.getByLabel('User Node name', { exact: false }).fill('Workspace cluster saved');
+  await page.getByLabel('Block name', { exact: false }).fill('Workspace cluster saved');
   await page
     .locator('[data-testid^="save-user-block-choices-"]')
-    .getByRole('button', { name: 'Save as new User Node' })
+    .getByRole('button', { name: 'Save as new Block' })
     .click();
   await expect(page.locator('[data-testid^="save-user-block-choices-"]')).toHaveCount(0);
   await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Nested observatory edit');
@@ -5924,7 +5924,7 @@ test.beforeEach(() => {
   mockReadyProofStatus = 'declared_safe';
 });
 
-test('Hugging Face catalog uses Cluster Node terminology and fail-closed readiness', async ({ page }) => {
+test('Hugging Face catalog uses Block terminology and fail-closed readiness', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
   await page.addInitScript(() => {
@@ -5942,10 +5942,10 @@ test('Hugging Face catalog uses Cluster Node terminology and fail-closed readine
   await setStudioViewMode(page, 'expert');
   await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
 
-  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   await expect(clusterGroup).toBeVisible();
-  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toBeVisible();
-  await expect(page.getByTestId('node-group-Diffusers-Component-Nodes')).toBeVisible();
+  await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toBeVisible();
+  await expect(page.getByTestId('node-group-Diffusers-components')).toBeVisible();
   await expect(page.getByText('Diffusers Pipelines', { exact: true })).toHaveCount(0);
 
   const clusterToggle = clusterGroup.getByRole('button').first();
@@ -5958,16 +5958,16 @@ test('Hugging Face catalog uses Cluster Node terminology and fail-closed readine
   await expect(qwenRow).not.toHaveAttribute('aria-disabled', 'true');
   await expect(qwenRow).toHaveAttribute('draggable', 'true');
   await expect(qwenRow).toContainText('Catalog only');
-  await expect(qwenRow).toHaveAccessibleName('Qwen Image — Text To Image. Catalog only; insert Cluster Node.');
+  await expect(qwenRow).toHaveAccessibleName('Qwen Image — Text To Image. Catalog only; insert Block.');
   await expect(qwenRow).toHaveAttribute(
     'title',
-    /Insert the reviewed structural Cluster Node; execution remains unavailable/u,
+    /Insert the reviewed structural Block; execution remains unavailable/u,
   );
   await expect(page.locator('[data-cluster-role]')).toHaveCount(0);
   await expect(page.locator('.react-flow__node-block')).toHaveCount(0);
 
   await page.getByLabel('Search nodes').fill('qwen');
-  const filteredClusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const filteredClusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   await expect(filteredClusterGroup).toContainText('Qwen Image');
   await expect(filteredClusterGroup).not.toContainText('Flux — Text To Image');
   await expect(filteredClusterGroup.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true');
@@ -6034,7 +6034,7 @@ test('a graph-qualified Qwen catalog drag inserts one durable V2 Block and prese
   await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-canvas-scope-pin');
   fieldActionRequests.length = 0;
 
-  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
     await clusterGroup.getByRole('button').first().click();
   }
@@ -6712,7 +6712,7 @@ test('selection toolbar shows rejected Block preparation without changing values
   await dismissTaskLauncher(page);
   await pinCurrentQwenRouteToMockRegistry(page, 'toolbar-auto-rejection');
   await page.getByTestId('left-tab-nodes').click();
-  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes').getByRole('button').first();
+  const group = page.getByTestId('node-group-Diffusers-Blocks').getByRole('button').first();
   if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click();
   await (
     await findQwenCatalogRow(page)
@@ -6862,7 +6862,7 @@ test('a current registered Qwen V2 Block requires source authority and a graph A
   const fixturePin = await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-auto-pin');
 
   await page.getByTestId('left-tab-nodes').click();
-  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
     await clusterGroup.getByRole('button').first().click();
   }
@@ -7004,12 +7004,12 @@ test('Hub import installs, translates, previews, and persists a pinned remote-co
   await verifyCompactDialog(page, dialog, 'hub-import');
   const repo = 'diffusers/reviewed-modular-block';
   const revision = 'a'.repeat(40);
-  await dialog.getByLabel('Hugging Face User Node repository').fill(repo);
-  await dialog.getByLabel('Hugging Face User Node revision').fill(revision);
+  await dialog.getByLabel('Hugging Face Block repository').fill(repo);
+  await dialog.getByLabel('Hugging Face Block revision').fill(revision);
   await dialog.getByTestId('hugging-face-user-node-reviewed').click();
-  await dialog.getByLabel('Hugging Face User Node revision').fill('b'.repeat(40));
+  await dialog.getByLabel('Hugging Face Block revision').fill('b'.repeat(40));
   await expect(dialog.getByTestId('hugging-face-user-node-reviewed')).not.toBeChecked();
-  await dialog.getByLabel('Hugging Face User Node revision').fill(revision);
+  await dialog.getByLabel('Hugging Face Block revision').fill(revision);
   await dialog.getByTestId('hugging-face-user-node-reviewed').click();
   await dialog.getByTestId('inspect-hugging-face-user-node').click();
   const inspection = dialog.getByTestId('hugging-face-user-node-inspection');
@@ -8778,6 +8778,55 @@ async function selectOperationPipeline(page: Page, pipeline: string, task?: stri
   return panel;
 }
 
+test('Expert inspects a stage from the canvas with the library closed, preserving graph and keyboard focus', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  const panel = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+  await panel.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Connected starter', exact: true })
+    .getByRole('button', { name: 'Add starter to canvas', exact: true })
+    .click();
+  await page.getByTestId('left-tab-nodes').click();
+  await expect(panel).not.toBeVisible();
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const nodeId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')!.id,
+  );
+  const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+  await node.locator('header').first().click();
+  const read = () => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
+  // The model-free fixture reports a missing reviewed model asynchronously.
+  // Let that validation settle before comparing the entire graph across inspection.
+  await expect
+    .poll(async () => (await read()).nodes.find((n) => n.action === 'ModelsLoader')?.uiState?.validationSeverity)
+    .toBe('error');
+  const before = await read();
+  const trigger = page.getByRole('button', { name: 'Inspect stage implementation', exact: true });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const inspector = page.getByRole('dialog', { name: 'Stage implementation and settings', exact: true });
+  await expect(inspector.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(inspector).toContainText('QwenImageModularPipeline');
+  await expect(inspector).toContainText('modules.ModularDiffusers.EncodePrompt');
+  await page.keyboard.press('Escape');
+  await expect(inspector).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(await read()).toEqual(before);
+  await setStudioViewMode(page, 'auto');
+  await expect(trigger).toHaveCount(0);
+  expect(await read()).toEqual(before);
+  await setStudioViewMode(page, 'expert');
+  await expect(trigger).toBeVisible();
+});
+
 test('node cache controls separate recomputation from model release without editing the graph', async ({ page }) => {
   await ensureFrontend();
   await installOperationAuthoringRoutes(page);
@@ -9032,6 +9081,10 @@ for (const pipeline of ['QwenImageModularPipeline', 'AnimaModularPipeline', 'Sta
       const target = page.getByTestId(`node-handle-${ids.get(edge.target)}-${edge.targetHandle}`);
       await expect(source).toBeVisible();
       await expect(target).toBeVisible();
+      // Arrange animates the viewport. Visibility alone does not establish
+      // stationary, hittable sockets; wait for actionability before measuring.
+      await source.click({ trial: true });
+      await target.click({ trial: true });
       const a = (await source.boundingBox())!,
         b = (await target.boundingBox())!;
       await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
@@ -9199,11 +9252,11 @@ test('workbench catalog defaults Expert to stages and makes implementation disco
   await search.fill('Encode Prompt');
   const prompt = page.getByTestId('node-row-modules-ModularDiffusers-EncodePrompt');
   await expect(prompt).toBeVisible();
-  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toHaveCount(0);
+  await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toHaveCount(0);
   await search.fill('');
   await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
-  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toBeVisible();
-  await expect(page.getByTestId('node-group-Diffusers-Component-Nodes')).toBeVisible();
+  await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toBeVisible();
+  await expect(page.getByTestId('node-group-Diffusers-components')).toBeVisible();
   await page.getByRole('tab', { name: 'Stages', exact: true }).click();
   await search.fill('Encode Prompt');
   await prompt.click();
@@ -9223,8 +9276,8 @@ test('workbench catalog defaults Expert to stages and makes implementation disco
   );
   await setStudioViewMode(page, 'auto');
   await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveCount(0);
-  await expect(page.getByTestId('node-group-Modular-Diffusers-Block-Nodes')).toHaveCount(0);
-  await expect(page.getByTestId('node-group-Diffusers-Component-Nodes')).toHaveCount(0);
+  await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toHaveCount(0);
+  await expect(page.getByTestId('node-group-Diffusers-components')).toHaveCount(0);
   await setStudioViewMode(page, 'expert');
   await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.screenshot({ path: test.info().outputPath('expert-stages-catalog.png'), animations: 'disabled' });
@@ -11153,7 +11206,7 @@ test('mocked graph Fix visibly restores a registered Qwen V2 structure, retains 
   await page.getByTestId('left-tab-nodes').click();
   await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-structural-fix-pin');
 
-  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
     await clusterGroup.getByRole('button').first().click();
   }
@@ -21544,18 +21597,18 @@ test('Blocks save, expand in place, collapse, and survive library-definition del
   await page.getByLabel('Search nodes').fill('Reusable render');
   await expect(userBlockRow).toBeVisible();
   await expect(userBlockRow).toContainText('Saved');
-  await page.getByLabel('Group User Nodes by').click();
+  await page.getByLabel('Group Saved Blocks by').click();
   await page.getByRole('option', { name: 'By saved workflow context', exact: true }).click();
   await expect(page.getByRole('button', { name: /No saved workflow context/u })).toBeVisible();
   await expect(userBlockRow).toBeVisible();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.getByLabel('Search nodes').fill('Reusable render');
-  await expect(page.getByLabel('Group User Nodes by')).toContainText('By saved workflow context');
+  await expect(page.getByLabel('Group Saved Blocks by')).toContainText('By saved workflow context');
   await expect(userBlockRow).toBeVisible();
   await expect(userBlockRow).not.toContainText('Instance render');
   await userBlockRow.click({ button: 'right' });
-  await page.getByTestId('user-block-context-menu').getByText('Delete from User Nodes').click();
+  await page.getByTestId('user-block-context-menu').getByText('Delete from Saved Blocks').click();
   await page.getByTestId('confirm-delete-user-block').click();
   await expect(userBlockRow).toHaveCount(0);
   await expect(blockNode).toHaveCount(1);
@@ -21721,7 +21774,7 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
 
   await block.getByRole('button', { name: 'Save block changes', exact: true }).click();
   choices = page.locator('[data-testid^="save-user-block-choices-"]');
-  await choices.getByRole('button', { name: 'Save as new User Node' }).click();
+  await choices.getByRole('button', { name: 'Save as new Block' }).click();
   await expect(choices).toHaveCount(0);
   const afterSaveAsNew = await page.evaluate(async () => {
     const [{ useFlowStore }, { useUserBlockStore }] = await Promise.all([
@@ -21750,7 +21803,7 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
 
   await block.getByRole('button', { name: 'Save block changes', exact: true }).click();
   choices = page.locator('[data-testid^="save-user-block-choices-"]');
-  await choices.getByRole('button', { name: 'Update existing User Node' }).click();
+  await choices.getByRole('button', { name: 'Update existing Block' }).click();
   await expect(choices).toHaveCount(0);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
@@ -22235,7 +22288,7 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
   // production 76-route audit independently enforces the real backend pins.
   await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-structural-pin');
 
-  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
     await clusterGroup.getByRole('button').first().click();
   }
@@ -23203,7 +23256,7 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
   await page.getByTestId('left-tab-nodes').click();
   await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-protected-replacement-pin');
 
-  const clusterGroup = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
+  const clusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   if ((await clusterGroup.getByRole('button').first().getAttribute('aria-expanded')) !== 'true') {
     await clusterGroup.getByRole('button').first().click();
   }

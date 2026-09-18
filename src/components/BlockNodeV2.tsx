@@ -178,7 +178,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
         setPendingRouteKey(null);
         enqueueSnackbar(
           saved
-            ? `Saved User Node ${saved.displayName}, then switched to ${switched.definitionSnapshot.displayName}.`
+            ? `Saved Block ${saved.displayName}, then switched to ${switched.definitionSnapshot.displayName}.`
             : `Model route changed to ${switched.definitionSnapshot.displayName}.`,
           {
             variant: 'success',

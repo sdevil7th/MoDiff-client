@@ -69,7 +69,7 @@ The view switch controls presentation; Resources controls planning. The Run menu
 - **Workflows** browses backend workflow files.
 
 In Auto, **Nodes** shows common task/media operations, graph-qualified task Blocks,
-and saved User Nodes. Expert opens the **Stages** view. Select a pipeline and task
+and Saved Blocks. Expert opens the **Stages** view. Select a pipeline and task
 in **Diffusers operations**, then click **Load models**, **Encode prompt**,
 **Denoise**, **Decode latents**, or another declared operation to add one ordinary
 node to the canvas. Whole-pipeline routes show a **Pipeline** label. Specialized
@@ -85,13 +85,30 @@ nodes. Changing its selection or leaving the workflow cancels pending insertion.
 Stages consolidates the underlying bound implementations and keeps common media
 utilities and installed custom nodes available. Older backends without the
 operation catalog retain the previous generic-node discovery. Saved action names
-and graphs remain compatible.
+and graphs remain compatible. Text and primitive value nodes are available in
+Stages too. A raw node is consolidated only when an exact pipeline/task operation
+binding is present in the backend support inventory; Advanced keeps deliberate
+access to the underlying nodes.
+
+Select an authored stage on the canvas and choose **Inspect stage implementation**
+in its selection toolbar. This works with the library closed. The dialog shows
+its pipeline, underlying action, connected inputs, overrides and retained settings
+excluded from execution. Inspection does not edit the graph or load models.
+Escape closes it and restores focus; changing the selected node or workflow closes
+it. Auto hides this developer control while preserving the graph.
+
+**Blocks** is the public name for both registered compositions and saved reusable
+compositions. **Saved Blocks** retains each saved name and revision. Existing
+workflow types, action names and library identities are unchanged. Historical
+Cluster/User Node terminology can still occur in older files and migration
+receipts. Use the explicit migration preview for supported historical documents;
+opening a file or switching Auto/Expert does not convert it.
 
 Expert's **Essentials** tab returns to the task-oriented catalog. **Advanced** adds
 implementation nodes, upstream Modular blocks, catalog-only tasks, and component
 references; check each entry's readiness before using it. **Experimental** contains
-experimental operations. Search applies within the selected view, and saved User
-Nodes remain available in each view. Changing catalog tabs does not change the
+experimental operations. Search applies within the selected view, and Saved
+Blocks remain available in each view. Changing catalog tabs does not change the
 workflow or execution settings. Returning to Expert selects Stages again.
 
 ### Canvas And Workflow Tabs
@@ -135,7 +152,7 @@ show the available shortcuts or gestures, including **Delete / Backspace**.
 all enabled terminal branches. Outside sources are ignored even when attached to a
 configured input: the Block uses its stored fallback or reports a missing input. The
 whole-workflow Run includes connected outside sources. Move a source inside when it
-should be part of a Block-only run. This behavior applies to modern clusters and Blocks.
+should be part of a Block-only run. This behavior applies to modern Blocks.
 
 ### Save A Block Or An Internal Modular Block
 
@@ -144,16 +161,16 @@ use Save in its selection toolbar. Both open **Save block changes** in the right
 prefilled from the selected Block:
 
 - **Keep only in this workflow** retains the current local workflow snapshot;
-  it does not create or update a User Node. Use the top-bar Save as well when
+  it does not create or update a saved Block. Use the top-bar Save as well when
   you want a named backend workflow file.
-- **Save as new User Node** copies the selected Block with its current prompts
+- **Save as new Block** copies the selected Block with its current prompts
   and settings. For an internal Block it copies only that subtree and its
   explicitly configured interface. Outside nodes and wires are omitted;
   temporary connected-only sockets are not saved as reusable ports. Its parent and
   other workflow instances are unchanged.
-- **Update existing User Node** appears on a user-owned reusable Block root.
+- **Update existing Block** appears on a user-owned reusable Block root.
   Internal projections do not have independent library definitions to overwrite.
-  Insert a saved subtree from User Nodes to edit/update that definition independently.
+  Insert a saved subtree from Saved Blocks to edit/update that definition independently.
 
 Collapsed internal Blocks show their declared descendant controls. Editing the
 same prompt or parameter at the root, an intermediate Block, or its internal
@@ -200,7 +217,7 @@ save operation rather than allowing it to save a different instance.
 
 Studio adopts a compatible existing graph when possible. If you manually change a managed graph until it no longer matches its binding, Studio treats it as a custom graph rather than silently replacing it. You can still select nodes and edit their exposed parameters from the Studio panel.
 
-For a custom graph, **Node controls** shows the selected ordinary node, Cluster Node, or User Node's declared
+For a custom graph, **Node controls** shows the selected ordinary node or Block's declared
 controls with the same values and connections as the canvas. Expand a Block and select an internal node to edit
 its controls. Edits use the normal workflow undo/redo and save behavior. **Pin inputs** keeps chosen controls in
 that workflow's panel after deselection. Pins inside collapsed Blocks remain readable; **Reveal in Block to edit**

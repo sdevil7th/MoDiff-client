@@ -31,6 +31,42 @@ let nodeListModule;
 let nodeStoreModule;
 let originalFetch;
 
+test('canonical discovery removes only covered bindings and retains fallback, utilities and Advanced access', () => {
+  const nodes = {
+    'alias.encode': { module: 'modules.ModularDiffusers', action: 'EncodePrompt', label: 'Encode Prompt', params: {} },
+    'custom.prompt': { module: 'custom.prompt', action: 'Encode', label: 'Encode Prompt', params: {} },
+  };
+  const binding = {
+    pipelineClass: 'FuturePipeline',
+    task: 'text_to_image',
+    operationId: 'diffusion.encode_prompt',
+    nodeKey: 'modules.ModularDiffusers.EncodePrompt',
+    binding: { pipelineClass: 'FuturePipeline', values: {} },
+  };
+  const support = [
+    { pipelineClass: 'FuturePipeline', tasks: [{ task: binding.task, operationIds: [binding.operationId] }] },
+  ];
+  const select = nodeCatalogModule.runtimeCatalogNodes;
+  const before = JSON.stringify(nodes);
+  assert.deepEqual(Object.keys(select(nodes, [binding], support, 'stages')), ['custom.prompt']);
+  for (const view of ['advanced', 'essential', 'experimental'])
+    assert.equal(select(nodes, [binding], support, view), nodes);
+  for (const contracts of [[], [{ ...binding, binding: undefined }], [{ ...binding, task: null }]])
+    assert.deepEqual(select(nodes, contracts, support, 'stages'), nodes);
+  assert.deepEqual(select(nodes, [binding], [], 'stages'), nodes);
+  assert.deepEqual(select(nodes, [binding], [{ ...support[0], tasks: [] }], 'stages'), nodes);
+  for (const module of ['modules.Primitive', 'modules.Text']) {
+    const entry = nodeCatalogModule.getNodeCatalogEntry({
+      module,
+      action: 'TextValue',
+      label: 'Text value',
+      params: {},
+    });
+    assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesView(entry, 'stages'), true);
+  }
+  assert.equal(JSON.stringify(nodes), before);
+});
+
 test('workbench catalog starts with generic stages and keeps implementation nodes opt-in', () => {
   const entry = (module, action, extra = {}) =>
     nodeCatalogModule.getNodeCatalogEntry({ module, action, label: action, category: 'Test', params: {}, ...extra });
@@ -60,7 +96,7 @@ test('workbench catalog scope filters HF internals and catalog-only blocks befor
   const sections = [
     {
       id: 'diffusers_cluster_nodes',
-      label: 'Diffusers Cluster Nodes',
+      label: 'Diffusers Blocks',
       entries: [
         {
           id: 'ready',
@@ -144,7 +180,7 @@ test('catalog keyword search handles spacing, punctuation and word order without
   const sections = [
     {
       id: 'modular_diffusers_block_nodes',
-      label: 'Modular Diffusers Block Nodes',
+      label: 'Modular Diffusers implementation',
       entries: [
         {
           id: 'text-inputs',
@@ -2902,7 +2938,7 @@ test('Cluster customization persists before replacement and leaves the original 
       module: 'modiff.hugging_face_cluster',
       action: 'RecoverableCluster',
       label: 'Recoverable Cluster',
-      category: 'Diffusers Cluster Nodes',
+      category: 'Diffusers Blocks',
       params: {
         prompt: { label: 'Prompt', type: 'string', value: 'Keep this prompt' },
       },
@@ -2996,7 +3032,7 @@ test('Cluster customization refuses a stale canvas or concurrently edited source
       module: 'modiff.hugging_face_cluster',
       action: 'StaleCluster',
       label: 'Stale Cluster',
-      category: 'Diffusers Cluster Nodes',
+      category: 'Diffusers Blocks',
       params: { prompt: { type: 'string', value: 'Before' } },
       huggingFaceClusterRole: 'root',
       huggingFaceClusterInstance: {},
@@ -3166,17 +3202,12 @@ test('all User Node save choices isolate workflow instances and cancel across a 
   assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].id, secondNode.id);
 });
 
-test('catalog projections use Cluster Node terminology and retain exact family definitions', () => {
+test('catalog projections use Block terminology and retain exact family definitions', () => {
   const parsed = libraryModule.parseHuggingFaceNodeLibrary(payload());
   const sections = libraryCatalogModule.buildHuggingFaceCatalogSections(parsed);
   assert.deepEqual(
     sections.map((section) => section.label),
-    [
-      'Diffusers Cluster Nodes',
-      'Transformers Cluster Nodes',
-      'Modular Diffusers Block Nodes',
-      'Diffusers Component Nodes',
-    ],
+    ['Diffusers Blocks', 'Transformers Blocks', 'Modular Diffusers implementation', 'Diffusers components'],
   );
   assert.deepEqual(
     sections.map((section) => section.entries.length),
@@ -3352,7 +3383,7 @@ test('reviewed Modular composition recipes preserve exact origin pins and bounde
   assert.match(recipe.operations[0].name, /_copy$/u);
 });
 
-test('Transformers Cluster Nodes insert and materialize their exact generic task graph', () => {
+test('Transformers Blocks insert and materialize their exact generic task graph', () => {
   const { body, transformerDefinition: rawDefinition, receipt } = payloadWithTransformersTextCluster();
   const parsed = libraryModule.parseHuggingFaceNodeLibrary(body);
   const definition = parsed.definitions.find((candidate) => candidate.id === rawDefinition.id);
@@ -3374,7 +3405,7 @@ test('Transformers Cluster Nodes insert and materialize their exact generic task
     admission.id,
     { device: 'cpu', quantizationMode: 'none' },
   );
-  assert.equal(root.data.category, 'Transformers Cluster Nodes');
+  assert.equal(root.data.category, 'Transformers Cluster Nodes', 'Legacy serialized category stays unchanged.');
   assert.equal(root.data.params.prompt.value, 'Explain why the sky appears blue.');
   const typedTokenCount = clusterInstanceModule.setHuggingFaceClusterParameter(
     root.data.huggingFaceClusterInstance,
@@ -4114,15 +4145,15 @@ test('Nodes panel keeps structural Clusters and Modular blocks draggable', () =>
       sections,
     }),
   );
-  assert.match(markup, />Diffusers Cluster Nodes</);
-  assert.match(markup, />Modular Diffusers Block Nodes</);
-  assert.match(markup, />Diffusers Component Nodes</);
+  assert.match(markup, />Diffusers Blocks</);
+  assert.match(markup, />Modular Diffusers implementation</);
+  assert.match(markup, />Diffusers components</);
   assert.match(markup, /data-readiness="catalog_only"/);
-  assert.match(markup, /aria-label="[^"]+Catalog only; insert Cluster Node\."/);
+  assert.match(markup, /aria-label="[^"]+Catalog only; insert Block\."/);
   assert.match(markup, /aria-label="[^"]+Composable; insert Modular Diffusers block\."/);
   assert.match(markup, /draggable="true"/);
   assert.match(markup, /Add this exact pinned Modular Diffusers definition from \d+ compatible context/);
-  assert.match(markup, /Insert the reviewed structural Cluster Node; execution remains unavailable/);
+  assert.match(markup, /Insert the reviewed structural Block; execution remains unavailable/);
   assert.match(markup, /Catalog only/);
   assert.doesNotMatch(markup, />Diffusers Pipelines</);
 

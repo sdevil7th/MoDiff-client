@@ -50,10 +50,10 @@ export type HuggingFaceCatalogSection = {
 };
 
 const SECTION_LABELS: Record<HuggingFaceCatalogSectionId, string> = {
-  diffusers_cluster_nodes: 'Diffusers Cluster Nodes',
-  transformers_cluster_nodes: 'Transformers Cluster Nodes',
-  modular_diffusers_block_nodes: 'Modular Diffusers Block Nodes',
-  diffusers_component_nodes: 'Diffusers Component Nodes',
+  diffusers_cluster_nodes: 'Diffusers Blocks',
+  transformers_cluster_nodes: 'Transformers Blocks',
+  modular_diffusers_block_nodes: 'Modular Diffusers implementation',
+  diffusers_component_nodes: 'Diffusers components',
 };
 
 function words(value: string) {
@@ -119,7 +119,7 @@ function definitionSearchText(definition: HuggingFaceNodeLibraryDefinition) {
 }
 
 export function huggingFaceClusterDisplayLabel(definition: HuggingFaceNodeLibraryDefinition) {
-  if (definition.provider === 'transformers') return definition.label.replace(/\bPipeline\b/giu, 'Cluster');
+  if (definition.provider === 'transformers') return definition.label.replace(/\bPipeline\b/giu, 'Block');
   const declaredWorkflowLabel = definition.label.split('—').slice(1).join('—').trim();
   const declaredFamilyLabel = definition.label.split('—')[0]?.trim() || '';
   // Prefer a publisher-reviewed human family name when one was supplied.
@@ -131,7 +131,7 @@ export function huggingFaceClusterDisplayLabel(definition: HuggingFaceNodeLibrar
       : words(definition.pipelineClass);
   const workflowLabel = (declaredWorkflowLabel || words(definition.workflowId)).replace(
     /\b(?:Modular\s+)?Pipeline\b/giu,
-    'Cluster',
+    'Block',
   );
   return `${familyLabel} — ${workflowLabel}`;
 }
@@ -156,7 +156,7 @@ function clusterEntries(
         label: huggingFaceClusterDisplayLabel(definition),
         description:
           definition.description ||
-          `Cluster Node containing the reviewed ${definition.pipelineClass} ${definition.workflowId} workflow.`,
+          `Block containing the reviewed ${definition.pipelineClass} ${definition.workflowId} workflow.`,
         detail: `${words(definition.taskId)} · ${definition.steps.length} block${definition.steps.length === 1 ? '' : 's'}`,
         searchText: definitionSearchText(definition),
         groupPath: [definitionModality(definition), titleWords(definition.taskId), definitionFamilyLabel(definition)],
@@ -395,7 +395,7 @@ function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEn
         kind: 'component' as const,
         label,
         description,
-        detail: `${component.creationMethod || 'runtime'} · ${definitionIds.length} cluster${definitionIds.length === 1 ? '' : 's'}`,
+        detail: `${component.creationMethod || 'runtime'} · ${definitionIds.length} Block${definitionIds.length === 1 ? '' : 's'}`,
         searchText: [component.name, component.type, component.creationMethod, ...component.reuseKey]
           .join(' ')
           .toLowerCase(),

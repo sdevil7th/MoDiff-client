@@ -218,7 +218,7 @@ export function useWorkflowDrop({
           .getState()
           .library?.definitions.find((candidate) => candidate.id === definitionId);
         if (!definition) {
-          showGraphImportError('The exact reviewed Cluster Node is no longer available. Reload the node catalog.');
+          showGraphImportError('The exact reviewed Block is no longer available. Reload the node catalog.');
           return;
         }
         const flow = useFlowStore.getState();
@@ -226,7 +226,7 @@ export function useWorkflowDrop({
           expandedUserBlockAtPosition(flow.nodes, position) ||
           expandedHuggingFaceClusterAtPosition(flow.nodes, position)
         ) {
-          enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested. The Cluster Node was added top-level.', {
+          enqueueSnackbar('Legacy Blocks cannot be nested directly. The Block was added top-level.', {
             variant: 'warning',
             autoHideDuration: 3000,
           });
@@ -253,12 +253,12 @@ export function useWorkflowDrop({
                 : destination.data.blockProjectionContainerExpanded === false)
             )
               throw new Error(
-                'The destination Block changed while the Cluster loaded. Expand it and try the drop again.',
+                'The destination Block changed while the Block loaded. Expand it and try the drop again.',
               );
             insertNodeAtBlockTargetV2(cluster, destination, current, addNode);
           } else completeBlockInsertionFeedbackV2(pendingId, cluster);
         } catch (error) {
-          showGraphImportError(formatRequestError(error, 'Could not add the Cluster Node.'));
+          showGraphImportError(formatRequestError(error, 'Could not add the Block.'));
         } finally {
           cancelBlockInsertionFeedbackV2(pendingId);
         }
@@ -280,7 +280,7 @@ export function useWorkflowDrop({
           expandedUserBlockAtPosition(flow.nodes, position) ||
           expandedHuggingFaceClusterAtPosition(flow.nodes, position)
         ) {
-          enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested. The User Node was added top-level.', {
+          enqueueSnackbar('Legacy Blocks cannot be nested directly. The Block was added top-level.', {
             variant: 'warning',
             autoHideDuration: 3000,
           });
@@ -297,7 +297,7 @@ export function useWorkflowDrop({
           if (target) insertNodeAtBlockTargetV2(newBlock, target, flow, addNode);
           else addNode(newBlock);
         } catch (error) {
-          showGraphImportError(formatRequestError(error, 'Could not add the saved User Node inside this Block.'));
+          showGraphImportError(formatRequestError(error, 'Could not add the saved Block inside this Block.'));
         }
         return;
       }
@@ -315,7 +315,7 @@ export function useWorkflowDrop({
           expandedUserBlockAtPosition(flow.nodes, position) ||
           expandedHuggingFaceClusterAtPosition(flow.nodes, position)
         ) {
-          enqueueSnackbar('Cluster Nodes and User Nodes cannot be nested. The User Node was added top-level.', {
+          enqueueSnackbar('Legacy Blocks cannot be nested directly. The Block was added top-level.', {
             variant: 'warning',
             autoHideDuration: 3000,
           });
@@ -345,7 +345,7 @@ export function useWorkflowDrop({
       const expandedUserBlock = expandedUserBlockAtPosition(flow.nodes, position);
       const expandedCluster = expandedUserBlock ? null : expandedHuggingFaceClusterAtPosition(flow.nodes, position);
       if (expandedCluster) {
-        flow.beginHistoryTransaction('Customize Cluster and add node');
+        flow.beginHistoryTransaction('Customize Block and add node');
         try {
           const customized = await customizeHuggingFaceClusterInstance(expandedCluster.id);
           const customizedFlow = useFlowStore.getState();
@@ -353,18 +353,18 @@ export function useWorkflowDrop({
           const expandedCustomized = useFlowStore
             .getState()
             .nodes.find((node) => node.id === customized.blockNodeId && node.data.type === 'block');
-          if (!expandedCustomized) throw new Error('The customized User Node could not be expanded.');
+          if (!expandedCustomized) throw new Error('The customized Block could not be expanded.');
           addNode(placeNodeInsideExpandedUserBlock(newNode, expandedCustomized, position));
           globalThis.queueMicrotask(() => {
             useFlowStore.getState().fitUserBlockToChildren(customized.blockNodeId);
             useStudioStore.getState().saveActiveWorkflowTab(true);
           });
-          enqueueSnackbar('Cluster customized as a User Node and the new node was added inside it.', {
+          enqueueSnackbar('Created an editable Block copy and the new node was added inside it.', {
             variant: 'success',
             autoHideDuration: 3000,
           });
         } catch (error) {
-          showGraphImportError(formatRequestError(error, 'Could not customize the Cluster as a User Node.'));
+          showGraphImportError(formatRequestError(error, 'Could not create an editable Block copy.'));
         } finally {
           useFlowStore.getState().commitHistoryTransaction();
         }

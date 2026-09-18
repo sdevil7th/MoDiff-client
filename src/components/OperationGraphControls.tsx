@@ -9,18 +9,17 @@ import {
 } from '../stores/useStudioStore';
 import { ModiffButton, ModiffDialog, ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import { formatRequestError } from '../utils/requestJson';
-import { deepEqual } from '../utils/deepEqual';
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
 import {
   createOperationStarter,
   operationAuthoring,
-  operationFieldValue,
   planOperationChange,
   type OperationChangePlan,
   type OperationStarter,
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
+import OperationStageInspector from './OperationStageInspector';
 
 type Preview = {
   starter: OperationStarter;
@@ -32,7 +31,6 @@ type Preview = {
 /** Lazy authoring UI. The preview never creates a managed template or Block. */
 export default function OperationGraphControls({ pipeline, task }: { pipeline: string; task: string }) {
   const nodes = useFlowStore((s) => s.nodes);
-  const edges = useFlowStore((s) => s.edges);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
   const operations = useNodesStore((s) => s.operationContracts);
   const [loader, setLoader] = useState('');
@@ -255,48 +253,7 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
         </ModiffDialog>
       ) : null}
       {inspect && selected && selectedHint ? (
-        <ModiffDialog open title="Stage implementation and settings" onClose={() => setInspect(false)}>
-          <div className="space-y-3 text-sm">
-            <p>
-              {selectedHint.operation.pipelineClass} · {selectedHint.operation.task}
-            </p>
-            <p>
-              {selectedHint.operation.nodeKey} / {selectedHint.operation.blockName ?? 'Pipeline'}
-            </p>
-            <dl className="space-y-2">
-              {Object.entries(selectedHint.defaults).map(([name, value]) => {
-                const connected = edges.find((e) => e.target === selected.id && e.targetHandle === name);
-                return (
-                  <div key={name}>
-                    <dt>
-                      {name} —{' '}
-                      {connected
-                        ? `Connected from ${connected.source}.${connected.sourceHandle}; saved fallback`
-                        : deepEqual(value, operationFieldValue(selected.data.params[name]))
-                          ? 'Selected contract default'
-                          : 'User override'}
-                    </dt>
-                    <dd className="break-words text-modiff-subtle-text">
-                      {JSON.stringify(operationFieldValue(selected.data.params[name]))}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-            {selectedHint.retained.length ? (
-              <div>
-                <p>Retained settings — excluded from execution:</p>
-                <ul className="list-inside list-disc">
-                  {selectedHint.retained.map((setting, i) => (
-                    <li key={i} className="break-words">
-                      {setting.pipeline} / {setting.field}: {JSON.stringify(setting.value)}. {setting.reason}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-        </ModiffDialog>
+        <OperationStageInspector key={selected.id} nodeId={selected.id} onClose={() => setInspect(false)} />
       ) : null}
     </div>
   );

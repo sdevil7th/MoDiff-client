@@ -225,7 +225,7 @@ test('schema-v4 recovery evidence parses and renders mapping progress as a read-
       onRefresh: () => undefined,
     }),
   );
-  assert.match(markup, /2 saved Clusters/u);
+  assert.match(markup, /2 saved Blocks/u);
   assert.match(markup, /0 mapping-ready instances/u);
   assert.match(markup, /2 historical still blocked/u);
   assert.match(markup, /1 blocked identity/u);

@@ -44,7 +44,7 @@ const BlockNode = memo((node: NodeProps<CustomNodeType>) => {
           className="flex h-full flex-col rounded-modiff-panel border border-modiff-border bg-modiff-surface text-sm text-modiff-subtle-text"
         >
           <div role="status" className="min-h-24 flex-1 p-3">
-            Loading saved User Node…
+            Loading saved Block…
           </div>
           {!node.data.uiState?.blockExpanded ? (
             <NodeContent

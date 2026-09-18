@@ -381,7 +381,7 @@ export function resolveFlowExecutionTargetNodeId(
       ),
     );
     const endpoint = preview ?? terminals[0];
-    if (!endpoint) throw new Error(`User Node run target ${targetNodeId} has no executable terminal node.`);
+    if (!endpoint) throw new Error(`Block run target ${targetNodeId} has no executable terminal node.`);
     return endpoint.id;
   }
 
@@ -706,7 +706,7 @@ function adoptTopLevelNodeIntoBlockV2(
   if (!target.data.blockInstanceV2.presentation.expanded)
     throw new Error(`Cannot move node "${nodeId}" into Block "${blockId}": expand the Block before dropping.`);
   if (source.id === target.id || source.data.type === 'block' || source.data.type === 'cluster')
-    throw new Error('Cluster Nodes and User Nodes cannot be nested.');
+    throw new Error('Legacy Blocks cannot be nested directly.');
   if (source.parentId)
     throw new Error(`Cannot move node "${nodeId}" into this Block: only disconnected top-level nodes are supported.`);
   if (state.nodes.some((node) => node.parentId === source.id))
@@ -1686,7 +1686,7 @@ export const useFlowStore = create<FlowStore>()(
             deepEqual(node.data.params[param]?.value, value)
           )
             return;
-          get().withHistory('Edit Diffusers Cluster Node parameter', () => {
+          get().withHistory('Edit Diffusers Block parameter', () => {
             set((state) => {
               const root = state.nodes.find((candidate) => candidate.id === node.data.huggingFaceClusterInstanceId);
               const definition = huggingFaceDefinitionForNode(root);
@@ -1749,7 +1749,7 @@ export const useFlowStore = create<FlowStore>()(
         const node = get().nodes.find((item) => item.id === id);
         if (node?.data.huggingFaceClusterRole === 'root') {
           const expanded = Boolean(node.data.huggingFaceClusterInstance?.presentation.expanded);
-          get().withHistory(expanded ? 'Fit Cluster Node to contents' : 'Reset Cluster Node size', () => {
+          get().withHistory(expanded ? 'Fit Block to contents' : 'Reset Block size', () => {
             if (expanded) {
               set((state) => {
                 const graph = fitHuggingFaceClusterInstance(state, id);
@@ -1831,7 +1831,7 @@ export const useFlowStore = create<FlowStore>()(
         );
       },
       toggleHuggingFaceClusterExpanded: (id) => {
-        get().withHistory('Toggle Hugging Face Cluster Node expansion', () => {
+        get().withHistory('Toggle Hugging Face Block expansion', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1843,7 +1843,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       toggleHuggingFaceClusterBlockExpanded: (id, path) => {
-        get().withHistory('Toggle Hugging Face Cluster block parameters', () => {
+        get().withHistory('Toggle Hugging Face Block parameters', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1853,7 +1853,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       setHuggingFaceClusterParameter: (id, name, value) => {
-        get().withHistory('Change Hugging Face Cluster Node parameter', () => {
+        get().withHistory('Change Hugging Face Block parameter', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1864,7 +1864,7 @@ export const useFlowStore = create<FlowStore>()(
         useHuggingFaceClusterRuntimeStore.getState().clearAuthority(id);
       },
       setHuggingFaceClusterExecution: (id, admissionId) => {
-        get().withHistory('Change Hugging Face Cluster Node execution mode', () => {
+        get().withHistory('Change Hugging Face Block execution mode', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1875,7 +1875,7 @@ export const useFlowStore = create<FlowStore>()(
         useHuggingFaceClusterRuntimeStore.getState().clearAuthority(id);
       },
       setHuggingFaceClusterExecutionParameter: (id, source, value) => {
-        get().withHistory('Change Hugging Face Cluster Node execution parameter', () => {
+        get().withHistory('Change Hugging Face Block execution parameter', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -2276,7 +2276,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       placeNodeInUserBlock: (nodeId, blockId) => {
-        get().withHistory('Move node into User Node', () => {
+        get().withHistory('Move node into Block', () => {
           set((state) => {
             const graph = placeExistingNodeInsideExpandedUserBlock(state, nodeId, blockId);
             return graph === state
@@ -2291,7 +2291,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       insertNodeInUserBlock: (blockId, suggestion) => {
-        get().withHistory('Insert node into User Node execution path', () => {
+        get().withHistory('Insert node into Block execution path', () => {
           set((state) => {
             const graph = insertNodeAtUserBlockSuggestion(state, blockId, suggestion);
             return {
@@ -2313,7 +2313,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       applyUserBlockDefinition: (id, definition) => {
-        get().withHistory('Apply User Node definition', () => {
+        get().withHistory('Apply Block definition', () => {
           set((state) => {
             const graph = applyUserBlockDefinitionToInstance(state, id, definition);
             return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };

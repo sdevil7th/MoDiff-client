@@ -1,12 +1,41 @@
 import { runtimeNodeIdentityV2 } from './nodeLibraryAuditV2';
 import type { NodeData } from '../stores/useNodeStore';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
+import type { OperationContract } from '../workflow/operationContracts';
+import type { PipelineSupport } from '../workflow/operationCatalog';
 
 export type NodeCatalogVisibility = 'essential' | 'advanced' | 'experimental' | 'internal';
 export type NodeCatalogView = 'essential' | 'stages' | 'advanced' | 'experimental';
 
 export function defaultNodeCatalogView(mode: 'auto' | 'expert'): NodeCatalogView {
   return mode === 'expert' ? 'stages' : 'essential';
+}
+
+/** Discovery only: retain the full registry for saved graphs and explicit Advanced authoring. */
+export function runtimeCatalogNodes(
+  nodes: Record<string, NodeData>,
+  operations: OperationContract[],
+  support: PipelineSupport[],
+  view: NodeCatalogView,
+): Record<string, NodeData> {
+  if (view !== 'stages' || !support.length) return nodes;
+  const covered = new Set(
+    operations
+      .filter(
+        (operation) =>
+          operation.binding &&
+          operation.task !== null &&
+          support.some(
+            (pipeline) =>
+              pipeline.pipelineClass === operation.pipelineClass &&
+              pipeline.tasks.some(
+                (task) => task.task === operation.task && task.operationIds.includes(operation.operationId),
+              ),
+          ),
+      )
+      .map((operation) => operation.nodeKey),
+  );
+  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => !covered.has(nodeKey(node))));
 }
 
 export type NodeSurfaceCategory =
@@ -85,6 +114,8 @@ export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeC
       entry.visibility !== 'experimental' &&
       (entry.visibility === 'essential' ||
         GENERIC_STAGE_NODE_KEYS.has(nodeKey(entry.node)) ||
+        entry.node.module === 'modules.Primitive' ||
+        entry.node.module === 'modules.Text' ||
         entry.node.module.startsWith('custom.'))
     );
   }

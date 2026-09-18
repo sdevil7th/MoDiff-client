@@ -47,7 +47,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // per-chunk ceiling and requiring a cold production browser check.
 // M7 adds the lazy service-interface export dialog (208.3 KiB aggregate).
 // Bound the added surface at 209 KiB; startup and individual chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 209 * 1024;
+// M8 shares the stage inspector with a lazy canvas entry point and checks its
+// workflow/selection lifetime. Aggregate deferred code measures 209.3 KiB.
+// Bound this surface at 210 KiB; startup and individual chunk caps stay fixed.
+const MAX_DEFERRED_GZIP_BYTES = 210 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;
