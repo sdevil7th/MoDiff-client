@@ -41,6 +41,16 @@ cd MoDiff
 Open <http://127.0.0.1:8088>. No separate frontend install or frontend process
 is needed for normal use.
 
+### Developer setup without launchers
+
+With Node 24.12.x and npm 11.6.2 installed, run `npm ci` and `npm run dev`
+from this checkout. Start the sibling backend using its
+[uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md).
+In Expert mode, **Export → Service package** exposes named scalar inputs and
+persisted preview outputs for the same lowered API graph. See the backend's
+[service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
+for the CLI, environment manifest and model-free example.
+
 ### Which launcher should I use?
 
 | Purpose                              | Start                                 | Stop             | What runs                                                                |

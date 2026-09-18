@@ -45,7 +45,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // M6 replaces the old module manager with one lazy source/approval/reload panel.
 // The deferred graph measures 206.2 KiB; bound it at 207 KiB while retaining the
 // per-chunk ceiling and requiring a cold production browser check.
-const MAX_DEFERRED_GZIP_BYTES = 207 * 1024;
+// M7 adds the lazy service-interface export dialog (208.3 KiB aggregate).
+// Bound the added surface at 209 KiB; startup and individual chunk caps stay fixed.
+const MAX_DEFERRED_GZIP_BYTES = 209 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -10131,6 +10131,7 @@ test('mocked topbar Export menu is compact in Auto and raw in Expert', async ({ 
   await expect(page.getByTestId('topbar-export-open-gallery')).toBeVisible();
   await expect(page.getByTestId('topbar-export-raw-workflow')).toHaveCount(0);
   await expect(page.getByTestId('topbar-export-api-graph')).toHaveCount(0);
+  await expect(page.getByTestId('topbar-export-service')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('topbar-export-menu')).toHaveCount(0);
   await expect(exportTrigger).toBeFocused();
@@ -10149,6 +10150,35 @@ test('mocked topbar Export menu is compact in Auto and raw in Expert', async ({ 
   await expect(page.getByTestId('topbar-export-raw-workflow')).toBeVisible();
   await expect(page.getByTestId('topbar-export-api-graph')).toBeVisible();
   await expect(page.getByTestId('topbar-export-api-graph')).toBeEnabled();
+  await page.route('**/service_package', async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.operation === 'inspect') {
+      await route.fulfill({
+        json: {
+          error: false,
+          inputs: [{ nodeId: 'prompt', field: 'text', type: 'string' }],
+          outputs: [{ nodeId: 'preview', field: 'preview', type: 'ui_text' }],
+        },
+      });
+    } else {
+      expect(body.interface).toEqual({
+        inputs: { prompt: [{ nodeId: 'prompt', field: 'text' }] },
+        outputs: { result: [{ nodeId: 'preview', field: 'preview' }] },
+      });
+      await route.fulfill({
+        status: 400,
+        json: { error: true, message: 'Select an immutable model revision before exporting.' },
+      });
+    }
+  });
+  await page.getByTestId('topbar-export-service').click();
+  await expect(page.getByTestId('service-export-dialog')).toBeVisible();
+  await page.getByLabel('inputs prompt.text', { exact: true }).fill('prompt');
+  await page.getByLabel('outputs preview.preview', { exact: true }).fill('result');
+  await page.getByRole('button', { name: 'Download service package' }).click();
+  await expect(page.getByRole('alert')).toContainText('immutable model revision');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByTestId('service-export-dialog')).toHaveCount(0);
 });
 
 test('mocked Run as app tab is Expert-only and graph-output gated', async ({ page }) => {

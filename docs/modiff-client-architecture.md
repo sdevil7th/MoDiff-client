@@ -1043,6 +1043,17 @@ their separate encoded-image input contract.
 
 Workflow packages are JSON. Image packages can also embed the `modiff.workflow` metadata key in PNG text chunks. Imported packages must be parsed/coerced at the boundary before they affect stores.
 
+Expert's **Export → Service package** lazily loads `ServiceExportDialog`. It reuses
+TopBar's existing Block/Modular lowering, checks the captured workflow context,
+and asks the backend `/service_package` boundary for supported scalar inputs and
+persisted preview outputs. Names refer to exact lowered node/field identities;
+there is no second graph representation or client-owned model dispatch. The
+backend owns portability checks, observed dependency/model/custom-code manifests,
+and execution-time validation. `studio/servicePackage.ts` narrows responses before
+showing candidates or downloading JSON. Auto keeps its existing compact menu.
+Service packages run through the existing backend queue; they are not standalone
+Diffusers Python or an alternative graph import format.
+
 ## Templates And Gallery Assets
 
 Curated templates live in `src/studio/templates.ts`. Git stores their typed

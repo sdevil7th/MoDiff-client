@@ -94,7 +94,7 @@
     "test:graph-mutations": "node --test scripts/flow-graph-mutations.test.mjs scripts/graph-fixer.test.mjs scripts/block-seed-repair-v2.test.mjs scripts/block-derived-control-repair-v2.test.mjs",
     "test:graph-visuals": "node --test scripts/graph-visuals.test.mjs scripts/node-measurement-dispatch.test.mjs scripts/node-connection-search.test.mjs",
     "test:media-viewer": "node --test scripts/media-viewer.test.mjs",
-    "test:requests": "node --test scripts/node-store-requests.test.mjs scripts/operation-catalog.test.mjs scripts/operation-authoring.test.mjs scripts/request-boundary.test.mjs scripts/server-actions.test.mjs scripts/shared-store-requests.test.mjs scripts/studio-output-requests.test.mjs scripts/resolved-execution-inputs.test.mjs scripts/runtime-resources.test.mjs",
+    "test:requests": "node --test scripts/service-package.test.mjs scripts/node-store-requests.test.mjs scripts/operation-catalog.test.mjs scripts/operation-authoring.test.mjs scripts/request-boundary.test.mjs scripts/server-actions.test.mjs scripts/shared-store-requests.test.mjs scripts/studio-output-requests.test.mjs scripts/resolved-execution-inputs.test.mjs scripts/runtime-resources.test.mjs",
     "test:run-coordinator": "node --test scripts/run-coordinator.test.mjs scripts/run-issue-store.test.mjs scripts/block-runtime-hints-v2.test.mjs",
     "test:run-activity": "node --test scripts/run-activity.test.mjs",
     "test:template-input-preview": "node --test scripts/template-input-preview.test.mjs",

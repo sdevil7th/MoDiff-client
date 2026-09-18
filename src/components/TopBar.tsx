@@ -79,6 +79,7 @@ import {
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
 import type { WorkflowSaveDestination } from './WorkflowSaveDialog';
 
+const ServiceExportDialog = lazy(() => import('./ServiceExportDialog'));
 const WorkflowSaveDialog = lazy(() => import('./WorkflowSaveDialog'));
 import { saveWorkflowNow } from '../studio/useWorkflowBackendSync';
 import { saveWorkflowSnapshotFile } from '../studio/workflowFileSave';
@@ -328,6 +329,7 @@ function TopBar() {
     () => workflowTabs.find((tab) => tab.id === activeWorkflowTabId) ?? null,
     [activeWorkflowTabId, workflowTabs],
   );
+  const [serviceExportOpen, setServiceExportOpen] = useState(false);
   const [saveDialog, setSaveDialog] = useState<{
     destination: WorkflowSaveDestination;
     renameCurrent: boolean;
@@ -447,13 +449,16 @@ function TopBar() {
       apiGraph = lower(apiGraph);
       assertWorkflowOperationContext(context);
     }
-    return buildWorkflowPackage({
-      form: useStudioStore.getState().form,
-      graph: flow.toObject(),
+    return {
+      ...buildWorkflowPackage({
+        form: useStudioStore.getState().form,
+        graph: flow.toObject(),
+        apiGraph,
+        latestOutput: latestWorkflowOutput,
+        packageType: 'modiff-workflow-share',
+      }),
       apiGraph,
-      latestOutput: latestWorkflowOutput,
-      packageType: 'modiff-workflow-share',
-    });
+    };
   }, [exportGraph, graphBinding, latestWorkflowOutput, sid]);
 
   const handleWorkflowPackageExportClick = useCallback(async () => {
@@ -740,6 +745,14 @@ function TopBar() {
                 >
                   API graph JSON
                 </ModiffMenuAction>
+                <ModiffMenuAction
+                  disabled={!sid}
+                  onClick={() => setServiceExportOpen(true)}
+                  data-testid="topbar-export-service"
+                  icon={<Package size={16} />}
+                >
+                  Service package
+                </ModiffMenuAction>
               </>
             )}
           </ModiffMenuSurface>
@@ -946,6 +959,9 @@ function TopBar() {
       </div>
 
       <Suspense fallback={null}>
+        {serviceExportOpen && (
+          <ServiceExportDialog getGraph={buildTopBarWorkflowPackage} onClose={() => setServiceExportOpen(false)} />
+        )}
         {saveDialog && (
           <WorkflowSaveDialog
             open
