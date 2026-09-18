@@ -35,7 +35,7 @@ node and Modular block execution, reload and targeted invalidation passed their
 scoped validation. M7 implementation and Linux validation are complete; Windows
 clean-install execution is deferred by the operator until a Windows machine is
 available. M8 implementation and scoped local qualification are complete;
-feature-branch publication is being finalized. This does not qualify every declared
+feature-branch publication is blocked by Git authentication. This does not qualify every declared
 model/task, hardware configuration or third-party extension.
 
 ## Progress tracker
@@ -54,7 +54,7 @@ Model execution, hardware qualification, and UI tests are separate evidence.
 | M5 — Reuse and selective recomputation             | Complete    | None within M5; broader family/hardware qualification remains scoped            |
 | M6 — Custom-node developer experience              | Complete    | None within M6; arbitrary extensions still need code/dependency/resource review |
 | M7 — Developer setup and service prototyping       | Implemented | Windows qualification deferred by the operator until after publication          |
-| M8 — Consolidation and product qualification       | Implemented | Publication in progress; Windows/model qualification remains separately scoped  |
+| M8 — Consolidation and product qualification       | Implemented | Push blocked by authentication; Windows/model qualification remains scoped      |
 
 Completed foundation: plan committed in both repos; implementation branches
 created from `develop`. M1 catalog views were committed in client `df50a30` and backend
@@ -983,8 +983,9 @@ M7.3 platform evidence:
       commands in a clean Windows environment and record the result. This host
       is Linux with no Windows runtime. GitHub repository access is available,
       and publication is authorized. This shell has no GitHub credentials for a
-      history-preserving push; the connected GitHub integration can publish exact
-      source trees as snapshot commits. Windows execution evidence is pending.
+      history-preserving push. The connected GitHub integration also rejects blob
+      creation with HTTP 403. No feature branch has been published or Windows job
+      started. Windows execution evidence is pending.
       Accelerator/model qualification remains separate from this CPU setup check.
 
 Delivered behavior:
@@ -1090,6 +1091,14 @@ hardware/model support is implied by consolidation or by publishing this branch.
 
 #### M8 implementation and local evidence — 2026-09-18
 
+Local implementation commits: backend
+`9931f22b5c0a11a42ce55ea6c37106a984886b35`; client
+`2cd222d86c74cdc2932b236296bf191e58e67701`. The subsequent client
+publication-preparation commit pins CI to that backend commit. Documentation and
+CI-pin commits do not change the tested runtime or the bundled frontend source.
+Final bundle SHA-256:
+`b93f21468d0147c2f0f21bc3916627657db69ff2d3c5d5367440d11c06d2e23b`.
+
 Expert Stages now suppresses an ordinary runtime entry only when an exact bound
 canonical operation has matching pipeline/task support. Incomplete or older
 catalogs retain the ordinary fallback; Advanced keeps implementation access.
@@ -1145,12 +1154,15 @@ Validation commands and scope:
   78 public template records retain their existing semantics and qualification.
   Models, Gallery media, saved Blocks and user workflows were preserved.
 
-Publication will record both the local implementation commits and published
-source commits. Normal Git push currently lacks shell authentication. If the
-connected GitHub integration is used, published commits will be exact-tree
-snapshots based on `develop`, with the client CI pinned to the published backend
-implementation. Local feature history will remain intact; this is not a claim
-that the original local commit IDs were pushed.
+Publication is authorized but blocked by credentials. Noninteractive HTTPS Git
+push fails because no username/credential helper is configured. SSH has no agent
+or default identity configured. The connected GitHub integration can read the
+repositories, but `create_blob` returns HTTP 403, "Resource not accessible by
+integration." No remote source, branch or snapshot commit was created. Keep the
+publication checkbox open until both branch tips are verified on GitHub. The
+client CI must pin the paired backend implementation commit, and the backend
+branch must be pushed first so that pin is reachable. All original local feature
+history remains intact.
 
 ## Sequencing and validation
 
