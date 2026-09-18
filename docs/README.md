@@ -10,7 +10,7 @@ This directory contains durable user, operator, and contributor documentation fo
 | [Studio user guide](studio-user-flow.md)        | Users and testers   | Tasks, interface areas, Auto performance, models, Gallery, export, failures, and smoke tests  |
 | [Troubleshooting](troubleshooting.md)           | Users and operators | Preflight, ports, slow/stalled runs, model downloads, browser state, and runtime recovery     |
 | [Privacy and security](privacy-and-security.md) | Users and deployers | Stored data, network activity, exports, trust boundaries, cleanup, and safe issue reports     |
-| [Windows support](windows-support.md)           | Windows users       | PowerShell launchers, backend setup, CUDA notes, process cleanup, and platform smoke tests    |
+| [Windows support](windows-support.md)           | Windows users       | uv/npm developer setup, PowerShell launchers, CUDA notes, cleanup, and platform smoke tests   |
 | [Ubuntu Linux support](linux-support.md)        | Linux users         | Native prerequisites, backend setup, launcher behavior, and platform smoke tests              |
 | [Apple Silicon macOS support](macos-support.md) | macOS users         | Native prerequisites, MPS caveats, backend setup, and platform smoke tests                    |
 

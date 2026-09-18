@@ -25,6 +25,14 @@ is only required for optional packages that compile native CUDA extensions.
 
 ## Backend Setup
 
+Developers can use the backend's
+[uv setup commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
+to plan, install, check and run the managed environment without shell launchers.
+Start the client with `npm ci` followed by `npm run dev` in a second terminal.
+Stop each process with `Ctrl+C`. Use a separate checkout for a clean CPU test;
+`modiff.dev setup` preserves an existing `.venv` unless `--repair` is explicit.
+The guided launcher path is also available:
+
 From the backend checkout:
 
 ```bash

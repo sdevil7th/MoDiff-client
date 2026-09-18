@@ -1,11 +1,13 @@
 # Windows Support
 
-This repository supports a local Windows setup where the MoDiff backend and Vite client run on the same workstation. The combined PowerShell launcher is the recommended development path.
+Run the MoDiff backend and Vite client on the same Windows workstation. Developers
+can use the uv/npm commands below; combined PowerShell launchers are also available.
 
 ## Prerequisites
 
 - 64-bit Windows 10/11
 - Git
+- uv `0.11.26` for the developer commands below; it can provision Python 3.12
 - PowerShell 5.1 or PowerShell 7+
 - Node.js `24.12.0` and npm `11.6.2`
 - A current NVIDIA driver for CUDA workflows
@@ -23,9 +25,46 @@ C:\path\to\projects\
 `-- MoDiff-client\
 ```
 
+## Developer Setup With uv And npm
+
+From a clean backend checkout, install the CPU development profile:
+
+```powershell
+uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
+uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
+uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
+uv run --no-project --no-sync --python 3.12 -m modiff.dev run
+```
+
+In a second terminal, from `MoDiff-client`:
+
+```powershell
+npm ci
+npm run dev
+```
+
+Open the URL printed by Vite. Stop each process with `Ctrl+C` in its terminal.
+These commands do not require running a repository PowerShell script or changing
+PowerShell execution policy. The backend-only install serves the checked client
+bundle too, at <http://127.0.0.1:8088>.
+
+Setup installs Python packages, including Torch, without downloading inference
+weights. An existing managed `.venv` is preserved; use `check` to inspect it and
+`run` to launch it. Test a clean CPU install in a separate checkout from a working
+GPU environment. A deliberate profile replacement requires `setup --repair`.
+Choose `--accelerator nvidia`, `intel`, or `auto` in both `plan` and `setup` for
+the applicable accelerator profile. Optional runtimes retain their explicit
+installation and consent flow.
+
+The backend's [developer setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
+explains the managed dependency contract and uv flags. Ordinary `uv sync` and
+project-resolving `uv run` are not supported in the accelerator environment.
+For named API inputs/outputs and the model-free service example, see the
+[service prototyping guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md).
+
 ## Backend Setup
 
-From the backend checkout:
+For guided setup, run the PowerShell installer from the backend checkout:
 
 ```powershell
 .\install.ps1 -Accelerator auto
@@ -55,7 +94,7 @@ Copy-Item config.example.ini config.ini
 
 ## Client Setup And Launch
 
-From `MoDiff-client`:
+For combined setup and launch through PowerShell scripts, run from `MoDiff-client`:
 
 ```powershell
 .\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto
@@ -86,6 +125,9 @@ powershell -ExecutionPolicy Bypass -File .\run-dev.ps1
 ```
 
 ## Stop Development Processes
+
+For the uv/npm terminals above, use `Ctrl+C` in each terminal. For processes
+started by the combined development launcher:
 
 ```powershell
 .\stop-dev.ps1

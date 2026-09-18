@@ -51,6 +51,12 @@ Required client versions:
 - Node.js `24.12.0` (`.nvmrc`)
 - npm `11.6.2` (`packageManager` and `engines` in `package.json`)
 
+For setup without repository launchers, use the backend's
+[uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
+and run `npm ci`, then `npm run dev`, in this client checkout. See the
+[Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm) for the
+two-terminal flow. The same uv commands work on Linux.
+
 For integrated development with sibling repositories, install the reviewed
 backend profile, backend test requirements, and exact client lockfile through
 the development installer:
