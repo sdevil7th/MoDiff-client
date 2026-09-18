@@ -8669,7 +8669,9 @@ for (const direction of ['source', 'target'] as const) {
 }
 
 async function operationStarterFixtures() {
-  const python = path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
   const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
   const command = process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
   const args = process.platform === 'win32' ? [script] : [python, script];

@@ -24,8 +24,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: 'a6dfb36eca3a3906eb2fd460795adfb844e5fcce',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-be5bd288',
-    compiledDefinitionCanonicalSha256: 'sha256:b0b3becb6fc65d9669567a2d8cb8fdd8a0922d3ebf34e6cd1e38db55ee279aba',
+    compiledDefinitionContentHash: 'block-definition-v2-f8d5e342',
+    compiledDefinitionCanonicalSha256: 'sha256:99702750992a4213f3ebe0a262e0c30ea9196c268882a05a4df8ff0e71bfbe0d',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -163,8 +163,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: 'a6dfb36eca3a3906eb2fd460795adfb844e5fcce',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-dee1170f',
-    compiledDefinitionCanonicalSha256: 'sha256:1c02f6015dcd96a871cc73957c0d07b56515a7d96e6f5066d0ae36a1e7a8127e',
+    compiledDefinitionContentHash: 'block-definition-v2-df0575c5',
+    compiledDefinitionCanonicalSha256: 'sha256:aea129e94517d7db956f213a1367f0d96a9dc2e4bf77256523d33c5ebeca6cb7',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -301,8 +301,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: 'a6dfb36eca3a3906eb2fd460795adfb844e5fcce',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-43a76702',
-    compiledDefinitionCanonicalSha256: 'sha256:f748049784ddd76da53b8964d64a5708d9bfeec78673b1354c58c24ec47cda55',
+    compiledDefinitionContentHash: 'block-definition-v2-6110ca28',
+    compiledDefinitionCanonicalSha256: 'sha256:528497abc6213114de0cbf5b52c48a4225d0da19120dac354dc31bfcc9b22c9c',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -432,8 +432,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-1d1f7ba8',
-    compiledDefinitionCanonicalSha256: 'sha256:f1ced8f5d7a2d236f49edbaa7305bd6aa2d6d687f0ae526a32aade06235292eb',
+    compiledDefinitionContentHash: 'block-definition-v2-82fd89a6',
+    compiledDefinitionCanonicalSha256: 'sha256:bbe2ffcca599396b7c497a2c05b504b5761685f9e8d46b9e866899901d464dce',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -616,8 +616,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-72285fb3',
-    compiledDefinitionCanonicalSha256: 'sha256:ea56ac900ca1d08f3301715267e7b07c745852e7756097ebffaa05cd21432e28',
+    compiledDefinitionContentHash: 'block-definition-v2-7f8b1cf1',
+    compiledDefinitionCanonicalSha256: 'sha256:c79e0b802181354299873c4634ec43e1f35dcd05a0fa05f75b16a169403a1bd3',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -807,8 +807,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-08c46ac3',
-    compiledDefinitionCanonicalSha256: 'sha256:f03eabf30f80f2dae9c3977263490698dcc7cb72da416f6f63b6569d2a45b7a9',
+    compiledDefinitionContentHash: 'block-definition-v2-73f14e45',
+    compiledDefinitionCanonicalSha256: 'sha256:55ecceb507454d2973245b384f1dc3f3952c843e3196a74e397d92eaff0cb571',
     controlFanOuts: [
       {
         source: 'quantizationMode',

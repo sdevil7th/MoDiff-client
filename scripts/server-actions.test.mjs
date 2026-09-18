@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer, loadConfigFromFile } from 'vite';
+import { runInNewContext } from 'node:vm';
+import { build, createServer, loadConfigFromFile } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -102,6 +103,60 @@ test('execution stop falls back to the worker endpoint when the supervisor is un
   assert.match(requests[1].url, /:5191\/stop$/);
   assert.equal(requests[1].init.method, 'POST');
   assert.equal(result.message, 'Execution set for interruption.');
+});
+
+test('production recovery follows the serving backend port instead of the development proxy', async () => {
+  const priorBackend = process.env.VITE_BACKEND_PROXY_TARGET;
+  const priorSupervisor = process.env.VITE_SUPERVISOR_CONTROL_ADDRESS;
+  process.env.VITE_BACKEND_PROXY_TARGET = 'http://127.0.0.1:65530';
+  delete process.env.VITE_SUPERVISOR_CONTROL_ADDRESS;
+  try {
+    const loaded = await loadConfigFromFile(
+      { command: 'build', mode: 'production' },
+      path.join(ROOT, 'vite.config.ts'),
+      ROOT,
+      'silent',
+    );
+    assert.ok(loaded);
+    for (const [origin, override, expected] of [
+      ['http://127.0.0.1:8096', undefined, 'http://127.0.0.1:8097'],
+      ['http://127.0.0.1:8088', undefined, 'http://127.0.0.1:8089'],
+      ['http://127.0.0.1:8096', 'http://127.0.0.1:18000', 'http://127.0.0.1:18000'],
+    ]) {
+      const bundle = await build({
+        configFile: false,
+        root: ROOT,
+        logLevel: 'silent',
+        build: {
+          write: false,
+          minify: false,
+          lib: { entry: path.join(ROOT, 'app.config.ts'), formats: ['cjs'] },
+          rollupOptions: { output: { exports: 'named' } },
+        },
+        define: {
+          'import.meta.env.DEV': 'false',
+          'import.meta.env.VITE_SERVER_ADDRESS': 'undefined',
+          'import.meta.env.VITE_BACKEND_PROXY_TARGET': JSON.stringify(process.env.VITE_BACKEND_PROXY_TARGET),
+          'import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS': override ? JSON.stringify(override) : 'undefined',
+          ...loaded.config.define,
+        },
+      });
+      const module = { exports: {} };
+      runInNewContext(bundle[0].output[0].code, {
+        module,
+        exports: module.exports,
+        window: { location: { origin } },
+        URL,
+      });
+      assert.equal(module.exports.default.serverAddress, origin);
+      assert.equal(module.exports.default.supervisorAddress, expected);
+    }
+  } finally {
+    if (priorBackend === undefined) delete process.env.VITE_BACKEND_PROXY_TARGET;
+    else process.env.VITE_BACKEND_PROXY_TARGET = priorBackend;
+    if (priorSupervisor === undefined) delete process.env.VITE_SUPERVISOR_CONTROL_ADDRESS;
+    else process.env.VITE_SUPERVISOR_CONTROL_ADDRESS = priorSupervisor;
+  }
 });
 
 test('successful HTTP responses with an error payload remain application failures', async () => {

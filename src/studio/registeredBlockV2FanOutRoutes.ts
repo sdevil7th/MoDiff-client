@@ -4603,8 +4603,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'baidu/ERNIE-Image-Turbo', revision: 'bc68c81e2a1730a394d5fc9fae70713dee940140' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-30138b23',
-    compiledDefinitionCanonicalSha256: 'sha256:3792671213c6136ad61d90642fca28a851d88e2203c017ca9a15f3145c9ec22c',
+    compiledDefinitionContentHash: 'block-definition-v2-d1e7da89',
+    compiledDefinitionCanonicalSha256: 'sha256:6c927b2c80c22a1ddfe4ee9cbaaa609484c21bf61b86ba13fe89a3069769fffd',
     controlFanOuts: [
       {
         source: 'quantizationMode',
