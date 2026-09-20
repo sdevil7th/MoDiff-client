@@ -29,11 +29,21 @@ type Preview = {
 };
 
 /** Lazy authoring UI. The preview never creates a managed template or Block. */
-export default function OperationGraphControls({ pipeline, task }: { pipeline: string; task: string }) {
+export default function OperationGraphControls({
+  pipeline,
+  task,
+  ownerId,
+}: {
+  pipeline: string;
+  task: string;
+  ownerId?: string;
+}) {
   const nodes = useFlowStore((s) => s.nodes);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
+  const canvasEpoch = useStudioStore((s) => s.workflowCanvasEpoch);
   const operations = useNodesStore((s) => s.operationContracts);
-  const [loader, setLoader] = useState('');
+  const [chosenLoader, setLoader] = useState('');
+  const loader = ownerId ?? chosenLoader;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -41,7 +51,7 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
   const pending = useRef<AbortController | null>(null);
   const loaders = nodes.filter(
     (n) =>
-      !n.parentId && !n.data.blockProjectionOwnerId && n.data.operationAuthoring?.operation.decomposition === 'loader',
+      !n.parentId && !n.data.blockProjectionOwnerId && n.data.operationAuthoring?.operation?.decomposition === 'loader',
   );
   const selected = nodes.find((n) => n.selected && n.data.operationAuthoring);
   const selectedHint = selected ? operationAuthoring(selected) : null;
@@ -56,7 +66,7 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
     return () => {
       pending.current?.abort();
     };
-  }, [pipeline, task, workflow, loader]);
+  }, [pipeline, task, workflow, canvasEpoch, loader]);
 
   async function prepare(change: boolean) {
     if (pending.current) return;
@@ -114,31 +124,37 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
 
   return (
     <div className="space-y-2 px-2 pb-2">
-      <ModiffButton disabled={busy} onClick={() => void prepare(false)}>
-        Preview connected starter
-      </ModiffButton>
+      {!ownerId ? (
+        <ModiffButton disabled={busy} onClick={() => void prepare(false)}>
+          Preview connected starter
+        </ModiffButton>
+      ) : null}
       {loaders.length ? (
         <>
-          <ModiffFieldShell label="Graph to change">
-            <ModiffSelect
-              aria-label="Operation graph to change"
-              value={loader}
-              onValueChange={setLoader}
-              options={[
-                { value: '', label: 'Select a loader on this canvas' },
-                ...loaders.map((n) => ({
-                  value: n.id,
-                  label: `${n.data.operationAuthoring!.operation.pipelineClass} · ${n.id.slice(-6)}`,
-                })),
-              ]}
-            />
-          </ModiffFieldShell>
+          {!ownerId ? (
+            <ModiffFieldShell label="Graph to change">
+              <ModiffSelect
+                aria-label="Operation graph to change"
+                value={loader}
+                onValueChange={setLoader}
+                options={[
+                  { value: '', label: 'Select a loader on this canvas' },
+                  ...loaders.map((n) => ({
+                    value: n.id,
+                    label: `${n.data.operationAuthoring!.operation.pipelineClass} · ${n.id.slice(-6)}`,
+                  })),
+                ]}
+              />
+            </ModiffFieldShell>
+          ) : null}
           <ModiffButton disabled={busy || !loaders.some((n) => n.id === loader)} onClick={() => void prepare(true)}>
             Preview model / task change
           </ModiffButton>
         </>
       ) : null}
-      {selectedHint ? <ModiffButton onClick={() => setInspect(true)}>Inspect selected node</ModiffButton> : null}
+      {!ownerId && selectedHint ? (
+        <ModiffButton onClick={() => setInspect(true)}>Inspect selected node</ModiffButton>
+      ) : null}
       {busy ? (
         <p role="status" className="text-xs text-modiff-subtle-text">
           Preparing ordinary nodes and connections…
@@ -208,8 +224,8 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
                   </div>
                 ) : null}
                 <p>
-                  Custom nodes are retained. Unsupported settings remain available in “Inspect selected node”. Undo
-                  restores the entire change.
+                  Custom nodes are retained. Unsupported settings remain available in the inspector’s Implementation
+                  tab. Undo restores the entire change.
                 </p>
               </>
             ) : null}

@@ -46,7 +46,7 @@ is needed for normal use.
 With Node 24.12.x and npm 11.6.2 installed, run `npm ci` and `npm run dev`
 from this checkout. Start the sibling backend using its
 [uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md).
-In Expert mode, **Export → Service package** exposes named scalar inputs and
+In the Developer workspace, **Export → Service package** exposes named scalar inputs and
 persisted preview outputs for the same lowered API graph. See the backend's
 [service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
 for the CLI, environment manifest and model-free example.
@@ -67,7 +67,7 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 - Build and inspect backend-native graphs on a visual canvas.
 - Start guided text-to-image, editing, inpainting, outpainting, control, layered-image, video, and advanced workflows.
 - Browse curated templates and proof-backed Gallery examples.
-- Use **Auto** to select a known hardware-aware recipe, or **Expert** to expose lower-level graph and runtime controls.
+- Choose **Creator** for templates or **Developer** for task-first workflows; select **Memory: Automatic / Custom** independently.
 - Discover local and Hugging Face model artifacts and start supported downloads from the UI.
 - Follow queue state, step progress, failures, and accelerator cleanup actions.
 - Keep multiple local workflow tabs and restore a generated output with its form and graph context.
@@ -262,9 +262,9 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
 
 See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas, workflow tabs, Gallery behavior, setup, failure recovery, and a manual verification checklist.
 
-## Auto And Expert
+## Workspace And Memory
 
-**Resources → Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
+**Memory → Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
 
 The backend planner is the compatibility authority. Template cards, Setup,
 Models, and Run readiness render the same structured assessment and do not
@@ -273,10 +273,10 @@ show **Checking compatibility** instead of guessing from a device label or a
 dedicated-VRAM number. This is important for Apple unified memory, AMD shared
 memory, and Intel integrated/XPU devices.
 
-The **Auto view / Expert view** switch controls editing tools independently of
-**Resources → Automatic / Expert overrides**. Changing views preserves the graph
-and saved execution policy. Expert view can keep automatic resource management;
-choose Expert overrides explicitly to run with your configured settings.
+The **Creator / Developer** switch controls editing tools independently of
+**Memory → Automatic / Custom**. Changing workspace preserves the graph
+and saved execution policy. Developer can keep automatic resource management;
+choose Custom explicitly to run with your configured settings.
 Each workflow saves its own resource policy; the editing preference is global.
 The Run menu's **Auto** item separately repeats execution after parameter changes;
 keep it off when you want a single generation.
@@ -543,9 +543,11 @@ inspect its ordinary nodes, required inputs and upstream implementation, then ad
 it to the canvas. You can also insert nodes individually by click, drag or canvas
 search and connect their ports. Connect the final result to a Preview, Save or Export node before running.
 
-To change a graph, select its loader under **Graph to change**, choose the new
-pipeline/task and use **Preview model / task change**. Review retained settings and
-connections before applying. Compatible prompt and parameter overrides survive;
+To change a graph of generic nodes, select its loader and open **Inspect node →
+Parameters → Change model / task**. Choose the replacement pipeline/task, then
+**Preview model / task change**. The same controls are available in the Studio
+inspector. Review retained settings and connections before applying. The Nodes
+library also retains its existing **Graph to change** entry point. Compatible prompt and parameter overrides survive;
 new defaults come from the selected backend contract. Undo restores the whole
 change. When nodes share a seed, editing either control updates both; random mode
 uses one draw per run for that group. Select a node and choose **Inspect node**

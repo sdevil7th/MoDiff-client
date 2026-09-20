@@ -3,6 +3,7 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import { ModiffTabs, StatusLine } from '../ui';
 
 const NodeInspectionDetails = lazy(() => import('./NodeInspectionDetails'));
+const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
 
 export type NodeInspectorSection = 'parameters' | 'interface' | 'implementation' | 'docs' | 'run';
 const sections: { value: NodeInspectorSection; label: string }[] = [
@@ -29,7 +30,14 @@ export default function NodeInspectorSections({ node, children }: { node: Custom
       />
       <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${section}`} tabIndex={0}>
         {section === 'parameters' ? (
-          children
+          <div className="grid gap-3">
+            {node.data.operationAuthoring?.operation?.decomposition === 'loader' ? (
+              <Suspense fallback={<StatusLine>Loading model controls…</StatusLine>}>
+                <OperationOwnerControls node={node} />
+              </Suspense>
+            ) : null}
+            {children}
+          </div>
         ) : (
           <Suspense fallback={<StatusLine>Loading node details…</StatusLine>}>
             <NodeInspectionDetails node={node} section={section} />

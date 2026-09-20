@@ -9217,6 +9217,168 @@ test('operation starters preserve native edits through model/task preview, Undo 
   expect(errors).toEqual([]);
 });
 
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} loader inspector changes its own model and task without library selection`, async ({ page }) => {
+    page.setDefaultTimeout(15_000);
+    await page.setViewportSize({ width: 1680, height: 1050 });
+    await ensureFrontend();
+    await installOperationAuthoringRoutes(page);
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    await page.getByTestId('left-tab-nodes').click();
+    const library = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+    await library.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Connected starter', exact: true })
+      .getByRole('button', { name: 'Add starter to canvas', exact: true })
+      .click();
+    await page.getByTestId('left-tab-nodes').click();
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    const initial = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes);
+    const loaderId = initial.find((n) => n.action === 'ModelsLoader')!.id;
+    const promptId = initial.find((n) => n.action === 'EncodePrompt')!.id;
+    const prompt = page.locator(`.react-flow__node[data-id="${promptId}"] [data-key="prompt"] textarea`);
+    await prompt.fill('A copper observatory, intricate engraved brass, sunrise through violet clouds');
+    await prompt.blur();
+    const inspect = () =>
+      page.evaluate(() => {
+        const nodes = window.__MODIFF_E2E__!.getState().flow.nodes;
+        return {
+          pipeline: nodes.find((n) => n.action === 'ModelsLoader')?.params.model_type.value,
+          prompt: nodes.find((n) => n.action === 'EncodePrompt')?.params.prompt.value,
+          count: nodes.length,
+        };
+      });
+    const before = await inspect();
+    const openOwner = async () => {
+      await page.locator(`.react-flow__node[data-id="${loaderId}"] header`).first().click();
+      await expect(page.getByRole('dialog', { name: 'Node inspector', exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+      const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+      await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
+      return inspector;
+    };
+    let inspector = await openOwner();
+    await expect(inspector.getByLabel('Replacement pipeline', { exact: true })).toContainText(
+      'QwenImageModularPipeline',
+    );
+    await inspector.getByLabel('Replacement pipeline', { exact: true }).click();
+    await page.getByRole('option', { name: 'FluxModularPipeline', exact: true }).click();
+    await waitForOperationGraphToSettle(page);
+    expect(await inspect()).toEqual(before);
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    let review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await expect(review).toContainText('FluxModularPipeline');
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(await inspect()).toEqual(before);
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    // Applying a graph replacement clears selection and closes the contextual inspector.
+    await expect(inspector).toHaveCount(0);
+    await expect.poll(inspect).toEqual({ ...before, pipeline: 'FluxModularPipeline' });
+    await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(inspect).toEqual(before);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(inspect).toEqual({ ...before, pipeline: 'FluxModularPipeline' });
+    inspector = await openOwner();
+    await inspector.getByLabel('Replacement task', { exact: true }).click();
+    await page.getByRole('option', { name: 'image to image', exact: true }).click();
+    await waitForOperationGraphToSettle(page);
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await expect(review).toContainText('encode image · image');
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    // Applying a graph replacement clears selection and closes the contextual inspector.
+    await expect(inspector).toHaveCount(0);
+    const expected = { ...before, pipeline: 'FluxModularPipeline', count: 5 };
+    await expect.poll(inspect).toEqual(expected);
+    await page.keyboard.press('Control+Shift+s');
+    await expect(page.getByTestId('save-workflow-dialog')).toBeVisible();
+    await page.getByTestId('save-workflow-name').fill(`Owner model change ${workspace}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect.poll(inspect).toEqual(expected);
+    await page.screenshot({ path: test.info().outputPath('owner-model-task.png'), animations: 'disabled' });
+  });
+}
+
+for (const invalidation of ['target', 'close', 'edit'] as const) {
+  test(`loader inspector discards delayed model previews after ${invalidation} and can retry`, async ({ page }) => {
+    await ensureFrontend();
+    await installOperationAuthoringRoutes(page);
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, 'expert');
+    await page.getByTestId('left-tab-nodes').click();
+    const library = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+    await library.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Connected starter', exact: true })
+      .getByRole('button', { name: 'Add starter to canvas', exact: true })
+      .click();
+    await page.getByTestId('left-tab-nodes').click();
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    const loaderId = await page.evaluate(
+      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'ModelsLoader')!.id,
+    );
+    await page.locator(`.react-flow__node[data-id="${loaderId}"] header`).first().click();
+    await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+    const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+    await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await waitForOperationGraphToSettle(page);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = false;
+    let completed = false;
+    await page.route('**/operations/starter', async (route) => {
+      if (!started) {
+        started = true;
+        await gate;
+        await route.fallback();
+        completed = true;
+      } else await route.fallback();
+    });
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await expect.poll(() => started).toBe(true);
+    if (invalidation === 'target') {
+      await inspector.getByLabel('Replacement pipeline', { exact: true }).click();
+      await page.getByRole('option', { name: 'FluxModularPipeline', exact: true }).click();
+    } else if (invalidation === 'close') {
+      await inspector.getByRole('button', { name: 'Close', exact: true }).click();
+    } else {
+      const field = inspector.locator('[data-key="repo_id"] input');
+      await field.fill('local/preserved-draft');
+      await field.blur();
+    }
+    const beforeReply = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    release();
+    await expect.poll(() => completed).toBe(true);
+    const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await expect(review).toHaveCount(0);
+    if (invalidation === 'edit') await expect(inspector.getByRole('alert')).toContainText('The graph changed');
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(beforeReply);
+    if (invalidation === 'close') {
+      await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+      await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    }
+    await waitForOperationGraphToSettle(page);
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await expect(review.getByRole('heading', { level: 2 })).toBeVisible();
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await inspector.getByRole('button', { name: 'Close', exact: true }).click();
+  });
+}
+
 test('stateful task changes share native seed edits and preserve them through Undo and reload', async ({ page }) => {
   page.setDefaultTimeout(15_000);
   await page.setViewportSize({ width: 1680, height: 1050 });
@@ -9246,10 +9408,19 @@ test('stateful task changes share native seed edits and preserve them through Un
   await panel.getByLabel('Operation graph to change').click();
   await page.getByRole('option', { name: new RegExp(loaderId.slice(-6)) }).click();
   await waitForOperationGraphToSettle(page);
+  const beforePreview = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
   const preview = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
   await expect(preview).toContainText('Shared seed:');
   await preview.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+  await test.info().attach('preview-graphs', {
+    body: JSON.stringify({
+      beforePreview,
+      afterApply: await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph()),
+    }),
+    contentType: 'application/json',
+  });
+  await expect(preview).toHaveCount(0);
   const inspect = () =>
     page.evaluate(() =>
       window

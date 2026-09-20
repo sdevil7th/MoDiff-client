@@ -134,6 +134,11 @@ export function SelectionToolbar({
     [selectedNodes],
   );
   const singleNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  useEffect(() => {
+    // The toolbar disappears on deselection before its dialog can invalidate
+    // itself. Clear its owner here so selecting that node again cannot reopen it.
+    if (inspectNodeId && singleNode?.id !== inspectNodeId) setInspectNodeId(null);
+  }, [inspectNodeId, singleNode?.id]);
   const replacementSource =
     selectedNodes.length === 2
       ? selectedNodes.find((node) => node.data.type === 'custom' && !node.parentId && !node.data.blockProjectionOwnerId)

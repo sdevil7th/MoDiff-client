@@ -65,7 +65,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // W4 adds catalog Block search, compiled public-interface validation and shared
 // asynchronous insertion/retry. Deferred code measures 221.5 KiB (+1.8 KiB).
 // Bound this feature at 222 KiB; startup and individual chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 222 * 1024;
+// W5 adds a lazy loader-owned pipeline/task chooser and shares the existing
+// preview transaction. Deferred code measures 223.0 KiB (+1.5 KiB); bound it at
+// 224 KiB. Startup and individual chunk ceilings remain unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 224 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;
