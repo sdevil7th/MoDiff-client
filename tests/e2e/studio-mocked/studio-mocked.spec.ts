@@ -25641,3 +25641,249 @@ test('bound prompt suggestions expose the declared text input and preserve the w
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
   expect(await read()).toEqual(connected);
 });
+
+for (const [workspace, pipeline] of [
+  ['auto', 'QwenImageModularPipeline'],
+  ['expert', 'AnimaModularPipeline'],
+] as const) {
+  test(`${workspace} drags a bound library node with exact defaults, Undo and reload`, async ({ page }) => {
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find((s) => s.pipelineClass === pipeline && s.task === 'text_to_image')!;
+    const loader = starter.nodes.find((n) => n.operation.decomposition === 'loader')!;
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    await page.getByTestId('left-tab-nodes').click();
+    const panel = await selectOperationPipeline(page, pipeline, starter.task);
+    const row = panel.getByRole('button', { name: /^Load models/ });
+    await expect(row).toHaveAttribute('draggable', 'true');
+    const pane = page.locator('.react-flow__pane');
+    await row.dragTo(pane, { targetPosition: { x: 400, y: 260 } });
+    await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(1);
+    await waitForOperationGraphToSettle(page);
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const graph = await read();
+    expect(graph.nodes[0]!.data.operationAuthoring?.operation).toEqual(loader.operation);
+    for (const [key, value] of Object.entries(loader.operation.binding!.values)) {
+      expect(graph.nodes[0]!.data.params[key]?.value).toEqual(value);
+    }
+    await pane.click({ position: { x: 70, y: 70 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(async () => (await read()).nodes.length).toBe(0);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(async () => (await read()).nodes.length).toBe(1);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await waitForOperationGraphToSettle(page);
+    const restored = await read();
+    expect(restored.nodes[0]!.id).toBe(graph.nodes[0]!.id);
+    // Reload materializes false connection flags for sockets with no wires.
+    // All values, socket declarations and remaining metadata must stay exact.
+    const params = (node: (typeof graph.nodes)[number]) =>
+      Object.fromEntries(
+        Object.entries(node.data.params).map(([key, field]) => [
+          key,
+          { ...field, isConnected: field.isConnected ?? false },
+        ]),
+      );
+    expect(params(restored.nodes[0]!)).toEqual(params(graph.nodes[0]!));
+    expect(restored.nodes[0]!.data.operationAuthoring).toEqual(graph.nodes[0]!.data.operationAuthoring);
+    await page.screenshot({ path: test.info().outputPath('bound-library-drag.png'), animations: 'disabled' });
+  });
+}
+
+for (const invalidation of ['selection', 'workflow', 'failure'] as const) {
+  test(`bound library drag handles delayed ${invalidation} without orphan nodes`, async ({ page }) => {
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image')!;
+    const loader = starter.nodes.find((n) => n.operation.decomposition === 'loader')!;
+    let calls = 0;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/operations/resolve', async (route) => {
+      calls++;
+      if (calls === 1) {
+        await held;
+        if (invalidation === 'failure') {
+          await route.fulfill({ status: 503, json: { error: 'Resolution temporarily unavailable' } });
+          return;
+        }
+      }
+      await route.fulfill({ json: { schemaVersion: 1, ...loader } });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, 'expert');
+    await page.getByTestId('left-tab-nodes').click();
+    const panel = await selectOperationPipeline(page, starter.pipelineClass, starter.task);
+    const drag = () =>
+      panel
+        .getByRole('button', { name: /^Load models/ })
+        .dragTo(page.locator('.react-flow__pane'), { targetPosition: { x: 400, y: 260 } });
+    await drag();
+    await expect.poll(() => calls).toBe(1);
+    if (invalidation === 'selection') {
+      await panel.getByLabel('Operation pipeline').click();
+      await page.getByRole('option', { name: 'Select a pipeline', exact: true }).click();
+    } else if (invalidation === 'workflow') {
+      await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+      await page
+        .getByRole('dialog', { name: 'Workflows', exact: true })
+        .getByRole('button', { name: 'Empty workflow', exact: true })
+        .click();
+    }
+    release();
+    if (invalidation === 'failure') await expect(page.getByText(/Resolution temporarily unavailable/)).toBeVisible();
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+    if (!(await panel.isVisible())) await page.getByTestId('left-tab-nodes').click();
+    if (invalidation !== 'failure') await selectOperationPipeline(page, starter.pipelineClass, starter.task);
+    await drag();
+    await expect.poll(() => calls).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(1);
+    await waitForOperationGraphToSettle(page);
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(1);
+  });
+}
+
+for (const [workspace, cancel] of [
+  ['auto', false],
+  ['expert', false],
+  ['auto', true],
+  ['expert', true],
+] as const) {
+  test(`${workspace} drops a bound node inside a nested Block ${cancel ? 'with collapse cancellation' : 'atomically'}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1200 });
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image')!;
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    // Set up a persisted composition fixture only; insertion and ownership changes
+    // below use the actual library gesture and ordinary Block adoption reducer.
+    const nestedId = await page.evaluate(async () => {
+      const [schema, runtime, { useFlowStore }, { useStudioStore }] = await Promise.all([
+        import('/src/studio/blockSchemaV2.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/stores/useStudioStore.ts'),
+      ]);
+      const graph = {
+        nodes: [
+          { nodeId: 'nested', nodeType: 'group', data: { type: 'group', label: 'Nested destination', params: {} } },
+          {
+            nodeId: 'unchanged',
+            nodeType: 'custom',
+            parentNodeId: 'nested',
+            data: {
+              type: 'custom',
+              module: 'modules.Test',
+              action: 'Text',
+              label: 'Unchanged sibling',
+              category: 'Test',
+              params: { prompt: { type: 'string', value: 'Keep this prompt' } },
+            },
+          },
+        ],
+        edges: [],
+      };
+      const raw = {
+        schemaVersion: 2,
+        definitionId: 'user:bound-drop-test',
+        displayName: 'Bound drop fixture',
+        source: { kind: 'user' },
+        graph: { ...graph, graphHash: schema.blockGraphHashV2(graph) },
+        boundary: { mode: 'explicit', inputs: [], outputs: [] },
+        controls: [],
+        previews: [],
+        ownership: { kind: 'user', definitionMutable: true },
+      };
+      const definition = schema.normalizeBlockDefinitionV2({
+        ...raw,
+        contentHash: schema.blockDefinitionContentHashV2(raw),
+      });
+      const instance = runtime.setBlockPresentationV2(
+        schema.createBlockInstanceV2(definition, {
+          instanceId: 'bound-drop-root',
+          position: { x: 80, y: 80 },
+          size: { width: 1050, height: 850 },
+        }),
+        { expanded: true },
+      );
+      const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+      useStudioStore.getState().clearGraphBinding();
+      useFlowStore.setState({ ...projection, viewport: { x: 0, y: 0, zoom: 0.7 } });
+      useFlowStore.getState().resetHistory();
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+      return projection.nodes.find((n) => n.data.blockProjectionNodeId === 'nested')!.id;
+    });
+    const read = () =>
+      page.evaluate(
+        () =>
+          window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.find((n) => n.id === 'bound-drop-root')!.data
+            .blockInstanceV2!,
+      );
+    const before = await read();
+    await page.getByTestId('left-tab-nodes').click();
+    const panel = await selectOperationPipeline(page, starter.pipelineClass, starter.task);
+    const nested = page.locator(`.react-flow__node[data-id="${nestedId}"]`);
+    await nested.getByRole('button', { name: 'Expand Nested destination', exact: true }).click();
+    await expect(nested.getByRole('button', { name: 'Collapse Nested destination', exact: true })).toBeVisible();
+    const loader = starter.nodes.find((n) => n.operation.decomposition === 'loader')!;
+    let release: () => void = () => {};
+    let requested = false;
+    if (cancel) {
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route('**/operations/resolve', async (route) => {
+        requested = true;
+        await held;
+        await route.fulfill({ json: { schemaVersion: 1, ...loader } });
+      });
+    }
+    const bounds = (await nested.boundingBox())!;
+    await panel.getByRole('button', { name: /^Load models/ }).dragTo(nested, {
+      targetPosition: { x: bounds.width - 12, y: bounds.height - 30 },
+    });
+    if (cancel) {
+      await expect.poll(() => requested).toBe(true);
+      await nested.getByRole('button', { name: 'Collapse Nested destination', exact: true }).click();
+      release();
+      await waitForOperationGraphToSettle(page);
+      expect((await read()).effectiveGraph).toEqual(before.effectiveGraph);
+      expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.length)).toBe(1);
+      return;
+    }
+    await expect.poll(async () => (await read()).effectiveGraph.nodes.length).toBe(3);
+    const inserted = await read();
+    const added = inserted.effectiveGraph.nodes.find((n) => n.data.action === loader.node.action)!;
+    expect(added).toBeTruthy();
+    expect(added.parentNodeId).toBe('nested');
+    expect(added.data.operationAuthoring?.operation.pipelineClass).toBe(starter.pipelineClass);
+    expect(inserted.definitionSnapshot).toEqual(before.definitionSnapshot);
+    expect(inserted.effectiveGraph.nodes.find((n) => n.nodeId === 'unchanged')).toEqual(
+      before.effectiveGraph.nodes.find((n) => n.nodeId === 'unchanged'),
+    );
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+z');
+    await expect.poll(async () => (await read()).effectiveGraph.nodes.length).toBe(2);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(async () => (await read()).effectiveGraph.nodes.length).toBe(3);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    const restored = await read();
+    expect(restored.effectiveGraph.nodes.find((n) => n.nodeId === added.nodeId)).toEqual(added);
+    expect(restored.definitionSnapshot).toEqual(before.definitionSnapshot);
+    await page.screenshot({ path: test.info().outputPath('bound-nested-drop.png'), animations: 'disabled' });
+  });
+}

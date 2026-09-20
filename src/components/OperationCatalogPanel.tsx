@@ -13,6 +13,7 @@ import { TreeButtonRow } from '../ui';
 import { operationSearchEntries } from '../workflow/nodeConnectionSearch';
 import { formatRequestError } from '../utils/requestJson';
 import OperationGraphControls from './OperationGraphControls';
+import { beginOperationDrag, endOperationDrag } from '../workflow/operationDrag';
 import { withOperationAuthoring } from '../workflow/operationAuthoring';
 
 /** A bound operation inserts one ordinary node. It does not create a template. */
@@ -106,6 +107,16 @@ export default function OperationCatalogPanel({
         <TreeButtonRow
           key={operation.operationId}
           level={0}
+          draggable={!busy}
+          onDragStart={(event) => {
+            if (busy) {
+              event.preventDefault();
+              return;
+            }
+            event.dataTransfer.setData('text/plain', beginOperationDrag(operation));
+            event.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragEnd={endOperationDrag}
           disabled={busy}
           aria-busy={busy || undefined}
           onClick={() => void insert(operation)}

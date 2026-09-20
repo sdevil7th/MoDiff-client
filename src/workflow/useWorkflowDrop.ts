@@ -1,5 +1,5 @@
 import { type Edge, type Viewport } from '@xyflow/react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import config from '../../app.config';
 import {
@@ -8,6 +8,7 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import type { NodeData } from '../stores/useNodeStore';
+import { OPERATION_DRAG_PREFIX, takeOperationDrag } from './operationDrag';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { WorkflowTab, WorkflowTabSnapshot } from '../studio/types';
 import { enqueueSnackbar } from '../ui/snackbar';
@@ -89,6 +90,14 @@ export function useWorkflowDrop({
   nodesRegistry,
   screenToFlowPosition,
 }: UseWorkflowDropOptions) {
+  const pendingOperations = useRef(new Set<AbortController>());
+  useEffect(() => {
+    const pending = pendingOperations.current;
+    return () => {
+      for (const request of pending) request.abort();
+      pending.clear();
+    };
+  }, []);
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -315,12 +324,39 @@ export function useWorkflowDrop({
         return;
       }
 
-      const newNode = createNodeFromRegistry(data, nodesRegistry, position);
+      let newNode: CustomNodeType | null;
+      if (data.startsWith(OPERATION_DRAG_PREFIX)) {
+        const request = new AbortController();
+        pendingOperations.current.add(request);
+        try {
+          const drag = takeOperationDrag(data);
+          const initialNodes = useFlowStore.getState().nodes;
+          const target =
+            expandedBlockV2AtPosition(initialNodes, position) ??
+            expandedUserBlockAtPosition(initialNodes, position) ??
+            expandedHuggingFaceClusterAtPosition(initialNodes, position);
+          const { resolveOperationDrop } = await import('./operationDropResolution');
+          newNode = await resolveOperationDrop(drag, target, position, request.signal);
+          if (!newNode || request.signal.aborted) return;
+        } catch (error) {
+          if (!request.signal.aborted)
+            showGraphImportError(formatRequestError(error, 'Could not add the selected node.'));
+          return;
+        } finally {
+          pendingOperations.current.delete(request);
+        }
+      } else {
+        newNode = createNodeFromRegistry(data, nodesRegistry, position);
+      }
       if (!newNode) {
         showGraphImportError(`Node ${data} not found. Reload the page to refresh the node list.`);
         return;
       }
 
+      if (useFlowStore.getState().historyTransaction) {
+        showGraphImportError('Finish the current graph edit before inserting a node.');
+        return;
+      }
       prepareWorkflowForManualInsertion();
       const flow = useFlowStore.getState();
       const targetBlockV2 = expandedBlockV2AtPosition(flow.nodes, position);

@@ -634,20 +634,26 @@ declarations, not compatibility verdicts,
 runtime readiness, installation consent or graph recipes. Existing dynamic field
 signals, graph validation, optional-runtime and resource planning remain their
 respective authorities. Version 3 adds exact executable bindings and the task
-support inventory. The Stages panel uses these contracts for ordinary node
-insertion and reviewed starter/model/task changes, as described in the stage
-authoring section above.
+support inventory. The Nodes library uses these contracts for ordinary node
+insertion and reviewed starter/model/task changes.
 
-`runtimeCatalogNodes` suppresses raw discovery entries only when an exact bound
-operation is present in the corresponding pipeline/task support record. Incomplete
-or absent support preserves ordinary discovery; Advanced and the execution registry
-remain intact. Text/primitive utilities and installed custom nodes stay accessible
-in Stages. No label-based implementation deduplication or graph migration occurs.
+`runtimeCatalogNodes` suppresses only the exact canonical registry contract and
+its aliases when a bound operation covers the selected pipeline/task. No selection
+or incomplete support preserves registry discovery. Distinct schemas remain
+accessible; implementation filters expose covered entries too. Alias search never
+changes runtime identities or migrates saved graphs.
 
-`OperationStageInspector` is shared by the Stages panel and the lazy canvas
-selection action. It is scoped to the opening workflow/epoch and selected node,
-closes on invalidation or leaving Expert, and only reads local declarations,
-parameters and edges. It does not require the pipeline picker to remain mounted.
+The shared node/Block inspector serves the side panel and canvas dialog in both
+workspaces. Parameters reuse canvas controls; Interface, Implementation, Docs and
+Run details read declared contracts and current workflow state. Opening inspection
+does not trigger field actions or enable custom source.
+
+Bound library drag insertion carries a transient, single-use gesture token; it
+never serializes trusted node metadata into the drop payload. The backend resolver
+supplies the exact selected contract. Workflow, selection, catalog and destination
+changes invalidate a pending resolution. The ordinary node factory and existing
+Block adoption transaction retain ownership, persistence and Undo behavior.
+Resolution code loads on demand; importing a drop payload grants no source consent.
 
 Registered composition labels use Blocks; the reusable group displays Saved Blocks.
 The persisted `User Nodes` group key, runtime categories and legacy `cluster`/`block`
@@ -659,17 +665,17 @@ No further backend implementation is removed without execution equivalence.
 
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
 
-Node discovery uses a shared `NodeCatalogView` policy. Expert defaults to `stages`,
-which includes existing generic Modular operations, essential operations, and
-installed custom nodes. Auto uses `essential`. `NodeList` applies the effective
-view to both ordinary registry entries and the separate Hugging Face catalog
-before keyword search. HF Essentials includes only insertable, graph-qualified
-task Blocks; HF implementation blocks and component references remain in
-Advanced. Experimental is separate, and Saved Blocks remain accessible in
-all views. These filters do not rewrite backend identities or add execution
-support. Catalog-tab changes are local presentation state; the Creator/Developer
-control updates the global `useSettingsStore.studioViewMode` and restores that
-workspace’s panel preferences. Persistence derives `workspaceMode` from the
+Node discovery uses a shared `NodeCatalogView` policy. Creator and Developer both
+start with `common`: generic nodes, utilities, enabled custom nodes, graph-qualified
+task Blocks and Saved Blocks. Independent implementation and experimental filters
+add entries without hiding common ones. `useNodeDiscoveryStore` shares transient
+filters and pipeline/task selection between the library and canvas search. Selection
+is scoped to the current workflow/canvas epoch; it does not adapt existing nodes.
+Saved revisions remain distinct. Upstream implementation blocks and component
+references remain available through the implementation filter.
+
+The Creator/Developer control updates `useSettingsStore.studioViewMode` and restores
+that workspace’s panel preferences. Persistence derives `workspaceMode` from the
 legacy view value; reload accepts either representation, preferring the new name.
 The workflow's `useStudioStore.form.resourceMode` independently owns execution
 planning, including registered-Block authority preparation and selected-node Run.
