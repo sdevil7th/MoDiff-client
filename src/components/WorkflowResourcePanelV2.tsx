@@ -90,8 +90,8 @@ export default function WorkflowResourcePanelV2() {
         Workflow resources
       </h2>
       <p className="text-xs text-modiff-subtle-text">
-        Resources → Automatic chooses supported technical settings. Expert overrides keeps your configured settings. The
-        Auto/Expert view switch only changes editing tools; either view can use either resource policy.
+        Memory → Automatic chooses supported technical settings. Custom keeps your configured settings. Creator and
+        Developer workspaces can use either memory policy; changing workspace preserves this workflow’s settings.
       </p>
       <p className="text-xs text-modiff-subtle-text">
         A loader’s Auto Offload controls where its weights reside. Repeat/Loop controls repeated runs. They are separate
@@ -174,7 +174,7 @@ export default function WorkflowResourcePanelV2() {
               {issue}
             </p>
           ))}
-          <p>Run checks the current graph and available memory again. Expert preserves your explicit settings.</p>
+          <p>Run checks the current graph and available memory again. Custom preserves your explicit settings.</p>
         </div>
       ) : null}
       {prepared.error || error ? (

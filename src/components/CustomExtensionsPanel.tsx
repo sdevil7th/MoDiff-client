@@ -80,7 +80,7 @@ export default function CustomExtensionsPanel() {
       </div>
       <p className="text-xs text-modiff-subtle-text">
         Stage source, inspect its code and dependencies, then explicitly enable it. Enabled nodes appear in search and
-        typed suggestions in Auto and Expert.
+        typed suggestions in Creator and Developer.
       </p>
       <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
         <ModiffFieldShell label="Source type">
@@ -217,7 +217,7 @@ export default function CustomExtensionsPanel() {
               ? 'Author declares no model loading. Auto does not execute custom code during inspection.'
               : inspection.runtimeRole === 'connected_components'
                 ? 'Models must come from connected reviewed loaders. Auto retains owners for custom code.'
-                : 'Use Expert for source with manual resource management.'}
+                : 'Use Custom memory for source with manual resource management.'}
           </DetailLine>
           {inspection.preview
             ? Object.entries(inspection.preview.nodes).map(([action, node]) => (

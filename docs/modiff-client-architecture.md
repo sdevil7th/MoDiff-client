@@ -45,7 +45,7 @@ The backend may use official model libraries maintained and published by Hugging
 
 - `src/main.tsx` mounts the app inside `ModiffSnackbarProvider`, `WebsocketProvider`, and `ReactFlowProvider`.
 - `src/App.tsx` owns the top bar, left rail/panels, central canvas, workflow tabs, right workspace, and app-level Gallery/issues dialogs.
-- `src/components/TopBar.tsx` owns New, workflow Save/Save as, Export, graph-fix review, Auto/Expert, Run mode,
+- `src/components/TopBar.tsx` owns New, workflow Save/Save as, Export, graph-fix review, Creator/Developer, Memory, Run mode,
   context-aware Run/Queue, Stop, runtime-resource status, model/template/settings/Gallery openers, progress, and connection controls.
 - `src/components/Workflow.tsx` owns the React Flow canvas, graph/node drops, node search, connections, selection, and canvas-level dialogs.
 - `src/components/WorkflowTabsBar.tsx` presents local workflow snapshots managed by `useStudioStore`.
@@ -667,11 +667,13 @@ before keyword search. HF Essentials includes only insertable, graph-qualified
 task Blocks; HF implementation blocks and component references remain in
 Advanced. Experimental is separate, and Saved Blocks remain accessible in
 all views. These filters do not rewrite backend identities or add execution
-support. Catalog-tab changes are local presentation state; the Auto/Expert
-control now updates only the persisted global `useSettingsStore.studioViewMode`.
+support. Catalog-tab changes are local presentation state; the Creator/Developer
+control updates the global `useSettingsStore.studioViewMode` and restores that
+workspace’s panel preferences. Persistence derives `workspaceMode` from the
+legacy view value; reload accepts either representation, preferring the new name.
 The workflow's `useStudioStore.form.resourceMode` independently owns execution
 planning, including registered-Block authority preparation and selected-node Run.
-The top-bar Resources control is available in both views. Managed resource-policy
+The top-bar Memory control is available in both workspaces. Managed resource-policy
 edits use the existing form/graph synchronization; presentation changes never call
 that path. `NodeContent` uses authoring mode for advanced-field disclosure and
 resource policy for Auto-managed/override indicators. Field groups keep their

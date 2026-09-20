@@ -556,7 +556,7 @@ function NodeList() {
         {effectiveCatalogView === 'stages'
           ? 'Generic stages, common operations, and installed custom nodes. Find implementation details in Advanced.'
           : effectiveCatalogView === 'essential'
-            ? 'Task blocks and common operations. More nodes are available in Expert.'
+            ? 'Task blocks and common operations. More editing tools are available in the Developer workspace.'
             : effectiveCatalogView === 'advanced'
               ? 'Node entries, upstream blocks, and component references. Check each entry’s readiness.'
               : 'Experimental operations. Model and runtime support vary.'}
@@ -1016,7 +1016,7 @@ function HuggingFaceCatalogEntryRow({
     ? entry.kind === 'block'
       ? `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Add this exact pinned Modular Diffusers definition from ${entry.modularBlockContexts?.length ?? 1} compatible context${(entry.modularBlockContexts?.length ?? 1) === 1 ? '' : 's'} as an ordinary composable node.`
       : entry.readiness === 'graph_qualified'
-        ? `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Runs directly in Expert mode; Auto checks the exact runtime, installed artifacts, and available resources before submission.`
+        ? `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Custom memory settings use your configured recipe; Automatic checks the exact runtime, installed artifacts, and available resources before submission.`
         : `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Insert the reviewed structural Block; execution remains unavailable until its exact graph, artifact, runtime, and resource admission completes.`
     : `${entry.description} ${integrationStatusLabel(entry.integrationStatus)}. Catalog metadata only; insertion is unavailable until its exact graph compiler is admitted.`;
   return entry.insertable ? (

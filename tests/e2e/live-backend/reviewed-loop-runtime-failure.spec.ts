@@ -73,8 +73,9 @@ test('an invalid iteration input fails visibly at the exact Qwen loop without ch
   }, submitted.runtimeHints.workflowSnapshot);
   const root = page.locator(`.react-flow__node-block[data-id="${before.instanceId}"]`);
   await expect(root).toBeVisible();
-  const auto = page.getByTestId('topbar-auto-switch');
-  if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await auto.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await root.locator('header').first().click();
   const responsePromise = page.waitForResponse(
     (response) => response.url().endsWith('/graph') && response.request().method() === 'POST',

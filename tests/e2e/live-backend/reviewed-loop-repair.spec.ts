@@ -567,8 +567,9 @@ for (const scenario of repairCases)
       ),
     );
     if (execute) {
-      const autoSwitch = page.getByTestId('topbar-auto-switch');
-      if ((await autoSwitch.getAttribute('aria-checked')) === 'true') await autoSwitch.click();
+      const autoSwitch = page.getByRole('radio', { name: 'Creator', exact: true });
+      if ((await autoSwitch.getAttribute('aria-checked')) === 'true')
+        await page.getByRole('radio', { name: 'Developer', exact: true }).click();
       await expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
       const server = process.env.MODIFF_LIVE_BACKEND_URL ?? 'http://127.0.0.1:8088';
       const backendRoot = process.env.MODIFF_BACKEND_ROOT ?? resolve(process.cwd(), '..', 'MoDiff');

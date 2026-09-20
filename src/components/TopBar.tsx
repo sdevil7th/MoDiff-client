@@ -60,6 +60,7 @@ import { getDownloadPercent, hasHfDownloadFailed, isHfDownloadActive } from '../
 import { buildOutputWorkflowPackage, buildWorkflowPackage } from '../studio/workflowPackage';
 import { cx } from '../utils/classNames';
 import type { StudioResourceMode } from '../studio/types';
+import { restoreWorkspaceView, workspaceModeForView } from '../studio/workspaceMode';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
 import { useGraphFixModule } from '../studio/useGraphFixModule';
@@ -73,7 +74,7 @@ import {
   ModiffMenuSeparator,
   ModiffMenuSurface,
   ModiffMenuTrigger,
-  ModiffSwitch,
+  ModiffRadioGroup,
   ModiffSelect,
 } from '../ui';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
@@ -771,21 +772,25 @@ function TopBar() {
         >
           <Info size={15} />
         </ModiffIconButton>
-        <ModiffSwitch
-          checked={studioViewMode === 'auto'}
-          onCheckedChange={(checked) => setStudioViewMode(checked ? 'auto' : 'expert')}
-          label={
-            <span className="text-xs font-bold text-modiff-text">
-              {studioViewMode === 'auto' ? 'Auto view' : 'Expert view'}
-            </span>
-          }
-          className="h-9 flex-row-reverse px-1"
-          aria-label={studioViewMode === 'auto' ? 'Use Expert view' : 'Use Auto view'}
-          title="Change editing tools while keeping this workflow’s resource policy."
-          data-testid="topbar-auto-switch"
-        />
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-modiff-subtle-text">Resources</span>
+          <span className="text-xs text-modiff-subtle-text">Workspace</span>
+          <ModiffRadioGroup
+            aria-label="Workspace"
+            data-testid="topbar-workspace"
+            variant="segmented"
+            value={workspaceModeForView(studioViewMode)}
+            onValueChange={(value) => setStudioViewMode(restoreWorkspaceView(value, studioViewMode))}
+            options={[
+              { value: 'creator', label: <span title="Build and run visual workflows">Creator</span> },
+              {
+                value: 'developer',
+                label: <span title="Develop and test nodes and Diffusers workflows">Developer</span>,
+              },
+            ]}
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-modiff-subtle-text">Memory</span>
           <ModiffSelect
             aria-label="Workflow resource policy"
             data-testid="topbar-resource-policy"
@@ -797,7 +802,7 @@ function TopBar() {
             }}
             options={[
               { value: 'auto', label: 'Automatic', disabled: customGraphAutoUnavailable },
-              { value: 'expert', label: 'Expert overrides' },
+              { value: 'expert', label: 'Custom' },
             ]}
           />
         </div>

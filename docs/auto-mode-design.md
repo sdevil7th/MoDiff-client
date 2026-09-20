@@ -2,10 +2,10 @@
 
 Auto is MoDiff's evidence-aware resource planner. It chooses a known local model/runtime recipe for the current task and machine. It is not a hidden benchmark, an automatic quality reducer, a background model probe, or a generic "use less VRAM" switch.
 
-This document describes the **Resources → Automatic** planner and **Expert
-overrides** execution policy. These are independent of the Auto/Expert authoring
-view: developers can use Expert tools with automatic resource management, and
-Auto view can present a workflow with explicit resource overrides.
+This document describes **Memory → Automatic** planning and **Memory → Custom**
+execution settings. These are independent of the **Creator / Developer** workspace:
+both workspaces can use either memory policy. Historical `auto` / `expert` resource
+identifiers remain unchanged in saved workflows and API contracts.
 
 ## User Contract
 

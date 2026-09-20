@@ -317,21 +317,34 @@ unqualified until a retained real-run receipt proves them.
 
 The durable planner contract and model-onboarding checklist are documented in [Auto mode design](docs/auto-mode-design.md).
 
+## Workspace and memory
+
+**Workspace: Creator / Developer** changes editing presentation. Both workspaces
+keep the same editable graph and remember their own panel layout. Switching does
+not change the selected model, workflow values, or memory policy.
+
+**Memory: Automatic / Custom** is a separate workflow setting. Automatic chooses
+a supported resource recipe; Custom retains explicit resource settings. Existing
+Auto/Expert preferences migrate without rewriting saved workflows or resource
+identifiers. The task-first Developer Workflows chooser and unified Nodes library
+are tracked in the [implementation plan](docs/creator-developer-workspaces-plan.md)
+and are not part of this controls update.
+
 ## Custom nodes
 
-Expert exposes **Nodes → Custom nodes** (also in the Models environment panel). Stage a local Python folder, pinned Git source or pinned Hub Modular block, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Auto and Expert. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Auto accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use remains in Expert. Staging/inspection never imports submitted Python or installs dependencies.
+Developer exposes **Nodes → Custom nodes** (also in the Models environment panel). Stage a local Python folder, pinned Git source or pinned Hub Modular block, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Creator and Developer. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Auto accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use requires Custom memory. Staging/inspection never imports submitted Python or installs dependencies.
 
 ## Interface Map
 
-| Area       | Purpose                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| Top bar    | Connection state, New, Auto/Expert, Run mode, Run/Stop, Export, model manager, and settings |
-| Left rail  | Nodes, templates, generated/imported Gallery media, models, and backend workflow files      |
-| Canvas     | Visual graph editing, connections, node actions, and workflow tabs                          |
-| Studio     | Guided task, model, prompt, input, generation, and graph controls                           |
-| Queue      | Current and recent task state, progress, cancellation, and failures                         |
-| Setup      | Backend runtime, capability metadata, model/cache diagnostics, and installation status      |
-| Run as app | Expert-only simplified controls for graphs with a usable output surface                     |
+| Area       | Purpose                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| Top bar    | Connection state, New, Creator/Developer, Memory, Run mode, Run/Stop, Export, model manager, and settings |
+| Left rail  | Nodes, templates, generated/imported Gallery media, models, and backend workflow files                    |
+| Canvas     | Visual graph editing, connections, node actions, and workflow tabs                                        |
+| Studio     | Guided task, model, prompt, input, generation, and graph controls                                         |
+| Queue      | Current and recent task state, progress, cancellation, and failures                                       |
+| Setup      | Backend runtime, capability metadata, model/cache diagnostics, and installation status                    |
+| Run as app | Expert-only simplified controls for graphs with a usable output surface                                   |
 
 Workflow tabs are stored locally in the browser. Each tab preserves its visual graph, viewport, Studio form, graph binding, and template/Gallery provenance where available.
 
@@ -513,7 +526,7 @@ change. When stages share a seed, editing either control updates both; random mo
 uses one draw per run for that group. Select a stage and choose **Inspect selected stage** to see its defaults,
 connected fallbacks, overrides and unsupported settings retained outside execution.
 
-These controls use the same saved canvas graph in Auto and Expert. Existing Blocks
+These controls use the same saved canvas graph in Creator and Developer. Existing Blocks
 keep their current structure and composition inspector. A declared stage graph can
 still require runtime installation, model files, conditioning or resource setup;
 authoring support alone does not qualify model execution.

@@ -238,8 +238,8 @@ export default function CompatibilityPanel() {
     <>
       <div className="grid gap-3 p-3 text-sm text-modiff-text" data-testid="compatibility-panel">
         <p className="text-xs text-modiff-subtle-text">
-          Auto selects a supported local resource recipe. Expert keeps your configured technical settings. Switching
-          preserves the workflow’s nodes, connections and creative controls.
+          Automatic memory selects a supported local resource recipe. Custom keeps your configured technical settings.
+          Switching preserves the workflow’s nodes, connections and creative controls.
         </p>
         <p className="text-xs text-modiff-subtle-text">
           Auto Offload on a loader controls weight placement. Repeat/Loop controls repeated runs. These are separate

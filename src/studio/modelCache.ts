@@ -62,8 +62,8 @@ export function reviewedExpertInstallTarget(
     repo: profile.defaultRepo,
     label: profile.artifactLabel || profile.label,
     reason: status.repairRequired
-      ? 'Repair the exact reviewed model revision and file selection required by this Expert workflow.'
-      : 'Install the exact reviewed model revision and file selection required by this Expert workflow.',
+      ? 'Repair the exact reviewed model revision and file selection required by this workflow.'
+      : 'Install the exact reviewed model revision and file selection required by this workflow.',
     actionLabel: status.repairRequired ? 'Repair' : 'Install',
     repair: status.repairRequired,
     revision,

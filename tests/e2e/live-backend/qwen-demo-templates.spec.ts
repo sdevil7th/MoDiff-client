@@ -88,8 +88,9 @@ for (const templateId of ['qwen_product_mockup', 'qwen_product_relight']) {
       expect(lora, 'The template must include its declared Lightning adapter').toBeTruthy();
       expect(before.edges.some((edge) => edge.source === lora!.id)).toBe(true);
     }
-    const auto = page.getByTestId('topbar-auto-switch');
-    if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+    const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+    if ((await auto.getAttribute('aria-checked')) === 'true')
+      await page.getByRole('radio', { name: 'Developer', exact: true }).click();
     await expect(auto).toHaveAttribute('aria-checked', 'false');
     await expect.poll(async () => (await state()).studio.graphFinalization?.status).toBe('complete');
     const after = await inspect(page);

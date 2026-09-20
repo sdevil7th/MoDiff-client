@@ -5276,17 +5276,14 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
 }
 
 async function setStudioViewMode(page: Page, mode: 'auto' | 'expert') {
-  const toggle = page.getByTestId('topbar-auto-switch');
-  const expected = mode === 'auto' ? 'true' : 'false';
-  if ((await toggle.getAttribute('aria-checked')) !== expected) {
-    await toggle.click();
-  }
-  await expect(toggle).toHaveAttribute('aria-checked', expected);
+  const option = page.getByRole('radio', { name: mode === 'auto' ? 'Creator' : 'Developer', exact: true });
+  await option.click();
+  await expect(option).toHaveAttribute('aria-checked', 'true');
 }
 
 async function setWorkflowResourceMode(page: Page, mode: 'auto' | 'expert') {
   const control = page.getByTestId('topbar-resource-policy');
-  const label = mode === 'auto' ? 'Automatic' : 'Expert overrides';
+  const label = mode === 'auto' ? 'Automatic' : 'Custom';
   if ((await control.textContent())?.trim() !== label) {
     await control.click();
     await page.getByRole('option', { name: label, exact: true }).click();
@@ -5857,8 +5854,8 @@ test('custom workspace installs graph models without applying hidden form state 
   await expect(install).toBeVisible();
   await expect(page.getByTestId('studio-install-graph-model-missing/SecondGraphModel')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Install Z-Image Turbo', exact: true })).toHaveCount(0);
-  if ((await page.getByTestId('topbar-auto-switch').getAttribute('aria-checked')) === 'true') {
-    await page.getByTestId('topbar-auto-switch').click();
+  if ((await page.getByRole('radio', { name: 'Creator', exact: true }).getAttribute('aria-checked')) === 'true') {
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   }
   await expect(install).toBeVisible();
   const calls: Array<Record<string, unknown>> = [];
@@ -6082,7 +6079,7 @@ test('a graph-qualified Qwen catalog drag inserts one durable V2 Block and prese
   // placement graph above. Production pins remain unchanged by the helper and
   // are audited separately against the complete backend registry.
   expect(autoEligibility).toMatchObject({ eligible: true, code: 'eligible', rootId });
-  const autoSwitch = page.getByTestId('topbar-auto-switch');
+  const autoSwitch = page.getByRole('radio', { name: 'Creator', exact: true });
   await expect(autoSwitch).toBeEnabled();
   await expect(autoSwitch).toHaveAttribute('aria-checked', 'true');
 
@@ -6500,7 +6497,7 @@ test('a graph-qualified Qwen catalog drag inserts one durable V2 Block and prese
   expect(userNodeWriteRequests).toBe(0);
   // Reload removes the fixture's source pin. Workflow Auto remains available,
   // but its next Run must get a fresh plan for the actual exported graph.
-  await expect(page.getByTestId('topbar-auto-switch')).toBeEnabled();
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toBeEnabled();
 });
 
 test('canvas-scoped dynamic publications retain tab ownership across duplicate node ids', async ({ page }) => {
@@ -11445,8 +11442,8 @@ test('mocked Studio switches managed recipes to compact custom graph inspector a
       nodeCount: 6,
       resourceMode: 'auto',
     });
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByTestId('topbar-auto-switch')).toBeEnabled();
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toBeEnabled();
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Current graph');
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
@@ -11513,7 +11510,7 @@ test('mocked template workflow blocks stay managed and restore with Studio promp
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Current task');
   await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
-  await expect(page.getByTestId('topbar-auto-switch')).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toBeVisible();
   await expect(page.getByTestId('studio-resource-mode-select')).toHaveCount(0);
   await expect(page.getByTestId('studio-header-resource-mode-select')).toHaveCount(0);
   await expect(page.getByTestId('studio-section-panel-prompt')).toBeVisible();
@@ -13973,6 +13970,50 @@ test('mocked Studio consumes the exact execution-profile Expert MPS policy', asy
   await expect(issues).toContainText('limited Apple Silicon qualification');
 });
 
+test('Creator and Developer migrate old preferences and support keyboard switching independently of memory', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('modiff.settings')) {
+      localStorage.setItem('modiff.settings', JSON.stringify({ state: { studioViewMode: 'manual' }, version: 0 }));
+    }
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  const workspace = page.getByRole('radiogroup', { name: 'Workspace', exact: true });
+  const developer = workspace.getByRole('radio', { name: 'Developer', exact: true });
+  const creator = workspace.getByRole('radio', { name: 'Creator', exact: true });
+  await expect(developer).toHaveAttribute('aria-checked', 'true');
+  await setWorkflowResourceMode(page, 'expert');
+  const snapshot = () =>
+    page.evaluate(() => {
+      const { flow, studio } = window.__MODIFF_E2E__!.getState();
+      return { flow, form: studio.form, tab: studio.activeWorkflowTabId };
+    });
+  const before = await snapshot();
+  await developer.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(creator).toBeFocused();
+  await expect(creator).toHaveAttribute('aria-checked', 'true');
+  expect(await snapshot()).toEqual(before);
+  await page.keyboard.press('ArrowRight');
+  await expect(developer).toBeFocused();
+  await expect(developer).toHaveAttribute('aria-checked', 'true');
+  expect(await snapshot()).toEqual(before);
+  await expect
+    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('modiff.settings')!).state.workspaceMode))
+    .toBe('developer');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  await expect(developer).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Custom');
+  expect((await snapshot()).form).toEqual(before.form);
+});
+
 test('workbench resource overrides survive view changes, tabs, refresh and graph Undo', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
@@ -13981,11 +14022,16 @@ test('workbench resource overrides survive view changes, tabs, refresh and graph
   await dismissTaskLauncher(page);
   await setStudioViewMode(page, 'auto');
   await setWorkflowResourceMode(page, 'expert');
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'true');
   await page.getByTestId('left-tab-nodes').click();
   await page.getByLabel('Search nodes', { exact: true }).fill('Preview');
   await page.getByTestId('node-row-modules-Image-Preview').click();
   await expect(page.locator('.react-flow__node-custom')).toHaveCount(1);
+  // Wait for the new disconnected Preview's diagnostic paint before comparing
+  // the complete graph, including its UI state, across workspace changes.
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes[0]?.uiState?.validationSeverity))
+    .toBe('error');
   const snapshot = () =>
     page.evaluate(() => {
       const { flow, studio } = window.__MODIFF_E2E__!.getState();
@@ -14006,14 +14052,14 @@ test('workbench resource overrides survive view changes, tabs, refresh and graph
   await page.getByTestId('workflow-tab-new').click();
   await dismissTaskLauncher(page);
   await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'false');
   await page.getByTestId(`workflow-tab-${before.tab}`).click();
-  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Expert overrides');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Custom');
   await setStudioViewMode(page, 'auto');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Expert overrides');
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Custom');
   expect((await snapshot()).form).toEqual(before.form);
   expect((await snapshot()).flow.nodes.map(({ id }) => id)).toEqual(before.flow.nodes.map(({ id }) => id));
 });
@@ -14188,7 +14234,7 @@ test('workbench authoring modes preserve the exact Qwen graph and automatic reso
   }
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form))
@@ -24721,6 +24767,10 @@ test('custom source review requires consent and enabled nodes join typed search 
   await suggestions.getByRole('option', { name: 'M6 Echo', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
   await setStudioViewMode(page, 'auto');
+  // Each workspace restores its own panel layout. Open Creator's Nodes library
+  // explicitly before asserting that enabled custom nodes remain discoverable.
+  await page.getByTestId('left-tab-nodes').click();
+  await page.getByLabel('Search nodes', { exact: true }).fill('M6 Echo');
   await expect(page.getByTestId('node-row-custom-Example-Echo')).toBeVisible();
   expect(approvals).toHaveLength(1);
   expect(errors).toEqual([]);

@@ -6968,7 +6968,7 @@ test('Expert Model Manager installs only an exact reviewed immutable snapshot af
   assert.deepEqual(modelCacheModule.reviewedExpertInstallTarget(profile, status), {
     repo: 'Lightricks/LTX-2',
     label: profile.artifactLabel || profile.label,
-    reason: 'Install the exact reviewed model revision and file selection required by this Expert workflow.',
+    reason: 'Install the exact reviewed model revision and file selection required by this workflow.',
     actionLabel: 'Install',
     repair: false,
     revision,

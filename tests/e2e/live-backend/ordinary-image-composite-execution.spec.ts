@@ -167,8 +167,9 @@ test(`ordinary image composite preserves edited values through native Save, expa
   // This qualification deliberately selects a fixed resource recipe. Make
   // Expert an explicit native user choice, not a store injection or accidental
   // reliance on Auto choosing the same offload/quantization configuration.
-  const autoSwitch = page.getByTestId('topbar-auto-switch');
-  if ((await autoSwitch.getAttribute('aria-checked')) === 'true') await autoSwitch.click();
+  const autoSwitch = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoSwitch.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
   const originals = await page.evaluate(
     async ({ rootId, values, preprocessControl }) => {

@@ -1620,7 +1620,7 @@ export default function StudioPanel() {
           {expertAuthoringMode && (
             <StudioSection id="runtime" title="Runtime">
               <section className="grid gap-2" data-testid="studio-expert-runtime-controls">
-                <SectionHeader title="Expert runtime" />
+                <SectionHeader title="Custom runtime settings" />
                 <div className="flex gap-2">
                   <StudioSelect
                     aria-label="Data type"
@@ -1784,7 +1784,7 @@ export default function StudioPanel() {
           {expertAuthoringMode ? (
             <p className="border-t border-modiff-border pt-3 text-xs text-modiff-subtle-text">
               {graphBinding
-                ? 'Studio is linked to graph nodes. Expert graph edits remain visible on the canvas.'
+                ? 'Studio is linked to graph nodes. Workflow edits remain visible on the canvas.'
                 : 'Custom graph mode: add nodes, connect an output, or start from a template.'}
             </p>
           ) : null}

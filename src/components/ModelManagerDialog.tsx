@@ -267,7 +267,7 @@ function compactHealthBadge(label: string) {
   if (label === 'Not suitable locally' || label === 'Will not work on this machine') return 'Blocked';
   if (label === 'Repair required') return 'Repair';
   if (label === 'Failed here before') return 'Failed';
-  if (label === 'Expert only') return 'Expert';
+  if (label === 'Expert only') return 'Custom memory';
   if (label === 'Needs setup') return 'Install';
   if (label === 'Install model' || label === 'Install Auto artifact') return 'Install';
   return label;
@@ -1331,7 +1331,7 @@ function ModelManagerDialog({
                       <Settings size={15} className="text-hf-yellow" />
                       Diagnostics
                     </span>
-                    <StatusPill tone="default">Expert</StatusPill>
+                    <StatusPill tone="default">Developer</StatusPill>
                   </span>
                 }
                 buttonClassName="p-0"

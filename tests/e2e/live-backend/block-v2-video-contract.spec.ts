@@ -158,10 +158,11 @@ async function dismissTaskLauncher(page: Page, waitForAppearance = false) {
 }
 
 async function ensureExpertMode(page: Page) {
-  const auto = page.getByTestId('topbar-auto-switch');
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
   await waitForWorkspace(page);
   await dismissTaskLauncher(page);
-  if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+  if ((await auto.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(auto).toHaveAttribute('aria-checked', 'false');
 }
 

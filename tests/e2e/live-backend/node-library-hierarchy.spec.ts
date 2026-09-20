@@ -45,8 +45,9 @@ test('every node library segment exposes a nested browse hierarchy and search re
   await ready(page);
   const advanced = page.getByRole('button', { name: /Advanced workflow/u });
   if (await advanced.isVisible()) await advanced.click();
-  const auto = page.getByTestId('topbar-auto-switch');
-  if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await auto.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await page.getByTestId('left-tab-nodes').click();
   await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
   const paths: Record<string, string[]> = {};

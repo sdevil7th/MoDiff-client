@@ -108,7 +108,7 @@ test('revalidate the saved model handoff workflow without repeating authoring', 
   await page.getByTestId('saved-workflow-auto-lifecycle-demo-20260911').getByRole('button').first().click();
   await expect(page.getByTestId(`user-block-${rootId}`)).toBeVisible();
   await page.getByTestId('arrange-graph').click();
-  const mode = page.getByTestId('topbar-auto-switch');
+  const mode = page.getByRole('radio', { name: 'Creator', exact: true });
   if ((await mode.getAttribute('aria-checked')) !== 'true') await mode.click();
   await retainRun(page, title, rootId);
   const after = await inspect(page);

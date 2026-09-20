@@ -100,8 +100,9 @@ test('authored audio template preserves settings through the requested native li
   await expect(advanced).toBeVisible();
   await advanced.click();
   await expect(advanced).toHaveCount(0);
-  const auto = page.getByTestId('topbar-auto-switch');
-  if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await auto.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await page.getByTestId('topbar-templates').click();
   await page.getByTestId('template-browser-search').fill(
     templateId.startsWith('minimax')

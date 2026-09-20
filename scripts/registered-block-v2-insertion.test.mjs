@@ -1523,6 +1523,62 @@ test('an exact Qwen cluster always submits a workflow Auto plan from top-bar and
   assert.equal(requests.length, 1, 'a rejected plan must never fall through to Expert submission');
 });
 
+test('workspace preferences migrate legacy views and round-trip without changing workflow resources', () => {
+  const settings = settingsStore.useSettingsStore;
+  const options = settings.persist.getOptions();
+  const before = structuredClone(studioStore.useStudioStore.getState().form);
+  for (const [persisted, view] of [
+    [{ workspaceMode: 'developer', studioViewMode: 'auto' }, 'expert'],
+    [{ workspaceMode: 'creator', studioViewMode: 'expert' }, 'auto'],
+    [{ studioViewMode: 'manual' }, 'expert'],
+    [{ studioViewMode: 'expert' }, 'expert'],
+    [{ studioViewMode: 'auto' }, 'auto'],
+    [{ workspaceMode: 'invalid', studioViewMode: 'expert' }, 'expert'],
+    [{ workspaceMode: { value: 'developer' } }, 'auto'],
+  ]) {
+    const restored = options.merge(persisted, settings.getState());
+    assert.equal(restored.studioViewMode, view);
+    const saved = options.partialize(restored);
+    assert.equal(saved.workspaceMode, view === 'expert' ? 'developer' : 'creator');
+    assert.equal(saved.studioViewMode, view, 'legacy clients can still restore the same presentation');
+    assert.equal(options.merge(saved, settings.getState()).studioViewMode, view);
+    assert.deepEqual(studioStore.useStudioStore.getState().form, before);
+  }
+});
+
+test('workspace panels restore independently across switches and reload without accepting invalid saved shapes', () => {
+  const settings = settingsStore.useSettingsStore;
+  settings.getState().resetToDefault();
+  settings.getState().setLeftPanelOpen(true);
+  settings.getState().setLeftPanelTabIndex(1);
+  settings.getState().setLeftPanelWidth(360);
+  settings.getState().setStudioViewMode('expert');
+  settings.getState().setLeftPanelTabIndex(0);
+  settings.getState().setLeftPanelWidth(480);
+  settings.getState().setRightPanelTab('queue');
+  settings.getState().setStudioViewMode('auto');
+  assert.equal(settings.getState().leftPanelTabIndex, 1);
+  assert.equal(settings.getState().leftPanelWidth, 360);
+  assert.equal(settings.getState().rightPanelTab, 'studio');
+  const options = settings.persist.getOptions();
+  settings.setState(options.merge(options.partialize(settings.getState()), settings.getState()));
+  settings.getState().setStudioViewMode('expert');
+  assert.equal(settings.getState().leftPanelTabIndex, 0);
+  assert.equal(settings.getState().leftPanelWidth, 480);
+  assert.equal(settings.getState().rightPanelTab, 'queue');
+  const restored = options.merge(
+    { workspacePanelPreferences: { creator: { leftPanelWidth: 'wide' }, developer: null } },
+    settings.getState(),
+  );
+  assert.deepEqual(restored.workspacePanelPreferences, {});
+  const malformed = { ...settings.getState().workspacePanelPreferences.creator, rightPanelTab: { toString: null } };
+  assert.deepEqual(
+    options.merge({ workspacePanelPreferences: { creator: malformed } }, settings.getState()).workspacePanelPreferences,
+    {},
+  );
+  settings.getState().resetToDefault();
+});
+
 test('legacy authoring and resource settings retain independent meanings on restore', () => {
   const settings = settingsStore.useSettingsStore;
   for (const [savedView, view] of [

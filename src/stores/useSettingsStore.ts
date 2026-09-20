@@ -7,6 +7,14 @@ import type { FocusedModelManagerTarget, StudioViewMode, WorkspacePanelTab } fro
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
 import type { MediaKind } from '../studio/mediaCapabilities';
+import {
+  restoreWorkspaceView,
+  workspaceModeForView,
+  workspacePanels,
+  restoreWorkspacePanels,
+  type WorkspaceMode,
+  type WorkspacePanels,
+} from '../studio/workspaceMode';
 
 const LEFT_PANEL_WIDTH_MIN = 240;
 const RIGHT_PANEL_WIDTH_MIN = 320;
@@ -34,6 +42,7 @@ interface SettingsState {
 
   executeButtonIndex: number;
   studioViewMode: StudioViewMode;
+  workspacePanelPreferences: Partial<Record<WorkspaceMode, WorkspacePanels>>;
 
   activeNodeGroups: string[];
   nodeGroupBy: 'module' | 'category';
@@ -177,6 +186,7 @@ const defaultState: SettingsState = {
   rightPanelTab: 'studio',
   executeButtonIndex: 0,
   studioViewMode: 'auto',
+  workspacePanelPreferences: {},
   activeNodeGroups: [],
   nodeGroupBy: 'module',
   userBlockGrouping: 'source',
@@ -219,7 +229,21 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       setRightPanelTab: (tab: WorkspacePanelTab) => set({ rightPanelTab: tab }),
 
       setExecuteButtonIndex: (index: number) => set({ executeButtonIndex: index }),
-      setStudioViewMode: (mode: StudioViewMode) => set({ studioViewMode: mode === 'expert' ? 'expert' : 'auto' }),
+      setStudioViewMode: (mode: StudioViewMode) =>
+        set((state) => {
+          const view = mode === 'expert' ? 'expert' : 'auto';
+          if (view === state.studioViewMode) return state;
+          const panels = workspacePanels(state);
+          return {
+            ...panels,
+            ...state.workspacePanelPreferences[workspaceModeForView(view)],
+            studioViewMode: view,
+            workspacePanelPreferences: {
+              ...state.workspacePanelPreferences,
+              [workspaceModeForView(state.studioViewMode)]: panels,
+            },
+          };
+        }),
 
       setActiveNodeGroups: (group: string) => {
         const current = get().activeNodeGroups;
@@ -285,12 +309,15 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       name: SETTINGS_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       merge: (persisted, current) => {
-        const value = persisted && typeof persisted === 'object' ? (persisted as Partial<SettingsState>) : {};
-        const legacyMode = (value as { studioViewMode?: unknown }).studioViewMode;
+        const { workspaceMode, ...value } =
+          persisted && typeof persisted === 'object'
+            ? (persisted as Partial<SettingsState> & { workspaceMode?: unknown })
+            : {};
         return {
           ...current,
           ...value,
-          studioViewMode: legacyMode === 'manual' || legacyMode === 'expert' ? 'expert' : 'auto',
+          studioViewMode: restoreWorkspaceView(workspaceMode, value.studioViewMode),
+          workspacePanelPreferences: restoreWorkspacePanels(value.workspacePanelPreferences),
           userBlockGrouping: value.userBlockGrouping === 'workflow' ? 'workflow' : 'source',
           modelTermsAcknowledgements:
             value.modelTermsAcknowledgements && typeof value.modelTermsAcknowledgements === 'object'
@@ -305,7 +332,8 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
         volatileKeys.forEach((key) => delete persistedState[key]);
 
         // return the state without the volatile keys
-        return persistedState as SettingsState;
+        // Derive both names from one live preference, retaining older-client restore.
+        return { ...persistedState, workspaceMode: workspaceModeForView(state.studioViewMode) } as SettingsState;
       },
     },
   ),
