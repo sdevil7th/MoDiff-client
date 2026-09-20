@@ -557,6 +557,11 @@ Implementation includes defaults, connected fallbacks, overrides and unsupported
 settings retained outside execution. Metadata inspection does not load models or
 execute custom source.
 
+Existing Blocks with a model-route selector keep separate workflow drafts when
+switching. You can cancel while the destination loads. A newer graph edit or
+workflow change cancels the pending switch; connected outputs are checked against
+the actual restored interface before applying.
+
 These controls use the same saved canvas graph in Creator and Developer. Existing Blocks
 keep their current structure and composition inspector. A graph of generic nodes can
 still require runtime installation, model files, conditioning or resource setup;

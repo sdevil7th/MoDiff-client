@@ -2547,3 +2547,136 @@ test('workflow replacement during a deferred field action aborts and cleans the 
   assert.equal(flowStore.useFlowStore.getState().historyPast.length, 0);
   assert.equal(persistedFlowText().includes('blockCompilationTransientV2'), false);
 });
+
+for (const change of ['workflow', 'edit', 'cancel', 'gesture', 'none']) {
+  test(`a delayed registered Block switch preserves its owner after ${change}`, async () => {
+    const switching = await server.ssrLoadModule('/src/studio/registeredBlockRouteSwitchV1.ts');
+    const configured = fixture();
+    const root = await insertion.createHuggingFaceClusterForGraph(configured.definition, { x: 80, y: 90 }, form());
+    // Existing workflow route state intentionally exercises the compatibility
+    // path. New modelVariant Blocks are not converted to legacy route sets.
+    root.data.blockInstanceV2.routeSelection = {
+      schemaVersion: 1,
+      routeSetId: 'diffusers.route-set:text-to-image:v1',
+      selectedRouteKey: 'qwen-image-2512',
+      inactiveDrafts: {},
+    };
+    const target = fluxFixture();
+    configureFixture(target);
+    libraryStore.useHuggingFaceNodeLibraryStore.setState({
+      library: fixtureLibrary([configured.definition, target.definition], target.blockDefinitions),
+      loaded: true,
+    });
+    flowStore.useFlowStore.getState().replaceGraph({ nodes: [root, baseNode()], edges: [] });
+    flowStore.useFlowStore.getState().resetHistory();
+    const original = flowStore.useFlowStore.getState().toObject();
+    const fetch = globalThis.fetch;
+    const entered = deferred();
+    const release = deferred();
+    globalThis.fetch = async (url, init) => {
+      entered.resolve();
+      await release.promise;
+      return fetch(url, init);
+    };
+    const controller = new AbortController();
+    const pending = switching.switchRegisteredBlockRouteV1(root.id, 'flux-1-dev', { signal: controller.signal });
+    // Observe rejection immediately so cancellation cannot become an unhandled
+    // rejection while the deliberately delayed metadata server finishes.
+    const settled = pending.then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+    await entered.promise;
+    if (change === 'workflow') {
+      studioStore.useStudioStore.setState({ activeWorkflowTabId: 'different-workflow', workflowCanvasEpoch: 2 });
+    } else if (change === 'edit') {
+      flowStore.useFlowStore.getState().setBlockInstanceValueV2(root.id, 'prompt', 'Newer draft must survive');
+    } else if (change === 'cancel') controller.abort();
+    else if (change === 'gesture') flowStore.useFlowStore.getState().beginHistoryTransaction('Unfinished gesture');
+    const before = flowStore.useFlowStore.getState().toObject();
+    const history = structuredClone(flowStore.useFlowStore.getState().historyPast);
+    release.resolve();
+    const result = await settled;
+    if (change === 'none') {
+      assert.equal(result.error, undefined);
+      assert.equal(result.value.definitionSnapshot.source.pipelineClass, 'FluxModularPipeline');
+      assert.equal(flowStore.useFlowStore.getState().historyPast.length, 1);
+      flowStore.useFlowStore.getState().undo();
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), original);
+      flowStore.useFlowStore.getState().redo();
+      assert.equal(
+        flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot.source.pipelineClass,
+        'FluxModularPipeline',
+      );
+    } else {
+      assert.ok(result.error, `The ${change} must reject the delayed switch`);
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), before);
+      assert.deepEqual(flowStore.useFlowStore.getState().historyPast, history);
+    }
+  });
+}
+
+for (const hasRestoredPort of [false, true]) {
+  test(`Block switching validates the restored interface when a custom port is ${hasRestoredPort ? 'present' : 'absent'}`, async () => {
+    const routes = await server.ssrLoadModule('/src/studio/blockRouteSelectionV1.ts');
+    const qwen = fixture();
+    const qwenRoot = await insertion.createHuggingFaceClusterForGraph(qwen.definition, { x: 80, y: 90 }, form());
+    const flux = fluxFixture();
+    configureFixture(flux);
+    const fluxRoot = await insertion.createHuggingFaceClusterForGraph(flux.definition, { x: 80, y: 90 }, form());
+    const routeState = (selectedRouteKey) => ({
+      schemaVersion: 1,
+      routeSetId: 'diffusers.route-set:text-to-image:v1',
+      selectedRouteKey,
+      inactiveDrafts: {},
+    });
+    const sourceFlux = { ...fluxRoot.data.blockInstanceV2, routeSelection: routeState('flux-1-dev') };
+    const portId = hasRestoredPort ? 'detail_image' : 'images';
+    const changeOutputs = (instance, add) =>
+      blockRuntime.replaceBlockEffectiveInterfaceV2(instance, {
+        ...instance.effectiveInterface,
+        boundary: {
+          ...instance.effectiveInterface.boundary,
+          outputs: add
+            ? [
+                ...instance.effectiveInterface.boundary.outputs,
+                { ...instance.effectiveInterface.boundary.outputs[0], portId: 'detail_image' },
+              ]
+            : instance.effectiveInterface.boundary.outputs.filter((p) => p.portId !== 'images'),
+        },
+      });
+    const editedFlux = changeOutputs(sourceFlux, hasRestoredPort);
+    let current = routes.switchBlockRouteInstanceV1(editedFlux, 'qwen-image-2512', qwenRoot.data.blockInstanceV2);
+    if (hasRestoredPort) current = changeOutputs(current, true);
+    const owner = blockRuntime.createBlockRootNodeV2(current);
+    const edge = {
+      id: 'public-output',
+      source: owner.id,
+      sourceHandle: portId,
+      target: baseNode().id,
+      targetHandle: 'image',
+      type: 'default',
+    };
+    flowStore.useFlowStore.getState().replaceGraph({ nodes: [owner, baseNode()], edges: [edge] });
+    flowStore.useFlowStore.getState().resetHistory();
+    const before = flowStore.useFlowStore.getState().toObject();
+    const change = () =>
+      flowStore.useFlowStore.getState().switchBlockRouteV1(owner.id, 'flux-1-dev', fluxRoot.data.blockInstanceV2);
+    if (hasRestoredPort) {
+      change();
+      const after = flowStore.useFlowStore.getState().toObject();
+      assert.deepEqual(after.edges, before.edges);
+      assert.deepEqual(after.nodes[0].data.blockInstanceV2.effectiveInterface, editedFlux.effectiveInterface);
+      assert.deepEqual(after.nodes[0].data.blockInstanceV2.definitionSnapshot, sourceFlux.definitionSnapshot);
+      assert.equal(flowStore.useFlowStore.getState().historyPast.length, 1);
+      flowStore.useFlowStore.getState().undo();
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), before);
+      flowStore.useFlowStore.getState().redo();
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), after);
+    } else {
+      assert.throws(change, /images is connected.*does not expose/u);
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), before);
+      assert.equal(flowStore.useFlowStore.getState().historyPast.length, 0);
+    }
+  });
+}

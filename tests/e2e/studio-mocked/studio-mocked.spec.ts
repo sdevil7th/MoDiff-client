@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Locator } from '@playwright/test';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
@@ -26369,5 +26370,120 @@ for (const search of ['Flux Denoise Step', 'Sequential Pipeline Blocks', 'Flux T
     await page.keyboard.press('Control+Shift+z');
     await expect.poll(async () => (await read()).nodes.length).toBe(1);
     await page.screenshot({ path: test.info().outputPath('catalog-implementation.png'), animations: 'disabled' });
+  });
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} legacy Block model switch cancels metadata, retries and preserves its draft`, async ({ page }) => {
+    const python =
+      process.env.MODIFF_BACKEND_PYTHON ||
+      path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    const script = path.join(CLIENT_ROOT, 'scripts', 'block-route-fixtures.py');
+    const command = process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
+    const { stdout } = await promisify(execFile)(command, process.platform === 'win32' ? [script] : [python, script], {
+      cwd: BACKEND_ROOT,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    const fixture = JSON.parse(stdout) as {
+      library: unknown;
+      entries: import('../../../src/studio/registeredBlockV2CompiledCatalog').RegisteredBlockV2CompiledCatalogEntry[];
+    };
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.route('**/huggingface/node-library', (route) => route.fulfill({ json: fixture.library }));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let requested = 0;
+    let completed = false;
+    await page.route('**/huggingface/registered-block-v2**', async (route) => {
+      const url = new URL(route.request().url());
+      const entry = fixture.entries.find((e) => e.admissionId === url.searchParams.get('admission_id'));
+      expect(entry).toBeTruthy();
+      requested++;
+      if (requested === 1) await gate;
+      await route.fulfill({ json: { schemaVersion: 1, error: false, entry } });
+      completed = true;
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    // Seed an existing saved route-selection workflow. All actions below are
+    // native; this does not invent new route support or execute either model.
+    await page.evaluate(async (entry) => {
+      const [
+        { createBlockInstanceV2 },
+        { createBlockRootNodeV2 },
+        { useFlowStore },
+        { prepareWorkflowForManualInsertion },
+      ] = await Promise.all([
+        import('/src/studio/blockSchemaV2.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/manualGraphInsertion.ts'),
+      ]);
+      const instance = createBlockInstanceV2(entry.definition, {
+        instanceId: 'legacy-model-owner',
+        size: { width: 520, height: 640 },
+        position: { x: 80, y: 90 },
+        values: entry.values,
+        internalLayout: entry.internalLayout,
+        internalLayoutMode: entry.internalLayoutMode,
+      });
+      instance.routeSelection = {
+        schemaVersion: 1,
+        routeSetId: 'diffusers.route-set:text-to-image:v1',
+        selectedRouteKey: 'qwen-image-2512',
+        inactiveDrafts: {},
+      };
+      prepareWorkflowForManualInsertion();
+      useFlowStore.getState().replaceGraph({ nodes: [createBlockRootNodeV2(instance)], edges: [] });
+    }, fixture.entries[0]!);
+    const root = page.locator('.react-flow__node[data-id="legacy-model-owner"]');
+    await root.getByLabel('prompt', { exact: true }).fill('Keep my copper observatory and its saved route draft');
+    await root.getByLabel('prompt', { exact: true }).blur();
+    await waitForOperationGraphToSettle(page);
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const before = await read();
+    const choose = async (save = false) => {
+      await root.getByTestId('block-v2-route-select-legacy-model-owner').click();
+      await page.getByRole('option', { name: 'FLUX.1 Dev', exact: true }).click();
+      const dialog = page.getByTestId('switch-block-route-v1-legacy-model-owner');
+      await expect(dialog).toBeVisible();
+      await dialog
+        .getByRole('button', { name: save ? 'Save active route and switch' : 'Keep draft and switch', exact: true })
+        .click();
+      return dialog;
+    };
+    let dialog = await choose();
+    await expect.poll(() => requested).toBe(1);
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    release();
+    await expect.poll(() => completed).toBe(true);
+    expect(await read()).toEqual(before);
+    dialog = await choose(workspace === 'expert');
+    await expect(dialog).toHaveCount(0);
+    await expect(root.getByTestId('block-v2-route-select-legacy-model-owner')).toContainText('FLUX.1 Dev');
+    await expect(root.getByLabel('prompt', { exact: true })).toHaveValue(
+      'Keep my copper observatory and its saved route draft',
+    );
+    await page.locator('.react-flow__pane').click({ position: { x: 100, y: 60 } });
+    await page.keyboard.press('Control+z');
+    await expect(root.getByTestId('block-v2-route-select-legacy-model-owner')).toContainText('Qwen Image 2512');
+    await page.keyboard.press('Control+Shift+z');
+    await expect(root.getByTestId('block-v2-route-select-legacy-model-owner')).toContainText('FLUX.1 Dev');
+    await page.keyboard.press('Control+Shift+s');
+    await page.getByTestId('save-workflow-name').fill(`Legacy Block switch ${workspace}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(root.getByTestId('block-v2-route-select-legacy-model-owner')).toContainText('FLUX.1 Dev');
+    await expect(root.getByLabel('prompt', { exact: true })).toHaveValue(
+      'Keep my copper observatory and its saved route draft',
+    );
+    await page.screenshot({ path: test.info().outputPath('legacy-route-draft.png'), animations: 'disabled' });
   });
 }

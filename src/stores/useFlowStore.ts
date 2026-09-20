@@ -1926,6 +1926,8 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       switchBlockRouteV1: (id, routeKey, compiledDestination) => {
+        if (get().historyTransaction)
+          throw new Error('Finish the current canvas gesture before changing this Block model.');
         get().withHistory('Switch block model route', () => {
           set((state) => {
             const root = state.nodes.find((candidate) => candidate.id === id);
@@ -1934,10 +1936,11 @@ export const useFlowStore = create<FlowStore>()(
               root.data.blockInstanceV2.previewStates.some(({ status }) => status === 'queued' || status === 'running')
             )
               throw new Error('Cannot switch this Block while its current run is queued or running.');
-            assertBlockRouteEdgesCompatibleV1(root.data.blockInstanceV2, compiledDestination, state.edges);
-            const graph = updateBlockInstanceV2(state, id, (instance) =>
-              switchBlockRouteInstanceV1(instance, routeKey, compiledDestination),
-            );
+            const destination = switchBlockRouteInstanceV1(root.data.blockInstanceV2, routeKey, compiledDestination);
+            // A restored route draft may have a customized public interface.
+            // Check the actual destination, not just its registered defaults.
+            assertBlockRouteEdgesCompatibleV1(root.data.blockInstanceV2, destination, state.edges);
+            const graph = updateBlockInstanceV2(state, id, () => destination);
             if (!graph) throw new Error(`Block V2 root ${id} could not be switched.`);
             return { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) };
           });

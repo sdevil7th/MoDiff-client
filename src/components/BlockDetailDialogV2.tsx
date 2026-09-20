@@ -21,15 +21,13 @@ export default function BlockDetailDialogV2(props: Props) {
   return (
     <ModiffDialog
       open
-      onClose={() => !props.busy && props.onClose()}
+      onClose={props.onClose}
       title="Switch model route"
       testId={`switch-block-route-v1-${props.nodeId}`}
       panelClassName="max-w-lg"
       footer={
         <>
-          <ModiffButton disabled={props.busy} onClick={props.onClose}>
-            Cancel
-          </ModiffButton>
+          <ModiffButton onClick={props.onClose}>Cancel</ModiffButton>
           <ModiffButton disabled={props.busy} onClick={() => props.onSwitch(true)}>
             Save active route and switch
           </ModiffButton>
