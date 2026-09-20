@@ -2,6 +2,7 @@ import type { Edge } from '@xyflow/react';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
+import { remapOperationAuthoring } from '../workflow/operationSharedInputs';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from './blockCrossingConnectionsV2';
 import {
   blockGraphHashV2,
@@ -1365,9 +1366,36 @@ function projectedNodeData(
     resizable: true,
     ...(typeof raw.description === 'string' ? { description: raw.description } : {}),
     ...(typeof raw.skipParamsCheck === 'boolean' ? { skipParamsCheck: raw.skipParamsCheck } : {}),
+    ...(raw.operationAuthoring
+      ? {
+          operationAuthoring: remapOperationAuthoring(raw.operationAuthoring, (id) =>
+            blockProjectionNodeIdV2(instance.instanceId, id),
+          ),
+        }
+      : {}),
     blockProjectionOwnerId: instance.instanceId,
     blockProjectionNodeId: graphNode.nodeId,
     blockProjectionKind: 'internal',
+  };
+}
+
+/** Complete authoring view, including hidden members; not an execution or readiness check. */
+export function blockOperationGraphV2(instance: BlockInstanceV2): BlockFlowGraphV2 {
+  const values = projectedBindingValues(instance);
+  return {
+    nodes: instance.effectiveGraph.nodes.map((node) => ({
+      id: blockProjectionNodeIdV2(instance.instanceId, node.nodeId),
+      type: runtimeNodeType(node),
+      position: { x: 0, y: 0 },
+      data: projectedNodeData(instance, node, values),
+    })),
+    edges: instance.effectiveGraph.edges.map((edge) => ({
+      id: edge.edgeId,
+      source: blockProjectionNodeIdV2(instance.instanceId, edge.sourceNodeId),
+      sourceHandle: edge.sourcePortId,
+      target: blockProjectionNodeIdV2(instance.instanceId, edge.targetNodeId),
+      targetHandle: edge.targetPortId,
+    })),
   };
 }
 

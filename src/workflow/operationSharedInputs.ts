@@ -1,16 +1,28 @@
 import type { Edge } from '@xyflow/react';
 import type { FlowGraphNode } from '../stores/flowGraphExport';
 import { deepEqual } from '../utils/deepEqual';
+import type { OperationAuthoring } from './operationAuthoring';
+
+/** Remap advisory loader references with the graph, never by pipeline name. */
+export function remapOperationAuthoring(value: unknown, remap: (id: string) => string): OperationAuthoring | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const hint = structuredClone(value) as OperationAuthoring;
+  if (Array.isArray(hint.sharedInputs))
+    hint.sharedInputs = hint.sharedInputs.map((binding) =>
+      binding && typeof binding.loaderId === 'string' ? { ...binding, loaderId: remap(binding.loaderId) } : binding,
+    );
+  return hint;
+}
 
 /** A shared editing relationship between ordinary nodes, scoped to one loader.
  * It grants no runtime authority. Detached/cloned/legacy nodes keep their values. */
 export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], nodeId: string, field: string) {
   const node = nodes.find((n) => n.id === nodeId);
   const hint = node?.data.operationAuthoring;
+  const owner = node?.data.blockProjectionOwnerId;
   if (
     !node ||
-    node.parentId ||
-    node.data.blockProjectionOwnerId ||
+    (node.parentId && !owner) ||
     node.data.blockInstanceV2 ||
     !Array.isArray(hint?.sharedInputs) ||
     hint.sharedInputs.length > 32
@@ -28,7 +40,8 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
   const rootOperation = root?.data.operationAuthoring?.operation;
   if (
     !root ||
-    root.parentId ||
+    (root.parentId && !owner) ||
+    root.data.blockProjectionOwnerId !== owner ||
     root.data.blockInstanceV2 ||
     rootOperation?.decomposition !== 'loader' ||
     !rootOperation.binding ||
@@ -43,8 +56,8 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
   const candidates = nodes.filter((n) => {
     const op = n.data.operationAuthoring?.operation;
     return (
-      !n.parentId &&
-      !n.data.blockProjectionOwnerId &&
+      (!n.parentId || Boolean(owner)) &&
+      n.data.blockProjectionOwnerId === owner &&
       !n.data.blockInstanceV2 &&
       op &&
       Array.isArray(op.ports) &&
@@ -67,6 +80,15 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
       }
   }
   if (!reached.has(node.id)) return null;
+  if (
+    edges.some(
+      (edge) =>
+        reached.has(edge.target) &&
+        edge.source !== root.id &&
+        nodes.find((n) => n.id === edge.source)?.data.operationAuthoring?.operation?.decomposition === 'loader',
+    )
+  )
+    return null;
   const members = candidates.flatMap((n) => {
     if (!reached.has(n.id)) return [];
     const bindings = n.data.operationAuthoring?.sharedInputs;

@@ -25,7 +25,10 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // M6 validates custom-extension identity and dependency responses in the shared
 // store. Startup measures 604.1 KiB; bound it at 605 KiB without increasing the
 // individual chunk limit. The extension review panel is loaded on demand.
-const MAX_STARTUP_GZIP_BYTES = 605 * 1024;
+// Preserve generic operation relationships through Block projection, nested
+// adoption and shared control writes. Startup measures 605.6 KiB; bound this
+// correctness fix at 606 KiB. Individual chunks and deferred limits stay fixed.
+const MAX_STARTUP_GZIP_BYTES = 606 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

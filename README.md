@@ -557,6 +557,11 @@ Implementation includes defaults, connected fallbacks, overrides and unsupported
 settings retained outside execution. Metadata inspection does not load models or
 execute custom source.
 
+Generic nodes keep their operation metadata inside Blocks and after reuse. Shared
+seed controls update together, including hidden members; random seeds are drawn
+once per connected group and independently for separate Block instances. Sealed
+controls still reject edits, and conflicting shared values must be resolved before Run.
+
 Existing Blocks with a model-route selector keep separate workflow drafts when
 switching. You can cancel while the destination loads. A newer graph edit or
 workflow change cancels the pending switch; connected outputs are checked against

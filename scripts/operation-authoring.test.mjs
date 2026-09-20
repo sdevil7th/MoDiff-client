@@ -538,3 +538,281 @@ test('workflow choices join exact execution profiles and retain task and pipelin
   assert.equal(result.find((c) => c.task === 'future_task').repo, null);
   assert.equal(choices.workflowTaskLabel('future_task'), 'Future task');
 });
+
+async function operationBlock(instanceId = 'operation-block') {
+  const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const draft = authoring.createOperationStarter(seededStarter(true), { x: 40, y: 80 });
+  for (const node of draft.nodes.filter((n) => n.data.params.seed))
+    node.data.params.seed.value = { value: 4109, isRandom: true };
+  const graph = {
+    nodes: draft.nodes.map((node) => ({ nodeId: node.id, nodeType: node.type, data: node.data })),
+    edges: draft.edges.map((edge) => ({
+      edgeId: edge.id,
+      sourceNodeId: edge.source,
+      sourcePortId: edge.sourceHandle,
+      targetNodeId: edge.target,
+      targetPortId: edge.targetHandle,
+    })),
+  };
+  const definition = {
+    schemaVersion: 2,
+    definitionId: 'user:generic-operations',
+    displayName: 'Generic operations',
+    source: { kind: 'user' },
+    graph: { ...graph, graphHash: schema.blockGraphHashV2(graph) },
+    boundary: { mode: 'explicit', inputs: [], outputs: [] },
+    controls: [],
+    suggestedInputs: [],
+    previews: [],
+    ownership: { kind: 'user', definitionMutable: true },
+  };
+  definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+  const instance = schema.createBlockInstanceV2(definition, {
+    instanceId,
+    position: { x: 80, y: 90 },
+    size: { width: 400, height: 600 },
+    internalLayout: Object.fromEntries(
+      draft.nodes.map((node) => [node.id, { ...node.position, width: 360, height: 400 }]),
+    ),
+  });
+  return { schema, runtime, instance, draft };
+}
+
+test('generic Block projections preserve operation hints and scope shared random seeds to each instance', async () => {
+  const { schema, runtime, instance } = await operationBlock();
+  const peer = schema.createBlockInstanceV2(instance.definitionSnapshot, {
+    instanceId: 'peer-block',
+    position: { x: 900, y: 90 },
+    size: { width: 400, height: 600 },
+  });
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  useFlowStore.getState().replaceGraph({
+    nodes: [runtime.createBlockRootNodeV2(instance), runtime.createBlockRootNodeV2(peer)],
+    edges: [],
+  });
+  const before = structuredClone(useFlowStore.getState().toObject());
+  const expanded = runtime.expandBlockGraphV2ForExecution(before.nodes, before.edges);
+  const seeds = expanded.nodes.filter((n) => n.data.params.seed);
+  for (const node of seeds) assert.ok(authoring.operationAuthoring(node), 'operation metadata survives lowering');
+  const { sharedOperationInput } = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts');
+  const groups = seeds.map((n) => sharedOperationInput(expanded.nodes, expanded.edges, n.id, 'seed'));
+  assert.ok(groups.every((group) => group?.members.length === 2));
+  assert.equal(new Set(groups.map((group) => group.key)).size, 2);
+  const exported = useFlowStore.getState().exportGraph('test');
+  for (const owner of ['operation-block', 'peer-block']) {
+    const values = Object.entries(exported.nodes)
+      .filter(([id, n]) => id.includes(owner) && n.params.seed)
+      .map(([, n]) => n.params.seed.value);
+    assert.equal(values.length, 2);
+    assert.equal(values[0], values[1]);
+    assert.ok(Number.isSafeInteger(values[0]));
+  }
+  assert.deepEqual(
+    useFlowStore
+      .getState()
+      .toObject()
+      .nodes.map((n) => n.data.blockInstanceV2.definitionSnapshot),
+    before.nodes.map((n) => n.data.blockInstanceV2.definitionSnapshot),
+  );
+});
+
+test('editing one generic Block seed updates hidden peers atomically and survives persistence', async () => {
+  const { runtime, instance } = await operationBlock();
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const root = runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(instance, { expanded: true }));
+  useFlowStore.getState().replaceGraph(runtime.materializeBlockProjectionV2(root));
+  useFlowStore.getState().resetHistory();
+  const node = useFlowStore.getState().nodes.find((n) => n.data.params.seed);
+  useFlowStore.getState().setParamWithHistory(node.id, 'seed', { value: 72, isRandom: false });
+  const assertSeeds = (expected) => {
+    const { nodes, edges } = useFlowStore.getState().toObject();
+    for (const n of runtime.expandBlockGraphV2ForExecution(nodes, edges).nodes.filter((n) => n.data.params.seed))
+      assert.equal(n.data.params.seed.value.value, expected);
+  };
+  assertSeeds(72);
+  assert.equal(useFlowStore.getState().historyPast.length, 1);
+  useFlowStore.getState().undo();
+  assertSeeds(4109);
+  useFlowStore.getState().redo();
+  assertSeeds(72);
+  useFlowStore.getState().replaceGraph(JSON.parse(JSON.stringify(useFlowStore.getState().toObject())));
+  assertSeeds(72);
+  assert.deepEqual(
+    useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot,
+    instance.definitionSnapshot,
+  );
+});
+
+for (const surface of ['root', 'nested', 'sealed']) {
+  test(`generic Block shared input respects ${surface} interface bindings`, async () => {
+    const { runtime, instance, draft } = await operationBlock();
+    const { configureBlockContainerInterfaceV1 } = await server.ssrLoadModule('/src/studio/blockContainerEditingV1.ts');
+    const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+    const seedId = draft.nodes[1].id;
+    const control = {
+      controlId: 'seed',
+      label: 'Seed',
+      binding: { nodeId: seedId, fieldId: 'seed' },
+      valueType: 'int',
+      defaultValue: { value: 4109, isRandom: true },
+      order: 0,
+      ...(surface === 'sealed' ? { sealed: true } : {}),
+    };
+    let prepared;
+    if (surface === 'nested') {
+      const graph = structuredClone(instance.effectiveGraph);
+      graph.nodes.forEach((n) => {
+        n.parentNodeId = 'container';
+      });
+      graph.nodes.unshift({
+        nodeId: 'container',
+        nodeType: 'group',
+        data: { type: 'group', label: 'Nested', params: {} },
+      });
+      prepared = runtime.replaceBlockEffectiveGraphV2(instance, graph);
+      prepared = configureBlockContainerInterfaceV1(prepared, 'container', {
+        boundary: { mode: 'explicit', inputs: [], outputs: [] },
+        controls: [control],
+      });
+    } else {
+      prepared = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+        boundary: instance.effectiveInterface.boundary,
+        controls: [control],
+      });
+    }
+    prepared = runtime.setBlockPresentationV2(prepared, { expanded: true });
+    useFlowStore.getState().replaceGraph(runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(prepared)));
+    useFlowStore.getState().resetHistory();
+    const before = structuredClone(useFlowStore.getState().toObject());
+    if (surface === 'sealed') {
+      const other = useFlowStore.getState().nodes.find((n) => n.data.blockProjectionNodeId === draft.nodes[2].id);
+      assert.throws(
+        () => useFlowStore.getState().setParamWithHistory(other.id, 'seed', { value: 73, isRandom: false }),
+        /sealed/,
+      );
+      assert.deepEqual(useFlowStore.getState().toObject(), before);
+      assert.equal(useFlowStore.getState().historyPast.length, 0);
+      return;
+    }
+    if (surface === 'root')
+      useFlowStore.getState().setBlockInstanceValueV2(instance.instanceId, 'seed', { value: 73, isRandom: false });
+    else {
+      const container = useFlowStore.getState().nodes.find((n) => n.data.blockProjectionNodeId === 'container');
+      const field = Object.keys(container.data.params).find(
+        (k) => container.data.params[k].fieldOptions?.blockContainerControlV1?.controlId === 'seed',
+      );
+      assert.ok(field);
+      useFlowStore.getState().setParamWithHistory(container.id, field, { value: 73, isRandom: false });
+    }
+    const saved = useFlowStore.getState().toObject();
+    const lowered = runtime.expandBlockGraphV2ForExecution(saved.nodes, saved.edges);
+    const seeds = lowered.nodes.filter((n) => n.data.params.seed);
+    assert.equal(seeds.length, 2);
+    for (const n of seeds) assert.equal(n.data.params.seed.value.value, 73);
+    assert.equal(useFlowStore.getState().historyPast.length, 1);
+    useFlowStore.getState().undo();
+    assert.deepEqual(useFlowStore.getState().toObject(), before);
+  });
+}
+
+test('nesting and reusing a generic Block remaps loader references without modifying its saved definition', async () => {
+  const { schema, runtime, instance } = await operationBlock();
+  const { reusableBlockDefinitionFromInstanceV2 } = await server.ssrLoadModule(
+    '/src/studio/blockDefinitionPersistenceV2.ts',
+  );
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const host = schema.createBlockInstanceV2(instance.definitionSnapshot, {
+    instanceId: 'host-block',
+    position: { x: 1100, y: 100 },
+    size: { width: 800, height: 800 },
+  });
+  useFlowStore.getState().replaceGraph({
+    nodes: [
+      runtime.createBlockRootNodeV2(instance),
+      runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(host, { expanded: true })),
+    ],
+    edges: [],
+  });
+  useFlowStore.getState().resetHistory();
+  useFlowStore.getState().adoptBlockFragmentIntoBlockV2(instance.instanceId, host.instanceId);
+  const saved = useFlowStore.getState().toObject();
+  const owner = saved.nodes.find((n) => n.id === host.instanceId).data.blockInstanceV2;
+  assert.deepEqual(owner.definitionSnapshot, host.definitionSnapshot);
+  const { sharedOperationInput } = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts');
+  const assertGroups = (value) => {
+    const graph = runtime.expandBlockGraphV2ForExecution([runtime.createBlockRootNodeV2(value)], []);
+    const groups = graph.nodes
+      .filter((n) => n.data.params.seed)
+      .map((n) => sharedOperationInput(graph.nodes, graph.edges, n.id, 'seed'));
+    assert.equal(groups.length, 4);
+    assert.ok(groups.every((g) => g?.members.length === 2));
+    assert.equal(new Set(groups.map((g) => g.key)).size, 2);
+  };
+  assertGroups(owner);
+  const definition = reusableBlockDefinitionFromInstanceV2(owner, {
+    definitionId: 'user:reused-operations',
+    displayName: 'Reused operations',
+  });
+  const reinserted = schema.createBlockInstanceV2(definition, {
+    instanceId: 'reinserted',
+    position: { x: 0, y: 0 },
+    size: { width: 500, height: 500 },
+  });
+  assertGroups(reinserted);
+  useFlowStore.getState().undo();
+  assert.equal(useFlowStore.getState().toObject().nodes.length, 2);
+});
+
+test('nested shared seed conflicts still block export and cannot borrow a different loader', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { sharedOperationInput } = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts');
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const graph = structuredClone(instance.effectiveGraph);
+  graph.nodes[1].data.params.seed.value = { value: 999, isRandom: false };
+  useFlowStore.getState().replaceGraph({
+    nodes: [runtime.createBlockRootNodeV2(runtime.replaceBlockEffectiveGraphV2(instance, graph))],
+    edges: [],
+  });
+  assert.throws(() => useFlowStore.getState().exportGraph('test'), /Shared seed controls disagree/);
+  const lowered = runtime.blockOperationGraphV2(instance);
+  const loader = lowered.nodes[0];
+  lowered.nodes.push({ ...structuredClone(loader), id: 'another-loader' });
+  lowered.edges.push({ ...lowered.edges[0], id: 'competing', source: 'another-loader' });
+  assert.equal(
+    sharedOperationInput(
+      lowered.nodes,
+      lowered.edges,
+      runtime.blockProjectionNodeIdV2(instance.instanceId, draft.nodes[1].id),
+      'seed',
+    ),
+    null,
+  );
+});
+
+test('nested adoption preserves an invalid advisory hint without interpreting it as a shared input', async () => {
+  const { schema, runtime, instance } = await operationBlock();
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const graph = structuredClone(instance.effectiveGraph);
+  graph.nodes[0].data.operationAuthoring = 'legacy invalid hint';
+  const fragment = runtime.replaceBlockEffectiveGraphV2(instance, graph);
+  const host = schema.createBlockInstanceV2(instance.definitionSnapshot, {
+    instanceId: 'hint-host',
+    position: { x: 0, y: 0 },
+    size: { width: 600, height: 600 },
+  });
+  useFlowStore.getState().replaceGraph({
+    nodes: [
+      runtime.createBlockRootNodeV2(fragment),
+      runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(host, { expanded: true })),
+    ],
+    edges: [],
+  });
+  useFlowStore.getState().adoptBlockFragmentIntoBlockV2(fragment.instanceId, host.instanceId);
+  const saved = useFlowStore.getState().toObject();
+  assert.ok(
+    saved.nodes[0].data.blockInstanceV2.effectiveGraph.nodes.some(
+      (n) => n.data.operationAuthoring === 'legacy invalid hint',
+    ),
+  );
+});

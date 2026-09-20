@@ -26487,3 +26487,132 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.screenshot({ path: test.info().outputPath('legacy-route-draft.png'), animations: 'disabled' });
   });
 }
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} generic Block shares native seed edits with hidden nodes across Undo and reload`, async ({
+    page,
+  }) => {
+    page.setDefaultTimeout(15_000);
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find(
+      (s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'image_to_image',
+    )!;
+    expect(starter.sharedInputs).toHaveLength(1);
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    // One-time saved-Block fixture from real backend operation contracts. No
+    // model execution; all subsequent edits/history/workspace/save gestures are native.
+    await page.evaluate(async (starter) => {
+      const [{ createOperationStarter }, schema, runtime, { useFlowStore }, { prepareWorkflowForManualInsertion }] =
+        await Promise.all([
+          import('/src/workflow/operationAuthoring.ts'),
+          import('/src/studio/blockSchemaV2.ts'),
+          import('/src/studio/blockRuntimeV2.ts'),
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/studio/manualGraphInsertion.ts'),
+        ]);
+      const draft = createOperationStarter(starter, { x: 40, y: 90 });
+      const seeds = draft.nodes.filter((n) => n.data.params.seed);
+      for (const n of seeds) n.data.params.seed.value = { value: 4109, isRandom: false };
+      const graph = JSON.parse(
+        JSON.stringify({
+          nodes: draft.nodes.map((n) => ({ nodeId: n.id, nodeType: n.type, data: n.data })),
+          edges: draft.edges.map((e) => ({
+            edgeId: e.id,
+            sourceNodeId: e.source,
+            sourcePortId: e.sourceHandle,
+            targetNodeId: e.target,
+            targetPortId: e.targetHandle,
+          })),
+        }),
+      );
+      graph.graphHash = schema.blockGraphHashV2(graph);
+      const definition: import('../../../src/studio/blockSchemaV2').BlockDefinitionV2 = {
+        schemaVersion: 2,
+        definitionId: 'user:shared-seed-fixture',
+        displayName: 'Shared seed Block',
+        contentHash: '',
+        source: { kind: 'user' },
+        graph,
+        boundary: { mode: 'explicit', inputs: [], outputs: [] },
+        controls: [
+          {
+            controlId: 'seed',
+            label: 'Seed',
+            binding: { nodeId: seeds[0]!.id, fieldId: 'seed' },
+            valueType: 'int',
+            defaultValue: { value: 4109, isRandom: false },
+            order: 0,
+          },
+        ],
+        suggestedInputs: [],
+        previews: [],
+        ownership: { kind: 'user', definitionMutable: true },
+      };
+      definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+      const instance = schema.createBlockInstanceV2(definition, {
+        instanceId: 'shared-seed-block',
+        position: { x: 80, y: 100 },
+        size: { width: 500, height: 450 },
+      });
+      prepareWorkflowForManualInsertion();
+      useFlowStore.getState().replaceGraph({ nodes: [runtime.createBlockRootNodeV2(instance)], edges: [] });
+    }, starter);
+    const root = page.locator('.react-flow__node[data-id="shared-seed-block"]');
+    const field = root.locator('[data-key="seed"] input');
+    await expect(field).toHaveValue('4109');
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const before = await read();
+    const seedValues = async () => {
+      const graph = await read();
+      const instance = graph.nodes.find((n) => n.id === 'shared-seed-block')!.data.blockInstanceV2!;
+      return instance.effectiveGraph.nodes
+        .filter(
+          (n) =>
+            n.data.params && typeof n.data.params === 'object' && !Array.isArray(n.data.params) && n.data.params.seed,
+        )
+        .map((n) => {
+          const bound = instance.effectiveInterface.controls.find(
+            (c) => c.binding.nodeId === n.nodeId && c.binding.fieldId === 'seed',
+          );
+          const params = n.data.params as Record<string, { value: unknown }>;
+          return bound ? (instance.values[bound.controlId] ?? bound.defaultValue) : params.seed!.value;
+        });
+    };
+    await field.fill('7319');
+    await field.blur();
+    await expect.poll(seedValues).toEqual([
+      { value: '7319', isRandom: false },
+      { value: '7319', isRandom: false },
+    ]);
+    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(seedValues).toEqual([
+      { value: 4109, isRandom: false },
+      { value: 4109, isRandom: false },
+    ]);
+    await page.keyboard.press('Control+Shift+z');
+    await expect(field).toHaveValue('7319');
+    await setStudioViewMode(page, workspace === 'auto' ? 'expert' : 'auto');
+    await expect(field).toHaveValue('7319');
+    await page.getByTestId('topbar-save-workflow-options').click();
+    await page.getByTestId('topbar-save-workflow-as').click();
+    await page.getByTestId('save-workflow-name').fill(`Shared seed ${workspace}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect(field).toHaveValue('7319');
+    await expect.poll(seedValues).toEqual([
+      { value: '7319', isRandom: false },
+      { value: '7319', isRandom: false },
+    ]);
+    expect((await read()).nodes[0]!.data.blockInstanceV2!.definitionSnapshot).toEqual(
+      before.nodes[0]!.data.blockInstanceV2!.definitionSnapshot,
+    );
+    await page.screenshot({ path: test.info().outputPath('shared-seed-block.png'), animations: 'disabled' });
+  });
+}

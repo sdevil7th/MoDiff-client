@@ -1,4 +1,4 @@
-import { sharedOperationInput } from '../workflow/operationSharedInputs';
+import { remapOperationAuthoring, sharedOperationInput } from '../workflow/operationSharedInputs';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
@@ -117,7 +117,11 @@ import {
   rebaseBlockInstanceV2ToDefinition,
   reusableBlockDefinitionFromSubtreeV2,
 } from '../studio/blockDefinitionPersistenceV2';
-import { configureBlockContainerInterfaceV1, setBlockContainerControlValueV1 } from '../studio/blockContainerEditingV1';
+import {
+  configureBlockContainerInterfaceV1,
+  setBlockContainerControlValueV1,
+  setBlockSharedOperationInputV2,
+} from '../studio/blockContainerEditingV1';
 import {
   blockContainerFieldV1,
   blockContainerFieldValueV1,
@@ -1007,6 +1011,11 @@ function adoptTopLevelBlockFragmentIntoBlockV2(
     const metadata = node.modularDiffusers ? cloneJson(node.modularDiffusers) : undefined;
     if (metadata?.kind === 'upstream_block') delete metadata.parentPlacementPath;
     let copied = cloneJson(node);
+    const operationHint = remapOperationAuthoring(
+      copied.data.operationAuthoring,
+      (id) => semanticIdBySource.get(id) ?? id,
+    );
+    if (operationHint) copied.data.operationAuthoring = operationHint as unknown as BlockJsonValue;
     delete copied.parentNodeId;
     const sourceParent = sourceParents.get(node.nodeId);
     const parent = sourceParent ? semanticIdBySource.get(sourceParent) : (wrapperId ?? parentSemanticNodeId);
@@ -1640,6 +1649,20 @@ export const useFlowStore = create<FlowStore>()(
         const blockOwnerId = node?.data.blockProjectionOwnerId;
         const blockSemanticNodeId = node?.data.blockProjectionNodeId;
         if (blockOwnerId && blockSemanticNodeId && (key === undefined || key === 'value')) {
+          const owner = get().nodes.find((n) => n.id === blockOwnerId)?.data.blockInstanceV2;
+          const shared =
+            owner &&
+            setBlockSharedOperationInputV2(
+              owner,
+              [{ nodeId: blockSemanticNodeId, fieldId: param }],
+              value as BlockJsonValue | undefined,
+            );
+          if (shared) {
+            get().withHistory('Edit shared Block input', () => {
+              set((state) => updateBlockInstanceV2(state, blockOwnerId, () => shared) ?? state);
+            });
+            return;
+          }
           const localBindingValue = node.data.params[param]?.fieldOptions?.blockContainerControlV1;
           const localBinding = isRecord(localBindingValue) ? localBindingValue : null;
           if (localBinding) {
@@ -1918,9 +1941,19 @@ export const useFlowStore = create<FlowStore>()(
       setBlockInstanceValueV2: (id, logicalId, value) => {
         get().withHistory('Edit block parameter', () => {
           set((state) => {
-            const graph = updateBlockInstanceV2(state, id, (instance) =>
-              reduceBlockInstanceValueV2(instance, logicalId, value),
-            );
+            const graph = updateBlockInstanceV2(state, id, (instance) => {
+              const control = instance.effectiveInterface.controls.find((c) => c.controlId === logicalId);
+              const port = instance.effectiveInterface.boundary.inputs.find((p) => p.portId === logicalId);
+              const targets = control
+                ? [control.binding, ...(control.mirrorBindings ?? [])]
+                : port
+                  ? blockInputPortBindingsV2(port).map((b) => ({ nodeId: b.nodeId, fieldId: b.fieldOrPortId }))
+                  : [];
+              return (
+                setBlockSharedOperationInputV2(instance, targets, value) ??
+                reduceBlockInstanceValueV2(instance, logicalId, value)
+              );
+            });
             return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
           });
         });
