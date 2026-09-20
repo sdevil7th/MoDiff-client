@@ -2,7 +2,6 @@ import RuntimeNodeGroupsV2 from './RuntimeNodeGroupsV2';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { nanoid } from 'nanoid';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -30,7 +29,6 @@ import {
   Webhook,
 } from 'lucide-react';
 import { cx } from '../utils/classNames';
-import { matchesSearchKeywords } from '../utils/searchKeywords';
 import {
   ModiffButton,
   ModiffCheckbox,
@@ -46,7 +44,7 @@ import {
 } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { createUserBlockFromSelection, createUserBlockNode, USER_BLOCK_DRAG_PREFIX } from '../studio/userBlocks';
-import { createBlockInstanceV2 } from '../studio/blockSchemaV2';
+import { createStoredUserBlockNode } from '../studio/storedUserBlockInsertion';
 import {
   isBlockDefinitionV2,
   storedUserBlockId,
@@ -54,10 +52,10 @@ import {
   storedUserBlockGroupPath,
   storedUserBlockRevision,
   uniqueStoredUserBlocks,
+  savedBlockMatchesSearch,
   type StoredUserBlockDefinition,
   type UserBlockGrouping,
 } from '../studio/userBlockLibrary';
-import { createBlockRootNodeV2 } from '../studio/blockRuntimeV2';
 import { USER_BLOCK_V2_DRAG_PREFIX } from '../studio/blockPersistenceV2';
 import {
   nodeGroupForCatalogEntry,
@@ -201,15 +199,7 @@ function NodeList() {
         useFlowStore.getState().nodes,
         { width: 420, height: 480 },
       );
-      const node = isBlockDefinitionV2(block)
-        ? createBlockRootNodeV2(
-            createBlockInstanceV2(block, {
-              instanceId: `block-v2-${nanoid(16)}`,
-              position,
-              size: { width: 420, height: 480 },
-            }),
-          )
-        : createUserBlockNode(block, position);
+      const node = createStoredUserBlockNode(block, position);
       addNode(node);
       if (activeWorkflowTabId) {
         const requestedAt = Date.now();
@@ -1420,17 +1410,7 @@ function NodeGroupList({
   const setUserBlockGrouping = useSettingsStore((state) => state.setUserBlockGrouping);
   const matchingUserBlocks = useMemo(() => {
     const unique = uniqueStoredUserBlocks(userBlocks);
-    return unique.filter((block) =>
-      matchesSearchKeywords(search, [
-        'Saved Blocks',
-        'User Nodes', // Historical search term; persisted group identity is unchanged.
-        storedUserBlockName(block),
-        storedUserBlockId(block),
-        ...storedUserBlockGroupPath(block),
-        ...storedUserBlockGroupPath(block, 'workflow'),
-        storedUserBlockRevision(block),
-      ]),
-    );
+    return unique.filter((block) => savedBlockMatchesSearch(block, search));
   }, [search, userBlocks]);
   const userBlocksOpen = activeNodeGroups.includes('User Nodes') || Boolean(search.trim() && matchingUserBlocks.length);
 

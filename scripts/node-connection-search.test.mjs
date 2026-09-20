@@ -82,3 +82,15 @@ test('connection search deduplicates exact aliases and excludes structural group
   assert.equal(entries.length, 2);
   assert.deepEqual(entries.map(([, node]) => node.params.input.type).sort(), ['image', 'string']);
 });
+
+test('canvas search retains legacy keys and labels after exact-contract deduplication', () => {
+  const node = definition({ input: { display: 'input', type: 'string' } });
+  const registry = {
+    canonical: node,
+    retired_lookup: { ...node, label: 'Historical caption', description: 'Special old explanation' },
+  };
+  for (const query of ['retired_lookup', 'Historical caption']) {
+    assert.equal(search.connectionSearchEntries(registry, 'string', 'source', query).length, 1, query);
+  }
+  assert.equal(search.connectionSearchEntries(registry, 'string', 'source', 'absent term').length, 0);
+});

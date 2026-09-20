@@ -1,5 +1,6 @@
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
+import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
 
 export type HandleDirection = 'source' | 'target' | null | undefined;
 
@@ -10,7 +11,7 @@ export function matchingNodeHandleForDrop(
   handleType: HandleDirection,
 ) {
   if (handleType !== 'source' && handleType !== 'target') return undefined;
-  return Object.entries(node.params).find(([, param]) => {
+  return Object.entries(nodeConnectorParams({ data: node })).find(([, param]) => {
     if (handleType === 'source') {
       return (
         (param.display === 'input' || param.isInput) &&

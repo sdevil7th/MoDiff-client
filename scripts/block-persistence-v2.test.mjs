@@ -15,6 +15,9 @@ let server;
 let studioStore;
 let userBlockStore;
 let originalFetch;
+let search;
+let blockLibrary;
+let blockInsertion;
 
 before(async () => {
   const storage = new Map();
@@ -49,6 +52,9 @@ before(async () => {
   studioStore = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   userBlockStore = await server.ssrLoadModule('/src/stores/useUserBlockStore.ts');
   originalFetch = globalThis.fetch;
+  search = await server.ssrLoadModule('/src/workflow/nodeConnectionSearch.ts');
+  blockLibrary = await server.ssrLoadModule('/src/studio/userBlockLibrary.ts');
+  blockInsertion = await server.ssrLoadModule('/src/studio/storedUserBlockInsertion.ts');
 });
 
 after(async () => {
@@ -802,4 +808,27 @@ test('the User Node store parses mixed V1/V2 lists and persists only user-owned 
   };
   await assert.rejects(state.saveBlockDefinitionV2(definition()), /Registered catalog definitions cannot be saved/);
   assert.equal(registeredRequests, 0);
+});
+
+test('Saved Block search keeps distinct identities and searches revisions with public-socket direction rules', () => {
+  const first = definition('user', 'saved-first');
+  const second = definition('user', 'saved-second');
+  const before = JSON.stringify([first, second]);
+  const entries = search.savedBlockSearchEntries([first, second, first]);
+  assert.equal(entries.length, 2);
+  for (const entry of entries) {
+    assert.deepEqual(entry.node.params, {});
+    assert.equal(search.matchingNodeHandleForDrop(entry.node, 'str', 'source')?.[0], 'prompt');
+    assert.equal(search.matchingNodeHandleForDrop(entry.node, 'image', 'target')?.[0], 'image');
+    assert.equal(search.matchingNodeHandleForDrop(entry.node, 'audio', 'source'), undefined);
+    assert.equal(search.matchingNodeHandleForDrop(entry.node, 'string', 'target'), undefined);
+    for (const query of [entry.block.definitionId, entry.revision, 'User Nodes', 'Saved Blocks']) {
+      assert.ok(blockLibrary.savedBlockMatchesSearch(entry.block, query));
+    }
+    const inserted = blockInsertion.createStoredUserBlockNode(entry.block, { x: 100, y: 200 });
+    assert.notEqual(inserted.data.blockInstanceV2.instanceId, entry.node.blockInstanceV2.instanceId);
+    assert.equal(inserted.data.blockInstanceV2.definitionRef.contentHash, entry.block.contentHash);
+    assert.deepEqual(inserted.position, { x: 100, y: 200 });
+  }
+  assert.equal(JSON.stringify([first, second]), before);
 });

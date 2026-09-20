@@ -178,6 +178,7 @@ export type FlowStore = {
 
   // actions
   addNode: (node: CustomNodeType) => void;
+  addNodeWithConnection: (node: CustomNodeType, connection?: CustomConnection) => void;
   removeNodes: (ids: string | string[]) => void;
   removeEdges: (id: string | string[]) => void;
   clearWorkflow: () => void;
@@ -1582,6 +1583,25 @@ export const useFlowStore = create<FlowStore>()(
       },
       addNode: (node: CustomNodeType) => {
         get().withHistory('Add node', () => addFlowNode(node, set, get));
+      },
+      addNodeWithConnection: (node, connection) => {
+        if (get().historyTransaction) throw new Error('Finish the current graph edit before inserting a node.');
+        get().beginHistoryTransaction('Add and connect node');
+        try {
+          addFlowNode(node, set, get);
+          if (connection) {
+            const before = get().edges;
+            // Use the canvas commit path, including Block ownership/state validation.
+            handleConnect(connection, set, get);
+            if (get().edges === before) {
+              throw new Error('The selected ports can no longer be connected. Reopen node search and try again.');
+            }
+          }
+          get().commitHistoryTransaction();
+        } catch (error) {
+          get().cancelHistoryTransaction();
+          throw error;
+        }
       },
       removeNodes: (ids: string | string[]) => {
         get().withHistory('Remove nodes', () => removeFlowNodes(ids, set, get));

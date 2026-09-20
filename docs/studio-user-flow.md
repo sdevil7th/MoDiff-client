@@ -112,6 +112,15 @@ focus; selection or workflow changes close it. Run-blocked and Fix inspection ac
 focus the affected node without changing workspace or memory policy. Expand a Block
 on the canvas for structural editing; this does not edit its Python implementation.
 
+Double-click empty canvas space, or drag a connection to empty space, to search
+nodes and Saved Blocks without opening the library. Searches retain old registry
+keys and labels, plus the historical **User Nodes** name. Saved Blocks show their
+saved revision; equal names do not merge separate definitions. Connection searches
+show compatible public inputs or outputs according to the originating handle.
+Selecting a result creates a fresh instance and validates the wire through the
+canvas's existing rules. Undo removes that insertion and wire together; a rejected
+connection leaves no disconnected insertion. Search does not grant code consent.
+
 **Blocks** is the public name for both registered compositions and saved reusable
 compositions. **Saved Blocks** retains each saved name and revision. Existing
 workflow types, action names and library identities are unchanged. Historical

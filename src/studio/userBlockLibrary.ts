@@ -1,3 +1,4 @@
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 import type { BlockDefinitionV2 } from './blockSchemaV2';
 import type { UserBlockDefinition } from './types';
 
@@ -85,7 +86,7 @@ export function storedUserBlockGroupPath(block: StoredUserBlockDefinition, group
 export function storedUserBlockRevision(block: StoredUserBlockDefinition) {
   // A schema number is not a saved revision. V2 has a content identity; legacy saves have a timestamp.
   return isBlockDefinitionV2(block)
-    ? `Revision ${block.contentHash.replace(/^.*:/u, '').slice(0, 12)}`
+    ? `Revision ${block.contentHash.replace(/^block-definition-v2-|^.*:/u, '').slice(0, 12)}`
     : `Saved ${new Date(block.updatedAt).toISOString().replace('T', ' ').slice(0, 19)} UTC`;
 }
 
@@ -98,4 +99,16 @@ export function uniqueStoredUserBlocks(blocks: StoredUserBlockDefinition[]) {
     seen.add(id);
     return true;
   });
+}
+
+export function savedBlockMatchesSearch(block: StoredUserBlockDefinition, search: string) {
+  return matchesSearchKeywords(search, [
+    'Saved Blocks',
+    'User Nodes', // Historical library name remains searchable.
+    storedUserBlockId(block),
+    storedUserBlockName(block),
+    storedUserBlockRevision(block),
+    ...storedUserBlockGroupPath(block),
+    ...storedUserBlockGroupPath(block, 'workflow'),
+  ]);
 }

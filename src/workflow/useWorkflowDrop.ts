@@ -1,6 +1,5 @@
 import { type Edge, type Viewport } from '@xyflow/react';
 import { useCallback } from 'react';
-import { nanoid } from 'nanoid';
 
 import config from '../../app.config';
 import {
@@ -15,7 +14,6 @@ import { enqueueSnackbar } from '../ui/snackbar';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
 import { createNodeFromRegistry } from './nodeFactory';
 import {
-  createUserBlockNode,
   expandedUserBlockAtPosition,
   placeNodeInsideExpandedUserBlock,
   USER_BLOCK_DRAG_PREFIX,
@@ -35,8 +33,7 @@ import {
 } from '../studio/huggingFaceNodeCatalog';
 import { HUGGING_FACE_CLUSTER_DRAG_PREFIX } from '../studio/huggingFaceClusterDrag';
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
-import { createBlockInstanceV2 } from '../studio/blockSchemaV2';
-import { createBlockRootNodeV2 } from '../studio/blockRuntimeV2';
+import { createStoredUserBlockNode } from '../studio/storedUserBlockInsertion';
 import { expandedBlockV2AtPosition, insertNodeAtBlockTargetV2 } from '../studio/blockDropTargetsV2';
 import { USER_BLOCK_V2_DRAG_PREFIX } from '../studio/blockPersistenceV2';
 import {
@@ -285,13 +282,7 @@ export function useWorkflowDrop({
             autoHideDuration: 3000,
           });
         }
-        const newBlock = createBlockRootNodeV2(
-          createBlockInstanceV2(definition, {
-            instanceId: `block-v2-${nanoid(16)}`,
-            position,
-            size: { width: 420, height: 480 },
-          }),
-        );
+        const newBlock = createStoredUserBlockNode(definition, position);
         const target = expandedBlockV2AtPosition(flow.nodes, position);
         try {
           if (target) insertNodeAtBlockTargetV2(newBlock, target, flow, addNode);
@@ -320,7 +311,7 @@ export function useWorkflowDrop({
             autoHideDuration: 3000,
           });
         }
-        addNode(createUserBlockNode(block, position));
+        addNode(createStoredUserBlockNode(block, position));
         return;
       }
 

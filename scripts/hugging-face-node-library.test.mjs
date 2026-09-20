@@ -276,6 +276,14 @@ test('User Node library groups saved context and actual revisions without changi
     'Qwen Image — Text To Image',
   ]);
   assert.equal(library.storedUserBlockRevision(definition), 'Revision 1234567890ab');
+  assert.equal(
+    library.storedUserBlockRevision({ ...definition, contentHash: 'block-definition-v2-2116b7a1' }),
+    'Revision 2116b7a1',
+  );
+  assert.equal(
+    library.storedUserBlockRevision({ ...definition, contentHash: 'block-definition-v2-28772675' }),
+    'Revision 28772675',
+  );
   assert.deepEqual(library.uniqueStoredUserBlocks([definition, second, definition]).map(library.storedUserBlockId), [
     'copy-one',
     'copy-two',

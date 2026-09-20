@@ -443,7 +443,6 @@ function Workflow() {
     nodeSearchDataType,
     nodeSearchHandleType,
   } = useWorkflowConnections({
-    addNode,
     edgeType,
     getParam: getConnectionParam,
     onConnect: connectWithFeedback,

@@ -8618,6 +8618,7 @@ for (const direction of ['source', 'target'] as const) {
             ...mockRegistry,
             [producerKey]: producer,
             [consumerKey]: consumer,
+            'zzzz.retired_consumer': { ...consumer, label: 'Historical consumer' },
             'custom.Workbench.Wildcard': wildcard,
             'custom.Workbench.Image': incompatible,
           },
@@ -8658,7 +8659,7 @@ for (const direction of ['source', 'target'] as const) {
     await popupSearch.fill('Workbench image');
     await expect(page.getByText('No compatible nodes found', { exact: true })).toBeVisible();
     await expect(suggestions.getByRole('option')).toHaveCount(0);
-    await popupSearch.fill(direction === 'source' ? 'consumer Workbench' : 'producer Workbench');
+    await popupSearch.fill(direction === 'source' ? 'retired_consumer' : 'producer Workbench');
     await expect(suggestions.getByRole('option', { name: wanted, exact: true })).toBeVisible();
     await page.screenshot({
       path: test.info().outputPath(`typed-${direction}-suggestions.png`),
@@ -9078,6 +9079,25 @@ test('node cache controls separate recomputation from model release without edit
   expect(await readNodes()).toEqual(before);
 });
 
+async function waitForOperationGraphToSettle(page: Page) {
+  // Native edits also trigger asynchronous schema/validation publications.
+  // Establish a settled source document before reviewing a replacement; a late
+  // publication correctly invalidates a preview and must not weaken its guard.
+  let lastSignature = '';
+  let stableReads = 0;
+  await expect
+    .poll(
+      async () => {
+        const signature = await page.evaluate(() => JSON.stringify(window.__MODIFF_E2E__!.exportWorkflowGraph()));
+        stableReads = signature === lastSignature ? stableReads + 1 : 0;
+        lastSignature = signature;
+        return stableReads;
+      },
+      { intervals: [100, 250, 500], timeout: 10_000 },
+    )
+    .toBeGreaterThanOrEqual(3);
+}
+
 test('operation starters preserve native edits through model/task preview, Undo and Save/reopen', async ({ page }) => {
   page.setDefaultTimeout(15_000);
   await page.setViewportSize({ width: 1680, height: 1050 });
@@ -9116,22 +9136,7 @@ test('operation starters preserve native edits through model/task preview, Undo 
   panel = await selectOperationPipeline(page, 'FluxModularPipeline');
   await panel.getByLabel('Operation graph to change').click();
   await page.getByRole('option', { name: new RegExp(loaderId.slice(-6)) }).click();
-  // Native edits also trigger asynchronous schema/validation publications.
-  // Establish a settled source document before reviewing a replacement; a late
-  // publication correctly invalidates a preview and must not weaken its guard.
-  let lastSignature = '';
-  let stableReads = 0;
-  await expect
-    .poll(
-      async () => {
-        const signature = await page.evaluate(() => JSON.stringify(window.__MODIFF_E2E__!.exportWorkflowGraph()));
-        stableReads = signature === lastSignature ? stableReads + 1 : 0;
-        lastSignature = signature;
-        return stableReads;
-      },
-      { intervals: [100, 250, 500], timeout: 10_000 },
-    )
-    .toBeGreaterThanOrEqual(3);
+  await waitForOperationGraphToSettle(page);
   await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
   await expect(dialog.getByRole('heading', { level: 2 })).toBeVisible();
@@ -9221,6 +9226,7 @@ test('stateful task changes share native seed edits and preserve them through Un
   panel = await selectOperationPipeline(page, 'StableDiffusionXLModularPipeline', 'image_to_image');
   await panel.getByLabel('Operation graph to change').click();
   await page.getByRole('option', { name: new RegExp(loaderId.slice(-6)) }).click();
+  await waitForOperationGraphToSettle(page);
   await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
   const preview = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
   await expect(preview).toContainText('Shared seed:');
@@ -25290,3 +25296,147 @@ test('Creator reload retries automatic planning when late hydration changes docu
   await expect(page.getByTestId('task-launcher')).toHaveCount(0);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBeGreaterThan(0);
 });
+
+for (const workspace of ['auto', 'expert'] as const) {
+  for (const direction of ['source', 'target'] as const) {
+    test(`${workspace} canvas search inserts a Saved Block from a ${direction} port with one-step Undo`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1600, height: 1000 });
+      await ensureFrontend();
+      await installMockRoutes(page);
+      const definition = {
+        ...nodeDef('custom.Search', 'Echo', 'custom', {
+          input: { label: 'Text', type: 'string', display: 'input' },
+          output: { label: 'Text', type: 'string', display: 'output' },
+        }),
+        label: 'Search echo',
+      };
+      await page.route('**/nodes**', async (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ instance: 'mock', nodes: { ...mockRegistry, 'custom.Search.Echo': definition } }),
+        }),
+      );
+      await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+      await dismissTaskLauncher(page);
+      await setStudioViewMode(page, workspace);
+      // Exact saved-definition fixture; insertion, wiring, Undo and reload use native UI.
+      const hashes = await page.evaluate(async (data) => {
+        const [schema, { useUserBlockStore }] = await Promise.all([
+          import('/src/studio/blockSchemaV2.ts'),
+          import('/src/stores/useUserBlockStore.ts'),
+        ]);
+        const definitions = [0, 1].map((version) => {
+          const graph = {
+            nodes: [{ nodeId: 'echo', nodeType: 'custom', data: { ...data, description: `Revision ${version}` } }],
+            edges: [],
+          };
+          const raw = {
+            schemaVersion: 2,
+            definitionId: `saved-search-${version}`,
+            displayName: 'Saved search echo',
+            source: { kind: 'user' },
+            graph: { ...graph, graphHash: schema.blockGraphHashV2(graph) },
+            boundary: {
+              mode: 'explicit',
+              inputs: [
+                {
+                  portId: 'input',
+                  label: 'Text',
+                  valueType: 'string',
+                  required: false,
+                  binding: { nodeId: 'echo', fieldOrPortId: 'input' },
+                },
+              ],
+              outputs: [
+                {
+                  portId: 'output',
+                  label: 'Text',
+                  valueType: 'string',
+                  required: false,
+                  binding: { nodeId: 'echo', fieldOrPortId: 'output' },
+                },
+              ],
+            },
+            controls: [],
+            previews: [],
+            ownership: { kind: 'user', definitionMutable: true },
+          };
+          return schema.normalizeBlockDefinitionV2({ ...raw, contentHash: schema.blockDefinitionContentHashV2(raw) });
+        });
+        useUserBlockStore.getState().setBlockDefinitionsV2(definitions);
+        return definitions.map((item) => item.contentHash);
+      }, definition);
+      await page.getByTestId('left-tab-nodes').click();
+      await page.getByLabel('Search nodes', { exact: true }).fill('Search echo');
+      await page.getByTestId('node-row-custom-Search-Echo').click();
+      const original = page.locator('.react-flow__node-custom').first();
+      const originalId = (await original.getAttribute('data-id'))!;
+      const handle = original.getByTestId(`node-handle-${originalId}-${direction === 'source' ? 'output' : 'input'}`);
+      const bounds = (await page.locator('.react-flow__pane').boundingBox())!;
+      await handle.hover();
+      const start = (await handle.boundingBox())!;
+      await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(bounds.x + bounds.width - 60, bounds.y + 60, { steps: 15 });
+      await page.mouse.up();
+      const list = page.getByRole('listbox', { name: 'Matching nodes' });
+      await expect(list).toBeVisible();
+      const search = page.getByLabel('Search nodes', { exact: true }).last();
+      await search.fill('Saved search echo');
+      await expect(list.getByRole('option')).toHaveCount(2);
+      expect(hashes[0]).not.toBe(hashes[1]);
+      expect(await list.getByRole('option').allTextContents()).toHaveLength(2);
+      expect(await list.getByRole('option').nth(0).textContent()).not.toBe(
+        await list.getByRole('option').nth(1).textContent(),
+      );
+      await expect(list).toContainText(hashes[0]!.replace(/^block-definition-v2-|^.*:/u, '').slice(0, 12));
+      await expect(list).toContainText(hashes[1]!.replace(/^block-definition-v2-|^.*:/u, '').slice(0, 12));
+      if (direction === 'source') {
+        await search.press('ArrowDown');
+        await search.press('Enter');
+      } else {
+        await list.getByRole('option').nth(1).click();
+      }
+      const read = () =>
+        page.evaluate(async () => {
+          const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+          const flow = useFlowStore.getState();
+          const block = flow.nodes.find((node) => node.data.blockInstanceV2);
+          return {
+            nodes: flow.nodes.length,
+            edges: flow.edges.length,
+            blockId: block?.id,
+            definition: block?.data.blockInstanceV2?.definitionRef,
+            params: block?.data.params,
+            source: flow.edges[0]?.source,
+            target: flow.edges[0]?.target,
+          };
+        });
+      await expect.poll(async () => (await read()).edges).toBe(1);
+      const connected = await read();
+      expect(connected.nodes).toBe(2);
+      expect(connected.params).toEqual({});
+      expect(connected.definition).toMatchObject({ definitionId: 'saved-search-1', contentHash: hashes[1] });
+      expect(direction === 'source' ? connected.source : connected.target).toBe(originalId);
+      expect(direction === 'source' ? connected.target : connected.source).toBe(connected.blockId);
+      await page.screenshot({ path: test.info().outputPath('saved-block-connected.png'), animations: 'disabled' });
+      await page.locator('.react-flow__pane').click({ position: { x: 80, y: 70 } });
+      await page.keyboard.press('Control+z');
+      await expect
+        .poll(async () => {
+          const result = await read();
+          return [result.nodes, result.edges];
+        })
+        .toEqual([1, 0]);
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(read).toEqual(connected);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+      await expect.poll(read).toEqual(connected);
+    });
+  }
+}

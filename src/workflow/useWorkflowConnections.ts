@@ -1,6 +1,5 @@
 import { type Connection, type FinalConnectionState } from '@xyflow/react';
 import { useCallback, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { nanoid } from 'nanoid';
 
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
@@ -8,7 +7,17 @@ import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 import { matchingNodeHandleForDrop } from './nodeConnectionMatching';
-import { cloneNodeData } from './nodeFactory';
+import { createNodeFromRegistry } from './nodeFactory';
+import { createStoredUserBlockNode } from '../studio/storedUserBlockInsertion';
+import type { StoredUserBlockDefinition } from '../studio/userBlockLibrary';
+import { useFlowStore } from '../stores/useFlowStore';
+import {
+  captureWorkflowOperationContext,
+  assertWorkflowOperationContext,
+  useStudioStore,
+} from '../stores/useStudioStore';
+import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
+import { enqueueSnackbar } from '../ui/snackbar';
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
 type GetParam = <K extends keyof NodeParams>(id: string, param: string, key: K) => NodeParams[K] | null;
@@ -73,7 +82,6 @@ export function captureWorkflowDropHandle(
 }
 
 type UseWorkflowConnectionsOptions = {
-  addNode: (node: CustomNodeType) => void;
   edgeType: string;
   getParam: GetParam;
   onConnect: (connection: CustomConnection) => void;
@@ -91,7 +99,6 @@ function pointerPosition(event: MouseEvent | TouchEvent) {
 }
 
 export function useWorkflowConnections({
-  addNode,
   edgeType,
   getParam,
   onConnect,
@@ -106,6 +113,7 @@ export function useWorkflowConnections({
   const [connectionDataType, setConnectionDataType] = useState<string | string[] | null>(null);
   const connectionTypeRef = useRef<string | string[] | null>(null);
   const dropHandleRef = useRef<DropHandle | null>(null);
+  const searchContextRef = useRef<ReturnType<typeof captureWorkflowOperationContext> | null>(null);
 
   const handleDoubleClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -114,6 +122,8 @@ export function useWorkflowConnections({
     }
 
     event.preventDefault();
+    dropHandleRef.current = null;
+    searchContextRef.current = captureWorkflowOperationContext();
     setAnchorPosition({
       top: event.clientY,
       left: event.clientX,
@@ -121,59 +131,53 @@ export function useWorkflowConnections({
   }, []);
 
   const handleNodeSearchSelect = useCallback(
-    (_: string, node: NodeData) => {
-      if (!anchorPosition) {
-        return;
-      }
-
-      const dropHandle = dropHandleRef.current;
-      const matchingHandle = dropHandle
-        ? matchingNodeHandleForDrop(node, dropHandle.dataType, dropHandle.handleType)
-        : undefined;
-      if (dropHandle && !matchingHandle) return;
-
-      const position = screenToFlowPosition({
-        x: anchorPosition.left,
-        y: anchorPosition.top,
-      });
-      const newNode: CustomNodeType = {
-        id: `node-${nanoid()}`,
-        type: node.type,
-        position,
-        data: cloneNodeData(node),
-      };
-
-      addNode(newNode);
-
-      if (!dropHandle) {
-        return;
-      }
-
-      if (matchingHandle) {
-        const [newHandleId] = matchingHandle;
-        const connection =
-          dropHandle.handleType === 'source'
-            ? {
-                source: dropHandle.nodeId,
-                sourceHandle: dropHandle.handleId,
-                target: newNode.id,
-                targetHandle: newHandleId,
-                edgeType,
-              }
-            : {
-                source: newNode.id,
-                sourceHandle: newHandleId,
-                target: dropHandle.nodeId,
-                targetHandle: dropHandle.handleId,
-                edgeType,
-              };
-
-        onConnect(connection);
+    (key: string, node: NodeData, block?: StoredUserBlockDefinition) => {
+      if (!anchorPosition || !searchContextRef.current) return;
+      try {
+        assertWorkflowOperationContext(searchContextRef.current, { includeForm: false });
+        const position = screenToFlowPosition({ x: anchorPosition.left, y: anchorPosition.top });
+        const newNode = block
+          ? createStoredUserBlockNode(block, position)
+          : createNodeFromRegistry(key, { [key]: node }, position)!;
+        const dropHandle = dropHandleRef.current;
+        const matchingHandle = dropHandle
+          ? matchingNodeHandleForDrop(newNode.data, dropHandle.dataType, dropHandle.handleType)
+          : undefined;
+        if (dropHandle && !matchingHandle) throw new Error('This node no longer has a compatible port.');
+        let connection: CustomConnection | undefined;
+        if (dropHandle && matchingHandle) {
+          const [newHandleId] = matchingHandle;
+          connection =
+            dropHandle.handleType === 'source'
+              ? {
+                  source: dropHandle.nodeId,
+                  sourceHandle: dropHandle.handleId,
+                  target: newNode.id,
+                  targetHandle: newHandleId,
+                  edgeType,
+                }
+              : {
+                  source: newNode.id,
+                  sourceHandle: newHandleId,
+                  target: dropHandle.nodeId,
+                  targetHandle: dropHandle.handleId,
+                  edgeType,
+                };
+        }
+        const wasEmpty = useFlowStore.getState().nodes.length === 0;
+        useFlowStore.getState().addNodeWithConnection(newNode, connection);
+        if (wasEmpty && useStudioStore.getState().graphBinding) useStudioStore.getState().detachManagedGraph();
+        prepareWorkflowForManualInsertion();
+      } catch (error) {
+        enqueueSnackbar(error instanceof Error ? error.message : 'Could not insert this node.', {
+          variant: 'error',
+          autoHideDuration: 5200,
+        });
       }
 
       dropHandleRef.current = null;
     },
-    [anchorPosition, screenToFlowPosition, addNode, onConnect, edgeType],
+    [anchorPosition, screenToFlowPosition, edgeType],
   );
 
   const handleIsValidConnection = useCallback(
@@ -259,6 +263,7 @@ export function useWorkflowConnections({
       }
 
       setAnchorPosition(pointerPosition(event));
+      searchContextRef.current = captureWorkflowOperationContext();
       return true;
     },
     [getParam],
@@ -351,6 +356,7 @@ export function useWorkflowConnections({
   const closeNodeSearchDialog = useCallback(() => {
     setAnchorPosition(null);
     dropHandleRef.current = null;
+    searchContextRef.current = null;
   }, []);
 
   return {
