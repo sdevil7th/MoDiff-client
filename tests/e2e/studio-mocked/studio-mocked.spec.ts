@@ -26912,3 +26912,69 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.screenshot({ path: test.info().outputPath('connected-block-inputs.png'), animations: 'disabled' });
   });
 }
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} Gallery keeps recognized graph task after history reload`, async ({ page }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const output = {
+      id: 'task-history',
+      url: '/file?file=task-history.webp',
+      displayType: 'image',
+      taskId: 'task-history-run',
+      nodeId: 'preview',
+      attemptIndex: 0,
+      createdAt: 1,
+      mode: 'text_to_image',
+      formSnapshot: { mode: 'text_to_image' },
+      resolvedExecutionInputs: {
+        schemaVersion: 1,
+        source: 'backend-execution',
+        taskId: 'task-history-run',
+        nodeId: 'preview',
+        attemptIndex: 0,
+        nodes: [
+          {
+            nodeId: 'loader',
+            module: 'modules.ModularDiffusers',
+            action: 'ModelsLoader',
+            fields: { model_type: { value: 'StableDiffusionXLModularPipeline', source: 'literal' } },
+            omittedFields: {},
+          },
+        ],
+        summary: { modelType: 'StableDiffusionXLModularPipeline' },
+        ambiguousFields: [],
+        unavailableFields: [],
+        uncapturedNodeIds: [],
+        truncated: false,
+        graphTasks: [{ loaderId: 'loader', pipelineClass: 'StableDiffusionXLModularPipeline', task: 'image_to_image' }],
+      },
+    };
+    await page.route('**/studio_outputs**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, outputs: [output], revision: 1 }),
+      }),
+    );
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    for (let reload = 0; reload < 2; reload += 1) {
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+      await dismissTaskLauncher(page);
+      await setStudioViewMode(page, workspace);
+      await page.getByTestId('topbar-gallery').click();
+      await expect(page.getByTestId('gallery-output-0')).toBeVisible();
+      await page.getByTestId('gallery-view-inspect').click();
+      const inspector = page.getByTestId('gallery-inspect-view');
+      const metadata = JSON.parse((await inspector.locator('pre').textContent())!);
+      await expect(inspector.locator('h2')).toContainText('Image to image');
+      expect(metadata.resolvedExecutionInputs.graphTasks).toEqual(output.resolvedExecutionInputs.graphTasks);
+      const stored = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0]);
+      expect(stored.mode).toBe('image_to_image');
+      expect(stored.formSnapshot.mode).toBe('text_to_image');
+      if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
+    }
+    await page.getByTestId('gallery-inspect-view').locator('h2').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('recognized-graph-task.png'), animations: 'disabled' });
+  });
+}

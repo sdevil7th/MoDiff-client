@@ -1235,3 +1235,12 @@ URL. A ready backend current-output slot for the same workflow/node/field can re
 completion missed while the browser was closed. A merely newer output from the same
 node is insufficient. Snapshots, saves and reloads retain these durable references
 without changing graph values or execution ownership.
+
+### Recognized graph tasks in output history
+
+`resolvedExecutionInputs` can carry backend `graphTasks` alongside captured call
+arguments. The client validates each owner against the receipt's captured Modular
+loader and model identity. A unique supported task updates the output label while
+leaving its saved form untouched. Legacy receipts remain readable; incomplete or
+ambiguous graph recognition does not invent a task. This metadata grants no
+execution or resource authority and adds no frontend model-family dispatch.

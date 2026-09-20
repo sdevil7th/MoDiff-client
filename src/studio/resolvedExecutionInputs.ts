@@ -1,4 +1,5 @@
-import type { StudioOutput } from './types';
+import type { StudioMode, StudioOutput } from './types';
+import { STUDIO_MODE_DESCRIPTIONS } from './modelProfiles';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
 type InputField = {
@@ -25,6 +26,8 @@ export type ResolvedExecutionInputs = {
   unavailableFields: string[];
   uncapturedNodeIds: string[];
   truncated: boolean;
+  /** Backend recognition of concrete graph contracts, separate from consumed values. */
+  graphTasks?: { loaderId: string; pipelineClass: string; task: string | null }[];
 };
 
 const inputNames: Record<string, string> = {
@@ -200,11 +203,52 @@ export function coerceResolvedExecutionInputs(
     )
   )
     return undefined;
+  let graphTasks: ResolvedExecutionInputs['graphTasks'];
+  if (value.graphTasks !== undefined) {
+    if (
+      !Array.isArray(value.graphTasks) ||
+      value.graphTasks.length > 256 ||
+      value.truncated ||
+      value.uncapturedNodeIds.length > 0
+    )
+      return undefined;
+    const owners = new Set<string>();
+    graphTasks = [];
+    for (const item of value.graphTasks) {
+      if (
+        !record(item) ||
+        !text(item.loaderId) ||
+        !text(item.pipelineClass) ||
+        !(item.task === null || (text(item.task) && /^[a-z][a-z0-9_]*$/u.test(item.task))) ||
+        owners.has(item.loaderId)
+      )
+        return undefined;
+      const owner = value.nodes.find((node) => record(node) && node.nodeId === item.loaderId);
+      if (
+        !record(owner) ||
+        owner.module !== 'modules.ModularDiffusers' ||
+        owner.action !== 'ModelsLoader' ||
+        !record(owner.fields) ||
+        !record(owner.fields.model_type) ||
+        owner.fields.model_type.value !== item.pipelineClass
+      )
+        return undefined;
+      owners.add(item.loaderId);
+      graphTasks.push({ loaderId: item.loaderId, pipelineClass: item.pipelineClass, task: item.task });
+    }
+  }
+  if (graphTasks) {
+    const loaders = value.nodes.filter(
+      (node) => record(node) && node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+    );
+    if (loaders.length !== graphTasks.length) return undefined;
+  }
   // Shared backend bounds plus envelope/summary overhead. JSON input only;
   // never stringify live model objects or retain unknown extension fields.
   if (JSON.stringify(value).length > 800_000) return undefined;
   return JSON.parse(
     JSON.stringify({
+      ...(graphTasks ? { graphTasks } : {}),
       schemaVersion: 1,
       source: 'backend-execution',
       taskId: value.taskId,
@@ -249,6 +293,9 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
     promptSettingsHash: undefined,
     exactTemplateCompatible: false,
   };
+  const tasks = new Set(receipt.graphTasks?.map((item) => item.task));
+  const task = [...tasks][0];
+  if (tasks.size === 1 && task && hasOwn(STUDIO_MODE_DESCRIPTIONS, task)) next.mode = task as StudioMode;
   for (const key of ['prompt', 'negativePrompt', 'repo'] as const) {
     if (typeof receipt.summary[key] === 'string') next[key] = receipt.summary[key];
     else if (resolvedInputUnavailable(receipt, key)) next[key] = '';

@@ -297,3 +297,40 @@ test('effective image overrides survive persistence without presenting unused fo
     output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
   }
 });
+
+test('graph task evidence replaces stale history labels while preserving the saved form', () => {
+  const evidence = receipt();
+  evidence.nodes.push({
+    nodeId: 'loader',
+    module: 'modules.ModularDiffusers',
+    action: 'ModelsLoader',
+    fields: {
+      model_type: { value: 'StableDiffusionXLModularPipeline', source: 'literal' },
+    },
+    omittedFields: {},
+  });
+  evidence.summary.modelType = 'StableDiffusionXLModularPipeline';
+  evidence.graphTasks = [
+    { loaderId: 'loader', pipelineClass: 'StableDiffusionXLModularPipeline', task: 'image_to_image' },
+  ];
+  const value = {
+    id: 'graph-task',
+    url: '/image.webp',
+    taskId: 'actual-task',
+    attemptIndex: 2,
+    nodeId: 'preview',
+    mode: 'text_to_image',
+    formSnapshot: { mode: 'text_to_image' },
+    resolvedExecutionInputs: evidence,
+  };
+  const output = contracts.coerceStudioOutput(value);
+  assert.equal(output.mode, 'image_to_image');
+  assert.equal(output.formSnapshot.mode, 'text_to_image');
+  assert.deepEqual(output.resolvedExecutionInputs.graphTasks, evidence.graphTasks);
+  assert.equal(contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output))).mode, 'image_to_image');
+  for (const patch of [{ loaderId: 'missing' }, { pipelineClass: 'FluxModularPipeline' }, { task: {} }]) {
+    const malformed = structuredClone(evidence);
+    Object.assign(malformed.graphTasks[0], patch);
+    assert.equal(inputs.coerceResolvedExecutionInputs(malformed, output), undefined);
+  }
+});
