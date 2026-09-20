@@ -1003,6 +1003,7 @@ export function installE2EHooks() {
         },
         studio: {
           workflowCanvasHydrated: useStudioStore.getState().workflowCanvasHydrated,
+          launcherDismissed: useStudioStore.getState().launcherDismissed,
           form: useStudioStore.getState().form,
           graphBinding: useStudioStore.getState().graphBinding,
           graphFinalization: useStudioStore.getState().graphFinalization,

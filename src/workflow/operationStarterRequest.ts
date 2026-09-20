@@ -144,11 +144,12 @@ export function requestOperationStarter(
   task: string,
   operations: OperationContract[],
   signal?: AbortSignal,
+  executionProfileId?: string,
 ) {
   return requestJson(`${config.serverAddress}/operations/starter`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pipelineClass, task }),
+    body: JSON.stringify({ pipelineClass, task, ...(executionProfileId ? { executionProfileId } : {}) }),
     signal,
     parse: (value) => parseOperationStarter(value, pipelineClass, task, operations),
   });

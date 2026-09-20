@@ -3620,3 +3620,94 @@ test('queued option updates retain their originating canvas ownership', async ()
   await action;
   assert.deepEqual(updates, immediate);
 });
+
+test('nonqueued field metadata requests abort when their workflow is replaced', async () => {
+  let signal;
+  globalThis.fetch = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      signal = init.signal;
+      signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+    });
+  const request = fieldActionModule.default(
+    {
+      nodeId: 'preview',
+      fieldKey: 'output',
+      module: 'modules.Test',
+      action: 'Preview',
+      onChange: 'refresh',
+      updateStore: () => undefined,
+    },
+    'next',
+  );
+  try {
+    assert.ok(signal);
+    studioStoreModule.useStudioStore.setState((state) => ({ workflowCanvasEpoch: state.workflowCanvasEpoch + 1 }));
+    assert.equal(signal.aborted, true);
+    await request;
+  } finally {
+    // Avoid leaving the deliberately unanswered request alive after a red assertion.
+    if (!signal.aborted) signal.dispatchEvent(new Event('abort'));
+    await request.catch(() => undefined);
+  }
+});
+
+test('navigation cancels nonqueued schema waits and removes its temporary listener', async () => {
+  const listeners = new Set();
+  globalThis.window.addEventListener = (name, callback) => {
+    assert.equal(name, 'beforeunload');
+    listeners.add(callback);
+  };
+  globalThis.window.removeEventListener = (name, callback) => {
+    assert.equal(name, 'beforeunload');
+    listeners.delete(callback);
+  };
+  let signal;
+  globalThis.fetch = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      signal = init.signal;
+      signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+    });
+  try {
+    const request = fieldActionModule.default(
+      {
+        nodeId: 'preview',
+        fieldKey: 'output',
+        module: 'modules.Test',
+        action: 'Preview',
+        onChange: 'refresh',
+        updateStore: () => undefined,
+      },
+      'next',
+    );
+    assert.equal(listeners.size, 1);
+    for (const listener of listeners) listener();
+    await request;
+    assert.equal(signal.aborted, true);
+    assert.equal(listeners.size, 0);
+  } finally {
+    delete globalThis.window.addEventListener;
+    delete globalThis.window.removeEventListener;
+  }
+});
+
+test('changing workflows retains the acknowledgement of a queued field action', async () => {
+  let signal;
+  globalThis.fetch = async (_url, init) => {
+    signal = init.signal;
+    studioStoreModule.useStudioStore.setState((state) => ({ workflowCanvasEpoch: state.workflowCanvasEpoch + 1 }));
+    return jsonResponse({ error: false, task_id: 'queued-action' });
+  };
+  await fieldActionModule.default(
+    {
+      nodeId: 'preview',
+      fieldKey: 'output',
+      module: 'modules.Test',
+      action: 'Preview',
+      onChange: 'refresh',
+      fieldOptions: { queue: true },
+      updateStore: () => undefined,
+    },
+    'next',
+  );
+  assert.equal(signal.aborted, false);
+});

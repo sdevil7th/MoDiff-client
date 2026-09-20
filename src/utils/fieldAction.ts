@@ -3,7 +3,11 @@
 import type { FieldProps } from '../components/NodeContent';
 import { useFlowStore } from '../stores/useFlowStore';
 import { type NodeParamSignal, type NodeParams, useNodesStore } from '../stores/useNodeStore';
-import { captureWorkflowOperationContext, workflowOperationContextIsCurrent } from '../stores/useStudioStore';
+import {
+  captureWorkflowOperationContext,
+  useStudioStore,
+  workflowOperationContextIsCurrent,
+} from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { enqueueSnackbar } from '../ui/snackbar';
 import config from '../../app.config';
@@ -429,6 +433,17 @@ async function execAction(
 ) {
   const nodeValues = useFlowStore.getState().getNodeParamsValues(nodeId);
   const workflowContext = captureWorkflowOperationContext();
+  // Background schema updates belong to this document. Abort their HTTP waits
+  // when it leaves, freeing browser connections for the next canvas/navigation.
+  // Queued user actions keep their acknowledgement and execution ownership.
+  const controller = queue ? null : new AbortController();
+  const abort = () => controller?.abort();
+  const unsubscribe = controller
+    ? useStudioStore.subscribe(() => {
+        if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: workflowScope !== 'canvas' })) abort();
+      })
+    : undefined;
+  if (controller && typeof window !== 'undefined') window.addEventListener?.('beforeunload', abort);
 
   try {
     const sid = useWebsocketStore.getState().sid;
@@ -441,6 +456,7 @@ async function execAction(
       // backend remains bounded per signal; do not abort the enclosing action
       // at the generic 15-second request default.
       timeoutMs,
+      signal: controller?.signal,
       body: JSON.stringify({
         node: nodeId,
         sid,
@@ -473,11 +489,15 @@ async function execAction(
       },
     });
   } catch (error) {
+    if (controller?.signal.aborted) return;
     // The originating graph owns the result, including its error notification.
     // Backend websocket schema updates carry the same ownership receipt.
     if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: workflowScope !== 'canvas' })) return;
     const err = `Error running node action: ${formatRequestError(error, 'Request failed.')}`;
     enqueueSnackbar(err, { variant: 'error', autoHideDuration: err.length * 80 });
     throw new Error(err);
+  } finally {
+    unsubscribe?.();
+    if (controller && typeof window !== 'undefined') window.removeEventListener?.('beforeunload', abort);
   }
 }

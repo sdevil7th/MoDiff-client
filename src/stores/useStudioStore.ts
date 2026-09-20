@@ -98,6 +98,7 @@ type StudioState = {
   outputs: StudioOutput[];
   importedAssets: StudioImportedAsset[];
   workflowTabs: WorkflowTab[];
+  dismissedWorkflowLaunchers: string[];
   activeWorkflowTabId: string | null;
   appModeConfigs: AppModeConfig[];
   activeAppModeConfigId: string | null;
@@ -750,6 +751,15 @@ function normalizePersistedStudioState(
       )
     : currentState.workflowTabs;
   const activeWorkflowTab = workflowTabs.find((tab) => tab.id === mergedState.activeWorkflowTabId);
+  const dismissedWorkflowLaunchers = Array.isArray(mergedState.dismissedWorkflowLaunchers)
+    ? [
+        ...new Set(
+          mergedState.dismissedWorkflowLaunchers.filter(
+            (id): id is string => typeof id === 'string' && workflowTabs.some((tab) => tab.id === id),
+          ),
+        ),
+      ]
+    : [];
   const activeSnapshot = activeWorkflowTab?.snapshot;
   const rawActiveWorkflowTab = Array.isArray(persistedState.workflowTabs)
     ? persistedState.workflowTabs.filter(isRecord).find((tab) => tab.id === mergedState.activeWorkflowTabId)
@@ -799,6 +809,9 @@ function normalizePersistedStudioState(
       ? mergedState.importedAssets.filter(isStudioImportedAsset).slice(0, 24)
       : currentState.importedAssets,
     workflowTabs,
+    dismissedWorkflowLaunchers,
+    launcherDismissed:
+      Boolean(activeSnapshot?.nodes.length) || dismissedWorkflowLaunchers.includes(activeWorkflowTab?.id ?? ''),
     pinnedGraphInputIds: Array.isArray(activeSnapshot?.pinnedGraphInputIds)
       ? activeSnapshot.pinnedGraphInputIds
       : Array.isArray(mergedState.pinnedGraphInputIds)
@@ -956,6 +969,7 @@ const defaultState: StudioState = {
   outputs: [],
   importedAssets: [],
   workflowTabs: [],
+  dismissedWorkflowLaunchers: [],
   activeWorkflowTabId: null,
   appModeConfigs: [],
   activeAppModeConfigId: null,
@@ -1793,7 +1807,15 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         })),
       clearGraphBinding: () => set({ graphBinding: null, graphFinalization: null }),
       setCanvasTransition: (transition) => set({ canvasTransition: transition }),
-      setLauncherDismissed: (dismissed) => set({ launcherDismissed: dismissed }),
+      setLauncherDismissed: (dismissed) =>
+        set((state) => ({
+          launcherDismissed: dismissed,
+          dismissedWorkflowLaunchers: state.workflowTabs
+            .filter((tab) =>
+              tab.id === state.activeWorkflowTabId ? dismissed : state.dismissedWorkflowLaunchers.includes(tab.id),
+            )
+            .map((tab) => tab.id),
+        })),
       resetWorkflowSession: () =>
         set({
           graphBinding: null,
@@ -2741,7 +2763,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           sourceOutputId: targetSnapshot.sourceOutputId,
           pinnedGraphInputIds: targetSnapshot.pinnedGraphInputIds ?? [],
           autoFieldOverrides: targetSnapshot.autoFieldOverrides ?? {},
-          launcherDismissed: targetSnapshot.nodes.length > 0,
+          launcherDismissed: targetSnapshot.nodes.length > 0 || state.dismissedWorkflowLaunchers.includes(id),
           lastError: null,
           ...resumedRunContexts,
         });
@@ -2821,7 +2843,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           sourceOutputId: nextSnapshot.sourceOutputId,
           pinnedGraphInputIds: nextSnapshot.pinnedGraphInputIds ?? [],
           autoFieldOverrides: nextSnapshot.autoFieldOverrides ?? {},
-          launcherDismissed: nextSnapshot.nodes.length > 0,
+          launcherDismissed: nextSnapshot.nodes.length > 0 || state.dismissedWorkflowLaunchers.includes(nextActive.id),
           lastError: null,
           ...resumedRunContexts,
         });
@@ -3117,6 +3139,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         importedAssets: state.importedAssets,
         workflowTabs: workflowTabsForLocalCheckpoint(state.workflowTabs, state.activeWorkflowTabId),
         activeWorkflowTabId: state.activeWorkflowTabId,
+        dismissedWorkflowLaunchers: state.dismissedWorkflowLaunchers.filter((id) =>
+          state.workflowTabs.some((tab) => tab.id === id),
+        ),
         appModeConfigs: state.appModeConfigs,
         activeAppModeConfigId: state.activeAppModeConfigId,
         blueprints: state.blueprints,

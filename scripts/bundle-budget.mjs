@@ -50,7 +50,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // M8 shares the stage inspector with a lazy canvas entry point and checks its
 // workflow/selection lifetime. Aggregate deferred code measures 209.3 KiB.
 // Bound this surface at 210 KiB; startup and individual chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 210 * 1024;
+// W3 adds the task-first Developer chooser and defers the existing Creator
+// launcher. Measured deferred code is 214.9 KiB; bound the added feature at
+// 215 KiB. Startup and individual chunk ceilings remain unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 215 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

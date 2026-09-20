@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 
-let server, authoring, requests;
+let server, authoring, requests, drafts, choices;
 const originalFetch = globalThis.fetch;
 before(async () => {
   globalThis.fetch = async (url, options) => {
@@ -32,6 +32,8 @@ before(async () => {
   });
   authoring = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
   requests = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+  drafts = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
+  choices = await server.ssrLoadModule('/src/workflow/workflowChoices.ts');
 });
 after(async () => {
   await server?.close();
@@ -457,4 +459,82 @@ test('shared seed hints cannot cross loader branches or act on malformed or deta
   assert.equal(sharedOperationInput(a.nodes, a.edges, a.nodes[1].id, 'seed'), null);
   b.nodes[0].data.params.pipeline_class.value = 'ChangedOutsidePreview';
   assert.equal(sharedOperationInput(b.nodes, b.edges, b.nodes[1].id, 'seed'), null);
+});
+
+test('workflow drafts connect concrete image, audio and video media without changing the starter', () => {
+  for (const [type, key, input] of [
+    ['image', 'modules.Image.Preview', 'image'],
+    ['audio', 'modules.Audio.Preview', 'audio'],
+    ['video_asset', 'modules.Video.ExportAsset', 'video'],
+  ]) {
+    const s = starter();
+    s.nodes[1].node.params.result = { type, display: 'output' };
+    s.nodes[1].operation.ports.push({
+      name: 'result',
+      direction: 'output',
+      hidden: false,
+      types: [type],
+      semantics: { kind: 'media' },
+    });
+    const original = structuredClone(s);
+    const registry = {
+      [key]: {
+        module: key.slice(0, key.lastIndexOf('.')),
+        action: key.split('.').at(-1),
+        label: 'Output',
+        params: { [input]: { type, display: 'input' } },
+      },
+    };
+    const { graph, notices } = drafts.createWorkflowDraft(s, registry);
+    assert.deepEqual(s, original);
+    assert.equal(graph.nodes.length, 3);
+    assert.equal(graph.edges.length, 2);
+    assert.equal(graph.edges[1].targetHandle, input);
+    assert.equal(graph.edges[1].sourceHandle, 'result');
+    assert.deepEqual(notices, []);
+    registry[key].params[input].hidden = true;
+    assert.equal(drafts.createWorkflowDraft(s, registry).graph.nodes.length, 2);
+  }
+});
+
+test('workflow drafts keep unsupported or latent outputs explicit instead of inventing an output adapter', () => {
+  const s = starter();
+  s.nodes[1].node.params.result = { type: 'latent', display: 'output' };
+  s.nodes[1].operation.ports.push({
+    name: 'result',
+    direction: 'output',
+    types: ['latent'],
+    semantics: { kind: 'state' },
+  });
+  const result = drafts.createWorkflowDraft(s, {});
+  assert.equal(result.graph.nodes.length, 2);
+  assert.match(result.notices[0], /No compatible output/);
+});
+
+test('workflow choices join exact execution profiles and retain task and pipeline distinctions', () => {
+  const support = [
+    {
+      pipelineClass: 'FuturePipeline',
+      tasks: ['text_to_image', 'edit_image'].map((task) => ({
+        task,
+        operationIds: ['load', 'run'],
+        executionProfileIds: ['first', 'second'],
+      })),
+    },
+    {
+      pipelineClass: 'UnknownPipeline',
+      tasks: [{ task: 'future_task', operationIds: ['load'], executionProfileIds: [] }],
+    },
+  ];
+  const models = ['first', 'second'].map((id) => ({
+    label: id,
+    defaultRepo: `test/${id}`,
+    executionProfiles: [{ id, default_repo: `test/${id}` }],
+  }));
+  const result = choices.workflowChoices(support, models, [], [], null);
+  assert.equal(result.length, 5);
+  assert.equal(new Set(result.map((c) => c.id)).size, 5);
+  assert.equal(result.find((c) => c.task === 'edit_image' && c.profileId === 'second').repo, 'test/second');
+  assert.equal(result.find((c) => c.task === 'future_task').repo, null);
+  assert.equal(choices.workflowTaskLabel('future_task'), 'Future task');
 });

@@ -349,6 +349,8 @@ declare global {
           historyFuture: number;
         };
         studio: {
+          launcherDismissed: boolean;
+          workflowCanvasHydrated: boolean;
           form: {
             mode?: string;
             modelType?: string;
@@ -5293,7 +5295,13 @@ async function setWorkflowResourceMode(page: Page, mode: 'auto' | 'expert') {
 }
 
 async function dismissTaskLauncher(page: Page) {
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  const expected = await page.evaluate(() => {
+    const { flow, studio } = window.__MODIFF_E2E__!.getState();
+    return flow.nodes.length === 0 && !studio.launcherDismissed;
+  });
   const launcher = page.getByTestId('task-launcher');
+  if (expected) await expect(launcher).toBeVisible();
   if (await launcher.isVisible()) {
     await launcher.getByLabel('Close').click();
     await expect(launcher).toBeHidden();
@@ -8733,7 +8741,13 @@ async function installOperationAuthoringRoutes(page: Page) {
     }),
   );
   await page.unroute('**/nodes');
-  const registry = Object.fromEntries(starters.flatMap((s) => s.nodes.map((n) => [n.operation.nodeKey, n.node])));
+  const registry = {
+    ...Object.fromEntries(starters.flatMap((s) => s.nodes.map((n) => [n.operation.nodeKey, n.node]))),
+    'modules.Image.Preview': mockRegistry['modules.Image.Preview'],
+    'modules.Audio.Preview': nodeDef('modules.Audio', 'Preview', 'audio', {
+      audio: { type: 'audio', display: 'input' },
+    }),
+  };
   await page.route('**/nodes', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: registry }) }),
   );
@@ -17401,8 +17415,9 @@ test('session activity and generation notifications open the originating workflo
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
     .not.toBe(workflowId);
-  await expect(page.getByTestId('task-launcher')).toBeVisible();
-  await dismissTaskLauncher(page);
+  // Closing a tab returns to an already-dismissed empty document. Its chooser
+  // stays dismissed; only an explicit New workflow should offer it again.
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
   await page.route('**/runs/notification-success-task', async (route) => {
     await route.fulfill({
       status: 200,
@@ -17474,8 +17489,7 @@ test('session activity and generation notifications open the originating workflo
       ),
     )
     .toBe(false);
-  await expect(page.getByTestId('task-launcher')).toBeVisible();
-  await dismissTaskLauncher(page);
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
   await page.getByTestId(`session-run-${noOutputTaskId}`).click();
   await expect(
     page.getByText('Run completed, but no previewable output was generated. Showing its Queue details.'),
@@ -24775,4 +24789,137 @@ test('custom source review requires consent and enabled nodes join typed search 
   expect(approvals).toHaveLength(1);
   expect(errors).toEqual([]);
   await page.screenshot({ path: test.info().outputPath('custom-nodes-auto.png'), animations: 'disabled' });
+});
+
+async function openDeveloperWorkflows(page: Page) {
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('modiff.settings'))
+      localStorage.setItem('modiff.settings', JSON.stringify({ state: { workspaceMode: 'developer' }, version: 0 }));
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(
+    page
+      .getByRole('dialog', { name: 'Workflows', exact: true })
+      .getByRole('heading', { name: 'Workflows', exact: true }),
+  ).toBeVisible();
+}
+
+for (const [task, pipeline, count, output] of [
+  ['text_to_image', 'QwenImageModularPipeline', 5, 'modules.Image'],
+  ['image_to_image', 'FluxModularPipeline', 6, 'modules.Image'],
+  ['edit_image', 'FluxKontextModularPipeline', 6, 'modules.Image'],
+  ['text_to_audio', 'StableAudioPipeline', 3, 'modules.Audio'],
+] as const) {
+  test(`Developer Workflows creates and restores ordinary ${task} nodes with a connected output`, async ({ page }) => {
+    await openDeveloperWorkflows(page);
+    const modal = page.getByRole('dialog', { name: 'Workflows', exact: true });
+    await modal.getByTestId(`workflow-task-${task}`).click();
+    await modal.getByLabel('Search workflow models').fill(pipeline);
+    await modal.getByLabel('Workflow model', { exact: true }).click();
+    await page.getByRole('option').filter({ hasText: pipeline }).click();
+    await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
+    await expect(modal.getByRole('region', { name: 'Workflow preview' })).toBeVisible();
+    await fs.mkdir(path.join(CLIENT_ROOT, 'reviews/creator-developer-w3'), { recursive: true });
+    await page.screenshot({ path: path.join(CLIENT_ROOT, `reviews/creator-developer-w3/preview-${task}.png`) });
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+    if (task === 'image_to_image' || task === 'edit_image') await expect(modal).toContainText('Inputs to provide');
+    await modal.getByRole('button', { name: 'Create workflow', exact: true }).dblclick();
+    await expect(modal).toHaveCount(0);
+    const read = () =>
+      page.evaluate((module) => {
+        const { flow, studio } = window.__MODIFF_E2E__!.getState();
+        const preview = flow.nodes.find((n) => n.module === module && n.action === 'Preview');
+        return {
+          count: flow.nodes.length,
+          connected: Boolean(preview && flow.edges.some((e) => e.target === preview.id)),
+          binding: studio.graphBinding,
+        };
+      }, output);
+    await expect.poll(read).toEqual({ count, connected: true, binding: null });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect(modal).toHaveCount(0);
+    await expect.poll(read).toEqual({ count, connected: true, binding: null });
+  });
+}
+
+test('Developer Workflows Escape persists per tab and a new document offers tasks again on a small viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 640 });
+  await openDeveloperWorkflows(page);
+  const modal = page.getByRole('dialog', { name: 'Workflows', exact: true });
+  await modal.getByTestId('workflow-task-text_to_image').focus();
+  await page.keyboard.press('Enter');
+  await expect(modal.getByLabel('Workflow model', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(modal).toHaveCount(0);
+  await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+  await expect(modal.getByRole('heading', { name: 'Workflows', exact: true })).toBeVisible();
+  await modal.getByRole('button', { name: 'Empty workflow', exact: true }).click();
+  await expect(modal).toHaveCount(0);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+});
+
+test('Developer Workflows retries failures and discards a delayed preview after changing tasks', async ({ page }) => {
+  await openDeveloperWorkflows(page);
+  const modal = page.getByRole('dialog', { name: 'Workflows', exact: true });
+  let attempts = 0;
+  await page.route('**/operations/starter', async (route) => {
+    attempts++;
+    if (attempts === 1)
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Temporarily unavailable' }),
+      });
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.fallback();
+  });
+  await modal.getByTestId('workflow-task-text_to_image').click();
+  await modal.getByLabel('Workflow model', { exact: true }).click();
+  await page.getByRole('option').filter({ hasText: 'QwenImageModularPipeline' }).click();
+  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
+  await expect(modal.getByRole('alert')).toBeVisible();
+  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
+  await modal.getByRole('button', { name: 'All tasks', exact: true }).click();
+  await expect.poll(() => attempts).toBe(2);
+  await modal.getByTestId('workflow-task-edit_image').click();
+  await modal.getByLabel('Workflow model', { exact: true }).click();
+  await page.getByRole('option').filter({ hasText: 'FluxKontextModularPipeline' }).click();
+  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
+  await expect(modal.getByRole('region', { name: 'Workflow preview' })).toContainText('Inputs to provide');
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+});
+
+test('Developer Workflows recovers unavailable capabilities without installing or executing anything', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page);
+  await page.addInitScript(() =>
+    localStorage.setItem('modiff.settings', JSON.stringify({ state: { workspaceMode: 'developer' }, version: 0 })),
+  );
+  let offline = true;
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      mutations.push(request.url());
+  });
+  await page.route('**/model_capabilities**', (route) =>
+    offline ? route.fulfill({ status: 503, json: { error: 'Backend temporarily unavailable' } }) : route.fallback(),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Close loading error and start with an empty workflow', exact: true }).click();
+  const modal = page.getByTestId('task-launcher');
+  await expect(modal.getByRole('button', { name: 'Retry capabilities' })).toBeVisible();
+  offline = false;
+  await modal.getByRole('button', { name: 'Retry capabilities' }).click();
+  await expect(modal.getByTestId('workflow-task-text_to_image')).toBeVisible();
+  expect(mutations).toEqual([]);
 });
