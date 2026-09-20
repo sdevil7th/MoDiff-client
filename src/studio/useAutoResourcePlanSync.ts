@@ -31,6 +31,9 @@ export function useAutoResourcePlanSync() {
   const form = useStudioStore((state) => state.form);
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
   const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const canvasHydrated = useStudioStore((state) => state.workflowCanvasHydrated);
+  const canvasEpoch = useStudioStore((state) => state.workflowCanvasEpoch);
+  const formEpoch = useStudioStore((state) => state.workflowFormEpoch);
   const launcherDismissed = useStudioStore((state) => state.launcherDismissed);
   const canvasTransitionType = useStudioStore((state) => state.canvasTransition?.type);
   const graphBindingFingerprint = useStudioStore((state) => state.graphBinding?.fingerprint);
@@ -48,6 +51,10 @@ export function useAutoResourcePlanSync() {
 
   useEffect(() => {
     let cancelled = false;
+    // Restoring the authoritative snapshot may keep the same form and binding
+    // while invalidating the request's ownership. Retry for the new epochs;
+    // otherwise a discarded response leaves startup waiting for a plan forever.
+    if (!canvasHydrated) return;
     const context = captureWorkflowOperationContext();
     if (!launcherDismissed && !graphBindingFingerprint && nodeCount === 0) {
       setAutoResourcePlan(null);
@@ -101,6 +108,9 @@ export function useAutoResourcePlanSync() {
     };
   }, [
     activeWorkflowTabId,
+    canvasHydrated,
+    canvasEpoch,
+    formEpoch,
     autoResourcePlan,
     form,
     graphBindingFingerprint,

@@ -15,6 +15,7 @@ import { workflowChoices, workflowTaskLabel } from '../workflow/workflowChoices'
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { createWorkflowDraft } from '../workflow/workflowDraft';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
+import WorkflowEntryActions from './WorkflowEntryActions';
 import type { OperationStarter } from '../workflow/operationAuthoring';
 
 type Preview = {
@@ -34,7 +35,6 @@ export default function DeveloperWorkflowLauncher() {
   const diagnostics = useNodesStore((s) => s.modelCacheDiagnostics);
   const capabilitiesStatus = useNodesStore((s) => s.discoveryRequests.capabilities);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
-  const tabs = useStudioStore((s) => s.workflowTabs);
   const choices = useMemo(
     () => workflowChoices(support, models, hfCache, localModels, diagnostics),
     [support, models, hfCache, localModels, diagnostics],
@@ -79,11 +79,6 @@ export default function DeveloperWorkflowLauncher() {
   }, [task, choiceId, workflow, operations, registry]);
 
   const dismiss = () => prepareWorkflowForManualInsertion({ revealWorkspace: false });
-  const openLibrary = () => {
-    dismiss();
-    useSettingsStore.getState().setLeftPanelTabIndex(4);
-    useSettingsStore.getState().setLeftPanelOpen(true);
-  };
   const openSetup = () => {
     dismiss();
     useSettingsStore.getState().setRightPanelTab('setup');
@@ -154,19 +149,8 @@ export default function DeveloperWorkflowLauncher() {
       <p className="mb-3 text-sm text-modiff-subtle-text">
         Choose a task, select a model, and preview its connected nodes. Models load only when you run the workflow.
       </p>
-      <div className="mb-4 flex flex-wrap gap-2">
-        <ModiffButton onClick={() => prepareWorkflowForManualInsertion()} data-testid="launcher-mode-advanced_workflow">
-          Empty workflow
-        </ModiffButton>
-        <ModiffButton onClick={openLibrary}>Open workflow</ModiffButton>
-        <ModiffButton
-          onClick={() => {
-            dismiss();
-            useSettingsStore.getState().setTemplateBrowserOpen(true);
-          }}
-        >
-          Browse templates
-        </ModiffButton>
+      <div className="mb-4">
+        <WorkflowEntryActions templates />
       </div>
       {!task ? (
         <>
@@ -198,26 +182,6 @@ export default function DeveloperWorkflowLauncher() {
               </ModiffButton>
             </div>
           )}
-          {tabs.some((tab) => tab.id !== workflow) ? (
-            <section className="mt-4 space-y-2" aria-label="Recent workflows">
-              <h3 className="text-sm font-semibold">Recent workflows</h3>
-              {[...tabs]
-                .filter((tab) => tab.id !== workflow)
-                .sort((a, b) => b.updatedAt - a.updatedAt)
-                .slice(0, 6)
-                .map((tab) => (
-                  <ModiffButton
-                    key={tab.id}
-                    onClick={() => {
-                      dismiss();
-                      useStudioStore.getState().switchWorkflowTab(tab.id);
-                    }}
-                  >
-                    {tab.title}
-                  </ModiffButton>
-                ))}
-            </section>
-          ) : null}
         </>
       ) : (
         <div className="space-y-3">

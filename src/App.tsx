@@ -25,7 +25,6 @@ import { openRunActivity } from './studio/runActivity.ts';
 import { useAutoResourcePlanSync } from './studio/useAutoResourcePlanSync.ts';
 import { useWorkflowBackendSync } from './studio/useWorkflowBackendSync.ts';
 
-const TaskLauncher = lazy(() => import('./components/TaskLauncher'));
 const DeveloperWorkflowLauncher = lazy(() => import('./components/DeveloperWorkflowLauncher'));
 const GraphFixDialog = lazy(() => import('./components/GraphFixDialog.tsx'));
 const RunIssuesDialog = lazy(() => import('./components/RunIssuesDialog.tsx'));
@@ -535,9 +534,9 @@ export default function App() {
           <WorkflowTabsBar />
           <div className="relative min-h-0 flex-1">
             <Workflow />
-            {workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && (
+            {workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && studioViewMode === 'expert' && (
               <Suspense fallback={null}>
-                {studioViewMode === 'expert' ? <DeveloperWorkflowLauncher /> : <TaskLauncher />}
+                <DeveloperWorkflowLauncher />
               </Suspense>
             )}
             <RunSessionShelf />
@@ -564,7 +563,12 @@ export default function App() {
       <Suspense fallback={null}>
         {runIssuesDialogOpen ? <RunIssuesDialog /> : null}
         {graphFixDialogOpen ? <GraphFixDialog /> : null}
-        {templateBrowserOpen ? <TemplateBrowserDialog /> : null}
+        {templateBrowserOpen ||
+        (workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && studioViewMode === 'auto') ? (
+          <TemplateBrowserDialog
+            entry={workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && studioViewMode === 'auto'}
+          />
+        ) : null}
         {galleryLibraryOpen ? <GalleryLibraryDialog /> : null}
         {mediaViewerOpener ? <MediaViewerDialog /> : null}
         {mediaExportOpener ? <MediaExportDialog /> : null}

@@ -565,7 +565,7 @@ declare global {
         speechStrideSeconds?: number;
       }) => void;
       bindManagedGraphForTest: (form: Record<string, unknown>, nodes: Record<string, string>) => boolean;
-      startManagedGraphFinalizationForTest: () => Promise<void>;
+      startManagedGraphFinalizationForTest: (mode?: 'text_to_image' | 'inpaint' | 'outpaint') => Promise<void>;
       waitForManagedGraphFinalizationForTest: () => Promise<void>;
       startStudioRunForTest: (identity: { clientRunId: string; runInputHash: string; taskId?: string | null }) => {
         clientRunId: string;
@@ -5308,6 +5308,14 @@ async function dismissTaskLauncher(page: Page) {
   }
 }
 
+// Legacy managed-graph regressions seed their existing document explicitly now
+// that Creator starts in Templates. This is fixture setup, not entry-flow proof;
+// the Creator/Developer tests below use native selection and creation gestures.
+async function seedLegacyManagedWorkflow(page: Page, mode: 'text_to_image' | 'inpaint' | 'outpaint') {
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
+  await page.evaluate((value) => window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest(value), mode);
+}
+
 async function openTemplateBrowser(page: Page) {
   // Empty workflows intentionally open the dismissible task launcher as a
   // modal. Template-focused tests must close it before interacting with the
@@ -5686,11 +5694,7 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
   // Warm Studio through its real launcher entry so this test isolates the
   // missing Block control path from the independent visibility defect.
-  await page.getByTestId('launcher-open-template-browser').click();
-  await page
-    .getByRole('dialog', { name: 'Templates', exact: true })
-    .getByRole('button', { name: 'Close', exact: true })
-    .click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
   await page.getByTestId('left-tab-nodes').click();
   await pinCurrentQwenRouteToMockRegistry(page, 'workspace-qwen-controls');
   const group = page.getByTestId('node-group-Diffusers-Blocks');
@@ -5794,7 +5798,6 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Nested observatory edit');
 
   await page.getByTestId('workflow-tab-new').click();
-  await page.getByTestId('launcher-open-template-browser').click();
   await page.getByTestId('template-browser-search').fill('Product Mockup');
   await page.getByTestId('template-browser-create-card-z_image_product_mockup').click();
   await expect(page.getByTestId('studio-model-select')).toBeVisible();
@@ -7475,9 +7478,7 @@ test('manual graphs expose Encode Image status and graph-derived full-resolution
   await expect(page.getByRole('heading', { name: 'A/B image comparison' })).toBeVisible();
 });
 
-test('template browser defers its indexes until first open and never refreshes them when reopened', async ({
-  page,
-}) => {
+test('Developer defers template indexes until first open and never refreshes them when reopened', async ({ page }) => {
   mockInstalledRepos.clear();
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
@@ -7485,6 +7486,9 @@ test('template browser defers its indexes until first open and never refreshes t
 
   await ensureFrontend();
   await installMockRoutes(page);
+  await page.addInitScript(() =>
+    localStorage.setItem('modiff.settings', JSON.stringify({ state: { workspaceMode: 'developer' }, version: 0 })),
+  );
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
@@ -7545,6 +7549,9 @@ test('template startup indexes recover once at the correct readiness signal with
     await route.fallback();
   });
 
+  await page.addInitScript(() =>
+    localStorage.setItem('modiff.settings', JSON.stringify({ state: { workspaceMode: 'developer' }, version: 0 })),
+  );
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
@@ -8203,7 +8210,7 @@ test('mocked Studio normalizes persisted forms without video fields', async ({ p
   // discarded instead of being migrated back into localStorage.
   expect(state.studio.outputs).toEqual([]);
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
@@ -8933,6 +8940,22 @@ test('operation starters preserve native edits through model/task preview, Undo 
   panel = await selectOperationPipeline(page, 'FluxModularPipeline');
   await panel.getByLabel('Operation graph to change').click();
   await page.getByRole('option', { name: new RegExp(loaderId.slice(-6)) }).click();
+  // Native edits also trigger asynchronous schema/validation publications.
+  // Establish a settled source document before reviewing a replacement; a late
+  // publication correctly invalidates a preview and must not weaken its guard.
+  let lastSignature = '';
+  let stableReads = 0;
+  await expect
+    .poll(
+      async () => {
+        const signature = await page.evaluate(() => JSON.stringify(window.__MODIFF_E2E__!.exportWorkflowGraph()));
+        stableReads = signature === lastSignature ? stableReads + 1 : 0;
+        lastSignature = signature;
+        return stableReads;
+      },
+      { intervals: [100, 250, 500], timeout: 10_000 },
+    )
+    .toBeGreaterThanOrEqual(3);
   await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
   await expect(dialog.getByRole('heading', { level: 2 })).toBeVisible();
@@ -9307,7 +9330,7 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
-  await expect(page.getByTestId('launcher-mode-image_to_video')).toBeVisible();
+  await expect(page.getByTestId('template-browser-category-video')).toBeVisible();
 
   await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-models').click();
@@ -9641,7 +9664,7 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
   await page.getByTestId('topbar-new-workflow').click();
   await expect(page.getByTestId('task-launcher')).toBeVisible();
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.getByTestId('template-browser-create-card-z_image_quick_concept').click();
   await expect
     .poll(async () => {
       const current = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())) as {
@@ -10984,7 +11007,7 @@ test('mocked custom graph inspector blocks invalid graphs in Auto and Expert', a
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
 
   const scenarios: Array<{
@@ -11087,7 +11110,7 @@ test('mocked custom graph artifact requirements show a compact install action', 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
 
   await page.evaluate(() => {
@@ -11143,7 +11166,7 @@ test('mocked graph Fix button opens a reviewed model repair without downloading 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(() => window.__MODIFF_E2E__!.setGraphScenarioForTest('missing_model'));
 
   const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
@@ -11179,7 +11202,7 @@ test('mocked graph Fix applies a topology repair once and verifies the original 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(() => window.__MODIFF_E2E__!.setGraphScenarioForTest('disconnected_output'));
 
   const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow);
@@ -11376,7 +11399,7 @@ test('mocked custom graph inspector summarizes multi-model comparison graphs', a
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
 
   await page.evaluate(() => {
@@ -11416,7 +11439,7 @@ test('mocked Studio switches managed recipes to compact custom graph inspector a
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Current task');
   await expect(page.getByTestId('studio-prompt-input')).toBeVisible({ timeout: 30_000 });
@@ -12411,7 +12434,7 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
   await expect(page.getByTestId('task-launcher')).toBeVisible();
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await expect(page.getByTestId('studio-section-panel-task')).toBeVisible();
   await expect(page.getByTestId('studio-section-panel-prompt')).toBeVisible();
@@ -12771,7 +12794,7 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
@@ -12909,7 +12932,7 @@ test('low-VRAM Auto template remains finalized across repeated Run planning', as
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('low_vram');
   });
@@ -12991,7 +13014,7 @@ test('busy one-shot action becomes Queue and submits once without stopping activ
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('low_vram');
   });
@@ -13152,7 +13175,7 @@ test('restored finalized exact workflow queues without replaying field actions o
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('low_vram', { resourceMode: 'expert' });
   });
@@ -13232,7 +13255,7 @@ test('transient Auto planner failure does not report an installed Z-Image model 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
   });
@@ -13383,7 +13406,7 @@ test('mocked Studio renders generic Qwen template skeleton without waiting on Mo
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await openTemplateBrowser(page);
   await page.getByTestId('template-browser-category-all').click();
@@ -13546,7 +13569,7 @@ test('mocked Studio keeps exact direct Qwen Expert graphs independent of unused 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
@@ -13591,7 +13614,7 @@ test('mocked Studio consumes the exact execution-profile Expert CUDA policy', as
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
@@ -13628,7 +13651,7 @@ test('mocked Studio derives Expert quantization choices from the exact execution
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
@@ -13653,7 +13676,7 @@ test('mocked Studio preserves Expert quantization only when the target execution
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
@@ -13688,7 +13711,7 @@ test('mocked Studio exposes and binds generic PAG controls for the exact PAG pro
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
@@ -13965,7 +13988,7 @@ test('mocked Studio consumes the exact execution-profile Expert MPS policy', asy
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
@@ -14092,7 +14115,7 @@ test('workbench authoring modes preserve the exact Qwen graph and automatic reso
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
@@ -14429,7 +14452,7 @@ test('unconditional image forms stay prompt-free and expose only adapter-specifi
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
 
   await page.evaluate(() =>
@@ -16185,7 +16208,7 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
@@ -17646,7 +17669,7 @@ test('a recovered native worker crash opens an explicit failure with a lower-mem
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
 
   const workflowId = await page.evaluate(
@@ -17722,7 +17745,7 @@ test('mocked Studio leaves newly-created Expert Qwen quantization node expanded'
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await setStudioViewMode(page, 'expert');
   await page.evaluate(() => {
@@ -17935,7 +17958,7 @@ test('mocked Studio wires Qwen inpaint through generic Diffusers image nodes', a
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-inpaint').click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_inpaint_mask_draft', {
@@ -18025,7 +18048,7 @@ test('mocked Studio wires generic Qwen outpaint graph with generated canvas and 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-outpaint').click();
+  await seedLegacyManagedWorkflow(page, 'outpaint');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_outpaint_draft', {
@@ -18145,7 +18168,7 @@ test('mocked Studio blocks Qwen outpaint when backend canvas node is missing', a
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-outpaint').click();
+  await page.getByTestId('launcher-mode-advanced_workflow').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
     try {
@@ -18198,7 +18221,7 @@ test('mocked Studio blocks Expert Modular Qwen 4-bit mode when backend quantizat
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await setStudioViewMode(page, 'expert');
   await page.evaluate(async () => {
@@ -18411,7 +18434,7 @@ test('mocked dynamic node definitions update node and field metadata without val
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.getByTestId('launcher-mode-text_to_image').click();
+  await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
       resourceMode: 'auto',
@@ -24922,4 +24945,161 @@ test('Developer Workflows recovers unavailable capabilities without installing o
   await modal.getByRole('button', { name: 'Retry capabilities' }).click();
   await expect(modal.getByTestId('workflow-task-text_to_image')).toBeVisible();
   expect(mutations).toEqual([]);
+});
+
+test('Creator starts in Templates and keeps Empty Open and recent workflows keyboard accessible', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.setViewportSize({ width: 390, height: 640 });
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      mutations.push(request.url());
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  const modal = page.getByTestId('task-launcher');
+  await expect(modal.getByRole('heading', { name: 'Templates', exact: true })).toBeVisible();
+  await expect(modal.getByTestId('template-browser-search')).toBeVisible();
+  const filters = modal.getByRole('button', { name: /^Filters/ });
+  await expect(filters).toHaveAttribute('aria-expanded', 'false');
+  await expect(modal.getByTestId('template-browser-level-filter')).toBeHidden();
+  await filters.focus();
+  await page.keyboard.press('Enter');
+  await modal.getByTestId('template-browser-level-filter').click();
+  await page.getByRole('option', { name: 'Starter', exact: true }).click();
+  await filters.click();
+  await expect(filters).toHaveText('Filters (1)');
+  await expect(modal.getByTestId('template-browser-level-filter')).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(modal.getByTestId('template-browser-level-filter')).toBeVisible();
+  await expect(modal.getByTestId('template-browser-level-filter')).toHaveText('Starter');
+  await page.setViewportSize({ width: 390, height: 640 });
+  const initial = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  await modal.getByRole('button', { name: 'Empty workflow', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(modal).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(modal).toHaveCount(0);
+  await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+  expect((await modal.getByTestId('template-browser-gallery-scroll').boundingBox())!.height).toBeGreaterThan(180);
+  await modal.getByRole('region', { name: 'Recent workflows' }).getByRole('button').first().click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .toBe(initial);
+  await expect(modal).toHaveCount(0);
+  await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+  await modal.getByRole('button', { name: 'Open workflow', exact: true }).click();
+  await expect(modal).toHaveCount(0);
+  await expect(page.getByLabel('Search workflows')).toBeVisible();
+  expect(mutations).toEqual([]);
+});
+
+test('Creator Templates opens an editable template and preserves the canvas when switching workspaces', async ({
+  page,
+}) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  const modal = page.getByTestId('task-launcher');
+  await expect(modal.getByRole('heading', { name: 'Templates', exact: true })).toBeVisible();
+  await modal.getByTestId('template-browser-create-card-z_image_quick_concept').click();
+  await expect(modal).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBeGreaterThan(0);
+  await page.evaluate(() => window.__MODIFF_E2E__!.waitForManagedGraphFinalizationForTest());
+  const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.canvasTransition)).toBeNull();
+  const graph = await read();
+  await setStudioViewMode(page, 'expert');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await read()).toEqual(graph);
+  await setStudioViewMode(page, 'auto');
+  expect(await read()).toEqual(graph);
+});
+
+test('Developer Workflows abandons a pending preview before changing documents and reopening recent work', async ({
+  page,
+}) => {
+  await openDeveloperWorkflows(page);
+  const modal = page.getByTestId('task-launcher');
+  const first = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = false;
+  let completed = false;
+  await page.route('**/operations/starter', async (route) => {
+    if (!started) {
+      started = true;
+      await gate;
+      await route.fallback();
+      completed = true;
+    } else await route.fallback();
+  });
+  await modal.getByTestId('workflow-task-text_to_image').click();
+  await modal.getByLabel('Workflow model', { exact: true }).click();
+  await page.getByRole('option').filter({ hasText: 'QwenImageModularPipeline' }).click();
+  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
+  await expect.poll(() => started).toBe(true);
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+  await modal.getByTestId('workflow-task-edit_image').click();
+  await modal.getByLabel('Workflow model', { exact: true }).click();
+  await page.getByRole('option').filter({ hasText: 'FluxKontextModularPipeline' }).click();
+  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
+  const preview = modal.getByRole('region', { name: 'Workflow preview' });
+  await expect(preview).toContainText('Inputs to provide');
+  const before = await preview.textContent();
+  release();
+  await expect.poll(() => completed).toBe(true);
+  await expect(preview).toHaveText(before!);
+  await modal.getByRole('button', { name: 'Create workflow', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(6);
+  await page.getByTestId(`workflow-tab-${first}`).click();
+  await expect(modal).toHaveCount(0);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+  await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+  await expect(modal.getByRole('region', { name: 'Recent workflows' })).toBeVisible();
+  await modal.getByRole('button', { name: 'Open workflow', exact: true }).click();
+  await expect(page.getByLabel('Search workflows')).toBeVisible();
+});
+
+test('Creator reload retries automatic planning when late hydration changes document ownership', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockIncludeQuantizationNode = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('template-browser-create-card-z_image_quick_concept').click();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.canvasTransition)).toBeNull();
+  await page.getByTestId('topbar-save-workflow').click();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = false;
+  await page.route('**/auto_resource/plan', async (route) => {
+    started = true;
+    await gate;
+    await route.fallback();
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect.poll(() => started).toBe(true);
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(page.getByTestId('startup-workspace-gate')).toBeVisible();
+  // Match the production race: a late authoritative hydration increments the
+  // document epochs without changing the form, binding fingerprint or node count.
+  await page.evaluate(() => window.__MODIFF_E2E__!.rehydrateActiveWorkflowCanvasForTest());
+  release();
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.autoResourcePlan))
+    .not.toBeNull();
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBeGreaterThan(0);
 });

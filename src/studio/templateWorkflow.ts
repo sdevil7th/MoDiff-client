@@ -115,6 +115,8 @@ function blankCurrentCanvas() {
 export async function createWorkflowFromTemplate(template: StudioTemplate): Promise<TemplateWorkflowResult> {
   const studio = useStudioStore.getState();
   const workflowTabId = studio.createWorkflowTab(template.label, undefined, 'template', template.id);
+  // A template already owns this new document; do not reopen a launcher while its graph resolves.
+  useStudioStore.getState().setLauncherDismissed(true);
   const context = captureWorkflowOperationContext();
   useStudioStore.getState().setCanvasTransition({
     type: 'template_graph_building',

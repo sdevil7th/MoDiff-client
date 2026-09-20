@@ -38,6 +38,7 @@ import { arrangeGraphNodes, waitForGraphNodeMeasurements } from '../workflow/gra
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 import type {
   StudioFormState,
+  StudioMode,
   StudioGraphBinding,
   StudioImportedAsset,
   StudioGraphRole,
@@ -124,7 +125,7 @@ type ModiffE2EHooks = {
   setWebsocketConnection: (connection: { sid?: string | null; isConnected?: boolean }) => void;
   setStudioFormForTest: (form: Partial<StudioFormState>) => void;
   bindManagedGraphForTest: (form: Partial<StudioFormState>, nodes: Partial<Record<StudioGraphRole, string>>) => boolean;
-  startManagedGraphFinalizationForTest: () => Promise<void>;
+  startManagedGraphFinalizationForTest: (mode?: StudioMode) => Promise<void>;
   waitForManagedGraphFinalizationForTest: () => Promise<void>;
   startStudioRunForTest: (identity: { clientRunId: string; runInputHash: string; taskId?: string | null }) => {
     clientRunId: string;
@@ -1125,7 +1126,8 @@ export function installE2EHooks() {
       useStudioStore.getState().setLauncherDismissed(true);
     },
     bindManagedGraphForTest,
-    startManagedGraphFinalizationForTest: () => {
+    startManagedGraphFinalizationForTest: (mode?: StudioMode) => {
+      if (mode) useStudioStore.getState().selectMode(mode);
       managedGraphFinalizationForTest = createOrUpdateStudioGraph().then(() => undefined);
       return managedGraphFinalizationForTest;
     },
