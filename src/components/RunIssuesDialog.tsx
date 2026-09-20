@@ -42,7 +42,6 @@ export default function RunIssuesDialog() {
   const sid = useWebsocketStore((state) => state.sid);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
-  const setStudioViewMode = useSettingsStore((state) => state.setStudioViewMode);
   const setWorkflowFocusRequest = useSettingsStore((state) => state.setWorkflowFocusRequest);
   const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
   const form = useStudioStore((state) => state.form);
@@ -129,7 +128,6 @@ export default function RunIssuesDialog() {
     setRightPanelOpen(true);
     setRightPanelTab('studio');
     if (nodeId) {
-      setStudioViewMode('expert');
       const flow = useFlowStore.getState();
       if (flow.nodes.some((node) => node.id === nodeId)) {
         void flow.onNodesChange(

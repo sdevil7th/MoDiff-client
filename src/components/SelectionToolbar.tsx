@@ -35,7 +35,6 @@ import {
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
-import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { isUserBlockExpandedInstance } from '../studio/userBlocks';
 import { isHuggingFaceClusterExpanded } from '../studio/huggingFaceClusterGraph';
@@ -49,7 +48,7 @@ import { ModiffMenuAction, ModiffMenuRoot, ModiffMenuSurface, ModiffMenuTrigger 
 import { deleteNodeCache, recomputeNodeOutputs } from '../utils/serverActions';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 
-const OperationStageInspector = lazy(() => import('./OperationStageInspector'));
+const NodeInspectorDialog = lazy(() => import('./NodeInspectorDialog'));
 
 const TOOLBAR_MARGIN = 8;
 const TOOLBAR_SELECTION_GAP = 12;
@@ -115,7 +114,6 @@ export function SelectionToolbar({
   const { flowToScreenPosition, getNodesBounds } = useReactFlow<CustomNodeType>();
   const [saveNodeId, setSaveNodeId] = useState<string | null>(null);
   const [inspectNodeId, setInspectNodeId] = useState<string | null>(null);
-  const expertMode = useSettingsStore((state) => state.studioViewMode) === 'expert';
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const removeNodes = useFlowStore((state) => state.removeNodes);
@@ -481,18 +479,19 @@ export function SelectionToolbar({
         </>
       )}
 
+      {singleNode ? (
+        <ToolbarActionButton
+          label={singleNode.data.blockInstanceV2 ? 'Inspect Block' : 'Inspect node'}
+          onClick={() => setInspectNodeId(singleNode.id)}
+          data-testid="selection-toolbar-inspect-node"
+        >
+          <Blocks size={16} />
+        </ToolbarActionButton>
+      ) : null}
+
       {showSingleNodeActions && (
         <>
           <ToolbarDivider />
-          {expertMode && singleActionNode?.data.operationAuthoring ? (
-            <ToolbarActionButton
-              label="Inspect stage implementation"
-              onClick={() => setInspectNodeId(singleActionNode.id)}
-              data-testid="selection-toolbar-inspect-stage"
-            >
-              <Blocks size={16} />
-            </ToolbarActionButton>
-          ) : null}
           <ToolbarActionButton
             label="Duplicate node"
             onClick={handleDuplicateNode}
@@ -631,7 +630,7 @@ export function SelectionToolbar({
       ) : null}
       {inspectNodeId ? (
         <Suspense fallback={null}>
-          <OperationStageInspector key={inspectNodeId} nodeId={inspectNodeId} onClose={() => setInspectNodeId(null)} />
+          <NodeInspectorDialog key={inspectNodeId} nodeId={inspectNodeId} onClose={() => setInspectNodeId(null)} />
         </Suspense>
       ) : null}
     </div>

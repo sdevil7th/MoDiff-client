@@ -5710,6 +5710,16 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   await expect(inspector.getByText('No editable params', { exact: true })).toHaveCount(0);
   const rootId = (await root.getAttribute('data-id'))!;
   const workflowId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  const beforeInspection = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await inspector.getByRole('tab', { name: 'Interface', exact: true }).click();
+  await expect(inspector).toContainText('Public sockets of this Block instance');
+  await inspector.getByRole('tab', { name: 'Implementation', exact: true }).click();
+  await expect(inspector).toContainText('Editable graph composition');
+  await expect(inspector).toContainText('Revision:');
+  await inspector.getByRole('tab', { name: 'Docs', exact: true }).click();
+  await expect(inspector).toContainText('This does not edit the Python implementation');
+  await inspector.getByRole('tab', { name: 'Parameters', exact: true }).click();
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(beforeInspection);
   const originalPrompt = await inspector.getByLabel('prompt', { exact: true }).inputValue();
   const before = await page.evaluate(async (id) => {
     const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
@@ -8798,11 +8808,17 @@ async function selectOperationPipeline(page: Page, pipeline: string, task?: stri
   return panel;
 }
 
-test('Expert inspects a stage from the canvas with the library closed, preserving graph and keyboard focus', async ({
+test('both workspaces inspect a node with the library closed, preserving graph and keyboard focus', async ({
   page,
 }) => {
+  mockInstalledRepos.clear();
+  const fieldRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/fields/action')) fieldRequests.push(request.postData() ?? '');
+  });
   await ensureFrontend();
   await installOperationAuthoringRoutes(page);
+  await page.route('**/cache', (route) => route.fulfill({ json: { error: false } }));
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
   await dismissTaskLauncher(page);
@@ -8829,22 +8845,182 @@ test('Expert inspects a stage from the canvas with the library closed, preservin
     .poll(async () => (await read()).nodes.find((n) => n.action === 'ModelsLoader')?.uiState?.validationSeverity)
     .toBe('error');
   const before = await read();
-  const trigger = page.getByRole('button', { name: 'Inspect stage implementation', exact: true });
-  await trigger.focus();
-  await page.keyboard.press('Enter');
-  const inspector = page.getByRole('dialog', { name: 'Stage implementation and settings', exact: true });
-  await expect(inspector.getByRole('heading', { level: 2 })).toBeVisible();
-  await expect(inspector).toContainText('QwenImageModularPipeline');
-  await expect(inspector).toContainText('modules.ModularDiffusers.EncodePrompt');
+  const beforeFieldRequests = [...fieldRequests];
+  const trigger = page.getByRole('button', { name: 'Inspect node', exact: true });
+  for (const mode of ['expert', 'auto'] as const) {
+    await setStudioViewMode(page, mode);
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+    await expect(inspector.getByRole('heading', { level: 2 })).toBeVisible();
+    await expect(inspector.getByRole('tab', { name: 'Parameters', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await inspector.getByRole('tab', { name: 'Interface', exact: true }).click();
+    await expect(inspector).toContainText('diffusers_auto_models');
+    await expect(inspector).toContainText('Socket: embeddings');
+    await inspector.getByRole('tab', { name: 'Implementation', exact: true }).click();
+    await expect(inspector).toContainText('QwenImageModularPipeline');
+    await expect(inspector).toContainText('modules.ModularDiffusers.EncodePrompt');
+    await inspector.getByRole('tab', { name: 'Docs', exact: true }).click();
+    await expect(inspector.getByRole('tabpanel')).toBeVisible();
+    await inspector.getByRole('tab', { name: 'Run details', exact: true }).click();
+    await expect(inspector).toContainText('No execution recorded');
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect(await read()).toEqual(before);
+    await expect(
+      page.getByRole('radio', { name: mode === 'auto' ? 'Creator' : 'Developer', exact: true }),
+    ).toBeChecked();
+  }
+  expect(fieldRequests).toEqual(beforeFieldRequests);
+  // Inject an execution diagnostic, then exercise its real Inspect action.
+  // This is diagnostic fixture setup, not proof of model execution.
+  await page.evaluate(async (id) => {
+    const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
+    useRunIssueStore.getState().showIssues([
+      {
+        id: 'inspection-regression',
+        category: 'graph',
+        severity: 'error',
+        blocking: true,
+        nodeId: id,
+        action: 'inspect_node',
+        message: 'Review this prompt node.',
+      },
+    ]);
+  }, nodeId);
+  await page
+    .getByRole('dialog', { name: 'Run blocked', exact: true })
+    .getByRole('button', { name: 'Inspect node', exact: true })
+    .click();
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toBeChecked();
+  const sideInspector = page.getByTestId('studio-custom-graph-inspector');
+  await sideInspector.getByRole('tab', { name: 'Implementation', exact: true }).click();
+  await expect(sideInspector).toContainText('modules.ModularDiffusers.EncodePrompt');
+  expect(await read()).toEqual({
+    ...before,
+    nodes: before.nodes.map((node) => ({ ...node, selected: node.id === nodeId })),
+  });
+  await trigger.click();
+  const editable = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+  await editable.getByLabel(/^Prompt(?: \*)?$/).fill('Inspector edit on the original graph');
+  await editable.getByLabel(/^Prompt(?: \*)?$/).blur();
+  await expect
+    .poll(async () => (await read()).nodes.find((node) => node.id === nodeId)?.params.prompt.value)
+    .toBe('Inspector edit on the original graph');
   await page.keyboard.press('Escape');
-  await expect(inspector).toHaveCount(0);
-  await expect(trigger).toBeFocused();
-  expect(await read()).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(async () => (await read()).nodes.find((node) => node.id === nodeId)?.params.prompt.value)
+    .toBe(before.nodes.find((node) => node.id === nodeId)!.params.prompt.value);
+});
+
+test('Fix opens a required Block input without changing Creator workspace or memory policy', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
   await setStudioViewMode(page, 'auto');
-  await expect(trigger).toHaveCount(0);
-  expect(await read()).toEqual(before);
-  await setStudioViewMode(page, 'expert');
-  await expect(trigger).toBeVisible();
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  // Load an exact, deliberately incomplete user Block. All inspection and Fix
+  // actions below use native controls; this fixture is not execution evidence.
+  const nodeId = await page.evaluate(async () => {
+    const [schema, runtime, { useFlowStore }, { useStudioStore }, { useNodesStore }] = await Promise.all([
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+      import('/src/stores/useNodeStore.ts'),
+    ]);
+    const registry = useNodesStore.getState().nodesRegistry;
+    const image = structuredClone(registry['modules.Image.Load']);
+    image.params.file = { ...image.params.file, value: '', fieldOptions: { fileTypes: ['image'] } };
+    const graph = {
+      nodes: [
+        { nodeId: 'load', nodeType: 'custom', data: image },
+        { nodeId: 'preview', nodeType: 'custom', data: structuredClone(registry['modules.Image.Preview']) },
+      ],
+      edges: [
+        {
+          edgeId: 'image',
+          sourceNodeId: 'load',
+          sourcePortId: 'image',
+          targetNodeId: 'preview',
+          targetPortId: 'image',
+        },
+      ],
+    };
+    const raw = {
+      schemaVersion: 2,
+      definitionId: 'user:required-image-inspection',
+      displayName: 'Required image',
+      source: { kind: 'user' },
+      graph: { ...graph, graphHash: schema.blockGraphHashV2(graph) },
+      boundary: {
+        mode: 'explicit',
+        inputs: [
+          {
+            portId: 'image',
+            label: 'Image',
+            valueType: 'image',
+            required: true,
+            binding: { nodeId: 'load', fieldOrPortId: 'file' },
+          },
+        ],
+        outputs: [],
+      },
+      controls: [
+        {
+          controlId: 'image',
+          label: 'Image',
+          valueType: 'string',
+          required: true,
+          binding: { nodeId: 'load', fieldId: 'file' },
+          order: 0,
+        },
+      ],
+      previews: [],
+      ownership: { kind: 'user', definitionMutable: true },
+    };
+    const definition = schema.normalizeBlockDefinitionV2({
+      ...raw,
+      contentHash: schema.blockDefinitionContentHashV2(raw),
+    });
+    const instance = schema.createBlockInstanceV2(definition, {
+      instanceId: 'required-image-inspection',
+      position: { x: 100, y: 100 },
+      size: { width: 420, height: 380 },
+    });
+    const node = runtime.createBlockRootNodeV2(instance);
+    useStudioStore.getState().clearGraphBinding();
+    useFlowStore.getState().addNode(node);
+    return node.id;
+  });
+  const memory = await page.getByTestId('topbar-resource-policy').textContent();
+  await expect(page.getByTestId('graph-fix')).toBeEnabled();
+  await page.getByTestId('graph-fix').click();
+  const dialog = page.getByTestId('graph-fix-dialog');
+  await expect(dialog).toContainText('Choose Image before running.');
+  await expect(dialog.getByTestId('graph-fix-apply')).toHaveText('Open required input');
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await dialog.getByTestId('graph-fix-apply').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toBeChecked();
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText(memory!);
+  const inspector = page.getByTestId('studio-custom-graph-inspector');
+  await expect(page.getByTestId(`studio-node-disclosure-${nodeId}`)).toBeVisible();
+  await inspector.getByRole('tab', { name: 'Interface', exact: true }).click();
+  await expect(inspector).toContainText('Image · image · Required');
+  await expect(inspector).toContainText('Not connected');
+  const after = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  // Inspect intentionally focuses the camera; graph contents and layout stay exact.
+  expect(after.nodes).toEqual(before.nodes);
+  expect(after.edges).toEqual(before.edges);
 });
 
 test('node cache controls separate recomputation from model release without editing the graph', async ({ page }) => {
@@ -8962,8 +9138,9 @@ test('operation starters preserve native edits through model/task preview, Undo 
   await dialog.getByRole('button', { name: 'Apply graph change', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await promptNode.locator('header').first().click();
-  await panel.getByRole('button', { name: 'Inspect selected stage', exact: true }).click();
-  const stageInspector = page.getByRole('dialog', { name: 'Stage implementation and settings', exact: true });
+  await panel.getByRole('button', { name: 'Inspect selected node', exact: true }).click();
+  const stageInspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+  await stageInspector.getByRole('tab', { name: 'Implementation', exact: true }).click();
   await expect(stageInspector).toContainText('Retained settings');
   await expect(stageInspector).toContainText('watermark');
   await stageInspector.getByRole('button', { name: 'Close', exact: true }).click();
@@ -24791,6 +24968,16 @@ test('custom source review requires consent and enabled nodes join typed search 
   await page.getByTestId('node-row-custom-Example-Echo').click();
   const node = page.locator('.react-flow__node-custom').first();
   const id = (await node.getAttribute('data-id'))!;
+  await node.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+  await inspector.getByRole('tab', { name: 'Implementation', exact: true }).click();
+  await expect(inspector).toContainText('custom.Example.Echo');
+  await expect(inspector).toContainText('Custom Python implementation');
+  await expect(inspector).toContainText('custom/Example');
+  await expect(inspector).toContainText(extension.codeHash);
+  await page.keyboard.press('Escape');
+  expect(approvals).toHaveLength(1);
   const handle = node.getByTestId(`node-handle-${id}-out`);
   await expect(handle).toBeVisible();
   const start = (await handle.boundingBox())!;

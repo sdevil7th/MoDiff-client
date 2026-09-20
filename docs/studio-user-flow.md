@@ -90,12 +90,27 @@ Stages too. A raw node is consolidated only when an exact pipeline/task operatio
 binding is present in the backend support inventory; Advanced keeps deliberate
 access to the underlying nodes.
 
-Select an authored stage on the canvas and choose **Inspect stage implementation**
-in its selection toolbar. This works with the library closed. The dialog shows
-its pipeline, underlying action, connected inputs, overrides and retained settings
-excluded from execution. Inspection does not edit the graph or load models.
-Escape closes it and restores focus; changing the selected node or workflow closes
-it. Auto hides this developer control while preserving the graph.
+Select a node or Block on the canvas to see its controls in the Studio side panel.
+The selection toolbar's **Inspect node** or **Inspect Block** opens the same inspector
+in a dialog, even when the Nodes library is closed. Both Creator and Developer offer:
+
+- **Parameters**: the canvas's existing controls, with the same edits and Undo.
+- **Interface**: declared input/output types, required sockets and current connections.
+  A composition shows its public sockets without expanding its internal graph.
+- **Implementation**: the underlying action, operation defaults and overrides,
+  retained settings excluded from execution, and available source/revision metadata.
+  Approved custom Python nodes expose their installed source path and inspected code
+  hash; opening the inspector grants no code permission.
+- **Docs**: descriptions and field help supplied by the node or Block.
+- **Run details**: current execution status, reported cache state and diagnostics.
+  Cached outputs do not guarantee a cache hit on the next run; earlier runs remain
+  in history.
+
+Browsing these details does not edit the graph, resolve fields or load models.
+Parameter edits update the original workflow. Escape closes the dialog and restores
+focus; selection or workflow changes close it. Run-blocked and Fix inspection actions
+focus the affected node without changing workspace or memory policy. Expand a Block
+on the canvas for structural editing; this does not edit its Python implementation.
 
 **Blocks** is the public name for both registered compositions and saved reusable
 compositions. **Saved Blocks** retains each saved name and revision. Existing

@@ -513,7 +513,7 @@ with `npm run licenses:generate` after dependency changes.
 
 ### Authoring with generic stages
 
-In **Expert → Nodes → Stages**, select a pipeline and task. Use **Preview connected
+In **Developer → Nodes → Stages**, select a pipeline and task. Use **Preview connected
 starter** to inspect its ordinary stages, required inputs and upstream implementation,
 then add it to the canvas. You can also insert the stages individually and wire their
 ports. Connect the final result to a Preview, Save or Export node before running.
@@ -523,8 +523,12 @@ pipeline/task and use **Preview model / task change**. Review retained settings 
 connections before applying. Compatible prompt and parameter overrides survive;
 new defaults come from the selected backend contract. Undo restores the whole
 change. When stages share a seed, editing either control updates both; random mode
-uses one draw per run for that group. Select a stage and choose **Inspect selected stage** to see its defaults,
-connected fallbacks, overrides and unsupported settings retained outside execution.
+uses one draw per run for that group. Select a node and choose **Inspect node**
+(**Inspect Block** for a composition), or use its controls in the Studio side panel.
+Both workspaces provide Parameters, Interface, Implementation, Docs and Run details.
+Implementation includes defaults, connected fallbacks, overrides and unsupported
+settings retained outside execution. Metadata inspection does not load models or
+execute custom source.
 
 These controls use the same saved canvas graph in Creator and Developer. Existing Blocks
 keep their current structure and composition inspector. A declared stage graph can

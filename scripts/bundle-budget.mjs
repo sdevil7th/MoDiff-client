@@ -53,7 +53,12 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // W3 adds the task-first Developer chooser and defers the existing Creator
 // launcher. Measured deferred code is 214.9 KiB; bound the added feature at
 // 215 KiB. Startup and individual chunk ceilings remain unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 215 * 1024;
+// W4 replaces the operation-only inspector with shared Parameters, Interface,
+// Implementation, Docs and Run details for nodes and Blocks. The same controls
+// serve the side panel and lazy dialog; metadata is deferred. Measured aggregate
+// is 217.4 KiB (2.5 KiB added); bound it at 218 KiB. Startup (604.0 KiB) and
+// individual chunk ceilings stay fixed; verify the cold production inspector.
+const MAX_DEFERRED_GZIP_BYTES = 218 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

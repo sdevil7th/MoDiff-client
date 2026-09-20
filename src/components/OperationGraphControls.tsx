@@ -19,7 +19,7 @@ import {
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
-import OperationStageInspector from './OperationStageInspector';
+import NodeInspectorDialog from './NodeInspectorDialog';
 
 type Preview = {
   starter: OperationStarter;
@@ -138,7 +138,7 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
           </ModiffButton>
         </>
       ) : null}
-      {selectedHint ? <ModiffButton onClick={() => setInspect(true)}>Inspect selected stage</ModiffButton> : null}
+      {selectedHint ? <ModiffButton onClick={() => setInspect(true)}>Inspect selected node</ModiffButton> : null}
       {busy ? (
         <p role="status" className="text-xs text-modiff-subtle-text">
           Preparing ordinary nodes and connections…
@@ -208,7 +208,7 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
                   </div>
                 ) : null}
                 <p>
-                  Custom nodes are retained. Unsupported settings remain available in “Inspect selected stage”. Undo
+                  Custom nodes are retained. Unsupported settings remain available in “Inspect selected node”. Undo
                   restores the entire change.
                 </p>
               </>
@@ -253,7 +253,7 @@ export default function OperationGraphControls({ pipeline, task }: { pipeline: s
         </ModiffDialog>
       ) : null}
       {inspect && selected && selectedHint ? (
-        <OperationStageInspector key={selected.id} nodeId={selected.id} onClose={() => setInspect(false)} />
+        <NodeInspectorDialog key={selected.id} nodeId={selected.id} onClose={() => setInspect(false)} />
       ) : null}
     </div>
   );

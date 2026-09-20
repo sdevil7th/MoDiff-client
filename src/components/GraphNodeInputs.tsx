@@ -12,6 +12,7 @@ import { formatStudioFieldValue } from '../studio/presetDiff';
 import { ModiffDisclosure, StatusLine, StudioButton } from '../ui';
 import { cx } from '../utils/classNames';
 import NodeContent from './NodeContent';
+import NodeInspectorSections from './NodeInspectorSections';
 
 const inspectorDisclosureMemory = new Map<string, boolean>();
 
@@ -23,6 +24,7 @@ export function GraphNodeInputs({
   pinnedInputs,
   selectedNodes,
   workflowId,
+  controlIdPrefix = 'studio-inspector',
 }: {
   candidates: GraphInputCandidate[];
   nodes: CustomNodeType[];
@@ -31,6 +33,7 @@ export function GraphNodeInputs({
   pinnedInputs: GraphInputCandidate[];
   selectedNodes: CustomNodeType[];
   workflowId: string | null;
+  controlIdPrefix?: string;
 }) {
   const [disclosureState, setDisclosureState] = useState<Record<string, boolean>>({});
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
@@ -84,6 +87,46 @@ export function GraphNodeInputs({
           const label = node.data.label || `${node.data.module}.${node.data.action}`;
           const fieldCount = Object.keys(params).length;
 
+          const controls = !nodes.some(({ id }) => id === node.id) ? (
+            <div className="grid gap-2" data-testid={`studio-hidden-pinned-inputs-${node.id}`}>
+              {Object.entries(params).map(([key, param]) => (
+                <p key={key} className="break-words text-xs text-modiff-subtle-text">
+                  {param.label || key}: {formatStudioFieldValue(param.value ?? param.default)}
+                </p>
+              ))}
+              <StudioButton tone="secondary" onClick={() => revealPinnedGraphInput(workflowId, node)}>
+                Reveal in Block to edit
+              </StudioButton>
+            </div>
+          ) : fieldCount > 0 ? (
+            <div className="grid min-w-0 grid-cols-1 gap-3 [&>[data-key]]:m-0 [&>[data-key]]:min-w-0">
+              <NodeContent
+                nodeId={node.id}
+                controlIdPrefix={controlIdPrefix}
+                params={params}
+                updateStore={(param, value, key) => updateParam(node.id, param, value, key)}
+                updateFieldActionStore={(origin, param, value, key) =>
+                  updateGraphNodeControl(workflowId, node.id, param, value, key, origin)
+                }
+                module={
+                  node.data.blockInstanceV2
+                    ? (node.data.blockInstanceV2.definitionSnapshot.source.library ??
+                      node.data.blockInstanceV2.definitionSnapshot.source.provider ??
+                      'MoDiff')
+                    : node.data.module
+                }
+                action={node.data.blockInstanceV2 ? 'BlockV2' : node.data.action}
+                mode="controls"
+                hidePreviews
+                executionStatus={node.data.executionStatus}
+                progressMessage={node.data.progressMessage}
+                uiStateMessage={node.data.uiState?.validationMessage ?? node.data.uiState?.errorMessage}
+              />
+            </div>
+          ) : (
+            <StatusLine tone="secondary">No editable params</StatusLine>
+          );
+
           return (
             <ModiffDisclosure
               key={`${disclosureKey}:${selected ? 'selected' : 'idle'}`}
@@ -110,45 +153,7 @@ export function GraphNodeInputs({
               }}
               panelClassName="border-t border-modiff-border-subtle p-3"
             >
-              {!nodes.some(({ id }) => id === node.id) ? (
-                <div className="grid gap-2" data-testid={`studio-hidden-pinned-inputs-${node.id}`}>
-                  {Object.entries(params).map(([key, param]) => (
-                    <p key={key} className="break-words text-xs text-modiff-subtle-text">
-                      {param.label || key}: {formatStudioFieldValue(param.value ?? param.default)}
-                    </p>
-                  ))}
-                  <StudioButton tone="secondary" onClick={() => revealPinnedGraphInput(workflowId, node)}>
-                    Reveal in Block to edit
-                  </StudioButton>
-                </div>
-              ) : fieldCount > 0 ? (
-                <div className="grid min-w-0 grid-cols-1 gap-3 [&>[data-key]]:m-0 [&>[data-key]]:min-w-0">
-                  <NodeContent
-                    nodeId={node.id}
-                    controlIdPrefix="studio-inspector"
-                    params={params}
-                    updateStore={(param, value, key) => updateParam(node.id, param, value, key)}
-                    updateFieldActionStore={(origin, param, value, key) =>
-                      updateGraphNodeControl(workflowId, node.id, param, value, key, origin)
-                    }
-                    module={
-                      node.data.blockInstanceV2
-                        ? (node.data.blockInstanceV2.definitionSnapshot.source.library ??
-                          node.data.blockInstanceV2.definitionSnapshot.source.provider ??
-                          'MoDiff')
-                        : node.data.module
-                    }
-                    action={node.data.blockInstanceV2 ? 'BlockV2' : node.data.action}
-                    mode="controls"
-                    hidePreviews
-                    executionStatus={node.data.executionStatus}
-                    progressMessage={node.data.progressMessage}
-                    uiStateMessage={node.data.uiState?.validationMessage ?? node.data.uiState?.errorMessage}
-                  />
-                </div>
-              ) : (
-                <StatusLine tone="secondary">No editable params</StatusLine>
-              )}
+              {selected ? <NodeInspectorSections node={node}>{controls}</NodeInspectorSections> : controls}
             </ModiffDisclosure>
           );
         })
