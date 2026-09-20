@@ -26763,3 +26763,152 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.screenshot({ path: test.info().outputPath('block-model-change.png'), animations: 'disabled' });
   });
 }
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} task extension keeps a native outside seed wire and connects the new shared consumer`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    page.setDefaultTimeout(15_000);
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find(
+      (s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'text_to_image',
+    )!;
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    // One saved Block and typed custom-source fixture; subsequent wiring and edits are native. No custom code executes.
+    await page.evaluate(async (starter) => {
+      const [{ createOperationStarter }, schema, runtime, { useFlowStore }, { prepareWorkflowForManualInsertion }] =
+        await Promise.all([
+          import('/src/workflow/operationAuthoring.ts'),
+          import('/src/studio/blockSchemaV2.ts'),
+          import('/src/studio/blockRuntimeV2.ts'),
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/studio/manualGraphInsertion.ts'),
+        ]);
+      const draft = createOperationStarter(starter, { x: 40, y: 90 });
+      const seeds = draft.nodes.filter((n) => n.data.params.seed);
+      for (const n of seeds) n.data.params.seed.value = { value: 4109, isRandom: false };
+      const graph = JSON.parse(
+        JSON.stringify({
+          nodes: draft.nodes.map((n) => ({ nodeId: n.id, nodeType: n.type, data: n.data })),
+          edges: draft.edges.map((e) => ({
+            edgeId: e.id,
+            sourceNodeId: e.source,
+            sourcePortId: e.sourceHandle,
+            targetNodeId: e.target,
+            targetPortId: e.targetHandle,
+          })),
+        }),
+      );
+      graph.graphHash = schema.blockGraphHashV2(graph);
+      const definition: import('../../../src/studio/blockSchemaV2').BlockDefinitionV2 = {
+        schemaVersion: 2,
+        definitionId: 'user:shared-seed-fixture',
+        displayName: 'Connected inputs Block',
+        contentHash: '',
+        source: { kind: 'user' },
+        graph,
+        boundary: {
+          mode: 'explicit',
+          inputs: [
+            {
+              portId: 'seed-in',
+              label: 'Seed',
+              valueType: 'int',
+              required: false,
+              binding: { nodeId: seeds[0]!.id, fieldOrPortId: 'seed' },
+            },
+          ],
+          outputs: [],
+        },
+        controls: [],
+        suggestedInputs: [],
+        previews: [],
+        ownership: { kind: 'user', definitionMutable: true },
+      };
+      definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+      const instance = schema.createBlockInstanceV2(definition, {
+        instanceId: 'shared-seed-block',
+        position: { x: 520, y: 100 },
+        size: { width: 500, height: 450 },
+      });
+      prepareWorkflowForManualInsertion();
+      const source: import('../../../src/stores/useFlowStore').CustomNodeType = {
+        id: 'outside-seed',
+        type: 'custom',
+        position: { x: 80, y: 100 },
+        data: {
+          type: 'custom',
+          module: 'custom.Fixture',
+          action: 'Integer',
+          category: 'test',
+          label: 'Outside seed',
+          params: {
+            value: { type: 'int', display: 'number', value: 4109 },
+            output: { type: 'int', display: 'output' },
+          },
+        },
+      };
+      useFlowStore.getState().replaceGraph({ nodes: [runtime.createBlockRootNodeV2(instance), source], edges: [] });
+    }, starter);
+    const root = page.locator('.react-flow__node[data-id="shared-seed-block"]');
+    const source = page.locator('.react-flow__node[data-id="outside-seed"]');
+    await source.locator('[data-key="value"] input').fill('7319');
+    await source.locator('[data-key="value"] input').blur();
+    const from = source.locator('.react-flow__handle.source[data-handleid="output"]');
+    const to = root.locator('.react-flow__handle.target[data-handleid="seed-in"]');
+    await expect(from).toBeVisible();
+    await expect(to).toBeVisible();
+    const a = (await from.boundingBox())!,
+      b = (await to.boundingBox())!;
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 15 });
+    await page.mouse.up();
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    await expect.poll(async () => (await read()).edges.length).toBe(1);
+    await waitForOperationGraphToSettle(page);
+    const before = await read();
+    await root.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await root.getByLabel('Replacement task', { exact: true }).click();
+    await page.getByRole('option', { name: 'image to image', exact: true }).click();
+    await waitForOperationGraphToSettle(page);
+    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await expect(review).toContainText('Connect the existing outside source to 1 newly shared input');
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect((await read()).edges).toEqual(before.edges);
+    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    await expect.poll(async () => (await read()).edges.length).toBe(2);
+    const changed = await read();
+    expect(changed.edges.find((edge) => edge.id === before.edges[0]!.id)).toEqual(before.edges[0]);
+    expect(changed.edges.every((edge) => edge.source === 'outside-seed' && edge.sourceHandle === 'output')).toBe(true);
+    expect(
+      changed.nodes.find((node) => node.id === 'shared-seed-block')!.data.blockInstanceV2!.definitionSnapshot,
+    ).toEqual(before.nodes.find((node) => node.id === 'shared-seed-block')!.data.blockInstanceV2!.definitionSnapshot);
+    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(async () => (await read()).edges).toEqual(before.edges);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(async () => (await read()).edges).toEqual(changed.edges);
+    await page.getByTestId('topbar-save-workflow-options').click();
+    await page.getByTestId('topbar-save-workflow-as').click();
+    await page.getByTestId('save-workflow-name').fill(`Connected Block inputs ${workspace}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+    await expect.poll(async () => (await read()).edges).toEqual(changed.edges);
+    await expect(source.locator('[data-key="value"] input')).toHaveValue('7319');
+    await root.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await expect(root.getByLabel('Replacement task', { exact: true })).toContainText('image to image');
+    await page.screenshot({ path: test.info().outputPath('connected-block-inputs.png'), animations: 'disabled' });
+  });
+}

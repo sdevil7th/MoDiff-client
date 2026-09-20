@@ -3,7 +3,7 @@ import type { NodeData } from '../stores/useNodeStore';
 import { deepEqual } from '../utils/deepEqual';
 import { blockContainerFieldValueV1 } from '../studio/blockContainerInterfaceV1';
 import {
-  blockConnectionTargetsV2,
+  assertBlockCrossingConnectionV2,
   blockCrossingParamV2,
   parseBlockCrossingHandleV2,
 } from '../studio/blockCrossingConnectionsV2';
@@ -15,9 +15,9 @@ import {
   replaceBlockEffectiveGraphNodeV2,
   replaceBlockEffectiveGraphV2,
 } from '../studio/blockRuntimeV2';
+import { blockOperationInputs } from './operationBlockInputs';
 import { remapOperationAuthoring } from './operationSharedInputs';
 import {
-  operationAuthoring,
   operationScope,
   planOperationChange,
   type OperationChangePlan,
@@ -64,53 +64,24 @@ export function planBlockOperationChange(
   const scope = new Set(operationScope(internal, loaderId).map((node) => node.id));
   if (original.effectiveGraph.nodes.some((node) => scope.has(node.nodeId) && node.modularDiffusers))
     throw new Error('Edit this Modular composition through its Block interface before changing its operation graph.');
-  const plan = planOperationChange(internal, loaderId, starter);
+  const inputs = blockOperationInputs(graph, root, internal, scope);
+  const plan = planOperationChange(inputs.graph, loaderId, starter);
   // Canvas node replacements get new IDs. Internal implementations keep their
   // semantic roles so public ports, previews, layouts and crossing sockets survive.
   const semanticIds = new Map(Object.entries(plan.replacements).map(([oldId, newId]) => [newId, oldId]));
   const semanticId = (id: string) => semanticIds.get(id) ?? id;
-  const planned = plan.graph.nodes.map((node) => {
+  const restored = inputs.restore(plan.graph, semanticId);
+  const planned = restored.internal.nodes.map((node) => {
     const hint = remapOperationAuthoring(node.data.operationAuthoring, semanticId);
     return { ...node, id: semanticId(node.id), data: { ...node.data, ...(hint ? { operationAuthoring: hint } : {}) } };
   });
-  const edges = plan.graph.edges.map((edge) => ({
+  const edges = restored.internal.edges.map((edge) => ({
     edgeId: edge.id,
     sourceNodeId: semanticId(edge.source),
     sourcePortId: edge.sourceHandle!,
     targetNodeId: semanticId(edge.target),
     targetPortId: edge.targetHandle!,
   }));
-  for (const wire of graph.edges.filter((edge) => edge.target === blockId)) {
-    for (const target of blockConnectionTargetsV2(root, wire.targetHandle ?? '', 'input')) {
-      if (!scope.has(target.nodeId)) continue;
-      const supplies = (edge: (typeof edges)[number]) =>
-        edge.targetNodeId === target.nodeId && edge.targetPortId === target.fieldOrPortId;
-      if (edges.some(supplies) && !original.effectiveGraph.edges.some(supplies))
-        throw new Error(
-          `The new task adds an internal connection to externally connected ${target.fieldOrPortId}. Review that connection before retrying.`,
-        );
-      const members = (nodes: CustomNodeType[]) => {
-        const owner = nodes.find((node) => node.id === target.nodeId);
-        const hint = (owner ? operationAuthoring(owner) : null)?.sharedInputs?.find(
-          (binding) => binding.field === target.fieldOrPortId,
-        );
-        return nodes
-          .flatMap(
-            (node) =>
-              operationAuthoring(node)
-                ?.sharedInputs?.filter(
-                  (binding) => hint && binding.loaderId === hint.loaderId && binding.groupId === hint.groupId,
-                )
-                .map((binding) => `${node.id}:${binding.field}`) ?? [],
-          )
-          .sort();
-      };
-      if (!deepEqual(members(internal.nodes), members(planned)))
-        throw new Error(
-          `The shared ${target.fieldOrPortId} connections change. Review the externally connected group before retrying.`,
-        );
-    }
-  }
   // Temporarily detach reviewed internal connections before replacing field
   // contracts. Each replacement still validates every public/nested binding.
   let instance = replaceBlockEffectiveGraphV2(original, {
@@ -178,16 +149,30 @@ export function planBlockOperationChange(
     }
   }
   const next = createBlockRootNodeV2(instance);
+  const result: OperationGraph = {
+    nodes: graph.nodes.map((node) => (node.id === blockId ? { ...node, data: { ...node.data, ...next.data } } : node)),
+    edges: [...graph.edges, ...restored.added],
+  };
+  for (const edge of restored.added)
+    assertBlockCrossingConnectionV2(
+      {
+        source: edge.source,
+        sourceHandle: edge.sourceHandle ?? null,
+        target: edge.target,
+        targetHandle: edge.targetHandle ?? null,
+      },
+      result.nodes,
+      result.edges,
+      new Set([edge.id]),
+    );
   return {
     ...plan,
-    graph: {
-      nodes: graph.nodes.map((node) =>
-        node.id === blockId ? { ...node, data: { ...node.data, ...next.data } } : node,
-      ),
-      edges: graph.edges,
-    },
+    graph: result,
     changes: [
       ...plan.changes,
+      ...(restored.added.length
+        ? [`Connect the existing outside source to ${restored.added.length} newly shared input(s).`]
+        : []),
       'Update this Block instance; keep its saved definition, public interface and other instances.',
     ],
   };

@@ -539,10 +539,10 @@ test('workflow choices join exact execution profiles and retain task and pipelin
   assert.equal(choices.workflowTaskLabel('future_task'), 'Future task');
 });
 
-async function operationBlock(instanceId = 'operation-block') {
+async function operationBlock(instanceId = 'operation-block', selectedStarter = seededStarter(true)) {
   const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
   const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
-  const draft = authoring.createOperationStarter(seededStarter(true), { x: 40, y: 80 });
+  const draft = authoring.createOperationStarter(selectedStarter, { x: 40, y: 80 });
   for (const node of draft.nodes.filter((n) => n.data.params.seed))
     node.data.params.seed.value = { value: 4109, isRandom: true };
   const graph = {
@@ -944,7 +944,7 @@ test('owning Block crossing wires survive compatible changes and reject incompat
   const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
   const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
   const graph = {
-    nodes: [runtime.createBlockRootNodeV2(instance)],
+    nodes: [runtime.createBlockRootNodeV2(instance), outsideValue('outside', 'string', 'text')],
     edges: [
       {
         id: 'outside',
@@ -966,7 +966,7 @@ test('owning Block crossing wires survive compatible changes and reject incompat
   assert.throws(() => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, next), /changes type/u);
 });
 
-test('owning Block task preview rejects a new competing internal driver on an outside socket', async () => {
+test('owning Block task preview preserves an outside image driver instead of adding a competing internal driver on an outside socket', async () => {
   const { runtime, instance, draft } = await operationBlock();
   const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
   const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
@@ -976,7 +976,7 @@ test('owning Block task preview rejects a new competing internal driver on an ou
     edges: instance.effectiveGraph.edges.filter((edge) => edge.targetPortId !== 'image'),
   });
   const graph = {
-    nodes: [runtime.createBlockRootNodeV2(detached)],
+    nodes: [runtime.createBlockRootNodeV2(detached), outsideValue('outside', 'image', 'image')],
     edges: [
       {
         id: 'image',
@@ -988,9 +988,230 @@ test('owning Block task preview rejects a new competing internal driver on an ou
     ],
   };
   const before = structuredClone(graph);
-  assert.throws(
-    () => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, seededStarter(true)),
-    /externally connected image/u,
+  const result = planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, seededStarter(true));
+  assert.deepEqual(result.graph.edges, graph.edges);
+  assert.ok(
+    !result.graph.nodes[0].data.blockInstanceV2.effectiveGraph.edges.some(
+      (edge) => edge.targetNodeId === denoise.id && edge.targetPortId === 'image',
+    ),
   );
   assert.deepEqual(graph, before);
+});
+
+function outsideValue(id = 'outside', type = 'int', field = 'value') {
+  return {
+    id,
+    type: 'custom',
+    position: { x: -400, y: 80 },
+    data: {
+      type: 'custom',
+      module: 'custom.Test',
+      action: 'Value',
+      label: 'Outside value',
+      params: { [field]: { type, display: 'output' } },
+    },
+  };
+}
+
+for (const surface of ['public', 'crossing']) {
+  test(`Block task extension preserves a ${surface} seed wire and connects its new shared member`, async () => {
+    const { runtime, instance, draft } = await operationBlock('operation-block', seededStarter(false));
+    const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+    const { blockCrossingHandleV2, blockConnectionTargetsV2 } = await server.ssrLoadModule(
+      '/src/studio/blockCrossingConnectionsV2.ts',
+    );
+    const denoise = draft.nodes.find((n) => n.data.action === 'Denoise');
+    const bound = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+      boundary: {
+        mode: 'explicit',
+        outputs: [],
+        inputs: [
+          {
+            portId: 'seed-in',
+            required: false,
+            label: 'Seed',
+            binding: { nodeId: denoise.id, fieldOrPortId: 'seed' },
+            valueType: 'int',
+          },
+        ],
+      },
+      controls: [],
+    });
+    const source = { ...outsideValue(), width: 10000, measured: { width: 10000, height: 600 } };
+    const wire = {
+      id: 'authored-seed',
+      source: source.id,
+      sourceHandle: 'value',
+      target: instance.instanceId,
+      targetHandle:
+        surface === 'public'
+          ? 'seed-in'
+          : blockCrossingHandleV2({ nodeId: denoise.id, fieldOrPortId: 'seed', direction: 'input' }),
+    };
+    const graph = { nodes: [runtime.createBlockRootNodeV2(bound), source], edges: [wire] };
+    const before = structuredClone(graph);
+    const result = planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, seededStarter(true));
+    assert.deepEqual(graph, before);
+    assert.deepEqual(result.graph.nodes[1], source);
+    assert.deepEqual(
+      result.graph.edges.find((e) => e.id === wire.id),
+      wire,
+    );
+    assert.equal(result.graph.edges.length, 2);
+    const root = result.graph.nodes[0];
+    const updated = root.data.blockInstanceV2;
+    assert.ok(
+      Object.values(updated.presentation.internalLayout).every((layout) => layout.x < 10000),
+      'outside source dimensions do not change internal placement',
+    );
+    assert.deepEqual(updated.effectiveInterface, bound.effectiveInterface);
+    assert.deepEqual(updated.definitionSnapshot, bound.definitionSnapshot);
+    const targets = result.graph.edges.flatMap((e) => blockConnectionTargetsV2(root, e.targetHandle, 'input'));
+    assert.equal(new Set(targets.map((t) => t.nodeId)).size, 2);
+    assert.ok(targets.every((t) => t.fieldOrPortId === 'seed'));
+    assert.ok(updated.effectiveGraph.nodes.every((n) => !n.nodeId.startsWith('boundary-')));
+    const lowered = runtime.expandBlockGraphV2ForExecution(result.graph.nodes, result.graph.edges);
+    const drivers = lowered.edges.filter((e) => e.source === source.id);
+    assert.equal(drivers.length, 2);
+    assert.equal(new Set(drivers.map((e) => e.target)).size, 2);
+    assert.ok(drivers.every((e) => e.targetHandle === 'seed'));
+  });
+}
+
+test('Block shared-input adaptation rejects competing outside sources without changing the graph', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const sources = [outsideValue('first'), outsideValue('second')];
+  const graph = {
+    nodes: [runtime.createBlockRootNodeV2(instance), ...sources],
+    edges: draft.nodes
+      .filter((n) => n.data.params.seed)
+      .map((n, i) => ({
+        id: `seed-${i}`,
+        source: sources[i].id,
+        sourceHandle: 'value',
+        target: instance.instanceId,
+        targetHandle: blockCrossingHandleV2({ nodeId: n.id, fieldOrPortId: 'seed', direction: 'input' }),
+      })),
+  };
+  const before = structuredClone(graph);
+  assert.throws(
+    () => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, seededStarter(true)),
+    /several input sources/u,
+  );
+  assert.deepEqual(graph, before);
+});
+
+test('new shared connections cannot override a sealed Block control', async () => {
+  const original = seededStarter(true);
+  original.sharedInputs = [];
+  const { runtime, instance, draft } = await operationBlock('operation-block', original);
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const encoder = draft.nodes.find((n) => n.data.action === 'Encode');
+  const denoise = draft.nodes.find((n) => n.data.action === 'Denoise');
+  const sealed = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+    boundary: instance.effectiveInterface.boundary,
+    controls: [
+      {
+        controlId: 'locked-seed',
+        label: 'Locked seed',
+        valueType: 'int',
+        binding: { nodeId: encoder.id, fieldId: 'seed' },
+        defaultValue: { value: 4109, isRandom: true },
+        order: 0,
+        sealed: true,
+      },
+    ],
+  });
+  const graph = {
+    nodes: [runtime.createBlockRootNodeV2(sealed), outsideValue()],
+    edges: [
+      {
+        id: 'external',
+        source: 'outside',
+        sourceHandle: 'value',
+        target: instance.instanceId,
+        targetHandle: blockCrossingHandleV2({ nodeId: denoise.id, fieldOrPortId: 'seed', direction: 'input' }),
+      },
+    ],
+  };
+  const before = structuredClone(graph);
+  assert.throws(
+    () => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, seededStarter(true)),
+    /sealed Block control/u,
+  );
+  assert.deepEqual(graph, before);
+});
+
+test('an outside loader remains a competing owner rather than becoming an untyped value source', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const source = graph().nodes[0];
+  const denoise = draft.nodes.find((n) => n.data.action === 'Denoise');
+  const canvas = {
+    nodes: [runtime.createBlockRootNodeV2(instance), source],
+    edges: [
+      {
+        id: 'external',
+        source: source.id,
+        sourceHandle: 'models',
+        target: instance.instanceId,
+        targetHandle: blockCrossingHandleV2({ nodeId: denoise.id, fieldOrPortId: 'models', direction: 'input' }),
+      },
+    ],
+  };
+  const before = structuredClone(canvas);
+  assert.throws(
+    () => planBlockOperationChange(canvas, instance.instanceId, draft.nodes[0].id, seededStarter(true)),
+    /another loader too/u,
+  );
+  assert.deepEqual(canvas, before);
+});
+
+test('a nested outside Block source preserves its interface and is never adopted during task adaptation', async () => {
+  const { runtime, instance, draft } = await operationBlock('target', seededStarter(false));
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const peer = await operationBlock('source');
+  let source = runtime.addBlockEffectiveGraphNodeV2(peer.instance, {
+    nodeId: 'value',
+    nodeType: 'custom',
+    data: outsideValue().data,
+  });
+  source = runtime.replaceBlockEffectiveInterfaceV2(source, {
+    boundary: {
+      mode: 'explicit',
+      inputs: [],
+      outputs: [
+        {
+          portId: 'value-out',
+          label: 'Value',
+          required: false,
+          valueType: 'int',
+          binding: { nodeId: 'value', fieldOrPortId: 'value' },
+        },
+      ],
+    },
+    controls: [],
+  });
+  const canvas = {
+    nodes: [runtime.createBlockRootNodeV2(instance), runtime.createBlockRootNodeV2(source)],
+    edges: [
+      {
+        id: 'external',
+        source: source.instanceId,
+        sourceHandle: 'value-out',
+        target: instance.instanceId,
+        targetHandle: blockCrossingHandleV2({ nodeId: draft.nodes[1].id, fieldOrPortId: 'seed', direction: 'input' }),
+      },
+    ],
+  };
+  const result = planBlockOperationChange(canvas, instance.instanceId, draft.nodes[0].id, seededStarter(true));
+  assert.deepEqual(result.graph.nodes[1], canvas.nodes[1]);
+  assert.equal(result.graph.edges.length, 2);
+  assert.ok(result.graph.edges.every((edge) => edge.source === 'source' && edge.sourceHandle === 'value-out'));
+  assert.deepEqual(result.graph.nodes[0].data.blockInstanceV2.definitionSnapshot, instance.definitionSnapshot);
 });

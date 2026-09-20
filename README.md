@@ -562,10 +562,13 @@ controls. Select a loader when it contains several independent graphs. Expanded
 loaders offer the same action in their inspector. Preview and Apply update only
 that workflow instance, preserving its saved definition, compatible public
 controls, nested ownership and outside connections. Undo restores the entire edit.
-An incompatible public binding, conflicting bound value or new competing input
-connection stops the preview with an explanation; edit the interface or connection
-before retrying. Existing upstream Modular compositions retain their composition
-editing path.
+Outside input wires keep their source and identity during compatible task changes.
+If the new task declares another consumer of a shared input, the preview proposes
+an additional wire from the same outside source. Existing image connections take
+precedence over starter defaults. Incompatible public bindings, conflicting bound
+values, competing sources and sealed controls stop the preview with an explanation;
+edit the interface or connection before retrying. Existing upstream Modular
+compositions retain their composition editing path.
 
 Generic nodes keep their operation metadata inside Blocks and after reuse. Shared
 seed controls update together, including hidden members; random seeds are drawn
