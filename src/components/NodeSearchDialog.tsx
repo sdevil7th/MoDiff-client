@@ -28,6 +28,14 @@ import {
 } from '../workflow/nodeConnectionSearch';
 import { useUserBlockStore } from '../stores/useUserBlockStore';
 import { savedBlockMatchesSearch, type StoredUserBlockDefinition } from '../studio/userBlockLibrary';
+import type { NodeSearchFactory } from '../workflow/useWorkflowConnections';
+import { createNodeFromRegistry } from '../workflow/nodeFactory';
+import { createStoredUserBlockNode } from '../studio/storedUserBlockInsertion';
+import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
+import { useHuggingFaceModularConditionalStore } from '../stores/useHuggingFaceModularConditionalStore';
+import { useRegisteredBlockInterfacesStore } from '../stores/useRegisteredBlockInterfacesStore';
+import { buildHuggingFaceCatalogSections, type HuggingFaceCatalogEntry } from '../studio/huggingFaceNodeCatalog';
+import { catalogNodeSearchEntries, createCatalogSearchNode } from '../workflow/catalogNodeSearch';
 
 type SearchEntry = {
   key: string;
@@ -36,12 +44,13 @@ type SearchEntry = {
   block?: StoredUserBlockDefinition;
   revision?: string;
   operation?: OperationContract;
+  catalog?: HuggingFaceCatalogEntry;
 };
 
 interface NodeSearchDialogProps {
   anchorPosition: { top: number; left: number } | null;
   onClose: () => void;
-  onSelect: (nodeKey: string, node: NodeData, block?: StoredUserBlockDefinition) => void;
+  onSelect: (createNode: NodeSearchFactory, signal: AbortSignal) => Promise<void>;
   nodes: Record<string, NodeData>;
   dataType?: string | string[];
   handleType?: 'source' | 'target' | null | undefined;
@@ -72,6 +81,45 @@ const NodeSearchDialog = ({
   const fetchBlocks = useUserBlockStore((state) => state.fetchBlocks);
   const error = useUserBlockStore((state) => state.error);
   const savedEntries = useMemo(() => savedBlockSearchEntries([...definitions, ...blocks]), [definitions, blocks]);
+
+  const library = useHuggingFaceNodeLibraryStore((s) => s.library);
+  const libraryLoaded = useHuggingFaceNodeLibraryStore((s) => s.loaded);
+  const libraryError = useHuggingFaceNodeLibraryStore((s) => s.error);
+  const fetchLibrary = useHuggingFaceNodeLibraryStore((s) => s.fetchLibrary);
+  const snapshot = useHuggingFaceModularConditionalStore((s) => s.snapshot);
+  const snapshotLoaded = useHuggingFaceModularConditionalStore((s) => s.loaded);
+  const snapshotError = useHuggingFaceModularConditionalStore((s) => s.error);
+  const fetchSnapshot = useHuggingFaceModularConditionalStore((s) => s.fetchSnapshot);
+  const interfaces = useRegisteredBlockInterfacesStore((s) => s.entries);
+  const interfacesLoaded = useRegisteredBlockInterfacesStore((s) => s.loaded);
+  const interfacesError = useRegisteredBlockInterfacesStore((s) => s.error);
+  const fetchInterfaces = useRegisteredBlockInterfacesStore((s) => s.fetch);
+  const form = useStudioStore((s) => s.form);
+  const catalogContext = useMemo(
+    () => (library ? { library, snapshot, registry: nodes, form } : null),
+    [library, snapshot, nodes, form],
+  );
+  const catalogSections = useMemo(
+    () => (library ? buildHuggingFaceCatalogSections(library, snapshot) : []),
+    [library, snapshot],
+  );
+  const catalogEntries = useMemo(
+    () =>
+      catalogContext
+        ? catalogNodeSearchEntries(catalogSections, catalogContext, interfaces, searchQuery, view, dataType, handleType)
+        : [],
+    [catalogSections, catalogContext, interfaces, searchQuery, view, dataType, handleType],
+  );
+
+  useEffect(() => {
+    if (!libraryLoaded) void fetchLibrary();
+  }, [libraryLoaded, fetchLibrary]);
+  useEffect(() => {
+    if (!snapshotLoaded) void fetchSnapshot();
+  }, [snapshotLoaded, fetchSnapshot]);
+  useEffect(() => {
+    if (handleType && !interfacesLoaded) void fetchInterfaces();
+  }, [handleType, interfacesLoaded, fetchInterfaces]);
 
   useEffect(() => {
     if (!loaded) void fetchBlocks();
@@ -107,6 +155,7 @@ const NodeSearchDialog = ({
         node,
         label: node.label,
       })),
+      ...catalogEntries.map((catalog) => ({ key: `catalog:${catalog.id}`, label: catalog.label, catalog })),
       ...savedEntries
         .filter(
           ({ block, node }) =>
@@ -115,7 +164,19 @@ const NodeSearchDialog = ({
         )
         .map((entry) => ({ ...entry, label: entry.node.label })),
     ],
-    [catalogNodes, operations, pipeline, task, view, dataType, handleType, searchQuery, savedEntries, nodes],
+    [
+      catalogNodes,
+      operations,
+      pipeline,
+      task,
+      view,
+      dataType,
+      handleType,
+      searchQuery,
+      savedEntries,
+      nodes,
+      catalogEntries,
+    ],
   );
 
   useEffect(() => {
@@ -142,11 +203,6 @@ const NodeSearchDialog = ({
   const selectEntry = useCallback(
     async (entry: SearchEntry) => {
       if (pending.current) return;
-      if (!entry.operation) {
-        if (entry.node) onSelect(entry.key, entry.node, entry.block);
-        handleClose();
-        return;
-      }
       const request = new AbortController();
       const context = captureWorkflowOperationContext();
       const selection = useNodeDiscoveryStore.getState().selection;
@@ -154,16 +210,35 @@ const NodeSearchDialog = ({
       setBusy(true);
       setResolutionError(null);
       try {
-        const node = await resolve(entry.operation, request.signal);
+        let createNode: NodeSearchFactory;
+        if (entry.operation) {
+          const operation = entry.operation;
+          const node = await resolve(operation, request.signal);
+          const data = withOperationAuthoring(
+            prepareOperationConnection(node, operation, dataType, handleType),
+            operation,
+          );
+          createNode = (position) =>
+            createNodeFromRegistry(operation.nodeKey, { [operation.nodeKey]: data }, position)!;
+        } else if (entry.catalog && catalogContext) {
+          const catalog = entry.catalog;
+          createNode = async (position) => {
+            const node = await createCatalogSearchNode(catalog, catalogContext, position, request.signal);
+            if (useHuggingFaceNodeLibraryStore.getState().library !== catalogContext.library)
+              throw new Error('The catalog changed. Select the Block again.');
+            return node;
+          };
+        } else if (entry.block) {
+          const block = entry.block;
+          createNode = (position) => createStoredUserBlockNode(block, position);
+        } else if (entry.node) {
+          const node = entry.node;
+          createNode = (position) => createNodeFromRegistry(entry.key, { [entry.key]: node }, position)!;
+        } else return;
         if (request.signal.aborted || useNodeDiscoveryStore.getState().selection !== selection) return;
         assertWorkflowOperationContext(context, { includeForm: false });
-        onSelect(
-          entry.operation.nodeKey,
-          withOperationAuthoring(
-            prepareOperationConnection(node, entry.operation, dataType, handleType),
-            entry.operation,
-          ),
-        );
+        await onSelect(createNode, request.signal);
+        if (request.signal.aborted) return;
         handleClose();
       } catch (error) {
         if (!request.signal.aborted)
@@ -175,7 +250,7 @@ const NodeSearchDialog = ({
         }
       }
     },
-    [resolve, onSelect, handleClose, dataType, handleType],
+    [resolve, onSelect, handleClose, dataType, handleType, catalogContext],
   );
 
   const handleKeyDown = useCallback(
@@ -228,7 +303,7 @@ const NodeSearchDialog = ({
           aria-label="Search nodes"
           aria-activedescendant={filteredNodes[activeIndex] ? `node-search-${activeIndex}` : undefined}
           autoFocus
-          placeholder="Search nodes and Saved Blocks"
+          placeholder="Search nodes and Blocks"
           value={searchQuery}
           onChange={(event) => {
             setSearchQuery(event.currentTarget.value);
@@ -260,6 +335,26 @@ const NodeSearchDialog = ({
         <div role="status" className="px-3 pb-2 text-xs text-modiff-subtle-text">
           Saved Blocks could not be loaded.
           <GraphControlButton onClick={() => void fetchBlocks()}>Retry Saved Blocks</GraphControlButton>
+        </div>
+      ) : null}
+
+      {!libraryLoaded || !snapshotLoaded || (handleType && !interfacesLoaded) ? (
+        <p role="status" className="px-3 pb-2 text-xs text-modiff-subtle-text">
+          Loading catalog Blocks…
+        </p>
+      ) : null}
+      {libraryError || snapshotError || (handleType && interfacesError) ? (
+        <div role="status" className="px-3 pb-2 text-xs text-modiff-subtle-text">
+          Some catalog Blocks or compatible ports could not be loaded.
+          <GraphControlButton
+            onClick={() => {
+              if (libraryError) void fetchLibrary();
+              if (snapshotError) void fetchSnapshot();
+              if (interfacesError) void fetchInterfaces();
+            }}
+          >
+            Retry catalog
+          </GraphControlButton>
         </div>
       ) : null}
 
@@ -297,6 +392,11 @@ const NodeSearchDialog = ({
               <div className="truncate text-sm text-modiff-text">{entry.label}</div>
               {entry.block ? (
                 <div className="text-xs text-modiff-subtle-text">Saved Block · {entry.revision}</div>
+              ) : null}
+              {entry.catalog ? (
+                <div className="text-xs text-modiff-subtle-text">
+                  {entry.catalog.kind === 'cluster' ? 'Block' : 'Implementation'} · {entry.catalog.readinessLabel}
+                </div>
               ) : null}
               {entry.operation ? (
                 <div className="text-xs text-modiff-subtle-text">

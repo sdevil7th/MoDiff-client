@@ -3853,8 +3853,11 @@ function mockGraphQualifiedQwenNodeLibrary() {
   return library;
 }
 
-function mockModularConditionalSnapshot(library: ReturnType<typeof mockGraphQualifiedQwenNodeLibrary>) {
-  const qwen = library.definitions.find((definition) => definition.pipelineClass === 'QwenImageModularPipeline');
+function mockModularConditionalSnapshot(
+  library: ReturnType<typeof mockGraphQualifiedQwenNodeLibrary>,
+  pipelineClass = 'QwenImageModularPipeline',
+) {
+  const qwen = library.definitions.find((definition) => definition.pipelineClass === pipelineClass);
   if (!qwen) throw new Error('The mocked Qwen Cluster definition is missing.');
   const root = library.blockDefinitions.find((definition) => definition.id === qwen.rootBlockDefinitionId);
   if (!root) throw new Error('The mocked Qwen root Modular block is missing.');
@@ -4318,6 +4321,9 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
       body: JSON.stringify(nodeLibrary),
     });
   });
+  await page.route('**/huggingface/registered-block-interfaces', (route) =>
+    route.fulfill({ json: { schemaVersion: 1, error: false, entries: [] } }),
+  );
   await page.route('**/huggingface/modular-conditionals', async (route) => {
     await route.fulfill({
       status: 200,
@@ -5565,7 +5571,20 @@ async function pinCurrentQwenRouteToMockRegistry(page: Page, compilerInstanceId:
       body: JSON.stringify({ schemaVersion: 1, error: false, entry: fixture.entry }),
     });
   });
-  return { contentHash: fixture.contentHash, canonicalSha256: fixture.canonicalSha256 };
+  const entry = fixture.entry;
+  const interfaceEntry = {
+    catalogDefinitionId: entry.catalogDefinitionId,
+    catalogDefinitionContentHash: entry.catalogDefinitionContentHash,
+    admissionId: entry.admissionId,
+    compiledDefinitionContentHash: entry.definition.contentHash,
+    compiledDefinitionCanonicalSha256: entry.compiledDefinitionCanonicalSha256,
+    inputs: entry.definition.boundary.inputs.map(({ portId, valueType }) => ({ portId, valueType })),
+    outputs: entry.definition.boundary.outputs.map(({ portId, valueType }) => ({ portId, valueType })),
+  };
+  await page.route('**/huggingface/registered-block-interfaces', (route) =>
+    route.fulfill({ json: { schemaVersion: 1, error: false, entries: [interfaceEntry] } }),
+  );
+  return { contentHash: fixture.contentHash, canonicalSha256: fixture.canonicalSha256, entry };
 }
 
 async function findQwenCatalogRow(page: Page) {
@@ -25885,5 +25904,221 @@ for (const [workspace, cancel] of [
     expect(restored.effectiveGraph.nodes.find((n) => n.nodeId === added.nodeId)).toEqual(added);
     expect(restored.definitionSnapshot).toEqual(before.definitionSnapshot);
     await page.screenshot({ path: test.info().outputPath('bound-nested-drop.png'), animations: 'disabled' });
+  });
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} finds a registered catalog Block in canvas search without opening the library`, async ({
+    page,
+  }) => {
+    await ensureFrontend();
+    await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    await pinCurrentQwenRouteToMockRegistry(page, 'catalog-search-pin');
+    await page.locator('.react-flow__pane').dblclick({ position: { x: 300, y: 200 } });
+    const list = page.getByRole('listbox', { name: 'Matching nodes' });
+    await expect(list).toBeVisible();
+    await page.locator('input[aria-label="Search nodes"]').last().fill('Qwen Image Text To Image');
+    const option = list.getByRole('option').filter({ hasText: 'Qwen Image — Text To Image' });
+    await expect(option).toHaveCount(1);
+    await expect(option).toContainText('Graph qualified');
+    await option.click();
+    await expect(list).toHaveCount(0);
+    await expect(page.locator('.react-flow__node-block')).toHaveCount(1);
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const inserted = await read();
+    expect(inserted.nodes[0]!.data.blockInstanceV2?.definitionSnapshot.source.pipelineClass).toBe(
+      'QwenImageModularPipeline',
+    );
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+z');
+    await expect.poll(async () => (await read()).nodes.length).toBe(0);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(async () => (await read()).nodes.length).toBe(1);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    expect((await read()).nodes[0]!.data.blockInstanceV2).toEqual(inserted.nodes[0]!.data.blockInstanceV2);
+  });
+}
+
+async function openTypedCatalogSearch(page: Page, workspace: 'auto' | 'expert', direction: 'source' | 'target') {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await ensureFrontend();
+  await installMockRoutes(page, { graphQualifiedQwenCluster: true });
+  const probe = {
+    ...nodeDef('custom.Search', 'Probe', 'custom', {
+      input: { label: 'Image', type: 'image', display: 'input' },
+      output: { label: 'Prompt', type: 'str', display: 'output' },
+    }),
+    label: 'Catalog probe',
+  };
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        instance: 'mock',
+        nodes: { ...mockGraphQualifiedQwenRegistry, 'custom.Search.Probe': probe },
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, workspace);
+  const fixture = await pinCurrentQwenRouteToMockRegistry(page, 'typed-catalog-pin');
+  await page.getByTestId('left-tab-nodes').click();
+  await page.getByLabel('Search nodes', { exact: true }).fill('Catalog probe');
+  await page.getByTestId('node-row-custom-Search-Probe').click();
+  const original = page.locator('.react-flow__node-custom').first();
+  const id = (await original.getAttribute('data-id'))!;
+  const handle = original.getByTestId(`node-handle-${id}-${direction === 'source' ? 'output' : 'input'}`);
+  const start = (await handle.boundingBox())!;
+  const pane = (await page.locator('.react-flow__pane').boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pane.x + pane.width - 60, pane.y + 70, { steps: 15 });
+  await page.mouse.up();
+  const list = page.getByRole('listbox', { name: 'Matching nodes' });
+  await expect(list).toBeVisible();
+  await page.getByLabel('Search nodes', { exact: true }).last().fill('Qwen Image Text To Image');
+  const option = list.getByRole('option').filter({ hasText: 'Qwen Image — Text To Image' });
+  await expect(option).toHaveCount(1);
+  return { id, fixture, list, option };
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  for (const direction of ['source', 'target'] as const) {
+    test(`${workspace} connects a catalog Block from a ${direction} port with atomic history and persistence`, async ({
+      page,
+    }) => {
+      const { id, option } = await openTypedCatalogSearch(page, workspace, direction);
+      await option.click();
+      const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+      await expect.poll(async () => (await read()).edges.length).toBe(1);
+      const graph = await read();
+      expect(graph.nodes).toHaveLength(2);
+      const block = graph.nodes.find((node) => node.data.blockInstanceV2)!;
+      expect(graph.edges[0]).toMatchObject(
+        direction === 'source'
+          ? { source: id, sourceHandle: 'output', target: block.id, targetHandle: 'prompt' }
+          : { source: block.id, sourceHandle: 'images', target: id, targetHandle: 'input' },
+      );
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Control+z');
+      await expect
+        .poll(async () => {
+          const g = await read();
+          return [g.nodes.length, g.edges.length];
+        })
+        .toEqual([1, 0]);
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(async () => (await read()).edges).toEqual(graph.edges);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+      const restored = await read();
+      expect(restored.edges).toEqual(graph.edges);
+      expect(restored.nodes.find((node) => node.id === block.id)!.data.blockInstanceV2).toEqual(
+        block.data.blockInstanceV2,
+      );
+      await page.screenshot({ path: test.info().outputPath('catalog-connected.png'), animations: 'disabled' });
+    });
+  }
+}
+
+for (const outcome of ['failure', 'escape', 'workflow'] as const) {
+  test(`catalog search handles delayed ${outcome} without orphan nodes or lost connection context`, async ({
+    page,
+  }) => {
+    const { option, list, fixture } = await openTypedCatalogSearch(page, 'expert', 'source');
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    await page.route('**/huggingface/registered-block-v2**', async (route) => {
+      calls++;
+      if (calls === 1) {
+        await held;
+        if (outcome === 'failure')
+          return route.fulfill({ status: 503, json: { message: 'Catalog temporarily unavailable' } });
+      }
+      await route.fulfill({ json: { schemaVersion: 1, error: false, entry: fixture.entry } });
+    });
+    await option.click();
+    await expect.poll(() => calls).toBe(1);
+    if (outcome !== 'failure') await page.keyboard.press('Escape');
+    if (outcome === 'workflow') {
+      await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+      await page
+        .getByRole('dialog', { name: 'Workflows', exact: true })
+        .getByRole('button', { name: 'Empty workflow', exact: true })
+        .click();
+    }
+    release();
+    if (outcome === 'failure') {
+      await expect(page.getByRole('alert').filter({ hasText: 'Catalog temporarily unavailable' })).toBeVisible();
+      expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.length)).toBe(1);
+      await option.click();
+      await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph().edges.length)).toBe(1);
+      await expect(list).toHaveCount(0);
+    } else {
+      await waitForOperationGraphToSettle(page);
+      const graph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+      expect(graph.nodes).toHaveLength(outcome === 'workflow' ? 0 : 1);
+      expect(graph.edges).toEqual([]);
+      expect(graph.nodes.some((node) => node.data.blockInstanceV2)).toBe(false);
+    }
+  });
+}
+
+for (const search of ['Flux Denoise Step', 'Sequential Pipeline Blocks', 'Flux Text To Image'] as const) {
+  test(`canvas implementation search inserts ${search} with its original catalog identity`, async ({ page }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const snapshot = mockModularConditionalSnapshot(mockHuggingFaceNodeLibrary, 'FluxModularPipeline');
+    const leaf = mockHuggingFaceNodeLibrary.blockDefinitions.find((block) => block.className === 'FluxDenoiseStep')!;
+    snapshot.blockDefinitions.push(leaf);
+    snapshot.pipelines[0]!.placements.push({
+      path: ['root', 'denoise'],
+      legacyPath: 'root.denoise',
+      order: 0,
+      blockDefinitionId: leaf.id,
+      intermediateOutputs: [],
+    });
+    snapshot.pipelines[0]!.workflows[0]!.cases[0]!.activeLeafPaths = [['root', 'denoise']];
+    snapshot.pipelines[0]!.workflows[0]!.cases[0]!.activeLeafDefinitionIds = [leaf.id];
+    await page.route('**/huggingface/modular-conditionals', (route) => route.fulfill({ json: snapshot }));
+    await page.route('**/nodes**', (route) =>
+      route.fulfill({ json: { instance: 'mock', nodes: mockGraphQualifiedQwenRegistry } }),
+    );
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, 'expert');
+    await page.locator('.react-flow__pane').dblclick({ position: { x: 300, y: 200 } });
+    const list = page.getByRole('listbox', { name: 'Matching nodes' });
+    await expect(list).toBeVisible();
+    await page.getByLabel('Search nodes', { exact: true }).last().fill(search);
+    await expect(list.getByRole('option')).toHaveCount(0);
+    await page.getByRole('checkbox', { name: 'Show implementation nodes' }).last().check();
+    const option = list
+      .getByRole('option')
+      .filter({ hasText: search === 'Flux Text To Image' ? 'Flux — Text To Image' : search.replace(/ Step$/u, '') });
+    await expect(option).toHaveCount(1);
+    await expect(option).toContainText(search === 'Flux Text To Image' ? 'Catalog only' : 'Composable');
+    await option.click();
+    await expect(list).toHaveCount(0);
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const graph = await read();
+    expect(graph.nodes).toHaveLength(1);
+    expect(JSON.stringify(graph.nodes[0]!.data)).toContain('FluxModularPipeline');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+z');
+    await expect.poll(async () => (await read()).nodes.length).toBe(0);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(async () => (await read()).nodes.length).toBe(1);
+    await page.screenshot({ path: test.info().outputPath('catalog-implementation.png'), animations: 'disabled' });
   });
 }

@@ -1,15 +1,12 @@
 import { type Connection, type FinalConnectionState } from '@xyflow/react';
 import { useCallback, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
-import type { NodeData, NodeParams } from '../stores/useNodeStore';
+import type { NodeParams } from '../stores/useNodeStore';
 import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 import { matchingNodeHandleForDrop } from './nodeConnectionMatching';
-import { createNodeFromRegistry } from './nodeFactory';
-import { createStoredUserBlockNode } from '../studio/storedUserBlockInsertion';
-import type { StoredUserBlockDefinition } from '../studio/userBlockLibrary';
 import { useFlowStore } from '../stores/useFlowStore';
 import {
   captureWorkflowOperationContext,
@@ -17,7 +14,8 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
-import { enqueueSnackbar } from '../ui/snackbar';
+
+export type NodeSearchFactory = (position: CustomNodeType['position']) => CustomNodeType | Promise<CustomNodeType>;
 
 type ScreenToFlowPosition = (position: { x: number; y: number }) => { x: number; y: number };
 type GetParam = <K extends keyof NodeParams>(id: string, param: string, key: K) => NodeParams[K] | null;
@@ -131,15 +129,17 @@ export function useWorkflowConnections({
   }, []);
 
   const handleNodeSearchSelect = useCallback(
-    (key: string, node: NodeData, block?: StoredUserBlockDefinition) => {
+    async (createNode: NodeSearchFactory, signal: AbortSignal) => {
       if (!anchorPosition || !searchContextRef.current) return;
+      const context = searchContextRef.current;
+      const dropHandle = dropHandleRef.current;
+      let committed = false;
       try {
-        assertWorkflowOperationContext(searchContextRef.current, { includeForm: false });
+        assertWorkflowOperationContext(context, { includeForm: false });
         const position = screenToFlowPosition({ x: anchorPosition.left, y: anchorPosition.top });
-        const newNode = block
-          ? createStoredUserBlockNode(block, position)
-          : createNodeFromRegistry(key, { [key]: node }, position)!;
-        const dropHandle = dropHandleRef.current;
+        const newNode = await createNode(position);
+        if (signal.aborted) return;
+        assertWorkflowOperationContext(context, { includeForm: false });
         const matchingHandle = dropHandle
           ? matchingNodeHandleForDrop(newNode.data, dropHandle.dataType, dropHandle.handleType)
           : undefined;
@@ -168,14 +168,10 @@ export function useWorkflowConnections({
         useFlowStore.getState().addNodeWithConnection(newNode, connection);
         if (wasEmpty && useStudioStore.getState().graphBinding) useStudioStore.getState().detachManagedGraph();
         prepareWorkflowForManualInsertion();
-      } catch (error) {
-        enqueueSnackbar(error instanceof Error ? error.message : 'Could not insert this node.', {
-          variant: 'error',
-          autoHideDuration: 5200,
-        });
+        committed = true;
+      } finally {
+        if (committed && searchContextRef.current === context) dropHandleRef.current = null;
       }
-
-      dropHandleRef.current = null;
     },
     [anchorPosition, screenToFlowPosition, edgeType],
   );

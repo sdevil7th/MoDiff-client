@@ -62,7 +62,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // canvas picker, adds bound-node resolution/cancellation, and removes four catalog
 // tabs. Final measured aggregate is 219.7 KiB (1.9 KiB added). Bound this surface
 // at 220 KiB; startup and individual chunk ceilings stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 220 * 1024;
+// W4 adds catalog Block search, compiled public-interface validation and shared
+// asynchronous insertion/retry. Deferred code measures 221.5 KiB (+1.8 KiB).
+// Bound this feature at 222 KiB; startup and individual chunk caps stay fixed.
+const MAX_DEFERRED_GZIP_BYTES = 222 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

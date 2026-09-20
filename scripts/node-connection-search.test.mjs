@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 
 let server;
 let search;
+let interfaces;
 
 before(async () => {
   server = await createServer({
@@ -14,6 +17,7 @@ before(async () => {
     appType: 'custom',
   });
   search = await server.ssrLoadModule('/src/workflow/nodeConnectionSearch.ts');
+  interfaces = await server.ssrLoadModule('/src/studio/registeredBlockInterfaces.ts');
 });
 
 after(async () => server?.close());
@@ -220,4 +224,120 @@ test('bound value-input insertion exposes only an editable declared control with
     search.prepareOperationConnection(single, { ports: [{ ...operation.ports[0], hidden: true }] }, 'string', 'source'),
     single,
   );
+});
+
+const publicInterface = () => ({
+  catalogDefinitionId: 'catalog-task',
+  catalogDefinitionContentHash: 'source-hash',
+  admissionId: 'admission',
+  compiledDefinitionContentHash: 'compiled-hash',
+  compiledDefinitionCanonicalSha256: `sha256:${'a'.repeat(64)}`,
+  inputs: [{ portId: 'value', valueType: ['str', 'int'] }],
+  outputs: [{ portId: 'value', valueType: 'image' }],
+});
+const interfaceIndex = (entry = publicInterface()) => ({ schemaVersion: 1, error: false, entries: [entry] });
+const interfaceRoute = () => {
+  const entry = publicInterface();
+  return {
+    definitionId: entry.catalogDefinitionId,
+    definitionContentHash: entry.catalogDefinitionContentHash,
+    admissionId: entry.admissionId,
+    compiledDefinitionContentHash: entry.compiledDefinitionContentHash,
+    compiledDefinitionCanonicalSha256: entry.compiledDefinitionCanonicalSha256,
+  };
+};
+
+test('compiled interface suggestions preserve directions and aliases and require all route pins', () => {
+  const entries = interfaces.parseRegisteredBlockInterfaces(interfaceIndex());
+  const route = interfaceRoute();
+  const node = interfaces.registeredBlockInterfaceNode(entries, route);
+  assert.ok(search.matchingNodeHandleForDrop(node, 'string', 'source'));
+  assert.ok(search.matchingNodeHandleForDrop(node, 'integer', 'source'));
+  assert.ok(search.matchingNodeHandleForDrop(node, 'image', 'target'));
+  assert.equal(search.matchingNodeHandleForDrop(node, 'image', 'source'), undefined);
+  assert.equal(search.matchingNodeHandleForDrop(node, 'string', 'target'), undefined);
+  for (const key of Object.keys(route)) {
+    assert.equal(interfaces.registeredBlockInterfaceNode(entries, { ...route, [key]: 'stale' }), null, key);
+  }
+  assert.equal(interfaces.registeredBlockInterfaceNode([], route), null);
+});
+
+test('interface index rejects malformed, oversized, duplicate and extra executable data', () => {
+  for (const modify of [
+    (index) => {
+      index.error = true;
+    },
+    (index) => {
+      index.schemaVersion = 2;
+    },
+    (index) => {
+      index.graph = {};
+    },
+    (index) => {
+      index.entries.push(structuredClone(index.entries[0]));
+    },
+    (index) => {
+      index.entries[0].inputs.push(index.entries[0].inputs[0]);
+    },
+    (index) => {
+      index.entries[0].inputs[0].valueType = [];
+    },
+    (index) => {
+      index.entries[0].inputs[0].portId = 'bad\u0000id';
+    },
+    (index) => {
+      index.entries[0].outputs[0].valueType = { code: 'unsafe' };
+    },
+    (index) => {
+      index.entries[0].outputs[0].binding = {};
+    },
+    (index) => {
+      index.entries[0].compiledDefinitionCanonicalSha256 = 'bad';
+    },
+    (index) => {
+      index.entries[0].graph = {};
+    },
+    (index) => {
+      index.entries[0].inputs = Array.from({ length: 513 }, (_, n) => ({ portId: `${n}`, valueType: 'image' }));
+    },
+  ]) {
+    const index = interfaceIndex();
+    modify(index);
+    assert.throws(() => interfaces.parseRegisteredBlockInterfaces(index), /Invalid registered Block interface index/);
+  }
+});
+
+test('every shipped compiled catalog interface agrees with the frontend route and connector types', async () => {
+  const { REGISTERED_BLOCK_V2_ROUTES } = await server.ssrLoadModule('/src/studio/registeredBlockV2Routes.ts');
+  const catalog = JSON.parse(
+    gunzipSync(readFileSync(new URL('../../MoDiff/modiff/registered_block_v2_catalog.v1.json.gz', import.meta.url))),
+  );
+  const entries = catalog.entries.map((entry) => ({
+    catalogDefinitionId: entry.catalogDefinitionId,
+    catalogDefinitionContentHash: entry.catalogDefinitionContentHash,
+    admissionId: entry.admissionId,
+    compiledDefinitionContentHash: entry.definition.contentHash,
+    compiledDefinitionCanonicalSha256: entry.compiledDefinitionCanonicalSha256,
+    inputs: entry.definition.boundary.inputs.map(({ portId, valueType }) => ({ portId, valueType })),
+    outputs: entry.definition.boundary.outputs.map(({ portId, valueType }) => ({ portId, valueType })),
+  }));
+  const parsed = interfaces.parseRegisteredBlockInterfaces({ schemaVersion: 1, error: false, entries });
+  assert.equal(parsed.length, REGISTERED_BLOCK_V2_ROUTES.length);
+  for (const route of REGISTERED_BLOCK_V2_ROUTES) {
+    const node = interfaces.registeredBlockInterfaceNode(parsed, route);
+    assert.ok(node, route.definitionId);
+    const entry = parsed.find(
+      (entry) => entry.admissionId === route.admissionId && entry.catalogDefinitionId === route.definitionId,
+    );
+    for (const [direction, ports] of [
+      ['source', entry.inputs],
+      ['target', entry.outputs],
+    ]) {
+      for (const port of ports)
+        assert.ok(
+          search.matchingNodeHandleForDrop(node, port.valueType, direction),
+          `${route.definitionId}:${direction}:${port.portId}`,
+        );
+    }
+  }
 });

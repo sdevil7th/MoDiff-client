@@ -395,3 +395,49 @@ test('Auto plan batches and history mutations reject invalid or failed responses
     (error) => error.kind === 'http' && error.status === 423 && error.message === 'History is locked.',
   );
 });
+
+for (const [modulePath, storeName, method, response] of [
+  [
+    '/src/stores/useRegisteredBlockInterfacesStore.ts',
+    'useRegisteredBlockInterfacesStore',
+    'fetch',
+    { schemaVersion: 1, error: false, entries: [] },
+  ],
+  [
+    '/src/stores/useHuggingFaceModularConditionalStore.ts',
+    'useHuggingFaceModularConditionalStore',
+    'fetchSnapshot',
+    null,
+  ],
+]) {
+  test(`${storeName} coalesces concurrent callers and permits retry after failure`, async () => {
+    const store = (await server.ssrLoadModule(modulePath))[storeName];
+    store.setState({ loaded: false, error: null });
+    const held = deferred();
+    let count = 0;
+    globalThis.fetch = async () => {
+      count += 1;
+      await held.promise;
+      return jsonResponse({ message: 'Metadata temporarily unavailable' }, 503);
+    };
+    const first = store.getState()[method]();
+    const second = store.getState()[method]();
+    assert.equal(first, second);
+    assert.equal(store.getState().loaded, false);
+    assert.equal(count, 1);
+    held.resolve();
+    await Promise.all([first, second]);
+    assert.equal(store.getState().loaded, true);
+    assert.ok(store.getState().error);
+    globalThis.fetch = async () => {
+      count += 1;
+      return jsonResponse(response);
+    };
+    await store.getState()[method]();
+    assert.equal(count, 2);
+    if (response) {
+      assert.equal(store.getState().error, null);
+      assert.deepEqual(store.getState().entries, []);
+    } else assert.ok(store.getState().error, 'Malformed conditional metadata fails closed.');
+  });
+}

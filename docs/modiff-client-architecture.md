@@ -572,6 +572,21 @@ retained for exact backend composition lowering. Upstream Python identifiers
 may begin with `_`; public connector/control IDs remain on the stricter public
 ID grammar.
 
+Canvas search shares these catalog entries, filters and factories with the Nodes
+library. Registered task Blocks appear in normal search; upstream implementation
+entries and catalog-only structural Blocks require Show implementation nodes.
+Typed suggestions load `/huggingface/registered-block-interfaces` and match only
+compiled public ports whose complete route pins agree. Upstream leaf suggestions
+use the ordinary node factory's declared sockets; containers without public
+sockets remain available through plain search. No internal socket is guessed.
+
+Selection resolves asynchronously before a single add-and-connect history
+transaction. Full definition/hash validation and the existing canvas connector
+validation run before commit. Failure retains the search and original wire for
+retry; Escape, a changed discovery selection or a replaced workflow cancels
+insertion. Metadata requests are shared across library/picker/factory callers,
+and failures offer Retry catalog without installing or enabling any runtime.
+
 Fresh registered insertion fetches one build-time compiled, hash-pinned entry
 from `/huggingface/registered-block-v2`. The entry is generated from the live
 backend node schemas, schema-v6 definition/admission, route ledger, and exact
