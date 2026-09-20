@@ -557,6 +557,16 @@ Implementation includes defaults, connected fallbacks, overrides and unsupported
 settings retained outside execution. Metadata inspection does not load models or
 execute custom source.
 
+A Block containing generic nodes exposes **Change model / task** directly on its
+controls. Select a loader when it contains several independent graphs. Expanded
+loaders offer the same action in their inspector. Preview and Apply update only
+that workflow instance, preserving its saved definition, compatible public
+controls, nested ownership and outside connections. Undo restores the entire edit.
+An incompatible public binding, conflicting bound value or new competing input
+connection stops the preview with an explanation; edit the interface or connection
+before retrying. Existing upstream Modular compositions retain their composition
+editing path.
+
 Generic nodes keep their operation metadata inside Blocks and after reuse. Shared
 seed controls update together, including hidden members; random seeds are drawn
 once per connected group and independently for separate Block instances. Sealed

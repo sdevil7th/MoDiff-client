@@ -33,10 +33,12 @@ export default function OperationGraphControls({
   pipeline,
   task,
   ownerId,
+  blockId,
 }: {
   pipeline: string;
   task: string;
   ownerId?: string;
+  blockId?: string;
 }) {
   const nodes = useFlowStore((s) => s.nodes);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
@@ -66,7 +68,7 @@ export default function OperationGraphControls({
     return () => {
       pending.current?.abort();
     };
-  }, [pipeline, task, workflow, canvasEpoch, loader]);
+  }, [pipeline, task, workflow, canvasEpoch, loader, blockId]);
 
   async function prepare(change: boolean) {
     if (pending.current) return;
@@ -83,7 +85,21 @@ export default function OperationGraphControls({
       assertWorkflowOperationContext(context, { includeForm: false });
       if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The graph changed. Request a fresh preview.');
-      setPreview({ starter, plan: change ? planOperationChange(snapshot, loader, starter) : null, context, signature });
+      const plan = !change
+        ? null
+        : blockId
+          ? (await import('../workflow/operationBlockChange')).planBlockOperationChange(
+              snapshot,
+              blockId,
+              loader,
+              starter,
+            )
+          : planOperationChange(snapshot, loader, starter);
+      if (controller.signal.aborted) return;
+      assertWorkflowOperationContext(context, { includeForm: false });
+      if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
+        throw new Error('The graph changed. Request a fresh preview.');
+      setPreview({ starter, plan, context, signature });
     } catch (e) {
       if (!controller.signal.aborted) setError(formatRequestError(e, 'Could not prepare the graph.'));
     } finally {
@@ -129,7 +145,7 @@ export default function OperationGraphControls({
           Preview connected starter
         </ModiffButton>
       ) : null}
-      {loaders.length ? (
+      {blockId || loaders.length ? (
         <>
           {!ownerId ? (
             <ModiffFieldShell label="Graph to change">
@@ -147,7 +163,10 @@ export default function OperationGraphControls({
               />
             </ModiffFieldShell>
           ) : null}
-          <ModiffButton disabled={busy || !loaders.some((n) => n.id === loader)} onClick={() => void prepare(true)}>
+          <ModiffButton
+            disabled={busy || (!blockId && !loaders.some((n) => n.id === loader))}
+            onClick={() => void prepare(true)}
+          >
             Preview model / task change
           </ModiffButton>
         </>
@@ -180,8 +199,10 @@ export default function OperationGraphControls({
             </p>
             <p>{preview.starter.nodes.map((n) => n.node.label).join(' → ')}</p>
             <p>
-              The result is an editable canvas graph. Run checks model files, runtime support, required inputs and
-              resources.
+              {blockId
+                ? 'The result updates the editable graph inside this Block.'
+                : 'The result is an editable canvas graph.'}{' '}
+              Run checks model files, runtime support, required inputs and resources.
             </p>
             <p>
               Connect the final result to a Preview, Save or Export node before running. Drag from its output to see

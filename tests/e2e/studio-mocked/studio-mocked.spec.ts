@@ -26616,3 +26616,150 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.screenshot({ path: test.info().outputPath('shared-seed-block.png'), animations: 'disabled' });
   });
 }
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} owning Block model and task preview applies atomically and survives Undo and reload`, async ({
+    page,
+  }) => {
+    page.setDefaultTimeout(15_000);
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find(
+      (s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'text_to_image',
+    )!;
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    await page.evaluate(async (starter) => {
+      const [{ createOperationStarter }, schema, runtime, { useFlowStore }, { prepareWorkflowForManualInsertion }] =
+        await Promise.all([
+          import('/src/workflow/operationAuthoring.ts'),
+          import('/src/studio/blockSchemaV2.ts'),
+          import('/src/studio/blockRuntimeV2.ts'),
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/studio/manualGraphInsertion.ts'),
+        ]);
+      const draft = createOperationStarter(starter, { x: 40, y: 90 });
+      const seeds = draft.nodes.filter((n) => n.data.params.seed);
+      for (const n of seeds) n.data.params.seed.value = { value: 4109, isRandom: false };
+      const graph = JSON.parse(
+        JSON.stringify({
+          nodes: draft.nodes.map((n) => ({ nodeId: n.id, nodeType: n.type, data: n.data })),
+          edges: draft.edges.map((e) => ({
+            edgeId: e.id,
+            sourceNodeId: e.source,
+            sourcePortId: e.sourceHandle,
+            targetNodeId: e.target,
+            targetPortId: e.targetHandle,
+          })),
+        }),
+      );
+      graph.graphHash = schema.blockGraphHashV2(graph);
+      const definition: import('../../../src/studio/blockSchemaV2').BlockDefinitionV2 = {
+        schemaVersion: 2,
+        definitionId: 'user:shared-seed-fixture',
+        displayName: 'Model switch Block',
+        contentHash: '',
+        source: { kind: 'user' },
+        graph,
+        boundary: { mode: 'explicit', inputs: [], outputs: [] },
+        controls: [
+          {
+            controlId: 'seed',
+            label: 'Seed',
+            binding: { nodeId: seeds[0]!.id, fieldId: 'seed' },
+            valueType: 'int',
+            defaultValue: { value: 4109, isRandom: false },
+            order: 0,
+          },
+        ],
+        suggestedInputs: [],
+        previews: [],
+        ownership: { kind: 'user', definitionMutable: true },
+      };
+      definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+      const instance = schema.createBlockInstanceV2(definition, {
+        instanceId: 'shared-seed-block',
+        position: { x: 80, y: 100 },
+        size: { width: 500, height: 450 },
+      });
+      prepareWorkflowForManualInsertion();
+      useFlowStore.getState().replaceGraph({ nodes: [runtime.createBlockRootNodeV2(instance)], edges: [] });
+    }, starter);
+    const read = () =>
+      page.evaluate(
+        () =>
+          window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.find((n) => n.id === 'shared-seed-block')!.data
+            .blockInstanceV2!,
+      );
+    const before = await read();
+    const root = page.locator('.react-flow__node[data-id="shared-seed-block"]');
+    const inspector = root;
+    await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await inspector.getByLabel('Replacement pipeline', { exact: true }).click();
+    await page.getByRole('option', { name: 'FluxModularPipeline', exact: true }).click();
+    await waitForOperationGraphToSettle(page);
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    let review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await expect(review).toContainText('Update this Block instance');
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(await read()).toEqual(before);
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+
+    let changed = await read();
+    expect(changed.definitionSnapshot).toEqual(before.definitionSnapshot);
+    expect(changed.effectiveInterface).toEqual(before.effectiveInterface);
+    expect(changed.values).toEqual(before.values);
+    expect(
+      changed.effectiveGraph.nodes
+        .filter((n) => n.data.operationAuthoring)
+        .every(
+          (n) =>
+            (n.data.operationAuthoring as { operation: { pipelineClass: string } }).operation.pipelineClass ===
+            'FluxModularPipeline',
+        ),
+    ).toBe(true);
+    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(read).toEqual(before);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(read).toEqual(changed);
+    await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await inspector.getByLabel('Replacement task', { exact: true }).click();
+    await page.getByRole('option', { name: 'image to image', exact: true }).click();
+    await waitForOperationGraphToSettle(page);
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await expect(review).toContainText('encode image · image');
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    const previous = changed;
+    changed = await read();
+    expect(changed.effectiveGraph.nodes.length).toBe(previous.effectiveGraph.nodes.length + 1);
+    expect(changed.definitionSnapshot).toEqual(before.definitionSnapshot);
+    expect(changed.effectiveInterface).toEqual(before.effectiveInterface);
+    expect(changed.values).toEqual(before.values);
+    await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(read).toEqual(previous);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(read).toEqual(changed);
+    await page.getByTestId('topbar-save-workflow-options').click();
+    await page.getByTestId('topbar-save-workflow-as').click();
+    await page.getByTestId('save-workflow-name').fill(`Block model switch ${workspace}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect.poll(read).toEqual(changed);
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+    await root.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await expect(root.getByLabel('Replacement task', { exact: true })).toContainText('image to image');
+    await expect(root.getByLabel('Replacement pipeline', { exact: true })).toContainText('FluxModularPipeline');
+    await page.screenshot({ path: test.info().outputPath('block-model-change.png'), animations: 'disabled' });
+  });
+}

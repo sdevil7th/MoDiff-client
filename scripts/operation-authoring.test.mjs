@@ -816,3 +816,181 @@ test('nested adoption preserves an invalid advisory hint without interpreting it
     ),
   );
 });
+
+test('owning Block model changes preserve semantic roles, shared values, siblings and immutable definitions', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const peer = await operationBlock('untouched-peer');
+  const graph = {
+    nodes: [runtime.createBlockRootNodeV2(instance), runtime.createBlockRootNodeV2(peer.instance)],
+    edges: [],
+  };
+  const before = structuredClone(graph);
+  const next = seededStarter(true);
+  for (const item of next.nodes) {
+    item.operation.pipelineClass = 'AnotherSupportedPipeline';
+    item.operation.binding.pipelineClass = 'AnotherSupportedPipeline';
+    item.node.action += 'Next';
+    item.operation.nodeKey = `${item.node.module}.${item.node.action}`;
+  }
+  next.pipelineClass = 'AnotherSupportedPipeline';
+  const plan = planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, next);
+  assert.deepEqual(graph, before, 'preview is read-only');
+  const updated = plan.graph.nodes[0].data.blockInstanceV2;
+  assert.deepEqual(updated.definitionSnapshot, instance.definitionSnapshot);
+  assert.deepEqual(plan.graph.nodes[1], graph.nodes[1]);
+  assert.deepEqual(
+    updated.effectiveGraph.nodes.map((n) => n.nodeId),
+    instance.effectiveGraph.nodes.map((n) => n.nodeId),
+  );
+  assert.deepEqual(updated.presentation, instance.presentation);
+  for (const node of updated.effectiveGraph.nodes) {
+    assert.ok(node.data.action.endsWith('Next'));
+    for (const hint of node.data.operationAuthoring.sharedInputs ?? []) assert.equal(hint.loaderId, draft.nodes[0].id);
+    if (node.data.params.seed) assert.deepEqual(node.data.params.seed.value, { value: 4109, isRandom: true });
+  }
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const studio = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const { commitOperationGraph } = await server.ssrLoadModule('/src/workflow/operationGraphTransaction.ts');
+  useFlowStore.getState().replaceGraph(graph);
+  const snapshot = useFlowStore.getState().toObject();
+  commitOperationGraph(
+    plan.graph,
+    studio.captureWorkflowOperationContext(),
+    JSON.stringify(snapshot),
+    'Change Block model',
+  );
+  assert.deepEqual(useFlowStore.getState().toObject().nodes[0].data.blockInstanceV2, updated);
+  useFlowStore.getState().undo();
+  assert.deepEqual(useFlowStore.getState().toObject().nodes[0].data.blockInstanceV2, instance);
+  useFlowStore.getState().redo();
+  const saved = JSON.parse(JSON.stringify(useFlowStore.getState().toObject()));
+  useFlowStore.getState().replaceGraph(saved);
+  assert.deepEqual(useFlowStore.getState().toObject().nodes[0].data.blockInstanceV2, updated);
+});
+
+test('owning Block preview rejects incompatible public controls and conflicting bound model values atomically', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const withControl = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+    boundary: instance.effectiveInterface.boundary,
+    controls: [
+      {
+        controlId: 'pipeline',
+        label: 'Pipeline',
+        binding: { nodeId: draft.nodes[0].id, fieldId: 'pipeline_class' },
+        valueType: 'string',
+        defaultValue: 'FuturePipeline',
+        order: 0,
+      },
+    ],
+  });
+  const graph = { nodes: [runtime.createBlockRootNodeV2(withControl)], edges: [] };
+  const before = structuredClone(graph);
+  assert.throws(
+    () => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, starter('OtherPipeline')),
+    /overrides the replacement value/u,
+  );
+  const missing = starter();
+  delete missing.nodes[0].node.params.pipeline_class;
+  assert.throws(
+    () => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, missing),
+    /Configure Interface/u,
+  );
+  assert.deepEqual(graph, before);
+});
+
+test('owning Block task changes retain nested ownership and custom nodes while adding new operations', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  let nested = runtime.addBlockEffectiveGraphNodeV2(instance, {
+    nodeId: 'container',
+    nodeType: 'group',
+    data: { label: 'Nested', params: {} },
+  });
+  nested = runtime.replaceBlockEffectiveGraphV2(nested, {
+    ...nested.effectiveGraph,
+    nodes: nested.effectiveGraph.nodes.map((n) => (n.nodeId === 'container' ? n : { ...n, parentNodeId: 'container' })),
+  });
+  nested = runtime.addBlockEffectiveGraphNodeV2(nested, {
+    nodeId: 'custom',
+    nodeType: 'custom',
+    parentNodeId: 'container',
+    data: { module: 'custom.Local', action: 'Prompt', params: { value: { type: 'string', display: 'output' } } },
+  });
+  const next = starter('FuturePipeline', 'image_to_image');
+  const extra = structuredClone(next.nodes[1]);
+  extra.operation.operationId = 'diffusion.encode_image';
+  next.nodes.push(extra);
+  const result = planBlockOperationChange(
+    { nodes: [runtime.createBlockRootNodeV2(nested)], edges: [] },
+    instance.instanceId,
+    draft.nodes[0].id,
+    next,
+  ).graph.nodes[0].data.blockInstanceV2;
+  const added = result.effectiveGraph.nodes.find(
+    (n) => n.data.operationAuthoring?.operation.operationId === 'diffusion.encode_image',
+  );
+  assert.equal(added.parentNodeId, 'container');
+  assert.deepEqual(
+    result.effectiveGraph.nodes.find((n) => n.nodeId === 'custom'),
+    nested.effectiveGraph.nodes.find((n) => n.nodeId === 'custom'),
+  );
+  assert.deepEqual(result.definitionSnapshot, nested.definitionSnapshot);
+});
+
+test('owning Block crossing wires survive compatible changes and reject incompatible fields', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const graph = {
+    nodes: [runtime.createBlockRootNodeV2(instance)],
+    edges: [
+      {
+        id: 'outside',
+        source: 'outside',
+        sourceHandle: 'text',
+        target: instance.instanceId,
+        targetHandle: blockCrossingHandleV2({
+          nodeId: draft.nodes.find((n) => n.data.action === 'Denoise').id,
+          fieldOrPortId: 'prompt',
+          direction: 'input',
+        }),
+      },
+    ],
+  };
+  const next = starter('OtherPipeline');
+  const plan = planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, next);
+  assert.deepEqual(plan.graph.edges, graph.edges);
+  next.nodes[1].node.params.prompt.type = 'image';
+  assert.throws(() => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, next), /changes type/u);
+});
+
+test('owning Block task preview rejects a new competing internal driver on an outside socket', async () => {
+  const { runtime, instance, draft } = await operationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const { blockCrossingHandleV2 } = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const denoise = draft.nodes.find((node) => node.data.action === 'Denoise');
+  const detached = runtime.replaceBlockEffectiveGraphV2(instance, {
+    ...instance.effectiveGraph,
+    edges: instance.effectiveGraph.edges.filter((edge) => edge.targetPortId !== 'image'),
+  });
+  const graph = {
+    nodes: [runtime.createBlockRootNodeV2(detached)],
+    edges: [
+      {
+        id: 'image',
+        source: 'outside',
+        sourceHandle: 'image',
+        target: instance.instanceId,
+        targetHandle: blockCrossingHandleV2({ nodeId: denoise.id, fieldOrPortId: 'image', direction: 'input' }),
+      },
+    ],
+  };
+  const before = structuredClone(graph);
+  assert.throws(
+    () => planBlockOperationChange(graph, instance.instanceId, draft.nodes[0].id, seededStarter(true)),
+    /externally connected image/u,
+  );
+  assert.deepEqual(graph, before);
+});

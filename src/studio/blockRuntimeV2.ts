@@ -1288,7 +1288,7 @@ function projectedBindingValues(instance: BlockInstanceV2) {
   return values;
 }
 
-function runtimeNodeType(node: BlockGraphNodeV2): Exclude<NodeData['type'], 'block' | 'cluster'> {
+export function runtimeNodeType(node: BlockGraphNodeV2): Exclude<NodeData['type'], 'block' | 'cluster'> {
   const supported = new Set(['custom', 'any', 'group', 'loop']);
   if (!supported.has(node.nodeType))
     throw new Error(`Cannot project Block V2 node ${node.nodeId}: unsupported node type ${node.nodeType}.`);

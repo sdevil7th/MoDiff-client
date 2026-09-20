@@ -32,6 +32,7 @@ import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
 
+const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
 const BlockDetailDialogV2 = lazy(() => import('./BlockDetailDialogV2'));
 
 /**
@@ -414,6 +415,9 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
         }
         controls={
           <>
+            <Suspense fallback={null}>
+              <OperationOwnerControls node={{ ...node, position: view.position }} />
+            </Suspense>
             {registeredRouteSet ? (
               <ModiffFieldShell className="mb-3" label={registeredRouteSet.routeSet.label}>
                 <ModiffSelect

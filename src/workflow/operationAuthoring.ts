@@ -32,6 +32,8 @@ export type OperationChangePlan = {
   graph: OperationGraph;
   changes: string[];
   diagnostics: string[];
+  /** Exact correspondence for adapters that preserve semantic ownership. */
+  replacements: Record<string, string>;
 };
 
 function publicSetting(field: NodeParams) {
@@ -451,5 +453,5 @@ export function planOperationChange(
       `Share ${group.name} across ${members.map((m) => m.node.data.label).join(' and ')}; preserve its authored value and use one random draw per run.`,
     );
   }
-  return { graph: { nodes, edges }, changes, diagnostics };
+  return { graph: { nodes, edges }, changes, diagnostics, replacements: Object.fromEntries(changedIds) };
 }

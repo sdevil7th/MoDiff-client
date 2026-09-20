@@ -71,7 +71,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // W5 adds a lazy loader-owned pipeline/task chooser and shares the existing
 // preview transaction. Deferred code measures 223.0 KiB (+1.5 KiB); bound it at
 // 224 KiB. Startup and individual chunk ceilings remain unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 224 * 1024;
+// W5 adds lazy owning-Block model/task adaptation and loader selection. The
+// deferred graph measures 225.3 KiB (+1.9 KiB); bound the feature at 226 KiB.
+// Startup (605.7 KiB) and individual chunk ceilings stay unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 226 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;
