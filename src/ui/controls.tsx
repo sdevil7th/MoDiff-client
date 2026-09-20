@@ -610,6 +610,8 @@ export type ModiffSelectProps = {
   onValueChange: (value: string) => void;
   options: readonly ModiffSelectOption[];
   optionsClassName?: string;
+  /** Portal menus must sit above their owning canvas popover. */
+  layer?: 'panel' | 'popover';
   placeholder?: ReactNode;
   readOnly?: boolean;
   required?: boolean;
@@ -634,6 +636,7 @@ export function ModiffSelect({
   onValueChange,
   options,
   optionsClassName,
+  layer = 'panel',
   placeholder = 'Select…',
   readOnly,
   required,
@@ -745,7 +748,8 @@ export function ModiffSelect({
           modal={false}
           transition
           className={cx(
-            'z-[100] max-h-72 w-[var(--button-width)] min-w-32 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:pointer-events-none data-[closed]:scale-95 data-[closed]:opacity-0',
+            'max-h-72 w-[var(--button-width)] min-w-32 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:pointer-events-none data-[closed]:scale-95 data-[closed]:opacity-0',
+            layer === 'popover' ? 'z-[120]' : 'z-[100]',
             optionsClassName,
           )}
         >

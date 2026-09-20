@@ -5,37 +5,34 @@ import type { OperationContract } from '../workflow/operationContracts';
 import type { PipelineSupport } from '../workflow/operationCatalog';
 
 export type NodeCatalogVisibility = 'essential' | 'advanced' | 'experimental' | 'internal';
-export type NodeCatalogView = 'essential' | 'stages' | 'advanced' | 'experimental';
+export type NodeCatalogView = 'common' | 'advanced' | 'experimental' | 'all';
 
-export function defaultNodeCatalogView(mode: 'auto' | 'expert'): NodeCatalogView {
-  return mode === 'expert' ? 'stages' : 'essential';
-}
-
-/** Discovery only: retain the full registry for saved graphs and explicit Advanced authoring. */
+/** Discovery only. Distinct schemas remain available, and no registry entry is removed. */
 export function runtimeCatalogNodes(
   nodes: Record<string, NodeData>,
   operations: OperationContract[],
   support: PipelineSupport[],
   view: NodeCatalogView,
+  selection?: { pipeline: string; task: string },
 ): Record<string, NodeData> {
-  if (view !== 'stages' || !support.length) return nodes;
+  if (!selection?.pipeline || view === 'advanced' || view === 'all') return nodes;
+  const task = support
+    .find((item) => item.pipelineClass === selection.pipeline)
+    ?.tasks.find((item) => item.task === selection.task);
+  if (!task) return nodes;
   const covered = new Set(
     operations
       .filter(
         (operation) =>
           operation.binding &&
-          operation.task !== null &&
-          support.some(
-            (pipeline) =>
-              pipeline.pipelineClass === operation.pipelineClass &&
-              pipeline.tasks.some(
-                (task) => task.task === operation.task && task.operationIds.includes(operation.operationId),
-              ),
-          ),
+          operation.pipelineClass === selection.pipeline &&
+          operation.task === selection.task &&
+          task.operationIds.includes(operation.operationId) &&
+          nodes[operation.nodeKey],
       )
-      .map((operation) => operation.nodeKey),
+      .map((operation) => runtimeNodeIdentityV2(nodes[operation.nodeKey]!)),
   );
-  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => !covered.has(nodeKey(node))));
+  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => !covered.has(runtimeNodeIdentityV2(node))));
 }
 
 export type NodeSurfaceCategory =
@@ -89,7 +86,7 @@ const MODEL_SPECIFIC_MODULES = new Set<string>();
 
 // Discovery only: these existing generic operations keep their backend schemas
 // and execution identities. Inclusion does not add model/task support.
-const GENERIC_STAGE_NODE_KEYS = new Set([
+const GENERIC_NODE_KEYS = new Set([
   'modules.ModularDiffusers.ModelsLoader',
   'modules.ModularDiffusers.AutoModelLoader',
   'modules.ModularDiffusers.EncodePrompt',
@@ -108,19 +105,16 @@ const GENERIC_STAGE_NODE_KEYS = new Set([
 
 export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
   if (entry.visibility === 'internal') return false;
-  if (view === 'essential') return entry.visibility === 'essential';
-  if (view === 'stages') {
-    return (
-      entry.visibility !== 'experimental' &&
-      (entry.visibility === 'essential' ||
-        GENERIC_STAGE_NODE_KEYS.has(nodeKey(entry.node)) ||
-        entry.node.module === 'modules.Primitive' ||
-        entry.node.module === 'modules.Text' ||
-        entry.node.module.startsWith('custom.'))
-    );
-  }
-  if (view === 'advanced') return entry.visibility === 'essential' || entry.visibility === 'advanced';
-  return entry.visibility === 'experimental';
+  if (entry.visibility === 'experimental') return view === 'experimental' || view === 'all';
+  return (
+    view === 'advanced' ||
+    view === 'all' ||
+    entry.visibility === 'essential' ||
+    GENERIC_NODE_KEYS.has(nodeKey(entry.node)) ||
+    entry.node.module === 'modules.Primitive' ||
+    entry.node.module === 'modules.Text' ||
+    entry.node.module.startsWith('custom.')
+  );
 }
 
 const ESSENTIAL_NODE_KEYS = new Set([
@@ -252,7 +246,7 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
     runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated' || runtimeKind === 'experimental_diffusers';
   const specializedReason =
     visibility === 'experimental'
-      ? 'Experimental Diffusers node. Hidden from Essentials.'
+      ? 'Experimental Diffusers node. Enable experimental discovery to find it.'
       : MODEL_SPECIFIC_MODULES.has(node.module) || node.module === 'modules.ModularDiffusers'
         ? 'Backend strategy node. Studio routes normal workflows through profiles.'
         : undefined;

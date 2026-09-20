@@ -68,27 +68,27 @@ The view switch controls presentation; Resources controls planning. The Run menu
 - **Models** summarizes supported, installed, missing, and downloading artifacts.
 - **Workflows** browses backend workflow files.
 
-In Auto, **Nodes** shows common task/media operations, graph-qualified task Blocks,
-and Saved Blocks. Expert opens the **Stages** view. Select a pipeline and task
-in **Diffusers operations**, then click **Load models**, **Encode prompt**,
-**Denoise**, **Decode latents**, or another declared operation to add one ordinary
-node to the canvas. Whole-pipeline routes show a **Pipeline** label. Specialized
-video, audio, media preparation and conditioning operations keep their own entries.
+Creator and Developer share one **Nodes** library. It starts with generic nodes,
+common task/media operations, graph-qualified task Blocks, enabled custom nodes
+and Saved Blocks. Generic nodes remain available before selecting a pipeline.
+Select a pipeline and task in **Diffusers operations**, then click **Load models**,
+**Encode prompt**, **Denoise**, **Decode latents**, or another declared operation
+to add one ordinary node with that pipeline's inputs. Whole-pipeline routes show
+a **Pipeline** label. Specialized audio, video and conditioning operations retain
+their declared entries.
 
-The picker reports execution adapters and runtime requirements separately.
-A declared stage can be inspected and authored without an executable adapter;
-its visibility does not mean Run is available. Runtime availability still leaves
-model artifacts and resource checks to the backend. Install required packages
-explicitly through Setup. Changing the picker does not change existing graph
-nodes. Changing its selection or leaving the workflow cancels pending insertion.
+The picker reports execution adapters and runtime requirements separately. A
+node can be authored without an executable adapter; visibility does not mean Run
+is available. Model artifacts and resource checks still belong to the backend.
+Install required packages explicitly through Setup. Browsing a pipeline changes
+neither existing nodes nor execution settings. Leaving the destination workflow
+or changing the pipeline/task selection cancels pending insertion.
 
-Stages consolidates the underlying bound implementations and keeps common media
-utilities and installed custom nodes available. Older backends without the
-operation catalog retain the previous generic-node discovery. Saved action names
-and graphs remain compatible. Text and primitive value nodes are available in
-Stages too. A raw node is consolidated only when an exact pipeline/task operation
-binding is present in the backend support inventory; Advanced keeps deliberate
-access to the underlying nodes.
+Sidebar and canvas search share the same transient discovery filters and pipeline
+selection. The selection resets when the destination document is replaced. In
+common discovery, a bound operation replaces only its exact registry contract
+and aliases; distinct schemas remain separate. Older backend registries remain
+usable without an operation catalog. Saved identities and graphs do not change.
 
 Select a node or Block on the canvas to see its controls in the Studio side panel.
 The selection toolbar's **Inspect node** or **Inspect Block** opens the same inspector
@@ -113,12 +113,15 @@ focus the affected node without changing workspace or memory policy. Expand a Bl
 on the canvas for structural editing; this does not edit its Python implementation.
 
 Double-click empty canvas space, or drag a connection to empty space, to search
-nodes and Saved Blocks without opening the library. Searches retain old registry
+nodes and Saved Blocks without opening the library. Select a pipeline in this
+picker to find its bound nodes too. Searches retain old registry
 keys and labels, plus the historical **User Nodes** name. Saved Blocks show their
 saved revision; equal names do not merge separate definitions. Connection searches
 show compatible public inputs or outputs according to the originating handle.
 Selecting a result creates a fresh instance and validates the wire through the
-canvas's existing rules. Undo removes that insertion and wire together; a rejected
+canvas's existing rules. For a bound node, a compatible declared value input can
+expose its editable control as a socket, just as dragging a wire onto that control
+would. Hidden, disabled, signal and binding-constant fields are not exposed. Undo removes that insertion and wire together; a rejected
 connection leaves no disconnected insertion. Search does not grant code consent.
 
 **Blocks** is the public name for both registered compositions and saved reusable
@@ -128,12 +131,12 @@ Cluster/User Node terminology can still occur in older files and migration
 receipts. Use the explicit migration preview for supported historical documents;
 opening a file or switching Auto/Expert does not convert it.
 
-Expert's **Essentials** tab returns to the task-oriented catalog. **Advanced** adds
-implementation nodes, upstream Modular blocks, catalog-only tasks, and component
-references; check each entry's readiness before using it. **Experimental** contains
-experimental operations. Search applies within the selected view, and Saved
-Blocks remain available in each view. Changing catalog tabs does not change the
-workflow or execution settings. Returning to Expert selects Stages again.
+**Show implementation nodes** adds underlying adapters, upstream Modular blocks,
+catalog-only tasks and component references. Check each entry's readiness.
+**Show experimental nodes** independently adds experimental entries. These options
+are available in both workspaces, apply to sidebar and canvas discovery, and stay
+selected when switching workspace. They do not change the workflow or memory
+policy. Saved Blocks remain available with either option.
 
 ### Canvas And Workflow Tabs
 

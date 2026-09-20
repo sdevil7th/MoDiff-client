@@ -5958,7 +5958,7 @@ test('Hugging Face catalog uses Block terminology and fail-closed readiness', as
   }
   await page.getByTestId('left-tab-nodes').click();
   await setStudioViewMode(page, 'expert');
-  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true }).check();
 
   const clusterGroup = page.getByTestId('node-group-Diffusers-Blocks');
   await expect(clusterGroup).toBeVisible();
@@ -9451,14 +9451,17 @@ test('Expert resolves canonical operations as ordinary nodes and cancels stale s
   release!();
   await expect(panel.getByRole('button', { name: /^Denoise/ })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(before + 1);
-  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true }).check();
   await page.getByLabel('Search nodes', { exact: true }).fill('Denoise');
   await expect(page.getByTestId('node-row-modules-ModularDiffusers-Denoise')).toBeVisible();
   await setStudioViewMode(page, 'auto');
-  await expect(panel).toHaveCount(0);
+  await page.getByTestId('left-tab-nodes').click();
+  await expect(panel).toBeVisible();
 });
 
-test('workbench catalog defaults Expert to stages and makes implementation discovery explicit', async ({ page }) => {
+test('both workspaces share one library with additive implementation filters and unchanged graph contents', async ({
+  page,
+}) => {
   await ensureFrontend();
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
@@ -9466,40 +9469,43 @@ test('workbench catalog defaults Expert to stages and makes implementation disco
   await dismissTaskLauncher(page);
   await setStudioViewMode(page, 'expert');
   await page.getByTestId('left-tab-nodes').click();
-  await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveCount(0);
+  const implementation = page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true });
+  const experimental = page.getByRole('checkbox', { name: 'Show experimental nodes', exact: true });
+  await expect(implementation).not.toBeChecked();
+  await expect(experimental).not.toBeChecked();
   const search = page.getByLabel('Search nodes', { exact: true });
   await search.fill('Encode Prompt');
   const prompt = page.getByTestId('node-row-modules-ModularDiffusers-EncodePrompt');
   await expect(prompt).toBeVisible();
   await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toHaveCount(0);
-  await search.fill('');
-  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
-  await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toBeVisible();
-  await expect(page.getByTestId('node-group-Diffusers-components')).toBeVisible();
-  await page.getByRole('tab', { name: 'Stages', exact: true }).click();
-  await search.fill('Encode Prompt');
   await prompt.click();
   await expect
-    .poll(async () =>
+    .poll(() =>
       page.evaluate(
         () => window.__MODIFF_E2E__!.getState().flow.nodes.filter((node) => node.action === 'EncodePrompt').length,
       ),
     )
     .toBe(1);
-  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.id));
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   await search.fill('');
-  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
-  await page.getByRole('tab', { name: 'Stages', exact: true }).click();
-  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.id))).toEqual(
-    before,
-  );
+  await implementation.check();
+  await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toBeVisible();
+  await expect(page.getByTestId('node-group-Diffusers-components')).toBeVisible();
   await setStudioViewMode(page, 'auto');
-  await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveCount(0);
-  await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toHaveCount(0);
+  await page.getByTestId('left-tab-nodes').click();
+  await expect(implementation).toBeChecked();
+  await expect(page.getByTestId('node-group-Diffusers-components')).toBeVisible();
+  await implementation.uncheck();
+  await experimental.check();
+  await search.fill('Encode Prompt');
+  await expect(prompt).toBeVisible();
   await expect(page.getByTestId('node-group-Diffusers-components')).toHaveCount(0);
+  await experimental.uncheck();
   await setStudioViewMode(page, 'expert');
-  await expect(page.getByRole('tab', { name: 'Stages', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await page.screenshot({ path: test.info().outputPath('expert-stages-catalog.png'), animations: 'disabled' });
+  await expect(implementation).not.toBeChecked();
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  await page.screenshot({ path: test.info().outputPath('shared-nodes-library.png'), animations: 'disabled' });
 });
 
 test('mocked Studio keeps model health contextual while exposing every authored FLUX template', async ({ page }) => {
@@ -9541,8 +9547,8 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await page.getByLabel('Search nodes').fill('Export');
   await expect(page.getByTestId('node-row-modules-Audio-Export')).toContainText('Export');
   await setStudioViewMode(page, 'expert');
-  await expect(page.getByRole('tab', { name: 'Essentials' })).toBeVisible();
-  await page.getByRole('tab', { name: 'Advanced' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true }).check();
   await expect(page.getByTestId('node-row-modules-QwenImage-LoadPipeline')).toHaveCount(0);
   await setStudioViewMode(page, 'auto');
 
@@ -25440,3 +25446,198 @@ for (const workspace of ['auto', 'expert'] as const) {
     });
   }
 }
+
+for (const [workspace, direction] of [
+  ['auto', 'source'],
+  ['expert', 'target'],
+] as const) {
+  test(`${workspace} inserts a bound node from canvas ${direction} suggestions using shared pipeline selection`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1680, height: 1050 });
+    await ensureFrontend();
+    const starters = await installOperationAuthoringRoutes(page);
+    const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image')!;
+    const edge = starter.edges[0]!;
+    const original = starter.nodes.find(
+      (n) => n.operation.operationId === (direction === 'source' ? edge.source : edge.target),
+    )!;
+    const added = starter.nodes.find(
+      (n) => n.operation.operationId === (direction === 'source' ? edge.target : edge.source),
+    )!;
+    const label = (id: string) => id.split('.')[1]!.replaceAll('_', ' ');
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    await page.getByTestId('left-tab-nodes').click();
+    const panel = await selectOperationPipeline(page, starter.pipelineClass, starter.task);
+    await panel.getByRole('button', { name: new RegExp(`^${label(original.operation.operationId)}`, 'i') }).click();
+    await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(1);
+    const nodeId = await page.locator('.react-flow__node-custom').first().getAttribute('data-id');
+    const handle = page.getByTestId(
+      `node-handle-${nodeId}-${direction === 'source' ? edge.sourceHandle : edge.targetHandle}`,
+    );
+    await handle.hover();
+    const start = (await handle.boundingBox())!;
+    const bounds = (await page.locator('.react-flow__pane').boundingBox())!;
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width - 80, bounds.y + 70, { steps: 15 });
+    await page.mouse.up();
+    const list = page.getByRole('listbox', { name: 'Matching nodes' });
+    await expect(list).toBeVisible();
+    await expect(page.getByLabel('Operation pipeline').last()).toContainText(starter.pipelineClass);
+    const search = page.locator('input[aria-label="Search nodes"]').last();
+    await search.fill(label(added.operation.operationId));
+    const option = list.getByRole('option').filter({ hasText: starter.pipelineClass });
+    await expect(option).toHaveCount(1);
+    await option.click();
+    await expect(list).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
+    await waitForOperationGraphToSettle(page);
+    const readGraph = () =>
+      page.evaluate(() => {
+        const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
+        // Empty per-node presentation state is normalized when a document is restored.
+        return {
+          ...graph,
+          nodes: graph.nodes.map((node) => ({ ...node, data: { ...node.data, uiState: node.data.uiState ?? {} } })),
+        };
+      });
+    const graph = await readGraph();
+    const inserted = graph.nodes.find((node) => node.id !== nodeId)!;
+    expect(inserted.data.operationAuthoring?.operation).toMatchObject({
+      pipelineClass: starter.pipelineClass,
+      operationId: added.operation.operationId,
+    });
+    await page.locator('.react-flow__pane').click({ position: { x: 80, y: 70 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(1);
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(0);
+    await page.keyboard.press('Control+Shift+z');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await waitForOperationGraphToSettle(page);
+    expect(await readGraph()).toEqual(graph);
+    await page.screenshot({ path: test.info().outputPath('bound-node-connected.png'), animations: 'disabled' });
+  });
+}
+
+test('bound node lookup cancels when canvas selection or the destination workflow changes', async ({ page }) => {
+  await ensureFrontend();
+  const starters = await installOperationAuthoringRoutes(page);
+  const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image')!;
+  const loader = starter.nodes.find((n) => n.operation.decomposition === 'loader')!;
+  let calls = 0;
+  let release: () => void = () => {};
+  const held = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  let gate = held();
+  await page.route('**/operations/resolve', async (route) => {
+    calls++;
+    await gate;
+    await route.fulfill({ json: { schemaVersion: 1, ...loader } });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  const pane = page.locator('.react-flow__pane');
+  await pane.dblclick({ position: { x: 130, y: 130 } });
+  await page.getByLabel('Operation pipeline').click();
+  await page.getByRole('option', { name: starter.pipelineClass, exact: true }).click();
+  const list = page.getByRole('listbox', { name: 'Matching nodes' });
+  await list
+    .getByRole('option')
+    .filter({ hasText: /^Load models/ })
+    .click();
+  await expect.poll(() => calls).toBe(1);
+  await page.getByLabel('Operation pipeline').click();
+  await page.getByRole('option', { name: 'Select a pipeline', exact: true }).click();
+  release();
+  await expect(list.getByRole('option').filter({ hasText: starter.pipelineClass })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+  gate = held();
+  await page.getByTestId('left-tab-nodes').click();
+  const panel = await selectOperationPipeline(page, starter.pipelineClass, starter.task);
+  await panel.getByRole('button', { name: /^Load models/ }).click();
+  await expect.poll(() => calls).toBe(2);
+  await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
+  release();
+  await expect(
+    page
+      .getByRole('dialog', { name: 'Workflows', exact: true })
+      .getByRole('heading', { name: 'Workflows', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('dialog', { name: 'Workflows', exact: true })
+    .getByRole('button', { name: 'Empty workflow', exact: true })
+    .click();
+  if (!(await page.getByLabel('Operation pipeline').isVisible())) await page.getByTestId('left-tab-nodes').click();
+  await expect(page.getByLabel('Operation pipeline')).toContainText('Select a pipeline');
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
+});
+
+test('bound prompt suggestions expose the declared text input and preserve the wire through Undo and reload', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await ensureFrontend();
+  const starters = await installOperationAuthoringRoutes(page);
+  const value = nodeDef('custom.Prompt', 'Value', 'custom', {
+    text: { type: 'string', display: 'text', value: 'A glass observatory reflected in a stormy sea' },
+    output: { type: 'string', display: 'output' },
+  });
+  await page.route('**/nodes', (route) =>
+    route.fulfill({
+      json: {
+        nodes: {
+          ...Object.fromEntries(starters.flatMap((s) => s.nodes.map((n) => [n.operation.nodeKey, n.node]))),
+          'custom.Prompt.Value': value,
+        },
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'auto');
+  await page.getByTestId('left-tab-nodes').click();
+  await selectOperationPipeline(page, 'QwenImageModularPipeline', 'text_to_image');
+  await page.locator('input[aria-label="Search nodes"]').fill('custom.Prompt.Value');
+  await page.getByTestId('node-row-custom-Prompt-Value').click();
+  const originalId = (await page.locator('.react-flow__node-custom').first().getAttribute('data-id'))!;
+  const handle = page.getByTestId(`node-handle-${originalId}-output`);
+  await handle.hover();
+  const a = (await handle.boundingBox())!,
+    b = (await page.locator('.react-flow__pane').boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width - 80, b.y + 70, { steps: 15 });
+  await page.mouse.up();
+  const list = page.getByRole('listbox', { name: 'Matching nodes' });
+  await expect(list).toBeVisible();
+  await page.locator('input[aria-label="Search nodes"]').last().fill('Encode prompt');
+  await list.getByRole('option').filter({ hasText: 'QwenImageModularPipeline' }).click();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
+  const read = () =>
+    page.evaluate(() => {
+      const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
+      const prompt = graph.nodes.find((n) => n.data.action === 'EncodePrompt');
+      return { count: graph.nodes.length, edges: graph.edges, input: prompt?.data.params.prompt?.isInput };
+    });
+  const connected = await read();
+  expect(connected.input).toBe(true);
+  expect(connected.edges[0]).toMatchObject({ source: originalId, targetHandle: 'prompt' });
+  await page.locator('.react-flow__pane').click({ position: { x: 80, y: 70 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(read).toMatchObject({ count: 1, edges: [] });
+  await page.keyboard.press('Control+Shift+z');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  expect(await read()).toEqual(connected);
+});

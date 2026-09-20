@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNodesStore, type NodeData } from '../stores/useNodeStore';
-import { useStudioStore } from '../stores/useStudioStore';
-import { operationLabel, operationsForTask } from '../workflow/operationCatalog';
+import {
+  useStudioStore,
+  captureWorkflowOperationContext,
+  assertWorkflowOperationContext,
+} from '../stores/useStudioStore';
+import { useNodeDiscovery, useNodeDiscoveryStore } from '../stores/useNodeDiscoveryStore';
+import OperationDiscoveryFields from './OperationDiscoveryFields';
+import { operationLabel } from '../workflow/operationCatalog';
 import type { OperationContract } from '../workflow/operationContracts';
-import { ModiffFieldShell, ModiffSelect, TreeButtonRow } from '../ui';
-import { matchesSearchKeywords } from '../utils/searchKeywords';
+import { TreeButtonRow } from '../ui';
+import { operationSearchEntries } from '../workflow/nodeConnectionSearch';
 import { formatRequestError } from '../utils/requestJson';
 import OperationGraphControls from './OperationGraphControls';
 import { withOperationAuthoring } from '../workflow/operationAuthoring';
@@ -18,25 +24,20 @@ export default function OperationCatalogPanel({
   onInsert: (key: string, node: NodeData) => void;
 }) {
   const operations = useNodesStore((state) => state.operationContracts);
-  const support = useNodesStore((state) => state.pipelineSupport);
+  const registry = useNodesStore((state) => state.nodesRegistry);
   const resolve = useNodesStore((state) => state.resolveOperation);
   const workflow = useStudioStore((state) => state.activeWorkflowTabId);
-  const [pipeline, setPipeline] = useState('');
-  const [task, setTask] = useState('');
+  const { pipeline, task, selected, support } = useNodeDiscovery();
+  const canvasEpoch = useStudioStore((state) => state.workflowCanvasEpoch);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<AbortController | null>(null);
-  const entry = support.find((p) => p.pipelineClass === pipeline);
-  const selected =
-    entry?.tasks.find((t) => t.task === task) ?? entry?.tasks.find((t) => t.operationIds.length > 0) ?? entry?.tasks[0];
   const entries = useMemo(
     () =>
       selected
-        ? operationsForTask(operations, pipeline, selected.task).filter((op) =>
-            matchesSearchKeywords(search, [operationLabel(op), op.pipelineClass, op.nodeKey]),
-          )
+        ? operationSearchEntries(operations, pipeline, selected.task, undefined, undefined, search, registry)
         : [],
-    [operations, pipeline, selected, search],
+    [operations, pipeline, selected, search, registry],
   );
   useEffect(() => {
     pending.current?.abort();
@@ -46,18 +47,21 @@ export default function OperationCatalogPanel({
     return () => {
       pending.current?.abort();
     };
-  }, [pipeline, task, workflow]);
+  }, [pipeline, task, workflow, canvasEpoch]);
 
   async function insert(operation: OperationContract) {
     if (pending.current) return;
+    const context = captureWorkflowOperationContext();
+    const selection = useNodeDiscoveryStore.getState().selection;
     const request = new AbortController();
     pending.current = request;
     setBusy(true);
     setError(null);
     try {
       const node = await resolve(operation, request.signal);
-      if (!request.signal.aborted && useStudioStore.getState().activeWorkflowTabId === workflow)
-        onInsert(`${node.module}.${node.action}`, withOperationAuthoring(node, operation));
+      if (request.signal.aborted || useNodeDiscoveryStore.getState().selection !== selection) return;
+      assertWorkflowOperationContext(context, { includeForm: false });
+      onInsert(`${node.module}.${node.action}`, withOperationAuthoring(node, operation));
     } catch (error) {
       if (!request.signal.aborted) setError(formatRequestError(error, 'Could not resolve the selected operation.'));
     } finally {
@@ -71,49 +75,18 @@ export default function OperationCatalogPanel({
   return (
     <section aria-label="Diffusers operations" className="mb-2 border-b border-modiff-border pb-2">
       <div className="space-y-2 px-2 pb-2">
-        <ModiffFieldShell label="Pipeline">
-          <ModiffSelect
-            aria-label="Operation pipeline"
-            value={pipeline}
-            onValueChange={(value) => {
-              pending.current?.abort();
-              setPipeline(value);
-              setTask('');
-            }}
-            options={[
-              { value: '', label: 'Select a pipeline' },
-              ...support.map((p) => ({ value: p.pipelineClass, label: p.pipelineClass })),
-            ]}
-          />
-        </ModiffFieldShell>
-        {entry ? (
-          <ModiffFieldShell label="Task">
-            <ModiffSelect
-              aria-label="Operation task"
-              value={selected?.task ?? ''}
-              onValueChange={(value) => {
-                pending.current?.abort();
-                setTask(value);
-              }}
-              options={entry.tasks.map((t) => ({ value: t.task, label: t.task.replace(/_/gu, ' ') }))}
-            />
-          </ModiffFieldShell>
-        ) : (
-          <p className="text-xs text-modiff-subtle-text">
-            Choose a pipeline and task to add its operations to the canvas.
-          </p>
-        )}
+        <OperationDiscoveryFields />
         {selected ? (
           <p role="status" className="text-xs text-modiff-subtle-text">
             {selected.execution === 'adapter'
               ? 'Execution adapter available.'
               : selected.execution === 'declared'
-                ? 'Declared stages; no execution adapter.'
+                ? 'Declared nodes; no execution adapter.'
                 : 'No operation binding for this task.'}{' '}
             {selected.decomposition === 'pipeline'
               ? 'Whole pipeline call.'
               : selected.decomposition === 'stages'
-                ? 'Editable stages.'
+                ? 'Editable nodes.'
                 : ''}{' '}
             {selected.dependencies === 'blocked'
               ? 'Runtime setup required in Setup.'
@@ -144,7 +117,7 @@ export default function OperationCatalogPanel({
               ? 'Pipeline'
               : operation.decomposition === 'loader'
                 ? 'Load'
-                : 'Stage'}
+                : 'Node'}
           </span>
         </TreeButtonRow>
       ))}

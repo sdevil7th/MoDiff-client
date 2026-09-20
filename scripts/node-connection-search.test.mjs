@@ -94,3 +94,130 @@ test('canvas search retains legacy keys and labels after exact-contract deduplic
   }
   assert.equal(search.connectionSearchEntries(registry, 'string', 'source', 'absent term').length, 0);
 });
+
+test('bound node suggestions respect task selection, hidden ports and both connector directions', () => {
+  const input = {
+    name: 'prompt',
+    semanticName: 'prompt',
+    direction: 'input',
+    roles: ['value'],
+    types: ['string'],
+    hidden: false,
+  };
+  const output = { ...input, name: 'conditioning', direction: 'output', types: ['conditioning'] };
+  const operation = {
+    pipelineClass: 'FuturePipeline',
+    task: 'text_to_image',
+    operationId: 'diffusion.encode_prompt',
+    nodeKey: 'modules.ModularDiffusers.EncodePrompt',
+    binding: { pipelineClass: 'FuturePipeline', values: {} },
+    ports: [input, output],
+  };
+  const ops = [operation, { ...operation, task: 'image_to_image', operationId: 'diffusion.encode_image' }];
+  const select = (type, direction, query = '') =>
+    search.operationSearchEntries(ops, 'FuturePipeline', 'text_to_image', type, direction, query);
+  assert.deepEqual(select('str', 'source', 'encode'), [operation]);
+  assert.deepEqual(select('conditioning', 'target'), [operation]);
+  assert.deepEqual(select('image', 'source'), []);
+  assert.deepEqual(select('conditioning', 'source'), []);
+  assert.deepEqual(select('str', 'target'), []);
+  assert.deepEqual(select(undefined, undefined), [operation]);
+  assert.deepEqual(search.operationSearchEntries(ops, '', ''), []);
+  assert.deepEqual(
+    search.operationSearchEntries(
+      [{ ...operation, ports: [{ ...input, hidden: true }] }],
+      'FuturePipeline',
+      'text_to_image',
+      'str',
+      'source',
+    ),
+    [],
+  );
+  assert.deepEqual(
+    search.operationSearchEntries([{ ...operation, binding: undefined }], 'FuturePipeline', 'text_to_image'),
+    [],
+  );
+});
+
+test('bound operations retain old registry labels after exact alias consolidation', () => {
+  const node = definition({}, 'EncodePrompt');
+  const operation = {
+    pipelineClass: 'FuturePipeline',
+    task: 'text_to_image',
+    operationId: 'diffusion.encode_prompt',
+    nodeKey: 'custom.Workbench.EncodePrompt',
+    binding: { pipelineClass: 'FuturePipeline', values: {} },
+    ports: [],
+  };
+  const registry = { [operation.nodeKey]: node, retired_encoder: { ...node, label: 'Legacy tokenizer' } };
+  assert.deepEqual(
+    search.operationSearchEntries(
+      [operation],
+      'FuturePipeline',
+      'text_to_image',
+      undefined,
+      undefined,
+      'legacy tokenizer',
+      registry,
+    ),
+    [operation],
+  );
+  assert.deepEqual(
+    search.operationSearchEntries(
+      [operation],
+      'FuturePipeline',
+      'text_to_image',
+      undefined,
+      undefined,
+      'retired_encoder',
+      registry,
+    ),
+    [operation],
+  );
+});
+
+test('bound value-input insertion exposes only an editable declared control without mutating defaults', () => {
+  const node = definition({
+    prompt: { display: 'textarea', type: 'string', default: 'Keep me' },
+    negative_prompt: { display: 'textarea', type: 'string' },
+  });
+  const operation = {
+    ports: [
+      { name: 'prompt', direction: 'input', roles: ['value'], types: ['string'], hidden: false },
+      { name: 'negative_prompt', direction: 'input', roles: ['value'], types: ['string'], hidden: false },
+    ],
+  };
+  const before = JSON.stringify(node);
+  const prepared = search.prepareOperationConnection(node, operation, 'str', 'source');
+  assert.equal(prepared.params.prompt.isInput, true);
+  assert.equal(prepared.params.prompt.default, 'Keep me');
+  assert.equal(prepared.params.negative_prompt.isInput, undefined);
+  assert.equal(search.matchingNodeHandleForDrop(prepared, 'string', 'source')[0], 'prompt');
+  assert.equal(JSON.stringify(node), before);
+  assert.equal(search.prepareOperationConnection(node, operation, 'string', 'target'), node);
+  assert.equal(search.prepareOperationConnection(node, operation, 'image', 'source'), node);
+  assert.equal(search.prepareOperationConnection(prepared, operation, 'string', 'source'), prepared);
+  for (const blocked of [
+    { ...node.params.prompt, hidden: true },
+    { ...node.params.prompt, disabled: true },
+    { ...node.params.prompt, signal: { direction: 'input', value: 'review' } },
+    { ...node.params.prompt, display: 'output' },
+  ]) {
+    const restricted = definition({ prompt: blocked });
+    assert.equal(search.prepareOperationConnection(restricted, operation, 'string', 'source'), restricted);
+  }
+  const single = definition({ prompt: node.params.prompt });
+  assert.equal(
+    search.prepareOperationConnection(
+      single,
+      { ...operation, binding: { values: { prompt: 'bound' } } },
+      'string',
+      'source',
+    ),
+    single,
+  );
+  assert.equal(
+    search.prepareOperationConnection(single, { ports: [{ ...operation.ports[0], hidden: true }] }, 'string', 'source'),
+    single,
+  );
+});

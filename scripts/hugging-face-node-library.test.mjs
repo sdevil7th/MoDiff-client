@@ -31,9 +31,12 @@ let nodeListModule;
 let nodeStoreModule;
 let originalFetch;
 
-test('canonical discovery removes only covered bindings and retains fallback, utilities and Advanced access', () => {
+test('canonical discovery only hides exact aliases for the selected pipeline and task', () => {
+  const canonical = { module: 'modules.ModularDiffusers', action: 'EncodePrompt', label: 'Encode Prompt', params: {} };
   const nodes = {
-    'alias.encode': { module: 'modules.ModularDiffusers', action: 'EncodePrompt', label: 'Encode Prompt', params: {} },
+    'modules.ModularDiffusers.EncodePrompt': canonical,
+    'alias.encode': { ...canonical, label: 'Old prompt encoder' },
+    'distinct.encode': { ...canonical, params: { text: { type: 'string' } } },
     'custom.prompt': { module: 'custom.prompt', action: 'Encode', label: 'Encode Prompt', params: {} },
   };
   const binding = {
@@ -46,50 +49,61 @@ test('canonical discovery removes only covered bindings and retains fallback, ut
   const support = [
     { pipelineClass: 'FuturePipeline', tasks: [{ task: binding.task, operationIds: [binding.operationId] }] },
   ];
+  const selection = { pipeline: binding.pipelineClass, task: binding.task };
   const select = nodeCatalogModule.runtimeCatalogNodes;
   const before = JSON.stringify(nodes);
-  assert.deepEqual(Object.keys(select(nodes, [binding], support, 'stages')), ['custom.prompt']);
-  for (const view of ['advanced', 'essential', 'experimental'])
-    assert.equal(select(nodes, [binding], support, view), nodes);
-  for (const contracts of [[], [{ ...binding, binding: undefined }], [{ ...binding, task: null }]])
-    assert.deepEqual(select(nodes, contracts, support, 'stages'), nodes);
-  assert.deepEqual(select(nodes, [binding], [], 'stages'), nodes);
-  assert.deepEqual(select(nodes, [binding], [{ ...support[0], tasks: [] }], 'stages'), nodes);
-  for (const module of ['modules.Primitive', 'modules.Text']) {
-    const entry = nodeCatalogModule.getNodeCatalogEntry({
-      module,
-      action: 'TextValue',
-      label: 'Text value',
-      params: {},
-    });
-    assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesView(entry, 'stages'), true);
+  assert.equal(
+    select(nodes, [binding], support, 'common'),
+    nodes,
+    'Generic nodes remain available before selecting a pipeline.',
+  );
+  for (const view of ['common', 'experimental']) {
+    assert.deepEqual(Object.keys(select(nodes, [binding], support, view, selection)), [
+      'distinct.encode',
+      'custom.prompt',
+    ]);
+    for (const contracts of [[], [{ ...binding, binding: undefined }], [{ ...binding, task: null }]])
+      assert.deepEqual(select(nodes, contracts, support, view, selection), nodes);
+    for (const invalid of [
+      { pipeline: 'OtherPipeline', task: binding.task },
+      { ...selection, task: 'image_to_image' },
+    ])
+      assert.deepEqual(select(nodes, [binding], support, view, invalid), nodes);
   }
+  for (const view of ['advanced', 'all']) assert.equal(select(nodes, [binding], support, view, selection), nodes);
+  const aliasesOnly = { 'alias.encode': nodes['alias.encode'] };
+  assert.deepEqual(
+    select(aliasesOnly, [binding], support, 'common', selection),
+    aliasesOnly,
+    'Never guess which schema a missing canonical key refers to.',
+  );
+  assert.deepEqual(select(nodes, [binding], [], 'common', selection), nodes);
   assert.equal(JSON.stringify(nodes), before);
 });
 
-test('workbench catalog starts with generic stages and keeps implementation nodes opt-in', () => {
+test('one common catalog includes generic nodes, utilities and custom nodes with additive discovery options', () => {
   const entry = (module, action, extra = {}) =>
     nodeCatalogModule.getNodeCatalogEntry({ module, action, label: action, category: 'Test', params: {}, ...extra });
   const matches = nodeCatalogModule.nodeCatalogEntryMatchesView;
-  assert.equal(nodeCatalogModule.defaultNodeCatalogView('expert'), 'stages');
-  assert.equal(nodeCatalogModule.defaultNodeCatalogView('auto'), 'essential');
   for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents', 'ImageEncode']) {
-    const node = entry('modules.ModularDiffusers', action);
-    assert.equal(matches(node, 'stages'), true, action);
-    assert.equal(matches(node, 'essential'), false, action);
-    assert.equal(matches(node, 'advanced'), true, action);
+    for (const view of ['common', 'advanced', 'experimental', 'all'])
+      assert.equal(matches(entry('modules.ModularDiffusers', action), view), true, action);
   }
   for (const action of ['ReviewedModularWorkflowStep', 'WorkflowKrea2Denoise', 'DynamicBlockNode']) {
-    const node = entry('modules.ModularDiffusers', action);
-    assert.equal(matches(node, 'stages'), false, action);
-    assert.equal(matches(node, 'advanced'), true, action);
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'common'), false);
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'experimental'), false);
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'advanced'), true);
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'all'), true);
   }
-  assert.equal(matches(entry('modules.Image', 'Preview'), 'stages'), true);
-  assert.equal(matches(entry('custom.my_nodes', 'PromptProcessor'), 'stages'), true);
-  assert.equal(matches(entry('custom.my_nodes', 'PromptProcessor'), 'essential'), true);
-  assert.equal(matches(entry('modules.ModularDiffusers', 'Denoise', { type: 'group' }), 'stages'), false);
-  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'stages'), false);
+  for (const module of ['modules.Primitive', 'modules.Text', 'custom.my_nodes'])
+    assert.equal(matches(entry(module, 'TextValue'), 'common'), true);
+  assert.equal(matches(entry('modules.Image', 'Preview'), 'common'), true);
+  for (const view of ['common', 'advanced', 'experimental', 'all'])
+    assert.equal(matches(entry('modules.ModularDiffusers', 'Denoise', { type: 'group' }), view), false);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'common'), false);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'advanced'), false);
   assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'experimental'), true);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'all'), true);
 });
 
 test('workbench catalog scope filters HF internals and catalog-only blocks before search', () => {
@@ -138,10 +152,9 @@ test('workbench catalog scope filters HF internals and catalog-only blocks befor
   const before = JSON.stringify(sections);
   const filter = libraryCatalogModule.filterHuggingFaceCatalogSections;
   const ids = (view, query = '') => filter(sections, query, view).flatMap(({ entries }) => entries.map(({ id }) => id));
-  assert.deepEqual(ids('essential'), ['ready']);
-  assert.deepEqual(ids('essential', 'Draft'), []);
-  assert.deepEqual(ids('stages'), []);
-  assert.deepEqual(ids('experimental'), []);
+  assert.deepEqual(ids('common'), ['ready']);
+  assert.deepEqual(ids('common', 'Draft'), []);
+  assert.deepEqual(ids('experimental'), ['ready']);
   assert.deepEqual(ids('advanced'), ['ready', 'draft', 'blocked', 'internal', 'component']);
   assert.deepEqual(ids('advanced', 'Denoise'), ['internal']);
   assert.equal(JSON.stringify(sections), before, 'Discovery must not mutate catalog contracts.');

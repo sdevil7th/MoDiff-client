@@ -1,3 +1,5 @@
+import NodeDiscoveryFilters from './NodeDiscoveryFilters';
+import { useNodeDiscovery } from '../stores/useNodeDiscoveryStore';
 import RuntimeNodeGroupsV2 from './RuntimeNodeGroupsV2';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
@@ -38,7 +40,6 @@ import {
   ModiffPopover,
   ModiffSearchInput,
   ModiffSelect,
-  ModiffTabs,
   TreeButtonRow,
   TreeChildrenPanel,
 } from '../ui';
@@ -62,7 +63,6 @@ import {
   nodeCatalogEntries,
   nodeCatalogEntryMatchesSearch,
   nodeCatalogEntryMatchesView,
-  defaultNodeCatalogView,
   runtimeCatalogNodes,
   type NodeCatalogEntry,
   type NodeCatalogView,
@@ -140,17 +140,13 @@ function NodeList() {
   const [hubImportError, setHubImportError] = useState<string | null>(null);
   const [hubImportInspection, setHubImportInspection] = useState<CustomModularHubInspection | null>(null);
   const [clusterInsertionIds, setClusterInsertionIds] = useState<Set<string>>(() => new Set());
-  const [catalogView, setCatalogView] = useState<NodeCatalogView>(defaultNodeCatalogView(studioViewMode));
+  const { view: effectiveCatalogView, pipeline, task } = useNodeDiscovery();
   const expertMode = studioViewMode === 'expert';
-  const effectiveCatalogView = expertMode ? catalogView : 'essential';
   const catalogNodes = useMemo(
-    () => runtimeCatalogNodes(nodesRegistry, operationContracts, pipelineSupport, effectiveCatalogView),
-    [effectiveCatalogView, nodesRegistry, operationContracts, pipelineSupport],
+    () =>
+      runtimeCatalogNodes(nodesRegistry, operationContracts, pipelineSupport, effectiveCatalogView, { pipeline, task }),
+    [effectiveCatalogView, nodesRegistry, operationContracts, pipelineSupport, pipeline, task],
   );
-
-  useEffect(() => {
-    setCatalogView(defaultNodeCatalogView(studioViewMode));
-  }, [studioViewMode]);
 
   useEffect(() => {
     if (!userBlocksLoaded) {
@@ -491,9 +487,7 @@ function NodeList() {
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold text-modiff-text">Nodes</h2>
               <p className="truncate text-xs text-modiff-subtle-text">
-                {effectiveCatalogView === 'stages' && pipelineSupport.length
-                  ? 'Pipeline operations and common utilities'
-                  : `${runtimeNodeCount} nodes · ${huggingFaceCatalogCount} catalog entries`}
+                {runtimeNodeCount} nodes · {huggingFaceCatalogCount} catalog entries
               </p>
             </div>
           </div>
@@ -508,21 +502,7 @@ function NodeList() {
           onClear={() => setSearch('')}
         />
       </div>
-      {expertMode ? (
-        <ModiffTabs
-          aria-label="Node catalog level"
-          className="mb-0.5 border-y border-modiff-border bg-modiff-surface p-0.5"
-          options={[
-            { value: 'stages', label: 'Stages' },
-            { value: 'essential', label: 'Essentials' },
-            { value: 'advanced', label: 'Advanced' },
-            { value: 'experimental', label: 'Experimental' },
-          ]}
-          value={catalogView}
-          onValueChange={setCatalogView}
-          size="dense"
-        />
-      ) : null}
+      <NodeDiscoveryFilters />
 
       {expertMode ? (
         <div className="px-3 pb-2">
@@ -543,21 +523,13 @@ function NodeList() {
         ) : null}
       </ModiffDialog>
       <p className="px-3 pb-2 text-xs text-modiff-subtle-text">
-        {effectiveCatalogView === 'stages'
-          ? 'Generic stages, common operations, and installed custom nodes. Find implementation details in Advanced.'
-          : effectiveCatalogView === 'essential'
-            ? 'Task blocks and common operations. More editing tools are available in the Developer workspace.'
-            : effectiveCatalogView === 'advanced'
-              ? 'Node entries, upstream blocks, and component references. Check each entry’s readiness.'
-              : 'Experimental operations. Model and runtime support vary.'}
+        Nodes, task Blocks and Saved Blocks share this library. Choose a pipeline to add nodes with its declared inputs.
       </p>
 
       <div className="min-h-0 flex-1 select-none overflow-y-auto p-1">
-        {effectiveCatalogView === 'stages' ? (
-          <Suspense fallback={null}>
-            <OperationCatalogPanel search={search} onInsert={handleInsertNode} />
-          </Suspense>
-        ) : null}
+        <Suspense fallback={null}>
+          <OperationCatalogPanel search={search} onInsert={handleInsertNode} />
+        </Suspense>
         <NodeGroupList
           nodes={catalogNodes}
           search={search}
@@ -1416,19 +1388,17 @@ function NodeGroupList({
 
   return (
     <>
-      {view === 'essential' || view === 'advanced' ? (
-        <HuggingFaceNodeGroups
-          activeGroupIds={activeNodeGroups}
-          error={huggingFaceError}
-          insertingDefinitionIds={insertingHuggingFaceDefinitionIds}
-          loading={huggingFaceLoading}
-          onToggleGroup={setActiveNodeGroups}
-          onRetry={onRetryHuggingFaceLibrary}
-          onInsertCluster={onInsertHuggingFaceCluster}
-          searching={Boolean(search.trim())}
-          sections={huggingFaceSections}
-        />
-      ) : null}
+      <HuggingFaceNodeGroups
+        activeGroupIds={activeNodeGroups}
+        error={huggingFaceError}
+        insertingDefinitionIds={insertingHuggingFaceDefinitionIds}
+        loading={huggingFaceLoading}
+        onToggleGroup={setActiveNodeGroups}
+        onRetry={onRetryHuggingFaceLibrary}
+        onInsertCluster={onInsertHuggingFaceCluster}
+        searching={Boolean(search.trim())}
+        sections={huggingFaceSections}
+      />
       <div
         data-testid="node-group-User-Nodes"
         className={cx(

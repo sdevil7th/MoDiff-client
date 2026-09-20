@@ -450,9 +450,8 @@ export function filterHuggingFaceCatalogSections(
   search: string,
   view: NodeCatalogView = 'advanced',
 ): HuggingFaceCatalogSection[] {
-  if (view === 'stages' || view === 'experimental') return [];
   const visibleSections =
-    view === 'essential'
+    view === 'common' || view === 'experimental'
       ? sections
           .map((section) => ({
             ...section,
