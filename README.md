@@ -326,9 +326,34 @@ not change the selected model, workflow values, or memory policy.
 **Memory: Automatic / Custom** is a separate workflow setting. Automatic chooses
 a supported resource recipe; Custom retains explicit resource settings. Existing
 Auto/Expert preferences migrate without rewriting saved workflows or resource
-identifiers. The task-first Developer Workflows chooser and unified Nodes library
-are tracked in the [implementation plan](docs/creator-developer-workspaces-plan.md)
-and are not part of this controls update.
+identifiers.
+
+Creator starts with **Templates** for ready-made workflows. Developer starts with
+**Workflows**: choose an action such as Text to image or Image edit, select an
+available pipeline, inspect the connected graph and create it. Both offer an
+empty workflow and the same editable canvas.
+
+The shared **Nodes** library includes generic nodes, enabled custom nodes and
+**Saved Blocks**. Select a pipeline and task to browse its bound operations. Use
+**Show implementation nodes** for underlying adapters and upstream Diffusers
+blocks, and **Show experimental nodes** when needed. Double-click empty canvas
+space to search, or drag from a socket to see compatible nodes and Blocks.
+Distinct saved revisions stay separate. Catalog entries show their readiness;
+browsing them does not install or enable anything.
+
+A **Block** is an editable graph composition. Expand it to work on its nodes;
+**Saved Blocks** are reusable definitions. An upstream Python block can be an
+ordinary implementation node or a container represented by a graph Block.
+Use **Inspect node / Inspect Block → Implementation** to see its source.
+Use **Configure Block interface** to expose inputs, outputs and editable controls.
+A nested Block's interface editor also selects its collapsed previews. These edits
+belong to the workflow instance; **Save block changes** is the explicit action for
+reusing them in Saved Blocks. Expand or collapse a Block without changing its
+connections, and use Undo/Redo for graph edits in either workspace.
+
+Changing workspace preserves the graph, nested expansion, public connections and
+preview configuration. Loaded-model and active-run acceptance is tracked
+separately in the [implementation plan](docs/creator-developer-workspaces-plan.md).
 
 ## Custom nodes
 
@@ -511,18 +536,18 @@ distribution also ships a generated, lock-derived
 [dependency license inventory](public/THIRD_PARTY_LICENSES.txt); regenerate it
 with `npm run licenses:generate` after dependency changes.
 
-### Authoring with generic stages
+### Authoring with generic nodes
 
-In **Developer → Nodes → Stages**, select a pipeline and task. Use **Preview connected
-starter** to inspect its ordinary stages, required inputs and upstream implementation,
-then add it to the canvas. You can also insert the stages individually and wire their
-ports. Connect the final result to a Preview, Save or Export node before running.
+In **Nodes**, select a pipeline and task. Use **Preview connected starter** to
+inspect its ordinary nodes, required inputs and upstream implementation, then add
+it to the canvas. You can also insert nodes individually by click, drag or canvas
+search and connect their ports. Connect the final result to a Preview, Save or Export node before running.
 
 To change a graph, select its loader under **Graph to change**, choose the new
 pipeline/task and use **Preview model / task change**. Review retained settings and
 connections before applying. Compatible prompt and parameter overrides survive;
 new defaults come from the selected backend contract. Undo restores the whole
-change. When stages share a seed, editing either control updates both; random mode
+change. When nodes share a seed, editing either control updates both; random mode
 uses one draw per run for that group. Select a node and choose **Inspect node**
 (**Inspect Block** for a composition), or use its controls in the Studio side panel.
 Both workspaces provide Parameters, Interface, Implementation, Docs and Run details.
@@ -531,7 +556,7 @@ settings retained outside execution. Metadata inspection does not load models or
 execute custom source.
 
 These controls use the same saved canvas graph in Creator and Developer. Existing Blocks
-keep their current structure and composition inspector. A declared stage graph can
+keep their current structure and composition inspector. A graph of generic nodes can
 still require runtime installation, model files, conditioning or resource setup;
 authoring support alone does not qualify model execution.
 

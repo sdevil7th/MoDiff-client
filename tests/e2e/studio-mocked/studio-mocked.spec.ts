@@ -21628,7 +21628,31 @@ test('managed Auto keeps the exact interactive graph and only contains advanced 
   await expect(inspector.locator('[data-testid^="node-preview-"]')).toHaveCount(0);
 });
 
-test('Blocks save, expand in place, collapse, and survive library-definition deletion', async ({ page }) => {
+/** Workspace preferences may change panels, never the authored Block or memory policy. */
+async function assertSharedBlockWorkspaceSwitch(page: Page, workspace: 'auto' | 'expert') {
+  await waitForOperationGraphToSettle(page);
+  const read = () =>
+    page.evaluate(() => {
+      const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
+      return {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        memory: window.__MODIFF_E2E__!.getState().studio.form.resourceMode,
+      };
+    });
+  const before = await read();
+  for (const target of [workspace === 'auto' ? 'expert' : 'auto', workspace] as const) {
+    await setStudioViewMode(page, target);
+    await waitForOperationGraphToSettle(page);
+    expect(await read()).toEqual(before);
+    await expect(
+      page.getByRole('radio', { name: target === 'auto' ? 'Creator' : 'Developer', exact: true }),
+    ).toHaveAttribute('aria-checked', 'true');
+  }
+  await page.screenshot({ path: test.info().outputPath('shared-block-workspaces.png'), animations: 'disabled' });
+}
+
+async function sharedSavedBlockLifecycle(page: Page, workspace: 'auto' | 'expert') {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   await ensureFrontend();
@@ -21645,6 +21669,7 @@ test('Blocks save, expand in place, collapse, and survive library-definition del
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
   });
+  await setStudioViewMode(page, workspace);
   const initialNodeCount = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.selectNodesByAction(['Generate', 'Preview']))).toBe(2);
 
@@ -21907,7 +21932,16 @@ test('Blocks save, expand in place, collapse, and survive library-definition del
   await expect(blockNode).toHaveCount(1);
   await blockNode.getByRole('button', { name: 'Expand block' }).click();
   await expect(blockNode.getByRole('button', { name: 'Collapse block' })).toBeVisible();
-});
+  await assertSharedBlockWorkspaceSwitch(page, workspace);
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} Blocks save, expand in place, collapse, and survive library-definition deletion`, async ({
+    page,
+  }) => {
+    await sharedSavedBlockLifecycle(page, workspace);
+  });
+}
 
 test('existing canvas nodes drag into User Nodes and the three persistence choices survive refresh', async ({
   page,
@@ -22108,7 +22142,7 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   }
 });
 
-test('Collapsed many-output blocks keep preview and editable node disclosures usable', async ({ page }) => {
+async function sharedCollapsedBlockControls(page: Page, workspace: 'auto' | 'expert') {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   await ensureFrontend();
@@ -22122,6 +22156,7 @@ test('Collapsed many-output blocks keep preview and editable node disclosures us
   await page.evaluate(async () => {
     await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
   });
+  await setStudioViewMode(page, workspace);
   const selectedCount = await page.evaluate(() => {
     const actions = [...new Set(window.__MODIFF_E2E__!.getState().flow.nodes.map((node) => node.action))];
     return window.__MODIFF_E2E__!.selectNodesByAction(actions);
@@ -22209,11 +22244,18 @@ test('Collapsed many-output blocks keep preview and editable node disclosures us
       }),
     )
     .toBe('Editable prompt from the collapsed block');
-});
+  await assertSharedBlockWorkspaceSwitch(page, workspace);
+}
 
-test('expanded V2 Blocks explicitly adopt disconnected and connected ordinary nodes and rematerialize after refresh', async ({
-  page,
-}) => {
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} Collapsed many-output blocks keep preview and editable node disclosures usable`, async ({
+    page,
+  }) => {
+    await sharedCollapsedBlockControls(page, workspace);
+  });
+}
+
+async function sharedBlockAdoption(page: Page, workspace: 'auto' | 'expert') {
   await ensureFrontend();
   await installMockRoutes(page);
   await page.addInitScript(() => {
@@ -22225,6 +22267,7 @@ test('expanded V2 Blocks explicitly adopt disconnected and connected ordinary no
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await dismissTaskLauncher(page);
+  await setStudioViewMode(page, workspace);
 
   const fixture = await page.evaluate(async () => {
     const [{ useFlowStore }, { useStudioStore }, schema, runtime] = await Promise.all([
@@ -22539,11 +22582,18 @@ test('expanded V2 Blocks explicitly adopt disconnected and connected ordinary no
       ),
     )
     .toEqual({ sourceStillTopLevel: false, edgeStillPresent: true, semantic: true });
-});
+  await assertSharedBlockWorkspaceSwitch(page, workspace);
+}
 
-test('registered V2 Blocks visibly replace, cross public ports, reconnect, move out, configure, and persist', async ({
-  page,
-}) => {
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} expanded V2 Blocks explicitly adopt disconnected and connected ordinary nodes and rematerialize after refresh`, async ({
+    page,
+  }) => {
+    await sharedBlockAdoption(page, workspace);
+  });
+}
+
+async function sharedRegisteredBlockEditing(page: Page, workspace: 'auto' | 'expert') {
   test.slow();
   await page.setViewportSize({ width: 1920, height: 1080 });
   await ensureFrontend();
@@ -22574,6 +22624,7 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
     throw new Error(`Qwen V2 structural fixture failed startup validation: ${await page.locator('body').innerText()}`);
   }
   await dismissTaskLauncher(page);
+  await setStudioViewMode(page, workspace);
   await page.getByTestId('left-tab-nodes').click();
 
   // This gesture fixture intentionally uses a compact mocked catalog. Pin its
@@ -23529,9 +23580,18 @@ test('registered V2 Blocks visibly replace, cross public ports, reconnect, move 
   expect((await inspect()).executionInputTargets).toEqual([`${fixture.replacementId}:${fixture.publicInputField}`]);
   expect(missingHandleWarnings).toEqual([]);
   expect(userNodeWriteRequests).toBe(0);
-});
+  await assertSharedBlockWorkspaceSwitch(page, workspace);
+}
 
-test('registered V2 preview and sealed owners replace compatibly without rebinding and persist', async ({ page }) => {
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} registered V2 Blocks visibly replace, cross public ports, reconnect, move out, configure, and persist`, async ({
+    page,
+  }) => {
+    await sharedRegisteredBlockEditing(page, workspace);
+  });
+}
+
+async function sharedProtectedBlockReplacement(page: Page, workspace: 'auto' | 'expert') {
   test.slow();
   await page.setViewportSize({ width: 1920, height: 1080 });
   await ensureFrontend();
@@ -23546,6 +23606,7 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
   await dismissTaskLauncher(page);
+  await setStudioViewMode(page, workspace);
   await page.getByTestId('left-tab-nodes').click();
   await pinCurrentQwenRouteToMockRegistry(page, 'mock-qwen-protected-replacement-pin');
 
@@ -23856,11 +23917,18 @@ test('registered V2 preview and sealed owners replace compatibly without rebindi
   await restoredRoot.getByTestId(`user-block-toggle-${fixture.blockId}`).click();
   await expect(projectedNode(fixture.previewSemanticId)).resolves.toBeTruthy();
   await expect(projectedNode(fixture.sealedSemanticId)).resolves.toBeTruthy();
-});
+  await assertSharedBlockWorkspaceSwitch(page, workspace);
+}
 
-test('nested Configure Interface selects previews and preserves prompts, root outputs and saved User Node bindings', async ({
-  page,
-}) => {
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} registered V2 preview and sealed owners replace compatibly without rebinding and persist`, async ({
+    page,
+  }) => {
+    await sharedProtectedBlockReplacement(page, workspace);
+  });
+}
+
+async function sharedNestedBlockInterface(page: Page, workspace: 'auto' | 'expert') {
   await ensureFrontend();
   await installMockRoutes(page);
   const errors: string[] = [];
@@ -23874,6 +23942,7 @@ test('nested Configure Interface selects previews and preserves prompts, root ou
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
   await dismissTaskLauncher(page);
+  await setStudioViewMode(page, workspace);
   const definition = JSON.parse(
     await fs.readFile(path.resolve('../MoDiff/tests/fixtures/block_container_previews_v1.json'), 'utf8'),
   );
@@ -23967,7 +24036,16 @@ test('nested Configure Interface selects previews and preserves prompts, root ou
   expect((await inspect()).local!.previews).toEqual([]);
   expect((await inspect()).rootPreviews).toEqual(original.rootPreviews);
   expect(errors).toEqual([]);
-});
+  await assertSharedBlockWorkspaceSwitch(page, workspace);
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} nested Configure Interface selects previews and preserves prompts, root outputs and saved User Node bindings`, async ({
+    page,
+  }) => {
+    await sharedNestedBlockInterface(page, workspace);
+  });
+}
 
 test('mixed V1 and V2 User Nodes survive a full browser restart without cross-conversion', async ({ page }) => {
   await ensureFrontend();
