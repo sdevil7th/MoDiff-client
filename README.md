@@ -98,8 +98,8 @@ Client development requires:
 Integrated development also requires:
 
 - A sibling MoDiff backend checkout, or its path passed to the launcher
-- The backend's managed Python 3.12 environment, installed with its reviewed
-  `install.ps1` or `install.sh` profile
+- The backend's managed Python 3.12 environment, installed through the uv commands
+  below or its reviewed `install.ps1` / `install.sh` profile
 - Sufficient RAM, accelerator memory, and disk space for the model being used
 - Hugging Face authorization for gated model repositories, when applicable
 
@@ -120,6 +120,42 @@ Clone the backend and client into the sibling layout shown above:
 git clone https://github.com/sdevil7th/MoDiff.git MoDiff
 git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 ```
+
+### With uv and npm
+
+Install uv `0.11.26`, Node `24.12.0`, and npm `11.6.2`. In the first terminal,
+from the sibling **MoDiff backend checkout**, run these commands. They work in
+Linux shells and Windows PowerShell without repository shell/PowerShell launchers:
+
+```text
+uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
+uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
+uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
+uv run --no-project --no-sync --python 3.12 -m modiff.dev run
+```
+
+The CPU profile is for initial API/UI development. For GPU inference, replace
+`cpu` in both `plan` and `setup` with the appropriate backend accelerator selector,
+such as `nvidia` or `amd`. Setup preserves an existing `.venv`; use `check` to
+inspect it before any deliberate repair. These commands use the backend's managed
+installer through Python. Ordinary `uv sync` is not supported, and setup does not
+download inference weights. See the backend's
+[developer setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
+for accelerator prerequisites and environment repair.
+
+Keep the backend running at <http://127.0.0.1:8088>. In a second terminal, from
+this **MoDiff-client checkout**, run:
+
+```text
+npm ci
+npm run dev
+```
+
+Open the URL printed by Vite. The backend serves its checked frontend bundle if
+you only need the application; Vite provides the editable client development UI.
+For contributor test dependencies and checks, follow [CONTRIBUTING](CONTRIBUTING.md).
+
+### With the optional development launchers
 
 For an editable two-process development session, run the client repository's
 development installer. It installs the backend in backend-only mode, adds the
