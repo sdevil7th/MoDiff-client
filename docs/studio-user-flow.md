@@ -131,6 +131,12 @@ Cluster/User Node terminology can still occur in older files and migration
 receipts. Use the explicit migration preview for supported historical documents;
 opening a file or switching Auto/Expert does not convert it.
 
+New ordinary Diffusers image nodes and connected workflows use the selected
+model’s reviewed dtype, size, steps and guidance when those controls apply.
+Models sharing a pipeline class retain their own starting values. These are
+editable starting values; resolving another model does not rewrite an existing
+workflow or change its memory policy.
+
 Ordinary image utilities—including Resize, Apply Mask, Merge Images, Image Grid,
 comparison and saving—are available in the normal Nodes library in both workspaces,
 alongside text and value utilities. They do not require a pipeline selection or
