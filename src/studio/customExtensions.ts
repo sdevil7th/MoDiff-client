@@ -2,6 +2,7 @@ import config from '../../app.config';
 import { requestJson } from '../utils/requestJson';
 
 export type ExtensionSource = { kind: 'local' | 'git' | 'hub'; source: string; name: string; revision?: string };
+export type ResolvedExtensionSource = { kind: 'hub'; source: string; requestedRevision: string; revision: string };
 export type ExtensionInfo = {
   name: string;
   moduleKey: string;

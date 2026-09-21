@@ -2,26 +2,15 @@ import { DetailLine } from '../ui/DetailLine';
 import { useEffect, useRef, useState } from 'react';
 import { useNodesStore } from '../stores/useNodeStore';
 import { inspectExtension, type ExtensionInfo, type ExtensionSource } from '../studio/customExtensions';
+import ExtensionSourceForm from './ExtensionSourceForm';
 import { formatRequestError } from '../utils/requestJson';
-import {
-  ModiffButton,
-  ModiffCheckbox,
-  ModiffFieldShell,
-  ModiffInput,
-  ModiffSelect,
-  ModiffBadge,
-  ModiffDisclosure,
-} from '../ui';
+import { ModiffButton, ModiffCheckbox, ModiffBadge, ModiffDisclosure } from '../ui';
 
-export default function CustomExtensionsPanel() {
+export default function CustomExtensionsPanel({ initialKind = 'local' }: { initialKind?: ExtensionSource['kind'] }) {
   const modules = useNodesStore((state) => state.customModules);
   const fetchModules = useNodesStore((state) => state.fetchCustomModules);
   const install = useNodesStore((state) => state.installCustomModule);
   const enable = useNodesStore((state) => state.setCustomModuleEnabled);
-  const [kind, setKind] = useState<ExtensionSource['kind']>('local');
-  const [source, setSource] = useState('');
-  const [name, setName] = useState('');
-  const [revision, setRevision] = useState('');
   const [inspection, setInspection] = useState<ExtensionInfo | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,73 +71,20 @@ export default function CustomExtensionsPanel() {
         Stage source, inspect its code and dependencies, then explicitly enable it. Enabled nodes appear in search and
         typed suggestions in Creator and Developer.
       </p>
-      <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
-        <ModiffFieldShell label="Source type">
-          <ModiffSelect
-            aria-label="Extension source type"
-            value={kind}
-            disabled={busy}
-            options={[
-              { value: 'local', label: 'Local Python folder' },
-              { value: 'git', label: 'Git at exact commit' },
-              { value: 'hub', label: 'Hub Modular block at exact commit' },
-            ]}
-            onValueChange={(value) => {
-              if (value === 'local' || value === 'git' || value === 'hub') setKind(value);
-            }}
-          />
-        </ModiffFieldShell>
-        <ModiffInput
-          aria-label="Extension source"
-          placeholder={
-            kind === 'local' ? 'Backend folder path' : kind === 'git' ? 'HTTPS Git URL' : 'Hub owner/repository'
-          }
-          value={source}
-          disabled={busy}
-          onChange={(event) => setSource(event.target.value)}
-        />
-        <ModiffInput
-          aria-label="Extension module name"
-          placeholder="Module name, e.g. PromptTools"
-          value={name}
-          disabled={busy}
-          onChange={(event) => setName(event.target.value)}
-        />
-        {kind !== 'local' ? (
-          <ModiffInput
-            aria-label="Extension exact revision"
-            placeholder="40-character commit SHA"
-            value={revision}
-            disabled={busy}
-            onChange={(event) => setRevision(event.target.value)}
-          />
-        ) : null}
-        <ModiffButton
-          disabled={
-            busy ||
-            !source.trim() ||
-            !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(name) ||
-            (kind !== 'local' && !/^[a-f0-9]{40}$/u.test(revision))
-          }
-          onClick={() => {
-            void perform(async () => {
-              const result = await install({
-                kind,
-                source: source.trim(),
-                name,
-                ...(kind !== 'local' ? { revision } : {}),
-              });
-              return result.module ?? null;
-            }, 'Source staged. Python execution is disabled.');
-          }}
-        >
-          Stage source
-        </ModiffButton>
-        <DetailLine tone="muted">
-          Remote staging downloads code and metadata at the specified commit. It does not install packages or model
-          weights.
-        </DetailLine>
-      </div>
+      <ExtensionSourceForm
+        initialKind={initialKind}
+        busy={busy}
+        onStage={(source) => {
+          void perform(
+            async () => (await install(source)).module ?? null,
+            'Source staged. Python execution is disabled.',
+          );
+        }}
+      />
+      <DetailLine tone="muted">
+        You can inspect sources while a workflow runs. Staging, enabling, reloading and disabling code require an empty
+        run queue; finish or stop queued work first.
+      </DetailLine>
       {error ? (
         <p role="alert" className="text-xs text-modiff-red">
           {error}

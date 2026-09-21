@@ -87,7 +87,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // W5 adds the lazy upstream workflow/draft chooser and exact model selection.
 // Measured deferred aggregate is 231983 bytes (+2339 from required-media W5).
 // Bound this feature at 227 KiB; retain both individual chunk ceilings.
-const MAX_DEFERRED_GZIP_BYTES = 227 * 1024;
+// W6 adds Hub revision lookup and shared Developer source entry points. Keep the
+// resolver out of startup; measured deferred code is 227.8 KiB. Bound this added
+// surface at 228 KiB without changing startup or individual chunk ceilings.
+const MAX_DEFERRED_GZIP_BYTES = 228 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

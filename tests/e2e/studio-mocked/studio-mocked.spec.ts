@@ -27462,3 +27462,169 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.screenshot({ path: test.info().outputPath('restored-upstream-draft.png') });
   });
 }
+
+function developerHubExtensionFixture() {
+  return {
+    name: 'HubPrompt',
+    moduleKey: 'custom.HubPrompt',
+    source: 'custom',
+    kind: 'hub',
+    runtimeRole: 'data',
+    revision: 'b'.repeat(40),
+    enabled: false,
+    status: 'disabled',
+    path: 'custom/HubPrompt',
+    codeHash: 'sha256:' + 'c'.repeat(64),
+    nodeCount: 0,
+    nodes: ['Block'],
+    canDisable: false,
+    canEnable: true,
+    dependencies: [],
+    files: [],
+    preview: {
+      kind: 'modular',
+      diagnostics: [],
+      nodes: {
+        Block: {
+          label: 'Shared prompt block',
+          params: { text: { type: 'string', display: 'input' }, out_text: { type: 'string', display: 'output' } },
+        },
+      },
+    },
+  };
+}
+
+test('Developer source entry resolves a Hub URL and stages only the reviewed exact revision', async ({ page }) => {
+  await openDeveloperWorkflows(page);
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const staged: unknown[] = [];
+  const resolved: unknown[] = [];
+  const extension = developerHubExtensionFixture();
+  await page.route('**/custom_modules**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/resolve')) {
+      resolved.push(route.request().postDataJSON());
+      await route.fulfill({
+        json: {
+          source: { kind: 'hub', source: 'example/prompt', requestedRevision: 'review', revision: 'b'.repeat(40) },
+        },
+      });
+    } else if (path.endsWith('/install')) {
+      staged.push(route.request().postDataJSON());
+      await route.fulfill({ json: { modules: [extension], module: extension } });
+    } else await route.fulfill({ json: { modules: [] } });
+  });
+  await page.getByRole('button', { name: 'Add from Hugging Face', exact: true }).click();
+  const dialog = page.getByTestId('custom-extensions-dialog');
+  await dialog
+    .getByLabel('Extension source', { exact: true })
+    .fill('https://huggingface.co/example/prompt/tree/review');
+  await dialog.getByLabel('Extension module name').fill('HubPrompt');
+  await expect(dialog.getByRole('button', { name: 'Stage source', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Resolve revision', exact: true }).click();
+  await expect(dialog.getByRole('status')).toContainText('b'.repeat(40));
+  expect(resolved).toEqual([{ source: 'https://huggingface.co/example/prompt/tree/review' }]);
+  await dialog.getByRole('button', { name: 'Stage source', exact: true }).click();
+  await expect(dialog.getByRole('region', { name: 'Extension review' })).toContainText('Shared prompt block');
+  expect(staged).toEqual([{ kind: 'hub', source: 'example/prompt', name: 'HubPrompt', revision: 'b'.repeat(40) }]);
+  await expect(dialog.getByRole('button', { name: 'Enable code', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(
+    page
+      .getByRole('dialog', { name: 'Workflows', exact: true })
+      .getByRole('heading', { name: 'Workflows', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Add local source', exact: true }).click();
+  await expect(page.getByLabel('Extension source type')).toContainText('Local Python folder');
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+});
+
+for (const change of ['edit', 'cancel', 'close'] as const) {
+  test(`Developer Hub resolution discards a delayed response after ${change}`, async ({ page }) => {
+    await openDeveloperWorkflows(page);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = false;
+    let installs = 0;
+    await page.route('**/custom_modules**', async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/resolve')) {
+        started = true;
+        await gate;
+        await route.fulfill({
+          json: { source: { kind: 'hub', source: 'example/old', requestedRevision: 'main', revision: 'a'.repeat(40) } },
+        });
+      } else {
+        if (path.endsWith('/install')) installs++;
+        await route.fulfill({ json: { modules: [] } });
+      }
+    });
+    await page.getByRole('button', { name: 'Add from Hugging Face', exact: true }).click();
+    const dialog = page.getByTestId('custom-extensions-dialog');
+    await dialog.getByLabel('Extension source', { exact: true }).fill('example/old');
+    await dialog.getByLabel('Extension module name').fill('Old');
+    await dialog.getByRole('button', { name: 'Resolve revision', exact: true }).click();
+    await expect.poll(() => started).toBe(true);
+    if (change === 'edit') await dialog.getByLabel('Extension source', { exact: true }).fill('example/new');
+    if (change === 'cancel') await dialog.getByRole('button', { name: 'Cancel resolution', exact: true }).click();
+    if (change === 'close') await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    release();
+    if (change === 'close') await page.getByRole('button', { name: 'Add from Hugging Face', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Stage source', exact: true })).toBeDisabled();
+    await expect(dialog).not.toContainText('a'.repeat(40));
+    expect(installs).toBe(0);
+  });
+}
+
+test('Developer extension review handles dependencies, stale approval and failed imports without altering the graph', async ({
+  page,
+}) => {
+  await openDeveloperWorkflows(page);
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  let extension = {
+    ...developerHubExtensionFixture(),
+    dependencies: [{ requirement: 'missing-package==1.0', installed: null as string | null, status: 'missing' }],
+  };
+  const enables: unknown[] = [];
+  let failure = 'Source changed after inspection; review again.';
+  await page.route('**/custom_modules**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/enable') || path.endsWith('/reload')) {
+      enables.push(route.request().postDataJSON());
+      await route.fulfill({ status: 400, json: { error: true, message: failure } });
+    } else if (path.endsWith('/inspect')) await route.fulfill({ json: { module: extension } });
+    else await route.fulfill({ json: { modules: [extension] } });
+  });
+  await page.getByRole('button', { name: 'Add local source', exact: true }).click();
+  const dialog = page.getByTestId('custom-extensions-dialog');
+  const inspect = dialog.getByRole('button', { name: 'Inspect source', exact: true });
+  await inspect.click();
+  const review = dialog.getByRole('region', { name: 'Extension review' });
+  await expect(review).toContainText('missing-package==1.0');
+  const consent = review.getByRole('checkbox');
+  await consent.check();
+  await expect(review.getByRole('button', { name: 'Enable code', exact: true })).toBeDisabled();
+  await review.getByRole('button', { name: 'Cancel review', exact: true }).click();
+  expect(enables).toEqual([]);
+  extension = { ...extension, dependencies: [], codeHash: 'sha256:' + 'd'.repeat(64) };
+  await inspect.click();
+  await expect(consent).not.toBeChecked();
+  await consent.check();
+  await review.getByRole('button', { name: 'Enable code', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Source changed after inspection');
+  await expect(review).toHaveCount(0);
+  expect(enables).toEqual([{ codeHash: extension.codeHash, consent: true }]);
+  extension = { ...extension, codeHash: 'sha256:' + 'e'.repeat(64) };
+  failure = 'Could not import custom source: broken helper import';
+  await inspect.click();
+  await expect(consent).not.toBeChecked();
+  await consent.check();
+  await review.getByRole('button', { name: 'Enable code', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('broken helper import');
+  await expect(inspect).toBeEnabled();
+  expect(enables).toHaveLength(2);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  await page.screenshot({ path: test.info().outputPath('custom-source-failure.png') });
+});

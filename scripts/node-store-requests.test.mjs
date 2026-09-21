@@ -8,6 +8,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let nodesStoreModule;
 let extensionsModule;
+let sourceResolutionModule;
 let operationContractsModule;
 let optionalRuntimesModule;
 let requestModule;
@@ -48,6 +49,7 @@ before(async () => {
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
   extensionsModule = await server.ssrLoadModule('/src/studio/customExtensions.ts');
+  sourceResolutionModule = await server.ssrLoadModule('/src/studio/extensionSourceResolution.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
@@ -2634,4 +2636,42 @@ test('enable sends the reviewed code hash and preserves boolean consent', async 
   };
   await nodesStoreModule.useNodesStore.getState().setCustomModuleEnabled('Example', true, 'sha256:' + 'b'.repeat(64));
   assert.deepEqual(submitted, { codeHash: 'sha256:' + 'b'.repeat(64), consent: true });
+});
+
+test('Hub extension resolution accepts only a pinned source identity and preserves cancellation', async () => {
+  const valid = { kind: 'hub', source: 'example/block', requestedRevision: 'main', revision: 'a'.repeat(40) };
+  assert.deepEqual(sourceResolutionModule.parseResolvedExtensionSource({ error: false, source: valid }), valid);
+  const underscored = { ...valid, source: '_owner/_block' };
+  assert.deepEqual(sourceResolutionModule.parseResolvedExtensionSource({ source: underscored }), underscored);
+  for (const invalid of [
+    { ...valid, revision: 'main' },
+    { ...valid, kind: 'local' },
+    { ...valid, source: 'https://evil.test/source' },
+    { ...valid, requestedRevision: null },
+  ])
+    assert.throws(() => sourceResolutionModule.parseResolvedExtensionSource({ source: invalid }));
+  const controller = new AbortController();
+  let called = false;
+  globalThis.fetch = async (url, init) => {
+    called = true;
+    assert.match(String(url), /custom_modules\/resolve$/);
+    assert.equal(init.method, 'POST');
+    assert.deepEqual(JSON.parse(init.body), { source: 'https://huggingface.co/example/block', revision: 'main' });
+    return new Response(JSON.stringify({ source: valid }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  assert.deepEqual(
+    await sourceResolutionModule.resolveExtensionSource(
+      'https://huggingface.co/example/block',
+      'main',
+      controller.signal,
+    ),
+    valid,
+  );
+  assert.ok(called);
+  controller.abort();
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(init.signal.aborted, true);
+    throw new DOMException('Aborted', 'AbortError');
+  };
+  await assert.rejects(sourceResolutionModule.resolveExtensionSource('example/block', 'main', controller.signal));
 });

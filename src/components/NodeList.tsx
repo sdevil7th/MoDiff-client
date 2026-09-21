@@ -33,8 +33,8 @@ import {
 import { cx } from '../utils/classNames';
 import {
   ModiffButton,
-  ModiffCheckbox,
   ModiffDialog,
+  ModiffCheckbox,
   ModiffFieldShell,
   ModiffInput,
   ModiffPopover,
@@ -98,7 +98,7 @@ import {
   modularDiffusersCatalogEntryHasDescendants,
 } from '../studio/modularDiffusersBlockInsertion';
 
-const CustomExtensionsPanel = lazy(() => import('./CustomExtensionsPanel'));
+const CustomExtensionsDialog = lazy(() => import('./CustomExtensionsDialog'));
 const OperationCatalogPanel = lazy(() => import('./OperationCatalogPanel'));
 
 function NodeList() {
@@ -509,19 +509,11 @@ function NodeList() {
           <ModiffButton onClick={() => setExtensionsOpen(true)}>Custom nodes</ModiffButton>
         </div>
       ) : null}
-      <ModiffDialog
-        open={extensionsOpen}
-        onClose={() => setExtensionsOpen(false)}
-        title="Custom nodes"
-        panelClassName="max-w-2xl"
-        testId="custom-extensions-dialog"
-      >
-        {extensionsOpen ? (
-          <Suspense fallback={null}>
-            <CustomExtensionsPanel />
-          </Suspense>
-        ) : null}
-      </ModiffDialog>
+      {extensionsOpen ? (
+        <Suspense fallback={null}>
+          <CustomExtensionsDialog onClose={() => setExtensionsOpen(false)} />
+        </Suspense>
+      ) : null}
       <p className="px-3 pb-2 text-xs text-modiff-subtle-text">
         Nodes, task Blocks and Saved Blocks share this library. Choose a pipeline to add nodes with its declared inputs.
       </p>

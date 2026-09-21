@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -17,6 +17,8 @@ import { createWorkflowDraft } from '../workflow/workflowDraft';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
 import WorkflowEntryActions from './WorkflowEntryActions';
 import type { OperationStarter } from '../workflow/operationAuthoring';
+
+const CustomExtensionsDialog = lazy(() => import('./CustomExtensionsDialog'));
 
 type Preview = {
   starter: OperationStarter;
@@ -50,6 +52,7 @@ export default function DeveloperWorkflowLauncher() {
       }),
     [choices],
   );
+  const [customSource, setCustomSource] = useState<'local' | 'hub' | null>(null);
   const [task, setTask] = useState('');
   const [choiceId, setChoiceId] = useState('');
   const [query, setQuery] = useState('');
@@ -137,6 +140,13 @@ export default function DeveloperWorkflowLauncher() {
     }
   }
 
+  if (customSource)
+    return (
+      <Suspense fallback={null}>
+        <CustomExtensionsDialog initialKind={customSource} onClose={() => setCustomSource(null)} />
+      </Suspense>
+    );
+
   return (
     <ModiffDialog
       open
@@ -151,6 +161,14 @@ export default function DeveloperWorkflowLauncher() {
       </p>
       <div className="mb-4">
         <WorkflowEntryActions templates />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <ModiffButton disabled={busy} onClick={() => setCustomSource('hub')}>
+            Add from Hugging Face
+          </ModiffButton>
+          <ModiffButton disabled={busy} onClick={() => setCustomSource('local')}>
+            Add local source
+          </ModiffButton>
+        </div>
       </div>
       {!task ? (
         <>

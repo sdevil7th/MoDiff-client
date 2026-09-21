@@ -357,7 +357,7 @@ separately in the [implementation plan](docs/creator-developer-workspaces-plan.m
 
 ## Custom nodes
 
-Developer exposes **Nodes → Custom nodes** (also in the Models environment panel). Stage a local Python folder, pinned Git source or pinned Hub Modular block, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Creator and Developer. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Auto accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use requires Custom memory. Staging/inspection never imports submitted Python or installs dependencies.
+Developer’s **Workflows** dialog offers **Add from Hugging Face** and **Add local source**; **Nodes → Custom nodes** and the Models environment panel open the same review flow. Resolve a Hub URL or repository ID to an exact commit, stage a local Python folder or pinned remote source, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Creator and Developer. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Automatic memory accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use requires Custom memory. Staging/inspection never imports submitted Python or installs dependencies.
 
 ## Interface Map
 
