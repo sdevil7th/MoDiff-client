@@ -1,5 +1,5 @@
-import type { StudioMode, StudioOutput } from './types';
-import { STUDIO_MODE_DESCRIPTIONS } from './modelProfiles';
+import type { StudioMode, StudioModelType, StudioOutput } from './types';
+import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS } from './modelProfiles';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
 type InputField = {
@@ -296,16 +296,32 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
   const tasks = new Set(receipt.graphTasks?.map((item) => item.task));
   const task = [...tasks][0];
   if (tasks.size === 1 && task && hasOwn(STUDIO_MODE_DESCRIPTIONS, task)) next.mode = task as StudioMode;
+  const model = outputModelKey(next);
+  if (hasOwn(STUDIO_MODEL_LABELS, model)) {
+    next.modelType = model as StudioModelType;
+    next.modelLabel = STUDIO_MODEL_LABELS[next.modelType];
+  } else next.modelLabel = model === 'uncaptured-model' ? 'Model not uniquely captured' : model;
   for (const key of ['prompt', 'negativePrompt', 'repo'] as const) {
     if (typeof receipt.summary[key] === 'string') next[key] = receipt.summary[key];
     else if (resolvedInputUnavailable(receipt, key)) next[key] = '';
   }
   for (const key of ['seed', 'width', 'height', 'steps', 'guidanceScale'] as const) {
-    if (typeof receipt.summary[key] === 'number') next[key] = receipt.summary[key];
+    const value = outputNumericInputValue(next, key);
+    if (value !== undefined) next[key] = value;
   }
   if (next.provenance)
     next.provenance = { ...next.provenance, promptSettingsHash: undefined, exactTemplateCompatible: false };
   return next;
+}
+
+/** A custom or ambiguous captured model must not inherit the form's filter. */
+export function outputModelKey(output: StudioOutput): string {
+  const receipt = output.resolvedExecutionInputs;
+  if (!receipt) return output.modelType;
+  const model = receipt.summary.modelType;
+  return !resolvedInputUnavailable(receipt, 'modelType') && typeof model === 'string' && model.trim()
+    ? model
+    : 'uncaptured-model';
 }
 
 export function resolvedInputUnavailable(receipt: ResolvedExecutionInputs, key: string): boolean {
@@ -331,8 +347,15 @@ export function outputNumericInputValue(
 ): number | undefined {
   const receipt = output.resolvedExecutionInputs;
   if (receipt) {
-    const value = receipt.summary[key];
-    return !resolvedInputUnavailable(receipt, key) && typeof value === 'number' && Number.isFinite(value)
+    const raw = receipt.summary[key];
+    // Native controls may capture decimal strings. Normalize only presentation;
+    // retain the exact receipt and its ambiguity checks, never form fallbacks.
+    const value =
+      typeof raw === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(raw.trim()) ? Number(raw) : raw;
+    return !resolvedInputUnavailable(receipt, key) &&
+      typeof value === 'number' &&
+      Number.isFinite(value) &&
+      Math.abs(value) <= Number.MAX_SAFE_INTEGER
       ? value
       : undefined;
   }

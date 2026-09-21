@@ -28,7 +28,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // Preserve generic operation relationships through Block projection, nested
 // adoption and shared control writes. Startup measures 605.6 KiB; bound this
 // correctness fix at 606 KiB. Individual chunks and deferred limits stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 606 * 1024;
+// W5 captured model identities and decimal-string history display add 200 bytes
+// compressed (620678 measured). Allow 256 bytes; individual chunk caps stay fixed.
+const MAX_STARTUP_GZIP_BYTES = 606 * 1024 + 256;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -74,7 +76,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // W5 adds lazy owning-Block model/task adaptation and loader selection. The
 // deferred graph measures 225.3 KiB (+1.9 KiB); bound the feature at 226 KiB.
 // Startup (605.7 KiB) and individual chunk ceilings stay unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 226 * 1024;
+// Receipt-owned Gallery filters add 139 bytes (231442 measured). The prior cap
+// had 121 bytes of headroom; allow a further 128 bytes, with no chunk-cap change.
+const MAX_DEFERRED_GZIP_BYTES = 226 * 1024 + 128;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

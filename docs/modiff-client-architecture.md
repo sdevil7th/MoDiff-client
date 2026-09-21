@@ -1244,3 +1244,11 @@ loader and model identity. A unique supported task updates the output label whil
 leaving its saved form untouched. Legacy receipts remain readable; incomplete or
 ambiguous graph recognition does not invent a task. This metadata grants no
 execution or resource authority and adds no frontend model-family dispatch.
+
+History model labels and Gallery filters also use the validated captured model
+identity. Registered identities reuse existing display labels; custom pipeline
+identities remain distinct, and missing or ambiguous evidence is explicitly
+uncaptured. Legacy outputs without receipts keep their historical labels. Finite,
+safe decimal strings from native controls can be displayed as numbers without
+rewriting the receipt or saved form. This presentation conversion never merges
+conflicting captures or fills missing values from form defaults.

@@ -26926,7 +26926,9 @@ for (const workspace of ['auto', 'expert'] as const) {
       attemptIndex: 0,
       createdAt: 1,
       mode: 'text_to_image',
-      formSnapshot: { mode: 'text_to_image' },
+      modelType: 'ZImageModularPipeline',
+      modelLabel: 'Z-Image Turbo',
+      formSnapshot: { mode: 'text_to_image', modelType: 'ZImageModularPipeline', steps: 9, guidanceScale: 1 },
       resolvedExecutionInputs: {
         schemaVersion: 1,
         source: 'backend-execution',
@@ -26938,11 +26940,23 @@ for (const workspace of ['auto', 'expert'] as const) {
             nodeId: 'loader',
             module: 'modules.ModularDiffusers',
             action: 'ModelsLoader',
-            fields: { model_type: { value: 'StableDiffusionXLModularPipeline', source: 'literal' } },
+            fields: {
+              model_type: { value: 'StableDiffusionXLModularPipeline', source: 'literal' },
+            },
+            omittedFields: {},
+          },
+          {
+            nodeId: 'denoise',
+            module: 'modules.ModularDiffusers',
+            action: 'Denoise',
+            fields: {
+              num_inference_steps: { value: '32', source: 'literal' },
+              guidance_scale: { value: '6.5', source: 'literal' },
+            },
             omittedFields: {},
           },
         ],
-        summary: { modelType: 'StableDiffusionXLModularPipeline' },
+        summary: { modelType: 'StableDiffusionXLModularPipeline', steps: '32', guidanceScale: '6.5' },
         ambiguousFields: [],
         unavailableFields: [],
         uncapturedNodeIds: [],
@@ -26950,11 +26964,16 @@ for (const workspace of ['auto', 'expert'] as const) {
         graphTasks: [{ loaderId: 'loader', pipelineClass: 'StableDiffusionXLModularPipeline', task: 'image_to_image' }],
       },
     };
+    const custom = structuredClone(output);
+    custom.id = 'custom-history';
+    custom.resolvedExecutionInputs.nodes[0]!.fields.model_type!.value = 'CustomModularPipeline';
+    custom.resolvedExecutionInputs.summary.modelType = 'CustomModularPipeline';
+    custom.resolvedExecutionInputs.graphTasks[0]!.pipelineClass = 'CustomModularPipeline';
     await page.route('**/studio_outputs**', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ error: false, outputs: [output], revision: 1 }),
+        body: JSON.stringify({ error: false, outputs: [output, custom], revision: 1 }),
       }),
     );
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
@@ -26964,14 +26983,27 @@ for (const workspace of ['auto', 'expert'] as const) {
       await setStudioViewMode(page, workspace);
       await page.getByTestId('topbar-gallery').click();
       await expect(page.getByTestId('gallery-output-0')).toBeVisible();
+      await expect(page.getByTestId('gallery-filter-ZImageModularPipeline')).toHaveCount(0);
+      await page.getByTestId('gallery-filter-CustomModularPipeline').click();
       await page.getByTestId('gallery-view-inspect').click();
       const inspector = page.getByTestId('gallery-inspect-view');
+      await expect(inspector.locator('h2')).toContainText('CustomModularPipeline');
+      const modelFilter = page.getByTestId('gallery-filter-StableDiffusionXLModularPipeline');
+      const modelLabel = await modelFilter.textContent();
+      await modelFilter.click();
       const metadata = JSON.parse((await inspector.locator('pre').textContent())!);
       await expect(inspector.locator('h2')).toContainText('Image to image');
+      await expect(inspector.locator('h2')).toContainText(modelLabel!.trim());
+      await expect(inspector.locator('h2')).not.toContainText('Z-Image');
+      expect(metadata.steps).toBe(32);
+      expect(metadata.guidanceScale).toBe(6.5);
+      expect(metadata.resolvedExecutionInputs.summary.steps).toBe('32');
       expect(metadata.resolvedExecutionInputs.graphTasks).toEqual(output.resolvedExecutionInputs.graphTasks);
       const stored = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0]);
       expect(stored.mode).toBe('image_to_image');
       expect(stored.formSnapshot.mode).toBe('text_to_image');
+      expect(stored.formSnapshot.modelType).toBe('ZImageModularPipeline');
+      expect(stored.formSnapshot.steps).toBe(9);
       if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
     }
     await page.getByTestId('gallery-inspect-view').locator('h2').scrollIntoViewIfNeeded();
