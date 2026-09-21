@@ -13,6 +13,8 @@ import {
 } from 'react';
 import {
   Circle,
+  CircleCheck,
+  Info,
   CircleHelp,
   Clock3,
   Copy,
@@ -163,6 +165,16 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     : node.data.uiState?.validationMessage || node.data.uiState?.errorMessage;
   const recentChangeLabel = node.data.uiState?.recentChangeLabel;
   const isError = validationSeverity === 'error';
+  const isStatus = validationSeverity === 'success' || validationSeverity === 'info';
+  const statusHeading = isError ? 'Node error' : isStatus ? 'Node status' : 'Node warning';
+  const StatusIcon = validationSeverity === 'success' ? CircleCheck : isStatus ? Info : TriangleAlert;
+  const statusColor = isError
+    ? 'text-modiff-red'
+    : validationSeverity === 'success'
+      ? 'text-modiff-green'
+      : isStatus
+        ? 'text-modiff-subtle-text'
+        : 'text-hf-orange';
   const isCollapsed = Boolean(node.data.uiState?.collapsed || node.data.minimized);
   const isDisabledForRun = Boolean(node.data.uiState?.disabled);
   const showDisabledForRun = isDisabledForRun && !isClusterGraphProjection;
@@ -347,18 +359,16 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             <>
               <ModiffIconButton
                 size="compact"
-                className={cx('nodrag', isError ? 'text-modiff-red' : 'text-hf-orange')}
+                className={cx('nodrag', statusColor)}
                 onClick={(event) => setIssueAnchor(anchorBeside(event.currentTarget))}
                 title={validationMessage}
-                label={isError ? 'Node error details' : 'Node warning details'}
+                label={`${statusHeading} details`}
               >
-                <TriangleAlert size={16} />
+                <StatusIcon size={16} />
               </ModiffIconButton>
               {issueAnchor && (
                 <NodePopover anchor={issueAnchor} onClose={() => setIssueAnchor(null)} className="max-w-[420px] p-3">
-                  <div className={cx('mb-1 text-sm font-bold', isError ? 'text-modiff-red' : 'text-hf-orange')}>
-                    {isError ? 'Node error' : 'Node warning'}
-                  </div>
+                  <div className={cx('mb-1 text-sm font-bold', statusColor)}>{statusHeading}</div>
                   <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm text-modiff-text">
                     {validationMessage}
                   </p>

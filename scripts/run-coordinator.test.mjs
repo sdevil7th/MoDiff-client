@@ -3785,3 +3785,22 @@ for (const responseKind of ['blocked', 'http-error', 'invalid-response']) {
     });
   }
 }
+
+for (const status of ['running', 'succeeded', 'cached']) {
+  test(`a ${status} node clears the previous attempt's error detail`, () => {
+    const flow = flowStoreModule.useFlowStore.getState();
+    flow.setNodeUiState('preview', {
+      validationSeverity: 'error',
+      validationMessage: 'Previous allocation failed',
+      errorMessage: 'Previous allocation failed',
+    });
+    websocketModule.handleWebsocketMessage(
+      { type: status === 'running' ? 'progress' : 'executed', node: 'preview', status, progress: 0 },
+      { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => undefined, setLoopTimer: () => undefined },
+    );
+    const state = flowStoreModule.useFlowStore.getState().nodes[0].data.uiState;
+    assert.equal(state.errorMessage, undefined);
+    assert.equal(state.validationSeverity, status === 'running' ? 'info' : 'success');
+    assert.notEqual(state.validationMessage, 'Previous allocation failed');
+  });
+}

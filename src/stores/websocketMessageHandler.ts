@@ -147,6 +147,7 @@ function applyNodeExecutionStatus(message: WebsocketMessage) {
   flow.setNodeUiState(targetNodeId, {
     validationSeverity: message.status === 'failed' ? 'error' : message.status === 'running' ? 'info' : 'success',
     validationMessage: statusMessage,
+    ...(message.status === 'failed' ? {} : { errorMessage: undefined }),
   });
 }
 

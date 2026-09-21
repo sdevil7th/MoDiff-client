@@ -27690,3 +27690,54 @@ test('saved workflow browsing bounds mounted rows and searches the full library'
   const panel = page.getByTestId('left-panel');
   expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
+
+test('successful node status is not presented as a warning after recovery', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(async () => {
+    const [{ useFlowStore }, { prepareWorkflowForManualInsertion }] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/studio/manualGraphInsertion.ts'),
+    ]);
+    prepareWorkflowForManualInsertion();
+    useFlowStore.getState().replaceGraph({
+      nodes: [
+        {
+          id: 'recovered-node',
+          type: 'custom',
+          position: { x: 80, y: 80 },
+          data: {
+            module: 'modules.Image',
+            action: 'Preview',
+            type: 'custom',
+            label: 'Recovered image',
+            category: 'image',
+            params: {},
+          },
+        },
+      ],
+      edges: [],
+    });
+    useFlowStore.getState().setNodeUiState('recovered-node', {
+      validationSeverity: 'success',
+      validationMessage: 'Cached result reused: node inputs are unchanged.',
+    });
+  });
+  const node = page.locator('.react-flow__node[data-id="recovered-node"]');
+  await expect(node).toBeVisible();
+  await expect(node.getByRole('button', { name: 'Node warning details', exact: true })).toHaveCount(0);
+  await node.getByRole('button', { name: 'Node status details', exact: true }).click({ timeout: 10_000 });
+  await expect(page.getByText('Cached result reused: node inputs are unchanged.', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  for (const severity of ['warning', 'error'] as const) {
+    await page.evaluate(async (value) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      useFlowStore
+        .getState()
+        .setNodeUiState('recovered-node', { validationSeverity: value, validationMessage: 'Action required' });
+    }, severity);
+    await expect(node.getByRole('button', { name: `Node ${severity} details`, exact: true })).toBeVisible();
+  }
+});
