@@ -1528,3 +1528,79 @@ test('legacy nested snapshot conversion retains each advisory loader scope', asy
     for (const hint of node.data.operationAuthoring?.sharedInputs ?? []) assert.equal(hint.loaderId, loader.nodeId);
   assert.deepEqual(wrapper, before);
 });
+
+test('integrated model operations author, parse and replace without a synthetic loader', () => {
+  const base = starter('IntegratedPipeline', 'image_upscale');
+  const entry = base.nodes[0];
+  Object.assign(entry.node, {
+    action: 'Upscale',
+    label: 'Upscale',
+    params: {
+      model_id: { type: 'string', display: 'modelselect', value: { source: 'hub', value: 'test/model' } },
+      image: { type: 'image', display: 'input', required: true },
+      output: { type: 'image', display: 'output' },
+      downscale: { type: 'float', value: 1, min: 0.1, max: 1 },
+    },
+  });
+  Object.assign(entry.operation, {
+    operationId: 'image.upscale',
+    nodeKey: 'modules.Test.Upscale',
+    nodeType: 'integrated',
+    decomposition: 'integrated',
+    workflowId: null,
+    binding: { pipelineClass: 'IntegratedPipeline', values: {} },
+    ports: Object.entries(entry.node.params).map(([name, field]) => ({
+      name,
+      semanticName: name,
+      direction: field.display === 'output' ? 'output' : 'input',
+      roles: ['value'],
+      types: [field.type],
+      required: field.required === true,
+      hidden: false,
+      semantics: {
+        kind: field.type === 'image' ? 'media' : 'value',
+        scope: null,
+        state: null,
+        owner: 'none',
+        members: [],
+      },
+    })),
+  });
+  const draft = {
+    ...base,
+    workflowId: null,
+    nodes: [entry],
+    edges: [],
+    requiredInputs: [{ operationId: 'image.upscale', field: 'image' }],
+    upstreamBlocks: [],
+  };
+  assert.deepEqual(
+    requests.parseOperationStarter({ schemaVersion: 1, ...draft }, draft.pipelineClass, draft.task, [entry.operation]),
+    draft,
+  );
+  const graph = authoring.createOperationStarter(draft, { x: 100, y: 100 });
+  assert.equal(graph.nodes.length, 1);
+  const owner = graph.nodes[0];
+  owner.data.params.downscale.value = 0.5;
+  owner.data.params.image.value = '@data/images/reference.webp';
+  assert.deepEqual(
+    authoring.operationScope(graph, owner.id).map((node) => node.id),
+    [owner.id],
+  );
+  const target = structuredClone(draft);
+  target.nodes[0].node.params.model_id.value = { source: 'hub', value: 'test/selected-model' };
+  const before = structuredClone(graph);
+  const plan = authoring.planOperationChange(graph, owner.id, target, { replaceModel: true });
+  assert.deepEqual(graph, before);
+  assert.equal(plan.graph.nodes.length, 1);
+  assert.equal(plan.graph.nodes[0].data.params.model_id.value.value, 'test/selected-model');
+  assert.equal(plan.graph.nodes[0].data.params.downscale.value, 0.5);
+  assert.equal(plan.graph.nodes[0].data.params.image.value, '@data/images/reference.webp');
+  const invalid = structuredClone(draft);
+  invalid.nodes[0].operation.nodeType = 'pipeline';
+  assert.throws(() =>
+    requests.parseOperationStarter({ schemaVersion: 1, ...invalid }, draft.pipelineClass, draft.task, [
+      entry.operation,
+    ]),
+  );
+});

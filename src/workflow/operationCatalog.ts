@@ -95,7 +95,7 @@ export function parsePipelineSupport(
         (o) => o.decomposition === 'block' || o.decomposition === 'bundle',
       )
         ? 'stages'
-        : declared.some((o) => o.decomposition === 'pipeline')
+        : declared.some((o) => o.decomposition === 'pipeline' || o.decomposition === 'integrated')
           ? 'pipeline'
           : 'none';
       if (

@@ -1,3 +1,4 @@
+import { operationOwnsModel } from '../workflow/operationContracts';
 import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { ModiffTabs, StatusLine } from '../ui';
@@ -34,7 +35,7 @@ export default function NodeInspectorSections({ node, children }: { node: Custom
             {node.data.blockInstanceV2 ||
             node.data.userBlockSnapshot ||
             node.data.userBlockId ||
-            node.data.operationAuthoring?.operation?.decomposition === 'loader' ? (
+            operationOwnsModel(node.data.operationAuthoring?.operation) ? (
               <Suspense fallback={<StatusLine>Loading model controls…</StatusLine>}>
                 <OperationOwnerControls node={node} />
               </Suspense>

@@ -1,3 +1,4 @@
+import { operationOwnsModel } from './operationContracts';
 import config from '../../app.config';
 import { requestJson } from '../utils/requestJson';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
@@ -55,7 +56,7 @@ export function parseOperationStarter(
   if (
     byId.size !== nodes.length ||
     expected.length !== nodes.length ||
-    nodes.filter((n) => n.operation.decomposition === 'loader').length !== 1
+    nodes.filter((n) => operationOwnsModel(n.operation)).length !== 1
   )
     invalid();
   const targets = new Set<string>();

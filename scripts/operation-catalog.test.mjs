@@ -193,3 +193,26 @@ test('component subclasses require runtime validation instead of speculative dis
   derived.semantics.members[0].name = 'missing_component';
   assert.equal(catalog.operationPortCompatibility(base, derived), 'incompatible');
 });
+
+test('integrated model operations keep whole-call discovery and strict v3 identity', () => {
+  const value = {
+    ...operation(),
+    operationId: 'image.upscale',
+    nodeKey: 'modules.Test.Upscale',
+    nodeType: 'integrated',
+    decomposition: 'integrated',
+    blockName: null,
+    workflowId: null,
+    binding: { pipelineClass: 'FutureModularPipeline', values: {} },
+    ports: [],
+  };
+  const declared = support();
+  declared[0].tasks[0].decomposition = 'pipeline';
+  declared[0].tasks[0].operationIds = ['image.upscale'];
+  assert.deepEqual(contracts.parseOperationContracts([value], 3), [value]);
+  assert.deepEqual(catalog.parsePipelineSupport(declared, 1, [value]), declared);
+  assert.equal(contracts.operationOwnsModel(value), true);
+  assert.equal(contracts.operationOwnsModel({ ...value, decomposition: 'pipeline' }), false);
+  assert.equal(contracts.operationOwnsModel(undefined), false);
+  assert.throws(() => contracts.parseOperationContracts([{ ...value, nodeType: 'loader' }], 3));
+});

@@ -2799,3 +2799,24 @@ for (const artifactCase of ['old-url', 'old-task', 'matching', 'canonical-matchi
     assert.deepEqual(current, before, 'rendering does not rewrite the effective graph or immutable definition');
   });
 }
+
+test('replacing an unchanged internal node preserves the complete Block instance', () => {
+  const original = instance('unchanged-node-replacement');
+  const node = original.effectiveGraph.nodes.find(({ nodeId }) => nodeId === 'generate');
+  const next = runtime.replaceBlockEffectiveGraphNodeV2(original, node.nodeId, structuredClone(node));
+  assert.deepEqual(next, original);
+});
+
+test('restoring an internal node clears structural customization while retaining public edits', () => {
+  const original = instance('restored-node-replacement', { prompt: 'my retained prompt', steps: 23 });
+  const node = original.effectiveGraph.nodes.find(({ nodeId }) => nodeId === 'generate');
+  const replacement = structuredClone(node);
+  replacement.data.action = 'GenerateReplacement';
+  const changed = runtime.replaceBlockEffectiveGraphNodeV2(original, node.nodeId, replacement);
+  assert.equal(changed.customization.state, 'structure_changed');
+  const restored = runtime.replaceBlockEffectiveGraphNodeV2(changed, node.nodeId, node);
+  assert.deepEqual(restored.effectiveGraph, original.effectiveGraph);
+  assert.deepEqual(restored.values, original.values);
+  assert.deepEqual(restored.definitionSnapshot, original.definitionSnapshot);
+  assert.equal(restored.customization.state, original.customization.state);
+});

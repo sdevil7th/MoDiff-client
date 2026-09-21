@@ -659,6 +659,16 @@ it out of the static startup module graph. Unlike Studio model profiles, pipelin
 a frontend family union. Older backends without this catalog produce an empty
 list; failed discovery clears these declarations instead of reusing stale data.
 
+Version 3 also accepts `integrated` model operations: one existing action owns
+and executes the model. Shared `operationOwnsModel` handling selects that node
+for starter validation, model changes, inspection and Block ownership. The
+browser does not split it into artificial loading/compute nodes or identify its
+model family. Backend support describes it as a complete pipeline call; its
+ordinary node schema retains the exact artifact selector and required media.
+Identical internal-node replacements preserve the Block instance; restoring the
+definition node recomputes customization from the remaining graph, interface and
+public value edits. Neither operation changes the saved definition.
+
 Each port retains its pipeline scope, original semantic name, direction, declared
 types, requiredness, visibility and value/component/pipeline roles. A conditioning
 bundle can have both value and component roles on one socket. Whole-pipeline

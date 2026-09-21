@@ -32,6 +32,7 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
             ("FluxKontextModularPipeline", "edit_image"),
             ("AnimaModularPipeline", "text_to_image"),
             ("StableAudioPipeline", "text_to_audio"),
+            ("SpandrelImageUpscaleV1", "image_upscale"),
             ("StableDiffusionXLModularPipeline", "text_to_image"),
             ("StableDiffusionXLModularPipeline", "image_to_image"),
             ("StableDiffusionXLModularPipeline", "inpaint"),
@@ -39,7 +40,8 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
         )
         if "--all" in sys.argv:
             selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
-                                 and c["nodeKey"].startswith("modules.ModularDiffusers.")})
+                                 and (c["nodeKey"].startswith("modules.ModularDiffusers.")
+                                      or c["decomposition"] == "integrated")})
         for pipeline, task in selections:
             result = resolve_operation_starter(MODULE_MAP, contracts, {"pipelineClass": pipeline, "task": task})
             result["nodes"] = [

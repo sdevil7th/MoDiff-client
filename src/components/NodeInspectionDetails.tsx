@@ -140,7 +140,11 @@ export default function NodeInspectionDetails({
           </p>
           <p>
             {hint.operation.blockName ??
-              (hint.operation.decomposition === 'loader' ? 'Model loader' : 'Whole pipeline call')}
+              (hint.operation.decomposition === 'loader'
+                ? 'Model loader'
+                : hint.operation.decomposition === 'integrated'
+                  ? 'Model operation'
+                  : 'Whole pipeline call')}
           </p>
           <dl className="grid gap-2">
             {Object.entries(hint.defaults).map(([name, value]) => {

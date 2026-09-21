@@ -19,7 +19,7 @@ const starters = JSON.parse(
   ),
 );
 
-test('every published Modular starter preserves its generic graph and unrelated diagnostics during a compatible change', async (t) => {
+test('every published Modular or integrated starter preserves its generic graph and unrelated diagnostics during a compatible change', async (t) => {
   const server = await createServer({
     root,
     configFile: false,
@@ -30,6 +30,7 @@ test('every published Modular starter preserves its generic graph and unrelated 
   });
   try {
     const a = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
+    const { operationOwnsModel } = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
     const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
     const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
     const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
@@ -38,7 +39,7 @@ test('every published Modular starter preserves its generic graph and unrelated 
       const label = `${starter.pipelineClass}/${starter.task}`;
       await t.test(label, async () => {
         const graph = a.createOperationStarter(starter, { x: 80, y: 100 });
-        const loader = graph.nodes.find((n) => n.data.operationAuthoring.operation.decomposition === 'loader');
+        const loader = graph.nodes.find((n) => operationOwnsModel(n.data.operationAuthoring.operation));
         const custom = {
           id: 'custom-diagnostic',
           type: 'custom',

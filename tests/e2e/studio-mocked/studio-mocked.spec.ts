@@ -8780,7 +8780,9 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
             .map((s) => ({
               task: s.task,
               execution: 'declared',
-              decomposition: s.nodes.some((n) => n.operation.decomposition === 'pipeline') ? 'pipeline' : 'stages',
+              decomposition: s.nodes.some((n) => ['pipeline', 'integrated'].includes(n.operation.decomposition))
+                ? 'pipeline'
+                : 'stages',
               operationIds: s.nodes.map((n) => n.operation.operationId),
               executionProfileIds:
                 exactModel && s.pipelineClass === 'QwenImageModularPipeline' ? ['qwen-image:modular'] : [],
@@ -25469,6 +25471,7 @@ for (const [task, pipeline, count, output] of [
   ['image_to_image', 'FluxModularPipeline', 6, 'modules.Image'],
   ['edit_image', 'FluxKontextModularPipeline', 6, 'modules.Image'],
   ['text_to_audio', 'StableAudioPipeline', 3, 'modules.Audio'],
+  ['image_upscale', 'SpandrelImageUpscaleV1', 2, 'modules.Image'],
 ] as const) {
   test(`Developer Workflows creates and restores ordinary ${task} nodes with a connected output`, async ({ page }) => {
     await openDeveloperWorkflows(page);

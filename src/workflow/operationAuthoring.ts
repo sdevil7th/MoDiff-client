@@ -1,3 +1,4 @@
+import { operationOwnsModel } from './operationContracts';
 import type { Edge } from '@xyflow/react';
 import { nanoid } from 'nanoid';
 import type { CustomNodeType } from '../stores/useFlowStore';
@@ -111,7 +112,7 @@ export function createOperationStarter(starter: OperationStarter, position: { x:
 }
 
 function attachSharedInputs(nodes: CustomNodeType[], starter: OperationStarter, ids: Map<string, string>) {
-  const loader = starter.nodes.find((n) => n.operation.decomposition === 'loader')!;
+  const loader = starter.nodes.find((n) => operationOwnsModel(n.operation))!;
   for (const group of starter.sharedInputs)
     for (const member of group.members) {
       const node = nodes.find((n) => n.id === ids.get(member.operationId))!;
@@ -141,7 +142,7 @@ export function operationScope(graph: OperationGraph, loaderId: string): CustomN
   if (
     !root ||
     !hint ||
-    hint.operation.decomposition !== 'loader' ||
+    !operationOwnsModel(hint.operation) ||
     root.parentId ||
     root.data.blockInstanceV2 ||
     root.data.blockProjectionOwnerId
@@ -158,7 +159,7 @@ export function operationScope(graph: OperationGraph, loaderId: string): CustomN
           !n.data.blockProjectionOwnerId &&
           h.operation.pipelineClass === hint.operation.pipelineClass &&
           h.operation.task === hint.operation.task &&
-          (h.operation.decomposition !== 'loader' || n.id === loaderId)
+          (!operationOwnsModel(h.operation) || n.id === loaderId)
         );
       })
       .map((n) => [n.id, n]),
@@ -189,7 +190,7 @@ export function operationScope(graph: OperationGraph, loaderId: string): CustomN
     if (!ids.has(edge.target) || ids.has(edge.source)) continue;
     const source = graph.nodes.find((n) => n.id === edge.source);
     const h = source && operationAuthoring(source);
-    if (h?.operation.decomposition === 'loader')
+    if (operationOwnsModel(h?.operation))
       throw new Error(
         'A stage uses another loader too. Separate the shared component connection before changing this graph.',
       );
@@ -277,7 +278,7 @@ export function planOperationChange(
         !Object.prototype.hasOwnProperty.call(next.operation.binding?.values ?? {}, name) &&
         !(
           (modelChanged || options.replaceModel) &&
-          previous.operation.decomposition === 'loader' &&
+          operationOwnsModel(previous.operation) &&
           [
             'repo_id',
             'model_id',

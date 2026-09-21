@@ -1,3 +1,4 @@
+import { operationOwnsModel } from '../workflow/operationContracts';
 import { useEffect, useRef, useState } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -54,8 +55,7 @@ export default function OperationGraphControls({
   const [inspect, setInspect] = useState(false);
   const pending = useRef<AbortController | null>(null);
   const loaders = nodes.filter(
-    (n) =>
-      !n.parentId && !n.data.blockProjectionOwnerId && n.data.operationAuthoring?.operation?.decomposition === 'loader',
+    (n) => !n.parentId && !n.data.blockProjectionOwnerId && operationOwnsModel(n.data.operationAuthoring?.operation),
   );
   const selected = nodes.find((n) => n.selected && n.data.operationAuthoring);
   const selectedHint = selected ? operationAuthoring(selected) : null;

@@ -71,6 +71,12 @@ The view switch controls presentation; Resources controls planning. The Run menu
 Creator and Developer share one **Nodes** library. It starts with generic nodes,
 common task/media operations, graph-qualified task Blocks, enabled custom nodes
 and Saved Blocks. Generic nodes remain available before selecting a pipeline.
+**Image upscale** in the Developer Workflows chooser creates an ordinary
+**Upscale** model node and a connected Preview. Connect a source image to run it;
+tile size, overlap and output scaling remain editable. Loading and upscaling
+stay inside the same existing action. The selected reviewed model is an initial
+choice, and the graph can be edited and saved as a reusable Block.
+
 Select a pipeline and task in **Diffusers operations**, then click **Load models**,
 **Encode prompt**, **Denoise**, **Decode latents**, or another declared operation
 to add one ordinary node with that pipeline's inputs. Whole-pipeline routes show

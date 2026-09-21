@@ -1027,6 +1027,8 @@ export function replaceBlockEffectiveGraphNodeV2(
     ...(preservesProtectedIdentity ? { ...candidate, nodeId: replacedNodeId } : candidate),
     ...(replaced.containerInterface ? { containerInterface: cloneJson(replaced.containerInterface) } : {}),
   };
+  // An identical replacement preserves previews, authority and customization.
+  if (canonicalBlockStringifyV2(replacement) === canonicalBlockStringifyV2(replaced)) return instance;
   const replacementParams = sourceParams(replacement);
   const requireReplacementField = (fieldId: string, valueType: unknown, direction: 'input' | 'output' | 'control') => {
     const param = replacementParams[fieldId];
@@ -1160,7 +1162,7 @@ export function replaceBlockEffectiveGraphNodeV2(
       : state,
   );
 
-  return normalizeBlockInstanceV2({
+  const next: BlockInstanceV2 = {
     ...instance,
     effectiveGraph,
     effectiveInterface: {
@@ -1189,7 +1191,10 @@ export function replaceBlockEffectiveGraphNodeV2(
       effectiveGraphHash: effectiveGraph.graphHash,
       state: 'structure_changed',
     },
-  });
+  };
+  // Restoring the definition node can remove the last structural edit.
+  next.customization.state = parameterCustomizationState(next);
+  return normalizeBlockInstanceV2(next);
 }
 
 function blockNodeDeletionReferencesV2(instance: BlockInstanceV2, nodeId: string, removed: ReadonlySet<string>) {

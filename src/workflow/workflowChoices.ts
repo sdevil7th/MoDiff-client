@@ -132,6 +132,7 @@ export function workflowChoices(
 
 const TASK_LABELS: Record<string, string> = {
   text_to_image: 'Text to image',
+  image_upscale: 'Image upscale',
   image_to_image: 'Image to image',
   edit_image: 'Image edit',
   inpaint: 'Inpaint',

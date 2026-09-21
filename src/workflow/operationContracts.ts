@@ -24,12 +24,18 @@ export type OperationContract = {
   nodeKey: string;
   nodeType: string;
   blockName: string | null;
-  decomposition: 'block' | 'bundle' | 'loader' | 'pipeline';
+  decomposition: 'block' | 'bundle' | 'loader' | 'pipeline' | 'integrated';
   support: 'declared';
   ports: OperationPort[];
   workflowId?: string | null;
   binding?: { pipelineClass: string; values: Record<string, string> };
 };
+
+export function operationOwnsModel(
+  operation: OperationContract | null | undefined,
+): operation is OperationContract & { decomposition: 'loader' | 'integrated' } {
+  return operation?.decomposition === 'loader' || operation?.decomposition === 'integrated';
+}
 
 const RESERVED = new Set(['__proto__', 'prototype', 'constructor']);
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
@@ -187,7 +193,11 @@ export function parseOperationContracts(value: unknown, schemaVersion: unknown):
     const pipelineClass = identifier(item.pipelineClass);
     const nodeType = identifier(item.nodeType);
     const task = !v2 || item.task === null ? null : identifier(item.task);
-    const wholePipeline = v2 && (item.decomposition === 'loader' || item.decomposition === 'pipeline');
+    const wholePipeline =
+      v2 &&
+      (item.decomposition === 'loader' ||
+        item.decomposition === 'pipeline' ||
+        (v3 && item.decomposition === 'integrated'));
     if (
       typeof item.operationId !== 'string' ||
       item.operationId.split('.').length !== 2 ||

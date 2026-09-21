@@ -1,3 +1,4 @@
+import { operationOwnsModel } from './operationContracts';
 import type { Edge } from '@xyflow/react';
 import type { FlowGraphNode } from '../stores/flowGraphExport';
 import { deepEqual } from '../utils/deepEqual';
@@ -43,7 +44,7 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
     (root.parentId && !owner) ||
     root.data.blockProjectionOwnerId !== owner ||
     root.data.blockInstanceV2 ||
-    rootOperation?.decomposition !== 'loader' ||
+    !operationOwnsModel(rootOperation) ||
     !rootOperation.binding ||
     !rootOperation.binding.values ||
     typeof rootOperation.binding.values !== 'object' ||
@@ -64,7 +65,7 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
       op.nodeKey === `${n.data.module}.${n.data.action}` &&
       op.pipelineClass === rootOperation.pipelineClass &&
       op.task === rootOperation.task &&
-      (op.decomposition !== 'loader' || n.id === root.id)
+      (!operationOwnsModel(op) || n.id === root.id)
     );
   });
   const ids = new Set(candidates.map((n) => n.id)),
@@ -85,7 +86,7 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
       (edge) =>
         reached.has(edge.target) &&
         edge.source !== root.id &&
-        nodes.find((n) => n.id === edge.source)?.data.operationAuthoring?.operation?.decomposition === 'loader',
+        operationOwnsModel(nodes.find((n) => n.id === edge.source)?.data.operationAuthoring?.operation),
     )
   )
     return null;

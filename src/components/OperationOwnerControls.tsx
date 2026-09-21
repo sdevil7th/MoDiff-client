@@ -1,3 +1,4 @@
+import { operationOwnsModel } from '../workflow/operationContracts';
 import { lazy, Suspense, useState } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -27,7 +28,7 @@ export default function OperationOwnerControls({ node }: { node: CustomNodeType 
     !hint ||
     !hint.operation.pipelineClass ||
     !hint.operation.task ||
-    hint.operation.decomposition !== 'loader' ||
+    !operationOwnsModel(hint.operation) ||
     (node.parentId && !node.data.blockProjectionOwnerId)
   )
     return null;
@@ -51,8 +52,8 @@ export function BlockOwnerChoices({
   ownerBlockId?: string;
   inline?: boolean;
 }) {
-  const loaders = blockOperationGraphV2(node.data.blockInstanceV2!).nodes.filter(
-    (candidate) => operationAuthoring(candidate)?.operation.decomposition === 'loader',
+  const loaders = blockOperationGraphV2(node.data.blockInstanceV2!).nodes.filter((candidate) =>
+    operationOwnsModel(operationAuthoring(candidate)?.operation),
   );
   const [choice, setChoice] = useState('');
   const loader = loaders.find((candidate) => candidate.data.blockProjectionNodeId === choice) ?? loaders[0];
@@ -127,7 +128,7 @@ function OwnerChoices({
   return (
     <ModiffDisclosure label="Change model / task" collapsible={!inline} panelClassName="grid gap-2 py-2">
       <p className="text-xs text-modiff-subtle-text">
-        Review changes to this loader and its connected nodes. Model files and resources are checked when you run.
+        Review changes to this node and its connected nodes. Model files and resources are checked when you run.
       </p>
       <ModiffFieldShell label="Pipeline">
         <ModiffSelect
