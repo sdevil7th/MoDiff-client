@@ -1034,6 +1034,14 @@ being filled from the current filesystem or a later backend response.
 
 Fields must preserve `data-key`, `modiff-field`, `nodrag`, `nowheel`, hidden, disabled, and backend-action contracts. Backend-provided styles are sanitized to safe layout properties by `src/theme/modiffStyle.ts`; visual styling from dynamic payloads is not trusted.
 
+The backend isolates reviewed nonqueued generic Modular loader/schema callbacks
+from live model owners. Their existing `/fields/action` and WebSocket messages
+are unchanged; no client model-family dispatch or extra execution path is needed.
+Custom and model-changing callbacks still require the backend's model lease.
+Both paths retain workflow/canvas/form ownership checks. Aborting a stale browser
+request frees its HTTP connection but does not cancel its Python thread; the
+backend drains that work before releasing its relevant lease or changing code.
+
 Managed dynamic fields may opt into the versioned `fieldOptions.studioBinding`
 contract. Version 1 is intentionally small: an `identity` binding reads only
 the allowlisted `maxSequenceLength` form field, while
