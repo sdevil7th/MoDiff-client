@@ -584,7 +584,7 @@ test('outside LoRA connects to an undeclared internal input and survives collaps
     ),
   );
   const isolated = state.exportGraph('scope-test', current.instanceId);
-  assert.equal(isolated.nodes[outside.id], undefined, 'Run Block must exclude outside LoRA');
+  assert.ok(isolated.nodes[outside.id], 'Run Block must honor its connected outside LoRA');
   const whole = state.exportGraph('scope-test');
   assert.ok(whole.nodes[outside.id], 'whole graph must include outside LoRA');
   const reusable = persistence.reusableBlockDefinitionFromInstanceV2(
@@ -611,7 +611,7 @@ test('outside LoRA connects to an undeclared internal input and survives collaps
   });
   state = flowStore.useFlowStore.getState();
   assert.ok(state.edges.some((edge) => edge.source === moved));
-  assert.equal(state.exportGraph('scope-test', current.instanceId).nodes[moved], undefined);
+  assert.ok(state.exportGraph('scope-test', current.instanceId).nodes[moved]);
   state.removeEdges(state.edges.find((edge) => edge.source === outside.id).id);
   assert.equal(
     flowStore.useFlowStore.getState().edges.some((edge) => edge.source === outside.id),
@@ -2681,4 +2681,78 @@ test('graph identity checks reject duplicates and projection ids are delimiter-c
     /duplicate or empty edge id/u,
   );
   assert.notEqual(runtime.blockProjectionNodeIdV2('a:b', 'c'), runtime.blockProjectionNodeIdV2('a', 'b:c'));
+});
+
+test('selected Block execution retains transitive outside inputs and excludes downstream or unrelated drafts', () => {
+  for (const expanded of [false, true]) {
+    const root = runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(instance(), { expanded }));
+    const projection = runtime.materializeBlockProjectionV2(root);
+    const source = ordinaryNode('source', { text: { type: 'string', display: 'output' } });
+    const convert = ordinaryNode('convert', {
+      input: { type: 'string', display: 'input' },
+      text: { type: 'string', display: 'output' },
+    });
+    const sink = ordinaryNode('sink', { images: { type: 'list[image]', display: 'input' } });
+    const broken = runtime.createBlockRootNodeV2(instance('unrelated-broken'));
+    broken.data.blockInstanceV2.effectiveGraph.graphHash = 'invalid';
+    const nodes = [...projection.nodes, source, convert, sink, broken];
+    const edges = [
+      ...projection.edges,
+      { id: 'convert', source: source.id, sourceHandle: 'text', target: convert.id, targetHandle: 'input' },
+      { id: 'prompt', source: convert.id, sourceHandle: 'text', target: root.id, targetHandle: 'prompt' },
+      { id: 'outside-preview', source: root.id, sourceHandle: 'images', target: sink.id, targetHandle: 'images' },
+    ];
+    const before = structuredClone({ nodes, edges });
+    const execution = runtime.expandBlockGraphV2ForExecution(nodes, edges, root.id);
+    assert.ok(execution.nodes.some(({ id }) => id === source.id));
+    assert.ok(execution.nodes.some(({ id }) => id === convert.id));
+    assert.ok(!execution.nodes.some(({ id }) => id === sink.id || id.includes('unrelated-broken')));
+    assert.ok(
+      execution.edges.some(
+        (edge) =>
+          edge.source === convert.id &&
+          edge.target === runtime.blockProjectionNodeIdV2(root.id, 'generate') &&
+          edge.targetHandle === 'prompt',
+      ),
+    );
+    assert.deepEqual({ nodes, edges }, before);
+  }
+});
+
+test('selected nested Block retains sibling component dependencies and mirrored external inputs', () => {
+  const current = nestedConnectionInstance(true);
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+  const target = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  const source = ordinaryNode('outside-prompt', { text: { type: 'string', display: 'output' } });
+  const nodes = [...projection.nodes, source];
+  const edges = [
+    ...projection.edges,
+    { id: 'outside', source: source.id, sourceHandle: 'text', target: current.instanceId, targetHandle: 'prompt' },
+  ];
+  const before = structuredClone({ nodes, edges });
+  const execution = runtime.expandBlockGraphV2ForExecution(nodes, edges, target.id);
+  assert.ok(execution.nodes.some((node) => node.data.blockProjectionNodeId === 'load'));
+  assert.ok(!execution.nodes.some((node) => node.data.blockProjectionNodeId === 'alternate-load'));
+  assert.ok(execution.nodes.some((node) => node.id === source.id));
+  assert.equal(execution.edges.filter((edge) => edge.source === source.id).length, 2);
+  flowStore.useFlowStore.setState({ nodes, edges });
+  const exported = flowStore.useFlowStore.getState().exportGraph('nested-dependencies', target.id);
+  assert.ok(exported.nodes[source.id]);
+  assert.ok(exported.nodes[runtime.blockProjectionNodeIdV2(current.instanceId, 'load')]);
+  assert.deepEqual({ nodes, edges }, before);
+});
+
+test('selected Block retains another Block supplying its input through the existing exporter', () => {
+  const first = runtime.createBlockRootNodeV2(instance('upstream'));
+  const second = runtime.createBlockRootNodeV2(instance('selected'));
+  const nodes = [first, second];
+  const edges = [
+    { id: 'crossing', source: first.id, sourceHandle: 'images', target: second.id, targetHandle: 'prompt' },
+  ];
+  // Execution closure preserves supplied edges; connector validation owns types.
+  flowStore.useFlowStore.setState({ nodes, edges });
+  const exported = flowStore.useFlowStore.getState().exportGraph('block-dependencies', second.id);
+  assert.ok(exported.nodes[runtime.blockProjectionNodeIdV2(first.id, 'generate')]);
+  assert.equal(exported.nodes[runtime.blockProjectionNodeIdV2(first.id, 'preview')], undefined);
+  assert.ok(exported.nodes[runtime.blockProjectionNodeIdV2(second.id, 'preview')]);
 });

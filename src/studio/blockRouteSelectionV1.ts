@@ -1,4 +1,6 @@
 import type { Edge } from '@xyflow/react';
+import type { NodeParams } from '../stores/useNodeStore';
+import { acceptsOperationValue } from '../workflow/operationFieldValue';
 
 import type { HuggingFaceNodeLibraryDefinition } from './huggingFaceNodeLibrary';
 import { REGISTERED_BLOCK_V2_ROUTES } from './registeredBlockV2Routes';
@@ -369,6 +371,7 @@ function routeForDefinition(routeSet: RegisteredBlockRouteSetV1, definitionId: s
 }
 
 export function registeredRouteSetForBlockV1(instance: BlockInstanceV2) {
+  if (instance.routeSelection?.routeSetId === 'diffusers.definition-switch:v1') return null;
   // A reviewed same-pipeline checkpoint selector is an ordinary Block value:
   // changing it must not replace the definition, graph, interface, or layout.
   // Do not layer the older cross-family route switcher on top of that control.
@@ -524,6 +527,28 @@ function carryCompatibleValues(
     if (!sourceDeclaration || !destinationDeclaration) return;
     if (declarationIsSealed(sourceDeclaration) || declarationIsSealed(destinationDeclaration)) return;
     if (!blockValueTypesAreCompatibleV2(sourceDeclaration.valueType, destinationDeclaration.valueType)) return;
+    const bindings = [destinationDeclaration.binding, ...(destinationDeclaration.mirrorBindings ?? [])];
+    if (
+      bindings.some((binding) => {
+        const field = 'fieldId' in binding ? binding.fieldId : binding.fieldOrPortId;
+        const params = destination.effectiveGraph.nodes.find((n) => n.nodeId === binding.nodeId)?.data.params;
+        const param = params && typeof params === 'object' && !Array.isArray(params) ? params[field] : null;
+        const value = current.values[valueId];
+        // Block random controls persist their seed and mode together even when
+        // the bound ordinary field declares only the scalar integer input.
+        const scalar =
+          value &&
+          typeof value === 'object' &&
+          !Array.isArray(value) &&
+          Object.keys(value).length === 2 &&
+          typeof value.isRandom === 'boolean' &&
+          'value' in value
+            ? value.value
+            : value;
+        return !param || !acceptsOperationValue(param as NodeParams, scalar);
+      })
+    )
+      return;
     values[valueId] = structuredClone(current.values[valueId]) as BlockJsonValue;
     carried = true;
   });
@@ -655,6 +680,70 @@ export function switchBlockRouteInstanceV1(
     targetKey,
   );
   return instanceFromDraft(current, freshDraft, routeSelection);
+}
+
+/** Explicit whole-composition replacement. Keep the existing draft format and
+ * execution owner; dormant custom edits never become part of the new model. */
+export function switchBlockDefinitionV2(currentValue: BlockInstanceV2, destinationValue: BlockInstanceV2) {
+  const current = normalizeBlockInstanceV2(currentValue);
+  const destination = normalizeBlockInstanceV2(destinationValue);
+  if (current.previewStates.some(({ status }) => status === 'running' || status === 'queued'))
+    throw new Error('Wait for this Block to finish before changing its model or task.');
+  const sourceKey = current.definitionRef.definitionId;
+  const targetKey = destination.definitionRef.definitionId;
+  if (sourceKey === targetKey) return current;
+  const drafts: Record<string, BlockRouteDraftV1> = {};
+  for (const draft of Object.values(current.routeSelection?.inactiveDrafts ?? {})) {
+    const key = draft.definitionRef.definitionId;
+    if (drafts[key])
+      throw new Error('Several retained drafts claim the same definition. Resolve them before switching.');
+    drafts[key] = { ...structuredClone(draft), routeKey: key };
+  }
+  const restored = drafts[targetKey];
+  delete drafts[targetKey];
+  drafts[sourceKey] = draftFromInstance(current, sourceKey);
+  if (Object.keys(drafts).length > 8)
+    throw new Error(
+      'Eight model/task drafts are already retained. Save this workflow before starting a separate composition.',
+    );
+  const routeSelection = {
+    schemaVersion: 1 as const,
+    routeSetId: 'diffusers.definition-switch:v1',
+    selectedRouteKey: targetKey,
+    inactiveDrafts: drafts,
+  };
+  if (restored) return instanceFromDraft(current, restored, routeSelection);
+  const portable = carryCompatibleValues(current, destination, []);
+  return instanceFromDraft(
+    current,
+    draftFromInstance(
+      {
+        ...destination,
+        values: portable.values,
+        customization: portable.carried
+          ? { ...destination.customization, state: 'parameters_changed' }
+          : destination.customization,
+        presentation: {
+          ...destination.presentation,
+          internalLayout: carryCompatibleInternalLayout(current, destination),
+        },
+      },
+      targetKey,
+    ),
+    routeSelection,
+  );
+}
+
+export function restoreBlockDefinitionDraftV2(current: BlockInstanceV2, key: string) {
+  const draft = current.routeSelection?.inactiveDrafts[key];
+  if (!draft) throw new Error('The retained model/task draft is unavailable.');
+  const destination = instanceFromDraft(current, draft, {
+    schemaVersion: 1,
+    routeSetId: 'diffusers.definition-switch:v1',
+    selectedRouteKey: key,
+    inactiveDrafts: {},
+  });
+  return switchBlockDefinitionV2(current, destination);
 }
 
 function portForEdge(instance: BlockInstanceV2, edge: Edge) {

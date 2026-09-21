@@ -204,14 +204,16 @@ export function operationPortCompatibility(
     left.kind === 'component' &&
     left.members.length &&
     right.members.length &&
-    right.members.some(
-      (r) =>
-        !left.members.some(
-          (l) => l.name === r.name && (l.type === r.type || l.type === 'opaque' || r.type === 'opaque'),
-        ),
-    )
+    right.members.some((r) => !left.members.some((l) => l.name === r.name))
   )
     return 'incompatible';
+  // Declared Python names cannot establish inheritance or the concrete object
+  // supplied at runtime. Keep same-named components wired for backend validation.
+  if (
+    left.kind === 'component' &&
+    right.members.some((r) => left.members.some((l) => l.name === r.name && l.type !== r.type))
+  )
+    return 'runtime_validation';
   return left.owner === 'same_loader' || right.owner === 'same_loader' || left.kind === 'opaque'
     ? 'runtime_validation'
     : 'compatible';

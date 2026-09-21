@@ -31,6 +31,7 @@ export function planBlockOperationChange(
   blockId: string,
   loaderId: string,
   starter: OperationStarter,
+  options: { replaceModel?: boolean } = {},
 ): OperationChangePlan {
   const root = graph.nodes.find((node) => node.id === blockId);
   const original = root?.data.blockInstanceV2;
@@ -65,7 +66,7 @@ export function planBlockOperationChange(
   if (original.effectiveGraph.nodes.some((node) => scope.has(node.nodeId) && node.modularDiffusers))
     throw new Error('Edit this Modular composition through its Block interface before changing its operation graph.');
   const inputs = blockOperationInputs(graph, root, internal, scope);
-  const plan = planOperationChange(inputs.graph, loaderId, starter);
+  const plan = planOperationChange(inputs.graph, loaderId, starter, options);
   // Canvas node replacements get new IDs. Internal implementations keep their
   // semantic roles so public ports, previews, layouts and crossing sockets survive.
   const semanticIds = new Map(Object.entries(plan.replacements).map(([oldId, newId]) => [newId, oldId]));

@@ -108,6 +108,36 @@ function graph() {
   return authoring.createOperationStarter(starter(), { x: 40, y: 60 });
 }
 
+test('literal media inputs and their fallback values survive compatible task changes', () => {
+  const graph = authoring.createOperationStarter(starter(), { x: 0, y: 0 });
+  graph.nodes[1].data.params.image.value = '@data/images/reference.webp';
+  const before = structuredClone(graph);
+  const plan = authoring.planOperationChange(graph, graph.nodes[0].id, starter('OtherPipeline'));
+  assert.equal(plan.graph.nodes[1].data.params.image.value, '@data/images/reference.webp');
+  assert.deepEqual(graph, before);
+});
+
+test('an explicitly selected replacement profile wins over same-pipeline model overrides', () => {
+  const old = starter();
+  Object.assign(old.nodes[0].node.params, {
+    repo_id: { type: 'string', value: 'test/base' },
+    revision: { type: 'string', value: 'a'.repeat(40) },
+  });
+  const graph = authoring.createOperationStarter(old, { x: 0, y: 0 });
+  graph.nodes[0].data.params.repo_id.value = 'test/edited';
+  const target = structuredClone(old);
+  target.nodes[0].node.params.repo_id.value = 'test/selected';
+  target.nodes[0].node.params.revision.value = 'b'.repeat(40);
+  const plan = authoring.planOperationChange(graph, graph.nodes[0].id, target, { replaceModel: true });
+  assert.equal(plan.graph.nodes[0].data.params.repo_id.value, 'test/selected');
+  assert.equal(plan.graph.nodes[0].data.params.revision.value, 'b'.repeat(40));
+  assert.ok(
+    plan.graph.nodes[0].data.operationAuthoring.retained.some(
+      (v) => v.field === 'repo_id' && v.value === 'test/edited',
+    ),
+  );
+});
+
 test('model preview keeps prompts, connected values, positions and custom nodes without mutating the graph', () => {
   const g = graph();
   const [loader, denoise] = g.nodes;
@@ -204,6 +234,29 @@ test('duplicate stages, shared loader ownership and nested Blocks are rejected b
   g.nodes.push({ ...structuredClone(loader), id: 'other-loader' });
   g.edges.push({ ...g.edges[0], id: 'shared', source: 'other-loader' });
   assert.throws(() => authoring.planOperationChange(g, loader.id, starter()), /another loader/);
+});
+
+test('a disconnected loader change preserves orphan nodes and an independent loader', () => {
+  const g = graph();
+  g.edges = [];
+  const loader = g.nodes[0];
+  const orphan = structuredClone(g.nodes[1]);
+  const independent = { ...structuredClone(loader), id: 'independent-loader' };
+  g.nodes.push(independent);
+  const before = structuredClone(g);
+  const plan = authoring.planOperationChange(g, loader.id, starter('OtherPipeline'));
+  assert.deepEqual(g, before);
+  assert.deepEqual(
+    plan.graph.nodes.find((n) => n.id === orphan.id),
+    orphan,
+  );
+  assert.deepEqual(
+    plan.graph.nodes.find((n) => n.id === independent.id),
+    independent,
+  );
+  assert.equal(plan.graph.edges.length, 1);
+  assert.equal(plan.graph.edges[0].source, loader.id);
+  assert.notEqual(plan.graph.edges[0].target, orphan.id);
 });
 
 test('starter parser rejects stale bindings, competing writers, cycles and absent endpoints', () => {

@@ -174,3 +174,22 @@ test('semantic advisory matching preserves directional scalar compatibility', ()
     'incompatible',
   );
 });
+
+test('component subclasses require runtime validation instead of speculative disconnection', () => {
+  const base = {
+    direction: 'output',
+    types: ['components'],
+    semantics: {
+      kind: 'component',
+      scope: 'ExamplePipeline',
+      state: null,
+      owner: 'same_loader',
+      members: [{ name: 'guider', type: 'BaseGuider' }],
+    },
+  };
+  const derived = { ...structuredClone(base), direction: 'input' };
+  derived.semantics.members[0].type = 'SpecializedGuider';
+  assert.equal(catalog.operationPortCompatibility(base, derived), 'runtime_validation');
+  derived.semantics.members[0].name = 'missing_component';
+  assert.equal(catalog.operationPortCompatibility(base, derived), 'incompatible');
+});

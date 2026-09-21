@@ -33,7 +33,10 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // Required operation-media readiness shares the contract parser with startup.
 // Measured startup 622466 bytes, deferred 229644 (combined smaller than before).
 // Bound startup at 608 KiB; retain all deferred and individual chunk limits.
-const MAX_STARTUP_GZIP_BYTES = 608 * 1024;
+// W5 exact draft switching, bounds checks and shared field validation measure
+// 623267 startup bytes (+801). The workflow chooser remains lazy. Bound this
+// addition at 609 KiB and retain the individual startup chunk ceiling.
+const MAX_STARTUP_GZIP_BYTES = 609 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -81,7 +84,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup (605.7 KiB) and individual chunk ceilings stay unchanged.
 // Receipt-owned Gallery filters add 139 bytes (231442 measured). The prior cap
 // had 121 bytes of headroom; allow a further 128 bytes, with no chunk-cap change.
-const MAX_DEFERRED_GZIP_BYTES = 226 * 1024 + 128;
+// W5 adds the lazy upstream workflow/draft chooser and exact model selection.
+// Measured deferred aggregate is 231983 bytes (+2339 from required-media W5).
+// Bound this feature at 227 KiB; retain both individual chunk ceilings.
+const MAX_DEFERRED_GZIP_BYTES = 227 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -2751,11 +2751,38 @@ export function expandBlockGraphV2ForExecution(
       : new Set(selectedInstance.effectiveGraph.nodes.map(({ nodeId }) => nodeId))
     : undefined;
   if (selectedOwnerId) {
-    nodesValue = nodesValue.filter(
-      (node) => node.id === selectedOwnerId || node.data.blockProjectionOwnerId === selectedOwnerId,
-    );
+    // A selected Block still consumes its wired inputs. Retain upstream owners
+    // before validating/expanding, while unrelated drafts stay out of the run.
+    const ownerById = new Map(nodesValue.map((node) => [node.id, node.data.blockProjectionOwnerId ?? node.id]));
+    const retainedOwners = new Set([selectedOwnerId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of edgesValue) {
+        const source = ownerById.get(edge.source);
+        const target = ownerById.get(edge.target);
+        if (source && target && retainedOwners.has(target) && !retainedOwners.has(source)) {
+          retainedOwners.add(source);
+          changed = true;
+        }
+      }
+    }
+    nodesValue = nodesValue.filter((node) => retainedOwners.has(node.data.blockProjectionOwnerId ?? node.id));
     const retained = new Set(nodesValue.map(({ id }) => id));
     edgesValue = edgesValue.filter((edge) => retained.has(edge.source) && retained.has(edge.target));
+  }
+  if (selectedInstance && selectedSemanticIds) {
+    // Nested selection can depend on siblings elsewhere in the same owner.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of selectedInstance.effectiveGraph.edges) {
+        if (selectedSemanticIds.has(edge.targetNodeId) && !selectedSemanticIds.has(edge.sourceNodeId)) {
+          selectedSemanticIds.add(edge.sourceNodeId);
+          changed = true;
+        }
+      }
+    }
   }
   if (!containsBlockV2RuntimeData(nodesValue, edgesValue))
     return { nodes: cloneJson(nodesValue), edges: cloneJson(edgesValue) };
@@ -2879,9 +2906,20 @@ export function expandBlockGraphV2ForExecution(
     const included = new Set(
       [...selectedSemanticIds].map((nodeId) => blockProjectionNodeIdV2(selectedOwnerId!, nodeId)),
     );
+    const allEdges = [...translatedEdges, ...internalEdges];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of allEdges) {
+        if (included.has(edge.target) && !included.has(edge.source)) {
+          included.add(edge.source);
+          changed = true;
+        }
+      }
+    }
     return {
-      nodes: executionNodes.filter(({ id }) => included.has(id)),
-      edges: internalEdges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
+      nodes: [...externalNodes, ...executionNodes].filter(({ id }) => included.has(id)),
+      edges: allEdges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
     };
   }
   return { nodes: [...externalNodes, ...executionNodes], edges: [...translatedEdges, ...internalEdges] };

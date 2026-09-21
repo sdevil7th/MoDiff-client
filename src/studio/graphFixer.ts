@@ -191,7 +191,7 @@ function usableValue(value: unknown) {
 }
 
 function inputIsRequired(key: string, param: NodeParams, skipParamsCheck = false) {
-  if (param.disabled || param.spawn) return false;
+  if (param.hidden || param.disabled || param.spawn) return false;
   if (usableValue(param.value ?? param.default)) return false;
   if (param.required === false) return false;
   if (param.required === true) return true;
@@ -352,7 +352,7 @@ function existingConnectionCandidates(
         issueId,
         title: `Connect ${source.data.label || source.data.action}`,
         description: `Use its ${fieldLabel(source, sourceHandle)} output for ${fieldLabel(target, targetHandle)}.`,
-        confidence: 'safe' as const,
+        confidence: exactTypeScore(sourceParam, targetParam) === 100 ? ('safe' as const) : ('choice' as const),
         targetNodeId: target.id,
         targetHandle,
         operations: [

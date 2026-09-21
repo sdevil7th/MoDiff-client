@@ -45,6 +45,38 @@ function edge(id, source, sourceHandle, target, targetHandle) {
   return { id, source, sourceHandle, target, targetHandle, type: 'default' };
 }
 
+test('conditional hidden inputs are not missing prerequisites and wildcard outputs are not direct repairs', () => {
+  const preview = node(
+    'preview',
+    definition('modules.Image', 'Preview', 'Preview Image', {
+      image: { display: 'input', type: ['image', 'latent'] },
+      vae: { display: 'input', type: 'pipeline', hidden: true },
+    }),
+  );
+  const source = node(
+    'image',
+    definition('modules.Image', 'Load', 'Load Image', {
+      image: { display: 'output', type: 'image' },
+    }),
+  );
+  const arbitrary = node(
+    'data',
+    definition('modules.Text', 'ProcessText', 'Process Text/Data', {
+      output: { display: 'output', type: 'any' },
+    }),
+  );
+  const context = {
+    nodes: [preview, source, arbitrary],
+    edges: [edge('image', 'image', 'image', 'preview', 'image')],
+    registry: {},
+  };
+  assert.equal(graphFixer.buildGraphFixPlan(context).issues.length, 0);
+  preview.data.params.vae.hidden = false;
+  const issues = graphFixer.buildGraphFixPlan(context).issues.filter((i) => i.targetHandle === 'vae');
+  assert.equal(issues.length, 1, 'An unresolved visible input still needs a manual diagnostic.');
+  assert.ok(issues[0].candidates.every((c) => c.confidence !== 'safe'));
+});
+
 function blockV2Node(instanceId = 'v2-image-block', referenceDisplay = 'input') {
   const semanticGraph = {
     nodes: [

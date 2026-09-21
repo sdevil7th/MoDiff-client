@@ -1541,10 +1541,11 @@ export function normalizeBlockInstanceV2(value: unknown): BlockInstanceV2 {
           invalid(`Block route draft V1 ${draftKey}`, 'routeKey must match its inactiveDrafts key.');
         const draftDefinition = normalizeBlockDefinitionV2(draft.definitionSnapshot);
         if (
-          draftDefinition.ownership.kind !== 'registered' ||
-          draftDefinition.ownership.definitionMutable ||
-          (draftDefinition.source.kind !== 'diffusers_catalog' &&
-            draftDefinition.source.kind !== 'transformers_catalog')
+          !(routeSetId === 'diffusers.definition-switch:v1' && draftDefinition.source.kind === 'user') &&
+          (draftDefinition.ownership.kind !== 'registered' ||
+            draftDefinition.ownership.definitionMutable ||
+            (draftDefinition.source.kind !== 'diffusers_catalog' &&
+              draftDefinition.source.kind !== 'transformers_catalog'))
         )
           invalid(`Block route draft V1 ${draftKey}`, 'must contain one immutable registered definition.');
         const draftPreviews = blockInstancePreviewBindingsV2(draftDefinition, graphAt(draft.effectiveGraph)).map(

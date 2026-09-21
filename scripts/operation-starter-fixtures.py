@@ -21,7 +21,7 @@ with contextlib.redirect_stdout(io.StringIO()):
     describer = object.__new__(WebServer)
     results = []
     with patch("modiff.NodeBase.NodeBase.__init__", side_effect=AssertionError("Constructed node")):
-        for pipeline, task in (
+        selections = (
             ("QwenImageModularPipeline", "text_to_image"),
             ("FluxModularPipeline", "text_to_image"),
             ("FluxModularPipeline", "image_to_image"),
@@ -32,7 +32,11 @@ with contextlib.redirect_stdout(io.StringIO()):
             ("StableDiffusionXLModularPipeline", "image_to_image"),
             ("StableDiffusionXLModularPipeline", "inpaint"),
             ("QwenImageEditPlusModularPipeline", "multi_image_reference_edit"),
-        ):
+        )
+        if "--all" in sys.argv:
+            selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
+                                 and c["nodeKey"].startswith("modules.ModularDiffusers.")})
+        for pipeline, task in selections:
             result = resolve_operation_starter(MODULE_MAP, contracts, {"pipelineClass": pipeline, "task": task})
             result["nodes"] = [
                 {

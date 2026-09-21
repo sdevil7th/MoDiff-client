@@ -34,11 +34,13 @@ export default function OperationGraphControls({
   task,
   ownerId,
   blockId,
+  executionProfileId,
 }: {
   pipeline: string;
   task: string;
   ownerId?: string;
   blockId?: string;
+  executionProfileId?: string;
 }) {
   const nodes = useFlowStore((s) => s.nodes);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
@@ -68,7 +70,7 @@ export default function OperationGraphControls({
     return () => {
       pending.current?.abort();
     };
-  }, [pipeline, task, workflow, canvasEpoch, loader, blockId]);
+  }, [pipeline, task, workflow, canvasEpoch, loader, blockId, executionProfileId]);
 
   async function prepare(change: boolean) {
     if (pending.current) return;
@@ -80,7 +82,7 @@ export default function OperationGraphControls({
     setBusy(true);
     setError(null);
     try {
-      const starter = await requestOperationStarter(pipeline, task, operations, controller.signal);
+      const starter = await requestOperationStarter(pipeline, task, operations, controller.signal, executionProfileId);
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
       if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
@@ -93,8 +95,9 @@ export default function OperationGraphControls({
               blockId,
               loader,
               starter,
+              { replaceModel: Boolean(executionProfileId) },
             )
-          : planOperationChange(snapshot, loader, starter);
+          : planOperationChange(snapshot, loader, starter, { replaceModel: Boolean(executionProfileId) });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
       if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)

@@ -7,6 +7,7 @@ import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibili
 import { parseOperationContracts, type OperationContract } from './operationContracts';
 import { operationPortCompatibility } from './operationCatalog';
 import { createNodeFromRegistry } from './nodeFactory';
+import { acceptsOperationValue as acceptsValue } from './operationFieldValue';
 
 export type RetainedOperationSetting = { field: string; value: unknown; pipeline: string; reason: string };
 /** Advisory provenance for ordinary nodes. It grants no execution authority. */
@@ -37,7 +38,7 @@ export type OperationChangePlan = {
 };
 
 function publicSetting(field: NodeParams) {
-  return !field.hidden && field.display !== 'output' && field.display !== 'input' && !field.signal;
+  return !field.hidden && field.display !== 'output' && !field.signal;
 }
 
 export function operationFieldValue(field: NodeParams | undefined): unknown {
@@ -196,53 +197,6 @@ export function operationScope(graph: OperationGraph, loaderId: string): CustomN
   return result;
 }
 
-function acceptsValue(field: NodeParams, value: unknown): boolean {
-  if (field.display === 'random' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    const seed = value as Record<string, unknown>;
-    return (
-      Object.keys(seed).length === 2 &&
-      typeof seed.isRandom === 'boolean' &&
-      acceptsValue({ ...field, display: 'number' }, seed.value)
-    );
-  }
-  const types = Array.isArray(field.type) ? field.type : [field.type];
-  if (
-    typeof value === 'number' ||
-    (typeof value === 'string' &&
-      value.trim() &&
-      Number.isFinite(Number(value)) &&
-      types.some((t) => ['int', 'float', 'number'].includes(t ?? '')))
-  ) {
-    const number = Number(value);
-    if (
-      !Number.isFinite(number) ||
-      (types.includes('int') && !Number.isInteger(number)) ||
-      (field.min !== undefined && number < field.min) ||
-      (field.max !== undefined && number > field.max)
-    )
-      return false;
-  }
-  if (
-    types.some((t) => ['int', 'float', 'number'].includes(t ?? '')) &&
-    !(typeof value === 'number' || (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))))
-  )
-    return false;
-  if (types.some((t) => ['bool', 'boolean'].includes(t ?? '')) && typeof value !== 'boolean') return false;
-  if (field.options) {
-    const options = Array.isArray(field.options) ? field.options : Object.keys(field.options);
-    if (
-      options.length &&
-      !options.some(
-        (option) =>
-          deepEqual(option, value) ||
-          (typeof option === 'object' && option !== null && 'value' in option && deepEqual(option.value, value)),
-      )
-    )
-      return false;
-  }
-  return true;
-}
-
 function port(node: CustomNodeType, field: string | null | undefined, direction: 'input' | 'output') {
   return operationAuthoring(node)?.operation.ports.find((p) => p.name === field && p.direction === direction);
 }
@@ -274,6 +228,7 @@ export function planOperationChange(
   graph: OperationGraph,
   loaderId: string,
   starter: OperationStarter,
+  options: { replaceModel?: boolean } = {},
 ): OperationChangePlan {
   const scope = operationScope(graph, loaderId);
   const root = scope.find((n) => n.id === loaderId)!;
@@ -321,7 +276,7 @@ export function planOperationChange(
       const allowed =
         !Object.prototype.hasOwnProperty.call(next.operation.binding?.values ?? {}, name) &&
         !(
-          modelChanged &&
+          (modelChanged || options.replaceModel) &&
           previous.operation.decomposition === 'loader' &&
           [
             'repo_id',
@@ -333,6 +288,7 @@ export function planOperationChange(
             'conditioning_revision',
             'conditioning_kind',
             'execution_recipe',
+            'execution_profile_id',
           ].includes(name)
         ) &&
         target &&

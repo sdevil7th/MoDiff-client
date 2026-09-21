@@ -8742,7 +8742,7 @@ async function operationStarterFixtures() {
   });
 }
 
-async function installOperationAuthoringRoutes(page: Page) {
+async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
   await installMockRoutes(page);
   const starters = await operationStarterFixtures();
   const operations = starters.flatMap((s) => s.nodes.map((n) => n.operation));
@@ -8770,9 +8770,23 @@ async function installOperationAuthoringRoutes(page: Page) {
               execution: 'declared',
               decomposition: s.nodes.some((n) => n.operation.decomposition === 'pipeline') ? 'pipeline' : 'stages',
               operationIds: s.nodes.map((n) => n.operation.operationId),
-              executionProfileIds: [],
-              dependencies: 'unknown',
-              runtimeRequirements: [],
+              executionProfileIds:
+                exactModel && s.pipelineClass === 'QwenImageModularPipeline' ? ['qwen-image:modular'] : [],
+              dependencies: exactModel && s.pipelineClass === 'QwenImageModularPipeline' ? 'ready' : 'unknown',
+              runtimeRequirements:
+                exactModel && s.pipelineClass === 'QwenImageModularPipeline'
+                  ? [
+                      {
+                        schemaVersion: 1,
+                        delivery: 'base',
+                        requiredNow: false,
+                        profileIds: [],
+                        executionProfileIds: ['qwen-image:modular'],
+                        state: 'base_satisfied',
+                        reason: 'base_runtime',
+                      },
+                    ]
+                  : [],
             })),
         })),
       }),
@@ -8792,7 +8806,14 @@ async function installOperationAuthoringRoutes(page: Page) {
   );
   await page.route('**/operations/starter', (route) => {
     const selection = route.request().postDataJSON();
-    const value = starters.find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task);
+    const value = structuredClone(
+      starters.find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task),
+    );
+    if (exactModel && value && selection.executionProfileId === 'qwen-image:modular') {
+      const loader = value.nodes.find((n) => n.operation.decomposition === 'loader')!;
+      loader.node.params.repo_id!.value = 'Qwen/Qwen-Image-2512';
+      loader.node.params.revision!.value = '25468b98e3276ca6700de15c6628e51b7de54a26';
+    }
     return route.fulfill({
       status: value ? 200 : 400,
       contentType: 'application/json',
@@ -9308,6 +9329,73 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
     await expect.poll(inspect).toEqual(expected);
     await page.screenshot({ path: test.info().outputPath('owner-model-task.png'), animations: 'disabled' });
+  });
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} exact replacement model overrides the old identity and preserves the prompt`, async ({ page }) => {
+    await page.setViewportSize({ width: 1680, height: 1050 });
+    await ensureFrontend();
+    await installOperationAuthoringRoutes(page, true);
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    await page.getByTestId('left-tab-nodes').click();
+    const library = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+    await library.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Connected starter', exact: true })
+      .getByRole('button', { name: 'Add starter to canvas', exact: true })
+      .click();
+    await page.getByTestId('left-tab-nodes').click();
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const original = await read();
+    const loader = original.nodes.find((n) => n.data.action === 'ModelsLoader')!;
+    const encoder = original.nodes.find((n) => n.data.action === 'EncodePrompt')!;
+    const prompt = page.locator(`.react-flow__node[data-id="${encoder.id}"] [data-key="prompt"] textarea`);
+    await prompt.fill('Precisely engraved brass astrolabe, violet glass, intricate reflected light');
+    await prompt.blur();
+    const before = await read();
+    await page.locator(`.react-flow__node[data-id="${loader.id}"] header`).first().click();
+    await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+    const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+    await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await inspector.getByLabel('Replacement model', { exact: true }).click();
+    await page.getByRole('option').filter({ hasText: 'Qwen/' }).click();
+    const request = page.waitForRequest((r) => r.url().endsWith('/operations/starter') && r.method() === 'POST');
+    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    expect((await request).postDataJSON().executionProfileId).toBe('qwen-image:modular');
+    const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    const after = await read();
+    expect(after.nodes.find((n) => n.id === loader.id)!.data.params.repo_id.value).toBe('Qwen/Qwen-Image-2512');
+    expect(after.nodes.find((n) => n.id === loader.id)!.data.params.revision.value).toBe(
+      '25468b98e3276ca6700de15c6628e51b7de54a26',
+    );
+    expect(after.nodes.find((n) => n.id === encoder.id)!.data.params.prompt.value).toBe(
+      before.nodes.find((n) => n.id === encoder.id)!.data.params.prompt.value,
+    );
+    await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
+    await page.keyboard.press('Control+z');
+    await expect
+      .poll(async () => (await read()).nodes.find((n) => n.id === loader.id)!.data.params)
+      .toEqual(loader.data.params);
+    await page.keyboard.press('Control+Shift+z');
+    await expect
+      .poll(async () => (await read()).nodes.find((n) => n.id === loader.id)!.data.params)
+      .toEqual(after.nodes.find((n) => n.id === loader.id)!.data.params);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    const restoredLoader = (await read()).nodes.find((n) => n.id === loader.id)!;
+    const appliedLoader = after.nodes.find((n) => n.id === loader.id)!;
+    // Rehydration reapplies managed-field disabled flags. Persisted values and
+    // retained overrides must remain exact regardless of that presentation pass.
+    for (const [field, param] of Object.entries(appliedLoader.data.params))
+      expect(restoredLoader.data.params[field]?.value).toEqual(param.value);
+    expect(restoredLoader.data.operationAuthoring).toEqual(appliedLoader.data.operationAuthoring);
   });
 }
 
@@ -27182,6 +27270,10 @@ for (const workspace of ['auto', 'expert'] as const) {
         const to = imageNode.locator(`.react-flow__handle.target[data-handleid="${field}"]`);
         await expect(from).toBeVisible();
         await expect(to).toBeVisible();
+        // Arrange animates the viewport. Wait for both actual hit targets to
+        // settle before capturing drag coordinates; a visible socket can move.
+        await from.click({ trial: true });
+        await to.click({ trial: true });
         const a = (await from.boundingBox())!,
           b = (await to.boundingBox())!;
         await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
@@ -27207,9 +27299,166 @@ for (const workspace of ['auto', 'expert'] as const) {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
       await expect.poll(async () => (await missing()).length).toBe(0);
+      if (inBlock) {
+        const selected = await page.evaluate(async (owner) => {
+          const [{ useFlowStore }, { collectRunReadinessIssues }] = await Promise.all([
+            import('/src/stores/useFlowStore.ts'),
+            import('/src/studio/runReadiness.ts'),
+          ]);
+          return {
+            exportedNodes: Object.keys(useFlowStore.getState().exportGraph('selected-media', owner).nodes),
+            missing: collectRunReadinessIssues({
+              sid: 'selected-media',
+              isConnected: true,
+              includeStudio: false,
+              targetNodeId: owner,
+            }).filter((issue) => issue.code === 'operation_media_input_missing'),
+          };
+        }, owner);
+        expect(selected.exportedNodes).toContain('required-image-source');
+        expect(selected.exportedNodes).toContain('required-mask-source');
+        expect(selected.missing).toEqual([]);
+      }
       expect(submissions).toBe(0);
       expect(errors).toEqual([]);
       await page.screenshot({ path: test.info().outputPath('required-media-connected.png'), animations: 'disabled' });
     });
   }
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} upstream Block model task preview preserves user drafts and rejects stale edits`, async ({
+    page,
+  }) => {
+    page.setDefaultTimeout(15_000);
+    const python =
+      process.env.MODIFF_BACKEND_PYTHON ||
+      path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    const script = path.join(CLIENT_ROOT, 'scripts', 'block-route-fixtures.py');
+    const { stdout } = await promisify(execFile)(
+      process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh'),
+      process.platform === 'win32' ? [script] : [python, script],
+      { cwd: BACKEND_ROOT, maxBuffer: 32 * 1024 * 1024 },
+    );
+    const fixture = JSON.parse(stdout) as {
+      library: import('../../../src/studio/huggingFaceNodeLibrary').HuggingFaceNodeLibrary;
+      entries: import('../../../src/studio/registeredBlockV2CompiledCatalog').RegisteredBlockV2CompiledCatalogEntry[];
+    };
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.route('**/huggingface/node-library', (route) => route.fulfill({ json: fixture.library }));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let requested = 0;
+    await page.route('**/huggingface/registered-block-v2**', async (route) => {
+      const entry = fixture.entries.find(
+        (e) => e.admissionId === new URL(route.request().url()).searchParams.get('admission_id'),
+      );
+      expect(entry).toBeTruthy();
+      if (++requested === 1) await gate;
+      await route.fulfill({ json: { schemaVersion: 1, error: false, entry } });
+    });
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    // One-time saved upstream User Block. All changes after setup use native UI.
+    await page.evaluate(async (entry) => {
+      const [schema, runtime, { useFlowStore }, { prepareWorkflowForManualInsertion }] = await Promise.all([
+        import('/src/studio/blockSchemaV2.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/manualGraphInsertion.ts'),
+      ]);
+      const definition = structuredClone(entry.definition);
+      definition.definitionId = 'user:upstream-model-task';
+      definition.displayName = 'My upstream composition';
+      definition.source = { kind: 'user' };
+      definition.ownership = { kind: 'user', definitionMutable: true };
+      definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+      const instance = schema.createBlockInstanceV2(definition, {
+        instanceId: 'upstream-change',
+        position: { x: 80, y: 100 },
+        size: { width: 640, height: 950 },
+        values: entry.values,
+        internalLayout: entry.internalLayout,
+        internalLayoutMode: entry.internalLayoutMode,
+      });
+      prepareWorkflowForManualInsertion();
+      useFlowStore.getState().replaceGraph({ nodes: [runtime.createBlockRootNodeV2(instance)], edges: [] });
+    }, fixture.entries[0]!);
+    const root = page.locator('.react-flow__node[data-id="upstream-change"]');
+    const prompt = root.getByLabel('prompt', { exact: true });
+    await prompt.fill('Keep the copper observatory in my upstream draft');
+    await prompt.blur();
+    await root.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await root.getByRole('button', { name: /Load workflows|Refresh workflows/ }).click();
+    const targetEntry = fixture.entries[1]!;
+    const definition = fixture.library.definitions.find((d) =>
+      d.executionAdmissions.some((a) => a.id === targetEntry.admissionId),
+    )!;
+    const admission = definition.executionAdmissions.find((a) => a.id === targetEntry.admissionId)!;
+    await root.getByLabel('Replacement Block workflow').click();
+    await page
+      .getByRole('option', {
+        name: `${definition.label} · ${admission.studioMode ?? definition.workflowId}`,
+        exact: true,
+      })
+      .click();
+    await waitForOperationGraphToSettle(page);
+    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await expect.poll(() => requested).toBe(1);
+    await prompt.fill('Keep my newer edit while the destination is loading');
+    await prompt.blur();
+    release();
+    await expect(root.getByRole('alert')).toContainText('graph changed');
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const original = (await read()).nodes[0]!.data.blockInstanceV2!;
+    await waitForOperationGraphToSettle(page);
+    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Review Block model / task change', exact: true });
+    await expect(review).toContainText('retained outside execution');
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    await expect
+      .poll(async () => (await read()).nodes[0]!.data.blockInstanceV2!.definitionRef.definitionId)
+      .toBe(targetEntry.admissionId);
+    await expect(root.getByLabel('prompt', { exact: true })).toHaveValue(
+      'Keep my newer edit while the destination is loading',
+    );
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+z');
+    await expect
+      .poll(async () => (await read()).nodes[0]!.data.blockInstanceV2!.definitionRef.definitionId)
+      .toBe(original.definitionRef.definitionId);
+    await page.keyboard.press('Control+Shift+z');
+    await expect
+      .poll(async () => (await read()).nodes[0]!.data.blockInstanceV2!.definitionRef.definitionId)
+      .toBe(targetEntry.admissionId);
+    await page.getByTestId('topbar-save-workflow-options').click();
+    await page.getByTestId('topbar-save-workflow-as').click();
+    await page.getByTestId('save-workflow-name').fill(`Upstream switch ${workspace}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(root).toBeVisible();
+    await root.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await root.getByLabel('Replacement Block workflow').click();
+    await page.getByRole('option', { name: 'Restore draft · My upstream composition', exact: true }).click();
+    await waitForOperationGraphToSettle(page);
+    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    const restored = (await read()).nodes[0]!.data.blockInstanceV2!;
+    expect(restored.definitionSnapshot).toEqual(original.definitionSnapshot);
+    expect(restored.effectiveGraph).toEqual(original.effectiveGraph);
+    expect(restored.effectiveInterface).toEqual(original.effectiveInterface);
+    expect(restored.values).toEqual(original.values);
+    expect(errors).toEqual([]);
+    await page.screenshot({ path: test.info().outputPath('restored-upstream-draft.png') });
+  });
 }
