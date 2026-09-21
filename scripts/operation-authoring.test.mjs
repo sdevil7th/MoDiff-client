@@ -1268,3 +1268,64 @@ test('a nested outside Block source preserves its interface and is never adopted
   assert.ok(result.graph.edges.every((edge) => edge.source === 'source' && edge.sourceHandle === 'value-out'));
   assert.deepEqual(result.graph.nodes[0].data.blockInstanceV2.definitionSnapshot, instance.definitionSnapshot);
 });
+
+test('workflow discovery retains backend models absent from the legacy Studio union', () => {
+  const support = [
+    {
+      pipelineClass: 'FutureAutoModel',
+      tasks: [
+        { task: 'depth_estimation', operationIds: ['load', 'predict'], executionProfileIds: ['relative', 'metric'] },
+      ],
+    },
+  ];
+  const payload = {
+    schemaVersion: 2,
+    capabilities: ['relative', 'metric'].map((id) => ({
+      modelType: id,
+      label: `Future ${id}`,
+      executionProfiles: [
+        { id, model_type: id, pipeline_class: 'FutureAutoModel', default_repo: `owner/${id}`, public: true },
+      ],
+    })),
+  };
+  const descriptors = choices.parseWorkflowModelDescriptors(payload, support);
+  const result = choices.workflowChoices(support, [], [], [], null, descriptors);
+  assert.deepEqual(result.map((c) => [c.label, c.repo, c.profileId]).sort(), [
+    ['Future metric', 'owner/metric', 'metric'],
+    ['Future relative', 'owner/relative', 'relative'],
+  ]);
+  assert.equal(result.length, 2);
+  const legacy = structuredClone(payload);
+  delete legacy.capabilities[0].label;
+  assert.deepEqual(
+    choices.parseWorkflowModelDescriptors(legacy, support, [{ modelType: 'relative' }]),
+    descriptors.filter((d) => d.profileId === 'metric'),
+  );
+  assert.deepEqual(
+    choices.parseWorkflowModelDescriptors(
+      { schemaVersion: 2, capabilities: [{ modelType: 'legacy', executionProfiles: [{ id: 'unreferenced' }] }] },
+      [],
+    ),
+    [],
+  );
+  assert.deepEqual(choices.parseWorkflowModelDescriptors({ ...payload, schemaVersion: 1 }, support), []);
+  for (const alter of [
+    (p) => {
+      p.capabilities[0].executionProfiles[0].model_type = 'wrong';
+    },
+    (p) => {
+      p.capabilities[0].label = {};
+    },
+    (p) => {
+      p.capabilities.push(p.capabilities[0]);
+    },
+  ]) {
+    const malformed = structuredClone(payload);
+    alter(malformed);
+    assert.throws(() => choices.parseWorkflowModelDescriptors(malformed, support), /workflow model/i);
+  }
+  const unavailable = structuredClone(payload);
+  unavailable.capabilities[0].executionProfiles[0].public = false;
+  unavailable.capabilities[1].executionProfiles[0].pipeline_class = 'OtherPipeline';
+  assert.deepEqual(choices.parseWorkflowModelDescriptors(unavailable, support), []);
+});

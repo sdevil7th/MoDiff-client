@@ -30,6 +30,7 @@ type Preview = {
 export default function DeveloperWorkflowLauncher() {
   const support = useNodesStore((s) => s.pipelineSupport);
   const models = useNodesStore((s) => s.studioModelCapabilities);
+  const descriptors = useNodesStore((s) => s.workflowModelDescriptors);
   const operations = useNodesStore((s) => s.operationContracts);
   const registry = useNodesStore((s) => s.nodesRegistry);
   const hfCache = useNodesStore((s) => s.hfCache);
@@ -38,8 +39,8 @@ export default function DeveloperWorkflowLauncher() {
   const capabilitiesStatus = useNodesStore((s) => s.discoveryRequests.capabilities);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
   const choices = useMemo(
-    () => workflowChoices(support, models, hfCache, localModels, diagnostics),
-    [support, models, hfCache, localModels, diagnostics],
+    () => workflowChoices(support, models, hfCache, localModels, diagnostics, descriptors),
+    [support, models, hfCache, localModels, diagnostics, descriptors],
   );
   const tasks = useMemo(
     () =>

@@ -3,6 +3,7 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { operationAuthoring } from '../workflow/operationAuthoring';
+import { workflowChoices } from '../workflow/workflowChoices';
 import { ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import OperationGraphControls from './OperationGraphControls';
 
@@ -84,6 +85,7 @@ function OwnerChoices({
 }) {
   const support = useNodesStore((state) => state.pipelineSupport);
   const models = useNodesStore((state) => state.studioModelCapabilities);
+  const descriptors = useNodesStore((state) => state.workflowModelDescriptors);
   const [pipeline, setPipeline] = useState(pipelineClass);
   const [task, setTask] = useState(currentTask);
   const [profileId, setProfileId] = useState('');
@@ -91,10 +93,15 @@ function OwnerChoices({
   const entry = pipelines.find((p) => p.pipelineClass === pipeline);
   const tasks = entry?.tasks.filter((t) => t.operationIds.length) ?? [];
   const selected = tasks.find((t) => t.task === task);
-  const profiles = models.flatMap((model) =>
-    (model.executionProfiles ?? [])
-      .filter((profile) => selected?.executionProfileIds.includes(profile.id))
-      .map((profile) => ({ value: profile.id, label: `${model.label} · ${profile.default_repo}` })),
+  const profiles = workflowChoices(
+    entry && selected ? [{ ...entry, tasks: [selected] }] : [],
+    models,
+    [],
+    [],
+    null,
+    descriptors,
+  ).flatMap((choice) =>
+    choice.profileId ? [{ value: choice.profileId, label: `${choice.label} · ${choice.repo}` }] : [],
   );
   return (
     <ModiffDisclosure label="Change model / task" panelClassName="grid gap-2 py-2">

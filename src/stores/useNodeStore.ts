@@ -19,6 +19,7 @@ import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
 import type { OperationAuthoring } from '../workflow/operationAuthoring';
 import type { OperationContract } from '../workflow/operationContracts';
 import type { PipelineSupport } from '../workflow/operationCatalog';
+import type { WorkflowModelDescriptor } from '../workflow/workflowChoices';
 import {
   buildTaskTemplateSkeleton,
   parseTaskTemplateContracts,
@@ -416,6 +417,7 @@ type NodesStore = {
   studioModelCapabilities: StudioModelProfile[];
   operationContracts: OperationContract[];
   pipelineSupport: PipelineSupport[];
+  workflowModelDescriptors: WorkflowModelDescriptor[];
   resolveOperation: (operation: OperationContract, signal?: AbortSignal) => Promise<NodeData>;
   studioModelCapabilitiesAuthoritative: boolean;
   studioExecutionSpecInvalid: boolean;
@@ -1063,6 +1065,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   studioModelCapabilities: [],
   operationContracts: [],
   pipelineSupport: [],
+  workflowModelDescriptors: [],
   studioModelCapabilitiesAuthoritative: false,
   studioExecutionSpecInvalid: false,
   studioTaskTemplateContracts: [],
@@ -1440,10 +1443,12 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       'capabilities',
       set,
       async (signal) => {
-        const [{ parseOperationContracts }, { parsePipelineSupport }] = await Promise.all([
-          import('../workflow/operationContracts'),
-          import('../workflow/operationCatalog'),
-        ]);
+        const [{ parseOperationContracts }, { parsePipelineSupport }, { parseWorkflowModelDescriptors }] =
+          await Promise.all([
+            import('../workflow/operationContracts'),
+            import('../workflow/operationCatalog'),
+            import('../workflow/workflowChoices'),
+          ]);
         return requestJson(`${config.serverAddress}/model_capabilities`, {
           method: 'GET',
           signal,
@@ -1455,21 +1460,35 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
               payload.operationContracts,
               payload.operationContractSchemaVersion,
             );
+            const pipelineSupport = parsePipelineSupport(
+              payload.pipelineSupport,
+              payload.pipelineSupportSchemaVersion,
+              operationContracts,
+            );
             return {
               ...capabilities,
               operationContracts,
-              pipelineSupport: parsePipelineSupport(
-                payload.pipelineSupport,
-                payload.pipelineSupportSchemaVersion,
-                operationContracts,
+              pipelineSupport,
+              workflowModelDescriptors: parseWorkflowModelDescriptors(
+                payload,
+                pipelineSupport,
+                capabilities.capabilities,
               ),
             };
           },
         });
       },
-      ({ authoritative, capabilities, taskTemplateContracts, operationContracts, pipelineSupport }) => ({
+      ({
+        authoritative,
+        capabilities,
+        taskTemplateContracts,
         operationContracts,
         pipelineSupport,
+        workflowModelDescriptors,
+      }) => ({
+        operationContracts,
+        pipelineSupport,
+        workflowModelDescriptors,
         studioModelCapabilities: capabilities,
         studioModelCapabilitiesAuthoritative: authoritative,
         studioExecutionSpecInvalid: false,
@@ -1479,6 +1498,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       (message) => ({
         operationContracts: [],
         pipelineSupport: [],
+        workflowModelDescriptors: [],
         ...(message.includes('Studio execution specification')
           ? {
               studioModelCapabilities: [],
