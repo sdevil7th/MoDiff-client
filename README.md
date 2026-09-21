@@ -359,6 +359,12 @@ separately in the [implementation plan](docs/creator-developer-workspaces-plan.m
 
 Developer’s **Workflows** dialog offers **Add from Hugging Face** and **Add local source**; **Nodes → Custom nodes** and the Models environment panel open the same review flow. Resolve a Hub URL or repository ID to an exact commit, stage a local Python folder or pinned remote source, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Creator and Developer. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Automatic memory accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use requires Custom memory. Staging/inspection never imports submitted Python or installs dependencies.
 
+Approved Modular blocks that omit model ports receive a **Models** input when
+their Python contract requires components. Connect **Load Models → Pipeline
+Components** to reuse compatible loaded weights. This does not download missing
+block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/custom-nodes.md)
+for the VAE reconstruction example and component requirements.
+
 ## Interface Map
 
 | Area       | Purpose                                                                                                   |
