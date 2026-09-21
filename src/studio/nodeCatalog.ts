@@ -113,6 +113,7 @@ export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeC
     GENERIC_NODE_KEYS.has(nodeKey(entry.node)) ||
     entry.node.module === 'modules.Primitive' ||
     entry.node.module === 'modules.Text' ||
+    entry.node.module === 'modules.Image' ||
     entry.node.module.startsWith('custom.')
   );
 }

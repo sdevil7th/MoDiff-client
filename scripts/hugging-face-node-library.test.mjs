@@ -98,6 +98,11 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
   for (const module of ['modules.Primitive', 'modules.Text', 'custom.my_nodes'])
     assert.equal(matches(entry(module, 'TextValue'), 'common'), true);
   assert.equal(matches(entry('modules.Image', 'Preview'), 'common'), true);
+  for (const action of ['Resize', 'Save', 'Compare', 'ApplyMask', 'Merge', 'ImageGrid', 'SplitImageGrid']) {
+    for (const view of ['common', 'experimental', 'advanced', 'all'])
+      assert.equal(matches(entry('modules.Image', action), view), true, `${action} in ${view}`);
+    assert.equal(matches(entry('modules.Image', action, { type: 'group' }), 'common'), false);
+  }
   for (const view of ['common', 'advanced', 'experimental', 'all'])
     assert.equal(matches(entry('modules.ModularDiffusers', 'Denoise', { type: 'group' }), view), false);
   assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'common'), false);

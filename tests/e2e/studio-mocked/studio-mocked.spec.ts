@@ -9751,6 +9751,44 @@ test('Expert resolves canonical operations as ordinary nodes and cancels stale s
   await expect(panel).toBeVisible();
 });
 
+test('both workspaces discover and insert image utilities without implementation filters', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Image.Resize': nodeDef('modules.Image', 'Resize', 'image', {
+            image: { type: 'image', display: 'input' },
+            width: { type: 'int', default: 1024 },
+            height: { type: 'int', default: 1024 },
+            output: { type: 'image', display: 'output' },
+          }),
+        },
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  for (const [index, mode] of (['expert', 'auto'] as const).entries()) {
+    await setStudioViewMode(page, mode);
+    await page.getByTestId('left-tab-nodes').click();
+    await expect(page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true })).not.toBeChecked();
+    await page.getByLabel('Search nodes', { exact: true }).fill('Resize');
+    await page.getByTestId('node-row-modules-Image-Resize').click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__MODIFF_E2E__!.getState().flow.nodes.filter((node) => node.action === 'Resize').length,
+        ),
+      )
+      .toBe(index + 1);
+  }
+});
+
 test('both workspaces share one library with additive implementation filters and unchanged graph contents', async ({
   page,
 }) => {

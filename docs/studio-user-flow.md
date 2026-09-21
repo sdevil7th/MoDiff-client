@@ -131,6 +131,11 @@ Cluster/User Node terminology can still occur in older files and migration
 receipts. Use the explicit migration preview for supported historical documents;
 opening a file or switching Auto/Expert does not convert it.
 
+Ordinary image utilities—including Resize, Apply Mask, Merge Images, Image Grid,
+comparison and saving—are available in the normal Nodes library in both workspaces,
+alongside text and value utilities. They do not require a pipeline selection or
+an implementation filter.
+
 **Show implementation nodes** adds underlying adapters, upstream Modular blocks,
 catalog-only tasks and component references. Check each entry's readiness.
 **Show experimental nodes** independently adds experimental entries. These options
