@@ -27779,3 +27779,180 @@ test('successful node status is not presented as a warning after recovery', asyn
     await expect(node.getByRole('button', { name: `Node ${severity} details`, exact: true })).toBeVisible();
   }
 });
+
+for (const workspace of ['auto', 'expert'] as const) {
+  test(`${workspace} native saved ordinary Block reviews a model change and restores its legacy format with Undo`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1680, height: 1050 });
+    await ensureFrontend();
+    await installOperationAuthoringRoutes(page, true);
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await setStudioViewMode(page, workspace);
+    await page.getByTestId('left-tab-nodes').click();
+    const library = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+    await library.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Connected starter', exact: true })
+      .getByRole('button', { name: 'Add starter to canvas', exact: true })
+      .click();
+    await page.getByTestId('left-tab-nodes').click();
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const initial = await read();
+    const encoder = initial.nodes.find((n) => n.data.action === 'EncodePrompt')!;
+    const prompt = page.locator(`.react-flow__node[data-id="${encoder.id}"] [data-key="prompt"] textarea`);
+    const text = 'Engraved astrolabe, violet glass and carefully balanced reflected light';
+    await prompt.fill(text);
+    await prompt.blur();
+    await page.locator('.react-flow__pane').click({ position: { x: 80, y: 60 } });
+    for (const [index, selected] of (await read()).nodes.entries())
+      await page
+        .locator(`.react-flow__node[data-id="${selected.id}"] header`)
+        .first()
+        .click(index ? { modifiers: ['Control'] } : {});
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(initial.nodes.length);
+    await page.getByTestId('selection-toolbar-create-block').click();
+    const create = page.getByTestId('create-user-block-dialog');
+    await create.getByLabel('Name').fill('Native saved model workflow');
+    await page.getByTestId('confirm-create-user-block').click();
+    await expect(create).toHaveCount(0);
+    const block = (await read()).nodes.find((n) => n.data.userBlockSnapshot)!;
+    expect(block).toBeTruthy();
+    expect(block.data.blockInstanceV2).toBeUndefined();
+    const root = page.locator(`.react-flow__node[data-id="${block.id}"]`);
+    await root.getByRole('button', { name: 'Change model / task', exact: true }).click();
+    await root.getByLabel('Replacement model', { exact: true }).click();
+    await page.getByRole('option').filter({ hasText: 'Qwen/' }).click();
+    await waitForOperationGraphToSettle(page);
+    const before = (await read()).nodes.find((n) => n.id === block.id)!;
+    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+    await expect(review).toContainText('legacy workflow instance');
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect((await read()).nodes.find((n) => n.id === block.id)!.data).toEqual(before.data);
+    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    const changed = (await read()).nodes.find((n) => n.data.blockInstanceV2)!;
+    const instance = changed.data.blockInstanceV2!;
+    expect(instance.effectiveGraph.nodes.find((n) => n.data.action === 'ModelsLoader')!.data.params).toMatchObject({
+      repo_id: { value: 'Qwen/Qwen-Image-2512' },
+      revision: { value: '25468b98e3276ca6700de15c6628e51b7de54a26' },
+    });
+    expect(instance.effectiveGraph.nodes.find((n) => n.data.action === 'EncodePrompt')!.data.params).toMatchObject({
+      prompt: { value: text },
+    });
+    await page.locator('.react-flow__pane').click({ position: { x: 80, y: 60 } });
+    await page.keyboard.press('Control+z');
+    await expect
+      .poll(async () => (await read()).nodes.find((n) => n.id === block.id)!.data.userBlockSnapshot)
+      .toEqual(before.data.userBlockSnapshot);
+    expect((await read()).nodes.find((n) => n.id === block.id)!.data.blockInstanceV2).toBeUndefined();
+    await page.keyboard.press('Control+Shift+z');
+    await expect
+      .poll(async () => (await read()).nodes.find((n) => n.data.blockInstanceV2)!.data.blockInstanceV2)
+      .toEqual(instance);
+    await page.getByTestId('topbar-save-workflow-options').click();
+    await page.getByTestId('topbar-save-workflow-as').click();
+    await page.getByTestId('save-workflow-name').fill(`Native saved model workflow ${workspace}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect
+      .poll(async () => (await read()).nodes.find((n) => n.data.blockInstanceV2)!.data.blockInstanceV2)
+      .toEqual(instance);
+    await page.screenshot({
+      path: test.info().outputPath('native-saved-block-model-change.png'),
+      animations: 'disabled',
+    });
+  });
+}
+
+test('restored Block preview renders its current task instead of artifacts retained in the source field', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let oldRequests = 0;
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route('**/w8-current-preview.png', (route) => route.fulfill({ contentType: 'image/png', body: png }));
+  await page.route('**/w8-old-preview.png', (route) => {
+    oldRequests++;
+    return route.fulfill({ contentType: 'image/png', body: png });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.evaluate(async () => {
+    const schema = await import('/src/studio/blockSchemaV2.ts');
+    const runtime = await import('/src/studio/blockRuntimeV2.ts');
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { prepareWorkflowForManualInsertion } = await import('/src/studio/manualGraphInsertion.ts');
+    const definition = schema.migrateUserBlockDefinitionV1({
+      id: 'stale-preview-fixture',
+      name: 'Retained preview metadata',
+      version: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [
+        {
+          id: 'preview',
+          type: 'custom',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'custom',
+            module: 'modules.Image',
+            action: 'Preview',
+            label: 'Preview',
+            category: 'image',
+            params: {
+              preview: {
+                type: 'url',
+                display: 'ui_image',
+                value: '/w8-old-preview.png',
+                artifacts: [{ url: '/w8-old-preview.png', task_id: 'old-task' }],
+              },
+            },
+          },
+        },
+      ],
+      edges: [],
+      inputs: [],
+      outputs: [],
+      exposedParams: [],
+    });
+    const instance = runtime.setBlockPreviewStateV2(
+      schema.createBlockInstanceV2(definition, {
+        instanceId: 'retained-preview-fixture',
+        position: { x: 100, y: 100 },
+        size: { width: 480, height: 480 },
+      }),
+      { nodeId: 'preview', outputPortId: 'preview' },
+      { status: 'complete', taskId: 'current-task', mediaReference: '/w8-current-preview.png' },
+    );
+    prepareWorkflowForManualInsertion();
+    useFlowStore.getState().replaceGraph({ nodes: [runtime.createBlockRootNodeV2(instance)], edges: [] });
+  });
+  const image = page.locator('[data-testid^="block-v2-preview-"] img');
+  await expect(image).toHaveAttribute('src', /\/w8-current-preview\.png$/);
+  await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(1);
+  expect(oldRequests).toBe(0);
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Current Block preview');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(image).toHaveAttribute('src', /\/w8-current-preview\.png$/);
+  await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(1);
+  expect(oldRequests).toBe(0);
+});

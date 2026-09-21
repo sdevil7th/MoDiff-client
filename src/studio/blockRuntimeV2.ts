@@ -476,7 +476,21 @@ function previewViewsForNormalizedInstanceV2(
           label: base?.label ?? 'Preview',
           type: base?.type ?? binding.mediaType,
           display: PREVIEW_DISPLAY_V2[binding.mediaType],
-          ...(preview.mediaReference === undefined ? {} : { value: preview.mediaReference }),
+          ...(preview.mediaReference === undefined
+            ? {}
+            : {
+                value: preview.mediaReference,
+                // A saved source field can retain artifacts from an earlier run.
+                // Its URL must not override the current instance's media reference.
+                artifacts: Array.isArray(base?.artifacts)
+                  ? base.artifacts.filter(
+                      (artifact: unknown) =>
+                        isRecord(artifact) &&
+                        artifact.url === preview.mediaReference &&
+                        (!preview.taskId || (artifact.taskId ?? artifact.task_id) === preview.taskId),
+                    )
+                  : [],
+              }),
           fieldOptions: {
             ...(isRecord(base?.fieldOptions) ? cloneJson(base.fieldOptions) : {}),
             blockPreviewBindingV2: {

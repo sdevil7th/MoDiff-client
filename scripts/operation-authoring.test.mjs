@@ -931,6 +931,7 @@ test('owning Block preview rejects incompatible public controls and conflicting 
       {
         controlId: 'pipeline',
         label: 'Pipeline',
+        sealed: true,
         binding: { nodeId: draft.nodes[0].id, fieldId: 'pipeline_class' },
         valueType: 'string',
         defaultValue: 'FuturePipeline',
@@ -1328,4 +1329,202 @@ test('workflow discovery retains backend models absent from the legacy Studio un
   unavailable.capabilities[0].executionProfiles[0].public = false;
   unavailable.capabilities[1].executionProfiles[0].pipeline_class = 'OtherPipeline';
   assert.deepEqual(choices.parseWorkflowModelDescriptors(unavailable, support), []);
+});
+
+for (const prefix of ['node-', '_', '-']) {
+  test(`native saved ordinary Block supports atomic model replacement with ${prefix} identities`, async () => {
+    const { createUserBlockFromSelection, createUserBlockNode } =
+      await server.ssrLoadModule('/src/studio/userBlocks.ts');
+    const { prepareOperationBlockGraph, planOwnerBlockOperationChange } = await server.ssrLoadModule(
+      '/src/workflow/operationLegacyBlockChange.ts',
+    );
+    const { useUserBlockStore } = await server.ssrLoadModule('/src/stores/useUserBlockStore.ts');
+    const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+    const studio = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+    const { commitOperationGraph } = await server.ssrLoadModule('/src/workflow/operationGraphTransaction.ts');
+    const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+    const { remapOperationAuthoring } = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts');
+    const old = seededStarter(true);
+    Object.assign(old.nodes[0].node.params, {
+      repo_id: { type: 'string', display: 'text', value: 'test/base' },
+      revision: { type: 'string', display: 'text', value: 'a'.repeat(40) },
+    });
+    const draft = authoring.createOperationStarter(old, { x: 80, y: 80 });
+    const ids = new Map(draft.nodes.map((node, index) => [node.id, `${prefix}${index}`]));
+    draft.nodes = draft.nodes.map((node) => ({
+      ...node,
+      id: ids.get(node.id),
+      selected: true,
+      data: {
+        ...node.data,
+        operationAuthoring: remapOperationAuthoring(node.data.operationAuthoring, (id) => ids.get(id) ?? id),
+      },
+    }));
+    draft.edges = draft.edges.map((edge) => ({ ...edge, source: ids.get(edge.source), target: ids.get(edge.target) }));
+    draft.nodes[1].data.params.prompt.value = 'Keep this carefully edited prompt';
+    const saved = createUserBlockFromSelection(draft, 'Saved ordinary graph');
+    assert.equal(saved.ok, true);
+    const savedSnapshot = structuredClone(saved.block);
+    const root = createUserBlockNode(saved.block, { x: 300, y: 200 }, `${prefix}instance`);
+    const graph = { nodes: [root], edges: [] };
+    const snapshot = structuredClone(graph);
+    const library = structuredClone(useUserBlockStore.getState().blocks);
+    assert.equal(root.data.blockInstanceV2, undefined, 'exercise the actual v1 Save path');
+    const prepared = prepareOperationBlockGraph(graph, root.id);
+    const loader = prepared.root.data.blockInstanceV2.effectiveGraph.nodes.find(
+      (node) => node.data.operationAuthoring?.operation.decomposition === 'loader',
+    );
+    const target = structuredClone(old);
+    target.nodes[0].node.params.repo_id.value = 'test/selected';
+    target.nodes[0].node.params.revision.value = 'b'.repeat(40);
+    const plan = planOwnerBlockOperationChange(graph, root.id, loader.nodeId, target, { replaceModel: true });
+    assert.deepEqual(graph, snapshot, 'preview and cancellation leave legacy bytes unchanged');
+    assert.deepEqual(useUserBlockStore.getState().blocks, library);
+    const updated = plan.graph.nodes.find((node) => node.data.blockInstanceV2);
+    const effective = runtime.blockOperationGraphV2(updated.data.blockInstanceV2);
+    assert.equal(effective.nodes[0].data.params.repo_id.value, 'test/selected');
+    assert.equal(effective.nodes[0].data.params.revision.value, 'b'.repeat(40));
+    assert.equal(effective.nodes[1].data.params.prompt.value, 'Keep this carefully edited prompt');
+    for (const node of updated.data.blockInstanceV2.effectiveGraph.nodes)
+      for (const hint of node.data.operationAuthoring.sharedInputs ?? []) assert.equal(hint.loaderId, loader.nodeId);
+    useFlowStore.getState().replaceGraph(graph);
+    useFlowStore.getState().resetHistory();
+    const before = useFlowStore.getState().toObject();
+    commitOperationGraph(
+      plan.graph,
+      studio.captureWorkflowOperationContext(),
+      JSON.stringify(before),
+      'Change saved Block model',
+    );
+    assert.equal(useFlowStore.getState().historyPast.length, 1);
+    useFlowStore.getState().undo();
+    assert.deepEqual(useFlowStore.getState().toObject(), before);
+    useFlowStore.getState().redo();
+    const applied = JSON.parse(JSON.stringify(useFlowStore.getState().toObject()));
+    useFlowStore.getState().replaceGraph(applied);
+    assert.deepEqual(useFlowStore.getState().toObject(), applied);
+    assert.deepEqual(useUserBlockStore.getState().blocks, library);
+    assert.deepEqual(saved.block, savedSnapshot);
+  });
+}
+
+test('model replacement accepts the actual legacy graph returned by Create Block', async () => {
+  const { createUserBlockFromSelection } = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const { planOwnerBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationLegacyBlockChange.ts');
+  const old = graph();
+  old.nodes.forEach((node) => {
+    node.selected = true;
+  });
+  const saved = createUserBlockFromSelection(old, 'Native save regression');
+  assert.equal(saved.ok, true);
+  assert.equal(saved.blockNode.data.blockInstanceV2, undefined);
+  const planned = planOwnerBlockOperationChange(
+    { nodes: saved.nodes, edges: saved.edges },
+    saved.blockNode.id,
+    old.nodes[0].id,
+    starter(),
+  );
+  assert.ok(planned.graph.nodes.some((node) => node.data.blockInstanceV2));
+});
+
+for (const scope of ['agreed', 'unrelated', 'conflicting', 'sealed']) {
+  test(`Block replacement protects ${scope} mirrored model controls`, async () => {
+    const { runtime, instance, draft } = await operationBlock('model-controls', starter());
+    const { planOwnerBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationLegacyBlockChange.ts');
+    let base = instance;
+    const mirrorId = scope === 'unrelated' ? 'unrelated-node' : draft.nodes[1].id;
+    if (scope === 'unrelated')
+      base = runtime.addBlockEffectiveGraphNodeV2(base, {
+        nodeId: mirrorId,
+        nodeType: 'custom',
+        data: { label: 'Unrelated', params: { pipeline_class: { type: 'string', value: 'FuturePipeline' } } },
+      });
+    else {
+      const graph = structuredClone(base.effectiveGraph);
+      graph.nodes[1].data.params.pipeline_class = { type: 'string', value: 'FuturePipeline' };
+      base = runtime.replaceBlockEffectiveGraphV2(base, graph);
+    }
+    base = runtime.replaceBlockEffectiveInterfaceV2(base, {
+      boundary: base.effectiveInterface.boundary,
+      controls: [
+        {
+          controlId: 'pipeline',
+          label: 'Pipeline',
+          binding: { nodeId: draft.nodes[0].id, fieldId: 'pipeline_class' },
+          mirrorBindings: [{ nodeId: mirrorId, fieldId: 'pipeline_class' }],
+          valueType: 'string',
+          defaultValue: 'FuturePipeline',
+          order: 0,
+          ...(scope === 'sealed' ? { sealed: true } : {}),
+        },
+      ],
+    });
+    const graph = { nodes: [runtime.createBlockRootNodeV2(base)], edges: [] };
+    const snapshot = structuredClone(graph);
+    const target = starter('OtherPipeline');
+    target.nodes[1].node.params.pipeline_class = {
+      type: 'string',
+      value: scope === 'conflicting' ? 'ConflictingPipeline' : 'OtherPipeline',
+    };
+    target.nodes[1].operation.binding.values.pipeline_class = target.nodes[1].node.params.pipeline_class.value;
+    if (scope === 'agreed') {
+      const result = planOwnerBlockOperationChange(graph, base.instanceId, draft.nodes[0].id, target);
+      assert.equal(result.graph.nodes[0].data.blockInstanceV2.values.pipeline, 'OtherPipeline');
+    } else
+      assert.throws(
+        () => planOwnerBlockOperationChange(graph, base.instanceId, draft.nodes[0].id, target),
+        /overrides the replacement value/,
+      );
+    assert.deepEqual(graph, snapshot);
+  });
+}
+
+for (const status of ['running', 'queued']) {
+  test(`legacy model-change preview rejects a ${status} owner without converting it`, async () => {
+    const { createUserBlockFromSelection } = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+    const { prepareOperationBlockGraph } = await server.ssrLoadModule('/src/workflow/operationLegacyBlockChange.ts');
+    const draft = graph();
+    draft.nodes.forEach((node) => {
+      node.selected = true;
+    });
+    const saved = createUserBlockFromSelection(draft, 'Busy Block');
+    assert.equal(saved.ok, true);
+    saved.blockNode.data.executionStatus = status;
+    const before = structuredClone(saved.nodes);
+    assert.throws(
+      () => prepareOperationBlockGraph({ nodes: saved.nodes, edges: saved.edges }, saved.blockNode.id),
+      /Wait for this Block/,
+    );
+    assert.deepEqual(saved.nodes, before);
+  });
+}
+
+test('legacy nested snapshot conversion retains each advisory loader scope', async () => {
+  const { createUserBlockFromSelection } = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const { migrateLegacyHierarchyV2 } = await server.ssrLoadModule('/src/studio/legacyBlockMovementV2.ts');
+  const draft = authoring.createOperationStarter(seededStarter(true), { x: 40, y: 60 });
+  draft.nodes.forEach((node) => {
+    node.selected = true;
+  });
+  const saved = createUserBlockFromSelection(draft, 'Inner saved graph');
+  assert.equal(saved.ok, true);
+  const root = { ...saved.blockNode, id: 'inner' };
+  const wrapper = {
+    ...structuredClone(saved.block),
+    id: 'outer',
+    nodes: [root],
+    edges: [],
+    inputs: [],
+    outputs: [],
+    exposedParams: [],
+  };
+  const before = structuredClone(wrapper);
+  const converted = migrateLegacyHierarchyV2(wrapper, []);
+  const loader = converted.graph.nodes.find(
+    (node) => node.data.operationAuthoring?.operation.decomposition === 'loader',
+  );
+  assert.ok(loader.nodeId.startsWith('inner::'));
+  for (const node of converted.graph.nodes)
+    for (const hint of node.data.operationAuthoring?.sharedInputs ?? []) assert.equal(hint.loaderId, loader.nodeId);
+  assert.deepEqual(wrapper, before);
 });

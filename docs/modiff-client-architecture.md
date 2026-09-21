@@ -134,6 +134,16 @@ legacy graphs are not converted on open. Stage inspection shows defaults,
 overrides, connected fallbacks and retained settings separately. Retained settings
 are not automatically restored or included in execution parameters.
 
+Saved ordinary-node Blocks retain their legacy format until an explicit edit
+requires conversion. Their model/task chooser prepares a read-only candidate
+through the existing legacy instance adapter. Preview and cancellation never
+rewrite the graph or library. Apply commits conversion and model replacement in
+one canvas transaction; Undo restores the original format. The current embedded
+values, typed interfaces and unrelated instances survive. Editable exposed
+controls follow the reviewed replacement only when every mirrored target agrees;
+sealed controls and bindings outside the selected loader scope remain protected.
+This path shares the ordinary operation planner and existing backend executor.
+
 Required media readiness also checks generic operation ports in the resolved
 execution scope, including internal nodes without public Block ports. Current
 backend declarations refresh matching saved operation requirements without
@@ -1285,3 +1295,8 @@ uncaptured. Legacy outputs without receipts keep their historical labels. Finite
 safe decimal strings from native controls can be displayed as numbers without
 rewriting the receipt or saved form. This presentation conversion never merges
 conflicting captures or fills missing values from form defaults.
+
+Block preview projections retain source-field artifact metadata only when its
+URL and available task identity match the current instance media reference.
+Older cached artifacts stay in the immutable source snapshot but cannot override
+a newer rendered output, including after save/reload or explicit legacy conversion.

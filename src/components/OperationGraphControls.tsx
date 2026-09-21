@@ -90,7 +90,7 @@ export default function OperationGraphControls({
       const plan = !change
         ? null
         : blockId
-          ? (await import('../workflow/operationBlockChange')).planBlockOperationChange(
+          ? (await import('../workflow/operationLegacyBlockChange')).planOwnerBlockOperationChange(
               snapshot,
               blockId,
               loader,

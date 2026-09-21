@@ -1,4 +1,15 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react';
 import { ListChecks, Maximize2, Minimize2, Save, Settings2 } from 'lucide-react';
 import { type NodeProps, useStoreApi, useUpdateNodeInternals } from '@xyflow/react';
 
@@ -38,7 +49,10 @@ import {
 import NodeContent from './NodeContent';
 import { enqueueSnackbar } from '../ui/snackbar';
 
+const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
+
 const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
+  const currentNode = useFlowStore((state) => state.nodes.find((candidate) => candidate.id === node.id));
   const nodeRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const connectorRef = useRef<HTMLDivElement>(null);
@@ -384,6 +398,9 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
         }
         controls={
           <div className="grid gap-2" data-testid={`user-block-disclosures-${node.id}`}>
+            <Suspense fallback={<p role="status">Loading model controls…</p>}>
+              {currentNode ? <OperationOwnerControls node={currentNode} /> : null}
+            </Suspense>
             {contentGroups.map((group) => (
               <section key={group.id} data-block-source-node={group.id}>
                 {Object.keys(group.controlParams).length > 0 ? (

@@ -2756,3 +2756,46 @@ test('selected Block retains another Block supplying its input through the exist
   assert.equal(exported.nodes[runtime.blockProjectionNodeIdV2(first.id, 'preview')], undefined);
   assert.ok(exported.nodes[runtime.blockProjectionNodeIdV2(second.id, 'preview')]);
 });
+
+for (const artifactCase of ['old-url', 'old-task', 'matching', 'canonical-matching']) {
+  test(`current Block preview checks ${artifactCase} source artifact authority`, async () => {
+    const original = instance('preview-artifact-authority');
+    const graph = structuredClone(original.effectiveGraph);
+    const field = graph.nodes.find((node) => node.nodeId === 'preview').data.params.images;
+    field.type = 'url';
+    field.value = '/file?file=old.webp';
+    field.artifacts = [
+      {
+        url: artifactCase === 'old-url' ? '/file?file=old.webp' : '/file?file=current.webp',
+        ...(artifactCase === 'canonical-matching'
+          ? { taskId: 'current-task' }
+          : { task_id: artifactCase === 'matching' ? 'current-task' : 'old-task' }),
+        width: 1328,
+        height: 1328,
+        mimeType: 'image/webp',
+      },
+    ];
+    const authored = runtime.replaceBlockEffectiveGraphV2(original, graph);
+    const current = runtime.setBlockPreviewStateV2(
+      authored,
+      { nodeId: 'preview', outputPortId: 'images' },
+      { mediaReference: '/file?file=current.webp', taskId: 'current-task', status: 'complete' },
+    );
+    const before = structuredClone(current);
+    const view = runtime.blockViewModelV2(current).previewViews[0];
+    const param = Object.values(view.params)[0];
+    assert.equal(param.value, '/file?file=current.webp');
+    assert.deepEqual(param.artifacts, artifactCase.endsWith('matching') ? field.artifacts : []);
+    const { normalizeImageArtifacts } = await server.ssrLoadModule('/src/utils/imageArtifacts.ts');
+    const [media] = normalizeImageArtifacts({
+      value: param.value,
+      artifacts: param.artifacts,
+      dataType: param.type,
+      mimeType: 'image/webp',
+      nodeId: 'preview',
+      fieldKey: 'images',
+    });
+    assert.equal(new URL(media.url).searchParams.get('file'), 'current.webp');
+    assert.deepEqual(current, before, 'rendering does not rewrite the effective graph or immutable definition');
+  });
+}

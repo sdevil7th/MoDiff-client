@@ -1,7 +1,7 @@
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData } from '../stores/useNodeStore';
 import { deepEqual } from '../utils/deepEqual';
-import { blockContainerFieldValueV1 } from '../studio/blockContainerInterfaceV1';
+import { blockContainerControlTargetsV1, blockContainerFieldValueV1 } from '../studio/blockContainerInterfaceV1';
 import {
   assertBlockCrossingConnectionV2,
   blockCrossingParamV2,
@@ -10,6 +10,7 @@ import {
 import { blockValueTypesAreCompatibleV2 } from '../studio/blockValueTypeCompatibilityV2';
 import {
   runtimeNodeType,
+  setBlockInstanceValueV2,
   addBlockEffectiveGraphNodeV2,
   createBlockRootNodeV2,
   replaceBlockEffectiveGraphNodeV2,
@@ -115,6 +116,34 @@ export function planBlockOperationChange(
     }
   }
   instance = replaceBlockEffectiveGraphV2(instance, { ...instance.effectiveGraph, edges });
+  // Explicit replacement also updates editable public controls. Every mirrored
+  // target must agree; sealed controls and unrelated owners remain protected.
+  for (const control of instance.effectiveInterface.controls) {
+    const targets = blockContainerControlTargetsV1(control);
+    const values = targets.map((binding) => {
+      const node = planned.find((candidate) => candidate.id === binding.nodeId);
+      const field = node?.data.params[binding.fieldId];
+      return field && Object.prototype.hasOwnProperty.call(field, 'value') ? field.value : field?.default;
+    });
+    if (
+      !targets.some(
+        (binding, index) =>
+          scope.has(binding.nodeId) &&
+          !deepEqual(blockContainerFieldValueV1(instance, binding.nodeId, binding.fieldId), values[index]),
+      )
+    )
+      continue;
+    if (
+      control.sealed ||
+      values[0] === undefined ||
+      targets.some((binding) => !scope.has(binding.nodeId)) ||
+      values.some((value) => !deepEqual(value, values[0]))
+    )
+      throw new Error(
+        `The Block control ${control.label} overrides the replacement value. Review Configure Interface before retrying.`,
+      );
+    instance = setBlockInstanceValueV2(instance, control.controlId, JSON.parse(JSON.stringify(values[0])));
+  }
   for (const node of planned.filter(
     (node) => scope.has(node.id) || !internal.nodes.some((old) => old.id === node.id),
   )) {

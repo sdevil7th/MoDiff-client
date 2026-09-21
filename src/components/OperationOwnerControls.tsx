@@ -7,11 +7,21 @@ import { workflowChoices } from '../workflow/workflowChoices';
 import { ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import OperationGraphControls from './OperationGraphControls';
 
+const LegacyOperationOwnerControls = lazy(() => import('./LegacyOperationOwnerControls'));
+
 const BlockModelTaskControls = lazy(() => import('./BlockModelTaskControls'));
 
 /** Local target choices never change library browsing or the authored graph. */
 export default function OperationOwnerControls({ node }: { node: CustomNodeType }) {
   if (node.data.blockInstanceV2) return <BlockOwnerChoices node={node} />;
+  if (node.data.userBlockSnapshot || node.data.userBlockId)
+    return (
+      <ModiffDisclosure label="Change model / task" panelClassName="grid gap-2 py-2">
+        <Suspense fallback={<p role="status">Loading model/task controls…</p>}>
+          <LegacyOperationOwnerControls nodeId={node.id} />
+        </Suspense>
+      </ModiffDisclosure>
+    );
   const hint = operationAuthoring(node);
   if (
     !hint ||
@@ -32,7 +42,15 @@ export default function OperationOwnerControls({ node }: { node: CustomNodeType 
   );
 }
 
-function BlockOwnerChoices({ node }: { node: CustomNodeType }) {
+export function BlockOwnerChoices({
+  node,
+  ownerBlockId = node.id,
+  inline = false,
+}: {
+  node: CustomNodeType;
+  ownerBlockId?: string;
+  inline?: boolean;
+}) {
   const loaders = blockOperationGraphV2(node.data.blockInstanceV2!).nodes.filter(
     (candidate) => operationAuthoring(candidate)?.operation.decomposition === 'loader',
   );
@@ -64,7 +82,8 @@ function BlockOwnerChoices({ node }: { node: CustomNodeType }) {
       <OwnerChoices
         key={`${loader.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
         ownerId={loader.data.blockProjectionNodeId!}
-        blockId={node.id}
+        blockId={ownerBlockId}
+        inline={inline}
         pipelineClass={hint.operation.pipelineClass}
         currentTask={hint.operation.task}
       />
@@ -77,11 +96,13 @@ function OwnerChoices({
   blockId,
   pipelineClass,
   currentTask,
+  inline = false,
 }: {
   ownerId: string;
   blockId?: string;
   pipelineClass: string;
   currentTask: string;
+  inline?: boolean;
 }) {
   const support = useNodesStore((state) => state.pipelineSupport);
   const models = useNodesStore((state) => state.studioModelCapabilities);
@@ -104,7 +125,7 @@ function OwnerChoices({
     choice.profileId ? [{ value: choice.profileId, label: `${choice.label} · ${choice.repo}` }] : [],
   );
   return (
-    <ModiffDisclosure label="Change model / task" panelClassName="grid gap-2 py-2">
+    <ModiffDisclosure label="Change model / task" collapsible={!inline} panelClassName="grid gap-2 py-2">
       <p className="text-xs text-modiff-subtle-text">
         Review changes to this loader and its connected nodes. Model files and resources are checked when you run.
       </p>

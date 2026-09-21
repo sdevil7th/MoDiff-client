@@ -1,3 +1,4 @@
+import { remapOperationAuthoring } from '../workflow/operationSharedInputs';
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
@@ -230,14 +231,18 @@ export function migrateLegacyHierarchyV2(
     );
     base.graph.nodes.find((node) => node.nodeId === id)!.containerInterface = surface;
     base.graph.nodes.push(
-      ...definition.graph.nodes.map((node) => ({
-        ...node,
-        nodeId: map.get(node.nodeId)!,
-        parentNodeId: node.parentNodeId ? map.get(node.parentNodeId)! : id,
-        ...(node.containerInterface
-          ? { containerInterface: remapBlockContainerInterfaceV1(node.containerInterface, map) }
-          : {}),
-      })),
+      ...definition.graph.nodes.map((node) => {
+        const hint = remapOperationAuthoring(node.data.operationAuthoring, (key) => map.get(key) ?? key);
+        return {
+          ...node,
+          data: { ...node.data, ...(hint ? { operationAuthoring: JSON.parse(JSON.stringify(hint)) } : {}) },
+          nodeId: map.get(node.nodeId)!,
+          parentNodeId: node.parentNodeId ? map.get(node.parentNodeId)! : id,
+          ...(node.containerInterface
+            ? { containerInterface: remapBlockContainerInterfaceV1(node.containerInterface, map) }
+            : {}),
+        };
+      }),
     );
     base.graph.edges.push(
       ...definition.graph.edges.map((edge) => ({
@@ -271,6 +276,11 @@ function safeLegacyIds(snapshot: UserBlockDefinition) {
     nodeMap.set(node.id, next);
     node.id = next;
   }
+  for (const node of copy.nodes as CustomNodeType[]) {
+    const hint = remapOperationAuthoring(node.data.operationAuthoring, (id) => nodeMap.get(id) ?? id);
+    if (hint) node.data.operationAuthoring = hint;
+    if (node.parentId) node.parentId = nodeMap.get(node.parentId) ?? node.parentId;
+  }
   for (const edge of copy.edges as Edge[]) {
     edge.source = nodeMap.get(edge.source) ?? edge.source;
     edge.target = nodeMap.get(edge.target) ?? edge.target;
@@ -282,9 +292,9 @@ function safeLegacyIds(snapshot: UserBlockDefinition) {
   return { snapshot: copy, nodeMap };
 }
 
-/** Upgrade only workflow instances involved in an explicit membership gesture.
+/** Upgrade only workflow instances involved in an explicit instance edit.
  * The existing V1 snapshot/adapter owns values and interfaces; no library save.
- * Callers commit the returned graph and movement in the same Undo transaction. */
+ * Callers commit the returned graph and requested edit in the same Undo transaction. */
 export function prepareLegacyBlockMovementV2(
   nodes: CustomNodeType[],
   edges: Edge[],

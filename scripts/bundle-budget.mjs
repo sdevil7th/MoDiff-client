@@ -38,7 +38,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // addition at 609 KiB and retain the individual startup chunk ceiling.
 // Generic backend-only workflow identities add 55 startup bytes (623650 measured).
 // Allow 128 bytes for their shared store metadata; keep the chunk ceiling fixed.
-const MAX_STARTUP_GZIP_BYTES = 609 * 1024 + 128;
+// Current-preview artifact ownership adds 65 bytes (623807 measured). Allow
+// another 128 bytes for this shared renderer fix; individual chunk caps stay fixed.
+const MAX_STARTUP_GZIP_BYTES = 609 * 1024 + 256;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -97,7 +99,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 229 KiB. Startup and individual chunk limits remain unchanged.
 // Shared discovery/replacement descriptors add 875 deferred bytes (234516 total).
 // Bound this generic-model support at one additional KiB; chunk limits stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 230 * 1024;
+// Legacy Saved Block model controls add 1059 deferred bytes (235575 measured).
+// Allow 128 bytes beyond the existing aggregate cap; keep startup and chunk caps.
+const MAX_DEFERRED_GZIP_BYTES = 230 * 1024 + 128;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

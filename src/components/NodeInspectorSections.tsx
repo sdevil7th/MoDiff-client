@@ -31,7 +31,10 @@ export default function NodeInspectorSections({ node, children }: { node: Custom
       <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${section}`} tabIndex={0}>
         {section === 'parameters' ? (
           <div className="grid gap-3">
-            {node.data.blockInstanceV2 || node.data.operationAuthoring?.operation?.decomposition === 'loader' ? (
+            {node.data.blockInstanceV2 ||
+            node.data.userBlockSnapshot ||
+            node.data.userBlockId ||
+            node.data.operationAuthoring?.operation?.decomposition === 'loader' ? (
               <Suspense fallback={<StatusLine>Loading model controls…</StatusLine>}>
                 <OperationOwnerControls node={node} />
               </Suspense>
