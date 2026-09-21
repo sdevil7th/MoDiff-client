@@ -364,6 +364,9 @@ their Python contract requires components. Connect **Load Models → Pipeline
 Components** to reuse compatible loaded weights. This does not download missing
 block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/custom-nodes.md)
 for the VAE reconstruction example and component requirements.
+Blocks with official component types also expose **Load Models — [block name]**
+after approval. Select pinned, downloaded sources for its components, use **Custom**
+memory policy, and connect its Pipeline Components output to the custom block.
 
 ## Interface Map
 
