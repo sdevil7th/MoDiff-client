@@ -66,6 +66,9 @@ const inputNames: Record<string, string> = {
   control_guidance_end: 'controlGuidanceEnd',
   prompt_embeds_scale: 'reduxPromptEmbedsScale',
   pooled_prompt_embeds_scale: 'reduxPooledPromptEmbedsScale',
+  processing_resolution: 'processingResolution',
+  match_input_resolution: 'matchInputResolution',
+  depth_convention: 'depthConvention',
 };
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.

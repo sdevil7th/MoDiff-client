@@ -453,3 +453,24 @@ test('graph task evidence replaces stale history labels while preserving the sav
     assert.equal(inputs.coerceResolvedExecutionInputs(malformed, output), undefined);
   }
 });
+
+test('depth receipt preserves model-default resolution and false input matching through history parsing', () => {
+  const value = receipt();
+  value.nodes[0] = {
+    nodeId: 'depth',
+    module: 'modules.HuggingFaceTransformers',
+    action: 'PredictDepth',
+    fields: {
+      processing_resolution: { value: 0, source: 'literal' },
+      match_input_resolution: { value: false, source: 'literal' },
+      depth_convention: { value: 'model_default', source: 'literal' },
+    },
+    omittedFields: {},
+  };
+  value.summary = { processingResolution: 0, matchInputResolution: false, depthConvention: 'model_default' };
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(value, identity), value);
+  const mismatched = structuredClone(value);
+  mismatched.summary.matchInputResolution = true;
+  assert.equal(inputs.coerceResolvedExecutionInputs(mismatched, identity), undefined);
+});
