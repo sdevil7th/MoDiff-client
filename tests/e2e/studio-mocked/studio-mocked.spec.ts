@@ -9760,6 +9760,19 @@ test('both workspaces discover and insert image utilities without implementation
         instance: 'mock',
         nodes: {
           ...mockRegistry,
+          'modules.ImageFilters.Canny': nodeDef('modules.ImageFilters', 'Canny', 'image_filter', {
+            image: { type: 'image', display: 'input' },
+            output: { type: 'image', display: 'output' },
+          }),
+          'modules.Color.Invert': nodeDef('modules.Color', 'Invert', 'color', {
+            image: { type: 'image', display: 'input' },
+            output: { type: 'image', display: 'output' },
+          }),
+          'modules.DiffusersImage.OutpaintCanvas': nodeDef('modules.DiffusersImage', 'OutpaintCanvas', 'image', {
+            image: { type: 'image', display: 'input' },
+            canvas: { type: 'image', display: 'output' },
+            mask_image: { type: 'image', display: 'output' },
+          }),
           'modules.Image.Resize': nodeDef('modules.Image', 'Resize', 'image', {
             image: { type: 'image', display: 'input' },
             width: { type: 'int', default: 1024 },
@@ -9777,15 +9790,23 @@ test('both workspaces discover and insert image utilities without implementation
     await setStudioViewMode(page, mode);
     await page.getByTestId('left-tab-nodes').click();
     await expect(page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true })).not.toBeChecked();
-    await page.getByLabel('Search nodes', { exact: true }).fill('Resize');
-    await page.getByTestId('node-row-modules-Image-Resize').click();
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () => window.__MODIFF_E2E__!.getState().flow.nodes.filter((node) => node.action === 'Resize').length,
-        ),
-      )
-      .toBe(index + 1);
+    for (const [module, action] of [
+      ['Image', 'Resize'],
+      ['ImageFilters', 'Canny'],
+      ['Color', 'Invert'],
+      ['DiffusersImage', 'OutpaintCanvas'],
+    ]) {
+      await page.getByLabel('Search nodes', { exact: true }).fill(action);
+      await page.getByTestId(`node-row-modules-${module}-${action}`).click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (action) => window.__MODIFF_E2E__!.getState().flow.nodes.filter((node) => node.action === action).length,
+            action,
+          ),
+        )
+        .toBe(index + 1);
+    }
   }
 });
 

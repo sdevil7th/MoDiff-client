@@ -101,7 +101,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Bound this generic-model support at one additional KiB; chunk limits stay fixed.
 // Legacy Saved Block model controls add 1059 deferred bytes (235575 measured).
 // Allow 128 bytes beyond the existing aggregate cap; keep startup and chunk caps.
-const MAX_DEFERRED_GZIP_BYTES = 230 * 1024 + 128;
+// Normal discovery includes image filters, color inversion and Outpaint Canvas.
+// Measured deferred aggregate is 235674 bytes (+75); allow 64 bytes beyond the
+// previous cap. Startup and individual chunk budgets stay unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 230 * 1024 + 192;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

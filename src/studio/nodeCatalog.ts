@@ -87,6 +87,7 @@ const MODEL_SPECIFIC_MODULES = new Set<string>();
 // Discovery only: these existing generic operations keep their backend schemas
 // and execution identities. Inclusion does not add model/task support.
 const GENERIC_NODE_KEYS = new Set([
+  'modules.DiffusersImage.OutpaintCanvas',
   'modules.ModularDiffusers.ModelsLoader',
   'modules.ModularDiffusers.AutoModelLoader',
   'modules.ModularDiffusers.EncodePrompt',
@@ -114,6 +115,8 @@ export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeC
     entry.node.module === 'modules.Primitive' ||
     entry.node.module === 'modules.Text' ||
     entry.node.module === 'modules.Image' ||
+    entry.node.module === 'modules.ImageFilters' ||
+    entry.node.module === 'modules.Color' ||
     entry.node.module.startsWith('custom.')
   );
 }

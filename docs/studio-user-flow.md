@@ -138,7 +138,7 @@ editable starting values; resolving another model does not rewrite an existing
 workflow or change its memory policy.
 
 Ordinary image utilities—including Resize, Apply Mask, Merge Images, Image Grid,
-comparison and saving—are available in the normal Nodes library in both workspaces,
+Canny Edge Detection, color inversion, Outpaint Canvas, comparison and saving—are available in the normal Nodes library in both workspaces,
 alongside text and value utilities. They do not require a pipeline selection or
 an implementation filter.
 
