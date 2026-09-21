@@ -17225,6 +17225,13 @@ test('startup run recovery preserves the selected saved workflow until explicit 
   );
   await expect(page.getByTestId(`workflow-tab-${identity.selectedId}`)).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('session-run-other-client-task')).toBeVisible();
+  await expect(page.locator('.react-flow__node').filter({ hasText: 'Denoising in another workflow' })).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      window.__MODIFF_E2E__!.getState().flow.nodes.some((node) => node.activeTaskId === 'other-client-task'),
+    ),
+  ).toBe(false);
+
   await page.getByTestId('session-run-other-client-task').click();
   await expect(page.getByTestId(`workflow-tab-${identity.remoteId}`)).toHaveAttribute('aria-selected', 'true');
   await page.reload({ waitUntil: 'domcontentloaded' });

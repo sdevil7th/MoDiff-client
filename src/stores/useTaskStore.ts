@@ -431,7 +431,13 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
         queueRevision: state.queueRevision + 1,
       };
     });
-    if (current?.current_node && !isTerminalTaskStatus(current.status)) {
+    if (
+      current?.current_node &&
+      !isTerminalTaskStatus(current.status) &&
+      useStudioStore
+        .getState()
+        .shouldApplyRunUpdateToActiveWorkflow(current.task_id, current.client_run_id, current.workflow_tab_id)
+    ) {
       const flow = useFlowStore.getState();
       const progressNodeId = runtimeProgressTarget(flow.nodes, current.current_node, current.current_node_name);
       if (progressNodeId) {

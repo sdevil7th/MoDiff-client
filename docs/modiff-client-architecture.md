@@ -797,6 +797,11 @@ reject late or unrelated updates that would overwrite another workflow tab,
 replacement canvas, or newer attempt. Identity-less legacy field messages are
 accepted only when a single open workflow leaves no tab ambiguity.
 
+Queue snapshot recovery uses the same workflow ownership check as live node
+progress before resolving a canvas target by ID or label. Background tasks stay
+visible in Session activity without marking a similarly named node in another
+draft as running; navigating to the owning workflow restores its progress.
+
 Rendered canvas fields retain the workflow context that owns their immutable
 parameter schema. Before dispatch, a field action must still match that context
 and a live node, module/action pair, and field. Delayed option updates and errors

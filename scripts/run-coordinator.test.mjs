@@ -2440,6 +2440,34 @@ test('queue envelopes never overwrite the identity of a different current task',
   assert.equal(cancelled?.workflow_tab_id, 'workflow-queued');
 });
 
+for (const target of ['preview', 'another-runtime-node']) {
+  test(`queue recovery scopes canvas progress before resolving ${target}`, () => {
+    const studio = studioStoreModule.useStudioStore;
+    const tasks = taskStoreModule.useTaskStore;
+    const flow = flowStoreModule.useFlowStore;
+    const current = {
+      task_id: 'background-task',
+      name: 'Background workflow',
+      status: 'running',
+      workflow_tab_id: 'workflow-background',
+      current_node: target,
+      current_node_name: 'modules.Test.Preview',
+      node_progress: 42,
+      phase: 'denoising',
+      message: 'Denoising in the background',
+    };
+    tasks.getState().setTasks(current, {});
+    assert.equal(tasks.getState().currentTask.task_id, 'background-task');
+    assert.equal(tasks.getState().taskCount, 1);
+    assert.equal(flow.getState().nodes[0].data.activeTaskId, undefined);
+    assert.equal(flow.getState().nodes[0].data.progress, undefined);
+    studio.setState({ activeWorkflowTabId: 'workflow-background' });
+    tasks.getState().setTasks(current, {});
+    assert.equal(flow.getState().nodes[0].data.activeTaskId, 'background-task');
+    assert.equal(flow.getState().nodes[0].data.progress, 42);
+  });
+}
+
 test('a terminal event cannot borrow identity from a different current task', () => {
   const current = taskStoreModule.coerceTask({
     task_id: 'task-running-after-completion',

@@ -115,7 +115,11 @@ test('queue response validation reports an endpoint error and a later retry reco
   assert.equal(state.queuedTasks.next.task_id, 'next');
 });
 
-test('supervisor fallback restores active node progress and clears it on terminal recovery', async () => {
+test('supervisor fallback restores active node progress and clears it on terminal recovery', async (t) => {
+  const { useStudioStore } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const previousWorkflow = useStudioStore.getState().activeWorkflowTabId;
+  useStudioStore.setState({ activeWorkflowTabId: 'workflow-1' });
+  t.after(() => useStudioStore.setState({ activeWorkflowTabId: previousWorkflow }));
   flowStoreModule.useFlowStore.setState({
     nodes: [
       {
