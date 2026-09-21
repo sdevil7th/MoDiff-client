@@ -1199,7 +1199,7 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
   const issues = [
     ...collectUserBlockCompositionIssues(),
     ...collectGraphStructureIssues(executionGraph),
-    ...inspectBlockMediaInputsV2(visibleGraph.nodes, executionGraph),
+    ...inspectBlockMediaInputsV2(visibleGraph.nodes, executionGraph, useNodesStore.getState().operationContracts),
     ...collectGraphModelIssues(executionGraph),
     ...collectGraphDeviceOffloadIssues(executionGraph),
   ];
@@ -1822,7 +1822,13 @@ export function collectRunReadinessIssues(options: {
   }
   if (executionGraph) {
     issues.push(...collectGraphStructureIssues(executionGraph));
-    issues.push(...inspectBlockMediaInputsV2(useFlowStore.getState().nodes, executionGraph));
+    issues.push(
+      ...inspectBlockMediaInputsV2(
+        useFlowStore.getState().nodes,
+        executionGraph,
+        useNodesStore.getState().operationContracts,
+      ),
+    );
     issues.push(...collectGraphModelIssues(executionGraph));
     issues.push(...collectGraphDeviceOffloadIssues(executionGraph));
   }
@@ -1961,6 +1967,7 @@ export function collectRunReadinessIssues(options: {
     'graph_output_disconnected',
     'composite_execution_graph_invalid',
     'block_media_input_missing',
+    'operation_media_input_missing',
   ]);
   return collected.map((item) => {
     if (!item.blocking || hardSubmissionBlocks.has(item.code ?? '') || item.code?.startsWith('user_block_')) {

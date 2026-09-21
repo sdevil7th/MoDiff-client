@@ -900,8 +900,8 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
 
   const seenReadinessKeys = new Set<string>();
   (context.readinessIssues ?? []).forEach((readiness) => {
-    if (readiness.code === 'block_media_input_missing') {
-      const issueId = candidateId(readiness.code, readiness.nodeId, readiness.fieldId);
+    if (readiness.code === 'block_media_input_missing' || readiness.code === 'operation_media_input_missing') {
+      const issueId = candidateId(readiness.code, readiness.id);
       issues.push({
         id: issueId,
         kind: 'missing_media',

@@ -157,6 +157,26 @@ test('a missing required Block media input offers targeted navigation, never an 
   assert.deepEqual(root, before);
 });
 
+test('distinct required media findings inside a collapsed Block retain unique Fix identities', () => {
+  const root = blockV2Node();
+  const readinessIssues = ['image', 'mask_image'].map((field) => ({
+    id: `operation-media-input-missing:internal-encode:${field}`,
+    code: 'operation_media_input_missing',
+    category: 'asset',
+    severity: 'error',
+    blocking: true,
+    nodeId: root.id,
+    action: 'inspect_node',
+    message: `Connect ${field} before running.`,
+  }));
+  const plan = graphFixer.buildGraphFixPlan({ nodes: [root], edges: [], registry: {}, readinessIssues });
+  const issues = plan.issues.filter((i) => i.kind === 'missing_media');
+  assert.equal(issues.length, 2);
+  assert.equal(new Set(issues.map((i) => i.id)).size, 2);
+  assert.equal(new Set(issues.flatMap((i) => i.candidates.map((c) => c.id))).size, 2);
+  assert.ok(issues.every((i) => i.targetNodeId === root.id && i.targetHandle === undefined));
+});
+
 test('editable Block boundary controls do not receive mandatory connection repairs for blank values', () => {
   const catalog = JSON.parse(
     gunzipSync(readFileSync(path.resolve(ROOT, '../MoDiff/modiff/registered_block_v2_catalog.v1.json.gz'))),

@@ -8781,6 +8781,7 @@ async function installOperationAuthoringRoutes(page: Page) {
   await page.unroute('**/nodes');
   const registry = {
     ...Object.fromEntries(starters.flatMap((s) => s.nodes.map((n) => [n.operation.nodeKey, n.node]))),
+    'modules.Image.Load': mockRegistry['modules.Image.Load'],
     'modules.Image.Preview': mockRegistry['modules.Image.Preview'],
     'modules.Audio.Preview': nodeDef('modules.Audio', 'Preview', 'audio', {
       audio: { type: 'audio', display: 'input' },
@@ -27009,4 +27010,206 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.getByTestId('gallery-inspect-view').locator('h2').scrollIntoViewIfNeeded();
     await page.screenshot({ path: test.info().outputPath('recognized-graph-task.png'), animations: 'disabled' });
   });
+}
+
+for (const workspace of ['auto', 'expert'] as const) {
+  for (const inBlock of [false, true]) {
+    test(`${workspace} required operation media follows task changes ${inBlock ? 'inside a Block' : 'on ordinary nodes'}`, async ({
+      page,
+    }) => {
+      page.setDefaultTimeout(15_000);
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      page.on('console', (message) => {
+        if (message.text().includes('Encountered two children with the same key')) errors.push(message.text());
+      });
+      await page.setViewportSize({ width: 2600, height: 1500 });
+      await ensureFrontend();
+      const starters = await installOperationAuthoringRoutes(page);
+      await page.route('**/preview?*', (route) =>
+        route.fulfill({
+          contentType: 'image/png',
+          body: Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mP8z8Dwn4GBgYGJAQoAHQMBgOrlxjcAAAAASUVORK5CYII=',
+            'base64',
+          ),
+        }),
+      );
+      const starter = starters.find(
+        (s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'text_to_image',
+      )!;
+      await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+      await dismissTaskLauncher(page);
+      await setStudioViewMode(page, workspace);
+      let submissions = 0;
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') submissions++;
+      });
+      const owner = await page.evaluate(
+        async ({ starter, inBlock }) => {
+          const [
+            authoring,
+            schema,
+            runtime,
+            factory,
+            { useFlowStore },
+            { useNodesStore },
+            { prepareWorkflowForManualInsertion },
+          ] = await Promise.all([
+            import('/src/workflow/operationAuthoring.ts'),
+            import('/src/studio/blockSchemaV2.ts'),
+            import('/src/studio/blockRuntimeV2.ts'),
+            import('/src/workflow/nodeFactory.ts'),
+            import('/src/stores/useFlowStore.ts'),
+            import('/src/stores/useNodeStore.ts'),
+            import('/src/studio/manualGraphInsertion.ts'),
+          ]);
+          const draft = authoring.createOperationStarter(starter, { x: 80, y: 100 });
+          const loader = draft.nodes.find((n) => n.data.action === 'ModelsLoader')!;
+          const registry = useNodesStore.getState().nodesRegistry;
+          const preview = factory.createNodeFromRegistry('modules.Image.Preview', registry, { x: 1850, y: 100 })!;
+          const decode = draft.nodes.find(
+            (n) => n.data.operationAuthoring?.operation.operationId === 'diffusion.decode_latents',
+          )!;
+          draft.nodes.push(preview);
+          draft.edges.push({
+            id: 'decoded-preview',
+            source: decode.id,
+            sourceHandle: 'images',
+            target: preview.id,
+            targetHandle: 'image',
+          });
+          if (inBlock) {
+            const graph = {
+              nodes: draft.nodes.map((n) => ({
+                nodeId: n.id,
+                nodeType: n.type!,
+                data: JSON.parse(JSON.stringify(n.data)),
+              })),
+              edges: draft.edges.map((e) => ({
+                edgeId: e.id,
+                sourceNodeId: e.source,
+                sourcePortId: e.sourceHandle!,
+                targetNodeId: e.target,
+                targetPortId: e.targetHandle!,
+              })),
+            };
+            const definition: import('../../../src/studio/blockSchemaV2').BlockDefinitionV2 = {
+              schemaVersion: 2,
+              definitionId: 'user:required-operation-media',
+              displayName: 'Required operation media',
+              contentHash: '',
+              source: { kind: 'user' },
+              graph: { ...graph, graphHash: schema.blockGraphHashV2(graph) },
+              boundary: { mode: 'explicit', inputs: [], outputs: [] },
+              controls: [],
+              previews: [],
+              ownership: { kind: 'user', definitionMutable: true },
+            };
+            definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+            const instance = schema.createBlockInstanceV2(definition, {
+              instanceId: 'required-operation-block',
+              position: { x: 80, y: 100 },
+              size: { width: 500, height: 450 },
+            });
+            draft.nodes = [runtime.createBlockRootNodeV2(instance)];
+            draft.edges = [];
+          }
+          for (const [index, id] of ['required-image-source', 'required-mask-source'].entries()) {
+            const source = factory.createNodeFromRegistry('modules.Image.Load', registry, {
+              x: 700 + index * 450,
+              y: 950,
+            })!;
+            source.id = id;
+            source.data.params.file!.value = 'test-image.png';
+            draft.nodes.push(source);
+          }
+          prepareWorkflowForManualInsertion();
+          useFlowStore.getState().replaceGraph(draft);
+          return inBlock ? 'required-operation-block' : loader.id;
+        },
+        { starter, inBlock },
+      );
+      const missing = () =>
+        page.evaluate(() =>
+          window.__MODIFF_E2E__!.inspectRunReadiness().issues.filter((i) => i.code === 'operation_media_input_missing'),
+        );
+      await expect.poll(async () => (await missing()).length).toBe(0);
+      await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+      const ownerNode = page.locator(`.react-flow__node[data-id="${owner}"]`);
+      let inspector;
+      if (inBlock) {
+        await ownerNode.getByRole('button', { name: 'Change model / task', exact: true }).click();
+        inspector = ownerNode;
+      } else {
+        await ownerNode.locator('header').first().click();
+        await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+        inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+        await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
+      }
+      await inspector.getByLabel('Replacement task', { exact: true }).click();
+      await page.getByRole('option', { name: 'inpaint', exact: true }).click();
+      await waitForOperationGraphToSettle(page);
+      await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+      const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+      await expect(review).toContainText('encode image · mask_image');
+      await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+      await expect(review).toHaveCount(0);
+      await expect.poll(async () => (await missing()).length).toBe(2);
+      expect((await missing()).every((i) => i.blocking)).toBe(true);
+      if (inBlock) expect((await missing()).every((i) => i.nodeId === owner)).toBe(true);
+      await page.getByTestId('graph-fix').click();
+      const fix = page.getByTestId('graph-fix-dialog');
+      await expect(fix).toContainText('needs image before running');
+      await expect(fix).toContainText('needs mask image before running');
+      await fix.getByRole('button', { name: 'Close', exact: true }).click();
+      // Memory choice does not grant permission to omit a task's required media.
+      await page.getByTestId('topbar-resource-policy').click();
+      await page.getByRole('option', { name: 'Custom', exact: true }).click();
+      expect((await missing()).every((i) => i.blocking)).toBe(true);
+      if (inBlock) await ownerNode.getByRole('button', { name: 'Expand block', exact: true }).click();
+      await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+      const imageNode = page
+        .locator('.react-flow__node')
+        .filter({ has: page.locator('[data-key="mask_image"]') })
+        .filter({ visible: true })
+        .first();
+      const wire = async (sourceId: string, field: string) => {
+        const from = page.locator(
+          `.react-flow__node[data-id="${sourceId}"] .react-flow__handle.source[data-handleid="image"]`,
+        );
+        const to = imageNode.locator(`.react-flow__handle.target[data-handleid="${field}"]`);
+        await expect(from).toBeVisible();
+        await expect(to).toBeVisible();
+        const a = (await from.boundingBox())!,
+          b = (await to.boundingBox())!;
+        await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 16 });
+        await page.mouse.up();
+      };
+      await wire('required-image-source', 'image');
+      await expect.poll(async () => (await missing()).length).toBe(1);
+      expect((await missing())[0]!.message).toContain('mask image');
+      await wire('required-mask-source', 'mask_image');
+      await expect.poll(async () => (await missing()).length).toBe(0);
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Control+z');
+      await expect.poll(async () => (await missing()).length).toBe(1);
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(async () => (await missing()).length).toBe(0);
+      await page.getByTestId('topbar-save-workflow-options').click();
+      await page.getByTestId('topbar-save-workflow-as').click();
+      await page.getByTestId('save-workflow-name').fill(`Required media ${workspace} ${inBlock}`);
+      await page.getByTestId('confirm-save-workflow').click();
+      await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+      await expect.poll(async () => (await missing()).length).toBe(0);
+      expect(submissions).toBe(0);
+      expect(errors).toEqual([]);
+      await page.screenshot({ path: test.info().outputPath('required-media-connected.png'), animations: 'disabled' });
+    });
+  }
 }

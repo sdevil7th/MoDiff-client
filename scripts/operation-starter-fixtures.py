@@ -30,6 +30,8 @@ with contextlib.redirect_stdout(io.StringIO()):
             ("StableAudioPipeline", "text_to_audio"),
             ("StableDiffusionXLModularPipeline", "text_to_image"),
             ("StableDiffusionXLModularPipeline", "image_to_image"),
+            ("StableDiffusionXLModularPipeline", "inpaint"),
+            ("QwenImageEditPlusModularPipeline", "multi_image_reference_edit"),
         ):
             result = resolve_operation_starter(MODULE_MAP, contracts, {"pipelineClass": pipeline, "task": task})
             result["nodes"] = [

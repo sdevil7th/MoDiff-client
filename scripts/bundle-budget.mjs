@@ -30,7 +30,10 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // correctness fix at 606 KiB. Individual chunks and deferred limits stay fixed.
 // W5 captured model identities and decimal-string history display add 200 bytes
 // compressed (620678 measured). Allow 256 bytes; individual chunk caps stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 606 * 1024 + 256;
+// Required operation-media readiness shares the contract parser with startup.
+// Measured startup 622466 bytes, deferred 229644 (combined smaller than before).
+// Bound startup at 608 KiB; retain all deferred and individual chunk limits.
+const MAX_STARTUP_GZIP_BYTES = 608 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

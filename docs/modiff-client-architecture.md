@@ -134,6 +134,16 @@ legacy graphs are not converted on open. Stage inspection shows defaults,
 overrides, connected fallbacks and retained settings separately. Retained settings
 are not automatically restored or included in execution parameters.
 
+Required media readiness also checks generic operation ports in the resolved
+execution scope, including internal nodes without public Block ports. Current
+backend declarations refresh matching saved operation requirements without
+rewriting their snapshots. Missing required media remains blocking under either
+memory policy; Fix opens the affected visible node or owning Block. Optional
+media, blank prompts, tensor/state inputs and unrelated execution scopes are not
+inferred to be missing. A compatible enabled incoming connection satisfies this
+presence check; file existence and actual runtime objects still belong to backend
+validation.
+
 `blockControlConnectionsV2` resolves root and nested control aliases against the
 owning effective graph and external public-input wires. Connected body controls
 show their saved fallback read-only, with the source node/port and an explicit
