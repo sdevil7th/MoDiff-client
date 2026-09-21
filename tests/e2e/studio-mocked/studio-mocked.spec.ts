@@ -7013,8 +7013,20 @@ test('a current registered Qwen V2 Block requires source authority and a graph A
   workflowPlanReady = false;
   await runButton.click();
   await expect.poll(() => workflowPlanRequests.length).toBe(2);
-  await expect(page.getByRole('alert')).toContainText('Auto cannot run this workflow: Insufficient memory');
+  const blocked = page.getByTestId('run-issues-dialog');
+  await expect(blocked).toBeVisible();
+  await expect(blocked).toContainText('Auto cannot run this workflow: Insufficient memory');
+  await expect(blocked).toContainText('No run was submitted');
+  // The explanation outlives the caller's seven-second transient notification.
+  await page.waitForTimeout(7500);
+  await expect(blocked).toBeVisible();
   expect(graphRequests).toHaveLength(1);
+  await blocked.getByRole('button', { name: 'Close', exact: true }).filter({ hasText: 'Close' }).click();
+  workflowPlanReady = true;
+  await runButton.click();
+  await expect.poll(() => workflowPlanRequests.length).toBe(3);
+  await expect.poll(() => graphRequests.length).toBe(2);
+  await expect(blocked).toBeHidden();
 });
 
 test('Hub import installs, translates, previews, and persists a pinned remote-code-disabled User Node', async ({
@@ -27627,4 +27639,47 @@ test('Developer extension review handles dependencies, stale approval and failed
   expect(enables).toHaveLength(2);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
   await page.screenshot({ path: test.info().outputPath('custom-source-failure.png') });
+});
+
+test('saved workflow browsing bounds mounted rows and searches the full library', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/workflows?view=summary', (route) =>
+    route.fulfill({
+      json: {
+        workflows: Array.from({ length: 1000 }, (_, index) => ({
+          id: `paged-${index}`,
+          title: `Saved library item ${String(index).padStart(4, '0')}`,
+          updatedAt: 1_000_000 - index,
+          createdAt: 1,
+          source: 'manual',
+          revision: 1,
+        })),
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-workflows').click();
+  const library = page.getByTestId('my-workflows');
+  const rows = library.locator('[data-testid^="saved-workflow-"]');
+  await expect(rows).toHaveCount(50);
+  await expect(page.getByTestId('saved-workflow-paged-999')).toHaveCount(0);
+  await library.getByRole('button', { name: 'Next saved workflows', exact: true }).click();
+  await expect(rows).toHaveCount(50);
+  await expect(page.getByTestId('saved-workflow-paged-0')).toHaveCount(0);
+  await library.getByRole('button', { name: 'Previous saved workflows', exact: true }).click();
+  await expect(page.getByTestId('saved-workflow-paged-0')).toBeVisible();
+  const search = page.getByRole('searchbox', { name: 'Search workflows', exact: true });
+  await search.fill('Saved library item 0999');
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByTestId('saved-workflow-paged-999')).toBeVisible();
+  await search.fill('no saved workflow matches this');
+  await expect(rows).toHaveCount(0);
+  await search.fill('');
+  await expect(rows).toHaveCount(50);
+  await expect(page.getByTestId('saved-workflow-paged-0')).toBeVisible();
+  const panel = page.getByTestId('left-panel');
+  expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });

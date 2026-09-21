@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import config from '../../app.config';
 
 import {
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   FileJson2,
@@ -56,6 +58,7 @@ export interface GraphData {
 }
 
 const graphListRequestGate = createLatestRequestGate<'graphs'>();
+const SAVED_WORKFLOWS_PAGE_SIZE = 50;
 
 type SavedWorkflowSummary = Omit<WorkflowTab, 'snapshot'> & { snapshot?: WorkflowTab['snapshot'] };
 
@@ -137,6 +140,7 @@ function GraphList() {
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflowSummary[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const [savedPage, setSavedPage] = useState(0);
   const [mediaFilter, setMediaFilter] = useState('all');
   const [modelFilter, setModelFilter] = useState('all');
   const [modeFilter, setModeFilter] = useState('all');
@@ -246,6 +250,12 @@ function GraphList() {
   const visibleSavedWorkflowRows = savedWorkflowRows.filter((tab) =>
     tab.title.toLowerCase().includes(search.trim().toLowerCase()),
   );
+  // Each row owns an accessible action menu. Mounting an unbounded library
+  // makes unrelated graph edits and run feedback expensive to render.
+  const lastSavedPage = Math.max(0, Math.ceil(visibleSavedWorkflowRows.length / SAVED_WORKFLOWS_PAGE_SIZE) - 1);
+  const currentSavedPage = Math.min(savedPage, lastSavedPage);
+  const savedOffset = currentSavedPage * SAVED_WORKFLOWS_PAGE_SIZE;
+  const savedPageRows = visibleSavedWorkflowRows.slice(savedOffset, savedOffset + SAVED_WORKFLOWS_PAGE_SIZE);
   const filteredGraphs = useMemo(() => {
     if (!filtersActive) return visibleGraphs;
     return allWorkflowFiles.filter(
@@ -500,8 +510,14 @@ function GraphList() {
           className="min-w-0 flex-1"
           placeholder="Search workflows"
           value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          onClear={() => setSearch('')}
+          onChange={(event) => {
+            setSearch(event.currentTarget.value);
+            setSavedPage(0);
+          }}
+          onClear={() => {
+            setSearch('');
+            setSavedPage(0);
+          }}
         />
         <ModiffIconButton
           label="Reload workflows"
@@ -512,6 +528,7 @@ function GraphList() {
             void fetchSavedWorkflows();
             setExpanded(new Set());
             setSearch('');
+            setSavedPage(0);
             setMediaFilter('all');
             setModelFilter('all');
             setModeFilter('all');
@@ -524,8 +541,31 @@ function GraphList() {
       </div>
       <section className="min-w-0 overflow-hidden border-b border-modiff-border px-2 pb-2" data-testid="my-workflows">
         <h3 className="text-modiff-label mb-1 px-1 font-semibold uppercase text-modiff-subtle-text">My workflows</h3>
+        {lastSavedPage > 0 && (
+          <div className="mb-1 flex min-w-0 items-center justify-between gap-1 text-xs text-modiff-subtle-text">
+            <ModiffIconButton
+              size="compact"
+              label="Previous saved workflows"
+              disabled={currentSavedPage === 0}
+              onClick={() => setSavedPage(currentSavedPage - 1)}
+            >
+              <ChevronLeft size={14} />
+            </ModiffIconButton>
+            <span>
+              {savedOffset + 1}–{savedOffset + savedPageRows.length} of {visibleSavedWorkflowRows.length}
+            </span>
+            <ModiffIconButton
+              size="compact"
+              label="Next saved workflows"
+              disabled={currentSavedPage === lastSavedPage}
+              onClick={() => setSavedPage(currentSavedPage + 1)}
+            >
+              <ChevronRight size={14} />
+            </ModiffIconButton>
+          </div>
+        )}
         <div className="grid gap-1">
-          {visibleSavedWorkflowRows.map((tab) => (
+          {savedPageRows.map((tab) => (
             <div
               key={tab.id}
               className={`group flex min-h-8 min-w-0 items-center gap-1 overflow-hidden rounded-modiff-compact px-2 text-xs ${tab.id === activeWorkflowTabId ? 'bg-hf-yellow/10 text-hf-yellow' : 'text-modiff-text hover:bg-modiff-surface-hover/50'}`}

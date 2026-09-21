@@ -39,6 +39,7 @@ import os
 from copy import deepcopy
 from importlib import import_module
 from types import MethodType, SimpleNamespace
+from unittest.mock import patch
 
 # Catalog reproduction is a static contract audit. Its reviewed device defaults
 # and option labels must not depend on the runner's hardware or optional packages.
@@ -61,7 +62,12 @@ diffusers_profiles.optional_runtime_target = lambda **kwargs: runtime_target(
     machine=kwargs.get("machine") or "x86_64",
 )
 
-from modules import MODULE_MAP
+from modiff.custom_extensions import ExtensionStore
+# This is the built-in catalog. The child process has no pytest isolation and
+# must not import, execute or disable the operator's installed custom sources.
+with patch.object(ExtensionStore, "load_enabled", return_value=None):
+    from modules import MODULE_MAP
+assert not any(key.startswith("custom.") for key in MODULE_MAP)
 from modiff.huggingface_cluster_promotions import build_post_promotion_node_library_candidate
 from modiff.huggingface_node_library import build_huggingface_node_library
 from modiff.modular_conditional_contracts import reviewed_modular_conditional_snapshot

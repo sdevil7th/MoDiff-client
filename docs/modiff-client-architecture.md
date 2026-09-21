@@ -975,6 +975,16 @@ receipts do not replace that executable resource plan. A rejected plan prevents
 submission; it cannot silently fall through to Expert. Planning preserves the
 instance's creative settings and immutable source definition.
 
+The Workflows library renders at most 50 saved rows per page. Search covers the
+complete summary inventory and returns to the first page; paging never deletes
+workflows or fetches their full documents. This bounds action-menu rendering even
+when thousands of saved workflows exist.
+
+A rejected or unavailable workflow memory plan opens the existing **Run blocked**
+dialog with the backend explanation and a fresh-Run recovery path. This feedback
+stays visible until dismissed; it does not fabricate a task or failed generation.
+Late responses cannot open it after a workflow, graph or memory-policy change.
+
 Session activity merges queue history by execution timestamps before applying
 its 30-entry limit, retaining running work ahead of waiting tasks and finished history. Repeated or
 reordered history snapshots must not evict a new submission or promote old runs.

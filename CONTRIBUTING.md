@@ -306,7 +306,9 @@ device/package probes to reproduce the reviewed catalog on any host. Backend
 schemas, field actions, capability generation, and compiler validation remain real;
 the audit checks the existing definition hashes and complete decoded catalog bytes
 (gzip packaging varies across operating systems and zlib versions). This
-is contract evidence, not live hardware or model qualification.
+is contract evidence, not live hardware or model qualification. Python catalog and
+starter-fixture subprocesses suppress custom-extension discovery: they must not
+execute or change the operator’s installed source approvals.
 
 Run the mocked browser gate for behavior or layout-sensitive changes:
 

@@ -501,6 +501,12 @@ test('a historical registered V2 fixture needs a graph resource plan even if it 
     /Auto cannot run this workflow: No reviewed recipe/u,
   );
   assert.equal(requestCount, 1);
+  const blocked = runIssueStoreModule.useRunIssueStore.getState();
+  assert.equal(blocked.issueDialogOpen, true);
+  assert.match(blocked.issues[0].message, /No reviewed recipe/);
+  assert.match(blocked.issues[0].details, /No run was submitted/);
+  assert.equal(blocked.failure, null, 'planning rejection is not a failed model task');
+  assert.equal(studioStoreModule.useStudioStore.getState().currentRunContext, null);
 
   studioStoreModule.useStudioStore.setState({ form: { ...baseForm, resourceMode: 'expert' } });
   const manual = await coordinatorModule.coordinateGraphRun({
@@ -3711,3 +3717,43 @@ test('changing workflows retains the acknowledgement of a queued field action', 
   );
   assert.equal(signal.aborted, false);
 });
+
+for (const responseKind of ['blocked', 'http-error', 'invalid-response']) {
+  for (const changed of [false, 'tab', 'graph', 'mode']) {
+    test(`workflow Auto ${responseKind} keeps actionable feedback only for the current draft (changed=${changed})`, async () => {
+      const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+      studioStoreModule.useStudioStore.setState({
+        form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+      });
+      const before = flowStoreModule.useFlowStore.getState().toObject();
+      const pending = deferredResponse();
+      const requests = [];
+      globalThis.fetch = async (url) => {
+        requests.push(String(url));
+        return pending.promise;
+      };
+      const run = auto.prepareWorkflowAutoExecutionV2(graph());
+      if (changed === 'tab') studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: 'another-workflow' });
+      if (changed === 'graph') flowStoreModule.useFlowStore.getState().setParam('preview', 'output', 'newer.png');
+      if (changed === 'mode') studioStoreModule.useStudioStore.getState().updateForm({ resourceMode: 'expert' });
+      const currentDraft = flowStoreModule.useFlowStore.getState().toObject();
+      pending.resolve(
+        responseKind === 'blocked'
+          ? jsonResponse(workflowPlan(false))
+          : responseKind === 'http-error'
+            ? jsonResponse({ error: true, message: 'Runtime requires repair' }, 400)
+            : jsonResponse({ invalid: true }),
+      );
+      await assert.rejects(run);
+      const issues = runIssueStoreModule.useRunIssueStore.getState();
+      assert.equal(issues.issueDialogOpen, !changed);
+      assert.equal(issues.issues.length, changed ? 0 : 1);
+      assert.equal(issues.failure, null);
+      assert.equal(studioStoreModule.useStudioStore.getState().currentRunContext, null);
+      assert.deepEqual(flowStoreModule.useFlowStore.getState().toObject(), currentDraft);
+      if (!changed) assert.deepEqual(currentDraft, before);
+      assert.equal(requests.length, 1);
+      assert.match(requests[0], /auto_resource\/workflow$/);
+    });
+  }
+}

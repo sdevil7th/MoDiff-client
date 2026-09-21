@@ -10,8 +10,12 @@ from unittest.mock import patch
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "MoDiff"))
 
-with contextlib.redirect_stdout(io.StringIO()):
+from modiff.custom_extensions import ExtensionStore
+
+# Starter fixtures cover built-in contracts, not the operator's approved code.
+with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "load_enabled", return_value=None):
     from modules import MODULE_MAP
+    assert not any(key.startswith("custom.") for key in MODULE_MAP)
     from modiff.operation_catalog import build_operation_catalog
     from modiff.operation_starters import resolve_operation_starter
     from modiff.server import WebServer

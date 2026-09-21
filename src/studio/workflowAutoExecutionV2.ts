@@ -2,7 +2,8 @@ import type { Edge } from '@xyflow/react';
 import config from '../../app.config';
 import { useFlowStore, type APIGraphExport, type CustomNodeType } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
-import { requestJson } from '../utils/requestJson';
+import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { formatRequestError, requestJson } from '../utils/requestJson';
 import { canonicalBlockStringifyV2, type BlockInstanceV2 } from './blockSchemaV2';
 import {
   blockProjectionNodeIdV2,
@@ -148,14 +149,33 @@ export async function prepareWorkflowAutoExecutionV2(
 ) {
   const workflowId = useStudioStore.getState().activeWorkflowTabId;
   const beforeKey = semanticFlowKey();
-  const plan = await fetchWorkflowAutoPlanV2(graph);
-  if (
-    workflowId !== useStudioStore.getState().activeWorkflowTabId ||
-    beforeKey !== semanticFlowKey() ||
-    useStudioStore.getState().form.resourceMode !== 'auto'
-  )
-    throw new Error('The workflow or mode changed while Auto was planning. Run again with the current graph.');
-  if (!plan.canAutoRun) throw new Error(`Auto cannot run this workflow: ${plan.issues.join(' ')}`);
+  const isCurrent = () =>
+    workflowId === useStudioStore.getState().activeWorkflowTabId &&
+    beforeKey === semanticFlowKey() &&
+    useStudioStore.getState().form.resourceMode === 'auto';
+  let plan: WorkflowAutoPlanV2;
+  try {
+    plan = await fetchWorkflowAutoPlanV2(graph);
+    if (!isCurrent())
+      throw new Error('The workflow or mode changed while Auto was planning. Run again with the current graph.');
+    if (!plan.canAutoRun) throw new Error(`Auto cannot run this workflow: ${plan.issues.join(' ')}`);
+  } catch (error) {
+    // Preparation has no task or captured run context. Keep the explanation in
+    // the existing blocking dialog without inventing a failed model execution.
+    if (isCurrent())
+      useRunIssueStore.getState().showIssues([
+        {
+          id: 'workflow-auto-planning',
+          category: 'hardware_fit',
+          severity: 'error',
+          blocking: true,
+          message: formatRequestError(error, 'Workflow memory planning failed.'),
+          details:
+            'No run was submitted. Review the requirements and model/memory settings, then Run again for a fresh plan.',
+        },
+      ]);
+    throw error;
+  }
   const result = applyWorkflowAutoSettingsV2(graph, plan.patches, preparedLegacy);
   const groups = useFlowStore.getState().nodes.flatMap((node) => {
     const instance = node.data.blockInstanceV2;
