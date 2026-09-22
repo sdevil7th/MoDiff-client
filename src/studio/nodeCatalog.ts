@@ -1,3 +1,4 @@
+import { nodeDisplayLabel, nodeSearchAliases } from '../workflow/nodePresentation';
 import { runtimeNodeIdentityV2 } from './nodeLibraryAuditV2';
 import type { NodeData } from '../stores/useNodeStore';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
@@ -154,35 +155,6 @@ const ESSENTIAL_NODE_KEYS = new Set([
   'modules.Text.Display',
 ]);
 
-const FACADE_LABELS: Record<string, string> = {
-  'modules.DiffusersImage.LoadPipeline': 'Load pipeline',
-  'modules.DiffusersAudio.LoadPipeline': 'Load pipeline',
-  'modules.DiffusersImage.Generate': 'Generate image',
-  'modules.DiffusersImage.UnconditionalGenerate': 'Sample image',
-  'modules.DiffusersImage.Edit': 'Edit image',
-  'modules.DiffusersImage.Inpaint': 'Inpaint',
-  'modules.DiffusersImage.ControlGenerate': 'Generate image',
-  'modules.DiffusersImage.LoadAdapter': 'Load adapter',
-  'modules.DiffusersAudio.Generate': 'Generate audio',
-  'modules.DiffusersVideo.GenerateVideoAudio': 'Generate video + audio',
-  'modules.DiffusersVideo.GenerateSequence': 'Generate video sequence',
-  'modules.DiffusersThreeD.LoadPipeline': 'Load 3D pipeline',
-  'modules.DiffusersThreeD.GenerateRenderedArtifact': 'Render 3D orbit',
-  'modules.VideoConditioning.ReferenceImages': 'Reference images',
-  'modules.Audio.Load': 'Load audio',
-  'modules.Audio.FitDuration': 'Fit audio duration',
-  'modules.Audio.Export': 'Export',
-  'modules.Image.Load': 'Load image',
-  'modules.Image.Preview': 'Preview',
-  'modules.Video.Load': 'Load video',
-  'modules.Video.Export': 'Export',
-  'modules.Video.Compose': 'Compose video',
-  'modules.Video.LyricOverlay': 'Add timed lyrics',
-  'modules.Video.ExportWithAudio': 'Export video with audio',
-  'modules.Text.Display': 'Preview text',
-  'modules.ModularDiffusers.ModelsLoader': 'Load model',
-};
-
 function nodeKey(node: NodeData) {
   return `${node.module}.${node.action}`;
 }
@@ -226,23 +198,6 @@ function runtimeKindForNode(node: NodeData, key: string): NodeRuntimeKind {
   return 'diffusers';
 }
 
-function normalizeCatalogLabel(node: NodeData, key: string) {
-  if (FACADE_LABELS[key]) return FACADE_LABELS[key];
-  if (node.module === 'modules.HuggingFaceTransformers') return node.label || node.action;
-  const text = `${key} ${node.category} ${node.label}`.toLowerCase();
-  if (textIncludesAny(text, ['loadpipeline'])) return 'Load pipeline';
-  if (textIncludesAny(text, ['export', 'save'])) return 'Export';
-  if (textIncludesAny(text, ['preview', 'display']))
-    return textIncludesAny(text, ['text']) ? 'Preview text' : 'Preview';
-  if (textIncludesAny(text, ['inpaint', 'outpaint', 'edit'])) return 'Edit image';
-  if (textIncludesAny(text, ['generate'])) {
-    if (text.includes('audio') || /\bace(?:[-_ ]?step)?\b/u.test(text)) return 'Generate audio';
-    if (textIncludesAny(text, ['video', 'wan'])) return 'Generate video';
-    return 'Generate image';
-  }
-  return node.label || `${node.module}.${node.action}`;
-}
-
 export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCatalogEntry {
   const runtimeKind = runtimeKindForNode(node, key);
   const visibility = visibilityForNode(node, key);
@@ -258,7 +213,8 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
   return {
     key,
     dragKey: key,
-    label: normalizeCatalogLabel(node, key),
+    label: nodeDisplayLabel(node),
+    aliases: nodeSearchAliases(node),
     description: node.description,
     surfaceCategory: categoryFromNode(node, key),
     visibility,

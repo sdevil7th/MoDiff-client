@@ -1604,3 +1604,73 @@ test('integrated model operations author, parse and replace without a synthetic 
     ]),
   );
 });
+
+test('pristine route replacement reconnects preview across decomposition and refuses authored graphs', () => {
+  const old = starter();
+  const output = { type: 'image', display: 'output' };
+  old.nodes[1].node.params.images = output;
+  old.nodes[1].operation.ports.push({
+    name: 'images',
+    semanticName: 'images',
+    direction: 'output',
+    roles: ['value'],
+    types: ['image'],
+    required: false,
+    hidden: false,
+    semantics: { kind: 'media', scope: null, state: null, owner: 'none', members: [] },
+  });
+  const next = structuredClone(old);
+  next.pipelineClass = 'WholePipeline';
+  for (const n of next.nodes) n.operation.pipelineClass = 'WholePipeline';
+  next.nodes[1].operation.operationId = 'diffusion.generate_image';
+  next.nodes[1].operation.decomposition = 'pipeline';
+  next.nodes[1].operation.nodeType = 'pipeline';
+  next.nodes[1].operation.blockName = null;
+  next.edges[0].target = 'diffusion.generate_image';
+  const graph = authoring.createOperationStarter(old, { x: 80, y: 120 });
+  const preview = {
+    id: 'preview',
+    type: 'custom',
+    position: { x: 1500, y: 120 },
+    data: {
+      module: 'modules.Image',
+      action: 'Preview',
+      params: { image: { type: 'image', display: 'input' } },
+    },
+  };
+  graph.nodes.push(preview);
+  graph.edges.push({
+    id: 'preview-edge',
+    source: graph.nodes[1].id,
+    sourceHandle: 'images',
+    target: 'preview',
+    targetHandle: 'image',
+  });
+  const before = structuredClone(graph);
+  const plan = authoring.planPristineOperationChange(graph, graph.nodes[0].id, old, next);
+  assert.ok(plan);
+  assert.equal(plan.graph.nodes.length, 3);
+  assert.equal(plan.diagnostics.length, 0);
+  assert.deepEqual(
+    plan.graph.nodes.find((n) => n.id === 'preview'),
+    preview,
+  );
+  const generation = plan.graph.nodes.find(
+    (n) => n.data.operationAuthoring?.operation.operationId === 'diffusion.generate_image',
+  );
+  assert.equal(plan.graph.edges.find((e) => e.target === 'preview').source, generation.id);
+  assert.deepEqual(graph, before);
+  const edited = structuredClone(graph);
+  edited.nodes[1].data.params.prompt.value = '';
+  assert.equal(
+    authoring.planPristineOperationChange(edited, edited.nodes[0].id, old, next),
+    null,
+    'Intentionally empty prompt is authored',
+  );
+  const rewired = structuredClone(graph);
+  rewired.edges[0].sourceHandle = 'custom';
+  assert.equal(authoring.planPristineOperationChange(rewired, rewired.nodes[0].id, old, next), null);
+  const custom = structuredClone(graph);
+  custom.nodes.find((n) => n.id === 'preview').data.module = 'custom.Review';
+  assert.equal(authoring.planPristineOperationChange(custom, custom.nodes[0].id, old, next), null);
+});

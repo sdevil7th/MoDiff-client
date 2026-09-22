@@ -57,3 +57,5 @@ node/Block, hierarchy, execution, qualification or cross-machine integration wor
 - Link security-sensitive reports to [SECURITY.md](../SECURITY.md) and keep secrets out of public issues.
 
 If a guide and the application disagree, treat the implementation and automated checks as the immediate source of truth, then update the guide in the same change.
+
+- [Workflow authoring and model selection](workflow-authoring-ux.md)

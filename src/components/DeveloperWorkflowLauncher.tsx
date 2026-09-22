@@ -6,26 +6,22 @@ import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
   useStudioStore,
-  type WorkflowOperationContext,
 } from '../stores/useStudioStore';
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
-import { ModiffButton, ModiffDialog, ModiffDisclosure, ModiffFieldShell, ModiffSearchInput, ModiffSelect } from '../ui';
+import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffSearchInput } from '../ui';
 import { formatRequestError } from '../utils/requestJson';
 import { workflowChoices, workflowTaskLabel } from '../workflow/workflowChoices';
+import {
+  WORKFLOW_CATEGORIES,
+  defaultWorkflowChoice,
+  workflowTaskCards,
+  type WorkflowCategory,
+} from '../workflow/workflowTaskBrowser';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { createWorkflowDraft } from '../workflow/workflowDraft';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
-import WorkflowEntryActions from './WorkflowEntryActions';
-import type { OperationStarter } from '../workflow/operationAuthoring';
 
 const CustomExtensionsDialog = lazy(() => import('./CustomExtensionsDialog'));
-
-type Preview = {
-  starter: OperationStarter;
-  draft: ReturnType<typeof createWorkflowDraft>;
-  context: WorkflowOperationContext;
-  signature: string;
-};
 
 export default function DeveloperWorkflowLauncher() {
   const support = useNodesStore((s) => s.pipelineSupport);
@@ -42,63 +38,59 @@ export default function DeveloperWorkflowLauncher() {
     () => workflowChoices(support, models, hfCache, localModels, diagnostics, descriptors),
     [support, models, hfCache, localModels, diagnostics, descriptors],
   );
-  const tasks = useMemo(
-    () =>
-      [...new Set(choices.map((c) => c.task))].sort((a, b) => {
-        const order = ['text_to_image', 'image_to_image', 'edit_image', 'inpaint', 'outpaint'];
-        return (
-          (order.includes(a) ? order.indexOf(a) : 99) - (order.includes(b) ? order.indexOf(b) : 99) ||
-          a.localeCompare(b)
-        );
-      }),
-    [choices],
-  );
-  const [customSource, setCustomSource] = useState<'local' | 'hub' | null>(null);
-  const [task, setTask] = useState('');
-  const [choiceId, setChoiceId] = useState('');
+  const cards = useMemo(() => workflowTaskCards(choices), [choices]);
+  const [category, setCategory] = useState<WorkflowCategory | 'All'>('Image');
   const [query, setQuery] = useState('');
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [customSource, setCustomSource] = useState<'hub' | 'local' | null>(null);
   const pending = useRef<AbortController | null>(null);
-  const applied = useRef(false);
-  const options = choices.filter((c) => c.task === task);
-  const selected = options.find((c) => c.id === choiceId);
-  const visibleOptions = options.filter(
-    (c) =>
-      c.id === choiceId ||
-      `${c.label} ${c.repo ?? ''} ${c.pipeline}`.toLowerCase().includes(query.trim().toLowerCase()),
-  );
-
-  useEffect(() => {
-    pending.current?.abort();
-    pending.current = null;
-    setBusy(false);
-    setPreview(null);
-    setError(null);
-    applied.current = false;
-    return () => {
+  useEffect(
+    () => () => {
       pending.current?.abort();
-    };
-  }, [task, choiceId, workflow, operations, registry]);
-
-  const dismiss = () => prepareWorkflowForManualInsertion({ revealWorkspace: false });
-  const openSetup = () => {
-    dismiss();
-    useSettingsStore.getState().setRightPanelTab('setup');
-    useSettingsStore.getState().setRightPanelOpen(true);
+    },
+    [workflow],
+  );
+  const dismiss = () => {
+    pending.current?.abort();
+    prepareWorkflowForManualInsertion({ revealWorkspace: false });
   };
 
-  async function prepare() {
-    if (!selected || pending.current) return;
+  async function create(task: string) {
+    if (pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
     const context = captureWorkflowOperationContext();
     const signature = JSON.stringify(useFlowStore.getState().toObject());
-    setBusy(true);
+    setBusy(task);
     setError(null);
-    setPreview(null);
     try {
+      // A fast first click must not pick an unavailable alphabetical model
+      // merely because the installed-artifact indexes are still arriving.
+      const discovery = useNodesStore.getState();
+      await Promise.all([
+        discovery.discoveryRequests.hfCache.status === 'success' ? undefined : discovery.fetchHfCache(),
+        discovery.discoveryRequests.localModels.status === 'success' ? undefined : discovery.fetchLocalModels(),
+        discovery.discoveryRequests.modelCache.status === 'success'
+          ? undefined
+          : discovery.fetchModelCacheDiagnostics(),
+      ]);
+      if (controller.signal.aborted) return;
+      assertWorkflowOperationContext(context, { includeForm: false });
+      const current = useNodesStore.getState();
+      const selected = defaultWorkflowChoice(
+        workflowChoices(
+          current.pipelineSupport,
+          current.studioModelCapabilities,
+          current.hfCache,
+          current.localModels,
+          current.modelCacheDiagnostics,
+          current.workflowModelDescriptors,
+        ),
+        task,
+      );
+      if (!selected) throw new Error('This task is no longer available. Refresh the workflow catalog.');
       const starter = await requestOperationStarter(
         selected.pipeline,
         task,
@@ -108,216 +100,142 @@ export default function DeveloperWorkflowLauncher() {
       );
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
-        throw new Error('The workflow changed. Request a new preview.');
-      setPreview({ starter, draft: createWorkflowDraft(starter, registry), context, signature });
+      if (useFlowStore.getState().nodes.length || JSON.stringify(useFlowStore.getState().toObject()) !== signature)
+        throw new Error('The canvas changed. Start a new workflow before choosing a task.');
+      const draft = createWorkflowDraft(starter, registry);
+      commitOperationGraph(draft.graph, context, signature, 'Create workflow');
+      useStudioStore.getState().detachManagedGraph();
+      prepareWorkflowForManualInsertion();
+      const id = useStudioStore.getState().activeWorkflowTabId;
+      if (id) useStudioStore.getState().renameWorkflowTab(id, workflowTaskLabel(task));
+      useStudioStore.getState().saveActiveWorkflowTab(true);
     } catch (e) {
-      if (!controller.signal.aborted) setError(formatRequestError(e, 'Could not prepare this workflow.'));
+      if (!controller.signal.aborted) setError(formatRequestError(e, 'Could not create this workflow.'));
     } finally {
       if (pending.current === controller) {
         pending.current = null;
-        setBusy(false);
+        setBusy('');
       }
     }
   }
-  function create() {
-    if (!preview || applied.current) return;
-    try {
-      assertWorkflowOperationContext(preview.context, { includeForm: false });
-      if (
-        useFlowStore.getState().nodes.length ||
-        JSON.stringify(useFlowStore.getState().toObject()) !== preview.signature
-      )
-        throw new Error('This canvas changed. Start a new workflow or request a fresh preview.');
-      applied.current = true;
-      // Same transaction and ordinary node factory used by the operation library.
-      commitOperationGraph(preview.draft.graph, preview.context, preview.signature, 'Create workflow');
-      useStudioStore.getState().detachManagedGraph();
-      prepareWorkflowForManualInsertion();
-      useStudioStore.getState().saveActiveWorkflowTab(true);
-    } catch (e) {
-      applied.current = false;
-      setError(formatRequestError(e, 'Could not create this workflow.'));
-    }
-  }
-
+  const visible = cards.filter(
+    (c) =>
+      (category === 'All' || c.category === category) &&
+      (!downloaded || c.downloaded) &&
+      `${c.label} ${c.task} ${c.description}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
   if (customSource)
     return (
       <Suspense fallback={null}>
         <CustomExtensionsDialog initialKind={customSource} onClose={() => setCustomSource(null)} />
       </Suspense>
     );
-
   return (
     <ModiffDialog
       open
       onClose={dismiss}
       title="Workflows"
       testId="task-launcher"
-      panelClassName="max-w-[920px]"
+      panelClassName="max-w-5xl"
       bodyClassName="max-h-[78vh]"
     >
-      <p className="mb-3 text-sm text-modiff-subtle-text">
-        Choose a task, select a model, and preview its connected nodes. Models load only when you run the workflow.
-      </p>
-      <div className="mb-4">
-        <WorkflowEntryActions templates />
-        <div className="mt-2 flex flex-wrap gap-2">
-          <ModiffButton disabled={busy} onClick={() => setCustomSource('hub')}>
+      <div className="space-y-4">
+        <p className="text-sm text-modiff-subtle-text">
+          Choose a task to create its connected nodes. Change the model and parameters on the canvas. Models load only
+          when you run.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <ModiffButton
+            onClick={() => prepareWorkflowForManualInsertion()}
+            disabled={Boolean(busy)}
+            data-testid="launcher-mode-advanced_workflow"
+          >
+            Empty workflow
+          </ModiffButton>
+          <ModiffButton
+            onClick={() => {
+              dismiss();
+              useSettingsStore.getState().setLeftPanelTabIndex(4);
+              useSettingsStore.getState().setLeftPanelOpen(true);
+            }}
+            disabled={Boolean(busy)}
+          >
+            Open workflow
+          </ModiffButton>
+          <ModiffButton
+            onClick={() => {
+              dismiss();
+              useSettingsStore.getState().setTemplateBrowserOpen(true);
+            }}
+            disabled={Boolean(busy)}
+          >
+            Browse templates
+          </ModiffButton>
+        </div>
+        <ModiffSearchInput
+          aria-label="Search workflow tasks"
+          placeholder="Search workflows and actions"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onClear={() => setQuery('')}
+        />
+        <div className="flex flex-wrap gap-2" aria-label="Workflow categories">
+          {(['All', ...WORKFLOW_CATEGORIES] as const).map((name) => (
+            <ModiffButton
+              key={name}
+              tone={category === name ? 'primary' : 'secondary'}
+              aria-pressed={category === name}
+              onClick={() => setCategory(name)}
+            >
+              {name}
+            </ModiffButton>
+          ))}
+        </div>
+        <ModiffCheckbox checked={downloaded} onCheckedChange={setDownloaded} label="With downloaded models" />
+        {error ? <p role="alert">{error}</p> : null}
+        {busy ? <p role="status">Creating {workflowTaskLabel(busy).toLowerCase()} workflow…</p> : null}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {visible.map((card) => (
+            <ModiffButton
+              key={card.task}
+              tone="secondary"
+              align="left"
+              className="h-auto min-h-24 p-4"
+              disabled={Boolean(busy)}
+              onClick={() => void create(card.task)}
+              data-testid={`workflow-task-${card.task}`}
+            >
+              <span className="block">
+                <span className="block font-semibold">{card.label}</span>
+                <span className="mt-1 block text-sm font-normal text-modiff-subtle-text">{card.description}</span>
+              </span>
+            </ModiffButton>
+          ))}
+        </div>
+        {!visible.length ? (
+          <p role="status">
+            {capabilitiesStatus.status === 'loading'
+              ? 'Loading workflows…'
+              : cards.length
+                ? 'No workflows match these filters.'
+                : 'No workflow capabilities are available. Check the backend connection.'}
+          </p>
+        ) : null}
+        {!cards.length || capabilitiesStatus.error ? (
+          <ModiffButton onClick={() => void useNodesStore.getState().fetchStudioModelCapabilities()}>
+            Retry capabilities
+          </ModiffButton>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2 border-t border-modiff-border pt-3">
+          <span className="text-sm text-modiff-subtle-text">Custom nodes</span>
+          <ModiffButton disabled={Boolean(busy)} onClick={() => setCustomSource('hub')}>
             Add from Hugging Face
           </ModiffButton>
-          <ModiffButton disabled={busy} onClick={() => setCustomSource('local')}>
+          <ModiffButton disabled={Boolean(busy)} onClick={() => setCustomSource('local')}>
             Add local source
           </ModiffButton>
         </div>
       </div>
-      {!task ? (
-        <>
-          {tasks.length ? (
-            <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]">
-              {tasks.map((name) => (
-                <ModiffButton
-                  key={name}
-                  tone="secondary"
-                  align="left"
-                  className="h-auto min-h-16 p-3"
-                  onClick={() => setTask(name)}
-                  data-testid={`workflow-task-${name}`}
-                >
-                  {workflowTaskLabel(name)}
-                </ModiffButton>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2" role="status">
-              <p>
-                {capabilitiesStatus.status === 'loading'
-                  ? 'Loading workflow capabilities…'
-                  : 'No workflow capabilities are available. Check the backend connection or retry.'}
-              </p>
-              {capabilitiesStatus.error ? <p role="alert">{capabilitiesStatus.error}</p> : null}
-              <ModiffButton onClick={() => void useNodesStore.getState().fetchStudioModelCapabilities()}>
-                Retry capabilities
-              </ModiffButton>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="space-y-3">
-          <ModiffButton
-            onClick={() => {
-              setTask('');
-              setChoiceId('');
-              setQuery('');
-            }}
-          >
-            All tasks
-          </ModiffButton>
-          <h3 className="text-base font-semibold">{workflowTaskLabel(task)}</h3>
-          <ModiffSearchInput
-            aria-label="Search workflow models"
-            placeholder="Search models"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onClear={() => setQuery('')}
-          />
-          <ModiffFieldShell label="Model">
-            <ModiffSelect
-              aria-label="Workflow model"
-              value={choiceId}
-              onValueChange={setChoiceId}
-              options={[
-                { value: '', label: 'Select a model' },
-                ...visibleOptions.map((c) => ({
-                  value: c.id,
-                  label: `${c.cache?.runnable ? 'Downloaded · ' : ''}${c.label} · ${c.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'} · ${c.pipeline}`,
-                })),
-              ]}
-            />
-          </ModiffFieldShell>
-          {selected ? (
-            <>
-              <p className="break-words text-sm">{selected.repo ?? selected.pipeline}</p>
-              <p className="text-xs text-modiff-subtle-text">
-                {selected.cache?.reason ?? 'Model files are checked when you run.'}
-              </p>
-              <p className="text-xs text-modiff-subtle-text">
-                {selected.support.execution === 'adapter'
-                  ? 'Execution adapter available. Run checks this model’s files, inputs and memory recipe.'
-                  : 'Declared workflow without a reviewed model execution profile. Inspect and configure this draft before running.'}
-              </p>
-              {selected.support.dependencies === 'blocked' ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>Runtime setup required.</span>
-                  <ModiffButton onClick={openSetup}>Open Setup</ModiffButton>
-                </div>
-              ) : null}
-              {selected.cache && !selected.cache.runnable ? (
-                <ModiffButton
-                  onClick={() => {
-                    dismiss();
-                    useSettingsStore.getState().setModelManagerOpener({ nodeId: null, fieldKey: null });
-                  }}
-                >
-                  Review model files
-                </ModiffButton>
-              ) : null}
-              <ModiffButton disabled={busy} loading={busy} onClick={() => void prepare()}>
-                Preview workflow
-              </ModiffButton>
-            </>
-          ) : null}
-          {busy ? <p role="status">Preparing nodes and connections…</p> : null}
-          {preview ? (
-            <section
-              className="space-y-3 rounded-modiff-panel border border-modiff-border p-3"
-              aria-label="Workflow preview"
-            >
-              <p className="text-sm">{preview.draft.graph.nodes.map((n) => n.data.label).join(' → ')}</p>
-              <p className="text-xs text-modiff-subtle-text">
-                {preview.draft.graph.nodes.length} nodes · {preview.draft.graph.edges.length} connections. Creates an
-                editable workflow; nothing is executed.
-              </p>
-              {preview.starter.requiredInputs.length ? (
-                <div>
-                  <h4 className="text-sm font-semibold">Inputs to provide</h4>
-                  <ul className="list-inside list-disc text-sm">
-                    {preview.starter.requiredInputs.map((input) => (
-                      <li key={`${input.operationId}:${input.field}`}>
-                        {preview.starter.nodes.find((n) => n.operation.operationId === input.operationId)?.node.label} ·{' '}
-                        {input.field}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {preview.draft.notices.map((notice) => (
-                <p key={notice} role="status">
-                  {notice}
-                </p>
-              ))}
-              <ModiffDisclosure label="Implementation">
-                <p className="break-words text-xs">
-                  {preview.starter.pipelineClass} · {preview.starter.workflowId ?? 'Whole pipeline'}
-                </p>
-                <ul className="list-inside list-disc text-xs">
-                  {preview.starter.nodes.map((n) => (
-                    <li key={n.operation.operationId}>{n.operation.nodeKey}</li>
-                  ))}
-                </ul>
-              </ModiffDisclosure>
-              <ModiffButton tone="primary" onClick={create}>
-                Create workflow
-              </ModiffButton>
-            </section>
-          ) : null}
-        </div>
-      )}
-      {error ? (
-        <p role="alert" className="mt-3 text-sm">
-          {error}
-        </p>
-      ) : null}
     </ModiffDialog>
   );
 }

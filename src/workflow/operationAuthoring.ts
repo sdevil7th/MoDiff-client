@@ -5,7 +5,9 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { deepEqual } from '../utils/deepEqual';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
-import { parseOperationContracts, type OperationContract } from './operationContracts';
+import type { OperationContract } from './operationContracts';
+import { operationAuthoring } from './operationAuthoringHint';
+export { operationAuthoring } from './operationAuthoringHint';
 import { operationPortCompatibility } from './operationCatalog';
 import { createNodeFromRegistry } from './nodeFactory';
 import { acceptsOperationValue as acceptsValue } from './operationFieldValue';
@@ -60,35 +62,6 @@ export function withOperationAuthoring(node: NodeData, operation: OperationContr
       retained: [],
     },
   };
-}
-
-/** Imported hints are untrusted and never change a legacy graph on restore. */
-export function operationAuthoring(node: CustomNodeType): OperationAuthoring | null {
-  const hint = node.data.operationAuthoring;
-  if (
-    !hint ||
-    hint.schemaVersion !== 1 ||
-    !hint.defaults ||
-    typeof hint.defaults !== 'object' ||
-    Array.isArray(hint.defaults) ||
-    Object.keys(hint.defaults).length > 512 ||
-    !Array.isArray(hint.retained) ||
-    hint.retained.length > 512
-  )
-    return null;
-  try {
-    const [operation] = parseOperationContracts([hint.operation], 3);
-    if (!operation || operation.nodeKey !== `${node.data.module}.${node.data.action}`) return null;
-    if (
-      hint.retained.some(
-        (v) => !v || typeof v.field !== 'string' || typeof v.reason !== 'string' || typeof v.pipeline !== 'string',
-      )
-    )
-      return null;
-    return hint;
-  } catch {
-    return null;
-  }
 }
 
 export function createOperationStarter(starter: OperationStarter, position: { x: number; y: number }): OperationGraph {
@@ -222,6 +195,105 @@ function compatibleEdge(edge: Edge, nodes: CustomNodeType[]) {
   const a = port(source, edge.sourceHandle, 'output');
   const b = port(target, edge.targetHandle, 'input');
   return !a || !b || operationPortCompatibility(a, b) !== 'incompatible';
+}
+
+/** Replace a demonstrably untouched starter when its decomposition changes.
+ * Any authored value, custom connection or ambiguous output falls back to the
+ * ordinary preservation/review planner. The baseline is resolved by the backend. */
+export function planPristineOperationChange(
+  graph: OperationGraph,
+  loaderId: string,
+  baseline: OperationStarter,
+  starter: OperationStarter,
+): OperationChangePlan | null {
+  const scope = operationScope(graph, loaderId);
+  const root = scope.find((n) => n.id === loaderId)!;
+  const hint = operationAuthoring(root)!;
+  if (
+    baseline.pipelineClass !== hint.operation.pipelineClass ||
+    baseline.task !== hint.operation.task ||
+    baseline.task !== starter.task ||
+    scope.length !== baseline.nodes.length
+  )
+    return null;
+  const baselineGraph = createOperationStarter(baseline, root.position);
+  const baselineByOperation = new Map(
+    baselineGraph.nodes.map((n) => [operationAuthoring(n)!.operation.operationId, n]),
+  );
+  const currentByOperation = new Map(scope.map((n) => [operationAuthoring(n)!.operation.operationId, n]));
+  if (
+    starter.nodes.every((n) => currentByOperation.has(n.operation.operationId)) &&
+    starter.nodes.length === scope.length
+  )
+    return null;
+  for (const node of scope) {
+    const authoring = operationAuthoring(node)!;
+    const original = baselineByOperation.get(authoring.operation.operationId);
+    if (
+      !original ||
+      authoring.retained.length ||
+      node.data.uiState?.disabled ||
+      node.data.label !== original.data.label
+    )
+      return null;
+    for (const [name, field] of Object.entries(node.data.params)) {
+      if (!publicSetting(field)) continue;
+      if (!deepEqual(operationFieldValue(field), authoring.defaults[name])) return null;
+      if (Boolean(field.isInput) !== Boolean(original.data.params[name]?.isInput)) return null;
+    }
+  }
+  const affected = new Set(scope.map((n) => n.id));
+  const edgeKey = (edge: Edge, nodes: CustomNodeType[]) =>
+    JSON.stringify([
+      operationAuthoring(nodes.find((n) => n.id === edge.source)!)!.operation.operationId,
+      edge.sourceHandle,
+      operationAuthoring(nodes.find((n) => n.id === edge.target)!)!.operation.operationId,
+      edge.targetHandle,
+    ]);
+  const internal = graph.edges.filter((e) => affected.has(e.source) && affected.has(e.target));
+  if (
+    !deepEqual(
+      internal.map((e) => edgeKey(e, scope)).sort(),
+      baselineGraph.edges.map((e) => edgeKey(e, baselineGraph.nodes)).sort(),
+    )
+  )
+    return null;
+  if (graph.edges.some((e) => !affected.has(e.source) && affected.has(e.target))) return null;
+  const fresh = createOperationStarter(starter, root.position);
+  const outside = graph.nodes.filter((n) => !affected.has(n.id));
+  const edges = graph.edges.filter((e) => !affected.has(e.source) && !affected.has(e.target));
+  for (const edge of graph.edges.filter((e) => affected.has(e.source) && !affected.has(e.target))) {
+    const target = outside.find((n) => n.id === edge.target);
+    if (!target || target.data.action !== 'Preview' || !['modules.Image', 'modules.Audio'].includes(target.data.module))
+      return null;
+    const originalPort = port(
+      scope.find((n) => n.id === edge.source)!,
+      edge.sourceHandle,
+      'output',
+    );
+    if (originalPort?.semantics?.kind !== 'media') return null;
+    const candidates = fresh.nodes.flatMap((node) =>
+      operationAuthoring(node)!.operation.ports.flatMap((output) => {
+        const proposed = { ...edge, source: node.id, sourceHandle: output.name };
+        return output.direction === 'output' &&
+          output.semantics?.kind === 'media' &&
+          !fresh.edges.some((e) => e.source === node.id && e.sourceHandle === output.name) &&
+          compatibleEdge(proposed, [...fresh.nodes, ...outside])
+          ? [proposed]
+          : [];
+      }),
+    );
+    if (candidates.length !== 1) return null;
+    edges.push(candidates[0]!);
+  }
+  return {
+    graph: { nodes: [...outside, ...fresh.nodes], edges: [...edges, ...fresh.edges] },
+    changes: [
+      'Replace the untouched starter with the selected model’s connected operations; preserve preview nodes and unrelated branches.',
+    ],
+    diagnostics: [],
+    replacements: {},
+  };
 }
 
 /** Pure preview. No graph, library, model cache, or backend mutation happens here. */

@@ -117,6 +117,31 @@ export function ControlStateMatrix() {
         </p>
       </header>
 
+      {new URLSearchParams(window.location.search).has('large-options') ? (
+        <section className="grid gap-3" aria-label="Large option lists">
+          <ModiffSelect
+            aria-label="Long select"
+            value={select}
+            onValueChange={setSelect}
+            options={Array.from({ length: 1000 }, (_, i) => ({ value: String(i), label: `Model ${i}` }))}
+          />
+          <ModiffCombobox
+            aria-label="Long combobox"
+            value={comboboxValue}
+            onValueChange={(value) => setComboboxValue(typeof value === 'string' ? value : null)}
+            query={comboboxQuery}
+            onQueryChange={setComboboxQuery}
+            options={Array.from({ length: 1000 }, (_, i) => ({ value: String(i), label: `Model ${i}` }))}
+          />
+          <ModiffMultiSelect
+            aria-label="Long multiselect"
+            value={multiSelect}
+            onValueChange={setMultiSelect}
+            options={Array.from({ length: 1000 }, (_, i) => ({ value: String(i), label: `Model ${i}` }))}
+          />
+        </section>
+      ) : null}
+
       <div className="grid gap-4">
         <SizeExamples size="compact" />
         <SizeExamples size="normal" />

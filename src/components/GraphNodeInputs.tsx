@@ -1,3 +1,4 @@
+import { nodeDisplayLabel } from '../workflow/nodePresentation';
 import { useCallback, useMemo, useState } from 'react';
 import { Pin, PinOff } from 'lucide-react';
 import type { CustomNodeType } from '../stores/useFlowStore';
@@ -84,7 +85,7 @@ export function GraphNodeInputs({
           const disclosureKey = `${workflowId ?? 'unscoped'}:${node.id}`;
           const rememberedOpen = disclosureState[disclosureKey] ?? inspectorDisclosureMemory.get(disclosureKey);
           const defaultOpen = selected || (rememberedOpen ?? index === 0);
-          const label = node.data.label || `${node.data.module}.${node.data.action}`;
+          const label = nodeDisplayLabel(node.data);
           const fieldCount = Object.keys(params).length;
 
           const controls = !nodes.some(({ id }) => id === node.id) ? (

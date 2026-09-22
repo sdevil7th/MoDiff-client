@@ -42,7 +42,10 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // another 128 bytes for this shared renderer fix; individual chunk caps stay fixed.
 // Legacy exposed-field callback routing adds about 0.4 KiB compressed to startup.
 // Bound this shared correctness fix at 610 KiB; deferred and chunk caps stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 610 * 1024;
+// Identity-based node names, prompt attribution and contextual raw-model
+// selection measure 610.5 KiB. The graph-change planner stays deferred behind a
+// separate advisory-hint validator. Bound startup at 611 KiB; chunk caps stay fixed.
+const MAX_STARTUP_GZIP_BYTES = 611 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -106,7 +109,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Normal discovery includes image filters, color inversion and Outpaint Canvas.
 // Measured deferred aggregate is 235674 bytes (+75); allow 64 bytes beyond the
 // previous cap. Startup and individual chunk budgets stay unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 230 * 1024 + 192;
+// Task cards and the lazy model-first graph picker replace the launcher wizard.
+// With pristine-route replacement, aggregate is 232.5 KiB; bound this surface at 233 KiB and retain both
+// per-chunk ceilings. Cold production startup and model selection remain required.
+const MAX_DEFERRED_GZIP_BYTES = 233 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

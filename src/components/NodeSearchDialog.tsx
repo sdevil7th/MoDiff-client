@@ -1,3 +1,4 @@
+import { nodeDisplayLabel } from '../workflow/nodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
@@ -153,7 +154,7 @@ const NodeSearchDialog = ({
       ...connectionSearchEntries(catalogNodes, dataType, handleType, searchQuery, view).map(([key, node]) => ({
         key,
         node,
-        label: node.label,
+        label: nodeDisplayLabel(node),
       })),
       ...catalogEntries.map((catalog) => ({ key: `catalog:${catalog.id}`, label: catalog.label, catalog })),
       ...savedEntries

@@ -336,9 +336,20 @@ Auto/Expert preferences migrate without rewriting saved workflows or resource
 identifiers.
 
 Creator starts with **Templates** for ready-made workflows. Developer starts with
-**Workflows**: choose an action such as Text to image or Image edit, select an
-available pipeline, inspect the connected graph and create it. Both offer an
-empty workflow and the same editable canvas.
+**Workflows**: filter by media category or search, then click an action such as
+Text to image or Image edit once to create connected nodes. Use **Choose model**
+on the loader to change the compatible model across families. Model changes use
+the existing graph transaction; changes affecting authored controls or connections
+show a review before applying. Both workspaces offer an empty workflow and the
+same editable canvas. Creating a workflow does not load or download weights.
+
+The workflow sidebar separates **Example workflows** and **My workflows**, each
+with its own bounded list. Existing saved documents are retained. Raw implementation
+loaders are named **Load Image Pipeline**, **Load Modular Components** and **Load
+Model Component** to distinguish their contracts. Generic authored workflows retain
+**Load Models**. New operation prompts include task examples, with a creator-source
+link where the example was adapted from official guidance. Whole-pipeline routes
+remain explicit; they do not imply independently replaceable denoising nodes.
 
 The shared **Nodes** library includes generic nodes, enabled custom nodes and
 **Saved Blocks**. Select a pipeline and task to browse its bound operations. Use
@@ -362,9 +373,12 @@ Changing workspace preserves the graph, nested expansion, public connections and
 preview configuration. Loaded-model and active-run acceptance is tracked
 separately in the [implementation plan](docs/creator-developer-workspaces-plan.md).
 
+For the current task browser, picker behavior and qualification limits, see
+[Workflow authoring and model selection](docs/workflow-authoring-ux.md).
+
 ## Custom nodes
 
-Developer’s **Workflows** dialog offers **Add from Hugging Face** and **Add local source**; **Nodes → Custom nodes** and the Models environment panel open the same review flow. Resolve a Hub URL or repository ID to an exact commit, stage a local Python folder or pinned remote source, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Creator and Developer. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Automatic memory accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use requires Custom memory. Staging/inspection never imports submitted Python or installs dependencies.
+**Nodes → Custom nodes** and the Models environment panel open the shared custom-source review flow. Resolve a Hub URL or repository ID to an exact commit, stage a local Python folder or pinned remote source, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Creator and Developer. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Automatic memory accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use requires Custom memory. Staging/inspection never imports submitted Python or installs dependencies.
 
 Approved Modular blocks that omit model ports receive a **Models** input when
 their Python contract requires components. Connect **Load Models → Pipeline

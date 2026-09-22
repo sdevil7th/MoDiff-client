@@ -527,7 +527,7 @@ export function ModiffCombobox({
         anchor="bottom start"
         portal
         modal={false}
-        className="z-[100] max-h-72 w-[var(--input-width)] min-w-40 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-modiff-control text-modiff-text shadow-modiff-node outline-none empty:invisible"
+        className="z-[100] max-h-72 [--anchor-max-height:18rem] overscroll-contain nowheel w-[var(--input-width)] min-w-40 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-modiff-control text-modiff-text shadow-modiff-node outline-none empty:invisible"
       >
         {visibleOptions.length === 0 ? (
           <div className="px-2 py-2 text-modiff-metadata text-modiff-subtle-text">{emptyMessage}</div>
@@ -748,7 +748,7 @@ export function ModiffSelect({
           modal={false}
           transition
           className={cx(
-            'max-h-72 w-[var(--button-width)] min-w-32 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:pointer-events-none data-[closed]:scale-95 data-[closed]:opacity-0',
+            'max-h-72 [--anchor-max-height:18rem] overscroll-contain nowheel w-[var(--button-width)] min-w-32 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:pointer-events-none data-[closed]:scale-95 data-[closed]:opacity-0',
             layer === 'popover' ? 'z-[120]' : 'z-[100]',
             optionsClassName,
           )}
@@ -913,7 +913,7 @@ export function ModiffMultiSelect({
           modal={false}
           transition
           className={cx(
-            'z-[100] max-h-72 min-w-[var(--button-width)] overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0',
+            'z-[100] max-h-72 [--anchor-max-height:18rem] overscroll-contain nowheel min-w-[var(--button-width)] overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0',
             optionsClassName,
           )}
         >

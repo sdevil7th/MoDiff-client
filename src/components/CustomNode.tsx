@@ -1,3 +1,4 @@
+import { nodeDisplayLabel } from '../workflow/nodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { NodeProps, useStoreApi } from '@xyflow/react';
@@ -115,7 +116,7 @@ function contextMenuAnchor(event: MouseEvent<HTMLDivElement>): { mouseX: number;
 const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
-  const label = node.data.label || `${node.data.module} ${node.data.action}`;
+  const label = nodeDisplayLabel(node.data);
   const hasAudioPlayer = Object.values(node.data.params).some((param) => param.display === 'ui_audio');
   const minimumNodeWidth = hasAudioPlayer ? modiffLayout.audioPreviewNodeMinWidth : modiffLayout.nodeMinWidth;
   const setParam = useFlowStore((state) => state.setParamWithHistory);

@@ -262,3 +262,30 @@ test('compact and normal shared controls match the visual contract', async ({ pa
     animations: 'disabled',
   });
 });
+
+test('large option lists stay bounded without moving the document scrollbar', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto(`http://127.0.0.1:${frontendPort}/control-state-matrix.html?large-options`);
+  for (const label of ['Long select', 'Long combobox', 'Long multiselect']) {
+    const field = page.getByLabel(label, { exact: true });
+    await field.scrollIntoViewIfNeeded();
+    if (label === 'Long combobox') await field.fill('Model');
+    else await field.click();
+    if (label === 'Long combobox') await field.press('ArrowDown');
+    const list = page.getByRole('listbox');
+    await expect(list).toBeVisible();
+    const sizes = await list.evaluate((element) => ({
+      height: element.getBoundingClientRect().height,
+      content: element.scrollHeight,
+      overflow: getComputedStyle(element).overflowY,
+    }));
+    expect(sizes.height).toBeLessThanOrEqual(290);
+    expect(sizes.content).toBeGreaterThan(sizes.height);
+    expect(sizes.overflow).toMatch(/auto|scroll/);
+    const widths = [];
+    for (let i = 0; i < 8; i++) widths.push(await page.evaluate(() => document.documentElement.clientWidth));
+    expect(new Set(widths).size).toBe(1);
+    await page.keyboard.press('Escape');
+    await expect(list).toHaveCount(0);
+  }
+});

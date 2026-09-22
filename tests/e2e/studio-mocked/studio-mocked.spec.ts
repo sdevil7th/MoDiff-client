@@ -9347,7 +9347,9 @@ for (const workspace of ['auto', 'expert'] as const) {
 }
 
 for (const workspace of ['auto', 'expert'] as const) {
-  test(`${workspace} exact replacement model overrides the old identity and preserves the prompt`, async ({ page }) => {
+  test(`${workspace} node model picker switches families and preserves the prompt, undo and reload`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1680, height: 1050 });
     await ensureFrontend();
     await installOperationAuthoringRoutes(page, true);
@@ -9356,7 +9358,7 @@ for (const workspace of ['auto', 'expert'] as const) {
     await dismissTaskLauncher(page);
     await setStudioViewMode(page, workspace);
     await page.getByTestId('left-tab-nodes').click();
-    const library = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+    const library = await selectOperationPipeline(page, 'FluxModularPipeline');
     await library.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
     await page
       .getByRole('dialog', { name: 'Connected starter', exact: true })
@@ -9375,15 +9377,18 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.locator(`.react-flow__node[data-id="${loader.id}"] header`).first().click();
     await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
     const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
-    await inspector.getByRole('button', { name: 'Change model / task', exact: true }).click();
-    await inspector.getByLabel('Replacement model', { exact: true }).click();
-    await page.getByRole('option').filter({ hasText: 'Qwen/' }).click();
+    await inspector.getByRole('button', { name: 'Choose model', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+    await expect(picker.getByRole('searchbox', { name: 'Search compatible models' })).toBeVisible();
     const request = page.waitForRequest((r) => r.url().endsWith('/operations/starter') && r.method() === 'POST');
-    await inspector.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+    await picker.getByRole('button').filter({ hasText: 'Qwen/Qwen-Image-2512' }).click();
     expect((await request).postDataJSON().executionProfileId).toBe('qwen-image:modular');
-    const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
-    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
-    await expect(review).toHaveCount(0);
+    const apply = picker.getByRole('button', { name: 'Apply model change', exact: true });
+    // Cross-family schema differences are reviewed rather than silently discarded.
+    await expect(apply).toBeVisible();
+    await apply.click();
+    await expect(picker).toHaveCount(0);
+    await page.keyboard.press('Escape');
     const after = await read();
     expect(after.nodes.find((n) => n.id === loader.id)!.data.params.repo_id.value).toBe('Qwen/Qwen-Image-2512');
     expect(after.nodes.find((n) => n.id === loader.id)!.data.params.revision.value).toBe(
@@ -9460,9 +9465,8 @@ for (const invalidation of ['target', 'close', 'edit'] as const) {
     } else if (invalidation === 'close') {
       await inspector.getByRole('button', { name: 'Close', exact: true }).click();
     } else {
-      const field = inspector.locator('[data-key="repo_id"] input');
-      await field.fill('local/preserved-draft');
-      await field.blur();
+      await inspector.locator('[data-key="dtype"]').getByRole('button').click();
+      await page.getByRole('option', { name: 'float32', exact: true }).click();
     }
     const beforeReply = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
     release();
@@ -9886,15 +9890,15 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await page.getByTestId('left-tab-nodes').click();
   await expect(page.getByTestId('node-browser-view-essential')).toHaveCount(0);
   await page.getByLabel('Search nodes').fill('Load pipeline');
-  await expect(page.getByTestId('node-row-modules-DiffusersImage-LoadPipeline')).toContainText('Load pipeline');
+  await expect(page.getByTestId('node-row-modules-DiffusersImage-LoadPipeline')).toContainText('Load Image Pipeline');
   await expect(page.getByTestId('node-row-modules-DiffusersImage-LoadPipeline')).not.toContainText('Diffusers');
-  await expect(page.getByTestId('node-row-modules-DiffusersAudio-LoadPipeline')).toContainText('Load pipeline');
+  await expect(page.getByTestId('node-row-modules-DiffusersAudio-LoadPipeline')).toContainText('Load Audio Pipeline');
   await expect(page.getByTestId('node-row-modules-QwenImage-LoadPipeline')).toHaveCount(0);
   await page.getByLabel('Search nodes').fill('Generate');
-  await expect(page.getByTestId('node-row-modules-DiffusersImage-Generate')).toContainText('Generate image');
-  await expect(page.getByTestId('node-row-modules-DiffusersAudio-Generate')).toContainText('Generate audio');
+  await expect(page.getByTestId('node-row-modules-DiffusersImage-Generate')).toContainText('Generate Image');
+  await expect(page.getByTestId('node-row-modules-DiffusersAudio-Generate')).toContainText('Generate Audio');
   await page.getByLabel('Search nodes').fill('Edit');
-  await expect(page.getByTestId('node-row-modules-DiffusersImage-Edit')).toContainText('Edit image');
+  await expect(page.getByTestId('node-row-modules-DiffusersImage-Edit')).toContainText('Edit Image');
   await page.getByLabel('Search nodes').fill('Preview');
   await expect(page.getByTestId('node-row-modules-Image-Preview')).toContainText('Preview');
   await page.getByLabel('Search nodes').fill('Export');
@@ -10146,6 +10150,7 @@ test('left libraries stay contained at minimum width and collapse workflow actio
     { snapshot: state.studio.workflowTabs[0]!.snapshot },
   );
   await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
   const savedRow = page.getByTestId('saved-workflow-min-width-workflow');
   await expect(savedRow).toBeVisible();
   await expect(savedRow.getByRole('button', { name: /Actions for Qwen-Image-2512/ })).toHaveCount(1);
@@ -19901,6 +19906,21 @@ test('opaque adapter metadata drives repository, mode, task, and input choices w
   await expect(page.getByRole('option', { name: 'org/opaque-beta', exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
 
+  await repositoryField.getByRole('combobox').fill('');
+  await repositoryField.getByRole('combobox').blur();
+  await repositoryField.getByRole('button', { name: 'Choose model', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Choose model for Repository', exact: true });
+  const search = picker.getByRole('searchbox', { name: 'Search installed models' });
+  await search.fill('missing');
+  await expect(picker).toContainText('No compatible installed models match this search.');
+  await search.fill('opaque');
+  await expect(picker.getByRole('button').filter({ hasText: 'org/opaque-beta' })).toHaveCount(0);
+  await expect(picker.getByRole('button').filter({ hasText: 'org/opaque-incomplete' })).toHaveCount(0);
+  await picker.getByRole('button').filter({ hasText: 'org/opaque-alpha' }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(repositoryField.getByRole('combobox')).toHaveValue('org/opaque-alpha');
+  expect(mockDownloadCalls).toBe(0);
+
   await adapterNode.getByRole('button', { name: 'Local', exact: true }).click();
   await repositoryField.getByRole('button', { name: 'Show options' }).click();
   await expect(page.getByText('No compatible installed models', { exact: true })).toBeVisible();
@@ -25466,7 +25486,7 @@ async function openDeveloperWorkflows(page: Page) {
   ).toBeVisible();
 }
 
-for (const [task, pipeline, count, output] of [
+for (const [task, , count, output] of [
   ['text_to_image', 'QwenImageModularPipeline', 5, 'modules.Image'],
   ['image_to_image', 'FluxModularPipeline', 6, 'modules.Image'],
   ['edit_image', 'FluxKontextModularPipeline', 6, 'modules.Image'],
@@ -25476,17 +25496,8 @@ for (const [task, pipeline, count, output] of [
   test(`Developer Workflows creates and restores ordinary ${task} nodes with a connected output`, async ({ page }) => {
     await openDeveloperWorkflows(page);
     const modal = page.getByRole('dialog', { name: 'Workflows', exact: true });
+    if (task === 'text_to_audio') await modal.getByRole('button', { name: 'Audio', exact: true }).click();
     await modal.getByTestId(`workflow-task-${task}`).click();
-    await modal.getByLabel('Search workflow models').fill(pipeline);
-    await modal.getByLabel('Workflow model', { exact: true }).click();
-    await page.getByRole('option').filter({ hasText: pipeline }).click();
-    await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
-    await expect(modal.getByRole('region', { name: 'Workflow preview' })).toBeVisible();
-    await fs.mkdir(path.join(CLIENT_ROOT, 'reviews/creator-developer-w3'), { recursive: true });
-    await page.screenshot({ path: path.join(CLIENT_ROOT, `reviews/creator-developer-w3/preview-${task}.png`) });
-    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
-    if (task === 'image_to_image' || task === 'edit_image') await expect(modal).toContainText('Inputs to provide');
-    await modal.getByRole('button', { name: 'Create workflow', exact: true }).dblclick();
     await expect(modal).toHaveCount(0);
     const read = () =>
       page.evaluate((module) => {
@@ -25512,9 +25523,8 @@ test('Developer Workflows Escape persists per tab and a new document offers task
   await page.setViewportSize({ width: 390, height: 640 });
   await openDeveloperWorkflows(page);
   const modal = page.getByRole('dialog', { name: 'Workflows', exact: true });
-  await modal.getByTestId('workflow-task-text_to_image').focus();
-  await page.keyboard.press('Enter');
-  await expect(modal.getByLabel('Workflow model', { exact: true })).toBeVisible();
+  await modal.getByLabel('Search workflow tasks').fill('text');
+  await expect(modal.getByTestId('workflow-task-text_to_image')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(modal).toHaveCount(0);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -25527,34 +25537,23 @@ test('Developer Workflows Escape persists per tab and a new document offers task
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
 });
 
-test('Developer Workflows retries failures and discards a delayed preview after changing tasks', async ({ page }) => {
+test('Developer Workflows retries task creation and cancels a pending request on Escape', async ({ page }) => {
   await openDeveloperWorkflows(page);
-  const modal = page.getByRole('dialog', { name: 'Workflows', exact: true });
+  const modal = page.getByTestId('task-launcher');
   let attempts = 0;
   await page.route('**/operations/starter', async (route) => {
     attempts++;
-    if (attempts === 1)
-      return route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Temporarily unavailable' }),
-      });
+    if (attempts === 1) return route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } });
     await new Promise((resolve) => setTimeout(resolve, 800));
     await route.fallback();
   });
   await modal.getByTestId('workflow-task-text_to_image').click();
-  await modal.getByLabel('Workflow model', { exact: true }).click();
-  await page.getByRole('option').filter({ hasText: 'QwenImageModularPipeline' }).click();
-  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
   await expect(modal.getByRole('alert')).toBeVisible();
-  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
-  await modal.getByRole('button', { name: 'All tasks', exact: true }).click();
+  await modal.getByTestId('workflow-task-text_to_image').click();
   await expect.poll(() => attempts).toBe(2);
-  await modal.getByTestId('workflow-task-edit_image').click();
-  await modal.getByLabel('Workflow model', { exact: true }).click();
-  await page.getByRole('option').filter({ hasText: 'FluxKontextModularPipeline' }).click();
-  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
-  await expect(modal.getByRole('region', { name: 'Workflow preview' })).toContainText('Inputs to provide');
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+  await page.waitForTimeout(1000);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
 });
 
@@ -25658,9 +25657,7 @@ test('Creator Templates opens an editable template and preserves the canvas when
   expect(await read()).toEqual(graph);
 });
 
-test('Developer Workflows abandons a pending preview before changing documents and reopening recent work', async ({
-  page,
-}) => {
+test('Developer Workflows abandons pending creation when switching documents', async ({ page }) => {
   await openDeveloperWorkflows(page);
   const modal = page.getByTestId('task-launcher');
   const first = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
@@ -25679,29 +25676,31 @@ test('Developer Workflows abandons a pending preview before changing documents a
     } else await route.fallback();
   });
   await modal.getByTestId('workflow-task-text_to_image').click();
-  await modal.getByLabel('Workflow model', { exact: true }).click();
-  await page.getByRole('option').filter({ hasText: 'QwenImageModularPipeline' }).click();
-  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
   await expect.poll(() => started).toBe(true);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
   await modal.getByTestId('workflow-task-edit_image').click();
-  await modal.getByLabel('Workflow model', { exact: true }).click();
-  await page.getByRole('option').filter({ hasText: 'FluxKontextModularPipeline' }).click();
-  await modal.getByRole('button', { name: 'Preview workflow', exact: true }).click();
-  const preview = modal.getByRole('region', { name: 'Workflow preview' });
-  await expect(preview).toContainText('Inputs to provide');
-  const before = await preview.textContent();
+  await expect(modal).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(6);
+  const readGraph = () =>
+    page.evaluate(() => {
+      const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
+      // Initial control mounting may materialize an empty UI-state object.
+      // Preserve every nonempty setting and all graph/parameter/edge bytes.
+      for (const node of graph.nodes) {
+        if (node.data.uiState && Object.keys(node.data.uiState).length === 0) delete node.data.uiState;
+      }
+      return graph;
+    });
+  const before = await readGraph();
   release();
   await expect.poll(() => completed).toBe(true);
-  await expect(preview).toHaveText(before!);
-  await modal.getByRole('button', { name: 'Create workflow', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(6);
+  expect(await readGraph()).toEqual(before);
   await page.getByTestId(`workflow-tab-${first}`).click();
   await expect(modal).toHaveCount(0);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(0);
   await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
-  await expect(modal.getByRole('region', { name: 'Recent workflows' })).toBeVisible();
+  await expect(modal.getByLabel('Search workflow tasks')).toBeVisible();
   await modal.getByRole('button', { name: 'Open workflow', exact: true }).click();
   await expect(page.getByLabel('Search workflows')).toBeVisible();
 });
@@ -27731,6 +27730,7 @@ test('saved workflow browsing bounds mounted rows and searches the full library'
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
   const library = page.getByTestId('my-workflows');
   const rows = library.locator('[data-testid^="saved-workflow-"]');
   await expect(rows).toHaveCount(50);
@@ -27782,13 +27782,19 @@ test('successful node status is not presented as a warning after recovery', asyn
       ],
       edges: [],
     });
+  });
+  const node = page.locator('.react-flow__node[data-id="recovered-node"]');
+  await expect(node).toBeVisible();
+  await waitForOperationGraphToSettle(page);
+  // Publish the simulated runtime result after initial graph validation, just
+  // as a real completion arrives after the node has mounted.
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
     useFlowStore.getState().setNodeUiState('recovered-node', {
       validationSeverity: 'success',
       validationMessage: 'Cached result reused: node inputs are unchanged.',
     });
   });
-  const node = page.locator('.react-flow__node[data-id="recovered-node"]');
-  await expect(node).toBeVisible();
   await expect(node.getByRole('button', { name: 'Node warning details', exact: true })).toHaveCount(0);
   await node.getByRole('button', { name: 'Node status details', exact: true }).click({ timeout: 10_000 });
   await expect(page.getByText('Cached result reused: node inputs are unchanged.', { exact: true })).toBeVisible();
