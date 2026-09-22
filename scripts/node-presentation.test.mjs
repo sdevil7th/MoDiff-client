@@ -107,3 +107,14 @@ test('task browser groups modalities, deduplicates models and prefers available 
   assert.equal(browser.defaultWorkflowChoice(choices, 'text_to_image').id, 'installed-modular');
   assert.equal(browser.defaultWorkflowChoice(choices, 'missing'), undefined);
 });
+
+test('composite runtime identities distinguish media loading from pipeline loading and generation', async () => {
+  const { builtinNodeDisplayLabel } = await server.ssrLoadModule('/src/workflow/nodePresentation.ts');
+  assert.equal(builtinNodeDisplayLabel('modules.Audio.Load', 'Load'), 'Load Audio');
+  assert.equal(builtinNodeDisplayLabel('modules.Image.Load', 'Load'), 'Load Image');
+  assert.equal(builtinNodeDisplayLabel('modules.DiffusersImage.LoadPipeline', 'Load'), 'Load Image Pipeline');
+  assert.equal(builtinNodeDisplayLabel('modules.DiffusersAudio.LoadPipeline', 'Load'), 'Load Audio Pipeline');
+  assert.equal(builtinNodeDisplayLabel('modules.DiffusersAudio.Generate', 'Generate'), 'Generate Audio');
+  assert.equal(builtinNodeDisplayLabel('modules.DiffusersImage.Generate', 'Generate'), 'Generate Image');
+  assert.equal(builtinNodeDisplayLabel('custom.Image.Generate', 'My custom sampler'), 'My custom sampler');
+});

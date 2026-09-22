@@ -711,6 +711,8 @@ export type WorkflowTab = {
   createdAt: number;
   updatedAt: number;
   dirty: boolean;
+  /** Missing on legacy documents, which remain saved. */
+  intent?: 'draft' | 'saved';
   source?: 'new' | 'import' | 'template' | 'gallery' | 'manual';
   sourceLabel?: string;
   backendRevision?: number;

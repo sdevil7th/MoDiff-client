@@ -112,7 +112,11 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Task cards and the lazy model-first graph picker replace the launcher wizard.
 // With pristine-route replacement, aggregate is 232.5 KiB; bound this surface at 233 KiB and retain both
 // per-chunk ceilings. Cold production startup and model selection remain required.
-const MAX_DEFERRED_GZIP_BYTES = 233 * 1024;
+// Task resolution, saved/draft navigation, grouped model choices, explicit reset
+// and exposed Block selection add ~2 KiB of deferred code. Keep planning lazy;
+// the measured 234.5 KiB aggregate gets a 236 KiB feature budget. Startup and
+// individual chunk limits remain unchanged; cold production checks are required.
+const MAX_DEFERRED_GZIP_BYTES = 236 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -8818,6 +8818,21 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
   await page.route('**/nodes', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: registry }) }),
   );
+  await page.route('**/operations/task-starter', (route) => {
+    const selection = route.request().postDataJSON();
+    const value = structuredClone(starters.find((s) => s.task === selection.task));
+    if (exactModel && value?.pipelineClass === 'QwenImageModularPipeline') {
+      const loader = value.nodes.find((n) => n.operation.decomposition === 'loader')!;
+      loader.node.params.repo_id!.value = 'Qwen/Qwen-Image-2512';
+      loader.node.params.revision!.value = '25468b98e3276ca6700de15c6628e51b7de54a26';
+    }
+    return route.fulfill({
+      status: value ? 200 : 400,
+      json: value
+        ? { schemaVersion: 1, starter: value, profileId: null, unbound: false, message: 'Mock task selection' }
+        : { error: 'Unknown task' },
+    });
+  });
   await page.route('**/operations/starter', (route) => {
     const selection = route.request().postDataJSON();
     const value = structuredClone(
@@ -25541,7 +25556,7 @@ test('Developer Workflows retries task creation and cancels a pending request on
   await openDeveloperWorkflows(page);
   const modal = page.getByTestId('task-launcher');
   let attempts = 0;
-  await page.route('**/operations/starter', async (route) => {
+  await page.route('**/operations/task-starter', async (route) => {
     attempts++;
     if (attempts === 1) return route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } });
     await new Promise((resolve) => setTimeout(resolve, 800));
@@ -25667,7 +25682,7 @@ test('Developer Workflows abandons pending creation when switching documents', a
   });
   let started = false;
   let completed = false;
-  await page.route('**/operations/starter', async (route) => {
+  await page.route('**/operations/task-starter', async (route) => {
     if (!started) {
       started = true;
       await gate;
@@ -27715,7 +27730,7 @@ test('saved workflow browsing bounds mounted rows and searches the full library'
   await page.route('**/workflows?view=summary', (route) =>
     route.fulfill({
       json: {
-        workflows: Array.from({ length: 1000 }, (_, index) => ({
+        workflows: Array.from({ length: 5000 }, (_, index) => ({
           id: `paged-${index}`,
           title: `Saved library item ${String(index).padStart(4, '0')}`,
           updatedAt: 1_000_000 - index,
@@ -27863,9 +27878,12 @@ for (const workspace of ['auto', 'expert'] as const) {
     await expect(review).toContainText('legacy workflow instance');
     await review.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect((await read()).nodes.find((n) => n.id === block.id)!.data).toEqual(before.data);
-    await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
-    await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
-    await expect(review).toHaveCount(0);
+    await root.getByRole('button', { name: 'Choose model', exact: true }).first().click();
+    const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+    await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill('Qwen/Qwen-Image-2512');
+    await picker.getByRole('button').filter({ hasText: 'Qwen/Qwen-Image-2512' }).click();
+    await picker.getByRole('button', { name: 'Apply model change', exact: true }).click();
+    await expect(picker).toHaveCount(0);
     const changed = (await read()).nodes.find((n) => n.data.blockInstanceV2)!;
     const instance = changed.data.blockInstanceV2!;
     expect(instance.effectiveGraph.nodes.find((n) => n.data.action === 'ModelsLoader')!.data.params).toMatchObject({
@@ -27985,4 +28003,63 @@ test('restored Block preview renders its current task instead of artifacts retai
   await expect(image).toHaveAttribute('src', /\/w8-current-preview\.png$/);
   await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(1);
   expect(oldRequests).toBe(0);
+});
+
+test('task sidebar preserves the current document and explicit Save promotes its recovery draft', async ({ page }) => {
+  await openDeveloperWorkflows(page);
+  await page.getByTestId('task-launcher').getByTestId('workflow-task-text_to_image').click();
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  const first = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  const original = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((n) => n.id));
+  await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'Recovery drafts', exact: true }).click();
+  await expect(page.getByTestId(`saved-workflow-${first}`)).toBeVisible();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  await expect(page.getByTestId(`saved-workflow-${first}`)).toHaveCount(0);
+  const saved = page.waitForRequest(
+    (request) =>
+      request.method() === 'PUT' &&
+      request.url().includes(`/workflows/${first}`) &&
+      request.postDataJSON().intent === 'saved',
+  );
+  await page.getByTestId('topbar-save-workflow').click();
+  await saved;
+  await expect(page.getByTestId(`saved-workflow-${first}`)).toBeVisible();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByTestId('task-browser').getByTestId('workflow-task-image_to_image').click();
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
+    .not.toBe(first);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(6);
+  await page.getByTestId(`workflow-tab-${first}`).click();
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((n) => n.id))).toEqual(original);
+  await page.screenshot({ path: test.info().outputPath('shared-task-sidebar.png'), animations: 'disabled' });
+});
+
+test('Restore model defaults resets the prompt through the same undoable graph transaction', async ({ page }) => {
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page, true);
+  await page.addInitScript(() =>
+    localStorage.setItem('modiff.settings', JSON.stringify({ state: { workspaceMode: 'developer' }, version: 0 })),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('task-launcher').getByTestId('workflow-task-text_to_image').click();
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const graph = await read();
+  const encoder = graph.nodes.find((n) => n.data.action === 'EncodePrompt')!;
+  const loader = graph.nodes.find((n) => n.data.action === 'ModelsLoader')!;
+  const prompt = page.locator(`.react-flow__node[data-id="${encoder.id}"] [data-key="prompt"] textarea`);
+  const defaultPrompt = encoder.data.params.prompt.value;
+  await prompt.fill('An intentionally edited prompt before an explicit reset');
+  await prompt.blur();
+  await page
+    .locator(`.react-flow__node[data-id="${loader.id}"]`)
+    .getByRole('button', { name: 'Restore model defaults', exact: true })
+    .click();
+  await expect(prompt).toHaveValue(String(defaultPrompt));
+  await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
+  await page.keyboard.press('Control+z');
+  await expect(prompt).toHaveValue('An intentionally edited prompt before an explicit reset');
 });

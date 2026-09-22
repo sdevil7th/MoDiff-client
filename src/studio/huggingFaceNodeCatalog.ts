@@ -8,6 +8,7 @@ import { registeredBlockV2Route } from './registeredBlockV2Routes';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
 import type { HuggingFaceModularConditionalSnapshot } from './huggingFaceModularConditionals';
 import type { NodeCatalogView } from './nodeCatalog';
+import { builtinNodeDisplayLabel } from '../workflow/nodePresentation';
 
 export type HuggingFaceCatalogSectionId =
   | 'diffusers_cluster_nodes'
@@ -280,7 +281,7 @@ function selectedWorkflowBlockEntries(library: HuggingFaceNodeLibrary): HuggingF
           return {
             id: `modular-placement:${definition.id}:${placement.path.join('/')}`,
             kind: 'block' as const,
-            label: words(block.className),
+            label: compositeBlockLabel(definition, placement, words(block.className)),
             description,
             detail: `${words(definition.pipelineClass)} · ${words(definition.workflowId)} · ${placement.legacyPath}`,
             searchText: [block.className, block.kind, placement.legacyPath, ...definitionIds].join(' ').toLowerCase(),
@@ -302,6 +303,24 @@ function selectedWorkflowBlockEntries(library: HuggingFaceNodeLibrary): HuggingF
       ),
     library,
   );
+}
+
+/** Composite placements name ordinary runtime nodes through the reviewed adapter
+ * contract. Keep those names consistent with canvas/search, without guessing from
+ * prose descriptions or confusing Load Image with Load Image Pipeline. */
+function compositeBlockLabel(
+  definition: HuggingFaceNodeLibraryDefinition,
+  placement: HuggingFaceNodeLibraryBlockPlacement,
+  fallback: string,
+) {
+  if (!placement.blockDefinitionId.startsWith('diffusers.composite-block:')) return fallback;
+  const identities = new Set(
+    definition.graphAdapterContracts.flatMap((contract) => {
+      const index = contract.actionSequence.indexOf(placement.legacyPath);
+      return index < 0 ? [] : [contract.upstreamBlockSequence[index]!];
+    }),
+  );
+  return identities.size === 1 ? builtinNodeDisplayLabel([...identities][0]!, fallback) : fallback;
 }
 
 function unprunedBlockEntries(

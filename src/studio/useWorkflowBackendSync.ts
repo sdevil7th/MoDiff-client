@@ -36,6 +36,7 @@ export function backendWorkflowTab(value: unknown): WorkflowTab | null {
     createdAt: typeof value.createdAt === 'number' ? value.createdAt : Date.now(),
     updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : Date.now(),
     dirty: false,
+    intent: value.intent === 'draft' ? 'draft' : 'saved',
     source: typeof value.source === 'string' ? (value.source as WorkflowTab['source']) : 'manual',
     sourceLabel: typeof value.sourceLabel === 'string' ? value.sourceLabel : undefined,
     backendRevision: typeof value.revision === 'number' ? value.revision : 0,
@@ -44,7 +45,7 @@ export function backendWorkflowTab(value: unknown): WorkflowTab | null {
 }
 
 function contentSignature(tab: WorkflowTab) {
-  return stableStringify([tab.title, tab.source, tab.sourceLabel, tab.snapshot]);
+  return stableStringify([tab.title, tab.source, tab.sourceLabel, tab.intent ?? 'saved', tab.snapshot]);
 }
 
 const backendSignatures = new Map<string, string>();
@@ -130,6 +131,7 @@ async function putWorkflow(tab: WorkflowTab, signal?: AbortSignal) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: tab.title,
+      intent: tab.intent ?? 'saved',
       snapshot: tab.snapshot,
       source: tab.source,
       sourceLabel: tab.sourceLabel,
@@ -164,7 +166,7 @@ export function saveWorkflowNow(tab: WorkflowTab, options: { merge?: boolean } =
     .then(async () => {
       const current = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
       if (!current || isWorkflowTabClosed(tab.id)) throw new Error(`Workflow ${tab.title} is no longer open.`);
-      const saved = await saveDetachedWorkflowNow(current);
+      const saved = await saveDetachedWorkflowNow({ ...current, intent: 'saved' });
       const stillOpen = useStudioStore.getState().workflowTabs.some((item) => item.id === tab.id);
       if (options.merge !== false && stillOpen && !isWorkflowTabClosed(tab.id)) {
         useStudioStore.getState().mergeBackendWorkflow(saved, { acknowledgement: true });

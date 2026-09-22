@@ -5,6 +5,8 @@ type Presentation = { label: string; previous: string[] };
 /** Presentation only. Never replace execution identities or infer an operation
  * from a substring in its class name. Unrecognized and user-defined titles stay intact. */
 const PRESENTATIONS: Record<string, Presentation> = {
+  'modules.Audio.Load': { label: 'Load Audio', previous: ['Load'] },
+  'modules.Image.Load': { label: 'Load Image', previous: ['Load'] },
   'modules.ModularDiffusers.ModelsLoader': {
     label: 'Load Modular Components',
     previous: ['Load Models', 'Load model'],
@@ -105,6 +107,11 @@ const PRESENTATIONS: Record<string, Presentation> = {
     previous: ['Diffusers Video + Audio Generate', 'Generate video + audio'],
   },
 };
+
+/** Built-in composite metadata carries an exact runtime key, not a user title. */
+export function builtinNodeDisplayLabel(identity: string, fallback: string) {
+  return PRESENTATIONS[identity]?.label ?? fallback;
+}
 
 export function nodeDisplayLabel(node: Pick<NodeData, 'module' | 'action' | 'label' | 'operationAuthoring'>): string {
   // Canonical authoring nodes already have a task-specific semantic label. Raw

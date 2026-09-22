@@ -65,27 +65,25 @@ function asModelFieldValue(value: unknown, fallbackSource: ModelSource): ModelFi
   return { source: fallbackSource, value: '' };
 }
 
-const OperationModelPicker = lazy(() => import('../components/OperationModelPicker'));
+const OperationModelField = lazy(() => import('../components/OperationModelField'));
 
 export default function ModelSelectField(props: FieldProps) {
-  const node = useFlowStore((state) => state.nodes.find((n) => n.id === props.nodeId));
-  const hint = node ? operationAuthoring(node) : null;
+  const root = useFlowStore((state) => state.nodes.find((n) => n.id === props.nodeId));
   if (
-    node &&
-    hint?.operation.task &&
-    operationOwnsModel(hint.operation) &&
-    ['model_id', 'repo_id'].includes(props.fieldKey)
+    root &&
+    (root.data.blockInstanceV2 ||
+      root.data.userBlockSnapshot ||
+      operationOwnsModel(operationAuthoring(root)?.operation))
   )
     return (
-      <FieldFrame dataKey={props.fieldKey} hidden={props.hidden} layoutStyle={props.style} className="modiff-field">
-        <Suspense fallback={<span role="status">Loading model choices…</span>}>
-          <OperationModelPicker
-            node={node}
-            value={String(asModelFieldValue(props.value, 'hub').value ?? '')}
-            disabled={props.disabled || props.isConnected}
-          />
-        </Suspense>
-      </FieldFrame>
+      <Suspense fallback={<span role="status">Loading model choices…</span>}>
+        <OperationModelField
+          root={root}
+          field={props}
+          value={String(asModelFieldValue(props.value, 'hub').value ?? '')}
+          fallback={<RawModelSelectField {...props} />}
+        />
+      </Suspense>
     );
   return <RawModelSelectField {...props} />;
 }

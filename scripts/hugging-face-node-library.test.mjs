@@ -1625,6 +1625,36 @@ test('ordinary composite sequences retain repeated classes at distinct action pl
   assert.throws(() => libraryModule.parseHuggingFaceNodeLibrary(wrongLength));
 });
 
+test('composite catalog names distinguish media loading from pipeline loading by runtime identity', () => {
+  for (const [identity, expected] of [
+    ['modules.Image.Load', 'Load Image'],
+    ['modules.Audio.Load', 'Load Audio'],
+    ['modules.DiffusersImage.LoadPipeline', 'Load Image Pipeline'],
+    ['modules.DiffusersAudio.LoadPipeline', 'Load Audio Pipeline'],
+  ]) {
+    const body = payloadWithStandardDiffusersComposite();
+    const definition = body.definitions.at(-1);
+    const adapter = definition.graphAdapterContracts[0];
+    adapter.upstreamBlockSequence = adapter.actionSequence.map(() => identity);
+    const parsed = libraryModule.parseHuggingFaceNodeLibrary(body);
+    const entries = libraryCatalogModule
+      .buildHuggingFaceCatalogSections(parsed)
+      .find((section) => section.id === 'modular_diffusers_block_nodes').entries;
+    const paths = definition.blockPlacements
+      .map((placement) => placement.legacyPath)
+      .filter((path) => adapter.actionSequence.includes(path));
+    assert.ok(paths.length > 0);
+    for (const path of paths) {
+      const entry = entries.find((candidate) =>
+        candidate.modularBlockContexts?.some(
+          (context) => context.definitionId === definition.id && context.placement.legacyPath === path,
+        ),
+      );
+      assert.equal(entry?.label, expected, `${identity} at ${path}`);
+    }
+  }
+});
+
 test('unregistered publications remain structurally insertable while execution receipts stay sealed', () => {
   const body = payload();
   const flux = body.definitions[0];

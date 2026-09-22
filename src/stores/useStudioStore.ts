@@ -664,6 +664,7 @@ function normalizeWorkflowTab(value: unknown): WorkflowTab | undefined {
     createdAt,
     updatedAt: finiteNumber(value.updatedAt, createdAt),
     dirty: typeof value.dirty === 'boolean' ? value.dirty : false,
+    intent: value.intent === 'draft' ? 'draft' : 'saved',
     source,
     sourceLabel,
     backendRevision: finiteNumber(value.backendRevision, finiteNumber(value.revision, 0)) || undefined,
@@ -2667,6 +2668,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             {
               id,
               title: 'Workflow 1',
+              intent: snapshot.nodes.length ? 'saved' : 'draft',
               createdAt: Date.now(),
               updatedAt: Date.now(),
               dirty: false,
@@ -2702,6 +2704,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const savedTabs = savedTabsWithActiveSnapshot(state);
         const tab: WorkflowTab = {
           id,
+          intent: 'draft',
           title: title || `Workflow ${savedTabs.length + 1}`,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -2787,6 +2790,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             workflowTabs: [
               {
                 id: newId,
+                intent: 'draft',
                 title: 'Workflow 1',
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
@@ -2914,6 +2918,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               tab.id === normalized.id
                 ? {
                     ...localDocument,
+                    intent: normalized.intent === 'saved' ? 'saved' : localDocument.intent,
                     backendRevision: normalized.backendRevision,
                     dirty: true,
                   }

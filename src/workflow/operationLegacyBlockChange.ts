@@ -28,14 +28,14 @@ export function planOwnerBlockOperationChange(
   blockId: string,
   loaderId: string,
   starter: OperationStarter,
-  options: { replaceModel?: boolean } = {},
+  options: { replaceModel?: boolean; restoreDefaults?: boolean } = {},
 ) {
   const prepared = prepareOperationBlockGraph(graph, blockId);
   const plan = planBlockOperationChange(prepared.graph, prepared.root.id, loaderId, starter, options);
   return {
     ...plan,
-    changes: [
-      ...plan.changes,
+    diagnostics: [
+      ...plan.diagnostics,
       ...(prepared.converted
         ? [
             'Update this legacy workflow instance to the current editable Block format; Undo restores its original format.',

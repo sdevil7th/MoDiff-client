@@ -7,6 +7,7 @@ import { operationAuthoring } from '../workflow/operationAuthoring';
 import { workflowChoices } from '../workflow/workflowChoices';
 import { ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import OperationGraphControls from './OperationGraphControls';
+const OperationModelPicker = lazy(() => import('./OperationModelPicker'));
 
 const LegacyOperationOwnerControls = lazy(() => import('./LegacyOperationOwnerControls'));
 
@@ -80,6 +81,19 @@ export function BlockOwnerChoices({
           />
         </ModiffFieldShell>
       ) : null}
+      <Suspense fallback={<p role="status">Loading model choices…</p>}>
+        <OperationModelPicker
+          node={{ ...loader, data: { ...loader.data, blockProjectionOwnerId: ownerBlockId } }}
+          value={(() => {
+            const value = loader.data.params.repo_id?.value ?? loader.data.params.model_id?.value;
+            return typeof value === 'string'
+              ? value
+              : value && typeof value === 'object' && 'value' in value
+                ? String(value.value ?? '')
+                : '';
+          })()}
+        />
+      </Suspense>
       <OwnerChoices
         key={`${loader.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
         ownerId={loader.data.blockProjectionNodeId!}

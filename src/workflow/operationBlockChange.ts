@@ -12,7 +12,9 @@ import {
   runtimeNodeType,
   setBlockInstanceValueV2,
   addBlockEffectiveGraphNodeV2,
+  blockInputPortBindingsV2,
   createBlockRootNodeV2,
+  replaceBlockEffectiveInterfaceV2,
   replaceBlockEffectiveGraphNodeV2,
   replaceBlockEffectiveGraphV2,
 } from '../studio/blockRuntimeV2';
@@ -26,13 +28,124 @@ import {
   type OperationStarter,
 } from './operationAuthoring';
 
+function operationReplacementParam(
+  nodes: OperationGraph['nodes'],
+  nodeId: string,
+  fieldId: string,
+  valueType: string,
+  direction: 'input' | 'control',
+) {
+  const param = nodes.find((node) => node.id === nodeId)?.data.params[fieldId];
+  return Boolean(
+    param &&
+    param.display !== 'output' &&
+    (direction !== 'input' || !param.hidden) &&
+    blockValueTypesAreCompatibleV2(valueType, param.type),
+  );
+}
+
+function operationBindingHasOutsideWire(
+  graph: OperationGraph,
+  blockId: string,
+  publicId: string,
+  bindings: readonly { nodeId: string; fieldOrPortId?: string; fieldId?: string }[],
+) {
+  const identities = new Set(
+    bindings.map(({ nodeId, fieldOrPortId, fieldId }) => `${nodeId}\u0000${fieldOrPortId ?? fieldId ?? ''}`),
+  );
+  return graph.edges.some((edge) => {
+    if (edge.target !== blockId) return false;
+    if (edge.targetHandle === publicId) return true;
+    const crossing = parseBlockCrossingHandleV2(edge.targetHandle);
+    return crossing?.direction === 'input' && identities.has(`${crossing.nodeId}\u0000${crossing.fieldOrPortId}`);
+  });
+}
+
+/**
+ * A legacy Create Block selection derives its interface from every visible,
+ * unconnected field. Those generated entries are discovery conveniences, not
+ * proof that the user authored a durable cross-model contract. Remove only an
+ * untouched entry that the replacement cannot implement. Configure Interface,
+ * a connected wire, a sealed control, or an edited value makes it explicit and
+ * keeps the strict replacement rejection in blockRuntimeV2.
+ */
+function adaptDerivedOperationInterface(
+  graph: OperationGraph,
+  blockId: string,
+  original: NonNullable<CustomNodeType['data']['blockInstanceV2']>,
+  planned: OperationGraph['nodes'],
+  scope: ReadonlySet<string>,
+) {
+  if (original.effectiveInterface.boundary.mode !== 'derived') return { instance: original, removed: [] as string[] };
+
+  const definitionInputs = new Map(original.definitionSnapshot.boundary.inputs.map((port) => [port.portId, port]));
+  const definitionControls = new Map(
+    original.definitionSnapshot.controls.map((control) => [control.controlId, control]),
+  );
+  const removed: string[] = [];
+  const inputs = original.effectiveInterface.boundary.inputs.filter((port) => {
+    const bindings = blockInputPortBindingsV2(port);
+    const owned = bindings.filter(({ nodeId }) => scope.has(nodeId));
+    const unavailable = owned.some(
+      ({ nodeId, fieldOrPortId }) =>
+        !operationReplacementParam(planned, nodeId, fieldOrPortId, port.valueType, 'input'),
+    );
+    const generated = deepEqual(definitionInputs.get(port.portId), port);
+    const hasValue = Object.prototype.hasOwnProperty.call(original.values, port.portId);
+    if (
+      unavailable &&
+      owned.length === bindings.length &&
+      generated &&
+      !hasValue &&
+      !operationBindingHasOutsideWire(graph, blockId, port.portId, bindings)
+    ) {
+      removed.push(`input ${port.label}`);
+      return false;
+    }
+    return true;
+  });
+  const controls = original.effectiveInterface.controls.filter((control) => {
+    const bindings = blockContainerControlTargetsV1(control);
+    const owned = bindings.filter(({ nodeId }) => scope.has(nodeId));
+    const unavailable = owned.some(
+      ({ nodeId, fieldId }) => !operationReplacementParam(planned, nodeId, fieldId, control.valueType, 'control'),
+    );
+    const generated = deepEqual(definitionControls.get(control.controlId), control);
+    const currentValue = blockContainerFieldValueV1(original, control.binding.nodeId, control.binding.fieldId);
+    if (
+      unavailable &&
+      owned.length === bindings.length &&
+      generated &&
+      !control.sealed &&
+      deepEqual(currentValue, control.defaultValue) &&
+      !operationBindingHasOutsideWire(graph, blockId, control.controlId, bindings)
+    ) {
+      removed.push(`control ${control.label}`);
+      return false;
+    }
+    return true;
+  });
+  if (!removed.length) return { instance: original, removed };
+  return {
+    instance: replaceBlockEffectiveInterfaceV2(
+      original,
+      {
+        boundary: { ...original.effectiveInterface.boundary, inputs },
+        controls: controls.map((control, order) => ({ ...control, order })),
+      },
+      { preserveOmittedMirrors: false },
+    ),
+    removed,
+  };
+}
+
 /** Preview against current instance values; commit still belongs to the canvas transaction. */
 export function planBlockOperationChange(
   graph: OperationGraph,
   blockId: string,
   loaderId: string,
   starter: OperationStarter,
-  options: { replaceModel?: boolean } = {},
+  options: { replaceModel?: boolean; restoreDefaults?: boolean } = {},
 ): OperationChangePlan {
   const root = graph.nodes.find((node) => node.id === blockId);
   const original = root?.data.blockInstanceV2;
@@ -84,11 +197,12 @@ export function planBlockOperationChange(
     targetNodeId: semanticId(edge.target),
     targetPortId: edge.targetHandle!,
   }));
+  const adapted = adaptDerivedOperationInterface(graph, blockId, original, planned, scope);
   // Temporarily detach reviewed internal connections before replacing field
   // contracts. Each replacement still validates every public/nested binding.
-  let instance = replaceBlockEffectiveGraphV2(original, {
-    ...original.effectiveGraph,
-    edges: original.effectiveGraph.edges.filter(
+  let instance = replaceBlockEffectiveGraphV2(adapted.instance, {
+    ...adapted.instance.effectiveGraph,
+    edges: adapted.instance.effectiveGraph.edges.filter(
       (edge) => !scope.has(edge.sourceNodeId) && !scope.has(edge.targetNodeId),
     ),
   });
@@ -203,6 +317,7 @@ export function planBlockOperationChange(
       ...(restored.added.length
         ? [`Connect the existing outside source to ${restored.added.length} newly shared input(s).`]
         : []),
+      ...(adapted.removed.length ? [`Remove unavailable, unused derived Block ${adapted.removed.join(', ')}.`] : []),
       'Update this Block instance; keep its saved definition, public interface and other instances.',
     ],
   };

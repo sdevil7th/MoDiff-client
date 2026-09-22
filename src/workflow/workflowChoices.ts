@@ -143,3 +143,22 @@ const TASK_LABELS: Record<string, string> = {
 export function workflowTaskLabel(task: string): string {
   return TASK_LABELS[task] ?? task.replace(/_/gu, ' ').replace(/^./u, (c) => c.toUpperCase());
 }
+
+/** One model row per repository/task, with exact backend routes still selectable. */
+export function groupWorkflowModels(choices: WorkflowChoice[], currentId?: string) {
+  const groups = new Map<string, WorkflowChoice[]>();
+  for (const choice of choices) {
+    const key = `${choice.task}:${choice.repo ?? choice.id}`;
+    groups.set(key, [...(groups.get(key) ?? []), choice]);
+  }
+  return [...groups.entries()].map(([id, routes]) => {
+    routes.sort(
+      (a, b) =>
+        Number(b.id === currentId) - Number(a.id === currentId) ||
+        Number(b.support.dependencies === 'ready') - Number(a.support.dependencies === 'ready') ||
+        Number(b.support.decomposition === 'stages') - Number(a.support.decomposition === 'stages') ||
+        a.id.localeCompare(b.id),
+    );
+    return { id, primary: routes[0]!, routes };
+  });
+}

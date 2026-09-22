@@ -301,7 +301,7 @@ export function planOperationChange(
   graph: OperationGraph,
   loaderId: string,
   starter: OperationStarter,
-  options: { replaceModel?: boolean } = {},
+  options: { replaceModel?: boolean; restoreDefaults?: boolean } = {},
 ): OperationChangePlan {
   const scope = operationScope(graph, loaderId);
   const root = scope.find((n) => n.id === loaderId)!;
@@ -344,6 +344,17 @@ export function planOperationChange(
         !deepEqual(previous.defaults[name], field.value);
       if (!overridden) continue;
       const target = params[name];
+      // Explicit reset applies only to creative value controls. Preserve model
+      // ownership, resource settings, media, custom nodes and connected inputs.
+      if (
+        options.restoreDefaults &&
+        !operationOwnsModel(previous.operation) &&
+        next.operation.ports.some(
+          (port) => port.name === name && port.direction === 'input' && port.semantics?.kind === 'value',
+        ) &&
+        !graph.edges.some((edge) => edge.target === old.id && edge.targetHandle === name)
+      )
+        continue;
       // A changed loader adopts the target's exact artifact and trust defaults.
       // Treat previous loader overrides as retained settings for explicit review.
       const allowed =

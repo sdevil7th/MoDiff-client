@@ -15,11 +15,24 @@ import {
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
-import { workflowChoices, workflowTaskLabel, type WorkflowChoice } from '../workflow/workflowChoices';
-import { ModiffButton, ModiffDialog, ModiffSearchInput } from '../ui';
+import {
+  groupWorkflowModels,
+  workflowChoices,
+  workflowTaskLabel,
+  type WorkflowChoice,
+} from '../workflow/workflowChoices';
+import { operationOwnsModel } from '../workflow/operationContracts';
+import { rememberTaskModel } from '../workflow/taskModelPreferences';
+import { ModiffButton, ModiffDialog, ModiffDisclosure, ModiffSearchInput } from '../ui';
 import { formatRequestError } from '../utils/requestJson';
 
-type Review = { plan: OperationChangePlan; context: WorkflowOperationContext; signature: string };
+type Review = {
+  plan: OperationChangePlan;
+  context: WorkflowOperationContext;
+  signature: string;
+  choice: WorkflowChoice;
+  restoreDefaults?: boolean;
+};
 
 /** Model-first authoring over the existing ordinary/Block graph transaction. */
 export default function OperationModelPicker({
@@ -76,11 +89,18 @@ export default function OperationModelPicker({
     setOpen(false);
   }
   function apply(candidate: Review) {
-    commitOperationGraph(candidate.plan.graph, candidate.context, candidate.signature, 'Change model');
+    commitOperationGraph(
+      candidate.plan.graph,
+      candidate.context,
+      candidate.signature,
+      candidate.restoreDefaults ? 'Restore model defaults' : 'Change model',
+    );
     useStudioStore.getState().saveActiveWorkflowTab(true);
+    if (!candidate.restoreDefaults && candidate.choice.profileId)
+      rememberTaskModel(candidate.choice.task, candidate.choice.profileId);
     close();
   }
-  async function choose(choice: WorkflowChoice) {
+  async function choose(choice: WorkflowChoice, restoreDefaults = false) {
     if (pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
@@ -115,15 +135,15 @@ export default function OperationModelPicker({
             node.data.blockProjectionOwnerId,
             node.data.blockProjectionNodeId ?? node.id,
             starter,
-            { replaceModel: true },
+            { replaceModel: !restoreDefaults, restoreDefaults },
           )
-        : (baseline && planPristineOperationChange(snapshot, node.id, baseline, starter)) ||
-          planOperationChange(snapshot, node.id, starter, { replaceModel: true });
+        : (!restoreDefaults && baseline && planPristineOperationChange(snapshot, node.id, baseline, starter)) ||
+          planOperationChange(snapshot, node.id, starter, { replaceModel: !restoreDefaults, restoreDefaults });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
       if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The workflow changed. Select the model again.');
-      const candidate = { plan, context, signature };
+      const candidate = { plan, context, signature, choice, restoreDefaults };
       if (plan.diagnostics.length) setReview(candidate);
       else apply(candidate);
     } catch (e) {
@@ -148,6 +168,22 @@ export default function OperationModelPicker({
       >
         <span className="min-w-0 truncate">{current?.label ?? (value || 'Choose model')}</span>
       </ModiffButton>
+      {current &&
+      operations.some(
+        (o) =>
+          o.pipelineClass === hint.operation.pipelineClass && o.task === hint.operation.task && !operationOwnsModel(o),
+      ) ? (
+        <ModiffButton
+          disabled={disabled || busy}
+          onClick={() => {
+            setOpen(true);
+            void choose(current, true);
+          }}
+          title="Reset unconnected prompts and generation controls; keep model, memory settings, media and custom nodes. Undo is available."
+        >
+          Restore model defaults
+        </ModiffButton>
+      ) : null}
       {open ? (
         <ModiffDialog open onClose={close} title="Choose model for Load Models" panelClassName="max-w-3xl">
           <div className="space-y-3">
@@ -196,28 +232,42 @@ export default function OperationModelPicker({
               </section>
             ) : null}
             <div className="max-h-80 space-y-2 overflow-y-auto overscroll-contain" aria-label="Compatible models">
-              {visible.map((choice) => (
-                <ModiffButton
-                  key={choice.id}
-                  className="h-auto w-full p-3"
-                  align="left"
-                  disabled={busy}
-                  onClick={() => void choose(choice)}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-semibold">{choice.label}</span>
-                    <span className="block break-all text-xs text-modiff-subtle-text">{choice.repo}</span>
-                  </span>
-                  <span className="ml-auto flex shrink-0 flex-col items-end gap-1 text-xs text-modiff-subtle-text">
-                    {choice.cache?.runnable ? (
-                      <span className="rounded-modiff-compact bg-modiff-selected-surface px-2 py-1 text-hf-yellow">
-                        Downloaded
-                      </span>
-                    ) : null}
-                    <span>{choice.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'}</span>
-                    {choice.support.dependencies === 'blocked' ? <span>Runtime setup required</span> : null}
-                  </span>
-                </ModiffButton>
+              {groupWorkflowModels(visible, current?.id).map(({ id, primary: choice, routes }) => (
+                <div key={id}>
+                  <ModiffButton
+                    className="h-auto w-full p-3"
+                    align="left"
+                    disabled={busy}
+                    onClick={() => void choose(choice)}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold">{choice.label}</span>
+                      <span className="block break-all text-xs text-modiff-subtle-text">{choice.repo}</span>
+                    </span>
+                    <span className="ml-auto flex shrink-0 flex-col items-end gap-1 text-xs text-modiff-subtle-text">
+                      {choice.cache?.runnable ? (
+                        <span className="rounded-modiff-compact bg-modiff-selected-surface px-2 py-1 text-hf-yellow">
+                          Downloaded
+                        </span>
+                      ) : null}
+                      <span>{choice.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'}</span>
+                      {choice.support.dependencies === 'blocked' ? <span>Runtime setup required</span> : null}
+                    </span>
+                  </ModiffButton>
+                  {routes.length > 1 ? (
+                    <ModiffDisclosure
+                      label={`Other implementations (${routes.length - 1})`}
+                      className="px-3 py-1 text-xs text-modiff-subtle-text"
+                    >
+                      {routes.slice(1).map((route) => (
+                        <ModiffButton key={route.id} disabled={busy} onClick={() => void choose(route)}>
+                          {route.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'} ·{' '}
+                          {route.pipeline}
+                        </ModiffButton>
+                      ))}
+                    </ModiffDisclosure>
+                  ) : null}
+                </div>
               ))}
               {!visible.length ? <p role="status">No compatible models match these filters.</p> : null}
             </div>

@@ -123,6 +123,7 @@ interface SettingsStateVolatile {
   mediaExportOpener: MediaExportOpener;
   workflowFocusRequest: WorkflowFocusRequest;
   runActivityPendingTaskId: string | null;
+  workflowLibraryView: 'start' | 'examples' | 'saved' | 'drafts';
   templateBrowserOpen: boolean;
   templateBrowserInitialCategory: TemplateBrowserCategoryId | null;
   galleryLibraryOpen: boolean;
@@ -130,6 +131,7 @@ interface SettingsStateVolatile {
 }
 
 interface SettingsActions {
+  setWorkflowLibraryView: (view: SettingsStateVolatile['workflowLibraryView']) => void;
   setLeftPanelOpen: (open: boolean) => void;
   setLeftPanelWidth: (width: number) => void;
   setLeftPanelTabIndex: (index: number) => void;
@@ -205,6 +207,7 @@ const defaultVolatileState: SettingsStateVolatile = {
   mediaExportOpener: null,
   workflowFocusRequest: null,
   runActivityPendingTaskId: null,
+  workflowLibraryView: 'start',
   templateBrowserOpen: false,
   templateBrowserInitialCategory: null,
   galleryLibraryOpen: false,
@@ -221,6 +224,7 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       ...defaultVolatileState,
 
       // Actions
+      setWorkflowLibraryView: (view) => set({ workflowLibraryView: view }),
       setLeftPanelOpen: (open: boolean) => set({ isLeftPanelOpen: open }),
       setLeftPanelWidth: (width: number) => set({ leftPanelWidth: Math.max(LEFT_PANEL_WIDTH_MIN, width) }),
       setLeftPanelTabIndex: (index: number) => set({ leftPanelTabIndex: index }),

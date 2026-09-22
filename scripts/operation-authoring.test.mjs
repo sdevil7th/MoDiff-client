@@ -632,6 +632,80 @@ async function operationBlock(instanceId = 'operation-block', selectedStarter = 
   return { schema, runtime, instance, draft };
 }
 
+async function derivedOperationBlock(instanceId = 'derived-operation-block') {
+  const selected = seededStarter(true);
+  const selectedDenoise = selected.nodes.find((node) => node.node.action === 'Denoise');
+  selectedDenoise.node.params.guider = { type: 'custom_guider', display: 'input' };
+  selectedDenoise.node.params.strength = { type: 'float', display: 'number', value: 1 };
+  selectedDenoise.operation.ports.push(
+    {
+      name: 'guider',
+      semanticName: 'guider',
+      direction: 'input',
+      roles: ['value'],
+      types: ['custom_guider'],
+      required: false,
+      hidden: false,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [] },
+    },
+    {
+      name: 'strength',
+      semanticName: 'strength',
+      direction: 'input',
+      roles: ['value'],
+      types: ['float'],
+      required: false,
+      hidden: false,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [] },
+    },
+  );
+  const base = await operationBlock(instanceId, selected);
+  const denoise = base.draft.nodes.find((node) => node.data.action === 'Denoise');
+  const boundary = {
+    mode: 'derived',
+    inputs: [
+      {
+        portId: 'guider-in',
+        label: 'Guider',
+        valueType: 'custom_guider',
+        required: false,
+        binding: { nodeId: denoise.id, fieldOrPortId: 'guider' },
+      },
+    ],
+    outputs: [],
+    derivation: {
+      algorithmVersion: 'legacy-user-block-boundary-v1',
+      derivedAtDefinitionHash: base.instance.effectiveGraph.graphHash,
+    },
+  };
+  const controls = [
+    {
+      controlId: 'strength-control',
+      label: 'Strength',
+      valueType: 'float',
+      binding: { nodeId: denoise.id, fieldId: 'strength' },
+      defaultValue: 1,
+      order: 0,
+    },
+  ];
+  const withoutHash = {
+    ...base.instance.definitionSnapshot,
+    boundary,
+    controls,
+  };
+  const definition = {
+    ...withoutHash,
+    contentHash: base.schema.blockDefinitionContentHashV2(withoutHash),
+  };
+  const instance = base.schema.createBlockInstanceV2(definition, {
+    instanceId,
+    position: base.instance.presentation.position,
+    size: base.instance.presentation.size,
+    internalLayout: base.instance.presentation.internalLayout,
+  });
+  return { ...base, instance, denoise };
+}
+
 test('generic Block projections preserve operation hints and scope shared random seeds to each instance', async () => {
   const { schema, runtime, instance } = await operationBlock();
   const peer = schema.createBlockInstanceV2(instance.definitionSnapshot, {
@@ -920,6 +994,73 @@ test('owning Block model changes preserve semantic roles, shared values, sibling
   const saved = JSON.parse(JSON.stringify(useFlowStore.getState().toObject()));
   useFlowStore.getState().replaceGraph(saved);
   assert.deepEqual(useFlowStore.getState().toObject().nodes[0].data.blockInstanceV2, updated);
+});
+
+test('owning Block model changes remove only untouched unavailable fields from a derived interface', async () => {
+  const { runtime, instance, draft } = await derivedOperationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const target = seededStarter(true);
+  const plan = planBlockOperationChange(
+    { nodes: [runtime.createBlockRootNodeV2(instance)], edges: [] },
+    instance.instanceId,
+    draft.nodes[0].id,
+    target,
+  );
+  const updated = plan.graph.nodes[0].data.blockInstanceV2;
+  assert.deepEqual(updated.effectiveInterface.boundary.inputs, []);
+  assert.deepEqual(updated.effectiveInterface.controls, []);
+  assert.deepEqual(updated.definitionSnapshot, instance.definitionSnapshot);
+  assert.match(plan.changes.join(' '), /input Guider/u);
+  assert.match(plan.changes.join(' '), /control Strength/u);
+});
+
+test('owning Block model changes protect configured, connected and edited derived fields', async () => {
+  const { runtime, instance, draft } = await derivedOperationBlock();
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const target = seededStarter(true);
+  const configured = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+    boundary: { ...instance.effectiveInterface.boundary, mode: 'explicit', derivation: undefined },
+    controls: instance.effectiveInterface.controls,
+  });
+  assert.throws(
+    () =>
+      planBlockOperationChange(
+        { nodes: [runtime.createBlockRootNodeV2(configured)], edges: [] },
+        instance.instanceId,
+        draft.nodes[0].id,
+        target,
+      ),
+    /Configure Interface/u,
+  );
+
+  const connectedGraph = {
+    nodes: [runtime.createBlockRootNodeV2(instance), outsideValue('outside', 'custom_guider', 'guider')],
+    edges: [
+      {
+        id: 'connected-guider',
+        source: 'outside',
+        sourceHandle: 'guider',
+        target: instance.instanceId,
+        targetHandle: 'guider-in',
+      },
+    ],
+  };
+  assert.throws(
+    () => planBlockOperationChange(connectedGraph, instance.instanceId, draft.nodes[0].id, target),
+    /connected input guider-in/u,
+  );
+
+  const edited = runtime.setBlockInstanceValueV2(instance, 'strength-control', 0.5);
+  assert.throws(
+    () =>
+      planBlockOperationChange(
+        { nodes: [runtime.createBlockRootNodeV2(edited)], edges: [] },
+        instance.instanceId,
+        draft.nodes[0].id,
+        target,
+      ),
+    /Configure Interface/u,
+  );
 });
 
 test('owning Block preview rejects incompatible public controls and conflicting bound model values atomically', async () => {
@@ -1374,10 +1515,24 @@ for (const prefix of ['node-', '_', '-']) {
     const loader = prepared.root.data.blockInstanceV2.effectiveGraph.nodes.find(
       (node) => node.data.operationAuthoring?.operation.decomposition === 'loader',
     );
+    const { operationModelSource } = await server.ssrLoadModule('/src/workflow/operationModelSource.ts');
+    const control = prepared.root.data.blockInstanceV2.effectiveInterface.controls.find(
+      (c) => c.binding.nodeId === loader.nodeId && c.binding.fieldId === 'repo_id',
+    );
+    assert.ok(control, 'model is exposed on the saved Block');
+    const legacyOwner = operationModelSource(root, control.controlId);
+    assert.equal(legacyOwner?.data.blockProjectionOwnerId, root.id);
+    assert.equal(legacyOwner?.data.blockProjectionNodeId, loader.nodeId);
+    const owner = operationModelSource(prepared.root, control.controlId);
+    assert.equal(owner?.data.blockProjectionOwnerId, prepared.root.id);
+    assert.equal(owner?.data.blockProjectionNodeId, loader.nodeId);
+    assert.equal(operationModelSource(prepared.root, 'unknown'), null);
+    assert.deepEqual(graph, snapshot, 'field lookup must never migrate a saved document');
     const target = structuredClone(old);
     target.nodes[0].node.params.repo_id.value = 'test/selected';
     target.nodes[0].node.params.revision.value = 'b'.repeat(40);
     const plan = planOwnerBlockOperationChange(graph, root.id, loader.nodeId, target, { replaceModel: true });
+    assert.match(plan.diagnostics.join(' '), /legacy workflow instance/u);
     assert.deepEqual(graph, snapshot, 'preview and cancellation leave legacy bytes unchanged');
     assert.deepEqual(useUserBlockStore.getState().blocks, library);
     const updated = plan.graph.nodes.find((node) => node.data.blockInstanceV2);
@@ -1673,4 +1828,75 @@ test('pristine route replacement reconnects preview across decomposition and ref
   const custom = structuredClone(graph);
   custom.nodes.find((n) => n.id === 'preview').data.module = 'custom.Review';
   assert.equal(authoring.planPristineOperationChange(custom, custom.nodes[0].id, old, next), null);
+});
+
+test('explicit model defaults restore creative controls while preserving wired inputs and loader policy', () => {
+  const source = starter();
+  source.nodes[0].node.params.dtype = { type: 'string', display: 'text', value: 'bfloat16' };
+  const graph = authoring.createOperationStarter(source, { x: 0, y: 0 });
+  const [loader, denoise] = graph.nodes;
+  loader.data.params.dtype.value = 'float32';
+  denoise.data.params.prompt.value = 'Keep this connected prompt';
+  denoise.data.params.steps.value = 47;
+  graph.nodes.push({
+    id: 'custom',
+    type: 'custom',
+    position: { x: -50, y: 0 },
+    data: {
+      module: 'custom.Prompt',
+      action: 'Prompt',
+      params: { output: { type: 'string', display: 'output' } },
+    },
+  });
+  graph.edges.push({
+    id: 'custom-prompt',
+    source: 'custom',
+    sourceHandle: 'output',
+    target: denoise.id,
+    targetHandle: 'prompt',
+  });
+  const original = structuredClone(graph);
+  const plan = authoring.planOperationChange(graph, loader.id, source, { restoreDefaults: true });
+  assert.equal(plan.graph.nodes.find((n) => n.id === denoise.id).data.params.steps.value, 20);
+  assert.equal(
+    plan.graph.nodes.find((n) => n.id === denoise.id).data.params.prompt.value,
+    'Keep this connected prompt',
+  );
+  assert.equal(plan.graph.nodes.find((n) => n.id === loader.id).data.params.dtype.value, 'float32');
+  assert.deepEqual(
+    plan.graph.nodes.find((n) => n.id === 'custom'),
+    original.nodes[2],
+  );
+  assert.ok(plan.graph.edges.some((e) => e.id === 'custom-prompt'));
+  assert.deepEqual(graph, original);
+});
+
+test('model grouping keeps exact backend routes available without duplicate repository rows', () => {
+  const route = (id, decomposition, repo = 'org/model') => ({
+    id,
+    task: 'text_to_image',
+    repo,
+    support: { decomposition, dependencies: 'ready' },
+  });
+  const source = [route('whole', 'pipeline'), route('modular', 'stages'), route('another', 'pipeline', 'org/another')];
+  assert.equal(choices.groupWorkflowModels(source).length, 2);
+  assert.equal(choices.groupWorkflowModels(source)[0].primary.id, 'modular');
+  assert.equal(choices.groupWorkflowModels(source, 'whole')[0].primary.id, 'whole');
+  assert.deepEqual(
+    choices.groupWorkflowModels(source)[0].routes.map((r) => r.id),
+    ['modular', 'whole'],
+  );
+  assert.equal(source[0].id, 'whole');
+});
+
+test('task model preferences are bounded advisory identities and tolerate corrupt or unavailable storage', async () => {
+  const preferences = await server.ssrLoadModule('/src/workflow/taskModelPreferences.ts');
+  localStorage.setItem('modiff.task-models', '[]');
+  assert.equal(preferences.preferredTaskModel('text_to_image'), undefined);
+  preferences.rememberTaskModel('text_to_image', 'flux-schnell:direct');
+  assert.equal(preferences.preferredTaskModel('text_to_image'), 'flux-schnell:direct');
+  preferences.rememberTaskModel('text_to_image', 'bad\nidentity');
+  assert.equal(preferences.preferredTaskModel('text_to_image'), 'flux-schnell:direct');
+  for (let i = 0; i < 80; i++) preferences.rememberTaskModel(`task_${i}`, `profile_${i}`);
+  assert.equal(Object.keys(JSON.parse(localStorage.getItem('modiff.task-models'))).length, 64);
 });

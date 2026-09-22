@@ -195,3 +195,42 @@ test('an exact own-save acknowledgement clears dirty without another document re
   assert.equal(retained.backendRevision, 8);
   assert.equal(retained.dirty, false);
 });
+
+test('saved intent promotion retains newer graph edits without replacing the canvas', () => {
+  const local = { ...workflowTab({ dirty: true, prompt: 'Newer local edit' }), intent: 'draft' };
+  studio.useStudioStore.setState({ workflowTabs: [local], activeWorkflowTabId: null, workflowCanvasEpoch: 42 });
+  studio.useStudioStore.getState().mergeBackendWorkflow(
+    {
+      ...local,
+      intent: 'saved',
+      snapshot: { ...local.snapshot, studioForm: { prompt: 'Earlier saved edit' } },
+      backendRevision: 8,
+    },
+    { acknowledgement: true },
+  );
+  const state = studio.useStudioStore.getState();
+  assert.equal(state.workflowTabs[0].intent, 'saved');
+  assert.equal(state.workflowTabs[0].snapshot.studioForm.prompt, 'Newer local edit');
+  assert.equal(state.workflowTabs[0].dirty, true);
+  assert.equal(state.workflowCanvasEpoch, 42);
+});
+
+test('legacy documents stay saved and new explicit saves promote a draft', async () => {
+  assert.equal(sync.backendWorkflowTab(workflowTab({ dirty: false, prompt: '' })).intent, 'saved');
+  const originalFetch = globalThis.fetch;
+  let sent;
+  globalThis.fetch = async (_url, options) => {
+    sent = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ...sent, id: 'workflow-sync-test', revision: 9 }));
+  };
+  try {
+    const draft = { ...workflowTab({ dirty: true, prompt: 'Keep me' }), intent: 'draft' };
+    studio.useStudioStore.setState({ workflowTabs: [draft], activeWorkflowTabId: null });
+    const saved = await sync.saveWorkflowNow(draft);
+    assert.equal(sent.intent, 'saved');
+    assert.equal(saved.intent, 'saved');
+    assert.equal(studio.useStudioStore.getState().workflowTabs[0].intent, 'saved');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -22,6 +22,7 @@ export default function WorkflowEntryActions({ templates = false }: { templates?
         <ModiffButton
           onClick={() => {
             dismiss();
+            useSettingsStore.getState().setWorkflowLibraryView('saved');
             useSettingsStore.getState().setLeftPanelTabIndex(4);
             useSettingsStore.getState().setLeftPanelOpen(true);
           }}

@@ -155,3 +155,39 @@ export function requestOperationStarter(
     parse: (value) => parseOperationStarter(value, pipelineClass, task, operations),
   });
 }
+
+export function requestTaskStarter(
+  task: string,
+  operations: OperationContract[],
+  options: { preferredProfileId?: string; resourceMode: 'auto' | 'expert'; signal?: AbortSignal },
+) {
+  return requestJson(`${config.serverAddress}/operations/task-starter`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      task,
+      resourceMode: options.resourceMode,
+      ...(options.preferredProfileId ? { preferredProfileId: options.preferredProfileId } : {}),
+    }),
+    signal: options.signal,
+    timeoutMs: 120_000,
+    parse: (value) => {
+      const result = record(value, ['schemaVersion', 'starter', 'profileId', 'unbound', 'message']);
+      if (
+        result.schemaVersion !== 1 ||
+        typeof result.unbound !== 'boolean' ||
+        typeof result.message !== 'string' ||
+        (result.profileId !== null && typeof result.profileId !== 'string')
+      )
+        throw new Error('Invalid task starter.');
+      const raw = result.starter;
+      if (!raw || typeof raw !== 'object' || !('pipelineClass' in raw)) throw new Error('Missing task starter.');
+      const pipeline = identifier(raw.pipelineClass);
+      return {
+        starter: parseOperationStarter(raw, pipeline, task, operations),
+        unbound: result.unbound,
+        message: result.message,
+      };
+    },
+  });
+}
