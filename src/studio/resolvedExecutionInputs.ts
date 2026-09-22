@@ -71,6 +71,7 @@ const inputNames: Record<string, string> = {
   processing_resolution: 'processingResolution',
   match_input_resolution: 'matchInputResolution',
   depth_convention: 'depthConvention',
+  use_kv_cache: 'attentionContextReuse',
 };
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.

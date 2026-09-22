@@ -498,3 +498,21 @@ test('audio receipt validates duration, delivery rate and consumed controls thro
   const restored = inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(value)), identity);
   assert.equal(restored.nodes[0].fields.num_inference_steps.sourceNodeId, 'steps');
 });
+
+test('attention context reuse survives receipts and rejects a contradictory summary', () => {
+  for (const enabled of [true, false]) {
+    const value = receipt();
+    value.nodes[0] = {
+      nodeId: 'generate',
+      module: 'modules.DiffusersImage',
+      action: 'Generate',
+      fields: { use_kv_cache: { value: enabled, source: 'literal' } },
+      omittedFields: {},
+    };
+    value.summary = { attentionContextReuse: enabled };
+    const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(value)), identity), value);
+    value.summary.attentionContextReuse = !enabled;
+    assert.equal(inputs.coerceResolvedExecutionInputs(value, identity), undefined);
+  }
+});

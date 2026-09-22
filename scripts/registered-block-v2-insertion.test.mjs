@@ -376,7 +376,7 @@ function fixture() {
     definitionKind: 'modular_pipeline_workflow',
     ownership: 'library',
     mutable: false,
-    libraryRevision: '2f7e0154a9db246e95c9ede43edba7db5b130805',
+    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
     pipelineClass: 'QwenImageModularPipeline',
     blocksClass: 'QwenImageAutoBlocks',
     pipelineKind: 'auto',
@@ -421,7 +421,7 @@ function fixture() {
         url: 'https://huggingface.co/Qwen/Qwen-Image-2512/blob/' + '25468b98e3276ca6700de15c6628e51b7de54a26/README.md',
       },
     },
-    contentHash: 'sha256:9cbb38204acb409888b94e880a6e343e9bd67ea5703455560bc5c6d713437f68',
+    contentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
   };
   const executionSpec = {
     schemaVersion: 1,
@@ -498,7 +498,7 @@ function fluxFixture() {
         url: 'https://huggingface.co/black-forest-labs/FLUX.1-dev',
       },
     },
-    contentHash: 'sha256:a356ee05c84bbc30230e07c8477b9159a36678b9f76fa07127eea1a37e399e3a',
+    contentHash: 'sha256:cfec41815a507f63620e7b80cb6a18700485ac2520a7472826b1389418bbd7ed',
   });
   Object.assign(admission, {
     id: admissionId,

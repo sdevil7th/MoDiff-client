@@ -3619,7 +3619,7 @@ const mockHuggingFaceNodeLibrary = (() => {
 
 function mockGraphQualifiedQwenNodeLibrary() {
   const library = structuredClone(mockHuggingFaceNodeLibrary);
-  library.diffusersRevision = '2f7e0154a9db246e95c9ede43edba7db5b130805';
+  library.diffusersRevision = 'fbf49e7f35857f76bc57b177e26f12b03687c668';
   library.definitions.forEach((definition) => {
     definition.libraryRevision = library.diffusersRevision;
   });
@@ -3776,8 +3776,8 @@ function mockGraphQualifiedQwenNodeLibrary() {
   );
   const sealedSources = new Set(Object.keys(sealedBindingValues));
   qwen.schemaVersion = 6;
-  qwen.libraryRevision = '2f7e0154a9db246e95c9ede43edba7db5b130805';
-  qwen.contentHash = 'sha256:9cbb38204acb409888b94e880a6e343e9bd67ea5703455560bc5c6d713437f68';
+  qwen.libraryRevision = 'fbf49e7f35857f76bc57b177e26f12b03687c668';
+  qwen.contentHash = 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393';
   qwen.integrationStatus = 'reviewed_modular_workflow_route';
   qwen.suggestedInputs = {
     schemaVersion: 1,

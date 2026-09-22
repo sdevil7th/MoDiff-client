@@ -1622,7 +1622,11 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
   const qwenLayeredAdmission = qwenLayeredDefinition?.executionAdmissions.find(
     ({ id }) => id === 'diffusers.cluster-admission:QwenImageLayeredModularPipeline:default:mode:layer_decomposition',
   );
-  const qwenLayeredRoute = routeModule.registeredBlockV2Route(qwenLayeredDefinition, qwenLayeredAdmission);
+  const qwenLayeredCompiled = compilerSuccesses.get(compilerRouteKey(qwenLayeredDefinition, qwenLayeredAdmission));
+  const qwenLayeredRoute =
+    process.env.MODIFF_GENERATE_ROUTE_CANDIDATES === '1'
+      ? qwenLayeredCompiled?.routeCandidate
+      : routeModule.registeredBlockV2Route(qwenLayeredDefinition, qwenLayeredAdmission);
   assert.ok(qwenLayeredRoute, 'the exact Qwen Layered route was not audited');
   assert.deepEqual(
     qwenLayeredRoute.controlFanOuts.find(({ source }) => source === 'resolution'),
@@ -1634,7 +1638,6 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
     },
     'one public Layered resolution must feed both upstream Modular Diffusers consumers',
   );
-  const qwenLayeredCompiled = compilerSuccesses.get(compilerRouteKey(qwenLayeredDefinition, qwenLayeredAdmission));
   if (process.env.MODIFF_ROUTE_CANDIDATES_ONLY !== '1') {
     assert.ok(qwenLayeredCompiled, 'the exact Qwen Layered route did not compile');
     assert.deepEqual(

@@ -6,6 +6,10 @@ MoDiff Client is the graph-first web interface for the MoDiff generative-media b
 
 The client is built with React 19, TypeScript, Vite, Tailwind CSS, Headless UI, Zustand, Lucide React, and [`@xyflow/react`](https://reactflow.dev/).
 
+For Qwen-Image 2.1, use the generic image nodes in Developer → Workflows. The backend's
+[integration guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/qwen-image-21.md)
+explains attention-context reuse, runtime requirements and current qualification limits.
+
 > [!IMPORTANT]
 > MoDiff is under active development. It is designed for a trusted, local, single-user environment and has not been hardened as an internet-facing multi-user service. Model support depends on the backend version, installed packages, model access terms, hardware, and available disk space. The UI keeps unsupported or unproven paths visibly blocked instead of treating every listed model as runnable.
 
