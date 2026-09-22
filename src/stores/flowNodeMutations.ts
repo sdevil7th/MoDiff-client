@@ -16,6 +16,7 @@ import {
 } from '../studio/blockRuntimeV2';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
+import { collapsedUserBlockFieldTarget } from '../studio/userBlocks';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -52,11 +53,13 @@ export function clearFlowWorkflow(set: FlowStoreSet, get: FlowStoreGet) {
 }
 
 export function readNodeParam<K extends keyof NodeParams>(id: string, param: string, key: K, get: FlowStoreGet) {
-  const node = get().nodes.find((item) => item.id === id);
+  const nodes = get().nodes;
+  const target = nodes.some((item) => item.id === id) ? null : collapsedUserBlockFieldTarget(nodes, id, param);
+  const node = nodes.find((item) => item.id === (target?.nodeId ?? id));
   if (!node) {
     return null;
   }
-  return (nodeConnectorParam(node, param)?.[key] ?? null) as NodeParams[K] | null;
+  return (nodeConnectorParam(node, target?.fieldKey ?? param)?.[key] ?? null) as NodeParams[K] | null;
 }
 
 export function writeNodeParam<K extends keyof NodeParams = 'value'>(
@@ -68,7 +71,12 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
 ) {
   const paramKey = (key ?? 'value') as keyof NodeParams;
   set((state) => {
-    const node = state.nodes.find((item) => item.id === id);
+    const target = state.nodes.some((item) => item.id === id)
+      ? null
+      : collapsedUserBlockFieldTarget(state.nodes, id, param);
+    const targetId = target?.nodeId ?? id;
+    const targetParam = target?.fieldKey ?? param;
+    const node = state.nodes.find((item) => item.id === targetId);
     if (!node) {
       return state;
     }
@@ -77,22 +85,22 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
     if (node.data.blockInstanceV2) {
       return state;
     }
-    const currentValue = node.data.params[param]?.[paramKey];
+    const currentValue = node.data.params[targetParam]?.[paramKey];
     if (deepEqual(currentValue, value)) {
       return state;
     }
 
     return {
       nodes: state.nodes.map((item) =>
-        item.id === id
+        item.id === targetId
           ? {
               ...item,
               data: {
                 ...item.data,
                 params: {
                   ...item.data.params,
-                  [param]: {
-                    ...item.data.params[param],
+                  [targetParam]: {
+                    ...item.data.params[targetParam],
                     [paramKey]: value,
                   },
                 },

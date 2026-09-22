@@ -1094,6 +1094,15 @@ constants are explicitly parsed and pinned, not inferred from a family label.
 
 Backend-issued execution identities are opaque client values. The durable copy lives in a normal hidden parameter, so workflow snapshots, exports, and run-input hashes include it. A matching output `signal` may carry the identity across connected generic nodes while the graph is live; signal values are deliberately removed from durable snapshots and must be reconstructed by the backend after restore. The client transports and reconciles these values but does not parse repository names, pipeline classes, or identity fields to select behavior.
 
+Collapsed legacy Saved Block controls in the canvas and inspector resolve backend field actions through their
+explicit exposed-field binding. Requests use the existing internal runtime node
+identity and raw parameter names, with current instance values. Value, visibility
+and parameter replies map back only to that instance's declared exposed fields;
+unexposed or ambiguous targets remain inert. The saved definition and peer instances
+are unchanged, and ordinary/expanded nodes retain direct routing. This does not
+convert the legacy Block or add support for replacing its complete dynamic schema.
+Workflow, canvas, form and session ownership checks still apply to the replies.
+
 Generic model selectors coalesce free-form repository edits through a short bounded debounce. Backend `onChange` work runs for the initial value and the latest repository selection or source switch; it must not run once per keystroke.
 Their compatible choices come only from backend declarations. Hub entries apply the declared class/id filters. The current local-model index contains paths but no class metadata, so local ID-only filters remain usable while any declared local class filter fails closed with no candidates until the backend publishes metadata that can evaluate it. The generic model selector does not infer a model family from repository names, connected nodes, or the current Studio profile, and it does not rewrite backend repository defaults.
 

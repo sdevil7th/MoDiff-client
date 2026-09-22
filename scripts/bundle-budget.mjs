@@ -40,7 +40,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // Allow 128 bytes for their shared store metadata; keep the chunk ceiling fixed.
 // Current-preview artifact ownership adds 65 bytes (623807 measured). Allow
 // another 128 bytes for this shared renderer fix; individual chunk caps stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 609 * 1024 + 256;
+// Legacy exposed-field callback routing adds about 0.4 KiB compressed to startup.
+// Bound this shared correctness fix at 610 KiB; deferred and chunk caps stay fixed.
+const MAX_STARTUP_GZIP_BYTES = 610 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

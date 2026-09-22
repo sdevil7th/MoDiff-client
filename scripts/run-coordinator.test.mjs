@@ -3804,3 +3804,203 @@ for (const status of ['running', 'succeeded', 'cached']) {
     assert.notEqual(state.validationMessage, 'Previous allocation failed');
   });
 }
+
+function legacyMetadataBlock(id = 'saved') {
+  const params = {
+    model: { type: 'string', display: 'model', value: 'old', onChange: 'inspect' },
+    strength: { type: 'float', default: 1 },
+    image: { type: 'image', display: 'input' },
+  };
+  return {
+    id,
+    type: 'block',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'block',
+      module: 'user',
+      action: 'block',
+      userBlockId: 'definition',
+      params: { selected: { ...params.model, value: 'new' }, amount: { ...params.strength, value: 0.5 } },
+      userBlockSnapshot: {
+        id: 'definition',
+        name: 'Processor',
+        version: 1,
+        createdAt: '',
+        updatedAt: '',
+        edges: [],
+        inputs: [],
+        outputs: [],
+        nodes: [
+          {
+            id: 'processor',
+            type: 'custom',
+            position: { x: 0, y: 0 },
+            data: { type: 'custom', module: 'modules.Test', action: 'Processor', params },
+          },
+        ],
+        exposedParams: [
+          { id: 'selected', nodeId: 'processor', paramKey: 'model' },
+          { id: 'amount', nodeId: 'processor', paramKey: 'strength' },
+        ],
+      },
+    },
+  };
+}
+
+test('collapsed legacy metadata actions use declared internal identity and instance values', async () => {
+  const flow = flowStoreModule.useFlowStore;
+  const block = legacyMetadataBlock();
+  flow.setState({ nodes: [block], edges: [] });
+  const definition = structuredClone(block.data.userBlockSnapshot);
+  const calls = [];
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse({ error: false });
+  };
+  await fieldActionModule.default(
+    {
+      nodeId: 'saved',
+      fieldKey: 'selected',
+      module: 'modules.Test',
+      action: 'Processor',
+      onChange: 'inspect',
+      updateStore: (...args) => flow.getState().setParam('saved', ...args),
+    },
+    'new',
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].node, 'saved__processor');
+  assert.equal(calls[0].fieldKey, 'model');
+  assert.deepEqual(calls[0].values, { model: 'new', strength: 0.5 });
+  assert.deepEqual(flow.getState().nodes[0].data.userBlockSnapshot, definition);
+});
+
+test('collapsed legacy metadata updates map only exact exposed fields to their owning instance', () => {
+  const flow = flowStoreModule.useFlowStore;
+  const blocks = [legacyMetadataBlock(), legacyMetadataBlock('peer')];
+  flow.setState({ nodes: blocks, edges: [] });
+  const before = structuredClone(blocks);
+  flow.getState().setParam('saved__processor', 'model', { value: 'pinned', revision: 'a'.repeat(40) });
+  assert.deepEqual(flow.getState().getParam('saved', 'selected', 'value'), {
+    value: 'pinned',
+    revision: 'a'.repeat(40),
+  });
+  assert.deepEqual(flow.getState().getParam('saved__processor', 'model', 'value'), {
+    value: 'pinned',
+    revision: 'a'.repeat(40),
+  });
+  flow.getState().setParam('saved__processor', 'unexposed', 'ignored');
+  flow.getState().setParam('saved__other', 'model', 'ignored');
+  assert.equal(flow.getState().nodes[0].data.params.unexposed, undefined);
+  assert.deepEqual(flow.getState().nodes[0].data.userBlockSnapshot, before[0].data.userBlockSnapshot);
+  assert.deepEqual(flow.getState().nodes[1], before[1]);
+});
+
+test('collapsed legacy metadata retains websocket ownership and rejects undeclared or replaced owners', async () => {
+  const flow = flowStoreModule.useFlowStore;
+  const block = legacyMetadataBlock();
+  flow.setState({ nodes: [block], edges: [] });
+  const calls = [];
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse({ error: false });
+  };
+  const props = {
+    nodeId: 'saved',
+    fieldKey: 'selected',
+    module: 'modules.Test',
+    action: 'Processor',
+    onChange: 'inspect',
+    updateStore: (...args) => flow.getState().setParam('saved', ...args),
+  };
+  await fieldActionModule.default({ ...props, action: 'Other' }, 'new');
+  await fieldActionModule.default({ ...props, fieldKey: 'invented' }, 'new');
+  assert.deepEqual(calls, []);
+  const context = {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  };
+  const message = {
+    type: 'set_field_value',
+    node: 'saved__processor',
+    fields: { model: 'pinned' },
+    sid: 'session-1',
+    workflow_tab_id: 'workflow-origin',
+    workflow_canvas_epoch: 0,
+    workflow_form_epoch: 0,
+  };
+  websocketModule.handleWebsocketMessage({ ...message, workflow_canvas_epoch: 1 }, context);
+  websocketModule.handleWebsocketMessage({ ...message, workflow_form_epoch: 1 }, context);
+  websocketModule.handleWebsocketMessage({ ...message, sid: 'another-session' }, context);
+  assert.equal(flow.getState().getParam('saved', 'selected', 'value'), 'new');
+  websocketModule.handleWebsocketMessage(message, context);
+  assert.equal(flow.getState().getParam('saved', 'selected', 'value'), 'pinned');
+  websocketModule.handleWebsocketMessage(
+    { ...message, type: 'set_field_visibility', fields: { strength: false } },
+    context,
+  );
+  assert.equal(flow.getState().getParam('saved', 'amount', 'hidden'), true);
+  websocketModule.handleWebsocketMessage(
+    { ...message, type: 'set_field_params', field: 'strength', params: { max: 2 } },
+    context,
+  );
+  assert.equal(flow.getState().getParam('saved', 'amount', 'max'), 2);
+  const before = structuredClone(flow.getState().nodes);
+  flow.setState({
+    nodes: before.map((node) => ({ ...node, data: { ...node.data, uiState: { blockExpanded: true } } })),
+  });
+  websocketModule.handleWebsocketMessage({ ...message, fields: { model: 'late' } }, context);
+  assert.equal(flow.getState().getParam('saved', 'selected', 'value'), 'pinned');
+  flow.setState({ nodes: [] });
+  await fieldActionModule.default(props, 'detached');
+  websocketModule.handleWebsocketMessage(message, context);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(flow.getState().nodes, []);
+});
+
+test('collapsed legacy model callbacks retain the live structured action descriptor for debouncing', () => {
+  const block = legacyMetadataBlock();
+  const onChange = { action: 'exec', data: 'inspect' };
+  block.data.params.selected.onChange = onChange;
+  block.data.userBlockSnapshot.nodes[0].data.params.model.onChange = structuredClone(onChange);
+  flowStoreModule.useFlowStore.setState({ nodes: [block], edges: [] });
+  const source = fieldActionModule.fieldActionSource({
+    nodeId: 'saved',
+    fieldKey: 'selected',
+    module: 'modules.Test',
+    action: 'Processor',
+  });
+  assert.equal(source.param.onChange, onChange);
+  assert.equal(source.node.id, 'saved__processor');
+});
+
+test('collapsed legacy inspector controls dispatch the same internal callback as canvas controls', async () => {
+  const flow = flowStoreModule.useFlowStore;
+  const block = legacyMetadataBlock();
+  flow.setState({ nodes: [block], edges: [] });
+  const calls = [];
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse({ error: false });
+  };
+  await fieldActionModule.default(
+    {
+      nodeId: block.id,
+      fieldKey: 'selected',
+      module: block.data.module,
+      action: block.data.action,
+      onChange: 'inspect',
+      updateStore: (...args) => flow.getState().setParam(block.id, ...args),
+    },
+    'new',
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].node, 'saved__processor');
+  assert.equal(calls[0].module, 'modules.Test');
+  assert.equal(calls[0].action, 'Processor');
+  assert.equal(calls[0].fieldKey, 'model');
+  assert.deepEqual(calls[0].values, { model: 'new', strength: 0.5 });
+});

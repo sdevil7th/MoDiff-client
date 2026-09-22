@@ -8,7 +8,6 @@ import { FieldProps } from '../components/NodeContent';
 import AutocompleteField from './AutocompleteField';
 
 import { Download, Library, LoaderCircle, RefreshCw } from 'lucide-react';
-import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
@@ -22,7 +21,7 @@ import {
 import { FieldFrame, ModiffButton } from '../ui';
 import { GraphIconButton } from '../ui/GraphControls';
 import { enqueueSnackbar } from '../ui/snackbar';
-import fieldAction from '../utils/fieldAction';
+import fieldAction, { fieldActionSource } from '../utils/fieldAction';
 import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 
 type HfCacheItem = {
@@ -133,12 +132,8 @@ export default function ModelSelectField(props: FieldProps) {
     clearTimeout(actionTimerRef.current);
     const scheduledAction = props.onChange;
     actionTimerRef.current = window.setTimeout(() => {
-      const liveNode = useFlowStore.getState().nodes.find(({ id }) => id === props.nodeId);
-      if (
-        liveNode?.data.module === props.module &&
-        liveNode.data.action === props.action &&
-        liveNode.data.params[props.fieldKey]?.onChange === scheduledAction
-      ) {
+      const source = fieldActionSource(props);
+      if (source?.param?.onChange === scheduledAction) {
         void fieldAction(latestActionPropsRef.current, value);
       }
     }, 250);

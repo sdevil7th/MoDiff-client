@@ -14,6 +14,7 @@ import config from '../../app.config';
 import { beginManagedGraphSchemaMutation, finishManagedGraphSchemaMutation } from './managedGraphSchemaMutation';
 import { formatRequestError, requestJson, RequestError } from './requestJson';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
+import { collapsedUserBlockFieldSource } from '../studio/userBlocks';
 
 type FieldActionDescriptor = {
   action?: string;
@@ -122,6 +123,22 @@ export function buildFieldActionProps(nodeId: string, fieldKey: string): FieldPr
   };
 }
 
+/** Resolve the live field owner without accepting a stale or unrelated control. */
+export function fieldActionSource(props: Pick<FieldProps, 'nodeId' | 'fieldKey' | 'module' | 'action'>) {
+  const nodes = useFlowStore.getState().nodes;
+  const direct = nodes.find((candidate) => candidate.id === props.nodeId);
+  const directMatches = direct?.data.module === props.module && direct.data.action === props.action;
+  const source =
+    collapsedUserBlockFieldSource(nodes, props.nodeId, props.fieldKey) ??
+    (directMatches
+      ? { node: direct, fieldKey: props.fieldKey, param: nodeConnectorParam(direct, props.fieldKey) }
+      : null);
+  return source?.param &&
+    (directMatches || (source.node.data.module === props.module && source.node.data.action === props.action))
+    ? source
+    : null;
+}
+
 export type FieldActionWorkflowScope = 'form' | 'canvas';
 
 export type FieldActionOptions = {
@@ -213,25 +230,24 @@ export default async function fieldAction(
   if (action === 'exec') {
     // React can flush a departing canvas's passive effects after the new graph
     // is installed. Never turn an absent/replaced node into an empty request.
-    const node = flowState.nodes.find((candidate) => candidate.id === props.nodeId);
-    if (
-      !node ||
-      node.data.module !== props.module ||
-      node.data.action !== props.action ||
-      !nodeConnectorParam(node, props.fieldKey)
-    )
-      return;
+    const source = fieldActionSource(props);
+    if (!source) return;
     props.updateStore(props.fieldKey, true, 'disabled');
     try {
       await execAction(
-        props.nodeId,
-        props.module,
-        props.action,
+        source.node.id,
+        source.node.data.module,
+        source.node.data.action,
         String(data),
-        props.fieldKey,
+        source.fieldKey,
         Boolean(props.fieldOptions?.queue),
         options.workflowScope,
         options.timeoutMs,
+        Object.fromEntries(
+          Object.entries(source.node.data.params)
+            .filter(([, param]) => param.display !== 'input' && param.display !== 'output')
+            .map(([key, param]) => [key, param.value ?? param.default]),
+        ),
       );
     } catch (error) {
       props.updateStore(props.fieldKey, false, 'disabled');
@@ -430,8 +446,8 @@ async function execAction(
   queue?: boolean,
   workflowScope: FieldActionWorkflowScope = 'form',
   timeoutMs = 120_000,
+  nodeValues: Record<string, unknown> = useFlowStore.getState().getNodeParamsValues(nodeId),
 ) {
-  const nodeValues = useFlowStore.getState().getNodeParamsValues(nodeId);
   const workflowContext = captureWorkflowOperationContext();
   // Background schema updates belong to this document. Abort their HTTP waits
   // when it leaves, freeing browser connections for the next canvas/navigation.
