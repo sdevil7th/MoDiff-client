@@ -10,6 +10,9 @@ For Qwen-Image 2.1, use the generic image nodes in Developer → Workflows. The 
 [integration guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/qwen-image-21.md)
 explains attention-context reuse, runtime requirements and current qualification limits.
 
+The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/image-demo.md) lists the tested workflows, settings,
+measured reuse behavior and remaining qualification work.
+
 > [!IMPORTANT]
 > MoDiff is under active development. It is designed for a trusted, local, single-user environment and has not been hardened as an internet-facing multi-user service. Model support depends on the backend version, installed packages, model access terms, hardware, and available disk space. The UI keeps unsupported or unproven paths visibly blocked instead of treating every listed model as runnable.
 
