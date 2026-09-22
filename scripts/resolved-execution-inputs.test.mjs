@@ -474,3 +474,27 @@ test('depth receipt preserves model-default resolution and false input matching 
   mismatched.summary.matchInputResolution = true;
   assert.equal(inputs.coerceResolvedExecutionInputs(mismatched, identity), undefined);
 });
+
+test('audio receipt validates duration, delivery rate and consumed controls through history parsing', () => {
+  const value = receipt();
+  value.nodes[0] = {
+    nodeId: 'audio',
+    module: 'modules.DiffusersAudio',
+    action: 'Generate',
+    fields: {
+      num_inference_steps: { value: 200, source: 'connected', sourceNodeId: 'steps', sourcePortId: 'value' },
+      guidance_scale: { value: 3.5, source: 'literal' },
+      audio_duration: { value: 10, source: 'literal' },
+      sample_rate: { value: 16000, source: 'literal' },
+    },
+    omittedFields: {},
+  };
+  value.summary = { steps: 200, guidanceScale: 3.5, audioDuration: 10, sampleRate: 16000 };
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(value, identity), value);
+  const mismatched = structuredClone(value);
+  mismatched.summary.steps = 8;
+  assert.equal(inputs.coerceResolvedExecutionInputs(mismatched, identity), undefined);
+  const restored = inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(value)), identity);
+  assert.equal(restored.nodes[0].fields.num_inference_steps.sourceNodeId, 'steps');
+});

@@ -48,6 +48,8 @@ const inputNames: Record<string, string> = {
   num_frames: 'numFrames',
   fps: 'fps',
   frame_rate: 'fps',
+  audio_duration: 'audioDuration',
+  sample_rate: 'sampleRate',
   strength: 'strength',
   repo_id: 'repo',
   model_id: 'repo',
