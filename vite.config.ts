@@ -230,7 +230,13 @@ const baseConfig: UserConfig = {
       // Playwright can emit tens of thousands of trace resources during a
       // long-running model qualification. They are neither source nor HMR
       // inputs, and watching them can exhaust the host's inotify limit.
-      ignored: ['**/artifacts/**', '**/test-results*/**', '**/playwright-report*/**', '**/blob-report/**'],
+      ignored: [
+        '**/reviews/**',
+        '**/artifacts/**',
+        '**/test-results*/**',
+        '**/playwright-report*/**',
+        '**/blob-report/**',
+      ],
     },
   },
   build: {
