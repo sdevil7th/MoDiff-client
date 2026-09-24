@@ -26879,7 +26879,11 @@ for (const workspace of ['auto', 'expert'] as const) {
     const starter = starters.find(
       (s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'image_to_image',
     )!;
-    expect(starter.sharedInputs).toHaveLength(1);
+    expect(starter.sharedInputs!.map((input) => input.name)).toEqual(['seed', 'width', 'height']);
+    expect(starter.sharedInputs!.find((input) => input.name === 'seed')!.members).toEqual([
+      { operationId: 'diffusion.encode_image', field: 'seed' },
+      { operationId: 'diffusion.denoise', field: 'seed' },
+    ]);
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
     await dismissTaskLauncher(page);
@@ -27095,15 +27099,25 @@ for (const workspace of ['auto', 'expert'] as const) {
     expect(changed.definitionSnapshot).toEqual(before.definitionSnapshot);
     expect(changed.effectiveInterface).toEqual(before.effectiveInterface);
     expect(changed.values).toEqual(before.values);
-    expect(
-      changed.effectiveGraph.nodes
-        .filter((n) => n.data.operationAuthoring)
-        .every(
-          (n) =>
-            (n.data.operationAuthoring as { operation: { pipelineClass: string } }).operation.pipelineClass ===
-            'FluxModularPipeline',
-        ),
-    ).toBe(true);
+    const replacementOperations = new Set(
+      starters
+        .find((candidate) => candidate.pipelineClass === 'FluxModularPipeline' && candidate.task === 'text_to_image')!
+        .nodes.map((node) => node.operation.operationId),
+    );
+    const replacedOperations = new Set<string>();
+    for (const node of changed.effectiveGraph.nodes) {
+      const hint = node.data.operationAuthoring as
+        { operation: { operationId: string; pipelineClass: string } } | undefined;
+      if (hint && replacementOperations.has(hint.operation.operationId)) {
+        expect(hint.operation.pipelineClass).toBe('FluxModularPipeline');
+        replacedOperations.add(hint.operation.operationId);
+      } else {
+        // Layers/Guider are separate auxiliary branches, not canonical stages
+        // of the replacement. Preserve their exact authored data and identity.
+        expect(node).toEqual(before.effectiveGraph.nodes.find((previous) => previous.nodeId === node.nodeId));
+      }
+    }
+    expect(replacedOperations).toEqual(replacementOperations);
     await page.locator('.react-flow__pane').click({ position: { x: 50, y: 50 } });
     await page.keyboard.press('Control+z');
     await expect.poll(read).toEqual(before);
