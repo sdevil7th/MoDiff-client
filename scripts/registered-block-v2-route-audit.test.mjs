@@ -953,7 +953,7 @@ const REVIEWED_TERMINAL_OUTPUTS = new Map([
   ]),
   [
     'diffusers.modular:ErnieImageModularPipeline:text2image',
-    [{ portId: 'images', role: 'diffusersImageGenerate', fieldId: 'images', mediaType: 'image' }],
+    [{ portId: 'images', role: 'decode', fieldId: 'images', adaptation: 'direct_media', mediaType: 'image' }],
   ],
 ]);
 
@@ -1289,6 +1289,20 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
                   });
                 })();
             const exactRoute = {
+              definitionId: definition.id,
+              definitionContentHash: definition.contentHash,
+              provider: definition.provider,
+              surface: definition.surface,
+              definitionKind: definition.definitionKind,
+              libraryRevision: definition.libraryRevision,
+              pipelineClass: definition.pipelineClass,
+              workflowId: definition.workflowId,
+              admissionId: admission.id,
+              studioMode: admission.studioMode,
+              adapterContractId: admission.adapterContractId,
+              studioExecutionSpec: structuredClone(admission.studioExecutionSpec),
+              artifact: admission.artifact,
+              dynamicFieldActions: admission.dynamicFieldActions,
               boundary: { inputs, outputs },
               controlFanOuts,
               ...(definition.provider === 'diffusers' &&
@@ -1307,26 +1321,11 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
                 snapshot.registries[executionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
             });
             routeCandidates.push({
-              definitionId: definition.id,
-              definitionContentHash: definition.contentHash,
-              provider: definition.provider,
-              surface: definition.surface,
-              definitionKind: definition.definitionKind,
-              libraryRevision: definition.libraryRevision,
-              pipelineClass: definition.pipelineClass,
-              workflowId: definition.workflowId,
-              admissionId: admission.id,
-              studioMode: admission.studioMode,
-              adapterContractId: admission.adapterContractId,
-              studioExecutionSpec: admission.studioExecutionSpec,
-              artifact: admission.artifact,
-              dynamicFieldActions: admission.dynamicFieldActions,
+              ...exactRoute,
               compiledDefinitionContentHash: exact.definition.contentHash,
               compiledDefinitionCanonicalSha256: `sha256:${createHash('sha256')
                 .update(blockSchema.canonicalBlockStringifyV2(blockSchema.canonicalBlockDefinitionV2(exact.definition)))
                 .digest('hex')}`,
-              controlFanOuts,
-              boundary: { inputs, outputs },
             });
           } catch (candidateError) {
             routeCandidates.push({
@@ -1415,7 +1414,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
       definition.integrationStatus !== 'equivalent_standard_route',
   );
   if (process.env.MODIFF_ROUTE_CANDIDATES_ONLY !== '1')
-    assert.equal(exactModularSuccesses.length, 72, 'the complete currently admitted exact Modular route set drifted');
+    assert.equal(exactModularSuccesses.length, 73, 'the complete currently admitted exact Modular route set drifted');
   exactModularSuccesses.forEach(({ definition, compiledDefinition }) => {
     const exactSteps = compiledDefinition.graph.nodes.filter(
       (node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === 'ReviewedModularWorkflowStep',

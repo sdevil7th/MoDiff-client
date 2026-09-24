@@ -5292,10 +5292,9 @@ async function setStudioViewMode(page: Page, mode: 'auto' | 'expert') {
 
 async function setWorkflowResourceMode(page: Page, mode: 'auto' | 'expert') {
   const control = page.getByTestId('topbar-resource-policy');
-  const label = mode === 'auto' ? 'Automatic' : 'Custom';
+  const label = mode === 'auto' ? 'Auto' : 'Custom';
   if ((await control.textContent())?.trim() !== label) {
     await control.click();
-    await page.getByRole('option', { name: label, exact: true }).click();
   }
   await expect(control).toHaveText(label);
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.resourceMode)).toBe(mode);
@@ -5973,9 +5972,11 @@ test('Hugging Face catalog uses Block terminology and fail-closed readiness', as
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  if (await page.getByTestId('task-launcher').isVisible()) {
-    await page.getByTestId('task-launcher').getByRole('button', { name: 'Close' }).click();
-  }
+  // A fresh workspace opens the launcher after hydration, not when the E2E
+  // bridge first mounts. An immediate visibility check races that dialog.
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await page.getByTestId('task-launcher').getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
   await page.getByTestId('left-tab-nodes').click();
   await setStudioViewMode(page, 'expert');
   await page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true }).check();
@@ -6930,7 +6931,7 @@ test('a current registered Qwen V2 Block requires source authority and a graph A
   await setWorkflowResourceMode(page, 'expert');
   await setWorkflowResourceMode(page, 'auto');
   await setStudioViewMode(page, 'expert');
-  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Auto');
   expect(authorityRequests).toHaveLength(0);
 
   const runButton = page.getByTestId('studio-run');
@@ -8681,6 +8682,14 @@ for (const direction of ['source', 'target'] as const) {
     await page.mouse.up();
     const suggestions = page.getByRole('listbox', { name: 'Matching nodes' });
     await expect(suggestions).toBeVisible();
+    const builtInSection = suggestions.getByRole('button', { name: /^Built-in nodes and Blocks/u });
+    const customSection = suggestions.getByRole('button', { name: /^Custom nodes/u });
+    await expect(builtInSection).toHaveAttribute('aria-expanded', 'true');
+    await expect(customSection).toHaveAttribute('aria-expanded', 'true');
+    await builtInSection.click();
+    await expect(builtInSection).toHaveAttribute('aria-expanded', 'false');
+    await expect(customSection).toBeVisible();
+    await builtInSection.click();
     const wanted = direction === 'source' ? 'Workbench consumer' : 'Workbench producer';
     const wrongDirection = direction === 'source' ? 'Workbench producer' : 'Workbench consumer';
     await expect(suggestions.getByRole('option', { name: wanted, exact: true })).toBeVisible();
@@ -8722,6 +8731,62 @@ for (const direction of ['source', 'target'] as const) {
     await expect.poll(inspect).toEqual({ nodes: 2, connected: true, text: 'Keep my text' });
   });
 }
+
+test('image pipeline drag-to-add excludes generation actions outside the selected task contract', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const loader = structuredClone(mockRegistry['modules.DiffusersImage.LoadPipeline']);
+  loader.params.pipeline.signal = {
+    direction: 'output',
+    origin: 'pipeline_class',
+    value: {
+      mode: 'text_to_image',
+      actions: { Generate: ['text_to_image'] },
+    },
+  };
+  const unconditional = nodeDef('modules.DiffusersImage', 'UnconditionalGenerate', 'Diffusers Image', {
+    pipeline: {
+      type: 'image_diffusion_pipeline',
+      display: 'input',
+      signalCompatibility: { required: true, action: '$node' },
+    },
+    images: { type: 'image', display: 'output' },
+  });
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        instance: 'pipeline-capability',
+        nodes: {
+          ...mockRegistry,
+          'modules.DiffusersImage.LoadPipeline': loader,
+          'modules.DiffusersImage.UnconditionalGenerate': unconditional,
+        },
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await setStudioViewMode(page, 'expert');
+  await page.getByTestId('left-tab-nodes').click();
+  await page.getByLabel('Search nodes', { exact: true }).fill('Load Image Pipeline');
+  await page.getByTestId('node-row-modules-DiffusersImage-LoadPipeline').click();
+  const node = page.locator('.react-flow__node-custom').filter({ hasText: 'Load Image Pipeline' });
+  const id = (await node.getAttribute('data-id'))!;
+  const handle = node.getByTestId(`node-handle-${id}-pipeline`);
+  const start = (await handle.boundingBox())!;
+  const pane = (await page.locator('.react-flow__pane').boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pane.x + pane.width - 70, pane.y + 70, { steps: 18 });
+  await page.mouse.up();
+  const suggestions = page.getByRole('listbox', { name: 'Matching nodes' });
+  await expect(suggestions.getByRole('option', { name: 'Generate Image', exact: true })).toBeVisible();
+  await expect(suggestions.getByRole('option', { name: 'Generate Unconditional Image', exact: true })).toHaveCount(0);
+  await suggestions.getByRole('option', { name: 'Generate Image', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
+});
 
 async function operationStarterFixtures() {
   const python =
@@ -9389,6 +9454,9 @@ for (const workspace of ['auto', 'expert'] as const) {
     await prompt.fill('Precisely engraved brass astrolabe, violet glass, intricate reflected light');
     await prompt.blur();
     const before = await read();
+    const loaderNode = page.locator(`.react-flow__node[data-id="${loader.id}"]`);
+    await expect(loaderNode.locator('[data-key="model_type"]')).toBeHidden();
+    await expect(loaderNode.getByRole('button', { name: 'Choose model', exact: true })).toBeVisible();
     await page.locator(`.react-flow__node[data-id="${loader.id}"] header`).first().click();
     await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
     const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
@@ -9401,6 +9469,17 @@ for (const workspace of ['auto', 'expert'] as const) {
     const apply = picker.getByRole('button', { name: 'Apply model change', exact: true });
     // Cross-family schema differences are reviewed rather than silently discarded.
     await expect(apply).toBeVisible();
+    await expect(picker.getByTestId('model-selection-review')).toContainText('Apply Qwen-Image-2512');
+    await expect(picker.getByRole('button', { name: /^What will change \(/u })).toBeVisible();
+    await expect(picker.getByRole('button', { name: /^Values and connections kept \(/u })).toBeVisible();
+    await expect(picker.getByTestId('model-selection-review')).not.toContainText(/node-[A-Za-z0-9_-]+/u);
+    expect(
+      await picker.evaluate((root) => {
+        const models = root.querySelector('[aria-label="Compatible models"]');
+        const review = root.querySelector('[data-testid="model-selection-review"]');
+        return Boolean(models && review && models.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING);
+      }),
+    ).toBe(true);
     await apply.click();
     await expect(picker).toHaveCount(0);
     await page.keyboard.press('Escape');
@@ -10111,6 +10190,7 @@ test('mocked Workflows panel groups MoDiff examples in Auto and reveals raw root
 
   await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'Example workflows', exact: true }).click();
   await expect(page.getByTestId('workflow-list')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('workflow-source-MoDiff-Examples')).toBeVisible();
   await expect(page.getByTestId('workflow-source-Saved')).toBeVisible();
@@ -14587,6 +14667,9 @@ test('Creator and Developer migrate old preferences and support keyboard switchi
   const creator = workspace.getByRole('radio', { name: 'Creator', exact: true });
   await expect(developer).toHaveAttribute('aria-checked', 'true');
   await setWorkflowResourceMode(page, 'expert');
+  await page.getByTestId('topbar-resource-policy').hover();
+  await expect(page.getByRole('tooltip')).toContainText('Automatic chooses supported placement and offload settings.');
+  await expect(page.getByRole('tooltip')).toContainText('Custom keeps your node settings.');
   const snapshot = () =>
     page.evaluate(() => {
       const { flow, studio } = window.__MODIFF_E2E__!.getState();
@@ -14650,7 +14733,7 @@ test('workbench resource overrides survive view changes, tabs, refresh and graph
   expect((await snapshot()).flow.nodes.map(({ id }) => id)).toEqual(before.flow.nodes.map(({ id }) => id));
   await page.getByTestId('workflow-tab-new').click();
   await dismissTaskLauncher(page);
-  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Auto');
   await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'false');
   await page.getByTestId(`workflow-tab-${before.tab}`).click();
   await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Custom');
@@ -14824,7 +14907,7 @@ test('workbench authoring modes preserve the exact Qwen graph and automatic reso
   expect(await invariant()).toEqual(beforeViewChange);
   expect(preparationRequests).toEqual([]);
   await setStudioViewMode(page, 'expert');
-  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Auto');
   await page.screenshot({ path: test.info().outputPath('expert-automatic-resources.png'), animations: 'disabled' });
   await page.getByTestId('topbar-save-workflow').click();
   if (await page.getByTestId('save-workflow-dialog').isVisible()) {
@@ -14834,7 +14917,7 @@ test('workbench authoring modes preserve the exact Qwen graph and automatic reso
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
   await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'false');
-  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Automatic');
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveText('Auto');
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form))
     .toEqual(beforeViewChange.form);
@@ -20459,6 +20542,90 @@ test('registry-late field actions initialize once and live contract changes canc
   expect(requests.filter((request) => request.values?.repository?.value === pendingRepository)).toHaveLength(0);
 });
 
+test('automatic selector actions do not become user-authored operation choices', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Contract.AutomaticSelector': nodeDef('modules.Contract', 'AutomaticSelector', 'test', {
+            mode: {
+              label: 'Mode',
+              type: 'string',
+              display: 'select',
+              value: 'ModeA',
+              options: ['ModeA', 'ModeB'],
+              onChange: {
+                action: 'value',
+                target: 'guider',
+                prop: 'options',
+                data: { ModeA: ['CFG', 'PAG'], ModeB: ['PAG'] },
+              },
+            },
+            guider: { label: 'Guider', type: 'string', display: 'select', value: 'CFG', options: ['CFG', 'PAG'] },
+          }),
+        },
+      }),
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  const id = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('empty');
+    const id = window.__MODIFF_E2E__!.addCustomNodeForTest('modules.Contract.AutomaticSelector');
+    useFlowStore.setState((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id !== id
+          ? node
+          : {
+              ...node,
+              data: {
+                ...node.data,
+                operationAuthoring: {
+                  schemaVersion: 1,
+                  defaults: { mode: 'ModeA', guider: 'CFG' },
+                  retained: [],
+                  operation: {
+                    pipelineClass: 'FixturePipeline',
+                    task: 'text_to_image',
+                    operationId: 'diffusion.guidance',
+                    nodeKey: 'modules.Contract.AutomaticSelector',
+                    nodeType: 'guider',
+                    blockName: 'guidance',
+                    decomposition: 'block',
+                    support: 'declared',
+                    ports: [],
+                    workflowId: null,
+                    binding: { pipelineClass: 'FixturePipeline', values: {} },
+                  },
+                },
+              },
+            },
+      ),
+    }));
+    return id;
+  });
+  await page.getByRole('radio', { name: 'Developer', exact: true }).check();
+  const control = page.locator(`.react-flow__node[data-id="${id}"]`).getByLabel('Mode', { exact: true });
+  await control.click();
+  await page.getByRole('option', { name: 'ModeB', exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(async (id) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const node = useFlowStore.getState().nodes.find((node) => node.id === id)!;
+        return { value: node.data.params.guider.value, authored: node.data.operationAuthoring?.authored };
+      }, id),
+    )
+    .toEqual({ value: 'PAG', authored: ['mode'] });
+});
+
 test('Modular guider and scheduler signals narrow options for the reviewed pipeline identity', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
@@ -20645,7 +20812,7 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
   }, ids);
   await expect.poll(contractState).toEqual({
     guiderOptions: nonLayerGuiders,
-    guiderValue: '',
+    guiderValue: 'ClassifierFreeGuidance',
     layersSignal: 'ZImageModularPipeline',
     schedulerOptions: compatibleSchedulers,
     schedulerValue: 'EulerDiscreteScheduler',
@@ -20659,9 +20826,11 @@ test('Modular guider and scheduler signals narrow options for the reviewed pipel
       params: { signal: { direction: 'output', value: 'QwenImageModularPipeline' } },
     });
   }, ids);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(3);
+  await expect(page.getByText('Disconnected unsupported model component link.')).toBeVisible();
   await expect.poll(contractState).toEqual({
     guiderOptions: nonLayerGuiders,
-    guiderValue: '',
+    guiderValue: 'ClassifierFreeGuidance',
     layersSignal: 'ZImageModularPipeline',
     schedulerOptions: undefined,
     schedulerValue: '',
@@ -21464,7 +21633,10 @@ test('workflow tabs remain a single horizontally scrollable row with pinned new-
   expect((await readTabVisual(inactiveTab)).contrast).toBeGreaterThanOrEqual(4.5);
 
   await expect.poll(() => tabList.locator('[data-dirty="true"]').count()).toBeGreaterThan(0);
-  await expect(tabList.locator('[data-dirty="true"]').first().getByRole('tab')).toContainText(/^\* /);
+  const dirtyTab = tabList.locator('[data-dirty="true"]').first().getByRole('tab');
+  await expect(dirtyTab).toHaveAttribute('aria-label', /\(unsaved changes\)$/);
+  await expect(dirtyTab.locator('[aria-hidden="true"]')).toHaveCSS('opacity', '1');
+  await expect(dirtyTab).toContainText(/^\*/);
 
   await expect(newTab).toBeVisible();
   const newTabBox = (await newTab.boundingBox())!;
@@ -26081,11 +26253,16 @@ test('bound prompt suggestions expose the declared text input and preserve the w
     page.evaluate(() => {
       const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
       const prompt = graph.nodes.find((n) => n.data.action === 'EncodePrompt');
-      return { count: graph.nodes.length, edges: graph.edges, input: prompt?.data.params.prompt?.isInput };
+      const field = prompt?.data.params.prompt_input;
+      return {
+        count: graph.nodes.length,
+        edges: graph.edges,
+        input: field?.display === 'input' || field?.isInput === true,
+      };
     });
   const connected = await read();
   expect(connected.input).toBe(true);
-  expect(connected.edges[0]).toMatchObject({ source: originalId, targetHandle: 'prompt' });
+  expect(connected.edges[0]).toMatchObject({ source: originalId, targetHandle: 'prompt_input' });
   await page.locator('.react-flow__pane').click({ position: { x: 80, y: 70 } });
   await page.keyboard.press('Control+z');
   await expect.poll(read).toMatchObject({ count: 1, edges: [] });
@@ -27348,8 +27525,7 @@ for (const workspace of ['auto', 'expert'] as const) {
       await expect(fix).toContainText('needs mask image before running');
       await fix.getByRole('button', { name: 'Close', exact: true }).click();
       // Memory choice does not grant permission to omit a task's required media.
-      await page.getByTestId('topbar-resource-policy').click();
-      await page.getByRole('option', { name: 'Custom', exact: true }).click();
+      await setWorkflowResourceMode(page, 'expert');
       expect((await missing()).every((i) => i.blocking)).toBe(true);
       if (inBlock) await ownerNode.getByRole('button', { name: 'Expand block', exact: true }).click();
       await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
@@ -27771,30 +27947,44 @@ test('saved workflow browsing bounds mounted rows and searches the full library'
 test('successful node status is not presented as a warning after recovery', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Primitive.TextValue': nodeDef('modules.Primitive', 'TextValue', 'primitive', {
+            text: { type: 'string', display: 'text', value: 'Recovered value' },
+            output: { type: 'string', display: 'output' },
+          }),
+        },
+      },
+    }),
+  );
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
   await page.evaluate(async () => {
-    const [{ useFlowStore }, { prepareWorkflowForManualInsertion }] = await Promise.all([
-      import('/src/stores/useFlowStore.ts'),
-      import('/src/studio/manualGraphInsertion.ts'),
-    ]);
+    const [{ useFlowStore }, { prepareWorkflowForManualInsertion }, { useNodesStore }, { createNodeFromRegistry }] =
+      await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/manualGraphInsertion.ts'),
+        import('/src/stores/useNodeStore.ts'),
+        import('/src/workflow/nodeFactory.ts'),
+      ]);
     prepareWorkflowForManualInsertion();
+    // A Preview with no image is genuinely invalid: delayed readiness must
+    // replace its injected success with an error. Exercise status presentation
+    // on a valid registered node, not a race against missing-input validation.
+    const recovered = createNodeFromRegistry('modules.Primitive.TextValue', useNodesStore.getState().nodesRegistry, {
+      x: 80,
+      y: 80,
+    });
+    if (!recovered) throw new Error('The Text Value fixture is missing.');
+    recovered.id = 'recovered-node';
+    recovered.data.label = 'Recovered value';
     useFlowStore.getState().replaceGraph({
-      nodes: [
-        {
-          id: 'recovered-node',
-          type: 'custom',
-          position: { x: 80, y: 80 },
-          data: {
-            module: 'modules.Image',
-            action: 'Preview',
-            type: 'custom',
-            label: 'Recovered image',
-            category: 'image',
-            params: {},
-          },
-        },
-      ],
+      nodes: [recovered],
       edges: [],
     });
   });

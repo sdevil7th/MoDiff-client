@@ -2456,6 +2456,46 @@ test('role-marked generated Studio workflow imports retain their managed contrac
   assert.equal(snapshot.nodes.find((node) => node.id === 'prompt')?.data.studioRole, 'prompt');
 });
 
+test('explicit operation graphs are not adopted as legacy templates when saved', () => {
+  const graph = canonicalModularTextToImageGraph();
+  graph.nodes[0].data.operationAuthoring = { schemaVersion: 1 };
+  const form = { ...profilesModule.DEFAULT_STUDIO_FORM, resourceMode: 'expert' };
+  assert.equal(workflowInferenceModule.adoptManagedWorkflowGraph(graph.nodes, graph.edges, form), null);
+  const beforeTabs = studioStoreModule.useStudioStore.getState().workflowTabs;
+  try {
+    studioStoreModule.useStudioStore.getState().mergeBackendWorkflow({
+      id: 'manual-operation-save',
+      title: 'Manual operations',
+      createdAt: 1,
+      updatedAt: 1,
+      dirty: false,
+      source: 'saved',
+      backendRevision: 1,
+      snapshot: {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        studioForm: form,
+        studioGraphBinding: null,
+        selectedMode: form.mode,
+        activeTemplateId: null,
+        sourceOutputId: null,
+      },
+    });
+    const restored = studioStoreModule.useStudioStore
+      .getState()
+      .workflowTabs.find((tab) => tab.id === 'manual-operation-save');
+    assert.equal(restored.snapshot.studioGraphBinding, null);
+    assert.equal(restored.snapshot.studioForm.resourceMode, 'expert');
+    assert.deepEqual(
+      restored.snapshot.nodes.map((node) => node.id),
+      graph.nodes.map((node) => node.id),
+    );
+    assert.deepEqual(restored.snapshot.edges, graph.edges);
+  } finally {
+    studioStoreModule.useStudioStore.setState({ workflowTabs: beforeTabs });
+  }
+});
+
 test('existing saved canonical imports are adopted during workflow-tab normalization', () => {
   const graph = canonicalModularTextToImageGraph();
   const modelNode = graph.nodes.find((node) => node.id === 'models');

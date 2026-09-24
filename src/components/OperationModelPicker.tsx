@@ -14,7 +14,7 @@ import {
   type OperationChangePlan,
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
-import { commitOperationGraph } from '../workflow/operationGraphTransaction';
+import { commitOperationGraph, operationGraphSignature } from '../workflow/operationGraphTransaction';
 import {
   groupWorkflowModels,
   workflowChoices,
@@ -33,6 +33,11 @@ type Review = {
   choice: WorkflowChoice;
   restoreDefaults?: boolean;
 };
+
+function choiceLabel(choice: WorkflowChoice) {
+  const repositoryParts = (choice.repo || '').split('/');
+  return choice.label || repositoryParts[repositoryParts.length - 1] || choice.pipeline;
+}
 
 /** Model-first authoring over the existing ordinary/Block graph transaction. */
 export default function OperationModelPicker({
@@ -106,7 +111,7 @@ export default function OperationModelPicker({
     pending.current = controller;
     const context = captureWorkflowOperationContext();
     const snapshot = useFlowStore.getState().toObject();
-    const signature = JSON.stringify(snapshot);
+    const signature = operationGraphSignature(snapshot);
     setBusy(true);
     setError(null);
     setReview(null);
@@ -138,13 +143,17 @@ export default function OperationModelPicker({
             { replaceModel: !restoreDefaults, restoreDefaults },
           )
         : (!restoreDefaults && baseline && planPristineOperationChange(snapshot, node.id, baseline, starter)) ||
-          planOperationChange(snapshot, node.id, starter, { replaceModel: !restoreDefaults, restoreDefaults });
+          planOperationChange(snapshot, node.id, starter, {
+            replaceModel: !restoreDefaults,
+            restoreDefaults,
+            baseline,
+          });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
+      if (operationGraphSignature(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The workflow changed. Select the model again.');
       const candidate = { plan, context, signature, choice, restoreDefaults };
-      if (plan.diagnostics.length) setReview(candidate);
+      if (plan.review.required) setReview(candidate);
       else apply(candidate);
     } catch (e) {
       if (!controller.signal.aborted) setError(formatRequestError(e, 'Could not change this model.'));
@@ -156,6 +165,71 @@ export default function OperationModelPicker({
     }
   }
 
+  const reviewFooter = review ? (
+    <section className="w-full space-y-2" aria-label="Review model selection" data-testid="model-selection-review">
+      <div>
+        <p className="font-semibold text-modiff-text">Review selection</p>
+        <p className="text-sm text-modiff-subtle-text">
+          Apply {choiceLabel(review.choice)} to this workflow, or keep the current model.
+        </p>
+      </div>
+      {review.plan.review.changes.length ? (
+        <ModiffDisclosure
+          label={`What will change (${review.plan.review.changes.length})`}
+          buttonClassName="px-0 py-1 text-sm"
+          panelClassName="pt-1"
+        >
+          <ul className="list-inside list-disc text-sm text-modiff-subtle-text">
+            {review.plan.review.changes.map((message, index) => (
+              <li key={index}>{message}</li>
+            ))}
+          </ul>
+        </ModiffDisclosure>
+      ) : null}
+      {review.plan.review.preserved.length ? (
+        <ModiffDisclosure
+          label={`Values and connections kept (${review.plan.review.preserved.length})`}
+          buttonClassName="px-0 py-1 text-sm"
+          panelClassName="pt-1"
+        >
+          <ul className="list-inside list-disc text-sm text-modiff-subtle-text">
+            {review.plan.review.preserved.map((message, index) => (
+              <li key={index}>{message}</li>
+            ))}
+          </ul>
+        </ModiffDisclosure>
+      ) : null}
+      {review.plan.review.attention.length ? (
+        <ModiffDisclosure
+          label={`Needs attention (${review.plan.review.attention.length})`}
+          buttonClassName="px-0 py-1 text-sm"
+          panelClassName="pt-1"
+        >
+          <ul className="list-inside list-disc text-sm text-modiff-subtle-text">
+            {review.plan.review.attention.map((message, index) => (
+              <li key={index}>{message}</li>
+            ))}
+          </ul>
+        </ModiffDisclosure>
+      ) : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <ModiffButton onClick={() => setReview(null)}>Keep current model</ModiffButton>
+        <ModiffButton
+          tone="primary"
+          onClick={() => {
+            try {
+              apply(review);
+            } catch (e) {
+              setError(formatRequestError(e, 'Could not apply the model change.'));
+            }
+          }}
+        >
+          Apply model change
+        </ModiffButton>
+      </div>
+    </section>
+  ) : undefined;
+
   return (
     <>
       <ModiffButton
@@ -166,7 +240,7 @@ export default function OperationModelPicker({
         onClick={() => setOpen(true)}
         title={value}
       >
-        <span className="min-w-0 truncate">{current?.label ?? (value || 'Choose model')}</span>
+        <span className="min-w-0 truncate">{current ? choiceLabel(current) : value || 'Choose model'}</span>
       </ModiffButton>
       {current &&
       operations.some(
@@ -185,7 +259,13 @@ export default function OperationModelPicker({
         </ModiffButton>
       ) : null}
       {open ? (
-        <ModiffDialog open onClose={close} title="Choose model for Load Models" panelClassName="max-w-3xl">
+        <ModiffDialog
+          open
+          onClose={close}
+          title="Choose model for Load Models"
+          panelClassName="max-w-3xl"
+          footer={reviewFooter}
+        >
           <div className="space-y-3">
             <p className="text-sm text-modiff-subtle-text">
               {workflowTaskLabel(hint.operation.task ?? '')}. Selecting a model updates its connected nodes. Nothing is
@@ -208,40 +288,25 @@ export default function OperationModelPicker({
             </div>
             {error ? <p role="alert">{error}</p> : null}
             {busy ? <p role="status">Updating model and node contracts…</p> : null}
-            {review ? (
-              <section className="space-y-2 rounded-modiff-panel border border-modiff-border p-3">
-                <p className="font-semibold">This change needs your review</p>
-                <ul className="list-inside list-disc text-sm">
-                  {review.plan.diagnostics.map((message, index) => (
-                    <li key={index}>{message}</li>
-                  ))}
-                </ul>
-                <ModiffButton
-                  tone="primary"
-                  onClick={() => {
-                    try {
-                      apply(review);
-                    } catch (e) {
-                      setError(formatRequestError(e, 'Could not apply the model change.'));
-                    }
-                  }}
-                >
-                  Apply model change
-                </ModiffButton>
-                <ModiffButton onClick={() => setReview(null)}>Keep current model</ModiffButton>
-              </section>
-            ) : null}
-            <div className="max-h-80 space-y-2 overflow-y-auto overscroll-contain" aria-label="Compatible models">
+            <div
+              className="grid max-h-[min(24rem,50dvh)] gap-2 overflow-y-auto overscroll-contain pr-1"
+              aria-label="Compatible models"
+            >
               {groupWorkflowModels(visible, current?.id).map(({ id, primary: choice, routes }) => (
-                <div key={id}>
+                <div
+                  key={id}
+                  className="overflow-hidden rounded-modiff-panel border border-modiff-border bg-modiff-panel"
+                >
                   <ModiffButton
-                    className="h-auto w-full p-3"
+                    aria-pressed={review?.choice.id === choice.id || (!review && current?.id === choice.id)}
+                    className="h-auto w-full rounded-none p-3"
                     align="left"
                     disabled={busy}
                     onClick={() => void choose(choice)}
+                    tone={review?.choice.id === choice.id ? 'primary' : 'ghost'}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block font-semibold">{choice.label}</span>
+                      <span className="block font-semibold">{choiceLabel(choice)}</span>
                       <span className="block break-all text-xs text-modiff-subtle-text">{choice.repo}</span>
                     </span>
                     <span className="ml-auto flex shrink-0 flex-col items-end gap-1 text-xs text-modiff-subtle-text">
@@ -256,13 +321,30 @@ export default function OperationModelPicker({
                   </ModiffButton>
                   {routes.length > 1 ? (
                     <ModiffDisclosure
-                      label={`Other implementations (${routes.length - 1})`}
-                      className="px-3 py-1 text-xs text-modiff-subtle-text"
+                      label={
+                        <span className="flex items-center justify-between gap-2">
+                          <span>Other implementations</span>
+                          <span className="text-modiff-subtle-text">{routes.length - 1}</span>
+                        </span>
+                      }
+                      className="border-t border-modiff-border"
+                      buttonClassName="rounded-none px-3 py-2 text-xs"
+                      panelClassName="grid gap-1 border-t border-modiff-border bg-modiff-bg/40 p-2"
                     >
                       {routes.slice(1).map((route) => (
-                        <ModiffButton key={route.id} disabled={busy} onClick={() => void choose(route)}>
-                          {route.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'} ·{' '}
-                          {route.pipeline}
+                        <ModiffButton
+                          key={route.id}
+                          aria-pressed={review?.choice.id === route.id}
+                          align="left"
+                          className="h-auto w-full justify-between px-2 py-2"
+                          disabled={busy}
+                          onClick={() => void choose(route)}
+                          tone={review?.choice.id === route.id ? 'primary' : 'ghost'}
+                        >
+                          <span>{route.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'}</span>
+                          <span className="min-w-0 break-words text-xs text-modiff-subtle-text">
+                            {choiceLabel(route)} · {route.pipeline} · {route.profileId}
+                          </span>
                         </ModiffButton>
                       ))}
                     </ModiffDisclosure>

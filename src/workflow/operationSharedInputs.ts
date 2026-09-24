@@ -12,6 +12,26 @@ export function remapOperationAuthoring(value: unknown, remap: (id: string) => s
     hint.sharedInputs = hint.sharedInputs.map((binding) =>
       binding && typeof binding.loaderId === 'string' ? { ...binding, loaderId: remap(binding.loaderId) } : binding,
     );
+  if (Array.isArray(hint.inactiveDrafts) && hint.inactiveDrafts.length <= 16) {
+    for (const draft of hint.inactiveDrafts) {
+      if (!Array.isArray(draft?.nodes) || !Array.isArray(draft?.edges)) continue;
+      for (const node of draft.nodes) {
+        if (typeof node?.id !== 'string' || !node.data) continue;
+        node.id = remap(node.id);
+        if (node.parentId) node.parentId = remap(node.parentId);
+        const saved = node.data.operationAuthoring;
+        if (Array.isArray(saved?.sharedInputs))
+          saved.sharedInputs = saved.sharedInputs.map((binding) =>
+            typeof binding?.loaderId === 'string' ? { ...binding, loaderId: remap(binding.loaderId) } : binding,
+          );
+      }
+      draft.edges = draft.edges.map((edge) =>
+        typeof edge?.source === 'string' && typeof edge.target === 'string'
+          ? { ...edge, source: remap(edge.source), target: remap(edge.target) }
+          : edge,
+      );
+    }
+  }
   return hint;
 }
 

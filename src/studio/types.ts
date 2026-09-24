@@ -507,6 +507,7 @@ export type StudioGraphRole =
   | 'outpaintCanvas'
   | 'qwenInpaint'
   | 'prompt'
+  | 'promptEnhance'
   | 'beforeEncode'
   | 'textEncode'
   | 'duration'

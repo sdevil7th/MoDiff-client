@@ -70,6 +70,227 @@ test('connection search excludes wrong-direction nodes even for untyped origins 
   assert.equal(JSON.stringify(registry), before);
 });
 
+test('pipeline capability signals reject task-incompatible image consumers before insertion', () => {
+  const loader = {
+    module: 'modules.DiffusersImage',
+    action: 'LoadPipeline',
+    label: 'Load Image Pipeline',
+    category: 'Image',
+    type: 'custom',
+    params: {
+      pipeline: {
+        display: 'output',
+        type: 'image_diffusion_pipeline',
+        signal: {
+          direction: 'output',
+          value: {
+            mode: 'text_to_image',
+            actions: { Generate: ['text_to_image'] },
+          },
+        },
+      },
+    },
+  };
+  const taskParams = {
+    pipeline: {
+      display: 'input',
+      type: 'image_diffusion_pipeline',
+      signalCompatibility: { required: true, action: '$node' },
+    },
+    image_contract: { hidden: true, type: 'object' },
+  };
+  const generate = {
+    ...definition(taskParams, 'Generate'),
+    module: 'modules.DiffusersImage',
+  };
+  const unconditional = {
+    ...definition(taskParams, 'UnconditionalGenerate'),
+    module: 'modules.DiffusersImage',
+  };
+  const origin = { node: loader, handleId: 'pipeline' };
+  assert.equal(
+    search.matchingNodeHandleForDrop(generate, 'image_diffusion_pipeline', 'source', origin)?.[0],
+    'pipeline',
+  );
+  assert.equal(
+    search.matchingNodeHandleForDrop(unconditional, 'image_diffusion_pipeline', 'source', origin),
+    undefined,
+  );
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(loader, 'pipeline', unconditional, 'pipeline'), false);
+});
+
+test('declarative action contracts cover every pipeline modality and aliases without frontend module branches', () => {
+  const cases = [
+    ['audio_diffusion_pipeline', 'modules.AnyAudio', 'Generate', 'text_to_audio'],
+    ['video_diffusion_pipeline', 'custom.VideoNodes', 'GenerateVideoAudio', 'text_to_video'],
+    ['three_d_diffusion_pipeline', 'custom.ThreeDNodes', 'GenerateRenderedArtifact', 'text_to_3d'],
+  ];
+  for (const [type, module, action, mode] of cases) {
+    const loader = definition({
+      pipeline: {
+        display: 'output',
+        type,
+        signal: { direction: 'output', value: { mode, actions: { [action]: [mode] } } },
+      },
+    });
+    const consumer = {
+      ...definition(
+        {
+          pipeline: {
+            display: 'input',
+            type,
+            signalCompatibility: { required: true, action: '$node' },
+          },
+        },
+        action,
+      ),
+      module,
+    };
+    assert.equal(search.nodeConnectionSemanticsAreCompatible(loader, 'pipeline', consumer, 'pipeline'), true);
+    loader.params.pipeline.signal.value.actions = { DifferentAction: [mode] };
+    assert.equal(search.nodeConnectionSemanticsAreCompatible(loader, 'pipeline', consumer, 'pipeline'), false);
+  }
+});
+
+test('strict signal allowlists reject broad same-type producers without semantic identity', () => {
+  const genericLoader = definition({
+    model: { display: 'output', type: 'diffusers_auto_model', connectionRole: 'denoiser' },
+  });
+  const reviewedLoader = definition({
+    model: {
+      display: 'output',
+      type: 'diffusers_auto_model',
+      connectionRole: 'denoiser',
+      signal: { direction: 'output', value: 'StableDiffusionXLModularPipeline' },
+    },
+  });
+  const denoise = definition(
+    {
+      unet: {
+        display: 'input',
+        type: 'diffusers_auto_model',
+        signalCompatibility: {
+          required: true,
+          role: 'denoiser',
+          values: { StableDiffusionXLModularPipeline: ['denoise'] },
+        },
+      },
+    },
+    'Denoise',
+  );
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(genericLoader, 'model', denoise, 'unet'), false);
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(reviewedLoader, 'model', denoise, 'unet'), true);
+  reviewedLoader.params.model.connectionRole = 'scheduler';
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(reviewedLoader, 'model', denoise, 'unet'), false);
+  reviewedLoader.params.model.connectionRole = 'denoiser';
+  reviewedLoader.params.model.signal.value = 'ZImageModularPipeline';
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(reviewedLoader, 'model', denoise, 'unet'), false);
+});
+
+test('signal-driven option contracts exclude incompatible component modifiers for built-in and custom nodes', () => {
+  const loader = definition(
+    {
+      scheduler: {
+        display: 'output',
+        type: 'diffusers_auto_model',
+        connectionRole: 'scheduler',
+        signal: { direction: 'output', value: 'ZImageModularPipeline' },
+      },
+    },
+    'LoadModels',
+  );
+  const scheduler = definition(
+    {
+      scheduler_in: {
+        display: 'input',
+        type: 'diffusers_auto_model',
+        onSignal: {
+          action: 'value',
+          target: 'scheduler',
+          prop: 'options',
+          data: { StableDiffusionXLModularPipeline: ['EulerDiscreteScheduler'] },
+        },
+        signalCompatibility: {
+          required: true,
+          role: 'scheduler',
+          values: { StableDiffusionXLModularPipeline: ['EulerDiscreteScheduler'] },
+        },
+      },
+      scheduler: { type: 'string', value: 'EulerDiscreteScheduler' },
+    },
+    'Scheduler',
+  );
+  const origin = { node: loader, handleId: 'scheduler' };
+
+  assert.equal(search.matchingNodeHandleForDrop(scheduler, 'diffusers_auto_model', 'source', origin), undefined);
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(loader, 'scheduler', scheduler, 'scheduler_in'), false);
+
+  loader.params.scheduler.signal.value = 'StableDiffusionXLModularPipeline';
+  assert.equal(
+    search.matchingNodeHandleForDrop(scheduler, 'diffusers_auto_model', 'source', origin)?.[0],
+    'scheduler_in',
+  );
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(loader, 'scheduler', scheduler, 'scheduler_in'), true);
+
+  const guider = definition(
+    {
+      guider_out: {
+        display: 'output',
+        type: 'custom_guider',
+        onSignal: {
+          action: 'value',
+          target: 'guider',
+          prop: 'options',
+          data: { StableDiffusionXLModularPipeline: ['ClassifierFreeGuidance'] },
+        },
+      },
+    },
+    'Guider',
+  );
+  const downstream = definition(
+    {
+      guider: {
+        display: 'input',
+        type: 'custom_guider',
+        signal: { direction: 'input', value: 'ZImageModularPipeline' },
+      },
+    },
+    'Denoise',
+  );
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(guider, 'guider_out', downstream, 'guider'), false);
+  downstream.params.guider.signal.value = 'StableDiffusionXLModularPipeline';
+  assert.equal(search.nodeConnectionSemanticsAreCompatible(guider, 'guider_out', downstream, 'guider'), true);
+});
+
+test('connection ranking puts the likely media sink/source first and keeps stable ties', () => {
+  const process = definition({ image: { display: 'input', type: 'image' } }, 'Invert');
+  const preview = {
+    ...definition({ image: { display: 'input', type: 'image' } }, 'Preview'),
+    module: 'modules.Image',
+  };
+  const load = {
+    ...definition({ image: { display: 'output', type: 'image' } }, 'Load'),
+    module: 'modules.Image',
+  };
+  const entries = [
+    { key: 'modules.Color.Invert', label: 'Invert Colors', node: process },
+    { key: 'modules.Image.Preview', label: 'Preview Image', node: preview },
+  ];
+  assert.equal(search.rankConnectionSearchEntries(entries, 'image', 'source')[0].key, 'modules.Image.Preview');
+  assert.equal(
+    search.rankConnectionSearchEntries(
+      [...entries, { key: 'modules.Image.Load', label: 'Load Image', node: load }],
+      'image',
+      'target',
+    )[0].key,
+    'modules.Image.Load',
+  );
+  assert.deepEqual(
+    search.rankConnectionSearchEntries(entries, 'image', undefined).map((entry) => entry.key),
+    entries.map((entry) => entry.key),
+  );
+});
+
 test('connection search deduplicates exact aliases and excludes structural groups without merging different contracts', () => {
   const original = definition({ input: { display: 'input', type: 'string' } });
   const different = definition({ input: { display: 'input', type: 'image' } });

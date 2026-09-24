@@ -11,7 +11,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // startup graph. The 122-admission catalog adds 20 exact FLUX route records
 // (about 3 KiB compressed): a bounded 4 KiB increase over the former 582 KiB
 // ceiling covers that data. Deferred UI and individual chunk limits do not grow.
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
+// Authored-default provenance and bounded inactive-draft validation add less
+// than 1 KiB to the shared graph chunk. Keep the increase explicitly bounded.
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 439 * 1024;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -45,7 +47,15 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 438 * 1024;
 // Identity-based node names, prompt attribution and contextual raw-model
 // selection measure 610.5 KiB. The graph-change planner stays deferred behind a
 // separate advisory-hint validator. Bound startup at 611 KiB; chunk caps stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 611 * 1024;
+// Declared image-pipeline task compatibility now blocks invalid direct wires and
+// picker insertion before Run. Measured startup is 625760 bytes; allow 256 bytes
+// for the shared validator while retaining every chunk and deferred ceiling.
+// Generic signal-option contracts and model-change disconnection extend that
+// validator to component and custom nodes. Measured startup is 626016 bytes;
+// the compact memory toggle and hover guidance bring the final shell to 626241
+// bytes. Bound the reviewed UI addition without changing either chunk ceiling.
+// Image-prototyping preservation: measured startup 612.1 KiB, no new dependency.
+const MAX_STARTUP_GZIP_BYTES = 613 * 1024;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -116,7 +126,15 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // and exposed Block selection add ~2 KiB of deferred code. Keep planning lazy;
 // the measured 234.5 KiB aggregate gets a 236 KiB feature budget. Startup and
 // individual chunk limits remain unchanged; cold production checks are required.
-const MAX_DEFERRED_GZIP_BYTES = 236 * 1024;
+// Origin-ranked connection search and independently collapsible built-in/custom
+// result panes plus the model review footer measure 241986 bytes. Allow 384 bytes
+// for these picker behaviors; retain both individual chunk ceilings.
+// Semantic cross-model migration, readable review groups and the exhaustive
+// model matrix add 1883 compressed bytes (243869 measured). Bound that planner
+// at 238 KiB + 256 bytes; the 64 KiB per-chunk ceiling remains unchanged.
+// Lossless cross-model inactive-stage/wire restoration measures 239.1 KiB.
+// Keep the planner deferred and its individual 64 KiB chunk limit unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 240 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -133,6 +133,7 @@ export default function WorkflowTabsBar() {
                   appearance="surface"
                   id={`workflow-tab-${tab.id}`}
                   aria-controls="workflow-canvas-panel"
+                  aria-label={`${tab.title}${tab.dirty ? ' (unsaved changes)' : ''}`}
                   selected={selected}
                   data-testid={`workflow-tab-${tab.id}`}
                   onSelect={() => switchWorkflowTab(tab.id)}
@@ -142,9 +143,17 @@ export default function WorkflowTabsBar() {
                   }}
                   className="min-w-0 flex-1 justify-start rounded-none px-2 text-left text-xs leading-none focus-visible:outline-inset"
                 >
-                  <span className="block truncate">
-                    {tab.dirty ? '* ' : ''}
-                    {tab.title}
+                  <span className="relative block min-w-0 truncate pl-2">
+                    <span
+                      aria-hidden="true"
+                      className={cx(
+                        'pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 transition-opacity',
+                        tab.dirty ? 'opacity-100' : 'opacity-0',
+                      )}
+                    >
+                      *
+                    </span>
+                    <span>{tab.title}</span>
                   </span>
                 </ModiffTab>
                 <ModiffIconButton

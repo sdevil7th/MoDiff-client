@@ -84,7 +84,7 @@ export const REGISTERED_BLOCK_ROUTE_SETS_V1: readonly RegisteredBlockRouteSetV1[
         'ernie-image',
         'ERNIE Image',
         'diffusers.modular:ErnieImageModularPipeline:text2image',
-        'diffusers.cluster-admission:ErnieImageModularPipeline:text2image:mode:equivalent_standard_route',
+        'diffusers.cluster-admission:ErnieImageModularPipeline:text2image:workflow:official_top_level_blocks',
       ),
       exactRegisteredRouteV1(
         'flux-2',

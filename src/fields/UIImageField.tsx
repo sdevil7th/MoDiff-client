@@ -14,7 +14,7 @@ import { ModiffSelect } from '../ui/controls';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { GraphControlButton, GraphIconButton } from '../ui/GraphControls';
 import { cx } from '../utils/classNames';
-import { normalizeImageArtifacts, sanitizeImageArtifactUrl } from '../utils/imageArtifacts';
+import { normalizeImageArtifacts } from '../utils/imageArtifacts';
 import { MEDIA_PLACEHOLDER_DATA_URL } from '../utils/mediaViewer';
 import { PreviewHistoryStrip } from './PreviewHistoryStrip';
 import { userBlockPreviewSource } from '../studio/userBlocks';
@@ -25,7 +25,6 @@ export default function UIImageField(props: FieldProps) {
   const [dimensions, setDimensions] = useState<Record<number, string>>({});
   const [comparisonMode, setComparisonMode] = useState(false);
   const [selectedComparisonSourceId, setSelectedComparisonSourceId] = useState('');
-  const [selectedAfterUrl, setSelectedAfterUrl] = useState<string | null>(null);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [isDraggingComparison, setIsDraggingComparison] = useState(false);
   const comparisonRef = useRef<HTMLDivElement>(null);
@@ -62,29 +61,19 @@ export default function UIImageField(props: FieldProps) {
     () => graphImageSources(flowNodes, flowEdges, previewSource.nodeId),
     [flowEdges, flowNodes, previewSource.nodeId],
   );
+  const primaryImageUrl = images[0]?.url ?? null;
   const availableComparisonSources = useMemo(
-    () => comparisonSources.filter((source) => source.url && source.url !== selectedAfterUrl),
-    [comparisonSources, selectedAfterUrl],
+    () => comparisonSources.filter((source) => source.url && source.url !== primaryImageUrl),
+    [comparisonSources, primaryImageUrl],
   );
   const selectedComparisonSource =
     availableComparisonSources.find((source) => source.id === selectedComparisonSourceId) ??
     availableComparisonSources[0] ??
     null;
   const comparisonSource = selectedComparisonSource?.url ?? null;
-  const displayImages = useMemo(
-    () =>
-      images.map((image, index) =>
-        index === 0 && selectedAfterUrl && image.url !== selectedAfterUrl ? { ...image, url: selectedAfterUrl } : image,
-      ),
-    [images, selectedAfterUrl],
-  );
-  const primaryImageUrl = images[0]?.url ?? null;
+  const displayImages = images;
   const canCompare = Boolean(comparisonSource && displayImages[0]?.url && comparisonSource !== displayImages[0]?.url);
   const comparisonCapabilityExists = comparisonSources.length > 0;
-
-  useEffect(() => {
-    setSelectedAfterUrl(primaryImageUrl);
-  }, [primaryImageUrl]);
 
   useEffect(() => {
     if (
@@ -326,13 +315,7 @@ export default function UIImageField(props: FieldProps) {
           ))}
         </div>
       )}
-      <PreviewHistoryStrip
-        nodeId={previewSource.nodeId}
-        fieldKey={previewSource.fieldKey}
-        currentUrls={currentUrls}
-        selectedUrl={selectedAfterUrl}
-        onSelectImage={(url) => setSelectedAfterUrl(sanitizeImageArtifactUrl(url))}
-      />
+      <PreviewHistoryStrip nodeId={previewSource.nodeId} fieldKey={previewSource.fieldKey} currentUrls={currentUrls} />
     </FieldFrame>
   );
 }

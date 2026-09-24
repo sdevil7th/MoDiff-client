@@ -119,6 +119,8 @@ function parseArgs(argv) {
     else if (key === 'evidence') args.evidence = String(value);
     else if (key === 'remediation-key') args.remediationKey = String(value);
     else if (key === 'decision') args.decision = String(value);
+    else if (key === 'budget-ms') args.budgetMs = positiveInteger(value, 'budget-ms');
+    else if (key === 'stop-file') args.stopFile = resolve(String(value));
     else throw new Error(`Unknown option: --${key}`);
   }
 
@@ -132,6 +134,7 @@ Usage:
   npm run gallery:queue -- status [--json]
   npm run gallery:queue -- next [--job <id>] [--json]
   npm run gallery:queue -- run [--job <id>] [--dry-run] [--json]
+  npm run gallery:queue -- run-all --budget-ms <milliseconds> [--json]
   npm run gallery:queue -- mark --job <id> --status <status> --reason <text> [--evidence <path>]
   npm run gallery:queue -- retry --job <id> --reason <text> --remediation-key <unique-key>
   npm run gallery:queue -- review --job <id> --decision <decision> --reason <text> [--evidence <path>]
@@ -141,6 +144,8 @@ Commands:
   status   Show persisted state and the active job, if any.
   next     Show the single job that a run would select. It never changes state.
   run      Run at most one pending job, then stop. Runtime failures never auto-retry.
+  run-all  Run eligible jobs serially within a required wall-clock budget;
+           record each failure and continue. Completed/failed jobs are not repeated.
   mark     Record blocked_external, blocked_model, failed_quality, or proven.
            Marking proven requires an existing --evidence file.
   retry    Requeue one failed/blocked job after a named remediation. A new remediation
@@ -152,12 +157,13 @@ Options:
   --config <path>            Queue config. Default: ${DEFAULT_CONFIG_PATH}
   --state <path>             Persisted state. Default: ${DEFAULT_STATE_PATH}
   --job <id>                 Select one job explicitly.
+  --stop-file <path>         run-all stops between jobs when this file exists; never interrupts the active job.
   --dry-run                  Print the selected command without executing or mutating state.
   --json                     Emit machine-readable JSON.
 
 Safety model:
   - One process lock and one active job.
-  - One job per run invocation; there is no unbounded run-all loop.
+  - One job per run invocation; run-all requires a finite campaign budget.
   - Each job has a hard maxAttempts and timeoutMs.
   - Failed jobs require an explicit, uniquely keyed remediation before retry.
   - A repeated failure signature suppresses all further retries.
@@ -435,19 +441,24 @@ function appendTail(current, chunk, limit = 64 * 1024) {
   return next.length > limit ? next.slice(-limit) : next;
 }
 
-function terminateTree(child) {
-  if (!child.pid || child.killed) return;
+function terminateTree(child, signal = 'SIGTERM') {
+  if (!child.pid) return;
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
+      timeout: 2_000,
     });
     return;
   }
-  child.kill('SIGTERM');
+  try {
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error.code !== 'ESRCH') throw error;
+  }
 }
 
-async function executeJob(job, command, logPaths) {
+export async function executeJob(job, command, logPaths, onHeartbeat = () => {}) {
   mkdirSync(dirname(logPaths.stdout), { recursive: true });
   const stdoutLog = createWriteStream(logPaths.stdout, { flags: 'wx' });
   const stderrLog = createWriteStream(logPaths.stderr, { flags: 'wx' });
@@ -455,6 +466,16 @@ async function executeJob(job, command, logPaths) {
   let stderrTail = '';
   let timedOut = false;
   let launchError = null;
+  let lastOutputAt = null;
+  const logLimit = 16 * 1024 * 1024;
+  const logBytes = { stdout: 0, stderr: 0 };
+  // A full disk or broken log destination is a recorded failure, not an
+  // unhandled EventEmitter error that kills the entire campaign.
+  for (const stream of [stdoutLog, stderrLog]) {
+    stream.on('error', (error) => {
+      launchError = `Log write failed: ${error.message}`;
+    });
+  }
 
   const result = await new Promise((resolvePromise) => {
     const child = spawn(command[0], command.slice(1), {
@@ -462,40 +483,99 @@ async function executeJob(job, command, logPaths) {
       env: { ...process.env, ...job.env },
       shell: false,
       windowsHide: true,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.on('data', (chunk) => {
-      stdoutLog.write(chunk);
-      process.stdout.write(chunk);
+      const remaining = Math.max(0, logLimit - logBytes.stdout);
+      if (remaining && !stdoutLog.destroyed) stdoutLog.write(chunk.subarray(0, remaining));
+      logBytes.stdout += chunk.length;
+      lastOutputAt = now();
       stdoutTail = appendTail(stdoutTail, chunk);
     });
     child.stderr.on('data', (chunk) => {
-      stderrLog.write(chunk);
-      process.stderr.write(chunk);
+      const remaining = Math.max(0, logLimit - logBytes.stderr);
+      if (remaining && !stderrLog.destroyed) stderrLog.write(chunk.subarray(0, remaining));
+      logBytes.stderr += chunk.length;
+      lastOutputAt = now();
       stderrTail = appendTail(stderrTail, chunk);
     });
     child.once('error', (error) => {
       launchError = error instanceof Error ? error.message : String(error);
     });
+    let settled = false;
+    let forceTimer;
+    let abandonTimer;
+    const heartbeat = setInterval(() => {
+      try {
+        onHeartbeat({ pid: child.pid ?? null, heartbeatAt: now(), lastOutputAt });
+      } catch (error) {
+        launchError = `Heartbeat write failed: ${error.message}`;
+        stop();
+      }
+    }, 10_000);
+    const finish = (exitCode, signal, cleanupUnconfirmed = false) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(forceTimer);
+      clearTimeout(abandonTimer);
+      clearInterval(heartbeat);
+      process.removeListener('SIGTERM', interrupted);
+      process.removeListener('SIGINT', interrupted);
+      // Also reap grandchildren after an early parent exit. Their inherited
+      // pipes must not hold the queue's close event open indefinitely.
+      terminateTree(child, 'SIGKILL');
+      child.stdout.destroy();
+      child.stderr.destroy();
+      child.unref();
+      resolvePromise({ exitCode, signal, cleanupUnconfirmed });
+    };
+    const stop = () => {
+      if (forceTimer || settled) return;
+      terminateTree(child);
+      forceTimer = setTimeout(() => terminateTree(child, 'SIGKILL'), 2_000);
+      abandonTimer = setTimeout(() => finish(null, 'SIGKILL', true), 4_000);
+    };
+    const interrupted = () => {
+      launchError = 'Queue interrupted by operator signal.';
+      stop();
+    };
+    process.once('SIGTERM', interrupted);
+    process.once('SIGINT', interrupted);
     const timer = setTimeout(() => {
       timedOut = true;
-      terminateTree(child);
+      stop();
     }, job.timeoutMs);
-    child.once('close', (exitCode, signal) => {
-      clearTimeout(timer);
-      resolvePromise({ exitCode, signal });
+    child.once('exit', (exitCode, signal) => {
+      // close normally follows exit, but an orphan can keep pipes open.
+      terminateTree(child, 'SIGKILL');
+      abandonTimer ??= setTimeout(() => finish(exitCode, signal, true), 2_000);
     });
+    child.once('close', (exitCode, signal) => finish(exitCode, signal));
   });
 
   await Promise.all(
     [stdoutLog, stderrLog].map(
       (stream) =>
         new Promise((resolvePromise) => {
+          if (stream.destroyed) {
+            resolvePromise();
+            return;
+          }
+          stream.once('error', resolvePromise);
           stream.end(resolvePromise);
         }),
     ),
   );
-  return { ...result, timedOut, launchError, stdoutTail, stderrTail };
+  return {
+    ...result,
+    timedOut,
+    launchError,
+    stdoutTail,
+    stderrTail,
+    logsTruncated: Object.values(logBytes).some((bytes) => bytes > logLimit),
+  };
 }
 
 function isPidAlive(pid) {
@@ -632,7 +712,7 @@ async function runOne(args) {
     return 0;
   }
 
-  const lock = acquireRunLock(args.statePath);
+  const lock = args.runLock ?? acquireRunLock(args.statePath);
   try {
     const { config, state } = loadContext(args);
     const interruptedJobId = reconcileInterruptedRun(state, config);
@@ -681,15 +761,24 @@ async function runOne(args) {
     state.updatedAt = now();
     writeJsonAtomic(args.statePath, state);
 
-    const result = await executeJob(job, command, logPaths);
+    const effectiveJob = args.deadlineMs
+      ? { ...job, timeoutMs: Math.min(job.timeoutMs, Math.max(1, args.deadlineMs - Date.now() - 5_000)) }
+      : job;
+    attempt.timeoutMs = effectiveJob.timeoutMs;
+    const result = await executeJob(effectiveJob, command, logPaths, (heartbeat) => {
+      Object.assign(attempt, heartbeat);
+      writeJsonAtomic(args.statePath, state);
+    });
     attempt.finishedAt = now();
     attempt.exitCode = result.exitCode;
     attempt.signal = result.signal;
     attempt.timedOut = result.timedOut;
     attempt.launchError = result.launchError;
+    attempt.cleanupUnconfirmed = result.cleanupUnconfirmed;
+    attempt.logsTruncated = result.logsTruncated;
     state.activeJobId = null;
 
-    const succeeded = !result.timedOut && !result.launchError && result.exitCode === 0;
+    const succeeded = !result.timedOut && !result.launchError && !result.cleanupUnconfirmed && result.exitCode === 0;
     if (succeeded) {
       jobState.status = 'awaiting_quality';
       jobState.reason = 'Generation command completed; quality evidence and manual review are still required.';
@@ -702,7 +791,7 @@ async function runOne(args) {
       jobState.status = 'failed_runtime';
       jobState.retrySuppressed = previousOccurrences > 0 || jobState.attempts.length >= job.maxAttempts;
       jobState.reason = result.timedOut
-        ? `Command exceeded the ${job.timeoutMs}ms timeout.`
+        ? `Command exceeded the ${effectiveJob.timeoutMs}ms timeout.`
         : result.launchError
           ? `Command failed to start: ${result.launchError}`
           : `Command exited with code ${result.exitCode ?? 'null'}${result.signal ? ` (${result.signal})` : ''}.`;
@@ -727,6 +816,48 @@ async function runOne(args) {
     printValue(output, args.json);
     return succeeded ? 0 : 1;
   } finally {
+    if (!args.runLock) releaseRunLock(lock.lockPath);
+  }
+}
+
+async function runAll(args) {
+  if (!args.budgetMs || args.budgetMs > 24 * 60 * 60 * 1000) {
+    throw new Error('run-all requires --budget-ms between 1 and 86400000.');
+  }
+  if (args.jobId || args.dryRun)
+    throw new Error('Use plan/next for inspection; run-all does not accept --job or --dry-run.');
+  const lock = acquireRunLock(args.statePath);
+  const deadlineMs = Date.now() + args.budgetMs;
+  let failures = 0;
+  let processed = 0;
+  let interrupted = false;
+  const onInterrupt = () => {
+    interrupted = true;
+  };
+  process.on('SIGTERM', onInterrupt);
+  process.on('SIGINT', onInterrupt);
+  try {
+    while (!interrupted && Date.now() + 5_000 < deadlineMs) {
+      if (args.stopFile && existsSync(args.stopFile)) break;
+      const { config, state } = loadContext(args);
+      if (reconcileInterruptedRun(state, config)) writeJsonAtomic(args.statePath, state);
+      if (!selectNextJob(config, state)) break;
+      failures += await runOne({ ...args, runLock: lock, deadlineMs });
+      processed += 1;
+    }
+    printValue(
+      {
+        processed,
+        failures,
+        deadlineReached: Date.now() + 5_000 >= deadlineMs,
+        stopRequested: Boolean(args.stopFile && existsSync(args.stopFile)),
+      },
+      args.json,
+    );
+    return interrupted ? 130 : failures ? 1 : 0;
+  } finally {
+    process.removeListener('SIGTERM', onInterrupt);
+    process.removeListener('SIGINT', onInterrupt);
     releaseRunLock(lock.lockPath);
   }
 }
@@ -874,10 +1005,11 @@ export async function runCli(argv = process.argv) {
     console.log(usage());
     return 0;
   }
-  if (!['plan', 'status', 'next', 'run', 'mark', 'retry', 'review'].includes(args.command)) {
+  if (!['plan', 'status', 'next', 'run', 'run-all', 'mark', 'retry', 'review'].includes(args.command)) {
     throw new Error(`Unknown command: ${args.command}\n\n${usage()}`);
   }
   if (args.command === 'run') return runOne(args);
+  if (args.command === 'run-all') return runAll(args);
   if (args.command === 'mark') {
     printValue(markJob(args), args.json);
     return 0;

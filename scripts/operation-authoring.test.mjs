@@ -108,6 +108,45 @@ function graph() {
   return authoring.createOperationStarter(starter(), { x: 40, y: 60 });
 }
 
+test('replaced native stages cannot overwrite exact whole-pipeline binding values', () => {
+  const source = graph();
+  source.nodes[1].data.params.prompt.value = 'Authored native prompt';
+  const whole = starter('WholePipeline');
+  whole.nodes[1].operation.operationId = 'diffusion.generate_image';
+  whole.nodes[1].operation.decomposition = 'pipeline';
+  whole.nodes[1].operation.nodeType = 'pipeline';
+  whole.nodes[1].operation.blockName = null;
+  whole.nodes[1].operation.binding.values.prompt = 'ExactBoundPrompt';
+  whole.nodes[1].node.params.prompt.value = 'ExactBoundPrompt';
+  whole.edges[0].target = 'diffusion.generate_image';
+  const changed = authoring.planOperationChange(source, source.nodes[0].id, whole);
+  const generation = changed.graph.nodes.find(
+    (node) => node.data.operationAuthoring?.operation.operationId === 'diffusion.generate_image',
+  );
+  assert.equal(generation.data.params.prompt.value, 'ExactBoundPrompt');
+  assert.ok(
+    changed.graph.nodes.some((node) =>
+      node.data.operationAuthoring?.retained.some((entry) => entry.value === 'Authored native prompt'),
+    ),
+  );
+});
+
+test('resolved operation schemas suppress family-default initialization but keep connection visibility actions', () => {
+  const s = starter();
+  const node = s.nodes[1].node;
+  node.params.selector = { type: 'string', display: 'select', value: 'Variant', onChange: 'updateNode' };
+  node.params.models.onSignal = 'updateNode';
+  node.params.guider = { type: 'custom_guider', display: 'input', onChange: { true: [], false: ['guidance'] } };
+  const before = structuredClone(s);
+  const graph = authoring.createOperationStarter(s, { x: 0, y: 0 });
+  const params = graph.nodes[1].data.params;
+  assert.equal(params.selector.fieldOptions.suppressInitialFieldAction, true);
+  assert.equal(params.models.fieldOptions.suppressAutomaticSignalAction, true);
+  assert.equal(params.guider.fieldOptions?.suppressInitialFieldAction, undefined);
+  assert.deepEqual(params.guider.onChange, node.params.guider.onChange);
+  assert.deepEqual(s, before, 'The backend declaration is not mutated.');
+});
+
 test('literal media inputs and their fallback values survive compatible task changes', () => {
   const graph = authoring.createOperationStarter(starter(), { x: 0, y: 0 });
   graph.nodes[1].data.params.image.value = '@data/images/reference.webp';
@@ -157,7 +196,8 @@ test('model preview keeps prompts, connected values, positions and custom nodes 
   delete next.nodes[1].node.params.old_control;
   const result = authoring.planOperationChange(g, loader.id, next);
   assert.deepEqual(g, before);
-  const adapted = result.graph.nodes.find((n) => n.id === denoise.id);
+  const adapted = result.graph.nodes.find((n) => n.data.action === 'Denoise');
+  assert.notEqual(adapted.id, denoise.id, 'A different bound pipeline cannot inherit cached instance state.');
   assert.equal(adapted.data.params.prompt.value, 'My actual prompt');
   assert.equal(adapted.data.params.steps.value, 30);
   assert.deepEqual(adapted.position, denoise.position);
@@ -165,7 +205,7 @@ test('model preview keeps prompts, connected values, positions and custom nodes 
   assert.equal(adapted.data.params.old_control, undefined);
   assert.deepEqual(
     result.graph.edges.find((e) => e.id === 'external'),
-    g.edges[1],
+    { ...g.edges[1], target: adapted.id },
   );
   assert.equal(
     result.graph.nodes.find((n) => n.id === 'custom'),
@@ -183,6 +223,34 @@ test('changed runtime classes receive fresh IDs and preserve compatible external
   assert.notEqual(denoise.id, g.nodes[1].id);
   assert.equal(result.graph.edges[0].target, denoise.id);
   assert.equal(result.graph.nodes.length, 2);
+  const returned = authoring.planOperationChange(result.graph, result.graph.nodes[0].id, starter());
+  assert.equal(returned.graph.nodes.find((n) => n.data.action === 'Denoise').id, g.nodes[1].id);
+  assert.equal(returned.graph.edges[0].target, g.nodes[1].id);
+});
+
+test('same Python actions get pipeline-scoped runtime IDs and restore their original IDs on return', () => {
+  const source = starter();
+  const graph = authoring.createOperationStarter(source, { x: 30, y: 40 });
+  const switched = authoring.planOperationChange(graph, graph.nodes[0].id, starter('OtherPipeline')).graph;
+  for (let index = 0; index < graph.nodes.length; index++) {
+    assert.equal(switched.nodes[index].data.action, graph.nodes[index].data.action);
+    assert.notEqual(switched.nodes[index].id, graph.nodes[index].id);
+    assert.deepEqual(switched.nodes[index].position, graph.nodes[index].position);
+  }
+  const returned = authoring.planOperationChange(switched, switched.nodes[0].id, source).graph;
+  assert.deepEqual(
+    returned.nodes.map((node) => node.id),
+    graph.nodes.map((node) => node.id),
+  );
+  assert.deepEqual(
+    returned.edges.map(({ source, target }) => ({ source, target })),
+    graph.edges.map(({ source, target }) => ({ source, target })),
+  );
+  const same = authoring.planOperationChange(returned, returned.nodes[0].id, source).graph;
+  assert.deepEqual(
+    same.nodes.map((node) => node.id),
+    returned.nodes.map((node) => node.id),
+  );
 });
 
 test('incompatible custom wires are diagnosed and the custom node is retained', () => {
@@ -205,7 +273,8 @@ test('incompatible custom wires are diagnosed and the custom node is retained', 
   const result = authoring.planOperationChange(g, g.nodes[0].id, next);
   assert.equal(result.graph.edges.length, 1);
   assert.equal(result.graph.nodes[2].id, 'custom');
-  assert.match(result.diagnostics.join(' '), /Disconnect custom.value/);
+  assert.match(result.diagnostics.join(' '), /Node · value → Denoise · image will be disconnected/);
+  assert.doesNotMatch(result.diagnostics.join(' '), /custom|node-[A-Za-z0-9_-]+/);
 });
 
 test('invalid numeric overrides are retained outside execution and target selectors win', () => {
@@ -255,7 +324,13 @@ test('a disconnected loader change preserves orphan nodes and an independent loa
     independent,
   );
   assert.equal(plan.graph.edges.length, 1);
-  assert.equal(plan.graph.edges[0].source, loader.id);
+  assert.notEqual(plan.graph.edges[0].source, loader.id);
+  assert.equal(
+    plan.graph.edges[0].source,
+    plan.graph.nodes.find(
+      (n) => n.data.operationAuthoring?.operation.pipelineClass === 'OtherPipeline' && n.data.action === 'Load',
+    ).id,
+  );
   assert.notEqual(plan.graph.edges[0].target, orphan.id);
 });
 
@@ -293,6 +368,37 @@ test('starter parser rejects stale bindings, competing writers, cycles and absen
   }
 });
 
+test('starter accepts declared dotted layer controls without relaxing port or other field identifiers', () => {
+  const s = starter();
+  const operation = s.nodes[1];
+  const name = 'mid_block.attentions.0.transformer_blocks';
+  operation.node.params.blocks_select = { display: 'select', options: [name], value: [name] };
+  operation.node.params[name] = { display: 'layerconfig', value: { enabled: true, indices: '0,1' } };
+  const operations = s.nodes.map((n) => n.operation);
+  const parse = (value) => requests.parseOperationStarter(value, s.pipelineClass, s.task, operations);
+  assert.doesNotThrow(() => parse({ schemaVersion: 1, ...s }));
+  for (const mutate of [
+    (params) => {
+      params.blocks_select.options = [];
+    },
+    (params) => {
+      params[name].display = 'text';
+    },
+    (params) => {
+      params['mid_block.__proto__.0'] = params[name];
+      params.blocks_select.options.push('mid_block.__proto__.0');
+    },
+    (params) => {
+      params['mid_block..0'] = params[name];
+      params.blocks_select.options.push('mid_block..0');
+    },
+  ]) {
+    const bad = structuredClone({ schemaVersion: 1, ...s });
+    mutate(bad.nodes[1].node.params);
+    assert.throws(() => parse(bad));
+  }
+});
+
 test('a committed model change is one Undo/Redo step, persists hints, and rejects stale previews', async () => {
   const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   const { captureWorkflowOperationContext } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
@@ -315,6 +421,61 @@ test('a committed model change is one Undo/Redo step, persists hints, and reject
     () => commitOperationGraph(plan.graph, captureWorkflowOperationContext(), JSON.stringify(initial), 'Stale'),
     /changed/,
   );
+});
+
+test('review ignores derived operation availability but protects values, wires, bindings and layout', async () => {
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { captureWorkflowOperationContext } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const { commitOperationGraph, operationGraphSignature } = await server.ssrLoadModule(
+    '/src/workflow/operationGraphTransaction.ts',
+  );
+  const flow = useFlowStore.getState();
+  flow.replaceGraph(graph());
+  flow.resetHistory();
+  const initial = flow.toObject();
+  const sibling = structuredClone(initial.nodes[1]);
+  sibling.id = 'independent-refiner';
+  flow.replaceGraph({ ...initial, nodes: [...initial.nodes, sibling] });
+  const before = flow.toObject();
+  const signature = operationGraphSignature(before);
+  const proposed = structuredClone(before);
+  proposed.nodes[0].position.x += 100;
+  flow.setParam(sibling.id, 'steps', true, 'hidden');
+  flow.setParam(sibling.id, 'steps', true, 'disabled');
+  assert.equal(operationGraphSignature(flow.toObject()), signature);
+  commitOperationGraph(proposed, captureWorkflowOperationContext(), signature, 'Reviewed change');
+  const retained = flow.toObject().nodes.find((node) => node.id === sibling.id);
+  assert.equal(retained.data.params.steps.hidden, true);
+  assert.equal(retained.data.params.steps.disabled, true);
+  for (const mutate of [
+    (value) => {
+      value.nodes[1].data.params.steps.value = 123;
+    },
+    (value) => {
+      value.edges = [];
+    },
+    (value) => {
+      value.nodes[0].data.operationAuthoring.operation.pipelineClass = 'Changed';
+    },
+    (value) => {
+      value.nodes[0].position.x += 1;
+    },
+    (value) => {
+      value.nodes[1].data.params.steps.type = 'string';
+    },
+    (value) => {
+      value.nodes[1].data.operationAuthoring.authored = ['steps'];
+    },
+  ]) {
+    flow.replaceGraph(before);
+    const changed = structuredClone(before);
+    mutate(changed);
+    flow.replaceGraph(changed);
+    assert.throws(
+      () => commitOperationGraph(proposed, captureWorkflowOperationContext(), signature, 'Stale'),
+      /changed/,
+    );
+  }
 });
 
 test('an application failure rolls the whole graph back and does not create a history entry', async () => {
@@ -364,11 +525,18 @@ test('field initialization is a default, while a natively edited random seed is 
   delete source.nodes[1].node.params.steps.value;
   source.nodes[1].node.params.steps.default = 20;
   source.nodes[1].node.params.seed = { type: 'int', display: 'random', default: 0, min: 0, max: 4294967295 };
+  const seedPort = {
+    ...source.nodes[1].operation.ports.find((port) => port.name === 'steps'),
+    name: 'seed',
+    semanticName: 'seed',
+  };
+  source.nodes[1].operation.ports.push(seedPort);
   const g = authoring.createOperationStarter(source, { x: 0, y: 0 });
   g.nodes[1].data.params.steps.value = 20; // NodeContent initializes the declared default.
   g.nodes[1].data.params.seed.value = { value: '4109', isRandom: false }; // Native RandomField form.
   const next = starter('OtherPipeline', 'text_to_image', 30);
   next.nodes[1].node.params.seed = { ...source.nodes[1].node.params.seed };
+  next.nodes[1].operation.ports.push(structuredClone(seedPort));
   const result = authoring.planOperationChange(g, g.nodes[0].id, next);
   assert.equal(result.graph.nodes[1].data.params.steps.value, 30);
   assert.deepEqual(result.graph.nodes[1].data.params.seed.value, { value: '4109', isRandom: false });
@@ -1825,6 +1993,20 @@ test('pristine route replacement reconnects preview across decomposition and ref
   const rewired = structuredClone(graph);
   rewired.edges[0].sourceHandle = 'custom';
   assert.equal(authoring.planPristineOperationChange(rewired, rewired.nodes[0].id, old, next), null);
+  const moved = structuredClone(graph);
+  moved.nodes[1].position.x += 70;
+  assert.equal(
+    authoring.planPristineOperationChange(moved, moved.nodes[0].id, old, next),
+    null,
+    'A moved stage is not pristine',
+  );
+  const grouped = structuredClone(graph);
+  for (const node of grouped.nodes.slice(0, 2)) node.parentId = 'user-group';
+  assert.throws(
+    () => authoring.planPristineOperationChange(grouped, grouped.nodes[0].id, old, next),
+    /top-level operation loader/,
+    'Fast replacement must not ungroup user nodes',
+  );
   const custom = structuredClone(graph);
   custom.nodes.find((n) => n.id === 'preview').data.module = 'custom.Review';
   assert.equal(authoring.planPristineOperationChange(custom, custom.nodes[0].id, old, next), null);
@@ -1869,6 +2051,191 @@ test('explicit model defaults restore creative controls while preserving wired i
   );
   assert.ok(plan.graph.edges.some((e) => e.id === 'custom-prompt'));
   assert.deepEqual(graph, original);
+});
+
+test('a user-authored value equal to the old default survives model switching and is not pristine', () => {
+  const source = starter();
+  const graph = authoring.createOperationStarter(source, { x: 0, y: 0 });
+  graph.nodes[1].data.operationAuthoring.authored = ['steps'];
+  const target = starter('OtherPipeline', 'text_to_image', 40);
+  const plan = authoring.planOperationChange(graph, graph.nodes[0].id, target);
+  assert.equal(plan.graph.nodes.find((node) => node.data.action === 'Denoise').data.params.steps.value, 20);
+  assert.ok(
+    plan.graph.nodes.find((node) => node.data.action === 'Denoise').data.operationAuthoring.authored.includes('steps'),
+  );
+});
+
+test('Block public values equal to defaults survive a model change', async () => {
+  const { runtime, instance, draft } = await operationBlock('explicit-default', starter());
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  let configured = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+    boundary: instance.effectiveInterface.boundary,
+    controls: [
+      {
+        controlId: 'steps-control',
+        label: 'Steps',
+        valueType: 'int',
+        binding: { nodeId: draft.nodes[1].id, fieldId: 'steps' },
+        defaultValue: 20,
+        order: 0,
+      },
+    ],
+  });
+  configured = runtime.setBlockInstanceValueV2(configured, 'steps-control', 20);
+  const result = planBlockOperationChange(
+    { nodes: [runtime.createBlockRootNodeV2(configured)], edges: [] },
+    configured.instanceId,
+    draft.nodes[0].id,
+    starter('OtherPipeline', 'text_to_image', 40),
+  );
+  const updated = result.graph.nodes[0].data.blockInstanceV2;
+  assert.equal(updated.values['steps-control'], 20);
+  assert.equal(updated.effectiveGraph.nodes.find((node) => node.data.action === 'Denoise').data.params.steps.value, 20);
+});
+
+test('default-equal native edits carry authored provenance through undo and redo', async () => {
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const original = authoring.createOperationStarter(starter(), { x: 0, y: 0 });
+  useFlowStore.getState().replaceGraph(original);
+  const id = original.nodes[1].id;
+  useFlowStore.getState().setParamWithHistory(id, 'steps', 20);
+  assert.ok(
+    useFlowStore
+      .getState()
+      .nodes.find((node) => node.id === id)
+      .data.operationAuthoring.authored.includes('steps'),
+  );
+  useFlowStore.getState().undo();
+  assert.ok(
+    !useFlowStore
+      .getState()
+      .nodes.find((node) => node.id === id)
+      .data.operationAuthoring.authored?.includes('steps'),
+  );
+  useFlowStore.getState().redo();
+  assert.ok(
+    useFlowStore
+      .getState()
+      .nodes.find((node) => node.id === id)
+      .data.operationAuthoring.authored.includes('steps'),
+  );
+});
+
+test('removed stages are archived and an exact model round trip restores their settings and position', () => {
+  const source = starter();
+  const graph = authoring.createOperationStarter(source, { x: 15, y: 30 });
+  const prior = graph.nodes[1];
+  prior.data.params.prompt.value = 'My original custom prompt';
+  prior.position = { x: 850, y: 190 };
+  const target = starter('WholePipeline');
+  target.nodes[1].operation.operationId = 'diffusion.generate_image';
+  target.nodes[1].operation.decomposition = 'pipeline';
+  target.nodes[1].operation.nodeType = 'pipeline';
+  target.nodes[1].operation.blockName = null;
+  target.edges[0].target = 'diffusion.generate_image';
+  const changed = authoring.planOperationChange(graph, graph.nodes[0].id, target);
+  const owner = changed.graph.nodes.find((node) => node.data.action === 'Load');
+  assert.equal(owner.data.operationAuthoring.inactiveDrafts.length, 1);
+  const persisted = JSON.parse(JSON.stringify(changed.graph));
+  const returned = authoring.planOperationChange(persisted, owner.id, source);
+  const restored = returned.graph.nodes.find(
+    (node) => node.data.operationAuthoring?.operation.operationId === 'diffusion.denoise',
+  );
+  assert.equal(restored.data.params.prompt.value, 'My original custom prompt');
+  assert.deepEqual(restored.position, prior.position);
+  assert.equal(restored.id, prior.id);
+  assert.ok(authoring.operationAuthoring(returned.graph.nodes.find((node) => node.data.action === 'Load')));
+});
+
+test('explicit default-equal values retain authorship across a decomposition change and another model', () => {
+  const graph = authoring.createOperationStarter(starter(), { x: 0, y: 0 });
+  graph.nodes[1].data.operationAuthoring.authored = ['steps'];
+  const target = starter('WholePipeline');
+  target.nodes[1].operation.operationId = 'diffusion.generate_image';
+  target.nodes[1].operation.decomposition = 'pipeline';
+  target.nodes[1].operation.nodeType = 'pipeline';
+  target.nodes[1].operation.blockName = null;
+  target.edges[0].target = 'diffusion.generate_image';
+  const changed = authoring.planOperationChange(graph, graph.nodes[0].id, target);
+  const owner = changed.graph.nodes.find((node) => node.data.action === 'Load');
+  const stage = changed.graph.nodes.find((node) => node.data.action === 'Denoise');
+  assert.ok(stage.data.operationAuthoring.authored.includes('steps'));
+  const next = authoring.planOperationChange(changed.graph, owner.id, starter('ThirdPipeline', 'text_to_image', 40));
+  assert.equal(next.graph.nodes.find((node) => node.data.action === 'Denoise').data.params.steps.value, 20);
+});
+
+test('a whole-pipeline round trip restores custom text to the dedicated prompt socket, not its fallback widget', () => {
+  const native = starter();
+  native.nodes[1].node.params.prompt.isInput = false;
+  native.nodes[1].node.params.prompt_input = { type: 'string', display: 'input' };
+  native.nodes[1].operation.ports.push({
+    ...native.nodes[1].operation.ports.find((port) => port.name === 'prompt'),
+    name: 'prompt_input',
+    semanticName: 'prompt',
+  });
+  const graph = authoring.createOperationStarter(native, { x: 0, y: 0 });
+  const custom = {
+    id: 'custom',
+    type: 'custom',
+    position: { x: 0, y: 200 },
+    data: {
+      module: 'custom.Prompt',
+      action: 'Prefix',
+      label: 'Custom prompt',
+      params: {
+        text: { display: 'output', type: 'string' },
+      },
+    },
+  };
+  graph.nodes.push(custom);
+  const wire = {
+    id: 'custom-prompt',
+    source: custom.id,
+    sourceHandle: 'text',
+    target: graph.nodes[1].id,
+    targetHandle: 'prompt_input',
+  };
+  graph.edges.push(wire);
+  const whole = starter('WholePipeline');
+  whole.nodes[1].operation.operationId = 'diffusion.generate_image';
+  whole.nodes[1].operation.decomposition = 'pipeline';
+  whole.nodes[1].operation.nodeType = 'pipeline';
+  whole.nodes[1].operation.blockName = null;
+  whole.edges[0].target = 'diffusion.generate_image';
+  const changed = authoring.planOperationChange(graph, graph.nodes[0].id, whole);
+  assert.equal(changed.graph.edges.find((edge) => edge.id === wire.id).targetHandle, 'prompt');
+  const returned = authoring.planOperationChange(
+    JSON.parse(JSON.stringify(changed.graph)),
+    changed.graph.nodes[0].id,
+    native,
+  );
+  assert.deepEqual(
+    returned.graph.edges.find((edge) => edge.id === wire.id),
+    wire,
+  );
+  assert.equal(returned.graph.nodes.find((node) => node.id === wire.target).data.params.prompt.isInput, false);
+});
+
+test('matching guidance labels do not establish cross-family guidance semantics', () => {
+  const source = starter();
+  const target = starter('DistilledPipeline');
+  for (const item of [source, target]) {
+    item.nodes[1].node.params.guidance_scale = { type: 'float', display: 'number', value: 3.5 };
+    item.nodes[1].operation.ports.push({
+      ...item.nodes[1].operation.ports.find((port) => port.name === 'steps'),
+      name: 'guidance_scale',
+      semanticName: 'guidance_scale',
+      types: ['float'],
+    });
+  }
+  const graph = authoring.createOperationStarter(source, { x: 0, y: 0 });
+  graph.nodes[1].data.params.guidance_scale.value = 7;
+  const result = authoring.planOperationChange(graph, graph.nodes[0].id, target);
+  const stage = result.graph.nodes.find((node) => node.data.action === 'Denoise');
+  assert.equal(stage.data.params.guidance_scale.value, 3.5);
+  assert.ok(
+    stage.data.operationAuthoring.retained.some((field) => field.field === 'guidance_scale' && field.value === 7),
+  );
 });
 
 test('model grouping keeps exact backend routes available without duplicate repository rows', () => {

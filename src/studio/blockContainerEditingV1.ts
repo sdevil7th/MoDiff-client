@@ -22,6 +22,8 @@ import {
   setBlockInstanceValueV2,
 } from './blockRuntimeV2';
 import { sharedOperationInput } from '../workflow/operationSharedInputs';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import type { NodeData } from '../stores/useNodeStore';
 
 function sameBindings(
   a: { binding: unknown; mirrorBindings?: unknown },
@@ -210,14 +212,30 @@ function setBlockFieldValuesV1(
   if (!directTargets.length) return instance;
   const graph = structuredClone(instance.effectiveGraph);
   for (const { nodeId, fieldId } of directTargets) {
-    const field = blockContainerFieldV1(
-      graph.nodes.find((node) => node.nodeId === nodeId),
-      fieldId,
-    );
+    const node = graph.nodes.find((node) => node.nodeId === nodeId);
+    const field = blockContainerFieldV1(node, fieldId);
     if (!field) throw new Error('An internal control target no longer exists.');
     if (field.disabled) throw new Error(`Cannot change disabled internal field ${nodeId}.${fieldId}.`);
     if (value === undefined) delete field.value;
     else field.value = structuredClone(value);
+    if (node) {
+      const hint = operationAuthoring({
+        id: nodeId,
+        type: 'custom',
+        data: node.data as unknown as NodeData,
+        position: { x: 0, y: 0 },
+      });
+      if (hint)
+        node.data.operationAuthoring = JSON.parse(
+          JSON.stringify({
+            ...hint,
+            authored:
+              value === undefined
+                ? (hint.authored ?? []).filter((name) => name !== fieldId)
+                : [...new Set([...(hint.authored ?? []), fieldId])],
+          }),
+        );
+    }
   }
   return replaceBlockEffectiveGraphV2(instance, graph);
 }

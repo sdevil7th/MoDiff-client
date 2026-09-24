@@ -117,6 +117,7 @@ function adaptDerivedOperationInterface(
       owned.length === bindings.length &&
       generated &&
       !control.sealed &&
+      !Object.prototype.hasOwnProperty.call(original.values, control.controlId) &&
       deepEqual(currentValue, control.defaultValue) &&
       !operationBindingHasOutsideWire(graph, blockId, control.controlId, bindings)
     ) {
@@ -154,13 +155,37 @@ export function planBlockOperationChange(
     throw new Error('Wait for this Block to finish before changing its model or task.');
   const internal: OperationGraph = {
     nodes: original.effectiveGraph.nodes.map((node): CustomNodeType => {
-      const data = structuredClone(node.data) as NodeData;
+      const data = structuredClone(node.data) as unknown as NodeData;
       data.params = Object.fromEntries(
         Object.entries(data.params ?? {}).map(([field, param]) => [
           field,
           { ...param, value: blockContainerFieldValueV1(original, node.nodeId, field) },
         ]),
       );
+      if (data.operationAuthoring) {
+        const explicit = [
+          ...original.effectiveInterface.controls.flatMap((control) =>
+            Object.prototype.hasOwnProperty.call(original.values, control.controlId)
+              ? blockContainerControlTargetsV1(control).map((binding) => ({
+                  nodeId: binding.nodeId,
+                  fieldId: binding.fieldId,
+                }))
+              : [],
+          ),
+          ...original.effectiveInterface.boundary.inputs.flatMap((port) =>
+            Object.prototype.hasOwnProperty.call(original.values, port.portId)
+              ? blockInputPortBindingsV2(port).map((binding) => ({
+                  nodeId: binding.nodeId,
+                  fieldId: binding.fieldOrPortId,
+                }))
+              : [],
+          ),
+        ].filter((binding) => binding.nodeId === node.nodeId);
+        if (explicit.length)
+          data.operationAuthoring.authored = [
+            ...new Set([...(data.operationAuthoring.authored ?? []), ...explicit.map((binding) => binding.fieldId)]),
+          ];
+      }
       return {
         id: node.nodeId,
         type: runtimeNodeType(node),

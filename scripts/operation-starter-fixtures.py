@@ -17,6 +17,7 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
     from modules import MODULE_MAP
     assert not any(key.startswith("custom.") for key in MODULE_MAP)
     from modiff.operation_catalog import build_operation_catalog
+    from modiff.operation_contracts import operation_owns_model
     from modiff.operation_starters import resolve_operation_starter
     from modiff.server import WebServer
 
@@ -38,7 +39,10 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
             ("StableDiffusionXLModularPipeline", "inpaint"),
             ("QwenImageEditPlusModularPipeline", "multi_image_reference_edit"),
         )
-        if "--all" in sys.argv:
+        if "--all-models" in sys.argv:
+            selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
+                                 and operation_owns_model(c)})
+        elif "--all" in sys.argv:
             selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
                                  and (c["nodeKey"].startswith("modules.ModularDiffusers.")
                                       or c["decomposition"] == "integrated")})

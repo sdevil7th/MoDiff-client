@@ -6,7 +6,7 @@ import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
-import { matchingNodeHandleForDrop } from './nodeConnectionMatching';
+import { matchingNodeHandleForDrop, nodeConnectionSemanticsAreCompatible } from './nodeConnectionMatching';
 import { useFlowStore } from '../stores/useFlowStore';
 import {
   captureWorkflowOperationContext,
@@ -58,6 +58,7 @@ export function workflowConnectionParam<K extends keyof NodeParams>(
 
 export type DropHandle = {
   nodeId: string;
+  node: CustomNodeType['data'];
   handleId: string;
   handleType: 'source' | 'target' | null;
   dataType: string | string[] | null;
@@ -73,6 +74,7 @@ export function captureWorkflowDropHandle(
   if (!node || !handleId || (!param && !dataType)) return null;
   return {
     nodeId: node.id,
+    node: node.data,
     handleId,
     handleType,
     dataType: dataType ?? param?.type ?? null,
@@ -94,6 +96,20 @@ function pointerPosition(event: MouseEvent | TouchEvent) {
     top: 'touches' in event ? (event.touches[0]?.clientY ?? 0) : event.clientY,
     left: 'touches' in event ? (event.touches[0]?.clientX ?? 0) : event.clientX,
   };
+}
+
+function graphConnectionSemanticsAreCompatible(
+  sourceId: string,
+  sourceHandle: string,
+  targetId: string,
+  targetHandle: string,
+) {
+  const nodes = useFlowStore.getState().nodes;
+  const source = nodes.find((node) => node.id === sourceId);
+  const target = nodes.find((node) => node.id === targetId);
+  return (
+    !source || !target || nodeConnectionSemanticsAreCompatible(source.data, sourceHandle, target.data, targetHandle)
+  );
 }
 
 export function useWorkflowConnections({
@@ -141,7 +157,12 @@ export function useWorkflowConnections({
         if (signal.aborted) return;
         assertWorkflowOperationContext(context, { includeForm: false });
         const matchingHandle = dropHandle
-          ? matchingNodeHandleForDrop(newNode.data, dropHandle.dataType, dropHandle.handleType)
+          ? matchingNodeHandleForDrop(
+              newNode.data,
+              dropHandle.dataType,
+              dropHandle.handleType,
+              dropHandle.handleType ? { node: dropHandle.node, handleId: dropHandle.handleId } : null,
+            )
           : undefined;
         if (dropHandle && !matchingHandle) throw new Error('This node no longer has a compatible port.');
         let connection: CustomConnection | undefined;
@@ -192,7 +213,8 @@ export function useWorkflowConnections({
 
       const sourceType = getParam(conn.source, conn.sourceHandle, 'type') || 'default';
       const targetType = getParam(conn.target, conn.targetHandle, 'type') || 'default';
-      return connectionTypesAreCompatible(sourceType, targetType);
+      if (!connectionTypesAreCompatible(sourceType, targetType)) return false;
+      return graphConnectionSemanticsAreCompatible(conn.source, conn.sourceHandle, conn.target, conn.targetHandle);
     },
     [connectionScopeIsValid, getParam],
   );
@@ -289,6 +311,10 @@ export function useWorkflowConnections({
         return false;
       }
 
+      if (!graphConnectionSemanticsAreCompatible(conn.fromNode.id, conn.fromHandle.id, nodeId, fieldKey)) {
+        return false;
+      }
+
       if (
         connectionScopeIsValid &&
         !connectionScopeIsValid({
@@ -369,5 +395,6 @@ export function useWorkflowConnections({
     isConnectionValid,
     nodeSearchDataType: dropHandleRef.current?.dataType ?? undefined,
     nodeSearchHandleType: dropHandleRef.current?.handleType,
+    nodeSearchOrigin: dropHandleRef.current ?? undefined,
   };
 }

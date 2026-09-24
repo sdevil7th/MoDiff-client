@@ -283,6 +283,10 @@ export function adoptManagedWorkflowGraph(
   form: StudioFormState,
 ): ManagedWorkflowAdoption | null {
   const nodes = nodesInput.filter(isNodeLike) as CustomNodeType[];
+  // Explicit operation authoring is already a workflow-owned graph. Its shape
+  // may resemble a legacy template, but saving must not adopt its controls,
+  // reset its memory policy, or grant Studio authority over later model edits.
+  if (nodes.some((node) => node.data.operationAuthoring || node.data.blockInstanceV2)) return null;
   if (nodes.length !== nodesInput.length || nodes.some((node) => typeof node.id !== 'string' || !node.id)) {
     return null;
   }

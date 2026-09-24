@@ -22,6 +22,8 @@ import {
 } from '../studio/blockRuntimeV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { decorateConnectionEdge, decorateConnectionEdges } from '../theme/connectionTypes';
+import { enqueueSnackbar } from '../ui/snackbar';
+import { nodeConnectionSemanticsAreCompatible } from '../workflow/nodeConnectionMatching';
 import type { CustomConnection, CustomNodeType, FlowStore } from './useFlowStore';
 
 type FlowStoreSet = (
@@ -470,6 +472,7 @@ export function handleConnect(conn: CustomConnection, set: FlowStoreSet, get: Fl
     sourceParam.display !== 'output' ||
     (targetParam.display !== 'input' && !targetParam.isInput) ||
     !connectionTypesAreCompatible(sourceParam.type, targetParam.type) ||
+    !nodeConnectionSemanticsAreCompatible(sourceNode.data, conn.sourceHandle, targetNode.data, conn.targetHandle) ||
     !blockV2ConnectionScopeIsAllowed(get().nodes, conn.source, conn.target)
   ) {
     return;
@@ -540,6 +543,7 @@ export function handleReconnect(oldEdge: Edge, conn: Connection, set: FlowStoreS
     sourceParam.display !== 'output' ||
     (targetParam.display !== 'input' && !targetParam.isInput) ||
     !connectionTypesAreCompatible(sourceParam.type, targetParam.type) ||
+    !nodeConnectionSemanticsAreCompatible(sourceNode.data, conn.sourceHandle, targetNode.data, conn.targetHandle) ||
     !blockV2ConnectionScopeIsAllowed(get().nodes, conn.source, conn.target)
   )
     throw new Error(
@@ -671,7 +675,25 @@ export function handleReconnect(oldEdge: Edge, conn: Connection, set: FlowStoreS
 }
 
 export function updateSignalsForEdges(edges: Edge | Edge[], get: FlowStoreGet) {
-  const edgesArray = toArray(edges);
+  let edgesArray = toArray(edges);
+  const currentEdgeIds = new Set(get().edges.map(({ id }) => id));
+  const incompatibleIds = new Set(
+    edgesArray.flatMap((edge) => {
+      if (!currentEdgeIds.has(edge.id) || !edge.sourceHandle || !edge.targetHandle) return [];
+      const sourceNode = get().nodes.find((node) => node.id === edge.source);
+      const targetNode = get().nodes.find((node) => node.id === edge.target);
+      return sourceNode &&
+        targetNode &&
+        !nodeConnectionSemanticsAreCompatible(sourceNode.data, edge.sourceHandle, targetNode.data, edge.targetHandle)
+        ? [edge.id]
+        : [];
+    }),
+  );
+  if (incompatibleIds.size) {
+    get().onEdgesChange([...incompatibleIds].map((id) => ({ id, type: 'remove' })));
+    enqueueSnackbar('Disconnected unsupported model component link.', { variant: 'warning' });
+    edgesArray = edgesArray.filter(({ id }) => !incompatibleIds.has(id));
+  }
 
   edgesArray.forEach((edge) => {
     const sourceHandle = edge.sourceHandle;

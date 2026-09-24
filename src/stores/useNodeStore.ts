@@ -193,6 +193,13 @@ export type NodeParams = {
   step?: number;
   onChange?: unknown;
   onSignal?: unknown;
+  connectionRole?: string;
+  signalCompatibility?: {
+    required?: boolean;
+    values?: Record<string, unknown>;
+    action?: string;
+    role?: string | string[];
+  };
   signal?: NodeParamSignal;
   dataSource?: string;
   fieldOptions?: Record<string, unknown>;

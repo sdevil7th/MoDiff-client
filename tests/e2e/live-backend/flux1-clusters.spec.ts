@@ -2675,12 +2675,12 @@ test('live Wan 2.2 TI2V 5B Cluster generates a reviewable continuous-motion show
   }
 });
 
-test('live ERNIE Image Cluster persists, expands equivalently, and generates through its reviewed Diffusers executor', async ({
+test('live ERNIE Image Cluster persists, expands natively, and generates through official Modular blocks', async ({
   page,
 }) => {
   test.skip(
     process.env.MODIFF_RUN_ERNIE_IMAGE_CLUSTER !== '1',
-    'The cached ERNIE Image equivalent-standard Cluster qualification must be selected explicitly.',
+    'The cached ERNIE Image native Modular Cluster qualification must be selected explicitly.',
   );
   test.setTimeout(2 * 60 * 60 * 1000);
   const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
@@ -2717,17 +2717,10 @@ test('live ERNIE Image Cluster persists, expands equivalently, and generates thr
       prompt: 'Technical ERNIE Cluster proof: a tiny brass observatory under a clear night sky.',
       seed: 54001,
       guidanceScale: 1,
-      blockPlacementCount: 9,
+      blockPlacementCount: 10,
       width: 1024,
       height: 1024,
       steps: 1,
-      standardExecutor: {
-        role: 'diffusersImagePipeline',
-        module: 'modules.DiffusersImage',
-        action: 'LoadPipeline',
-        pipelineClass: 'ErnieImagePipeline',
-        executionProfileId: 'ernie-image:equivalent-standard',
-      },
     },
     evidenceRoot,
   );

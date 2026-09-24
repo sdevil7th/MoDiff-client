@@ -1680,12 +1680,14 @@ test('V2 public sockets connect in both directions without mirroring connector s
   const outboundDrop = workflowConnections.captureWorkflowDropHandle(block, 'image', 'source');
   assert.deepEqual(inboundDrop, {
     nodeId: block.id,
+    node: block.data,
     handleId: 'prompt',
     handleType: 'target',
     dataType: 'string',
   });
   assert.deepEqual(outboundDrop, {
     nodeId: block.id,
+    node: block.data,
     handleId: 'image',
     handleType: 'source',
     dataType: 'image',

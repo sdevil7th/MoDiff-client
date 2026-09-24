@@ -1747,14 +1747,14 @@ export const useFlowStore = create<FlowStore>()(
           key === undefined || key === 'value' ? sharedOperationInput(get().nodes, get().edges, id, param) : null;
         if (shared) {
           get().withHistory(`Edit shared ${shared.name}`, () => {
-            for (const member of shared.members) writeNodeParam(member.node.id, member.field, value, key, set);
+            for (const member of shared.members) writeNodeParam(member.node.id, member.field, value, key, set, true);
           });
           return;
         }
         if (key && ['disabled', 'hidden', 'isConnected', 'isInput', 'signal'].includes(key)) {
           writeNodeParam(id, param, value, key, set);
         } else {
-          get().withHistory('Edit node parameter', () => writeNodeParam(id, param, value, key, set));
+          get().withHistory('Edit node parameter', () => writeNodeParam(id, param, value, key, set, true));
         }
         if (key === 'type') {
           get().refreshConnectionVisuals();

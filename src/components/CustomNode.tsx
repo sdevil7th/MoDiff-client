@@ -423,6 +423,11 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
                 nodeId={node.id}
                 params={node.data.params}
                 updateStore={handleUpdateStore}
+                updateFieldActionStore={
+                  node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+                    ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+                    : undefined
+                }
                 module={node.data.module || ''}
                 action={node.data.action || ''}
                 mode="controls"
@@ -512,6 +517,11 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           nodeId={node.id}
           params={node.data.params}
           updateStore={handleUpdateStore}
+          updateFieldActionStore={
+            node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+              ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+              : undefined
+          }
           module={node.data.module || ''}
           action={node.data.action || ''}
           mode="connectors"

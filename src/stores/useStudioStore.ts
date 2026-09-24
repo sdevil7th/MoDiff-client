@@ -586,7 +586,7 @@ function normalizeWorkflowSnapshot(
     // Legacy template inference must never reinterpret, rebuild, or remove
     // registered/User Block roots merely because their internal actions look
     // like one managed task graph.
-    !nodes.some((node) => Boolean(node.data.blockInstanceV2)) &&
+    !nodes.some((node) => Boolean(node.data.blockInstanceV2 || node.data.operationAuthoring)) &&
     (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
   const inferredManagedForm = shouldRecoverManagedIdentity
     ? resolveStudioResourceForm(inferStudioFormFromWorkflow(nodes, persistedStudioForm))

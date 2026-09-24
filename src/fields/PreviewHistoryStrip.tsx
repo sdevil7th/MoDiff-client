@@ -8,8 +8,6 @@ export type PreviewHistoryStripProps = {
   nodeId: string;
   fieldKey: string;
   currentUrls?: string[];
-  onSelectImage?: (url: string) => void;
-  selectedUrl?: string | null;
   audioDownloadSampleRate?: number | null;
 };
 
@@ -17,8 +15,6 @@ export function PreviewHistoryStrip({
   nodeId,
   fieldKey,
   currentUrls = [],
-  onSelectImage,
-  selectedUrl,
   audioDownloadSampleRate,
 }: PreviewHistoryStripProps) {
   const outputs = useStudioStore((state) => state.outputs);
@@ -55,12 +51,7 @@ export function PreviewHistoryStrip({
         </p>
       }
     >
-      <Content
-        history={history}
-        onSelectImage={onSelectImage}
-        selectedUrl={selectedUrl}
-        audioDownloadSampleRate={audioDownloadSampleRate}
-      />
+      <Content history={history} audioDownloadSampleRate={audioDownloadSampleRate} />
     </Suspense>
   );
 }

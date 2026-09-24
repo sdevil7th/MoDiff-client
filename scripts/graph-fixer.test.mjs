@@ -511,6 +511,99 @@ test('ranks a typed bridge for an incompatible connection', () => {
   );
 });
 
+test('Fix uses the same text aliases as a custom prompt wire on the canvas', () => {
+  for (const type of ['str', 'string', 'text']) {
+    const source = node(
+      'prompt',
+      definition('custom.Prompt', 'Make', 'Prompt', {
+        prompt: { display: 'output', type },
+      }),
+    );
+    const target = node(
+      'preview',
+      definition('modules.Text', 'Preview', 'Preview text', {
+        prompt: { display: 'input', type: 'text', required: true },
+      }),
+    );
+    const context = {
+      nodes: [source, target],
+      edges: [edge('prompt', 'prompt', 'prompt', 'preview', 'prompt')],
+      registry: {},
+    };
+    assert.equal(graphFixer.buildGraphFixPlan(context).issues.length, 0);
+  }
+});
+
+test('Fix rejects known incompatible component roles both in suggestions and at materialization', () => {
+  const source = node(
+    'source',
+    definition('modules.Test', 'Load', 'Load video VAE', {
+      vae: { display: 'output', type: 'model', connectionRole: 'video_vae' },
+    }),
+  );
+  const target = node(
+    'preview',
+    definition('modules.Test', 'Preview', 'Preview image', {
+      vae: { display: 'input', type: 'model', required: true, signalCompatibility: { role: 'image_vae' } },
+    }),
+  );
+  const context = { nodes: [source, target], edges: [], registry: {} };
+  const suggestions = graphFixer.buildGraphFixPlan(context).issues.flatMap((issue) => issue.candidates);
+  assert.ok(!suggestions.some((candidate) => candidate.operations.some((op) => op.kind === 'connect')));
+  const wrong = graphFixer.buildGraphFixPlan({ ...context, edges: [edge('wrong', 'source', 'vae', 'preview', 'vae')] });
+  assert.match(wrong.issues.find((issue) => issue.kind === 'type_mismatch').description, /capabilities/);
+  assert.throws(
+    () =>
+      graphFixer.materializeGraphFixes(context, [
+        {
+          operations: [
+            {
+              kind: 'connect',
+              source: { nodeId: 'source', handle: 'vae' },
+              target: { nodeId: 'preview', handle: 'vae' },
+            },
+          ],
+        },
+      ]),
+    /capabilities/,
+  );
+});
+
+test('large generated interfaces do not expand every input/output pair for bridge suggestions', () => {
+  const source = node('source', imageSource);
+  const preview = node(
+    'preview',
+    definition('modules.Video', 'Preview', 'Preview video', {
+      video: { display: 'input', type: 'video', required: true },
+    }),
+  );
+  let typeReads = 0;
+  const params = {};
+  for (let index = 0; index < 1500; index++) {
+    for (const display of ['input', 'output']) {
+      params[`${display}${index}`] = {
+        display,
+        get type() {
+          typeReads++;
+          return display === 'input' ? 'image' : 'video';
+        },
+      };
+    }
+  }
+  const plan = graphFixer.buildGraphFixPlan({
+    nodes: [source, preview],
+    edges: [edge('wrong', 'source', 'image', 'preview', 'video')],
+    registry: { 'modules.Test.Wide': definition('modules.Test', 'Wide', 'Wide converter', params) },
+  });
+  const mismatch = plan.issues.find((issue) => issue.kind === 'type_mismatch');
+  assert.equal(mismatch.candidates.length, 3);
+  assert.deepEqual(
+    mismatch.candidates.map((candidate) => candidate.operations[3].source.handle),
+    ['output0', 'output1', 'output2'],
+  );
+  assert.ok(typeReads < 100_000, `Port reads must stay linear, got ${typeReads}.`);
+});
+
 test('routes missing models to the chooser without mutating the graph', () => {
   const source = node('source', imageSource);
   const preview = node('preview', imagePreview, 300, 0);

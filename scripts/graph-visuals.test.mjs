@@ -789,6 +789,23 @@ test('graph fields and overlays use graph-safe controls without losing specializ
   assert.match(workflow, /connectionColor\(connectionDataType\)/);
 });
 
+test('workflow dirty state uses an overlaid marker that never changes tab title width', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'components', 'WorkflowTabsBar.tsx'), 'utf8');
+  assert.match(source, /aria-label=\{`\$\{tab\.title\}\$\{tab\.dirty \? ' \(unsaved changes\)' : ''\}`\}/);
+  assert.match(source, /absolute left-0 top-1\/2/);
+  assert.match(source, /tab\.dirty \? 'opacity-100' : 'opacity-0'/);
+  assert.doesNotMatch(source, /\{tab\.dirty \? '\* ' : ''\}/);
+});
+
+test('opening preview history is read-only and cannot replace the latest node image', () => {
+  const imageField = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'UIImageField.tsx'), 'utf8');
+  const historyStrip = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'PreviewHistoryStripContent.tsx'), 'utf8');
+  assert.doesNotMatch(imageField, /selectedAfterUrl|onSelectImage/);
+  assert.match(imageField, /const displayImages = images/);
+  assert.doesNotMatch(historyStrip, /onSelectImage|selectedUrl/);
+  assert.match(historyStrip, /onClick=\{\(\) => openOutput\(output\)\}/);
+});
+
 test('layered layout is deterministic, separates ranks, and avoids sibling overlap', () => {
   const nodes = [node('a'), node('b'), node('c'), node('side')];
   const edges = [edge('ab', 'a', 'b'), edge('bc', 'b', 'c'), edge('aside', 'a', 'side')];

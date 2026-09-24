@@ -101,6 +101,71 @@ function cacheRequests() {
   return requests.filter((request) => request.url.endsWith('/cache') && request.init.method === 'DELETE');
 }
 
+test('connection mutations enforce signal-driven component compatibility', () => {
+  const schedulerOutput = (modelType) => ({
+    scheduler: {
+      display: 'output',
+      type: 'diffusers_auto_model',
+      connectionRole: 'scheduler',
+      signal: { direction: 'output', value: modelType },
+    },
+  });
+  const target = node('scheduler-modifier', {
+    scheduler_in: {
+      display: 'input',
+      type: 'diffusers_auto_model',
+      onSignal: {
+        action: 'value',
+        target: 'scheduler',
+        prop: 'options',
+        data: { StableDiffusionXLModularPipeline: ['EulerDiscreteScheduler'] },
+      },
+      signalCompatibility: {
+        required: true,
+        role: 'scheduler',
+        values: { StableDiffusionXLModularPipeline: ['EulerDiscreteScheduler'] },
+      },
+    },
+    scheduler: { type: 'string', value: 'EulerDiscreteScheduler' },
+  });
+  const incompatible = node('z-image-loader', schedulerOutput('ZImageModularPipeline'));
+  const compatible = node('sdxl-loader', schedulerOutput('StableDiffusionXLModularPipeline'));
+  const wrongRole = node('sdxl-unet-loader', {
+    scheduler: {
+      ...schedulerOutput('StableDiffusionXLModularPipeline').scheduler,
+      connectionRole: 'denoiser',
+    },
+  });
+  const connection = (source) => ({
+    source,
+    sourceHandle: 'scheduler',
+    target: target.id,
+    targetHandle: 'scheduler_in',
+  });
+
+  flowStoreModule.useFlowStore.setState({ nodes: [incompatible, compatible, wrongRole, target], edges: [] });
+  flowStoreModule.useFlowStore.getState().onConnect(connection(incompatible.id));
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+  flowStoreModule.useFlowStore.getState().onConnect(connection(wrongRole.id));
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+
+  flowStoreModule.useFlowStore.getState().onConnect(connection(compatible.id));
+  const existing = flowStoreModule.useFlowStore.getState().edges[0];
+  assert.equal(existing.source, compatible.id);
+  assert.throws(
+    () => flowStoreModule.useFlowStore.getState().onReconnect(existing, connection(incompatible.id)),
+    /missing, incompatible, or cross a Block boundary/,
+  );
+  assert.equal(flowStoreModule.useFlowStore.getState().edges[0].source, compatible.id);
+
+  flowStoreModule.useFlowStore
+    .getState()
+    .setParam(compatible.id, 'scheduler', { direction: 'output', value: 'ZImageModularPipeline' }, 'signal');
+  flowStoreModule.useFlowStore.getState().updateSignalValues(flowStoreModule.useFlowStore.getState().edges);
+  assert.equal(flowStoreModule.useFlowStore.getState().edges.length, 0);
+  assert.equal(snackbarModule.getToastItems().at(-1)?.message, 'Disconnected unsupported model component link.');
+});
+
 function blockV2DeletionFixture(instanceId = 'block-v2-delete') {
   const semanticGraph = {
     nodes: [

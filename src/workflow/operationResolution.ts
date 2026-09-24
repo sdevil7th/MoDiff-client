@@ -2,7 +2,7 @@ import config from '../../app.config';
 import { isRecord, parseNodesResponse, payloadRecord, type NodeData } from '../stores/useNodeStore';
 import { requestJson } from '../utils/requestJson';
 import { deepEqual } from '../utils/deepEqual';
-import { identifier, parseOperationContracts, type OperationContract } from './operationContracts';
+import { boundedText, identifier, parseOperationContracts, type OperationContract } from './operationContracts';
 
 /** Resolve metadata lazily; insertion still uses the ordinary node factory. */
 export async function resolveOperation(operation: OperationContract, signal?: AbortSignal): Promise<NodeData> {
@@ -45,8 +45,20 @@ export function parseResolvedOperation(value: unknown, operation: OperationContr
   )
     throw new Error('Invalid resolved node schema.');
   for (const [name, field] of Object.entries(node.params)) {
-    identifier(name);
     if (!isRecord(field)) throw new Error('Invalid resolved node field.');
+    if (field.display === 'layerconfig') {
+      // Dynamic layer controls use declared module paths, including numeric
+      // indices. They are configuration fields, not operation port identifiers.
+      boundedText(name, 256);
+      for (const segment of name.split('.')) if (!/^\d+$/u.test(segment)) identifier(segment);
+      const declared = Object.values(node.params).some(
+        (selector) =>
+          selector.display === 'select' &&
+          Array.isArray(selector.options) &&
+          selector.options.some((option) => (isRecord(option) ? option.value : option) === name),
+      );
+      if (!declared) throw new Error('The resolved layer field is not a declared option.');
+    } else identifier(name);
   }
   if (
     `${node.module}.${node.action}` !== key ||

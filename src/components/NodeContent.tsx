@@ -25,6 +25,7 @@ import { EncodeImageSummary } from './EncodeImageSummary';
 import { blockControlConnectionNotesV2 } from '../studio/blockControlConnectionsV2';
 import { FieldFrame } from '../ui/FieldFrame';
 import { PreviewEmptyState } from '../ui/PreviewFrame';
+import { operationOwnsModel } from '../workflow/operationContracts';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -211,7 +212,14 @@ const NodeContent = memo(function NodeContent({
     const connectionType = data.type || 'string';
     const options = liveFieldOptions(module, key, display, data.options || []);
     const fieldType = getFieldType(display, dataType, options);
-    const hidden = data.hidden || false;
+    // A managed model choice already resolves the repository, implementation
+    // route and pipeline class atomically. Keep model_type in the persisted
+    // execution contract, but do not offer it as a second, conflicting choice.
+    // Raw implementation nodes have no operation owner and retain the field for
+    // low-level/custom contract authoring.
+    const derivedPipelineType =
+      key === 'model_type' && operationOwnsModel(graphNode?.data.operationAuthoring?.operation);
+    const hidden = Boolean(data.hidden || derivedPipelineType);
     const configuredValue = data.value ?? data.default;
     const fileBackedLoaderPreview =
       (fieldType === 'ui_audio' || fieldType === 'ui_video') &&

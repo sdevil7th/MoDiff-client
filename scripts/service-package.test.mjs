@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { createServer } from 'vite';
+import { createServer, loadConfigFromFile } from 'vite';
 
 let server, service;
 before(async () => {
@@ -17,6 +17,14 @@ before(async () => {
 after(async () => {
   await server?.close();
   delete globalThis.window;
+});
+
+test('development service export uses the same backend proxy as ordinary graph execution', async () => {
+  const loaded = await loadConfigFromFile({ command: 'serve', mode: 'development' });
+  assert.ok(loaded);
+  const proxy = loaded.config.server.proxy;
+  assert.deepEqual(proxy['/service_package'], proxy['/graph']);
+  assert.equal(typeof proxy['/service_package'].target, 'string');
 });
 
 test('named bindings keep exact lowered graph identities and reject duplicate names', () => {

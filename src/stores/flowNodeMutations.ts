@@ -17,6 +17,7 @@ import {
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 import { collapsedUserBlockFieldTarget } from '../studio/userBlocks';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -68,6 +69,7 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
   value: NodeParams[K],
   key: K | undefined,
   set: FlowStoreSet,
+  authored = false,
 ) {
   const paramKey = (key ?? 'value') as keyof NodeParams;
   set((state) => {
@@ -86,7 +88,9 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
       return state;
     }
     const currentValue = node.data.params[targetParam]?.[paramKey];
-    if (deepEqual(currentValue, value)) {
+    const hint = authored && paramKey === 'value' ? operationAuthoring(node) : null;
+    const markAuthored = hint && !hint.authored?.includes(targetParam);
+    if (deepEqual(currentValue, value) && !markAuthored) {
       return state;
     }
 
@@ -97,6 +101,9 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
               ...item,
               data: {
                 ...item.data,
+                ...(markAuthored
+                  ? { operationAuthoring: { ...hint, authored: [...(hint.authored ?? []), targetParam] } }
+                  : {}),
                 params: {
                   ...item.data.params,
                   [targetParam]: {

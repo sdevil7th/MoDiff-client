@@ -361,7 +361,11 @@ export default async function fieldAction(
 
       queueMicrotask(() => {
         if (!isCurrent()) return;
-        props.updateStore(targetField, targetIsMultiple ? filterValue : (filterValue[0] ?? ''), 'value');
+        props.updateStore(
+          targetField,
+          targetIsMultiple ? filterValue : (filterValue[0] ?? validOptions[0] ?? ''),
+          'value',
+        );
         // force a refresh by triggering the disabled state
         props.updateStore(targetField, false, 'disabled');
       });

@@ -32,15 +32,16 @@ export function planOwnerBlockOperationChange(
 ) {
   const prepared = prepareOperationBlockGraph(graph, blockId);
   const plan = planBlockOperationChange(prepared.graph, prepared.root.id, loaderId, starter, options);
+  const conversion = prepared.converted
+    ? ['Update this legacy workflow instance to the current editable Block format; Undo restores its original format.']
+    : [];
   return {
     ...plan,
-    diagnostics: [
-      ...plan.diagnostics,
-      ...(prepared.converted
-        ? [
-            'Update this legacy workflow instance to the current editable Block format; Undo restores its original format.',
-          ]
-        : []),
-    ],
+    diagnostics: [...plan.diagnostics, ...conversion],
+    review: {
+      ...plan.review,
+      attention: [...plan.review.attention, ...conversion],
+      required: plan.review.required || conversion.length > 0,
+    },
   };
 }

@@ -442,6 +442,7 @@ function Workflow() {
     isConnectionValid,
     nodeSearchDataType,
     nodeSearchHandleType,
+    nodeSearchOrigin,
   } = useWorkflowConnections({
     edgeType,
     getParam: getConnectionParam,
@@ -1253,6 +1254,7 @@ function Workflow() {
             nodes={nodesRegistry}
             dataType={nodeSearchDataType}
             handleType={nodeSearchHandleType}
+            origin={nodeSearchOrigin}
           />
         </Suspense>
       ) : null}

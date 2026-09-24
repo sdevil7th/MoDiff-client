@@ -3,6 +3,8 @@ import { connectBlockInternalGraphV2, removeBlockInternalGraphEdgesV2 } from '..
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { dataTypeClass } from '../utils/dataTypeCategory';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
+import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
+import { nodeConnectionSemanticsAreCompatible } from '../workflow/nodeConnectionMatching';
 import { createBlockRootNodeV2, expandBlockGraphV2ForExecution, replaceBlockEffectiveGraphV2 } from './blockRuntimeV2';
 import { repairBlockSeedBindingV2 } from './blockSeedRepairV2';
 import { repairBlockDerivedControlV2 } from './blockDerivedControlMutationV2';
@@ -99,9 +101,25 @@ export function materializeGraphFixes(
       } else if (operation.kind === 'connect') {
         const source = resolvedNodeId(operation.source.nodeId, refs);
         const target = resolvedNodeId(operation.target.nodeId, refs);
-        if (!nodes.some((node) => node.id === source) || !nodes.some((node) => node.id === target)) {
+        const sourceNode = nodes.find((node) => node.id === source);
+        const targetNode = nodes.find((node) => node.id === target);
+        if (!sourceNode || !targetNode) {
           throw new Error('A proposed connection references a node that no longer exists.');
         }
+        const sourceParam = nodeConnectorParam(sourceNode, operation.source.handle);
+        const targetParam = nodeConnectorParam(targetNode, operation.target.handle);
+        if (
+          !sourceParam ||
+          !targetParam ||
+          !connectionTypesAreCompatible(sourceParam.type, targetParam.type) ||
+          !nodeConnectionSemanticsAreCompatible(
+            sourceNode.data,
+            operation.source.handle,
+            targetNode.data,
+            operation.target.handle,
+          )
+        )
+          throw new Error('The proposed connection no longer satisfies the socket type or component capabilities.');
         if (nodes.some((node) => [source, target].includes(node.id) && node.data.blockProjectionOwnerId)) {
           const graph = connectBlockInternalGraphV2(
             { source, target, sourceHandle: operation.source.handle, targetHandle: operation.target.handle },
@@ -114,8 +132,6 @@ export function materializeGraphFixes(
           return;
         }
         edges = edges.filter((edge) => !(edge.target === target && edge.targetHandle === operation.target.handle));
-        const sourceNode = nodes.find((node) => node.id === source);
-        const sourceParam = nodeConnectorParam(sourceNode, operation.source.handle);
         edges.push({
           id: nanoid(),
           source,

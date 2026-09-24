@@ -1029,6 +1029,7 @@ test('option signal actions preserve single- and multi-select value shapes', asy
         ...node.data,
         params: {
           guider: { type: 'string', display: 'select', value: 'ClassifierFreeGuidance' },
+          scheduler: { type: 'string', display: 'select', value: 'EulerDiscreteScheduler' },
           blocks: {
             type: 'string',
             display: 'select',
@@ -1042,6 +1043,23 @@ test('option signal actions preserve single- and multi-select value shapes', asy
   const updateStore = (field, value, prop = 'value') =>
     flowStoreModule.useFlowStore.getState().setParam('preview', field, value, prop);
 
+  await fieldActionModule.default(
+    {
+      nodeId: 'preview',
+      fieldKey: 'contract',
+      module: 'modules.Contract',
+      action: 'DynamicOptions',
+      onSignal: {
+        action: 'value',
+        target: 'scheduler',
+        prop: 'options',
+        data: { ModelA: ['FlowMatchEulerDiscreteScheduler', 'DDIMScheduler'] },
+      },
+      updateStore,
+    },
+    'ModelA',
+    'onSignal',
+  );
   await fieldActionModule.default(
     {
       nodeId: 'preview',
@@ -1080,6 +1098,7 @@ test('option signal actions preserve single- and multi-select value shapes', asy
 
   const flow = flowStoreModule.useFlowStore.getState();
   assert.equal(flow.getParam('preview', 'guider', 'value'), 'ClassifierFreeGuidance');
+  assert.equal(flow.getParam('preview', 'scheduler', 'value'), 'FlowMatchEulerDiscreteScheduler');
   assert.deepEqual(flow.getParam('preview', 'blocks', 'value'), ['transformer_blocks']);
 });
 

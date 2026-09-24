@@ -14,12 +14,12 @@ const fixture = path.join(root, 'scripts/operation-starter-fixtures.py');
 const starters = JSON.parse(
   execFileSync(
     process.platform === 'win32' ? python : path.join(backend, 'scripts/with-runtime-env.sh'),
-    process.platform === 'win32' ? [fixture, '--all'] : [python, fixture, '--all'],
+    process.platform === 'win32' ? [fixture, '--all-models'] : [python, fixture, '--all-models'],
     { cwd: backend, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 },
   ),
 );
 
-test('every published Modular or integrated starter preserves its generic graph and unrelated diagnostics during a compatible change', async (t) => {
+test('every published model starter preserves its generic graph and unrelated diagnostics during a compatible change', async (t) => {
   const server = await createServer({
     root,
     configFile: false,
@@ -34,7 +34,7 @@ test('every published Modular or integrated starter preserves its generic graph 
     const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
     const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
     const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
-    assert.ok(starters.length >= 86);
+    assert.ok(starters.length >= 250);
     for (const starter of starters) {
       const label = `${starter.pipelineClass}/${starter.task}`;
       await t.test(label, async () => {
@@ -110,6 +110,176 @@ test('every published Modular or integrated starter preserves its generic graph 
         assert.deepEqual(canvas.nodes[0].data.blockInstanceV2, instance, label);
       });
     }
+  } finally {
+    await server.close();
+  }
+});
+
+test('every supported cross-model change uses readable review text and carries common authored prompts', async () => {
+  const server = await createServer({
+    root,
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+    appType: 'custom',
+  });
+  try {
+    const a = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
+    const { operationOwnsModel } = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+    let comparisons = 0;
+    for (const source of starters) {
+      for (const target of starters) {
+        if (source.task !== target.task || source.pipelineClass === target.pipelineClass) continue;
+        const graph = a.createOperationStarter(source, { x: 80, y: 100 });
+        const loader = graph.nodes.find((node) => operationOwnsModel(node.data.operationAuthoring.operation));
+        const sourcePrompt = graph.nodes.find(
+          (node) =>
+            node.data.params.prompt && !node.data.params.prompt.hidden && node.data.params.prompt.display !== 'output',
+        );
+        const targetPrompts = target.nodes.filter(
+          ({ node }) => node.params.prompt && !node.params.prompt.hidden && node.params.prompt.display !== 'output',
+        );
+        const authoredPrompt = `Cross-model prompt ${comparisons}`;
+        const testPromptMigration = Boolean(sourcePrompt && targetPrompts.length === 1);
+        if (testPromptMigration) sourcePrompt.data.params.prompt.value = authoredPrompt;
+        const original = structuredClone(graph);
+        const plan = a.planOperationChange(graph, loader.id, target, { replaceModel: true, baseline: source });
+        assert.deepEqual(graph, original, `${source.pipelineClass} -> ${target.pipelineClass} mutated its source`);
+        const text = JSON.stringify(plan.review);
+        for (const node of graph.nodes)
+          assert.equal(
+            text.includes(node.id),
+            false,
+            `${source.pipelineClass} -> ${target.pipelineClass} exposed internal node id ${node.id}`,
+          );
+        assert.deepEqual(
+          plan.diagnostics,
+          [],
+          `${source.pipelineClass} -> ${target.pipelineClass} reported a problem for a compatible default graph`,
+        );
+        if (testPromptMigration)
+          assert.ok(
+            plan.graph.nodes.some((node) => node.data.params.prompt?.value === authoredPrompt),
+            `${source.pipelineClass} -> ${target.pipelineClass} discarded the authored prompt`,
+          );
+        const sourceShape = source.nodes.some(({ operation }) =>
+          ['pipeline', 'integrated'].includes(operation.decomposition),
+        );
+        const targetShape = target.nodes.some(({ operation }) =>
+          ['pipeline', 'integrated'].includes(operation.decomposition),
+        );
+        if (sourceShape !== targetShape) {
+          assert.equal(plan.review.required, true);
+          assert.ok(plan.review.changes.some((message) => /because this model uses/u.test(message)));
+          assert.equal(
+            plan.graph.nodes.some((node) => node.data.uiState?.disabled && node.data.operationAuthoring),
+            false,
+            `${source.pipelineClass} -> ${target.pipelineClass} left obsolete managed nodes disabled`,
+          );
+        }
+        comparisons += 1;
+      }
+    }
+    assert.ok(comparisons >= 4_000, `Only ${comparisons} cross-model changes were checked`);
+  } finally {
+    await server.close();
+  }
+});
+
+test('modular image graph to GLM keeps authored controls, custom prompt wiring and preview wiring', async () => {
+  const server = await createServer({
+    root,
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+    appType: 'custom',
+  });
+  try {
+    const a = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
+    const source = starters.find(
+      (starter) => starter.pipelineClass === 'ZImageModularPipeline' && starter.task === 'text_to_image',
+    );
+    const target = starters.find(
+      (starter) => starter.pipelineClass === 'GlmImagePipeline' && starter.task === 'text_to_image',
+    );
+    assert.ok(source && target);
+    const graph = a.createOperationStarter(source, { x: 80, y: 100 });
+    const loader = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+    const encode = graph.nodes.find((node) => node.data.action === 'EncodePrompt');
+    const denoise = graph.nodes.find((node) => node.data.action === 'Denoise');
+    const decode = graph.nodes.find((node) => node.data.action === 'DecodeLatents');
+    encode.data.params.prompt.value = 'User-edited GLM migration prompt';
+    denoise.data.params.width.value = 768;
+    denoise.data.params.num_inference_steps.value = 19;
+    graph.nodes.push(
+      {
+        id: 'custom-prefix',
+        type: 'custom',
+        position: { x: -400, y: 0 },
+        data: {
+          label: 'Prompt Prefix',
+          module: 'custom.Test',
+          action: 'Prefix',
+          params: { result: { label: 'Prompt', type: 'string', display: 'output' } },
+        },
+      },
+      {
+        id: 'preview',
+        type: 'custom',
+        position: { x: 1600, y: 0 },
+        data: {
+          label: 'Preview Image',
+          module: 'modules.Image',
+          action: 'Preview',
+          params: { image: { label: 'Image', type: 'image', display: 'input' } },
+        },
+      },
+    );
+    graph.edges.push(
+      {
+        id: 'custom-prompt',
+        source: 'custom-prefix',
+        sourceHandle: 'result',
+        target: encode.id,
+        targetHandle: 'prompt_input',
+      },
+      {
+        id: 'preview-image',
+        source: decode.id,
+        sourceHandle: 'images',
+        target: 'preview',
+        targetHandle: 'image',
+      },
+    );
+    const plan = a.planOperationChange(graph, loader.id, target, {
+      replaceModel: true,
+      baseline: source,
+    });
+    assert.deepEqual(plan.diagnostics, []);
+    assert.equal(
+      plan.graph.nodes.some((node) => node.data.uiState?.disabled),
+      false,
+    );
+    const generate = plan.graph.nodes.find((node) => node.data.label === 'Generate Image');
+    assert.ok(generate);
+    assert.equal(generate.data.params.prompt.value, 'User-edited GLM migration prompt');
+    assert.equal(generate.data.params.width.value, 768);
+    assert.equal(generate.data.params.num_inference_steps.value, 19);
+    assert.ok(
+      plan.graph.edges.some(
+        (edge) => edge.source === 'custom-prefix' && edge.target === generate.id && edge.targetHandle === 'prompt',
+      ),
+    );
+    assert.ok(
+      plan.graph.edges.some(
+        (edge) => edge.source === generate.id && edge.sourceHandle === 'images' && edge.target === 'preview',
+      ),
+    );
+    assert.match(plan.review.changes.join(' '), /whole-pipeline nodes/u);
+    assert.match(plan.review.preserved.join(' '), /Width: 768/u);
+    assert.doesNotMatch(JSON.stringify(plan.review), /node-[A-Za-z0-9_-]+/u);
   } finally {
     await server.close();
   }

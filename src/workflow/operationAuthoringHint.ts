@@ -13,7 +13,42 @@ export function operationAuthoring(node: CustomNodeType): OperationAuthoring | n
     Array.isArray(hint.defaults) ||
     Object.keys(hint.defaults).length > 512 ||
     !Array.isArray(hint.retained) ||
-    hint.retained.length > 512
+    hint.retained.length > 512 ||
+    (hint.authored !== undefined &&
+      (!Array.isArray(hint.authored) ||
+        hint.authored.length > 512 ||
+        hint.authored.some((name) => typeof name !== 'string' || name.length > 128))) ||
+    (hint.inactiveDrafts !== undefined &&
+      (!Array.isArray(hint.inactiveDrafts) ||
+        hint.inactiveDrafts.length > 16 ||
+        hint.inactiveDrafts.some(
+          (draft) =>
+            !draft ||
+            typeof draft.routeKey !== 'string' ||
+            draft.routeKey.length > 4096 ||
+            !Array.isArray(draft.nodes) ||
+            draft.nodes.length > 64 ||
+            !Array.isArray(draft.edges) ||
+            draft.edges.length > 512 ||
+            draft.edges.some(
+              (edge) =>
+                !edge ||
+                typeof edge.id !== 'string' ||
+                typeof edge.source !== 'string' ||
+                typeof edge.target !== 'string' ||
+                (edge.sourceHandle != null && typeof edge.sourceHandle !== 'string') ||
+                (edge.targetHandle != null && typeof edge.targetHandle !== 'string'),
+            ) ||
+            draft.nodes.some(
+              (item) =>
+                !item?.data ||
+                typeof item.id !== 'string' ||
+                !Number.isFinite(item.position?.x) ||
+                !Number.isFinite(item.position?.y) ||
+                item.data.operationAuthoring?.inactiveDrafts !== undefined ||
+                !operationAuthoring(item),
+            ),
+        )))
   )
     return null;
   try {

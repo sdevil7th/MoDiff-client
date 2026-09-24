@@ -181,6 +181,7 @@ const backendProxyPaths = [
   '/health',
   '/model_capabilities',
   '/operations',
+  '/service_package',
   '/media',
   '/auto_resource',
   '/studio_outputs',

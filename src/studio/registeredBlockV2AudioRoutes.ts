@@ -71,8 +71,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:audio-continuation:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-dd097b5a',
-    compiledDefinitionCanonicalSha256: 'sha256:c875a80d3bc10104593ad893e594dfbdb53335f820abd4da22ef46617e61a930',
+    compiledDefinitionContentHash: 'block-definition-v2-a122f3ae',
+    compiledDefinitionCanonicalSha256: 'sha256:518e7bd06f19fa048bc80259489a6f297dfb75752626a750f617b42213f202a3',
     boundary: {
       inputs: [
         {
@@ -136,8 +136,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:audio-repaint:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-36d6114c',
-    compiledDefinitionCanonicalSha256: 'sha256:17cf1c6f886e231b0c3039f0e21df0ca4d9db38e0e1a969e9ee7fd87d56442ef',
+    compiledDefinitionContentHash: 'block-definition-v2-4aa91148',
+    compiledDefinitionCanonicalSha256: 'sha256:20cc7c0bfa6c2615425c88e764dc8bfd0ab8fb4206e9bad2f27cd7b37ac8590e',
     boundary: {
       inputs: [
         {
@@ -206,8 +206,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:audio-variation:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-881667f7',
-    compiledDefinitionCanonicalSha256: 'sha256:08f3e74ea8caf0001a353d580bb63c1216817c96db9cafc67a7baa0f3a51335e',
+    compiledDefinitionContentHash: 'block-definition-v2-605c81eb',
+    compiledDefinitionCanonicalSha256: 'sha256:b82bfab972e24e5e081efc39c141e48da7ceaf47193dfa3cdab2a01ec8748321',
     boundary: {
       inputs: [
         {
@@ -276,8 +276,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:text-to-audio:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-a4ce0dae',
-    compiledDefinitionCanonicalSha256: 'sha256:3d3b6aaeff2bcae357bae1e44aaf6cc14fb86471f470c7b3226980c4f30e458e',
+    compiledDefinitionContentHash: 'block-definition-v2-12928a8a',
+    compiledDefinitionCanonicalSha256: 'sha256:e4648f5fb334813a41b2a736ff2ab37d9bbc5efd9517d675a5d542f4434f1760',
     boundary: {
       inputs: [
         {
@@ -354,8 +354,8 @@ const SOUND_ROUTES = [
         valueSource: 'pipelineClass',
       },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-9a71aac1',
-    compiledDefinitionCanonicalSha256: 'sha256:ca580689fb270fd13c499874f2ce43504ed9537daf527d990174a56caef45686',
+    compiledDefinitionContentHash: 'block-definition-v2-ccbbada5',
+    compiledDefinitionCanonicalSha256: 'sha256:58b7b3f4300b7b598cbe2d8f289095ca7415ef0b6ab3da080f2d33d8447d3602',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -468,8 +468,8 @@ const SOUND_ROUTES = [
         valueSource: 'pipelineClass',
       },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-a7515dd7',
-    compiledDefinitionCanonicalSha256: 'sha256:ea061f24753b8dce7df881fe8db8a7deb5c62d8089bd7665928d9dc83a72f10c',
+    compiledDefinitionContentHash: 'block-definition-v2-d01a4269',
+    compiledDefinitionCanonicalSha256: 'sha256:7f790866397ef4fe361e88d19c9b30240a28755b6c65249bc3ed53ac7948e991',
     controlFanOuts: [
       {
         source: 'dtype',

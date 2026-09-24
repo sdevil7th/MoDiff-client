@@ -31,8 +31,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-32c6f302',
-    compiledDefinitionCanonicalSha256: 'sha256:5d045f6a6581c256bd64c7b710047e7e99ec84ce0bc4f16ba7431bcc97743315',
+    compiledDefinitionContentHash: 'block-definition-v2-48f0fcae',
+    compiledDefinitionCanonicalSha256: 'sha256:eba6e3ccda0d4e42df6f214a0f078ed69492d02353ab98ddca028562248495cf',
     controlFanOuts: [
       {
         source: 'seed',
@@ -79,8 +79,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-501ba106',
-    compiledDefinitionCanonicalSha256: 'sha256:52138f53ee99f860e726718e3c938aee1eafd22464bc60620951159ec8973975',
+    compiledDefinitionContentHash: 'block-definition-v2-a97bfafa',
+    compiledDefinitionCanonicalSha256: 'sha256:ad96a30d8be6fa26519349b74498da043fa142f56e9da98cb4425e247c2fd7f3',
     controlFanOuts: [
       {
         source: 'seed',
@@ -196,8 +196,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
         valueSource: 'pipelineClass',
       },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-b2b73014',
-    compiledDefinitionCanonicalSha256: 'sha256:b8a58dd1c3e62a1db4f75955ae30fc79935c1d0f2ee0d0ef40749e0297567318',
+    compiledDefinitionContentHash: 'block-definition-v2-b0311110',
+    compiledDefinitionCanonicalSha256: 'sha256:b1b0a142e3bf001147fb4efde116693512253124fa17c82c71059b9a9c7c4f71',
     controlFanOuts: [
       {
         source: 'seed',
@@ -239,8 +239,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     pipelineClass: 'Flux2ModularPipeline',
     workflowId: 'text2image',
     admissionId: 'diffusers.cluster-admission:Flux2ModularPipeline:text2image:mode:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-33022b68',
-    compiledDefinitionCanonicalSha256: 'sha256:7802d73473baaf29f695b1cd6ebb604dc8299072a7a5b694838f95a93144cf1f',
+    compiledDefinitionContentHash: 'block-definition-v2-f5576368',
+    compiledDefinitionCanonicalSha256: 'sha256:329c085960f07c9b064fe7fb5728e6aad7ca5fed335c5a9aba64b5329174135a',
     studioMode: 'text_to_image',
     adapterContractId: 'diffusers.modular-adapter:Flux2ModularPipeline:text2image:mode:text_to_image',
     studioExecutionSpec: {
@@ -304,8 +304,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-9c856b4e',
-    compiledDefinitionCanonicalSha256: 'sha256:617fe9a53c0a12b64fd9a3910eb208143f59274b96ea16bd226388271aca4caa',
+    compiledDefinitionContentHash: 'block-definition-v2-2e5d5594',
+    compiledDefinitionCanonicalSha256: 'sha256:6a198730a7db6de7034a9ed206cbc9668636d63ced20a0f93833dafc7b58a31e',
     controlFanOuts: [
       {
         source: 'seed',
@@ -358,8 +358,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-42927520',
-    compiledDefinitionCanonicalSha256: 'sha256:0564333c10fbcdd7485a9da1d14d3079c104f333ad0d15d8cc930275edb6b256',
+    compiledDefinitionContentHash: 'block-definition-v2-2082b76c',
+    compiledDefinitionCanonicalSha256: 'sha256:ab46978dc5e95b945f7a2c45d3e946dc23fad75b0917988593d182de46001a3b',
     controlFanOuts: [
       {
         source: 'seed',
@@ -407,8 +407,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-a0c525c4',
-    compiledDefinitionCanonicalSha256: 'sha256:c8a762c070b51e88af37047d3e42d981ed2416a3f7fe8aa1807553c4e46a24f2',
+    compiledDefinitionContentHash: 'block-definition-v2-bb5b329c',
+    compiledDefinitionCanonicalSha256: 'sha256:47b3fd365c4f79368278924122f757442c785234b567c3206b1b6a9b3e5bacf2',
     controlFanOuts: [
       {
         source: 'seed',
@@ -457,8 +457,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-562019bc',
-    compiledDefinitionCanonicalSha256: 'sha256:08e0474738790225ee0b5d525bf657f31d92acbf8b2c7d09080b69caa409aa29',
+    compiledDefinitionContentHash: 'block-definition-v2-3ca28a94',
+    compiledDefinitionCanonicalSha256: 'sha256:638e0166263707ea79af288f41d8b1da1f2b0f926886860cdd3270e36c93f5b0',
     controlFanOuts: [
       {
         source: 'seed',
@@ -506,8 +506,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-173b3801',
-    compiledDefinitionCanonicalSha256: 'sha256:26d9ad2c2efaa55c24d8fb8df1a26edcb2ab8ee9097df8d4d35249bbca8775d5',
+    compiledDefinitionContentHash: 'block-definition-v2-da9b1897',
+    compiledDefinitionCanonicalSha256: 'sha256:a3d9ba025ba193920bb9db2ed23316db9127af10e617b6a4021bafa20a90be8d',
     controlFanOuts: [
       {
         source: 'resolution',
@@ -571,8 +571,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'kind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-c054c9b9',
-    compiledDefinitionCanonicalSha256: 'sha256:30d1702e0702bfde48a365865aac7414d69afae5c35096be57886897efa4c646',
+    compiledDefinitionContentHash: 'block-definition-v2-5bf3b391',
+    compiledDefinitionCanonicalSha256: 'sha256:8b271c4ef9f4c01dfac1b134a3e39f8afb0ac858b1ec4888b73c8b33fcecbb41',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -672,8 +672,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'kind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-7c020071',
-    compiledDefinitionCanonicalSha256: 'sha256:0fc5ee1667e19ac047a5b35bd6c8c45fd7ddb820a4838588ce7c293c183e0580',
+    compiledDefinitionContentHash: 'block-definition-v2-04434119',
+    compiledDefinitionCanonicalSha256: 'sha256:d564a947ea0a98abd45c60d877cbd6b156639b7196e87371f0dea6fa018826f5',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -759,8 +759,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'controlnetKind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-1a62d70b',
-    compiledDefinitionCanonicalSha256: 'sha256:d22e69230f31c887926dbea75324ade14755be5fcfeaf4750faf48dcc444ac5b',
+    compiledDefinitionContentHash: 'block-definition-v2-f48c2f2f',
+    compiledDefinitionCanonicalSha256: 'sha256:bc2384ec55727aa8e149102d8bccaa109af2058b41ca2a0eda73973643ca4045',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -832,7 +832,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:controlnet_union_text2image',
-    definitionContentHash: 'sha256:7b569e35d4c2a7b0c7bfde188f963ab41d4415c32cca9a23967f6f14939baec2',
+    definitionContentHash: 'sha256:ba49bcc8eb2d6d6cb8a5617ae6ea893f1e0886592b405f24a190600da9fce812',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -861,8 +861,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'controlnetKind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-ab3e051c',
-    compiledDefinitionCanonicalSha256: 'sha256:557d40bb46fcd2a2bf3f040ad5e8acff20f81359d0f6f511c962a61adcb8a781',
+    compiledDefinitionContentHash: 'block-definition-v2-8a07df11',
+    compiledDefinitionCanonicalSha256: 'sha256:81390c2388a55392b537c48cc397fec2f7382acf1d8af132b58f1c1c267e142b',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -945,8 +945,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-9914d799',
-    compiledDefinitionCanonicalSha256: 'sha256:a601ec703b9d1f70e6a0dcc053c0514432e3dad50cab69dec7836cbb55048a80',
+    compiledDefinitionContentHash: 'block-definition-v2-220c90ed',
+    compiledDefinitionCanonicalSha256: 'sha256:61668713d64fd668169850dbec95c0e13647fe83fc5ec8fb8ea88fd5ca802c1c',
     controlFanOuts: [
       {
         source: 'seed',
@@ -973,7 +973,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_controlnet_image2image',
-    definitionContentHash: 'sha256:c4d1e0c1fd298ad2eb54534f85819e7f855f51ce6753860173e1c0d687367a76',
+    definitionContentHash: 'sha256:40db194d5e5a73029775cfa6d27c91a31ba3ea274f9c72e7e182449de5778ebf',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -986,7 +986,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_controlnet_image2image:state_flow:ip_adapter_controlnet_image2image',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-402cb907',
+      contentHash: 'studio-spec-v1-667b4147',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-controlnet-image-to-image:v1',
     },
@@ -1005,8 +1005,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-7683bc58',
-    compiledDefinitionCanonicalSha256: 'sha256:ec1328974714e8361b898c7fb6f7461f9eb3b7243156683ecfefd5f6b70506b1',
+    compiledDefinitionContentHash: 'block-definition-v2-2cd6dd4e',
+    compiledDefinitionCanonicalSha256: 'sha256:281e974dcdd4fc148d63361cd56bc8030d9a3b8e13f055a0deff9e5e1d21f1ca',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1093,7 +1093,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_controlnet_text2image',
-    definitionContentHash: 'sha256:de5d7fa8fdfd055cc9b99f9549ebde89a78ea5593051d842cfa730ece00472b9',
+    definitionContentHash: 'sha256:ee554f2a27309fc36168af4ac1d7398e191d8b352a55171fe1b88dbaf3384619',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -1106,7 +1106,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_controlnet_text2image:state_flow:ip_adapter_controlnet_text2image',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-ec7d24a3',
+      contentHash: 'studio-spec-v1-adaf5107',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-controlnet-text-to-image:v1',
     },
@@ -1124,8 +1124,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-19083a71',
-    compiledDefinitionCanonicalSha256: 'sha256:a42b9d80fa9bdb9c95e2b11d1ea443a9f12d2f212fc64e54998c8bcdd440de47',
+    compiledDefinitionContentHash: 'block-definition-v2-e46b4fdb',
+    compiledDefinitionCanonicalSha256: 'sha256:29d06425a375f80ab1766417cd8dd0350e32afb7f84b90bd15c9fbd9b890b2fb',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1200,7 +1200,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_controlnet_union_image2image',
-    definitionContentHash: 'sha256:faf55f5f74d6a92f64b20c7ccfe5c479d214618fd9ea9ef2adb671a34e06632c',
+    definitionContentHash: 'sha256:8a3e340df4e536bb21946c0bbbd2b9e4b9f7214a150def53fc3919cc94a93986',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -1213,7 +1213,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_controlnet_union_image2image:state_flow:ip_adapter_controlnet_union_image2image',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-6e6e0a72',
+      contentHash: 'studio-spec-v1-ca90dd3e',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-controlnet-union-image-to-image:v1',
     },
@@ -1232,8 +1232,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-5b262e95',
-    compiledDefinitionCanonicalSha256: 'sha256:c42f5cfcc4e6ca833ba304b84d25c2851e48a65b9eead8900dd5cb2cdcc52a1c',
+    compiledDefinitionContentHash: 'block-definition-v2-913e939c',
+    compiledDefinitionCanonicalSha256: 'sha256:ac173b8e930f91b7f3958a4b2a75a7edf0f620b4cb5dfee68f0b78131eb3a024',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1321,7 +1321,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_controlnet_union_text2image',
-    definitionContentHash: 'sha256:999c221c7a2435ee05caf08c6af14c41cdfc47d61d57b9544142d92c5b3fcfd7',
+    definitionContentHash: 'sha256:0fb15ac8a70b3c4ef0d60a1b69f946cf9ac568bfd45ea7c781657f0467bfa4fd',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -1334,7 +1334,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_controlnet_union_text2image:state_flow:ip_adapter_controlnet_union_text2image',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-cb783b74',
+      contentHash: 'studio-spec-v1-528d1c84',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-controlnet-union-text-to-image:v1',
     },
@@ -1352,8 +1352,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-199187c0',
-    compiledDefinitionCanonicalSha256: 'sha256:cbda63016c30dae09d9aa070d4af1cb4edd0765f47f30003f373794ac05cb964',
+    compiledDefinitionContentHash: 'block-definition-v2-768fdeef',
+    compiledDefinitionCanonicalSha256: 'sha256:013d846e1d2a9afb89ea5c0e43e67c40772ade1417a491ac00500715cd44d558',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1429,7 +1429,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_image2image',
-    definitionContentHash: 'sha256:b90040612a57a7f5d7d180694539c92b8fe6c19731d128364964a7bb6dfbab5f',
+    definitionContentHash: 'sha256:b6379a498e3c4b702346af9b58aceb77c6c8ee2844c2ef6d920e6f37fa8eb59f',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -1442,7 +1442,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_image2image:state_flow:ip_adapter_image2image',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-607f0d61',
+      contentHash: 'studio-spec-v1-ef11b341',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-image-to-image:v1',
     },
@@ -1459,8 +1459,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-da05845c',
-    compiledDefinitionCanonicalSha256: 'sha256:caae71d220cc5001fa14fc283c1b10a7168efc074e1c1da275a75674c8f7fb00',
+    compiledDefinitionContentHash: 'block-definition-v2-e38f4a19',
+    compiledDefinitionCanonicalSha256: 'sha256:b9fc5347fd32c144237686acf23e33f6d7623831ea95d7beec161e864be41ddd',
     controlFanOuts: [
       {
         source: 'alphaMode',
@@ -1506,7 +1506,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_text2image',
-    definitionContentHash: 'sha256:f35135d002771e65b1f6363e63db5d921e8c2fcadca5e265cb03ba379a7bf2c3',
+    definitionContentHash: 'sha256:174492bf80f034db7fd85a525cfb660f2e58bd7e1a0ba1e34746c85c56bc44fb',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -1519,7 +1519,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_text2image:state_flow:ip_adapter_text2image',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-e4be9f20',
+      contentHash: 'studio-spec-v1-3a3a4038',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-text-to-image:v1',
     },
@@ -1535,8 +1535,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-9e713ae6',
-    compiledDefinitionCanonicalSha256: 'sha256:392912b0af2ebd033662767eaeaa72d924f0a7d6273c8833eb87eabfb1517bdf',
+    compiledDefinitionContentHash: 'block-definition-v2-e19a3e2c',
+    compiledDefinitionCanonicalSha256: 'sha256:57ca6d4bb06e1c6dd678abde658e0f62b09b5231d35b69f5096777514397e17a',
     controlFanOuts: [
       {
         source: 'guidanceScale',
@@ -1590,8 +1590,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-4acae30f',
-    compiledDefinitionCanonicalSha256: 'sha256:d4453a4a5266cd79b7fd069cc3327753399c422856f21ec9a99868e784fced82',
+    compiledDefinitionContentHash: 'block-definition-v2-ccbe99d9',
+    compiledDefinitionCanonicalSha256: 'sha256:9247eb2e62a8eb8ae7d3a5afbc62821f6d2bbaed9a566d727327729fa74ba46e',
     controlFanOuts: [
       {
         source: 'seed',
@@ -1636,8 +1636,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '073c3a9db359c31ad0e8aa268d15775473c2176c',
     },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-c206ca84',
-    compiledDefinitionCanonicalSha256: 'sha256:22e1dd4313cc6266a4021fc5f91a466e44200bf05cca88c6a5d6635815bbd573',
+    compiledDefinitionContentHash: 'block-definition-v2-8b76fbf2',
+    compiledDefinitionCanonicalSha256: 'sha256:60bf1a04d952428fc139eda543d5d8c4b7e75a293931f60a0d917fe43022ee26',
     controlFanOuts: [
       {
         source: 'width',
@@ -1706,8 +1706,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-bba6d38c',
-    compiledDefinitionCanonicalSha256: 'sha256:6bd4b2bc9408c4b6cf95b9eb7ef29c874acace4ee2c119bb6ca8b725672bd716',
+    compiledDefinitionContentHash: 'block-definition-v2-4318a5ba',
+    compiledDefinitionCanonicalSha256: 'sha256:472a5131dc052395f604ce5a65af27449c5dc90e22da8c773aa4a900cc60e040',
     controlFanOuts: [
       {
         source: 'seed',
@@ -1755,8 +1755,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Base', revision: '5c50b6bc90eae9bd815d2a50b0c9877e3fd2cf88' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-7efbd076',
-    compiledDefinitionCanonicalSha256: 'sha256:e30ad29b3fe6b669b6efca9d20e80a2d36abaff7f4229d2a4c6f12cd2d78cc25',
+    compiledDefinitionContentHash: 'block-definition-v2-a3982c0e',
+    compiledDefinitionCanonicalSha256: 'sha256:728c14f2862db7d54e511f985e20747306e048a7395115a1f61d0f64cc20c19d',
     controlFanOuts: [
       {
         source: 'width',
@@ -1823,8 +1823,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Base', revision: '5c50b6bc90eae9bd815d2a50b0c9877e3fd2cf88' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-add2a699',
-    compiledDefinitionCanonicalSha256: 'sha256:144c9f0b492e645a867dceaf1ec6a92da1deae885566237b4fea8c9fec779118',
+    compiledDefinitionContentHash: 'block-definition-v2-54f74bad',
+    compiledDefinitionCanonicalSha256: 'sha256:9974c4e627ee1b5cab7d9f639818a01d2884227e36609d91e0a3439db9651b47',
     controlFanOuts: [
       {
         source: 'width',
@@ -1893,8 +1893,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Distilled', revision: 'b991c0379a018f4de3227d95468237f56066f5bb' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-c12e19a1',
-    compiledDefinitionCanonicalSha256: 'sha256:192488253860621b86ed9e17f7b59b09c0c040c803fbe0d77ed648a6492691fc',
+    compiledDefinitionContentHash: 'block-definition-v2-53b267c1',
+    compiledDefinitionCanonicalSha256: 'sha256:7a6995885764acd0342ef8a9b7413965a0799de9f63e0afc1f6e14231d0feb9c',
     controlFanOuts: [
       {
         source: 'width',
@@ -1962,8 +1962,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Distilled', revision: 'b991c0379a018f4de3227d95468237f56066f5bb' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-62525b19',
-    compiledDefinitionCanonicalSha256: 'sha256:6e9042d0866d5ba34095b7f9218cb359e28b7beca6d92e6e52fca750b734c047',
+    compiledDefinitionContentHash: 'block-definition-v2-41eb6919',
+    compiledDefinitionCanonicalSha256: 'sha256:778fb61f110fea1b956d140441e0e86766af854cdacbef9e2888c3bee3232ec0',
     controlFanOuts: [
       {
         source: 'width',
@@ -2031,8 +2031,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Mid', revision: '477c55427ec0ea774bdebd0fbe736313cfc5a312' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-d362dd41',
-    compiledDefinitionCanonicalSha256: 'sha256:4e777d1c39397da100bff97b4c024e42cdc17214027e47daadb75ace31776bfa',
+    compiledDefinitionContentHash: 'block-definition-v2-9efe5819',
+    compiledDefinitionCanonicalSha256: 'sha256:2869fe70d34f4be1921886622bbb7e3de0c0c07e8c779d8b4bc739168ef7ff5b',
     controlFanOuts: [
       {
         source: 'width',
@@ -2100,8 +2100,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Mid', revision: '477c55427ec0ea774bdebd0fbe736313cfc5a312' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-40572866',
-    compiledDefinitionCanonicalSha256: 'sha256:2e2a0fe6c64a94caffacd4254227335ee0bdc052b1c78d3bcb68283a616a5ad4',
+    compiledDefinitionContentHash: 'block-definition-v2-7bd75aca',
+    compiledDefinitionCanonicalSha256: 'sha256:50cab79ab6e7127a0a4ee25324c7c4e57ee4671a7d077a1d9059d49c80d8d0d3',
     controlFanOuts: [
       {
         source: 'width',
@@ -2177,8 +2177,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'kind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-5a281d3a',
-    compiledDefinitionCanonicalSha256: 'sha256:ac6c45a7a7313ad0e8a08266503c2714781c5e44c8a18d8d9fe54f1690f9323b',
+    compiledDefinitionContentHash: 'block-definition-v2-35b79900',
+    compiledDefinitionCanonicalSha256: 'sha256:845bec5499e6aeea83c9f2664f9bc68fe48d93a09f7fedd7408891919ba16453',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -2297,8 +2297,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'kind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-4e6a3bf6',
-    compiledDefinitionCanonicalSha256: 'sha256:0df05bbf776017183bc50025a68eb16c997f516f70aca3772df677b499c4e2a6',
+    compiledDefinitionContentHash: 'block-definition-v2-834c403c',
+    compiledDefinitionCanonicalSha256: 'sha256:4040634f7a1e86b00fba916b7933ac5c7be10f0002bc2465c52b6f84a15234de',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -2394,8 +2394,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-694c16aa',
-    compiledDefinitionCanonicalSha256: 'sha256:d50e3ecccf7204d7c323abaa82082ec48b7889d56486c4a6041af6a2f04b4458',
+    compiledDefinitionContentHash: 'block-definition-v2-82896f2a',
+    compiledDefinitionCanonicalSha256: 'sha256:c680e81e52e98200764625a6c2a6e529d24e4b9680d726492fb391650751b657',
     controlFanOuts: [
       {
         source: 'height',
@@ -2458,8 +2458,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Base', revision: '5c50b6bc90eae9bd815d2a50b0c9877e3fd2cf88' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-fd4bba0b',
-    compiledDefinitionCanonicalSha256: 'sha256:7acec795e50cfd8cf1c301194213c48679b1ddd9bf028267e5f244712d90f4c0',
+    compiledDefinitionContentHash: 'block-definition-v2-8bc65c17',
+    compiledDefinitionCanonicalSha256: 'sha256:44e7237888bd11ca5f0327366f89214d604a8491e7bc14d7459549eb2edac9ae',
     controlFanOuts: [
       {
         source: 'steps',
@@ -2508,8 +2508,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Distilled', revision: 'b991c0379a018f4de3227d95468237f56066f5bb' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-5cb4086b',
-    compiledDefinitionCanonicalSha256: 'sha256:79b495b8bba9062dfcb2a1ee291394e7dbd4c327f9bf1cef61f9c78054218cb8',
+    compiledDefinitionContentHash: 'block-definition-v2-2591775b',
+    compiledDefinitionCanonicalSha256: 'sha256:e1d72f0eec1e44f97f34d9d4bfa6e99e090b75ea1e64a2c54d6631e7c2b48311',
     controlFanOuts: [
       {
         source: 'steps',
@@ -2557,8 +2557,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Mid', revision: '477c55427ec0ea774bdebd0fbe736313cfc5a312' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-1a38e68c',
-    compiledDefinitionCanonicalSha256: 'sha256:72508f7a70d09b8577d69554ca9d4afa6cdb7451c1ce26b11c990a737a673b17',
+    compiledDefinitionContentHash: 'block-definition-v2-6f9a7bb0',
+    compiledDefinitionCanonicalSha256: 'sha256:7dc9d65502f391f62a7bba0899fc8a4efad339d9625b71fa0c0cf4990ef27df0',
     controlFanOuts: [
       {
         source: 'steps',
@@ -2609,8 +2609,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '854c04a4c8a53d990b418c7478f0802c0fc8c726',
     },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-d4c28237',
-    compiledDefinitionCanonicalSha256: 'sha256:20f70573046229e7ac1b92c260101971d783bbdb632cc055e1506e23ef9efc7b',
+    compiledDefinitionContentHash: 'block-definition-v2-ea4b7237',
+    compiledDefinitionCanonicalSha256: 'sha256:3f3b1fdea5dddb1c47a670a3bf81965bb956f8d49d6b61c11be6e023c3529178',
     controlFanOuts: [],
     boundary: {
       inputs: [
@@ -2668,8 +2668,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '286be7ce72277246578a3e3cc2487e95ddae5bcf',
     },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-922e5778',
-    compiledDefinitionCanonicalSha256: 'sha256:2ae1db9f2c3209eb178bbe6f2205ae44bf1dd0d209124df983fb9bad8d3c4272',
+    compiledDefinitionContentHash: 'block-definition-v2-76297a3c',
+    compiledDefinitionCanonicalSha256: 'sha256:e2039e72e7f7ca5a89fc9ec9d1e3acbc23749f7e9e399ba1c38935dca70efc0e',
     controlFanOuts: [],
     boundary: {
       inputs: [
@@ -2715,8 +2715,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-9fca3a41',
-    compiledDefinitionCanonicalSha256: 'sha256:82082880e2e5d789f75cf71e5ebb52e3434f4eeb33e9d3d9ee90044d7e52e94b',
+    compiledDefinitionContentHash: 'block-definition-v2-e8e75314',
+    compiledDefinitionCanonicalSha256: 'sha256:b0cf1ffe72ef0c03215aed2c434f14e5dea9a240836970bdaa93c42b31ffa45a',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -2789,8 +2789,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-8873700c',
-    compiledDefinitionCanonicalSha256: 'sha256:94ca1c9b709cf4d7280365ea180aaba9c4f0e57d0b579830ba44bd396e144b27',
+    compiledDefinitionContentHash: 'block-definition-v2-b21aa7c9',
+    compiledDefinitionCanonicalSha256: 'sha256:9d1195a13a46332b85f9b5d147200437edc3d8bcb8f896ce54545d57f0f77735',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -2863,8 +2863,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-c61222f3',
-    compiledDefinitionCanonicalSha256: 'sha256:46d414da8a7cdf166e39028c165c4d8fe1b7255ed334258718b0854c8c82ecbc',
+    compiledDefinitionContentHash: 'block-definition-v2-44941270',
+    compiledDefinitionCanonicalSha256: 'sha256:b6df0c45b85c59816b45f15c40f043ce6af6cc926a33af353d418d604afe8997',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -2971,8 +2971,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-406a9731',
-    compiledDefinitionCanonicalSha256: 'sha256:ff833469f2689a2b2ec3fd9b67997d868b53811894fca025c49e1a3f31d0db7e',
+    compiledDefinitionContentHash: 'block-definition-v2-3e13c1be',
+    compiledDefinitionCanonicalSha256: 'sha256:8739656edb8838b65e00ae46e486cd51ac6fc10fc420dd24b7777097d53b0a8e',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -3044,8 +3044,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers', revision: 'b8fff7315c768468a5333511427288870b2e9635' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-fe491657',
-    compiledDefinitionCanonicalSha256: 'sha256:41b9d50c7713a73fc3b246bef0e933ae9fedb078a608048b96f1edf355e44fbb',
+    compiledDefinitionContentHash: 'block-definition-v2-b12c8a6e',
+    compiledDefinitionCanonicalSha256: 'sha256:963c6ac1c76f50760c28168f204ae1f0ff5aef53a41ff6f6d7603d0f11dc853b',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -3114,8 +3114,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers', revision: '596658fd9ca6b7b71d5057529bbf319ecbc61d74' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-87729940',
-    compiledDefinitionCanonicalSha256: 'sha256:4e577fca15f832bcf4e502d93e96f4b5821f6f57bb8b0d15044168abb9c2a435',
+    compiledDefinitionContentHash: 'block-definition-v2-1dd7deb3',
+    compiledDefinitionCanonicalSha256: 'sha256:1e18e336333cc2807d3d533752ca1556f72cc216d7a2abddfb966f9c3092d430',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -3184,8 +3184,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers', revision: '5be7df9619b54f4e2667b2755bc6a756675b5cd7' },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-8fd5b949',
-    compiledDefinitionCanonicalSha256: 'sha256:286b45a003545c9149c81dcd87c79410bc68c3bc99adafbafc6515ae75556c3f',
+    compiledDefinitionContentHash: 'block-definition-v2-10c5e03a',
+    compiledDefinitionCanonicalSha256: 'sha256:e52297c93ef3887658bf698f6476fa102fb6579206d59c12fde70ad96fc8983d',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -3258,8 +3258,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '59e4141466bcb1bf9733eca1bc78be6891c9fbdf',
     },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-80377e0f',
-    compiledDefinitionCanonicalSha256: 'sha256:2b2ef6c70e821e8bca177eb8c0e129e0c6eee8bcbfb620a1cd925e091117f1ee',
+    compiledDefinitionContentHash: 'block-definition-v2-19837e7f',
+    compiledDefinitionCanonicalSha256: 'sha256:64d35d87703f495c1e9b7bfc3afa162895e3ad5e97de79fbb8162621dfb3f0ab',
     controlFanOuts: [
       {
         source: 'fps',
@@ -3317,8 +3317,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'Wan-AI/Wan2.2-Animate-2-14B-Diffusers', revision: '7d48412d7b903ff3a89f4f5a960d99e1899605a1' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-f16246e5',
-    compiledDefinitionCanonicalSha256: 'sha256:4c21cb503a3cb72cfb54cb19ffd97c3ef9957d0e60d82cce2af0aec6ca70018c',
+    compiledDefinitionContentHash: 'block-definition-v2-aaeac40d',
+    compiledDefinitionCanonicalSha256: 'sha256:f77112cc1947dd32e140176051b06020a7a0fa55e64019cb07d577cb112a2947',
     controlFanOuts: [
       {
         source: 'fps',
@@ -3382,8 +3382,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-282eba1d',
-    compiledDefinitionCanonicalSha256: 'sha256:b668b8b7bfe36aee862bccdf8be68b58c977988c0c3c120ad25866d9eca0307a',
+    compiledDefinitionContentHash: 'block-definition-v2-94d0014d',
+    compiledDefinitionCanonicalSha256: 'sha256:a7d708a8d9d6a913a24109ffbdd82e418a1d57ac30d7eb0574bf904c8cdcc1bc',
     controlFanOuts: [
       {
         source: 'alphaMode',
@@ -3472,8 +3472,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-9b8e5624',
-    compiledDefinitionCanonicalSha256: 'sha256:5700538a382b28f057b32895979dd93f28b022b33a3a750f4f484b3f32fd6161',
+    compiledDefinitionContentHash: 'block-definition-v2-276340cc',
+    compiledDefinitionCanonicalSha256: 'sha256:16e01e466bc8ca24abdeffef01eea100eca592aaa25880cb9d967a91741d12b0',
     controlFanOuts: [
       {
         source: 'height',
@@ -3547,8 +3547,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-9144a9dd',
-    compiledDefinitionCanonicalSha256: 'sha256:b77d59bfbbe7dbdc43ef3b4059c31ce68474f755c546aabfb14212f82c56f712',
+    compiledDefinitionContentHash: 'block-definition-v2-493f50dd',
+    compiledDefinitionCanonicalSha256: 'sha256:39c7b956b0a811e3be7c96a130257434c3525950a40a1d28dca4a5d6c067c217',
     controlFanOuts: [],
     boundary: {
       inputs: [
@@ -3593,8 +3593,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-b44a845d',
-    compiledDefinitionCanonicalSha256: 'sha256:d958778f57c24ce987d4ba8be1f329b62e287b816aa0df6eacde3be35ab3f8f0',
+    compiledDefinitionContentHash: 'block-definition-v2-5482b115',
+    compiledDefinitionCanonicalSha256: 'sha256:48a742e34ee3d6b18b22808eafe3c94320e08f6a5ef1f68efdaf9977cb9aae9f',
     controlFanOuts: [
       {
         source: 'seed',
@@ -3652,8 +3652,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'kind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-4d7a7fef',
-    compiledDefinitionCanonicalSha256: 'sha256:d2d40ad90f112c6ca31e5cea0f2c16c68d4ec6d9a89bdbdf7d25a0aa1c0366d3',
+    compiledDefinitionContentHash: 'block-definition-v2-17ccaf31',
+    compiledDefinitionCanonicalSha256: 'sha256:c092fa6a22c6f4ab4b2f904289018a3657ed623ec9aafc40edf8fbd7718c9132',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -3771,8 +3771,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-d589be03',
-    compiledDefinitionCanonicalSha256: 'sha256:690cba0c03b95a6bf86898984720196452b5316820d4e8f162deba83b6a7f623',
+    compiledDefinitionContentHash: 'block-definition-v2-a607b84f',
+    compiledDefinitionCanonicalSha256: 'sha256:7ee094ae1849a41a2ac3fd47c0a6d424c5e1ddc749809f1b258c49f77151458c',
     controlFanOuts: [
       {
         source: 'height',
@@ -3848,8 +3848,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'kind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-8f39068e',
-    compiledDefinitionCanonicalSha256: 'sha256:5f7d685dd2a7d068421cff6bf03d55f7b5307781bf34260cdc080629d088406d',
+    compiledDefinitionContentHash: 'block-definition-v2-0ade626e',
+    compiledDefinitionCanonicalSha256: 'sha256:8ea5200cd7551066d7e8806b523632cdb7a5edf4e1a05bf9d0e1fbd4f5ca6abc',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -3956,8 +3956,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'controlnet_bundle', role: 'controlnet', valueSource: 'pipelineClass' },
       { event: 'onChange', field: 'model_type', role: 'controlnetModel', valueSource: 'controlnetKind' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-dbff712b',
-    compiledDefinitionCanonicalSha256: 'sha256:2990b9a09f2f94d0738c2361977b9f28ee46e996c08ec5d27f14613c2a6983e8',
+    compiledDefinitionContentHash: 'block-definition-v2-5fa1b057',
+    compiledDefinitionCanonicalSha256: 'sha256:78e1e8b4bed67589c8398e49050e88bf522ad24ee37c542e3784f7947491416e',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -4061,8 +4061,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'denoise', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'vae', role: 'decode', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-ccf396c3',
-    compiledDefinitionCanonicalSha256: 'sha256:f202b4f50de6f46ec40e994a4f54b3ab45c2d26bb05e7dbd9f9dde329f80274a',
+    compiledDefinitionContentHash: 'block-definition-v2-a60649bb',
+    compiledDefinitionCanonicalSha256: 'sha256:34d6b1c97fa49e0b7b892a1a9dee623a1400a252df42e76ec3df1758bf405890',
     controlFanOuts: [
       {
         source: 'seed',
@@ -4095,7 +4095,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_controlnet_inpainting',
-    definitionContentHash: 'sha256:97d1488f9eec2bee07b622c3173744577b80fdbfacf437cab9a9b3ada0f9e6f7',
+    definitionContentHash: 'sha256:7f54fa29d9872df2b61ac9d23e866753fb848958c2f3339afd8641bd617bc1b0',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -4108,7 +4108,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_controlnet_inpainting:state_flow:ip_adapter_controlnet_inpainting',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-6e525457',
+      contentHash: 'studio-spec-v1-6a51c40f',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-controlnet-inpainting:v1',
     },
@@ -4127,8 +4127,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-41fb08da',
-    compiledDefinitionCanonicalSha256: 'sha256:e8b0e590f0e67817a3202f0a1cdba8f20f6455f96b897c43f7006827604dffdb',
+    compiledDefinitionContentHash: 'block-definition-v2-60b1e883',
+    compiledDefinitionCanonicalSha256: 'sha256:9030d7abb48c2c51004c11e0de345780b225bf057a11157a1b36996f5e1c9cbd',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -4221,7 +4221,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_controlnet_union_inpainting',
-    definitionContentHash: 'sha256:79144e071f7aeebc614e2a30584b7f6a378bbf70e78c2cd886dfe3fb64412d85',
+    definitionContentHash: 'sha256:490b76a21848cafb9191c781bbb8fd65c23f75f05d385bb0eacb7dab10b9f57d',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -4234,7 +4234,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_controlnet_union_inpainting:state_flow:ip_adapter_controlnet_union_inpainting',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-a084dc74',
+      contentHash: 'studio-spec-v1-77a05908',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-controlnet-union-inpainting:v1',
     },
@@ -4253,8 +4253,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-2a4636a0',
-    compiledDefinitionCanonicalSha256: 'sha256:3525cedfa8b3be099f829c1c4d6231a73b2676da82b36223093f29d52934a858',
+    compiledDefinitionContentHash: 'block-definition-v2-197787ec',
+    compiledDefinitionCanonicalSha256: 'sha256:1f04e24bcef2ebda39e133ee600674778af64e98f2cf6206d2bd75641785e4dd',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -4348,7 +4348,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:StableDiffusionXLModularPipeline:ip_adapter_inpainting',
-    definitionContentHash: 'sha256:ff699042507259b5c074a26710ed43991d8e2ffa4f0cebc015d87b8dc44aaae2',
+    definitionContentHash: 'sha256:9b48e19d9622af7bf66fa8b0867723b793b249ab68c31692c7e32258d9281a9f',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
@@ -4361,7 +4361,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     adapterContractId:
       'diffusers.modular-adapter:StableDiffusionXLModularPipeline:ip_adapter_inpainting:state_flow:ip_adapter_inpainting',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-1e0da4e1',
+      contentHash: 'studio-spec-v1-263b7489',
       executionProfileId: 'sdxl-base:modular',
       id: 'sdxl-base:modular-ip-adapter-inpainting:v1',
     },
@@ -4378,8 +4378,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-8d7da5db',
-    compiledDefinitionCanonicalSha256: 'sha256:ae1c792e5ca1be0e807a73ae5fe930e384987fee40c7e55d95f5f0ca55917bd2',
+    compiledDefinitionContentHash: 'block-definition-v2-ab9f92cb',
+    compiledDefinitionCanonicalSha256: 'sha256:967376697ac2a9e3d4cf3661ef70ced72752cc0e8e1d3d80e6777bf18717e5df',
     controlFanOuts: [
       {
         source: 'alphaMode',
@@ -4451,8 +4451,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-462d0078',
-    compiledDefinitionCanonicalSha256: 'sha256:cf9766f0433c42e815d92ffc94b2779a21a90861bd2248b5bc3790a17061f296',
+    compiledDefinitionContentHash: 'block-definition-v2-4ae23355',
+    compiledDefinitionCanonicalSha256: 'sha256:a17ded30bf56e93415bc1e0dd5eb48afdc89c007e35dc62c7fcf61f814c4020f',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -4529,8 +4529,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-07ee5bfd',
-    compiledDefinitionCanonicalSha256: 'sha256:a91e36a08ab7abac4921f0216979bf6423a89261e2801b643dd63afdecc4d206',
+    compiledDefinitionContentHash: 'block-definition-v2-3b70cada',
+    compiledDefinitionCanonicalSha256: 'sha256:4df0816c911fddc6ca5c65f829d9f3db6fc14de57c747d315b9397bace445516',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -4586,69 +4586,58 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
   },
   {
     definitionId: 'diffusers.modular:ErnieImageModularPipeline:text2image',
-    definitionContentHash: 'sha256:39f1dd5c36bfcccc149e61872e9e276512112338e2ee276f86ddbb2f9c2f480e',
+    definitionContentHash: 'sha256:f1052b4f74c2a91b52dddd92744c1651df6a6c11fa14c5f581c598af5298b775',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
     libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
     pipelineClass: 'ErnieImageModularPipeline',
     workflowId: 'text2image',
-    admissionId: 'diffusers.cluster-admission:ErnieImageModularPipeline:text2image:mode:equivalent_standard_route',
+    admissionId: 'diffusers.cluster-admission:ErnieImageModularPipeline:text2image:workflow:official_top_level_blocks',
     studioMode: 'text_to_image',
-    adapterContractId: 'diffusers.modular-adapter:ErnieImageModularPipeline:text2image:mode:equivalent_standard_route',
+    adapterContractId:
+      'diffusers.modular-adapter:ErnieImageModularPipeline:text2image:workflow:official_top_level_blocks',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-3b024bde',
-      executionProfileId: 'ernie-image:equivalent-standard',
-      id: 'ernie-image:equivalent-standard-text-to-image:v1',
+      contentHash: 'studio-spec-v1-b410a5bb',
+      executionProfileId: 'ernie-image-turbo:official-modular-workflow',
+      id: 'ernie-image-turbo:modular-text-to-image:v1',
     },
     artifact: { repo: 'baidu/ERNIE-Image-Turbo', revision: 'bc68c81e2a1730a394d5fc9fae70713dee940140' },
-    dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-4938d19e',
-    compiledDefinitionCanonicalSha256: 'sha256:3a738e20749da4073dfccfa5d84eb9167f2e7f7c9562d37dee1fc9ff8f355ca0',
+    dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
+    exactModularGraph: { semanticRoleByPlacementPath: {} },
+    compiledDefinitionContentHash: 'block-definition-v2-8e2880d6',
+    compiledDefinitionCanonicalSha256: 'sha256:d777a3bb8098c6e1a4a37b9442d64df03326ba21697192f9b9c2db4fff094d15',
     controlFanOuts: [
       {
-        source: 'quantizationMode',
-        persistence: 'execution_parameter',
-        primary: { role: 'diffusersImagePipeline', fieldId: 'quantization_mode' },
-        mirrors: [{ role: 'diffusersQuantization', fieldId: 'backend' }],
+        source: 'width',
+        persistence: 'instance_input',
+        primary: { role: 'denoise', fieldId: 'width' },
+        mirrors: [{ role: 'promptEnhance', fieldId: 'width' }],
       },
       {
-        source: 'dtype',
-        persistence: 'execution_parameter',
-        primary: { role: 'diffusersImagePipeline', fieldId: 'dtype' },
-        mirrors: [{ role: 'diffusersQuantization', fieldId: 'dtype' }],
-      },
-      {
-        source: 'offloadMode',
-        persistence: 'execution_parameter',
-        primary: { role: 'diffusersImagePipeline', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'diffusersRecipe', fieldId: 'offload_mode' }],
-      },
-      {
-        source: 'device',
-        persistence: 'execution_parameter',
-        primary: { role: 'diffusersImagePipeline', fieldId: 'device' },
-        mirrors: [{ role: 'diffusersRecipe', fieldId: 'device' }],
+        source: 'height',
+        persistence: 'instance_input',
+        primary: { role: 'denoise', fieldId: 'height' },
+        mirrors: [{ role: 'promptEnhance', fieldId: 'height' }],
       },
     ],
     boundary: {
       inputs: [
-        { portId: 'prompt', role: 'diffusersImageGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'diffusersImageGenerate', fieldId: 'negative_prompt' },
+        { portId: 'prompt_input', inputName: 'prompt', role: 'promptEnhance', fieldId: 'prompt' },
+        { portId: 'height_input', inputName: 'height', role: 'denoise', fieldId: 'height' },
+        { portId: 'width_input', inputName: 'width', role: 'denoise', fieldId: 'width' },
+        { portId: 'negative_prompt', role: 'prompt', fieldId: 'negative_prompt' },
         {
           portId: 'num_inference_steps_input',
           inputName: 'num_inference_steps',
-          role: 'diffusersImageGenerate',
+          role: 'denoise',
           fieldId: 'num_inference_steps',
         },
-        { portId: 'height_input', inputName: 'height', role: 'diffusersImageGenerate', fieldId: 'height' },
-        { portId: 'width_input', inputName: 'width', role: 'diffusersImageGenerate', fieldId: 'width' },
-        { portId: 'output_type', role: 'diffusersImageGenerate', fieldId: 'output_type' },
       ],
       outputs: [
         {
           portId: 'images',
-          role: 'diffusersImageGenerate',
+          role: 'decode',
           fieldId: 'images',
           adaptation: 'direct_media',
           mediaType: 'image',

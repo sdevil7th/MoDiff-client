@@ -94,10 +94,40 @@ popup and the inserted connection. It uses the same normalized type compatibilit
 as ordinary wires, includes `isInput` controls, and respects direction even when
 the dragged port is untyped. Suggestions retain installed custom nodes and
 deduplicate exact registry aliases while excluding structural groups/loops.
+The popup ranks likely continuations from the origin node, handle direction and
+declared type (for example, Preview Image after an image output), then presents
+built-in/Block and enabled custom-node results in independently collapsible,
+independently scrolling sections under one shared search.
 The popup searches the executable registry independently of the left library's
-view; it cannot infer semantic model compatibility from a tensor type. New node
-data is cloned so edits cannot mutate a registry definition. Catalog enumeration
-stays in the popup's lazy `nodeConnectionSearch` module, outside canvas startup.
+view. For every backend pipeline contract that publishes an `actions` map, it
+also checks the loader's current task signal before suggesting or accepting a
+consumer whose connector declares `signalCompatibility.action`; a text-to-image
+pipeline therefore cannot be wired to unconditional generation, and a video-only
+pipeline cannot be wired to a video-plus-audio action.
+Component inputs can declare a generic signal-driven options map through
+`onSignal: { action: "value", prop: "options", data: ... }`. The same map is an
+executable compatibility contract for suggestions, direct connections and
+reconnections: a source signal with no non-empty option set is rejected. This
+also applies to custom nodes that publish the declaration, without client-side
+knowledge of Scheduler, Guider, Layers, or model-family names. When a valid
+signal changes a single-select field's options, an invalid previous value moves
+to the first allowed option; multi-select fields retain only allowed values. A
+later source-model change that makes an existing component connection invalid
+disconnects that edge and reports the reason before execution.
+The more general `signalCompatibility` connector metadata supports exact
+string-signal allowlists and structured action contracts. Built-in Modular stage
+nodes derive those allowlists from the backend registry, and custom nodes can use
+the same declaration. `connectionRole` plus `signalCompatibility.role` separates
+same-type components such as denoiser, VAE and scheduler even when they share a
+pipeline identity. `required: true` rejects a broad same-type producer that
+does not declare a semantic signal; an empty declared value remains pending until
+model selection publishes its identity. Pipeline-transform nodes relay the
+structured signal so compatibility and dynamic fields survive a chain.
+It cannot infer tensor shape, image-channel, model-weight or arbitrary custom-code
+semantics from a nominal type, so runtime validation remains authoritative. New
+node data is cloned so edits cannot mutate a registry definition. Catalog
+enumeration stays in the popup's lazy `nodeConnectionSearch` module, outside
+canvas startup.
 
 Expert's Stages panel also resolves connected starters from `POST /operations/starter`.
 The backend supplies ordinary node schemas and reviewed connections; the client
@@ -121,15 +151,34 @@ execution representation or model-family dispatch is introduced. The lazy
 retains compatible user overrides and custom branches, and previews incompatible
 wires and retained settings. Required conditioning comes from the exact upstream
 task; instruction editing and image-to-image remain distinct choices.
-Changing a Python action assigns a fresh runtime ID and reconnects compatible
-edges, while unchanged actions retain their IDs and positions. Unmatched canonical
+Changing a Python action or its bound pipeline assigns a fresh runtime ID and
+reconnects compatible edges; generic Python instances can retain pipeline-specific
+state even when the action name is unchanged. Same-binding actions retain their
+IDs, and all adapted stages retain their positions. Exact model round trips
+recover archived IDs. Unmatched canonical
 stages remain disabled with their saved data. Existing nested Blocks are left
 intact and use their composition inspector and structural editing commands.
 
+Resolved dynamic `layerconfig` fields may use dotted module paths with numeric
+indices only when the backend also declares the path as a selectable option.
+Reserved/empty path segments, undeclared paths, operation ports and ordinary
+parameter names remain subject to strict validation.
+
+Backend-resolved operation schemas suppress mount-time selector initialization
+and automatic signal actions that would replace exact-profile metadata with
+generic family defaults. Signal transport, connection-driven control visibility
+and explicit user actions remain active. Derived field-action updates are not
+marked as authored user choices; this prevents automatic option normalization
+from pinning a default guider across subsequent model changes.
+
 The change applies through `operationGraphTransaction`, using the existing history
 transaction, rollback and connection reconciliation. It rejects concurrent canvas
-edits, tab changes, active gestures and ambiguous/shared loader ownership. One
-Undo/Redo restores the complete edit. Imported hints are validated before use;
+edits, tab changes, active gestures and ambiguous/shared loader ownership. The
+model-picker preview excludes only the derived `hidden`/`disabled` parameter
+availability flags on ordinary operation nodes from its comparison; values,
+authored markers, contracts, bindings, wires and layout remain protected.
+Untouched siblings keep their latest availability metadata when committing.
+One Undo/Redo restores the complete edit. Imported hints are validated before use;
 legacy graphs are not converted on open. Stage inspection shows defaults,
 overrides, connected fallbacks and retained settings separately. Retained settings
 are not automatically restored or included in execution parameters.
@@ -755,6 +804,11 @@ full integrity verification. No template, discovery, or planning path invokes
 these mutations automatically.
 
 Model visibility, artifact presence, and Auto readiness are separate concepts.
+Explicit operation-authored graphs remain workflow-owned through save and restore,
+even when their shape matches a legacy five-node template. Canonical legacy
+adoption must not attach a Studio binding or reset their memory policy. Alternate
+model implementations show their backend profile identity as well as pipeline
+class, so variants sharing one class and repository remain distinguishable.
 User Nodes offer source/family and saved-workflow-context library views. Context is display-only,
 derived from the existing `name — workflow` save convention; it is not `source.workflow`, which names
 the upstream execution route. Legacy names without that convention appear under an explicit fallback.

@@ -215,7 +215,7 @@ export default function OperationGraphControls({
               <p key={index}>
                 Shared {group.name}:{' '}
                 {group.members.map((m) => m.operationId.split('.')[1]?.replace(/_/gu, ' ')).join(', ')}. Editing either
-                control updates the group; random mode draws one value per run.
+                control updates the group.{group.name === 'seed' ? ' Random mode draws one value per run.' : ''}
               </p>
             ))}
             {preview.starter.requiredInputs.length ? (

@@ -29,8 +29,13 @@ This directory contains durable user, operator, and contributor documentation fo
 
 ## Required Engineering Procedure
 
+The [image prototyping readiness plan](image-prototyping-readiness-plan.md)
+controls the next image handoff: audited model coverage, editable native stages,
+model-change preservation, custom nodes, UX fixes and integrated qualification.
+It records agreed scope and planned work, not completed implementation.
+
 The [Creator / Developer workspaces plan](creator-developer-workspaces-plan.md)
-is the accepted next implementation plan: audience-specific starting points,
+records the earlier implementation plan: audience-specific starting points,
 one editable graph, the Developer Workflows modal, and model/modification tests.
 Its unchecked milestones are planned work, not current support claims.
 
@@ -59,3 +64,4 @@ node/Block, hierarchy, execution, qualification or cross-machine integration wor
 If a guide and the application disagree, treat the implementation and automated checks as the immediate source of truth, then update the guide in the same change.
 
 - [Workflow authoring and model selection](workflow-authoring-ux.md)
+- [Serial image generation and modification campaigns](image-prototyping-campaign.md)

@@ -24,9 +24,11 @@ import {
   connectionSearchEntries,
   operationSearchEntries,
   prepareOperationConnection,
+  rankConnectionSearchEntries,
   matchingNodeHandleForDrop,
   savedBlockSearchEntries,
 } from '../workflow/nodeConnectionSearch';
+import type { ConnectionSearchOrigin } from '../workflow/nodeConnectionMatching';
 import { useUserBlockStore } from '../stores/useUserBlockStore';
 import { savedBlockMatchesSearch, type StoredUserBlockDefinition } from '../studio/userBlockLibrary';
 import type { NodeSearchFactory } from '../workflow/useWorkflowConnections';
@@ -55,6 +57,7 @@ interface NodeSearchDialogProps {
   nodes: Record<string, NodeData>;
   dataType?: string | string[];
   handleType?: 'source' | 'target' | null | undefined;
+  origin?: ConnectionSearchOrigin;
 }
 
 const NodeSearchDialog = ({
@@ -64,6 +67,7 @@ const NodeSearchDialog = ({
   nodes,
   dataType,
   handleType,
+  origin,
 }: NodeSearchDialogProps) => {
   const { pipeline, task, view, support } = useNodeDiscovery();
   const operations = useNodesStore((s) => s.operationContracts);
@@ -75,6 +79,8 @@ const NodeSearchDialog = ({
   const [resolutionError, setResolutionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [builtInOpen, setBuiltInOpen] = useState(true);
+  const [customOpen, setCustomOpen] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const blocks = useUserBlockStore((state) => state.blocks);
   const definitions = useUserBlockStore((state) => state.blockDefinitionsV2);
@@ -142,16 +148,17 @@ const NodeSearchDialog = ({
     () => runtimeCatalogNodes(nodes, operations, support, view, { pipeline, task }),
     [nodes, operations, support, view, pipeline, task],
   );
-  const filteredNodes = useMemo<SearchEntry[]>(
-    () => [
-      ...operationSearchEntries(operations, pipeline, task, dataType, handleType, searchQuery, nodes).map(
+  const filteredNodes = useMemo<SearchEntry[]>(() => {
+    const entries = [
+      ...operationSearchEntries(operations, pipeline, task, dataType, handleType, searchQuery, nodes, origin).map(
         (operation) => ({
           key: `operation:${operation.operationId}`,
           label: operationLabel(operation),
           operation,
+          node: nodes[operation.nodeKey],
         }),
       ),
-      ...connectionSearchEntries(catalogNodes, dataType, handleType, searchQuery, view).map(([key, node]) => ({
+      ...connectionSearchEntries(catalogNodes, dataType, handleType, searchQuery, view, origin).map(([key, node]) => ({
         key,
         node,
         label: nodeDisplayLabel(node),
@@ -161,23 +168,35 @@ const NodeSearchDialog = ({
         .filter(
           ({ block, node }) =>
             savedBlockMatchesSearch(block, searchQuery) &&
-            (!handleType || matchingNodeHandleForDrop(node, dataType, handleType)),
+            (!handleType || matchingNodeHandleForDrop(node, dataType, handleType, origin)),
         )
         .map((entry) => ({ ...entry, label: entry.node.label })),
-    ],
-    [
-      catalogNodes,
-      operations,
-      pipeline,
-      task,
-      view,
-      dataType,
-      handleType,
-      searchQuery,
-      savedEntries,
-      nodes,
-      catalogEntries,
-    ],
+    ];
+    return rankConnectionSearchEntries(entries, dataType, handleType, origin);
+  }, [
+    catalogNodes,
+    operations,
+    pipeline,
+    task,
+    view,
+    dataType,
+    handleType,
+    searchQuery,
+    savedEntries,
+    nodes,
+    catalogEntries,
+    origin,
+  ]);
+
+  const { builtInEntries, customEntries } = useMemo(() => {
+    return {
+      builtInEntries: filteredNodes.filter((entry) => !entry.node?.module.startsWith('custom.')),
+      customEntries: filteredNodes.filter((entry) => entry.node?.module.startsWith('custom.')),
+    };
+  }, [filteredNodes]);
+  const visibleEntries = useMemo(
+    () => [...(builtInOpen ? builtInEntries : []), ...(customOpen ? customEntries : [])],
+    [builtInEntries, builtInOpen, customEntries, customOpen],
   );
 
   useEffect(() => {
@@ -190,7 +209,7 @@ const NodeSearchDialog = ({
     };
   }, [pipeline, task, view, workflow, canvasEpoch, anchorPosition]);
 
-  const activeIndex = Math.min(selectedIndex, Math.max(0, filteredNodes.length - 1));
+  const activeIndex = Math.min(selectedIndex, Math.max(0, visibleEntries.length - 1));
 
   const handleClose = useCallback(() => {
     pending.current?.abort();
@@ -259,19 +278,19 @@ const NodeSearchDialog = ({
       switch (event.key) {
         case 'ArrowDown':
           event.preventDefault();
-          if (filteredNodes.length > 0) {
-            setSelectedIndex((prev) => (prev + 1) % filteredNodes.length);
+          if (visibleEntries.length > 0) {
+            setSelectedIndex((prev) => (prev + 1) % visibleEntries.length);
           }
           break;
         case 'ArrowUp':
           event.preventDefault();
-          if (filteredNodes.length > 0) {
-            setSelectedIndex((prev) => (prev - 1 + filteredNodes.length) % filteredNodes.length);
+          if (visibleEntries.length > 0) {
+            setSelectedIndex((prev) => (prev - 1 + visibleEntries.length) % visibleEntries.length);
           }
           break;
         case 'Enter':
-          if (filteredNodes[activeIndex]) {
-            void selectEntry(filteredNodes[activeIndex]);
+          if (visibleEntries[activeIndex]) {
+            void selectEntry(visibleEntries[activeIndex]);
           }
           break;
         case 'Escape':
@@ -279,12 +298,60 @@ const NodeSearchDialog = ({
           break;
       }
     },
-    [filteredNodes, activeIndex, selectEntry, handleClose],
+    [visibleEntries, activeIndex, selectEntry, handleClose],
   );
 
   if (!anchorPosition) {
     return null;
   }
+
+  const renderEntry = (entry: SearchEntry, index: number) => (
+    <GraphControlButton
+      type="button"
+      key={entry.key}
+      id={`node-search-${index}`}
+      role="option"
+      aria-selected={index === activeIndex}
+      disabled={busy}
+      aria-busy={busy || undefined}
+      onClick={() => void selectEntry(entry)}
+      className={cx(
+        'block w-full px-3 py-2 text-left transition hover:bg-modiff-surface-hover',
+        index === activeIndex && 'bg-modiff-surface',
+      )}
+    >
+      <div className="truncate text-sm text-modiff-text">{entry.label}</div>
+      {entry.block ? <div className="text-xs text-modiff-subtle-text">Saved Block · {entry.revision}</div> : null}
+      {entry.catalog ? (
+        <div className="text-xs text-modiff-subtle-text">
+          {entry.catalog.kind === 'cluster' ? 'Block' : 'Implementation'} · {entry.catalog.readinessLabel}
+        </div>
+      ) : null}
+      {entry.operation ? (
+        <div className="text-xs text-modiff-subtle-text">
+          {entry.operation.pipelineClass} · {entry.operation.task?.replace(/_/gu, ' ')}
+        </div>
+      ) : null}
+      {entry.node?.description ? (
+        <div className="truncate text-xs text-modiff-subtle-text">
+          {entry.node.description.substring(0, 72) + (entry.node.description.length > 72 ? '...' : '')}
+        </div>
+      ) : null}
+    </GraphControlButton>
+  );
+
+  const sectionHeader = (label: string, count: number, open: boolean, toggle: () => void) => (
+    <GraphControlButton
+      type="button"
+      aria-expanded={open}
+      onClick={toggle}
+      className="flex w-full shrink-0 items-center gap-2 border-b border-modiff-border px-3 py-2 text-left text-xs font-semibold text-modiff-text"
+    >
+      <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="text-modiff-subtle-text">{count}</span>
+    </GraphControlButton>
+  );
 
   return (
     <ModiffPopover
@@ -295,14 +362,14 @@ const NodeSearchDialog = ({
       modal
       onClose={handleClose}
       open
-      panelClassName="flex max-h-[512px] w-[368px] flex-col overflow-hidden border-4 border-modiff-bg bg-modiff-panel"
+      panelClassName="flex h-[min(512px,calc(100dvh-16px))] w-[368px] flex-col overflow-hidden border-4 border-modiff-bg bg-modiff-panel"
       placement="bottom-start"
     >
       <div className="shrink-0 p-2">
         <ModiffSearchInput
           ref={inputRef}
           aria-label="Search nodes"
-          aria-activedescendant={filteredNodes[activeIndex] ? `node-search-${activeIndex}` : undefined}
+          aria-activedescendant={visibleEntries[activeIndex] ? `node-search-${activeIndex}` : undefined}
           autoFocus
           placeholder="Search nodes and Blocks"
           value={searchQuery}
@@ -360,58 +427,55 @@ const NodeSearchDialog = ({
       ) : null}
 
       {handleType ? (
-        <p className="shrink-0 px-3 pb-2 text-xs text-modiff-subtle-text">
-          {handleType === 'source' ? 'Nodes with compatible inputs' : 'Nodes with compatible outputs'}
-        </p>
+        <div className="shrink-0 px-3 pb-2 text-xs text-modiff-subtle-text">
+          <p>
+            {handleType === 'source' ? 'Nodes with matching input port types' : 'Nodes with matching output port types'}
+          </p>
+          <p>Model, shape, and custom-code constraints are checked when declared and again at Run.</p>
+        </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto" role="listbox" aria-label="Matching nodes">
-        {filteredNodes.length === 0 ? (
-          <div className="px-4 py-6 text-center">
-            <div className="text-sm font-semibold text-modiff-text">
-              {handleType ? 'No compatible nodes found' : 'No results found'}
-            </div>
-            <div className="text-xs text-modiff-subtle-text">
-              {handleType ? 'Try another search or start from a different port.' : 'Try a different search query'}
-            </div>
-          </div>
-        ) : (
-          filteredNodes.map((entry, index) => (
-            <GraphControlButton
-              type="button"
-              key={entry.key}
-              id={`node-search-${index}`}
-              role="option"
-              aria-selected={index === activeIndex}
-              disabled={busy}
-              aria-busy={busy || undefined}
-              onClick={() => void selectEntry(entry)}
-              className={cx(
-                'block w-full px-3 py-2 text-left transition hover:bg-modiff-surface-hover',
-                index === activeIndex && 'bg-modiff-surface',
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden" role="listbox" aria-label="Matching nodes">
+        <section className={cx('flex min-h-0 flex-col', builtInOpen && builtInEntries.length ? 'flex-1' : 'shrink-0')}>
+          {sectionHeader('Built-in nodes and Blocks', builtInEntries.length, builtInOpen, () => {
+            setBuiltInOpen((open) => !open);
+            setSelectedIndex(0);
+          })}
+          {builtInOpen ? (
+            <div className={cx(builtInEntries.length ? 'min-h-0 flex-1 overflow-auto' : 'shrink-0')}>
+              {builtInEntries.length ? (
+                builtInEntries.map((entry, index) => renderEntry(entry, index))
+              ) : (
+                <div className="px-4 py-4 text-center">
+                  <div className="text-sm font-semibold text-modiff-text">
+                    {handleType ? 'No compatible nodes found' : 'No results found'}
+                  </div>
+                  <div className="text-xs text-modiff-subtle-text">
+                    {handleType ? 'Try another search or start from a different port.' : 'Try a different search query'}
+                  </div>
+                </div>
               )}
-            >
-              <div className="truncate text-sm text-modiff-text">{entry.label}</div>
-              {entry.block ? (
-                <div className="text-xs text-modiff-subtle-text">Saved Block · {entry.revision}</div>
-              ) : null}
-              {entry.catalog ? (
-                <div className="text-xs text-modiff-subtle-text">
-                  {entry.catalog.kind === 'cluster' ? 'Block' : 'Implementation'} · {entry.catalog.readinessLabel}
+            </div>
+          ) : null}
+        </section>
+        <section className={cx('flex min-h-0 flex-col', customOpen && customEntries.length ? 'flex-1' : 'shrink-0')}>
+          {sectionHeader('Custom nodes', customEntries.length, customOpen, () => {
+            setCustomOpen((open) => !open);
+            setSelectedIndex(0);
+          })}
+          {customOpen ? (
+            <div className={cx(customEntries.length ? 'min-h-0 flex-1 overflow-auto' : 'shrink-0')}>
+              {customEntries.length ? (
+                customEntries.map((entry, index) =>
+                  renderEntry(entry, (builtInOpen ? builtInEntries.length : 0) + index),
+                )
+              ) : (
+                <div className="px-4 py-3 text-center text-xs text-modiff-subtle-text">
+                  No matching enabled custom nodes
                 </div>
-              ) : null}
-              {entry.operation ? (
-                <div className="text-xs text-modiff-subtle-text">
-                  {entry.operation.pipelineClass} · {entry.operation.task?.replace(/_/gu, ' ')}
-                </div>
-              ) : null}
-              {entry.node?.description ? (
-                <div className="truncate text-xs text-modiff-subtle-text">
-                  {entry.node.description.substring(0, 72) + (entry.node.description.length > 72 ? '...' : '')}
-                </div>
-              ) : null}
-            </GraphControlButton>
-          ))
-        )}
+              )}
+            </div>
+          ) : null}
+        </section>
       </div>
     </ModiffPopover>
   );

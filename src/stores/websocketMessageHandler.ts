@@ -394,7 +394,10 @@ function preserveCurrentParamValue(current: NodeParams | undefined, incoming: No
   // other field option from the fresh backend definition.
   const clusterFieldOptions = Object.fromEntries(
     Object.entries(current.fieldOptions ?? {}).filter(
-      ([key]) => key === 'suppressInitialFieldAction' || key.startsWith('huggingFaceCluster'),
+      ([key]) =>
+        key === 'suppressInitialFieldAction' ||
+        key === 'suppressAutomaticSignalAction' ||
+        key.startsWith('huggingFaceCluster'),
     ),
   );
   if (Object.keys(clusterFieldOptions).length > 0) {

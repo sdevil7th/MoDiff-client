@@ -15,6 +15,7 @@ import {
   Info,
   ListPlus,
   LoaderCircle,
+  MemoryStick,
   Package,
   PanelRightClose,
   PanelRightOpen,
@@ -75,7 +76,7 @@ import {
   ModiffMenuSurface,
   ModiffMenuTrigger,
   ModiffRadioGroup,
-  ModiffSelect,
+  ModiffTooltip,
 } from '../ui';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
 import type { WorkflowSaveDestination } from './WorkflowSaveDialog';
@@ -761,51 +762,52 @@ function TopBar() {
       </div>
 
       <div className="flex flex-none items-center gap-2">
-        <ModiffIconButton
-          label="Workflow resources"
-          title="Assess this workflow’s resources"
-          data-testid="topbar-workflow-resources"
-          onClick={() => {
-            useSettingsStore.getState().setRightPanelTab('compatibility');
-            useSettingsStore.getState().setRightPanelOpen(true);
-          }}
+        <ModiffRadioGroup
+          aria-label="Workspace"
+          data-testid="topbar-workspace"
+          variant="segmented"
+          value={workspaceModeForView(studioViewMode)}
+          onValueChange={(value) => setStudioViewMode(restoreWorkspaceView(value, studioViewMode))}
+          options={[
+            { value: 'creator', label: <span title="Build and run visual workflows">Creator</span> },
+            {
+              value: 'developer',
+              label: <span title="Develop and test nodes and Diffusers workflows">Developer</span>,
+            },
+          ]}
+        />
+        <ModiffTooltip
+          content={
+            <div className="max-w-72 space-y-1">
+              <div className="font-semibold">Memory: {formResourceMode === 'auto' ? 'Automatic' : 'Custom'}</div>
+              <div>Automatic chooses supported placement and offload settings. Custom keeps your node settings.</div>
+              {customGraphAutoUnavailable ? <div>{customGraphAutoUnavailableReason}</div> : null}
+            </div>
+          }
         >
-          <Info size={15} />
-        </ModiffIconButton>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-modiff-subtle-text">Workspace</span>
-          <ModiffRadioGroup
-            aria-label="Workspace"
-            data-testid="topbar-workspace"
-            variant="segmented"
-            value={workspaceModeForView(studioViewMode)}
-            onValueChange={(value) => setStudioViewMode(restoreWorkspaceView(value, studioViewMode))}
-            options={[
-              { value: 'creator', label: <span title="Build and run visual workflows">Creator</span> },
-              {
-                value: 'developer',
-                label: <span title="Develop and test nodes and Diffusers workflows">Developer</span>,
-              },
-            ]}
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-modiff-subtle-text">Memory</span>
-          <ModiffSelect
-            aria-label="Workflow resource policy"
-            data-testid="topbar-resource-policy"
-            className="w-36"
-            value={formResourceMode}
-            title={customGraphAutoUnavailable ? customGraphAutoUnavailableReason : 'Resource policy for this workflow'}
-            onValueChange={(value) => {
-              if (value === 'auto' || value === 'expert') handleResourceModeChange(value);
-            }}
-            options={[
-              { value: 'auto', label: 'Automatic', disabled: customGraphAutoUnavailable },
-              { value: 'expert', label: 'Custom' },
-            ]}
-          />
-        </div>
+          {(tooltipProps) => (
+            <ModiffButton
+              {...tooltipProps}
+              aria-label={`Memory policy: ${formResourceMode === 'auto' ? 'Automatic' : 'Custom'}. Click to switch.`}
+              aria-pressed={formResourceMode === 'auto'}
+              data-testid="topbar-resource-policy"
+              className="flex-none rounded-none border border-transparent bg-modiff-panel/60 px-2.5 text-modiff-text hover:bg-modiff-surface-hover"
+              icon={<MemoryStick size={16} />}
+              onClick={() => {
+                const next = formResourceMode === 'auto' ? 'expert' : 'auto';
+                if (next === 'auto' && customGraphAutoUnavailable) {
+                  enqueueSnackbar(customGraphAutoUnavailableReason, { variant: 'warning' });
+                  return;
+                }
+                handleResourceModeChange(next);
+              }}
+              size="normal"
+              tone="ghost"
+            >
+              {formResourceMode === 'auto' ? 'Auto' : 'Custom'}
+            </ModiffButton>
+          )}
+        </ModiffTooltip>
         <TopBarButton
           disabled={graphFixPlan.issues.length === 0}
           icon={
@@ -826,9 +828,7 @@ function TopBar() {
           }
           testId="graph-fix"
           tone={graphFixPlan.issues.length > 0 ? 'active' : 'quiet'}
-        >
-          Fix
-        </TopBarButton>
+        ></TopBarButton>
         <div className="flex items-center">
           <TopBarButton
             disabled={runDisabled}
@@ -915,6 +915,17 @@ function TopBar() {
           onClick={() => setRightPanelOpen(!isRightPanelOpen)}
           tone={isRightPanelOpen ? 'active' : 'quiet'}
         />
+        <ModiffIconButton
+          label="Workflow resources"
+          title="Assess this workflow’s resources"
+          data-testid="topbar-workflow-resources"
+          onClick={() => {
+            useSettingsStore.getState().setRightPanelTab('compatibility');
+            useSettingsStore.getState().setRightPanelOpen(true);
+          }}
+        >
+          <Info size={15} />
+        </ModiffIconButton>
         <RuntimeResourceMonitor active={Boolean(currentTask)} connected={isConnected} />
         {(activeDownloadCount > 0 || failedDownloadCount > 0) && (
           <TopBarButton

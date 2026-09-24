@@ -689,7 +689,7 @@ test('all 94 reviewed workflows compile to one V2 graph with progressively proje
     });
   }
   assert.equal(definitions.length, 94);
-  assert.equal(nodeCount, 1794);
+  assert.equal(nodeCount, 1796);
   assert.equal(maximumDepth, 5);
   assert.equal(parameterLocalityChecks, 94);
   assert.ok(subtreeSaveChecks > 1400);
