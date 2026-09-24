@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          ref: 101b02a5cb1ff95e456ace014bcc7bd8a5431467
+          ref: b2c7f81f05203d6d88a0bb36d41bc78e58f4cf64
           path: MoDiff
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
