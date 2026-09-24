@@ -8788,6 +8788,8 @@ test('image pipeline drag-to-add excludes generation actions outside the selecte
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
 });
 
+let operationStarterFixturesPromise: Promise<import('../../../src/workflow/operationAuthoring').OperationStarter[]>;
+
 async function operationStarterFixtures() {
   const python =
     process.env.MODIFF_BACKEND_PYTHON ||
@@ -8795,29 +8797,24 @@ async function operationStarterFixtures() {
   const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
   const command = process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
   const args = process.platform === 'win32' ? [script] : [python, script];
-  return new Promise<import('../../../src/workflow/operationAuthoring').OperationStarter[]>((resolve, reject) => {
-    const child = spawn(command, args, { cwd: BACKEND_ROOT, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
-    let stdout = '',
-      stderr = '';
-    child.stdout.on('data', (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) reject(new Error(stderr));
-      else {
-        try {
-          resolve(JSON.parse(stdout));
-        } catch (error) {
-          reject(error);
-        }
-      }
-    });
-  });
+  // Source is fixed for a worker's lifetime. Generate once, but return isolated
+  // copies so exact-model and schema tests cannot contaminate later scenarios.
+  operationStarterFixturesPromise ??= promisify(execFile)(command, args, {
+    cwd: BACKEND_ROOT,
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+    timeout: 90_000,
+    maxBuffer: 32 * 1024 * 1024,
+  }).then(({ stdout }) => JSON.parse(stdout));
+  return structuredClone(await operationStarterFixturesPromise);
 }
+
+test('operation authoring fixtures isolate mutations between cached reads', async () => {
+  const first = await operationStarterFixtures();
+  const expected = structuredClone(first);
+  first[0]!.nodes[0]!.node.label = 'Changed only in this scenario';
+  first.splice(1);
+  expect(await operationStarterFixtures()).toEqual(expected);
+});
 
 async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
   await installMockRoutes(page);
@@ -9278,7 +9275,12 @@ test('operation starters preserve native edits through model/task preview, Undo 
   await expect(dialog.getByRole('heading', { level: 2 })).toBeVisible();
   await dialog.getByRole('button', { name: 'Apply graph change', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await promptNode.locator('header').first().click();
+  const replacedPromptId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')!.id,
+  );
+  // A different bound pipeline needs a fresh runtime node, not the old cache owner.
+  expect(replacedPromptId).not.toBe(promptId);
+  await page.locator(`.react-flow__node[data-id="${replacedPromptId}"] header`).first().click();
   await panel.getByRole('button', { name: 'Inspect selected node', exact: true }).click();
   const stageInspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
   await stageInspector.getByRole('tab', { name: 'Implementation', exact: true }).click();
@@ -9302,6 +9304,11 @@ test('operation starters preserve native edits through model/task preview, Undo 
   await expect
     .poll(inspect)
     .toEqual({ pipeline: 'QwenImageModularPipeline', prompt: 'Copper observatory at sunrise', count: 4 });
+  expect(
+    await page.evaluate(
+      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')?.id,
+    ),
+  ).toBe(promptId);
   await page.keyboard.press('Control+Shift+z');
   await expect
     .poll(inspect)
@@ -9310,8 +9317,14 @@ test('operation starters preserve native edits through model/task preview, Undo 
     await page.evaluate(
       () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')?.id,
     ),
-  ).toBe(promptId);
+  ).toBe(replacedPromptId);
   panel = await selectOperationPipeline(page, 'FluxModularPipeline', 'image_to_image');
+  const replacedLoaderId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'ModelsLoader')!.id,
+  );
+  await panel.getByLabel('Operation graph to change').click();
+  await page.getByRole('option', { name: new RegExp(replacedLoaderId.slice(-6)) }).click();
+  await waitForOperationGraphToSettle(page);
   await panel.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
   await expect(dialog).toContainText('encode image · image');
@@ -9354,7 +9367,6 @@ for (const workspace of ['auto', 'expert'] as const) {
     await page.getByTestId('left-tab-nodes').click();
     await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
     const initial = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes);
-    const loaderId = initial.find((n) => n.action === 'ModelsLoader')!.id;
     const promptId = initial.find((n) => n.action === 'EncodePrompt')!.id;
     const prompt = page.locator(`.react-flow__node[data-id="${promptId}"] [data-key="prompt"] textarea`);
     await prompt.fill('A copper observatory, intricate engraved brass, sunrise through violet clouds');
@@ -9370,7 +9382,10 @@ for (const workspace of ['auto', 'expert'] as const) {
       });
     const before = await inspect();
     const openOwner = async () => {
-      await page.locator(`.react-flow__node[data-id="${loaderId}"] header`).first().click();
+      const currentLoaderId = await page.evaluate(
+        () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'ModelsLoader')!.id,
+      );
+      await page.locator(`.react-flow__node[data-id="${currentLoaderId}"] header`).first().click();
       await expect(page.getByRole('dialog', { name: 'Node inspector', exact: true })).toHaveCount(0);
       await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
       const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
@@ -9484,11 +9499,13 @@ for (const workspace of ['auto', 'expert'] as const) {
     await expect(picker).toHaveCount(0);
     await page.keyboard.press('Escape');
     const after = await read();
-    expect(after.nodes.find((n) => n.id === loader.id)!.data.params.repo_id.value).toBe('Qwen/Qwen-Image-2512');
-    expect(after.nodes.find((n) => n.id === loader.id)!.data.params.revision.value).toBe(
-      '25468b98e3276ca6700de15c6628e51b7de54a26',
-    );
-    expect(after.nodes.find((n) => n.id === encoder.id)!.data.params.prompt.value).toBe(
+    const appliedLoader = after.nodes.find((n) => n.data.action === 'ModelsLoader')!;
+    const appliedEncoder = after.nodes.find((n) => n.data.action === 'EncodePrompt')!;
+    expect(appliedLoader.id).not.toBe(loader.id);
+    expect(appliedEncoder.id).not.toBe(encoder.id);
+    expect(appliedLoader.data.params.repo_id.value).toBe('Qwen/Qwen-Image-2512');
+    expect(appliedLoader.data.params.revision.value).toBe('25468b98e3276ca6700de15c6628e51b7de54a26');
+    expect(appliedEncoder.data.params.prompt.value).toBe(
       before.nodes.find((n) => n.id === encoder.id)!.data.params.prompt.value,
     );
     await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
@@ -9498,12 +9515,11 @@ for (const workspace of ['auto', 'expert'] as const) {
       .toEqual(loader.data.params);
     await page.keyboard.press('Control+Shift+z');
     await expect
-      .poll(async () => (await read()).nodes.find((n) => n.id === loader.id)!.data.params)
-      .toEqual(after.nodes.find((n) => n.id === loader.id)!.data.params);
+      .poll(async () => (await read()).nodes.find((n) => n.id === appliedLoader.id)!.data.params)
+      .toEqual(appliedLoader.data.params);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-    const restoredLoader = (await read()).nodes.find((n) => n.id === loader.id)!;
-    const appliedLoader = after.nodes.find((n) => n.id === loader.id)!;
+    const restoredLoader = (await read()).nodes.find((n) => n.id === appliedLoader.id)!;
     // Rehydration reapplies managed-field disabled flags. Persisted values and
     // retained overrides must remain exact regardless of that presentation pass.
     for (const [field, param] of Object.entries(appliedLoader.data.params))
@@ -9586,10 +9602,14 @@ test('stateful task changes share native seed edits and preserve them through Un
   await page.setViewportSize({ width: 1680, height: 1050 });
   await ensureFrontend();
   const starters = await installOperationAuthoringRoutes(page);
-  expect(
-    starters.find((s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'image_to_image')!
-      .sharedInputs,
-  ).toHaveLength(1);
+  const sharedInputs = starters.find(
+    (s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'image_to_image',
+  )!.sharedInputs!;
+  expect(sharedInputs.map((input) => input.name)).toEqual(['seed', 'width', 'height']);
+  expect(sharedInputs.find((input) => input.name === 'seed')!.members).toEqual([
+    { operationId: 'diffusion.encode_image', field: 'seed' },
+    { operationId: 'diffusion.denoise', field: 'seed' },
+  ]);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
   await dismissTaskLauncher(page);

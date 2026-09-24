@@ -310,6 +310,10 @@ is contract evidence, not live hardware or model qualification. Python catalog a
 starter-fixture subprocesses suppress custom-extension discovery: they must not
 execute or change the operator’s installed source approvals.
 
+Mocked operation-authoring tests generate backend starter schemas once per test
+worker and use deep copies per scenario. Keep source contracts fixed during a
+run; never share mutable fixture objects or reuse this cache across test runs.
+
 Run the mocked browser gate for behavior or layout-sensitive changes:
 
 ```bash
