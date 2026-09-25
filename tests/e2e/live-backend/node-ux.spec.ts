@@ -70,6 +70,8 @@ for (const kind of ['local', 'hub', 'git'] as const) {
         .fill(kind === 'hub' ? remote! : `https://huggingface.co/${remote}`);
       await modal.getByRole('button', { name: 'Advanced options', exact: true }).click();
       await modal.getByLabel('Extension module name').fill(name);
+      if (process.env.MODIFF_NODE_UX_REVISION)
+        await modal.getByLabel('Extension revision').fill(process.env.MODIFF_NODE_UX_REVISION);
       await modal.getByRole('button', { name: 'Add node', exact: true }).last().click();
     }
     await expect(modal.getByRole('status')).toContainText('Added and enabled', { timeout: 120_000 });

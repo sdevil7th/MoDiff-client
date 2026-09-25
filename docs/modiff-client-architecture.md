@@ -230,6 +230,12 @@ for equal media roles, keeps masks separate from alpha-mask outputs, and reports
 missing/incompatible loader definitions. It does not touch existing documents,
 invent media for text-only routes, or infer a tensor from a path-only field.
 
+Readiness also checks required file pickers in the selected executable closure.
+A connected loader output does not satisfy an empty required source file. Current
+registry declarations cover historical loader snapshots without modifying their
+saved values; enabled incoming file connections remain valid suppliers. The same
+inspection feeds canvas readiness and Run admission.
+
 Saved ordinary-node Blocks retain their legacy format until an explicit edit
 requires conversion. Their model/task chooser prepares a read-only candidate
 through the existing legacy instance adapter. Preview and cancellation never

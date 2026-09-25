@@ -35,6 +35,11 @@ for (const task of [
     const loader = page.locator('.react-flow__node').filter({ has: page.locator('header', { hasText: label }) });
     await expect(loader).toHaveCount(1, { timeout: 45_000 });
     await expect(loader.locator('input[type=file]')).toHaveCount(1);
+    await expect(page.getByTestId('studio-run')).toBeDisabled();
+    await expect(page.getByText(`${label} needs a file before running.`, { exact: true }).first()).toBeVisible();
+    const policy = page.getByTestId('topbar-resource-policy');
+    if ((await policy.getAttribute('aria-pressed')) === 'true') await policy.click();
+    await expect(page.getByTestId('studio-run')).toBeDisabled();
     const workflow = await graph(page);
     const sources = workflow.nodes.filter(
       (n) => ['modules.Image', 'modules.Audio'].includes(n.data.module) && n.data.action === 'Load',
@@ -210,7 +215,7 @@ test('Guidance is an ordinary node: refreshed fields, related membership, contro
   expect(errors).toEqual([]);
 });
 
-test('removed dynamic Guidance row stays hidden through Undo Redo and refresh without changing its value', async ({
+test('removed dynamic Guidance row stays hidden through Undo Redo save reopen and refresh without changing its value', async ({
   page,
 }) => {
   const nodes = await setup(page, 'StableDiffusionXLModularPipeline', 'text_to_image', true, true);
@@ -243,6 +248,27 @@ test('removed dynamic Guidance row stays hidden through Undo Redo and refresh wi
   await expect(node.getByText(label, { exact: true })).toBeVisible();
   await page.keyboard.press('Control+Shift+z');
   await expect(node.getByText(label, { exact: true })).toHaveCount(0);
+  const savedName = `Guidance removal ${Date.now()}`;
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill(savedName);
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: `Close ${savedName}`, exact: true }).click();
+  const launcher = page.getByTestId('task-launcher');
+  if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  await page.getByLabel('Search workflows').fill(savedName);
+  await page
+    .locator('[data-testid^="saved-workflow-"]')
+    .filter({ hasText: savedName })
+    .getByRole('button')
+    .first()
+    .click();
+  await expect(node.getByTestId(`guidance-node-${root.id}`)).toBeVisible();
+  await expect(node.getByText(label, { exact: true })).toHaveCount(0);
+  expect(await consumed()).toEqual(before);
   await page.reload();
   await expect(node.getByTestId(`guidance-node-${root.id}`)).toBeVisible({ timeout: 45_000 });
   await expect(node.getByText(label, { exact: true })).toHaveCount(0);

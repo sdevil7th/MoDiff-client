@@ -48,6 +48,87 @@ async function api(page: Page) {
   });
 }
 
+test('Preview Image rejects a wire back to its encoder with a visible cycle explanation', async ({ page }) => {
+  const ids = await setup(page, 'image_to_image');
+  const preview = ids.before.nodes.find(
+    (node) => node.data.module === 'modules.Image' && node.data.action === 'Preview',
+  )!;
+  const inputPort = ids.before.nodes
+    .find((node) => node.id === ids.input)!
+    .data.blockInstanceV2!.effectiveInterface.boundary.inputs.find(
+      (port) => port.binding.fieldOrPortId === 'image',
+    )!.portId;
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const source = page.locator(`.react-flow__node[data-id="${preview.id}"] .react-flow__handle.source`).first();
+  const target = page.locator(
+    `.react-flow__node[data-id="${ids.input}"] .react-flow__handle.target[data-handleid="${inputPort}"]`,
+  );
+  const before = await api(page);
+  const from = await source.boundingBox();
+  const to = await target.boundingBox();
+  if (!from || !to) throw new Error('Missing cycle gesture sockets');
+  await source.hover();
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 25 });
+  await page.mouse.up();
+  await expect(page.getByText(/Cannot connect:.*dependency loop|would create a cycle/u)).toBeVisible();
+  expect(await api(page)).toEqual(before);
+  await page.screenshot({ path: test.info().outputPath('cycle-rejection.png') });
+});
+
+test('Preview Image connects directly to an independent downstream encoding branch', async ({ page }) => {
+  const upstream = await setup(page, 'image_to_image');
+  const preview = upstream.before.nodes.find(
+    (node) => node.data.module === 'modules.Image' && node.data.action === 'Preview',
+  )!;
+  const branch = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    const { requestOperationStarter } = await import('/src/workflow/operationStarterRequest.ts');
+    const { createWorkflowDraft } = await import('/src/workflow/workflowDraft.ts');
+    const registry = useNodesStore.getState();
+    const starter = await requestOperationStarter(
+      'ZImageModularPipeline',
+      'text_to_image',
+      registry.operationContracts,
+    );
+    const { graph } = createWorkflowDraft(starter, registry.nodesRegistry);
+    const flow = useFlowStore.getState();
+    flow.replaceGraph({ nodes: [...flow.nodes, ...graph.nodes], edges: [...flow.edges, ...graph.edges] });
+    return graph.nodes.find((node) => node.data.label === 'Encode Inputs')!.id;
+  });
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const source = page.locator(`.react-flow__node[data-id="${preview.id}"] .react-flow__handle.source`).first();
+  const target = page.locator(
+    `.react-flow__node[data-id="${branch}"] .react-flow__handle.target[data-handleid="modiff-encoding-input:image"]`,
+  );
+  await expect(target).toBeVisible();
+  const before = await api(page);
+  const point = await target.boundingBox();
+  if (!point) throw new Error('Downstream image socket is missing');
+  await source.hover();
+  await page.mouse.down();
+  await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2, { steps: 25 });
+  await page.mouse.up();
+  await expect(target).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Attach media input', exact: true })).toHaveCount(0);
+  const connected = await api(page);
+  expect(
+    Object.values(connected.nodes).some(
+      (node) => node.action === 'ImageEncode' && node.params.image.sourceId === preview.id,
+    ),
+  ).toBe(true);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+z');
+  expect(await api(page)).toEqual(before);
+  await page.keyboard.press('Control+Shift+z');
+  expect(await api(page)).toEqual(connected);
+  await page.reload();
+  await expect(page.locator(`.react-flow__node[data-id="${branch}"]`)).toBeVisible({ timeout: 45_000 });
+  expect(await api(page)).toEqual(connected);
+  await page.screenshot({ path: test.info().outputPath('preview-downstream-branch.png') });
+});
+
 test('one Encode Inputs: simultaneous inputs, preview, disclosure, persistence and implementation menu', async ({
   page,
 }) => {
@@ -558,7 +639,5 @@ test('connected prompt provenance and hidden runtime summary preserve the author
   await expect(prompt).toBeEnabled();
   await expect(prompt).toHaveValue('Retained local fallback');
   await expect(input.getByText('1×4×64×64', { exact: true })).toHaveCount(0);
-  await expect(
-    input.getByText('Image input required — connect a separate Load Image node.', { exact: true }),
-  ).toBeVisible();
+  await expect(input.getByText('Connect an input image to encode.', { exact: true })).toBeVisible();
 });

@@ -32,18 +32,12 @@ editor, custom imports, matching sockets and supported image/audio attachments.
 
 ## Required Engineering Procedure
 
-The [image prototyping readiness plan](image-prototyping-readiness-plan.md)
-controls the next image handoff: audited model coverage, editable native stages,
-model-change preservation, custom nodes, UX fixes and integrated qualification.
-It records agreed scope and planned work, not completed implementation.
-
-The [Creator / Developer workspaces plan](creator-developer-workspaces-plan.md)
-is historical. Its mode switch and multi-step import UX are superseded by the
-developer-first editor; retained test evidence is not a new support claim.
-
-The [generic Diffusers workbench plan](generic-diffusers-workbench-plan.md)
-defines the staged Auto/Expert authoring redesign, compatibility requirements,
-and acceptance criteria. Planned behavior is not a current support claim.
+The [workbench acceptance guide](workbench-acceptance.md) consolidates model
+coverage, native-stage exceptions, preservation, custom-node and integrated
+qualification requirements. Retired implementation plans remain in Git history;
+their removal does not close outstanding acceptance gates. Use
+[developer-first authoring](developer-first-node-ux.md) and
+[workflow authoring](workflow-authoring-ux.md) for current behavior.
 
 See the [frontend style guide](frontend-style-guide.md#field-components) for
 numeric-field containment and [library accessibility](frontend-style-guide.md#accessibility)

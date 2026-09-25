@@ -178,6 +178,35 @@ function operationGraph(starter) {
 }
 
 let starters;
+test('ordinary required media pickers block connected empty loaders and retain historical snapshots', () => {
+  for (const media of ['image', 'audio']) {
+    const file = { display: 'filebrowser', type: 'str', required: true, fieldOptions: { fileTypes: [media] } };
+    const loader = {
+      id: 'loader',
+      data: { module: 'custom.Media', action: 'Load', label: 'Load media', params: { file: { ...file } } },
+    };
+    const consumer = { id: 'consumer', data: { params: {} } };
+    const graph = {
+      nodes: [loader, consumer],
+      edges: [{ source: 'loader', sourceHandle: media, target: 'consumer', targetHandle: media }],
+    };
+    const before = structuredClone(graph);
+    assert.equal(inspect(graph.nodes, graph)[0]?.code, 'media_file_input_missing');
+    assert.deepEqual(graph, before);
+    delete loader.data.params.file.required;
+    const registry = { 'custom.Media.Load': { params: { file } } };
+    assert.equal(inspect(graph.nodes, graph, [], registry)[0]?.nodeId, 'loader');
+    loader.data.params.file.value = ['@data/example'];
+    assert.equal(inspect(graph.nodes, graph, [], registry).length, 0);
+    loader.data.params.file.value = [];
+    graph.edges.push({ source: 'consumer', sourceHandle: 'path', target: 'loader', targetHandle: 'file' });
+    assert.equal(inspect(graph.nodes, graph, [], registry).length, 0);
+    consumer.data.uiState = { disabled: true };
+    assert.equal(inspect(graph.nodes, graph, [], registry).length, 1);
+    assert.equal(inspect(graph.nodes, { nodes: [consumer], edges: [] }, [], registry).length, 0);
+  }
+});
+
 test('backend-declared required media on ordinary generic nodes blocks before execution, without demanding optional masks or blank prompts', async () => {
   starters = await operationFixtures();
   for (const starter of starters) {
@@ -285,4 +314,48 @@ test('current backend declarations refresh stale saved requirements without chan
   assert.equal(inspect(graph.nodes, graph).length, 1);
   assert.equal(inspect(graph.nodes, graph, current).length, 2);
   assert.deepEqual(graph, before);
+});
+
+test('connected built-in loaders need files only when supplying declared required media', () => {
+  const starter = starters.find((s) => s.pipelineClass === 'FluxKontextModularPipeline' && s.task === 'edit_image');
+  for (const [module, media] of [
+    ['modules.Image', 'image'],
+    ['modules.Audio', 'audio'],
+  ]) {
+    const graph = operationGraph(starter);
+    const target = graph.nodes.find((node) =>
+      node.data.operationAuthoring.operation.ports.some((p) => p.required && p.semantics?.kind === 'media'),
+    );
+    const port = target.data.operationAuthoring.operation.ports.find(
+      (p) => p.required && p.semantics?.kind === 'media',
+    );
+    target.data.params[port.name].type = media;
+    const loader = {
+      id: 'source',
+      data: {
+        module,
+        action: 'Load',
+        label: `Load ${media}`,
+        params: {
+          file: { display: 'filebrowser', type: 'str', value: [] },
+          output: { display: 'output', type: media },
+        },
+      },
+    };
+    graph.nodes.push(loader);
+    graph.edges.push({ source: loader.id, sourceHandle: 'output', target: target.id, targetHandle: port.name });
+    const before = structuredClone(graph);
+    const missing = () => inspect(graph.nodes, graph).filter((i) => i.code === 'media_file_input_missing');
+    assert.equal(missing().length, 1);
+    assert.equal(missing()[0].nodeId, 'source');
+    assert.deepEqual(graph, before);
+    loader.data.params.file.value = ['@data/selected'];
+    assert.equal(missing().length, 0);
+    loader.data.params.file.value = [];
+    port.required = false;
+    assert.equal(missing().length, 0, 'preserve empty optional branches');
+    port.required = true;
+    loader.data.module = 'custom.GeneratedMedia';
+    assert.equal(missing().length, 0, 'do not infer arbitrary custom execution from a file widget');
+  }
 });

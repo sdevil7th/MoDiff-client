@@ -1,5 +1,6 @@
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
+import type { NodeData } from '../stores/useNodeStore';
 import { blockInputPortBindingsV2, blockProjectionNodeIdV2 } from './blockRuntimeV2';
 import { blockMediaFileBoundaryIsCompatibleV2 } from './blockValueTypeCompatibilityV2';
 import type { RunReadinessIssue } from './types';
@@ -23,6 +24,7 @@ export function inspectBlockMediaInputsV2(
   visibleNodes: CustomNodeType[],
   execution: { nodes: CustomNodeType[]; edges: Edge[] },
   operations: OperationContract[] = [],
+  registry: Record<string, NodeData> = {},
 ): RunReadinessIssue[] {
   const enabled = new Map(
     execution.nodes.filter((node) => !node.data.uiState?.disabled).map((node) => [node.id, node]),
@@ -79,6 +81,44 @@ export function inspectBlockMediaInputsV2(
       }
     }
   }
+  const requireFile = (node: CustomNodeType, field: string) => {
+    const param = node.data.params?.[field];
+    const key = `${node.id}\0${field}`;
+    if (
+      !param ||
+      param.disabled ||
+      seen.has(key) ||
+      connected.has(key) ||
+      !emptyPickerValue(param.value ?? param.default)
+    )
+      return;
+    seen.add(key);
+    const ownerId = owners.get(node.id);
+    const leafVisible = visible.has(node.id) || !ownerId;
+    issues.push({
+      id: `media-file-input-missing:${node.id}:${field}`,
+      code: 'media_file_input_missing',
+      category: 'asset',
+      severity: 'error',
+      blocking: true,
+      action: 'inspect_node',
+      nodeId: leafVisible ? node.id : ownerId,
+      fieldId: leafVisible ? field : undefined,
+      message: `${node.data.label || node.data.action} needs a file before running.`,
+      details:
+        'Select a file in the loader or connect an enabled source to its file input. Your other settings are unchanged.',
+    });
+  };
+  // A wire from a loader is not evidence that its required file was selected.
+  // Consult current declarations for historical snapshots, without rewriting
+  // their saved fields. Only inspect the selected executable closure.
+  for (const node of enabled.values()) {
+    const declared = registry[`${node.data.module}.${node.data.action}`]?.params;
+    for (const [field, param] of Object.entries(node.data.params ?? {})) {
+      const contract = declared?.[field] ?? param;
+      if (contract.display === 'filebrowser' && contract.required) requireFile(node, field);
+    }
+  }
   // Generic operations can require media without exposing a reusable Block
   // boundary. Their backend declarations apply to the same execution closure.
   // Do not infer required inputs from names, labels, model families or tensors.
@@ -106,12 +146,26 @@ export function inspectBlockMediaInputsV2(
       const key = `${node.id}\0${port.name}`;
       const param = node.data.params?.[port.name];
       if (seen.has(key) || !param || param.disabled || !emptyPickerValue(param.value ?? param.default)) continue;
-      const supplied = execution.edges.some((edge) => {
+      const supplied = execution.edges.find((edge) => {
         if (edge.target !== node.id || edge.targetHandle !== port.name) return false;
         const source = enabled.get(edge.source)?.data.params?.[edge.sourceHandle ?? ''];
         return source?.display === 'output' && !source.hidden && connectionTypesAreCompatible(source.type, param.type);
       });
-      if (supplied) continue;
+      if (supplied) {
+        const source = enabled.get(supplied.source)!;
+        // These ordinary loaders predate required-picker metadata. An empty
+        // Load Image can intentionally supply an optional branch, so only
+        // require its file when supplying a declared required media input.
+        // Do not revise immutable registered Block schemas or guess the output
+        // behavior of arbitrary custom sources from their file-picker fields.
+        if (
+          source.data.action === 'Load' &&
+          ['modules.Image', 'modules.Audio'].includes(source.data.module) &&
+          source.data.params?.file?.display === 'filebrowser'
+        )
+          requireFile(source, 'file');
+        continue;
+      }
       seen.add(key);
       const ownerId = owners.get(node.id);
       const leafVisible = visible.has(node.id) || !ownerId;

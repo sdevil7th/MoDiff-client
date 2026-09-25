@@ -24,7 +24,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Keep the editor lazy (eager loading measured 458.3 KiB); no new dependencies.
 // Shared ordinary Guidance presentation adds <1 KiB; metadata editing remains
 // deferred. Keep the bounded startup chunk at 448 KiB (no new dependency).
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 448 * 1024;
+// Required connected-loader readiness (including historical required pickers)
+// measures 458906 bytes after sharing diagnostics. Allow 256 additional bytes;
+// no dependencies or deferred limits change.
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 448 * 1024 + 256;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -77,7 +80,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 448 * 1024;
 // Explicit Guidance removal persistence and shared schema validation add 449
 // compressed startup bytes (636542 -> 636991). Bound the added metadata path
 // with 256 bytes above the prior total ceiling; individual/deferred caps stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 622 * 1024 + 256;
+// The same readiness fix measures 637211 bytes total startup. Allow another
+// bounded 128 bytes above the previous ceiling, not an unbounded budget reset.
+const MAX_STARTUP_GZIP_BYTES = 622 * 1024 + 384;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

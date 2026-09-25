@@ -356,8 +356,8 @@ reusing them in Saved Blocks. Expand or collapse a Block without changing its
 connections, and use Undo/Redo for graph edits in either workspace.
 
 Changing workspace preserves the graph, nested expansion, public connections and
-preview configuration. Loaded-model and active-run acceptance is tracked
-separately in the [implementation plan](docs/creator-developer-workspaces-plan.md).
+preview configuration. Loaded-model and active-run qualification must meet the
+[workbench acceptance criteria](docs/workbench-acceptance.md).
 
 For the current task browser, picker behavior and qualification limits, see
 [Workflow authoring and model selection](docs/workflow-authoring-ux.md).

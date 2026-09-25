@@ -1199,7 +1199,12 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
   const issues = [
     ...collectUserBlockCompositionIssues(),
     ...collectGraphStructureIssues(executionGraph),
-    ...inspectBlockMediaInputsV2(visibleGraph.nodes, executionGraph, useNodesStore.getState().operationContracts),
+    ...inspectBlockMediaInputsV2(
+      visibleGraph.nodes,
+      executionGraph,
+      useNodesStore.getState().operationContracts,
+      useNodesStore.getState().nodesRegistry,
+    ),
     ...collectGraphModelIssues(executionGraph),
     ...collectGraphDeviceOffloadIssues(executionGraph),
   ];
@@ -1827,6 +1832,7 @@ export function collectRunReadinessIssues(options: {
         useFlowStore.getState().nodes,
         executionGraph,
         useNodesStore.getState().operationContracts,
+        useNodesStore.getState().nodesRegistry,
       ),
     );
     issues.push(...collectGraphModelIssues(executionGraph));
@@ -1968,6 +1974,7 @@ export function collectRunReadinessIssues(options: {
     'composite_execution_graph_invalid',
     'block_media_input_missing',
     'operation_media_input_missing',
+    'media_file_input_missing',
   ]);
   return collected.map((item) => {
     if (!item.blocking || hardSubmissionBlocks.has(item.code ?? '') || item.code?.startsWith('user_block_')) {

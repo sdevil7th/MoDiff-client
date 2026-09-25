@@ -58,31 +58,30 @@ test('fresh documented custom package enables and reloads through the rendered U
     await expect(launcher).toBeVisible();
     await launcher.getByRole('button', { name: 'Empty workflow', exact: true }).click();
     await expect(page.getByTestId('startup-workspace-gate')).toBeHidden({ timeout: 90_000 });
-    await page.getByRole('radio', { name: 'Developer', exact: true }).check();
     await page.getByTestId('left-tab-nodes').click();
-    await page.getByRole('button', { name: 'Custom nodes', exact: true }).click();
+    await page.getByRole('button', { name: 'Add custom node', exact: true }).click();
     const dialog = page.getByTestId('custom-extensions-dialog');
+    await dialog.getByRole('button', { name: 'Advanced options', exact: true }).click();
     await dialog.getByLabel('Extension source', { exact: true }).fill('examples/custom_nodes/PromptTools');
     await dialog.getByLabel('Extension module name').fill(name);
-    const installed = page.waitForResponse((response) => response.url().endsWith('/custom_modules/install'));
-    await dialog.getByRole('button', { name: 'Stage source', exact: true }).click();
+    const installed = page.waitForResponse((response) => response.url().endsWith('/custom_modules/add'));
+    await dialog.getByTestId('extension-source-form').getByRole('button', { name: 'Add node', exact: true }).click();
     const installation = await (await installed).json();
     expect(installation.error).toBeFalsy();
     staged = true;
     receipts.push({ operation: 'stage', response: installation });
-    const review = dialog.getByRole('region', { name: 'Extension review' });
-    await expect(review).toContainText('Prompt Prefix');
-    await expect(review.getByRole('button', { name: 'Enable code', exact: true })).toBeDisabled();
-    await review.getByRole('checkbox').check();
-    const enabled = page.waitForResponse((response) => response.url().endsWith(`/custom_modules/${name}/enable`));
-    await review.getByRole('button', { name: 'Enable code', exact: true }).click();
-    const activation = await (await enabled).json();
+    await expect(dialog.getByRole('status')).toContainText('Added and enabled');
+    const activation = await (await page.request.get('/custom_modules')).json();
     receipts.push({ operation: 'enable', response: activation });
     const activatedModule = activation.modules.find((item: { name: string }) => item.name === name);
     expect(activatedModule.enabled).toBe(true);
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.getByLabel('Search nodes', { exact: true }).fill(`custom.${name}.PromptPrefix`);
-    await page.getByTestId(`node-row-custom-${name}-PromptPrefix`).click();
+    await page.getByLabel('Search nodes', { exact: true }).fill(name);
+    const group = page.getByTestId('node-group-custom-nodes');
+    if ((await group.getByRole('button').first().getAttribute('aria-expanded')) !== 'true')
+      await group.getByRole('button').first().click();
+    await group.getByRole('button', { name: 'Prompt Prefix', exact: true }).click();
+    await page.getByLabel('Search nodes', { exact: true }).fill('');
 
     // Import a tiny ordinary graph through the real frontend factories. The
     // approval, Run, reload and persistence gestures below use the actual UI.
@@ -248,27 +247,27 @@ test('fresh documented custom package enables and reloads through the rendered U
     await run('Watercolor: a lighthouse at night');
     const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
     await writeFile(resolve(output, 'before.workflow.json'), JSON.stringify(before, null, 2));
-    const installedPath = resolve(backend, 'custom', name, 'main.py');
+    const installedPath = resolve(activatedModule.path, 'main.py');
     expect(await readFile(installedPath, 'utf8')).toBe(source);
     // Change only this test's freshly staged copy; the repository example and
     // every pre-existing installed extension stay untouched.
     await writeFile(installedPath, source.replace('f"{prefix} {prompt}"', 'f"RELOADED {prefix} {prompt}"'));
-    await page.getByRole('button', { name: 'Custom nodes', exact: true }).click();
+    await page.getByRole('button', { name: 'Add custom node', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Manage nodes', exact: true }).click();
     // Selecting via the exact module text scopes the review to the owned copy.
     const inspected = await page.request.post(`/custom_modules/${name}/inspect`, { data: {} });
     const inspection = await inspected.json();
     expect(inspection.module.codeHash).not.toBe(activatedModule.codeHash);
     receipts.push({ operation: 'inspect edited installed copy', response: inspection });
     // The management list is a collection of cards, each named by its heading.
-    const card = dialog.getByText(name, { exact: true }).locator('..').locator('..');
+    const card = dialog
+      .locator('div.grid')
+      .filter({ has: page.locator('span.font-semibold').filter({ hasText: name }) })
+      .last();
     await expect(card).toContainText(name);
-    await card.getByRole('button', { name: 'Review reload', exact: true }).click();
-    await expect(review.getByRole('checkbox')).not.toBeChecked();
-    await review.getByRole('checkbox').check();
-    // The rendered client intentionally uses the same hash-bound enable API
-    // for initial approval and reload; /reload is an HTTP alias for that owner.
+    // Reload inspects and authorizes the current source hash in one action.
     const reloaded = page.waitForResponse((response) => response.url().endsWith(`/custom_modules/${name}/enable`));
-    await review.getByRole('button', { name: 'Enable and reload code', exact: true }).click();
+    await card.getByRole('button', { name: 'Reload', exact: true }).click();
     const reload = await (await reloaded).json();
     receipts.push({ operation: 'reload', response: reload });
     expect(reload.modules.find((item: { name: string }) => item.name === name).enabled).toBe(true);
