@@ -576,7 +576,7 @@ test('shared value edits preserve unrelated customized groups without rebuilding
   assert.deepEqual(protectedGraph, protectedBefore);
 });
 
-test('all representative backend starters preserve their complete API parameters and edges when grouped', async () => {
+test('all representative backend starters preserve their complete API parameters and edges when grouped', async (t) => {
   const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
   const exporter = await server.ssrLoadModule('/src/stores/flowGraphExport.ts');
@@ -604,12 +604,55 @@ test('all representative backend starters preserve their complete API parameters
       ]),
     );
   };
-  for (const starter of starters) {
-    const before = authoring.createOperationStarter(starter, { x: 0, y: 0 });
-    const grouped = visual.groupNewOperationGraph(before);
-    const after = runtime.expandBlockGraphV2ForExecution(grouped.nodes, grouped.edges);
-    assert.deepEqual(canonical(after), canonical(before), `${starter.pipelineClass}/${starter.task}`);
+  // Schema defaults reflect the host GPU inventory. Exercise explicit valid
+  // plans on every host instead of requiring CI to have a CUDA device. These
+  // are export-only fixtures: no hardware probing or model execution occurs.
+  for (const plan of [
+    { device: 'cpu:0', auto_offload: false, offload_mode: 'none' },
+    { device: 'cuda:0', auto_offload: true, offload_mode: 'model_cpu' },
+  ]) {
+    for (const starter of starters) {
+      await t.test(`${plan.device}/${starter.pipelineClass}/${starter.task}`, () => {
+        const before = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+        for (const node of before.nodes) {
+          for (const [field, value] of Object.entries(plan)) {
+            if (node.data.params[field]) node.data.params[field].value = value;
+          }
+        }
+        const original = structuredClone(before);
+        const expected = canonical(before);
+        const grouped = visual.groupNewOperationGraph(before);
+        const after = runtime.expandBlockGraphV2ForExecution(grouped.nodes, grouped.edges);
+        assert.deepEqual(canonical(after), expected);
+        assert.deepEqual(before, original, 'Grouping must not change the source graph');
+      });
+    }
   }
+});
+
+test('grouping preserves rejection of CPU execution with GPU-only offload', async () => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const exporter = await server.ssrLoadModule('/src/stores/flowGraphExport.ts');
+  const starter = starters.find(
+    (item) => item.pipelineClass === 'StableDiffusionXLModularPipeline' && item.task === 'text_to_image',
+  );
+  const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+  const loader = graph.nodes.find((node) => node.data.params.auto_offload && node.data.params.offload_mode);
+  assert.ok(loader, 'Fixture must contain the real backend offload controls');
+  loader.data.params.device.value = 'cpu:0';
+  loader.data.params.auto_offload.value = true;
+  loader.data.params.offload_mode.value = 'model_cpu';
+  const original = structuredClone(graph);
+  const grouped = visual.groupNewOperationGraph(graph);
+  const expanded = runtime.expandBlockGraphV2ForExecution(grouped.nodes, grouped.edges);
+  for (const candidate of [graph, expanded]) {
+    assert.throws(
+      () => exporter.buildApiGraphExport({ ...candidate, sid: 'proof', randomizeSeeds: false, setParam: () => {} }),
+      /cpu:0 execution cannot use model_cpu offload/,
+    );
+  }
+  assert.deepEqual(graph, original);
 });
 
 test('saved visual Block preserves grouping identity and declared values on independent reinsertion', async () => {
