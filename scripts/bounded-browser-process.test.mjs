@@ -4,6 +4,7 @@ import { runBoundedBrowser } from './bounded-browser-process.mjs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 test('records success, error and a bounded timeout', async () => {
   assert.deepEqual(await runBoundedBrowser(process.execPath, ['-e', 'process.exit(0)']), { code: 0, timedOut: false });
@@ -28,8 +29,25 @@ test(
     const result = await runBoundedBrowser(process.execPath, ['-e', parent], { timeoutMs: 800, graceMs: 200 });
     assert.equal(result.timedOut, true);
     const pid = Number(await readFile(marker, 'utf8'));
-    // Linux may briefly retain a killed orphan as a zombie. It cannot do work.
-    const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => '');
+    t.after(() => {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error;
+      }
+    });
+    // Sending SIGKILL does not wait for Linux to finish terminating the process.
+    // Allow bounded scheduling time; a killed orphan may remain as a zombie.
+    const deadline = performance.now() + 2000;
+    let stat;
+    do {
+      stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch((error) => {
+        if (error.code === 'ENOENT') return '';
+        throw error;
+      });
+      if (!stat || /\) Z /.test(stat)) break;
+      await delay(20);
+    } while (performance.now() < deadline);
     assert.ok(!stat || /\) Z /.test(stat), `Grandchild ${pid} must not remain running`);
   },
 );
