@@ -16,6 +16,44 @@ measured reuse behavior and remaining qualification work.
 > [!IMPORTANT]
 > MoDiff is under active development. It is designed for a trusted, local, single-user environment and has not been hardened as an internet-facing multi-user service. Model support depends on the backend version, installed packages, model access terms, hardware, and available disk space. The UI keeps unsupported or unproven paths visibly blocked instead of treating every listed model as runnable.
 
+## Developer setup with uv and npm
+
+Install Git, [uv `0.11.26`](https://docs.astral.sh/uv/getting-started/installation/),
+Node.js `24.12.0`, and npm `11.6.2`. uv can provision Python 3.12.
+Use two terminals for the backend and the editable frontend.
+
+**Terminal 1 — backend:** clone both repositories into the same parent directory,
+then start the backend. These commands work in Linux shells and Windows PowerShell.
+
+```text
+git clone https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+cd MoDiff
+uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
+uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
+uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
+uv run --no-project --no-sync --python 3.12 -m modiff.dev run
+```
+
+The CPU profile is for API/UI development. For NVIDIA inference, replace `cpu`
+with `nvidia` in both `plan` and `setup`; other accelerators are covered in the
+[full setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md). Setup preserves an existing `.venv` and
+does not download model weights. Use the guide for deliberate environment repair;
+ordinary `uv sync` is not supported.
+
+**Terminal 2 — frontend:** from the same parent directory, run:
+
+```text
+cd MoDiff-client
+npm ci
+npm run dev
+```
+
+Keep the backend running at <http://127.0.0.1:8088> and open the URL printed by
+Vite for the editable frontend. Press `Ctrl+C` in each terminal to stop it.
+See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md) for accelerator prerequisites,
+optional runtimes, repair, and bundled-app setup.
+
 ## Install and run MoDiff
 
 Clone both repositories into the same parent directory. The backend installer
@@ -48,16 +86,6 @@ cd MoDiff
 Open <http://127.0.0.1:8088>. No separate frontend install or frontend process
 is needed for normal use.
 
-### Developer setup without launchers
-
-With Node 24.12.x and npm 11.6.2 installed, run `npm ci` and `npm run dev`
-from this checkout. Start the sibling backend using its
-[uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md).
-In the editor, **Export → Service package** exposes named scalar inputs and
-persisted preview outputs for the same lowered API graph. See the backend's
-[service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
-for the CLI, environment manifest and model-free example.
-
 ### Which launcher should I use?
 
 | Purpose                              | Start                                 | Stop             | What runs                                                                |
@@ -80,6 +108,11 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 - Keep multiple local workflow tabs and restore a generated output with its form and graph context.
 - Export a workflow package, an output package, or raw graph JSON where available.
 - Add backend-defined nodes and custom React fields without creating a separate execution system.
+
+In the editor, **Export → Service package** exposes named scalar inputs and
+persisted preview outputs for the same lowered API graph. See the backend's
+[service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
+for the CLI, environment manifest and model-free example.
 
 ## Repository Pairing
 
@@ -106,7 +139,7 @@ Integrated development also requires:
 
 - A sibling MoDiff backend checkout, or its path passed to the launcher
 - The backend's managed Python 3.12 environment, installed through the uv commands
-  below or its reviewed `install.ps1` / `install.sh` profile
+  in the [quick start](#developer-setup-with-uv-and-npm) or its reviewed `install.ps1` / `install.sh` profile
 - Sufficient RAM, accelerator memory, and disk space for the model being used
 - Hugging Face authorization for gated model repositories, when applicable
 
@@ -119,50 +152,10 @@ npm --version
 
 For backend and accelerator prerequisites, follow the backend README first. Platform-specific client notes are available for [Windows](docs/windows-support.md), [Ubuntu Linux](docs/linux-support.md), and [Apple Silicon macOS](docs/macos-support.md).
 
-## Development quick start
+## Optional development launchers
 
-Clone the backend and client into the sibling layout shown above:
-
-```bash
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
-```
-
-### With uv and npm
-
-Install uv `0.11.26`, Node `24.12.0`, and npm `11.6.2`. In the first terminal,
-from the sibling **MoDiff backend checkout**, run these commands. They work in
-Linux shells and Windows PowerShell without repository shell/PowerShell launchers:
-
-```text
-uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
-uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
-uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
-uv run --no-project --no-sync --python 3.12 -m modiff.dev run
-```
-
-The CPU profile is for initial API/UI development. For GPU inference, replace
-`cpu` in both `plan` and `setup` with the appropriate backend accelerator selector,
-such as `nvidia` or `amd`. Setup preserves an existing `.venv`; use `check` to
-inspect it before any deliberate repair. These commands use the backend's managed
-installer through Python. Ordinary `uv sync` is not supported, and setup does not
-download inference weights. See the backend's
-[developer setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
-for accelerator prerequisites and environment repair.
-
-Keep the backend running at <http://127.0.0.1:8088>. In a second terminal, from
-this **MoDiff-client checkout**, run:
-
-```text
-npm ci
-npm run dev
-```
-
-Open the URL printed by Vite. The backend serves its checked frontend bundle if
-you only need the application; Vite provides the editable client development UI.
+Use the [uv/npm quick start](#developer-setup-with-uv-and-npm) for direct commands.
 For contributor test dependencies and checks, follow [CONTRIBUTING](CONTRIBUTING.md).
-
-### With the optional development launchers
 
 For an editable two-process development session, run the client repository's
 development installer. It installs the backend in backend-only mode, adds the
