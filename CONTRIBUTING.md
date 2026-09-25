@@ -282,7 +282,7 @@ Do not publish a local artifact, private input, personal path, access token, or 
 
 ## Custom extension changes
 
-Keep the Custom nodes review panel, strict response parser and backend code-hash approval in sync. Test cancellation before approval, stale inspections, import failure, typed search and registry refresh. Installed nodes retain the normal graph executor and Auto never grants new code permissions. Backend examples and complete API/resource contracts are documented in its `docs/custom-nodes.md`.
+Keep Add custom node, the strict response parser and backend hash-bound imports in sync. Intentional Add/Load/Reload is consent; discovery and graph import are not. Test import failure, changed source, missing dependencies, typed search and registry refresh. Use the normal graph executor. See the backend `docs/custom-nodes.md`.
 
 ## Testing
 

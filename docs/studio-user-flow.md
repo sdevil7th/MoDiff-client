@@ -68,10 +68,10 @@ The view switch controls presentation; Resources controls planning. The Run menu
 - **Models** summarizes supported, installed, missing, and downloading artifacts.
 - **Workflows** browses backend workflow files.
 
-Creator and Developer share one **Nodes** library. It starts with generic nodes,
+The editor has one **Nodes** library. It starts with generic nodes,
 common task/media operations, graph-qualified task Blocks, enabled custom nodes
 and Saved Blocks. Generic nodes remain available before selecting a pipeline.
-**Image upscale** in the Developer Workflows chooser creates an ordinary
+**Image upscale** in the Workflows chooser creates an ordinary
 **Upscale** model node and a connected Preview. Connect a source image to run it;
 tile size, overlap and output scaling remain editable. Loading and upscaling
 stay inside the same existing action. The selected reviewed model is an initial
@@ -98,7 +98,7 @@ usable without an operation catalog. Saved identities and graphs do not change.
 
 Select a node or Block on the canvas to see its controls in the Studio side panel.
 The selection toolbar's **Inspect node** or **Inspect Block** opens the same inspector
-in a dialog, even when the Nodes library is closed. Both Creator and Developer offer:
+in a dialog, even when the Nodes library is closed. The editor offers:
 
 - **Parameters**: the canvas's existing controls, with the same edits and Undo.
 - **Interface**: declared input/output types, required sockets and current connections.

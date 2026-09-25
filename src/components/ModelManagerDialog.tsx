@@ -469,7 +469,6 @@ function ModelManagerDialog({
   opener: { nodeId: string | null; fieldKey: string | null; focus?: FocusedModelManagerTarget } | null;
 }) {
   const { setAlertOpener } = useSettingsStore();
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const sid = useWebsocketStore((state) => state.sid);
   const compactHfCache = useNodesStore((state) => state.hfCache);
   const localModels = useNodesStore((state) => state.localModels);
@@ -509,7 +508,7 @@ function ModelManagerDialog({
   const [hfTokenSaving, setHfTokenSaving] = useState(false);
   const [hfTokenError, setHfTokenError] = useState<string | null>(null);
   const modelUsageTerms = useModelUsageTermsGate();
-  const expertMode = studioViewMode === 'expert';
+  const expertMode = true;
   const focus = opener?.focus;
   const activeInstallCount = Object.values(hfDownloadProgress).filter(isHfDownloadActive).length;
   const visibleDownloads = Object.entries(hfDownloadProgress).filter(

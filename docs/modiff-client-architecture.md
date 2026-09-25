@@ -45,7 +45,7 @@ The backend may use official model libraries maintained and published by Hugging
 
 - `src/main.tsx` mounts the app inside `ModiffSnackbarProvider`, `WebsocketProvider`, and `ReactFlowProvider`.
 - `src/App.tsx` owns the top bar, left rail/panels, central canvas, workflow tabs, right workspace, and app-level Gallery/issues dialogs.
-- `src/components/TopBar.tsx` owns New, workflow Save/Save as, Export, graph-fix review, Creator/Developer, Memory, Run mode,
+- `src/components/TopBar.tsx` owns New, workflow Save/Save as, Export, graph-fix review, Memory, Run mode,
   context-aware Run/Queue, Stop, runtime-resource status, model/template/settings/Gallery openers, progress, and connection controls.
 - `src/components/Workflow.tsx` owns the React Flow canvas, graph/node drops, node search, connections, selection, and canvas-level dialogs.
 - `src/components/WorkflowTabsBar.tsx` presents local workflow snapshots managed by `useStudioStore`.
@@ -86,6 +86,16 @@ Mutation logic is split into:
 - `flowGraphExport.ts`
 
 The store persists only nodes, edges, and viewport under `modiff.flow`. Runtime, history, and in-flight state are not persisted. A legacy `reactflow` key is migrated when present.
+
+Encode Inputs uses the ordinary node surface. Supported inactive image-encoding
+sockets are derived read-only from backend operation contracts. Connecting one
+uses `encodingNodeConnection` and the existing route planner to materialize real
+stage endpoints and commit the selected wire in one history transaction; it does
+not open the general media-attachment dialog. The smallest admitted extension
+must retain existing operations and cannot introduce another required media role.
+Default-backed creative values are preserved as well as explicit edits. Lazy
+socket handles never enter persistence or API export, and displaying them alone
+does not add an executable image stage. Existing real sockets use ordinary wiring.
 
 Connections are validated against handle/input rules. A normal input accepts one incoming edge unless the backend definition exposes spawn/multi-input behavior. `exportGraph(sid, targetNodeId?)` converts the visible graph into the backend graph payload.
 
@@ -182,6 +192,43 @@ One Undo/Redo restores the complete edit. Imported hints are validated before us
 legacy graphs are not converted on open. Stage inspection shows defaults,
 overrides, connected fallbacks and retained settings separately. Retained settings
 are not automatically restored or included in execution parameters.
+
+`workflow/visualOperationGroups` composes backend-declared encoder and guidance
+roles into workflow-local V2 Blocks. A user-source provider marker identifies the
+presentation recipe; it grants no authority. The existing effective graph is the
+only executable content. Authoring adapters resolve current public bindings to
+ordinary leaves, invoke the existing operation/media planner, then restore the
+visual grouping while retaining the immutable definition snapshot. No library
+write occurs. Task/model replacement keeps fresh runtime IDs where required;
+collapse/expand does not invalidate execution identity. Shared input edits and
+export resolve the same connected loader scope across group boundaries.
+
+New eligible starters opt into grouping; saved workflows require an explicit
+group action. Complex manually nested/mirrored interfaces fail closed during
+automatic adaptation, with an explicit editing instruction instead of data loss.
+
+Approved image Encode Inputs and image/audio Guidance compositions render through
+the ordinary node shell, not the expandable Block frame. Their canonical V2 data
+still owns values, interfaces and execution. Inspection is read-only; Separate
+stages is an explicit undoable structural edit. The interface inspector includes
+visible optional encoding sockets and labels their deferred stage preparation.
+
+Guidance interface edits record explicitly removed field bindings in optional
+`presentation.removedControlBindings` on the instance. The bounded, unique
+`{nodeId, fieldId}` list is visibility metadata, not an execution toggle. Removing
+a control materializes its current consumed value on the original stage before
+pruning its public override; re-exposing the binding clears the removal. Metadata
+refresh/regrouping retains the list, while historical omissions without a removal
+record still use the read-only field fallback. Reusable-node saves copy the list
+to optional definition `removedControlBindings`, used as initial presentation on
+insertion. Both runtimes validate these fields; presentation metadata is excluded
+from execution hashes. No document is rewritten merely by viewing its controls.
+
+`workflowDraft` completes fresh image/audio starters with ordinary registered
+loaders for typed required media inputs before grouping. It reuses sources only
+for equal media roles, keeps masks separate from alpha-mask outputs, and reports
+missing/incompatible loader definitions. It does not touch existing documents,
+invent media for text-only routes, or infer a tensor from a path-only field.
 
 Saved ordinary-node Blocks retain their legacy format until an explicit edit
 requires conversion. Their model/task chooser prepares a read-only candidate
@@ -737,8 +784,8 @@ or incomplete support preserves registry discovery. Distinct schemas remain
 accessible; implementation filters expose covered entries too. Alias search never
 changes runtime identities or migrates saved graphs.
 
-The shared node/Block inspector serves the side panel and canvas dialog in both
-workspaces. Parameters reuse canvas controls; Interface, Implementation, Docs and
+The shared node/Block inspector serves the side panel and canvas dialog in the
+unified editor. Parameters reuse canvas controls; Interface, Implementation, Docs and
 Run details read declared contracts and current workflow state. Opening inspection
 does not trigger field actions or enable custom source.
 
@@ -759,8 +806,8 @@ No further backend implementation is removed without execution equivalence.
 
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
 
-Node discovery uses a shared `NodeCatalogView` policy. Creator and Developer both
-start with `common`: generic nodes, utilities, enabled custom nodes, graph-qualified
+Node discovery uses a shared `NodeCatalogView` policy. The editor starts with
+`common`: generic nodes, utilities, enabled custom nodes, graph-qualified
 task Blocks and Saved Blocks. Independent implementation and experimental filters
 add entries without hiding common ones. `useNodeDiscoveryStore` shares transient
 filters and pipeline/task selection between the library and canvas search. Selection
@@ -768,16 +815,14 @@ is scoped to the current workflow/canvas epoch; it does not adapt existing nodes
 Saved revisions remain distinct. Upstream implementation blocks and component
 references remain available through the implementation filter.
 
-The Creator/Developer control updates `useSettingsStore.studioViewMode` and restores
-that workspace’s panel preferences. Persistence derives `workspaceMode` from the
-legacy view value; reload accepts either representation, preferring the new name.
+Obsolete workspace-mode and per-mode layout preferences are stripped once during
+settings hydration. Active panels and documents are retained; there is no mode switch.
 The workflow's `useStudioStore.form.resourceMode` independently owns execution
 planning, including registered-Block authority preparation and selected-node Run.
-The top-bar Memory control is available in both workspaces. Managed resource-policy
+The top-bar Memory control is independent of editor presentation. Managed resource-policy
 edits use the existing form/graph synchronization; presentation changes never call
-that path. `NodeContent` uses authoring mode for advanced-field disclosure and
-resource policy for Auto-managed/override indicators. Field groups keep their
-mounted identity across presentation changes and disclosure toggles, so revealing
+that path. `NodeContent` exposes developer controls and uses resource policy for
+Auto-managed/override indicators. Field groups keep their mounted identity across disclosure toggles, so revealing
 an unchanged advanced control cannot repeat its initial backend schema action.
 The permanently disabled
 Studio resource header and its unused refresh handler were removed; the top bar
@@ -906,6 +951,13 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 `src/studio/workflowFileSave.ts` and the workflow request helpers persist named snapshots through the backend workflow
 API. Local tabs remain the editing surface; a successful explicit Save creates or replaces a backend library file,
 while Save JSON copy is a browser download.
+
+Tab arrangement is browser-local presentation. `moveWorkflowTab` resolves source
+and destination IDs against current state and changes only the array order.
+Pointer previews stay outside the store until drop; structural tab changes cancel
+an in-flight gesture. Backend document-sync signatures are order-independent.
+The bounded local checkpoint selects active/dirty/recent tabs but preserves their
+original relative order, both when writing and restoring older checkpoints.
 
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
 

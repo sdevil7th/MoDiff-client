@@ -31,6 +31,63 @@ const definition = (params, action = 'Process') => ({
   params,
 });
 
+test('insertion preserves the discovery policy and rejects stale endpoints without choosing another socket', async () => {
+  const { matchingNodeHandleForInsertion } = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  const node = definition({ metadata: { type: 'any', display: 'input' }, image: { type: 'image', display: 'input' } });
+  const origin = { handleId: 'image', node: definition({ image: { type: 'image', display: 'output' } }) };
+  const selection = { dataType: 'image', handleType: 'source', origin, allowUnverified: false };
+  assert.equal(matchingNodeHandleForInsertion(node, selection, origin)?.[0], 'image');
+  assert.equal(matchingNodeHandleForInsertion(node, { ...selection, allowUnverified: true }, origin)?.[0], 'metadata');
+  assert.equal(matchingNodeHandleForInsertion(node, selection, null), undefined);
+  const stale = { ...origin, node: definition({ image: { type: 'audio', display: 'output' } }) };
+  assert.equal(matchingNodeHandleForInsertion(node, selection, stale), undefined);
+  const reversed = { ...origin, node: definition({ image: { type: 'image', display: 'input' } }) };
+  assert.equal(matchingNodeHandleForInsertion(node, selection, reversed), undefined);
+  const consumer = { handleId: 'image', node: definition({ image: { type: 'image', display: 'input' } }) };
+  const producer = definition({
+    metadata: { type: 'any', display: 'output' },
+    image: { type: 'image', display: 'output' },
+  });
+  assert.equal(
+    matchingNodeHandleForInsertion(producer, { ...selection, handleType: 'target', origin: consumer }, consumer)?.[0],
+    'image',
+  );
+});
+
+test('insertion revalidates derived Block crossing sockets using the normal connector resolver', async () => {
+  const { matchingNodeHandleForInsertion } = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const definition = JSON.parse(readFileSync('../MoDiff/tests/fixtures/block_container_interface_v1.json', 'utf8'));
+  const root = runtime.createBlockRootNodeV2(
+    schema.createBlockInstanceV2(definition, {
+      instanceId: 'crossing-origin',
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+    }),
+  );
+  const origin = { node: root.data, handleId: 'block-crossing:output:generate:images' };
+  const target = {
+    type: 'custom',
+    module: 'modules.Image',
+    action: 'Preview',
+    params: { image: { type: 'image', display: 'input' } },
+  };
+  assert.equal(
+    matchingNodeHandleForInsertion(
+      target,
+      {
+        dataType: 'image',
+        handleType: 'source',
+        origin,
+        allowUnverified: false,
+      },
+      origin,
+    )?.[0],
+    'image',
+  );
+});
+
 test('connection search and insertion agree on direction, enabled inputs, normalized types, unions and wildcards', () => {
   const node = definition({
     output: { display: 'output', type: 'string', isInput: true },
@@ -62,8 +119,10 @@ test('connection search excludes wrong-direction nodes even for untyped origins 
   const registry = { 'custom.Workbench.Input': input, 'custom.Workbench.Output': output };
   const before = JSON.stringify(registry);
   const keys = (...args) => search.connectionSearchEntries(registry, ...args).map(([key]) => key);
-  assert.deepEqual(keys(undefined, 'source'), ['custom.Workbench.Input']);
-  assert.deepEqual(keys(undefined, 'target'), ['custom.Workbench.Output']);
+  assert.deepEqual(keys(undefined, 'source'), []);
+  assert.deepEqual(keys(undefined, 'target'), []);
+  assert.deepEqual(keys(undefined, 'source', '', 'all', undefined, true), ['custom.Workbench.Input']);
+  assert.deepEqual(keys(undefined, 'target', '', 'all', undefined, true), ['custom.Workbench.Output']);
   assert.deepEqual(keys(' STRING ', 'source'), ['custom.Workbench.Input']);
   assert.deepEqual(keys('image', 'source'), []);
   assert.deepEqual(keys(undefined, undefined), Object.keys(registry));
@@ -303,6 +362,10 @@ test('connection search deduplicates exact aliases and excludes structural group
     },
     'any',
     'source',
+    '',
+    'all',
+    undefined,
+    true,
   );
   assert.equal(entries.length, 2);
   assert.deepEqual(entries.map(([, node]) => node.params.input.type).sort(), ['image', 'string']);

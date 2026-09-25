@@ -1,4 +1,5 @@
 import type { Edge } from '@xyflow/react';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
@@ -33,6 +34,7 @@ import {
 } from './blockValueTypeCompatibilityV2';
 import {
   blockContainerControlTargetsV1,
+  blockContainerFieldV1,
   blockContainerFieldValueV1,
   blockContainerInterfaceV1,
   blockContainerPortTargetsV1,
@@ -284,6 +286,8 @@ function rootNodeForNormalizedInstanceV2(
   instance: BlockInstanceV2,
   options: { selected?: boolean } = {},
 ): CustomNodeType {
+  if (isFocusedStageNode(instance) && instance.presentation.expanded)
+    instance = { ...instance, presentation: { ...instance.presentation, expanded: false } };
   const definition = instance.definitionSnapshot;
   const size = instance.presentation.expanded
     ? expandedSizeForNormalizedInstanceV2(instance)
@@ -733,9 +737,9 @@ export function replaceBlockEffectiveGraphV2(
 export function replaceBlockEffectiveInterfaceV2(
   instanceValue: BlockInstanceV2,
   value: { boundary: BlockBoundaryV2; controls: BlockControlV2[] },
-  options: { preserveOmittedMirrors?: boolean } = {},
+  options: { preserveOmittedMirrors?: boolean; rememberRemovedControls?: boolean } = {},
 ): BlockInstanceV2 {
-  const instance = normalizeBlockInstanceV2(instanceValue);
+  let instance = normalizeBlockInstanceV2(instanceValue);
   const boundary: BlockBoundaryV2 = {
     ...value.boundary,
     inputs: value.boundary.inputs.map((port) => {
@@ -810,6 +814,36 @@ export function replaceBlockEffectiveInterfaceV2(
     )
       throw new Error(`Cannot remove or rebind sealed Block V2 control ${controlId}.`);
   });
+  if (options.rememberRemovedControls) {
+    const key = (b: { nodeId: string; fieldId: string }) => JSON.stringify([b.nodeId, b.fieldId]);
+    const retained = new Set(controls.flatMap(controlBindingTargetsV2).map(key));
+    const removed = instance.effectiveInterface.controls.flatMap((control) =>
+      controlBindingTargetsV2(control).filter((binding) => !retained.has(key(binding))),
+    );
+    const bindings = new Map(
+      [...(instance.presentation.removedControlBindings ?? []), ...removed].map((binding) => [key(binding), binding]),
+    );
+    retained.forEach((id) => bindings.delete(id));
+    if (removed.length) {
+      // The disappearing row may own an override. Bake its currently consumed
+      // value into the same leaf before pruning the public control value.
+      const graph = cloneJson(instance.effectiveGraph);
+      for (const binding of removed) {
+        const value = blockContainerFieldValueV1(instance, binding.nodeId, binding.fieldId);
+        if (value !== undefined) {
+          const field = blockContainerFieldV1(
+            graph.nodes.find((n) => n.nodeId === binding.nodeId),
+            binding.fieldId,
+          )!;
+          field.value = cloneJson(value);
+        }
+      }
+      instance = replaceBlockEffectiveGraphV2(instance, graph);
+    }
+    instance.presentation = { ...instance.presentation };
+    if (bindings.size) instance.presentation.removedControlBindings = [...bindings.values()];
+    else delete instance.presentation.removedControlBindings;
+  }
   const effectiveInterfaceHash = blockInterfaceHashV2(interfaceValue);
   const allowedValues = new Set([
     ...boundary.inputs.map(({ portId }) => portId),
@@ -1388,7 +1422,9 @@ function projectedNodeData(
     ...(raw.operationAuthoring
       ? {
           operationAuthoring: remapOperationAuthoring(raw.operationAuthoring, (id) =>
-            blockProjectionNodeIdV2(instance.instanceId, id),
+            instance.effectiveGraph.nodes.some((member) => member.nodeId === id)
+              ? blockProjectionNodeIdV2(instance.instanceId, id)
+              : id,
           ),
         }
       : {}),
@@ -2473,7 +2509,7 @@ export function materializeBlockProjectionV2(rootValue: CustomNodeType): BlockFl
     ...rootNodeForNormalizedInstanceV2(instance),
     ...(rootValue.selected === undefined ? {} : { selected: rootValue.selected }),
   };
-  if (!instance.presentation.expanded) return { nodes: [root], edges: [] };
+  if (!instance.presentation.expanded || isFocusedStageNode(instance)) return { nodes: [root], edges: [] };
   return {
     nodes: [root, ...projectedChildren(instance, false)],
     edges: projectedInternalEdges(instance),

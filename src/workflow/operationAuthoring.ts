@@ -11,6 +11,13 @@ export { operationAuthoring } from './operationAuthoringHint';
 import { operationPortCompatibility } from './operationCatalog';
 import { createNodeFromRegistry } from './nodeFactory';
 import { acceptsOperationValue as acceptsValue } from './operationFieldValue';
+import { operationScope } from './operationScope';
+export { operationScope } from './operationScope';
+import {
+  unpackVisualOperationGroups,
+  restoreVisualOperationGroups,
+  visualOperationGroup,
+} from './visualOperationGroups';
 
 export type RetainedOperationSetting = { field: string; value: unknown; pipeline: string; reason: string };
 export type InactiveOperationDraft = { routeKey: string; nodes: CustomNodeType[]; edges: Edge[] };
@@ -226,67 +233,6 @@ function attachSharedInputs(nodes: CustomNodeType[], starter: OperationStarter, 
 
 /** Follow existing canonical connections from one loader. Custom branches are
  * preserved, and an unrelated loader/Block is never adopted into this scope. */
-export function operationScope(graph: OperationGraph, loaderId: string): CustomNodeType[] {
-  const root = graph.nodes.find((n) => n.id === loaderId);
-  const hint = root && operationAuthoring(root);
-  if (
-    !root ||
-    !hint ||
-    !operationOwnsModel(hint.operation) ||
-    root.parentId ||
-    root.data.blockInstanceV2 ||
-    root.data.blockProjectionOwnerId
-  )
-    throw new Error('Choose a top-level operation loader. Use the existing Block inspector for nested Blocks.');
-  const candidates = new Map(
-    graph.nodes
-      .filter((n) => {
-        const h = operationAuthoring(n);
-        return (
-          h &&
-          !n.parentId &&
-          !n.data.blockInstanceV2 &&
-          !n.data.blockProjectionOwnerId &&
-          h.operation.pipelineClass === hint.operation.pipelineClass &&
-          h.operation.task === hint.operation.task &&
-          (!operationOwnsModel(h.operation) || n.id === loaderId)
-        );
-      })
-      .map((n) => [n.id, n]),
-  );
-  const ids = new Set([loaderId]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const edge of graph.edges) {
-      for (const [source, target] of [
-        [edge.source, edge.target],
-        [edge.target, edge.source],
-      ]) {
-        if (source && target && ids.has(source) && candidates.has(target) && !ids.has(target)) {
-          ids.add(target);
-          changed = true;
-        }
-      }
-    }
-  }
-  const result = [...ids].map((id) => candidates.get(id)!);
-  if (new Set(result.map((n) => operationAuthoring(n)!.operation.operationId)).size !== result.length)
-    throw new Error(
-      'This graph has several instances of one stage. Change a separate branch or reconnect it to its own loader first.',
-    );
-  // A shared stage belongs to neither loader exclusively.
-  for (const edge of graph.edges) {
-    if (!ids.has(edge.target) || ids.has(edge.source)) continue;
-    const source = graph.nodes.find((n) => n.id === edge.source);
-    const h = source && operationAuthoring(source);
-    if (operationOwnsModel(h?.operation))
-      throw new Error(
-        'A stage uses another loader too. Separate the shared component connection before changing this graph.',
-      );
-  }
-  return result;
-}
 
 function port(node: CustomNodeType, field: string | null | undefined, direction: 'input' | 'output') {
   return operationAuthoring(node)?.operation.ports.find((p) => p.name === field && p.direction === direction);
@@ -323,6 +269,7 @@ export function planPristineOperationChange(
   baseline: OperationStarter,
   starter: OperationStarter,
 ): OperationChangePlan | null {
+  if (graph.nodes.some(visualOperationGroup)) return null;
   const scope = operationScope(graph, loaderId);
   const root = scope.find((n) => n.id === loaderId)!;
   const hint = operationAuthoring(root)!;
@@ -431,10 +378,22 @@ export function planOperationChange(
   graph: OperationGraph,
   loaderId: string,
   starter: OperationStarter,
-  options: { replaceModel?: boolean; restoreDefaults?: boolean; baseline?: OperationStarter | null } = {},
+  options: {
+    replaceModel?: boolean;
+    restoreDefaults?: boolean;
+    baseline?: OperationStarter | null;
+    preserveValues?: boolean;
+  } = {},
 ): OperationChangePlan {
+  if (graph.nodes.some(visualOperationGroup)) {
+    const unpacked = unpackVisualOperationGroups(graph);
+    const plan = planOperationChange(unpacked.graph, loaderId, starter, options);
+    return { ...plan, graph: restoreVisualOperationGroups(plan.graph, unpacked, plan.replacements) };
+  }
   const scope = operationScope(graph, loaderId);
   const root = scope.find((n) => n.id === loaderId)!;
+  if (options.preserveValues && operationAuthoring(root)!.operation.pipelineClass !== starter.pipelineClass)
+    throw new Error('Preserving all current values is only supported within the same pipeline.');
   const before = new Map(scope.map((n) => [operationAuthoring(n)!.operation.operationId, n]));
   const draft = createOperationStarter(starter, root.position);
   const nextOwner = draft.nodes.find((node) => operationOwnsModel(operationAuthoring(node)?.operation))!;
@@ -513,9 +472,28 @@ export function planOperationChange(
     }
     const retained = [...previous.retained];
     const modelChanged = previous.operation.binding?.pipelineClass !== next.operation.binding?.pipelineClass;
-    for (const [name, field] of Object.entries(old.data.params)) {
+    for (const [name, originalField] of Object.entries(old.data.params)) {
+      // Preserve compatible creative defaults, not task-bound selectors or
+      // controls absent from the destination. Authored overrides still go
+      // through the normal review path below.
+      const preserveDefault =
+        options.preserveValues &&
+        params[name] &&
+        publicSetting(params[name]) &&
+        !Object.prototype.hasOwnProperty.call(next.operation.binding?.values ?? {}, name) &&
+        acceptsValue(params[name], operationFieldValue(originalField)) &&
+        (operationOwnsModel(previous.operation) || transferableSetting(old, name, fresh, name));
+      // A direct socket connection is not a request for a new creative example.
+      // Retain default-backed visible values too, through the same schema and
+      // semantic checks used for explicit overrides. Model-change behavior is
+      // unchanged unless this narrowly scoped option is requested.
+      const field =
+        preserveDefault && originalField.value === undefined
+          ? { ...originalField, value: operationFieldValue(originalField) as NodeParams['value'] }
+          : originalField;
       if (!publicSetting(field) || field.value === undefined) continue;
-      const overridden = isAuthored(old, name, field);
+      if (options.preserveValues && deepEqual(field.value, operationFieldValue(params[name]))) continue;
+      const overridden = preserveDefault || isAuthored(old, name, field);
       if (!overridden) continue;
       const target = params[name];
       // Explicit reset applies only to creative value controls. Preserve model

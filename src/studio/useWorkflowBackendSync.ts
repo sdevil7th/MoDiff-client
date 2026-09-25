@@ -229,8 +229,23 @@ export function useWorkflowBackendSync() {
   const workflowCanvasHydrated = useStudioStore((state) => state.workflowCanvasHydrated);
   const [hydrated, setHydrated] = useState(false);
   const [syncEpoch, retrySync] = useState(0);
-  const serialized = useMemo(() => tabs.map((tab) => contentSignature(tab)).join('\n'), [tabs]);
-  const dirtyState = useMemo(() => tabs.map((tab) => `${tab.id}:${tab.dirty ? 'dirty' : 'saved'}`).join('\n'), [tabs]);
+  // Tab arrangement is browser-local presentation, not a document save event.
+  const serialized = useMemo(
+    () =>
+      tabs
+        .map((tab) => stableStringify([tab.id, contentSignature(tab)]))
+        .sort()
+        .join('\n'),
+    [tabs],
+  );
+  const dirtyState = useMemo(
+    () =>
+      tabs
+        .map((tab) => `${tab.id}:${tab.dirty ? 'dirty' : 'saved'}`)
+        .sort()
+        .join('\n'),
+    [tabs],
+  );
 
   useEffect(() => {
     if (!workflowCanvasHydrated) return;

@@ -1,11 +1,13 @@
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
-import { useSettingsStore } from '../stores/useSettingsStore';
 import { blockConnectorParamsV2 } from '../studio/blockRuntimeV2';
 import { formatStudioFieldValue } from '../studio/presetDiff';
 import { deepEqual } from '../utils/deepEqual';
 import { operationAuthoring, operationFieldValue } from '../workflow/operationAuthoring';
 import type { NodeInspectorSection } from './NodeInspectorSections';
+import { isFocusedStageNode, isFocusedGuidance } from '../workflow/encodingNodePresentation';
+import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
+import { isOptionalEncodingHandle } from '../workflow/encodingOptionalInput';
 
 /** Read only. Selecting a section cannot resolve schemas, import code or allocate models. */
 export default function NodeInspectionDetails({
@@ -18,7 +20,6 @@ export default function NodeInspectionDetails({
   const edges = useFlowStore((state) => state.edges);
   const owner = useFlowStore((state) => state.nodes.find((item) => item.id === node.data.blockProjectionOwnerId));
   const extension = useNodesStore((state) => state.customModules.find((item) => item.moduleKey === node.data.module));
-  const developer = useSettingsStore((state) => state.studioViewMode) === 'expert';
   const hint = operationAuthoring(node);
   const instance = node.data.blockInstanceV2;
   const source = instance?.definitionSnapshot.source;
@@ -41,9 +42,22 @@ export default function NodeInspectionDetails({
             Object.entries(node.data.params).filter(([, param]) => param.display === 'output'),
           ),
         };
+    // Include connectable adaptation sockets shown on the node, while marking
+    // them honestly: they are not yet executable internal stages.
+    if (isFocusedStageNode(instance)) {
+      const params = nodeConnectorParams(node);
+      ports.inputs = Object.fromEntries(Object.entries(params).filter(([, p]) => p.display !== 'output'));
+      ports.outputs = Object.fromEntries(Object.entries(params).filter(([, p]) => p.display === 'output'));
+    }
     return (
       <div className="grid gap-3 text-xs text-modiff-text">
-        {instance ? <p>Public sockets of this Block instance. Its internal graph remains unchanged.</p> : null}
+        {instance ? (
+          <p>
+            {isFocusedStageNode(instance)
+              ? 'Sockets of this node. Its execution stages remain separate.'
+              : 'Public sockets of this Block instance. Its internal graph remains unchanged.'}
+          </p>
+        ) : null}
         {(['inputs', 'outputs'] as const).map((direction) => (
           <div key={direction} className="grid gap-2">
             <h3 className="font-semibold">{direction === 'inputs' ? 'Inputs' : 'Outputs'}</h3>
@@ -60,6 +74,12 @@ export default function NodeInspectionDetails({
                     {param.required ? ' · Required' : ''}
                   </p>
                   <p className="text-modiff-subtle-text">Socket: {name}</p>
+                  {isOptionalEncodingHandle(name) ? (
+                    <p className="text-modiff-subtle-text">
+                      Optional adaptation socket — connecting prepares the supported stage; unused sockets do not
+                      execute.
+                    </p>
+                  ) : null}
                   {connections.length ? (
                     connections.map((edge) => (
                       <p key={edge.id} className="text-modiff-subtle-text">
@@ -87,7 +107,11 @@ export default function NodeInspectionDetails({
       <div className="grid gap-3 break-words text-xs text-modiff-text">
         <p className="whitespace-pre-wrap">{description || 'No description supplied by this node.'}</p>
         {instance ? (
-          <p>Use Expand Block on the canvas to edit this composition. This does not edit the Python implementation.</p>
+          <p>
+            {isFocusedStageNode(instance)
+              ? `Use Separate ${isFocusedGuidance(instance) ? 'guidance' : 'encoding'} stages to edit individual stages on the canvas.`
+              : 'Use Expand Block on the canvas to edit this composition. This does not edit the Python implementation.'}
+          </p>
         ) : null}
         {Object.entries(node.data.params)
           .filter(([, param]) => param.description && !param.hidden)
@@ -132,7 +156,7 @@ export default function NodeInspectionDetails({
   return (
     <div className="grid gap-3 break-words text-xs text-modiff-text">
       <p>{identity}</p>
-      {developer ? <p className="text-modiff-subtle-text">Canvas node: {node.id}</p> : null}
+      <p className="text-modiff-subtle-text">Canvas node: {node.id}</p>
       {hint ? (
         <>
           <p>
@@ -144,7 +168,9 @@ export default function NodeInspectionDetails({
                 ? 'Model loader'
                 : hint.operation.decomposition === 'integrated'
                   ? 'Model operation'
-                  : 'Whole pipeline call')}
+                  : hint.operation.decomposition === 'pipeline'
+                    ? 'Whole pipeline call'
+                    : 'Execution stage')}
           </p>
           <dl className="grid gap-2">
             {Object.entries(hint.defaults).map(([name, value]) => {

@@ -1003,6 +1003,7 @@ export function installE2EHooks() {
           historyFuture: useFlowStore.getState().historyFuture.length,
         },
         studio: {
+          workflowCanvasEpoch: useStudioStore.getState().workflowCanvasEpoch,
           workflowCanvasHydrated: useStudioStore.getState().workflowCanvasHydrated,
           launcherDismissed: useStudioStore.getState().launcherDismissed,
           form: useStudioStore.getState().form,
@@ -1037,7 +1038,6 @@ export function installE2EHooks() {
         settings: {
           rightPanelOpen: useSettingsStore.getState().isRightPanelOpen,
           rightPanelTab: useSettingsStore.getState().rightPanelTab,
-          studioViewMode: useSettingsStore.getState().studioViewMode,
         },
         runIssues: {
           issues: useRunIssueStore.getState().issues,

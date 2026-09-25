@@ -1,13 +1,15 @@
 import { type Edge, type Viewport } from '@xyflow/react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import config from '../../app.config';
 import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
   useStudioStore,
+  type WorkflowOperationContext,
 } from '../stores/useStudioStore';
-import type { NodeData } from '../stores/useNodeStore';
+import { useNodesStore, type NodeData } from '../stores/useNodeStore';
+import { pythonFileImport } from '../studio/customExtensions';
 import { OPERATION_DRAG_PREFIX, takeOperationDrag } from './operationDrag';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { WorkflowTab, WorkflowTabSnapshot } from '../studio/types';
@@ -90,6 +92,34 @@ export function useWorkflowDrop({
   nodesRegistry,
   screenToFlowPosition,
 }: UseWorkflowDropOptions) {
+  const [customImportChoice, setCustomImportChoice] = useState<{
+    keys: string[];
+    position: { x: number; y: number };
+    context: WorkflowOperationContext;
+  } | null>(null);
+  const importing = useRef(false);
+  const insertCustomNode = useCallback(
+    (key: string, position: { x: number; y: number }, context: WorkflowOperationContext) => {
+      assertWorkflowOperationContext(context, { includeForm: false });
+      const node = createNodeFromRegistry(key, useNodesStore.getState().nodesRegistry, position);
+      if (!node) throw new Error('Node is installed but its registry entry is unavailable. Refresh Custom nodes.');
+      prepareWorkflowForManualInsertion();
+      const flow = useFlowStore.getState();
+      const target = expandedBlockV2AtPosition(flow.nodes, position);
+      if (target) insertNodeAtBlockTargetV2({ ...node, selected: true }, target, flow, addNode);
+      else addNode({ ...node, selected: true });
+    },
+    [addNode],
+  );
+  const selectCustomImport = (key: string) => {
+    if (!customImportChoice) return;
+    try {
+      insertCustomNode(key, customImportChoice.position, customImportChoice.context);
+    } catch (error) {
+      showGraphImportError(formatRequestError(error, 'Node is installed. Add it from Custom nodes.'));
+    }
+    setCustomImportChoice(null);
+  };
   const pendingOperations = useRef(new Set<AbortController>());
   useEffect(() => {
     const pending = pendingOperations.current;
@@ -109,6 +139,38 @@ export function useWorkflowDrop({
 
       if (event.dataTransfer.files.length > 0) {
         const file = event.dataTransfer.files.item(0);
+        if (file && /\.py$/iu.test(file.name)) {
+          if (importing.current) {
+            showGraphImportError('Wait for the current node import to finish.');
+            return;
+          }
+          if (event.dataTransfer.files.length !== 1) {
+            showGraphImportError('Drop one Python node file at a time.');
+            return;
+          }
+          importing.current = true;
+          const context = captureWorkflowOperationContext();
+          const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+          enqueueSnackbar('Adding custom node. Its Python code will run on this backend.', { variant: 'info' });
+          let installed = false;
+          try {
+            const result = await useNodesStore.getState().addCustomModule(await pythonFileImport(file));
+            const item = result.module;
+            if (!item?.enabled || !item.nodes.length) throw new Error('The source did not register any enabled nodes.');
+            installed = true;
+            const keys = item.nodes.map((action) => `${item.moduleKey}.${action}`);
+            assertWorkflowOperationContext(context, { includeForm: false });
+            if (keys.length === 1) insertCustomNode(keys[0]!, position, context);
+            else setCustomImportChoice({ keys, position, context });
+          } catch (error) {
+            showGraphImportError(
+              `${installed ? 'Node added to Custom nodes, but not inserted' : 'Node import failed'}: ${formatRequestError(error, 'Check the node definition.')}`,
+            );
+          } finally {
+            importing.current = false;
+          }
+          return;
+        }
         if (!file || file.type !== 'application/json') {
           return;
         }
@@ -405,11 +467,14 @@ export function useWorkflowDrop({
         });
       }
     },
-    [screenToFlowPosition, addNode, nodesRegistry, edgeType, createWorkflowTab],
+    [screenToFlowPosition, addNode, nodesRegistry, edgeType, createWorkflowTab, insertCustomNode],
   );
 
   return {
     handleDragOver,
     handleDrop,
+    customImportChoice,
+    selectCustomImport,
+    dismissCustomImport: () => setCustomImportChoice(null),
   };
 }

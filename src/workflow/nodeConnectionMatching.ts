@@ -1,6 +1,6 @@
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
-import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
-import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
+import { connectionTypes, connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
+import { nodeConnectorParam, nodeConnectorParams } from '../studio/nodeConnectorResolution';
 
 export type HandleDirection = 'source' | 'target' | null | undefined;
 
@@ -117,9 +117,20 @@ export function matchingNodeHandleForDrop(
   dataType: NodeParams['type'] | null,
   handleType: HandleDirection,
   origin?: ConnectionSearchOrigin | null,
+  allowUnverified = true,
+  requiredHandleId?: string,
 ) {
   if (handleType !== 'source' && handleType !== 'target') return undefined;
   return Object.entries(nodeConnectorParams({ data: node })).find(([handleId, param]) => {
+    if (requiredHandleId !== undefined && handleId !== requiredHandleId) return false;
+    if (
+      !allowUnverified &&
+      [dataType, param.type].some((type) => {
+        const names = connectionTypes(type);
+        return names.length === 0 || names.includes('any');
+      })
+    )
+      return false;
     if (handleType === 'source') {
       return (
         (param.display === 'input' || param.isInput) &&
@@ -134,4 +145,42 @@ export function matchingNodeHandleForDrop(
       (!origin || nodeConnectionSemanticsAreCompatible(node, handleId, origin.node, origin.handleId))
     );
   });
+}
+
+/** Pin the discovery match, then validate that same endpoint against current state.
+ * A changed source must not silently redirect insertion to a broad `any` socket. */
+export function matchingNodeHandleForInsertion(
+  node: NodeData,
+  selection: {
+    dataType: NodeParams['type'] | null;
+    handleType: HandleDirection;
+    origin: ConnectionSearchOrigin;
+    allowUnverified: boolean;
+  },
+  currentOrigin: ConnectionSearchOrigin | null,
+) {
+  const match = matchingNodeHandleForDrop(
+    node,
+    selection.dataType,
+    selection.handleType,
+    selection.origin,
+    selection.allowUnverified,
+  );
+  if (!match || !currentOrigin || currentOrigin.handleId !== selection.origin.handleId) return undefined;
+  const param = nodeConnectorParam({ data: currentOrigin.node }, currentOrigin.handleId);
+  if (!param || param.hidden || param.disabled) return undefined;
+  if (
+    selection.handleType === 'source'
+      ? param.display !== 'output'
+      : param.display === 'output' || (param.display !== 'input' && !param.isInput)
+  )
+    return undefined;
+  return matchingNodeHandleForDrop(
+    node,
+    param.type ?? null,
+    selection.handleType,
+    currentOrigin,
+    selection.allowUnverified,
+    match[0],
+  );
 }

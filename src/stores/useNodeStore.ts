@@ -1,4 +1,10 @@
-import { parseExtensionInfo, type ExtensionInfo, type ExtensionSource } from '../studio/customExtensions';
+import { bindEncodingInputCapabilities, bindEncodingRouteResolver } from '../workflow/encodingOptionalInput';
+import {
+  parseExtensionInfo,
+  type ExtensionInfo,
+  type ExtensionSource,
+  type ExtensionImport,
+} from '../studio/customExtensions';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
@@ -91,6 +97,8 @@ export type NodeData = {
     errorMessage?: string;
     recentChangeLabel?: string;
     recentChangeAt?: number;
+    /** Transient backend encoding diagnostics, never authored graph values. */
+    encodingSummaries?: Record<string, { graphHash: string; value: string }>;
   };
   /** Authoring hints only; runtime still consumes params and ordinary edges. */
   operationAuthoring?: OperationAuthoring;
@@ -309,6 +317,7 @@ export type HfInstallResult = {
 export type CustomModuleInfo = ExtensionInfo;
 
 export type CustomModuleActionResult = {
+  root?: string;
   error?: boolean | string;
   message?: string;
   module?: CustomModuleInfo | null;
@@ -436,6 +445,7 @@ type NodesStore = {
   optionalRuntimeCatalog: OptionalRuntimeCatalog | null;
   hfDownloadProgress: Record<string, HfDownloadProgress>;
   customModules: CustomModuleInfo[];
+  customModuleRoot: string | null;
   customModuleError: string | null;
   discoveryRequests: Record<DiscoveryRequestKey, DiscoveryRequestState>;
   setHfDownloadProgress: (progress: HfDownloadProgress) => void;
@@ -451,6 +461,7 @@ type NodesStore = {
   fetchCustomModules: () => Promise<void>;
   refreshCustomModules: () => Promise<CustomModuleActionResult>;
   installCustomModule: (source: ExtensionSource) => Promise<CustomModuleActionResult>;
+  addCustomModule: (source: ExtensionImport) => Promise<CustomModuleActionResult>;
   updateCustomModule: (name: string) => Promise<CustomModuleActionResult>;
   setCustomModuleEnabled: (name: string, enabled: boolean, codeHash?: string) => Promise<CustomModuleActionResult>;
   fetchRuntimeStatus: () => Promise<void>;
@@ -1031,6 +1042,7 @@ function parseCustomModules(value: unknown, fallbackMessage: string) {
 function applyCustomModuleResult(set: NodesStoreSet, get: NodesStoreGet, data: CustomModuleActionResult) {
   set({
     customModules: data.modules ?? [],
+    customModuleRoot: typeof data.root === 'string' ? data.root : get().customModuleRoot,
     customModuleError: null,
     instance: typeof data.instance === 'string' ? data.instance : get().instance,
   });
@@ -1083,6 +1095,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   optionalRuntimeCatalog: null,
   hfDownloadProgress: {},
   customModules: [],
+  customModuleRoot: null,
   customModuleError: null,
   discoveryRequests: initialDiscoveryRequests(),
   setRuntimeResources: (runtimeResources) => set({ runtimeResources }),
@@ -1265,7 +1278,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           timeoutMs: 120_000,
           parse: (value) => parseCustomModules(value, 'Could not read custom modules.'),
         }),
-      (data) => ({ customModules: data.modules, customModuleError: null }),
+      (data) => ({
+        customModules: data.modules,
+        customModuleRoot: typeof data.root === 'string' ? data.root : get().customModuleRoot,
+        customModuleError: null,
+      }),
       (message) => ({ customModuleError: message }),
       'Could not read custom modules.',
     );
@@ -1301,6 +1318,18 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       `Could not update ${name}.`,
     );
   },
+  addCustomModule: async (source) =>
+    runCustomModuleAction(
+      set,
+      get,
+      `${config.serverAddress}/custom_modules/add`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...source, consent: true }),
+      },
+      'Node import failed.',
+    ),
   setCustomModuleEnabled: async (name, enabled, codeHash) => {
     const action = enabled ? 'enable' : 'disable';
     return runCustomModuleAction(
@@ -1450,12 +1479,18 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       'capabilities',
       set,
       async (signal) => {
-        const [{ parseOperationContracts }, { parsePipelineSupport }, { parseWorkflowModelDescriptors }] =
-          await Promise.all([
-            import('../workflow/operationContracts'),
-            import('../workflow/operationCatalog'),
-            import('../workflow/workflowChoices'),
-          ]);
+        const [
+          { parseOperationContracts },
+          { parsePipelineSupport },
+          { parseWorkflowModelDescriptors },
+          { optionalEncodingRoute },
+        ] = await Promise.all([
+          import('../workflow/operationContracts'),
+          import('../workflow/operationCatalog'),
+          import('../workflow/workflowChoices'),
+          import('../workflow/encodingImageRoute'),
+        ]);
+        bindEncodingRouteResolver(optionalEncodingRoute);
         return requestJson(`${config.serverAddress}/model_capabilities`, {
           method: 'GET',
           signal,
@@ -1542,3 +1577,5 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     await Promise.all([get().refreshModelIndexes(false, { invalidateAutoPlans: false }), get().fetchCustomModules()]);
   },
 }));
+
+bindEncodingInputCapabilities(() => useNodesStore.getState());

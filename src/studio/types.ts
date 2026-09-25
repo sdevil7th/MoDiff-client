@@ -220,7 +220,6 @@ export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_
 export type StudioOffloadMode = 'none' | 'model_cpu' | 'sequential_cpu' | 'group_cpu' | 'group_disk';
 export type StudioResourceMode = 'auto' | 'expert';
 /** Global editing preference; independent of the workflow's execution policy. */
-export type StudioViewMode = 'auto' | 'expert';
 
 export type StudioPresetId =
   | 'fast'

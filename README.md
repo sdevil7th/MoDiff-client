@@ -6,7 +6,7 @@ MoDiff Client is the graph-first web interface for the MoDiff generative-media b
 
 The client is built with React 19, TypeScript, Vite, Tailwind CSS, Headless UI, Zustand, Lucide React, and [`@xyflow/react`](https://reactflow.dev/).
 
-For Qwen-Image 2.1, use the generic image nodes in Developer → Workflows. The backend's
+For Qwen-Image 2.1, use the generic image nodes in Workflows. The backend's
 [integration guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/qwen-image-21.md)
 explains attention-context reuse, runtime requirements and current qualification limits.
 
@@ -53,7 +53,7 @@ is needed for normal use.
 With Node 24.12.x and npm 11.6.2 installed, run `npm ci` and `npm run dev`
 from this checkout. Start the sibling backend using its
 [uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md).
-In the Developer workspace, **Export → Service package** exposes named scalar inputs and
+In the editor, **Export → Service package** exposes named scalar inputs and
 persisted preview outputs for the same lowered API graph. See the backend's
 [service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
 for the CLI, environment manifest and model-free example.
@@ -74,7 +74,7 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 - Build and inspect backend-native graphs on a visual canvas.
 - Start guided text-to-image, editing, inpainting, outpainting, control, layered-image, video, and advanced workflows.
 - Browse curated templates and proof-backed Gallery examples.
-- Choose **Creator** for templates or **Developer** for task-first workflows; select **Memory: Automatic / Custom** independently.
+- Use one developer-first editor: start from Workflows or Templates; select **Memory: Automatic / Custom** independently.
 - Discover local and Hugging Face model artifacts and start supported downloads from the UI.
 - Follow queue state, step progress, failures, and accelerator cleanup actions.
 - Keep multiple local workflow tabs and restore a generated output with its form and graph context.
@@ -241,9 +241,9 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
    runtime profile is usable and resolve any environment or model-cache repair
    blocker before starting a model download.
 2. On the empty canvas, choose **Text to image** or click **Browse recipes**.
-   Prefer a lightweight image recipe that Auto marks ready for the detected
+   Prefer a lightweight image recipe that Automatic memory marks ready for the detected
    device; a large video or audio model is not a useful first smoke test.
-3. Open the right-side **Studio** panel and keep the resource-mode **Auto**
+3. Open the right-side **Studio** panel and keep the memory setting **Automatic**
    switch enabled for the first run.
 4. Enter a prompt or select a template. Studio creates or reconciles the visible
    graph; the canvas remains the workflow that will execute.
@@ -280,15 +280,13 @@ show **Checking compatibility** instead of guessing from a device label or a
 dedicated-VRAM number. This is important for Apple unified memory, AMD shared
 memory, and Intel integrated/XPU devices.
 
-The **Creator / Developer** switch controls editing tools independently of
-**Memory → Automatic / Custom**. Changing workspace preserves the graph
-and saved execution policy. Developer can keep automatic resource management;
-choose Custom explicitly to run with your configured settings.
-Each workflow saves its own resource policy; the editing preference is global.
+There is one developer-first workspace. Technical inspection and exports are
+always available. Each workflow saves its own **Memory: Automatic / Custom**
+policy; choose Custom explicitly to use your configured settings.
 The Run menu's **Auto** item separately repeats execution after parameter changes;
 keep it off when you want a single generation.
 
-**Expert** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Expert is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
+**Memory → Custom** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Custom memory is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
 
 Important model-support rules:
 
@@ -324,24 +322,19 @@ unqualified until a retained real-run receipt proves them.
 
 The durable planner contract and model-onboarding checklist are documented in [Auto mode design](docs/auto-mode-design.md).
 
-## Workspace and memory
+## Working in the editor
 
-**Workspace: Creator / Developer** changes editing presentation. Both workspaces
-keep the same editable graph and remember their own panel layout. Switching does
-not change the selected model, workflow values, or memory policy.
+Start with **Workflows** for connected task stages or choose **Templates** for a
+prepared example. The same canvas exposes node parameters, implementation, docs,
+and developer exports. Advanced controls can be expanded without changing modes.
+Creating a workflow does not download weights.
 
-**Memory: Automatic / Custom** is a separate workflow setting. Automatic chooses
-a supported resource recipe; Custom retains explicit resource settings. Existing
-Auto/Expert preferences migrate without rewriting saved workflows or resource
-identifiers.
-
-Creator starts with **Templates** for ready-made workflows. Developer starts with
-**Workflows**: filter by media category or search, then click an action such as
-Text to image or Image edit once to create connected nodes. Use **Choose model**
-on the loader to change the compatible model across families. Model changes use
-the existing graph transaction; changes affecting authored controls or connections
-show a review before applying. Both workspaces offer an empty workflow and the
-same editable canvas. Creating a workflow does not load or download weights.
+Select **Add image / audio input** on the model loader, or drag a media output
+onto an operation. Choose a supported role from the dropdown. The existing graph
+adapts atomically, retaining prompts and custom branches and adding required
+encoding stages. Saved Blocks use durable crossing sockets. Unsupported changes
+report why; they do not silently switch models. Undo restores the whole edit.
+Video attachment simplification is deferred.
 
 The workflow sidebar separates **Example workflows** and **My workflows**, each
 with its own bounded list. Existing saved documents are retained. Raw implementation
@@ -378,7 +371,15 @@ For the current task browser, picker behavior and qualification limits, see
 
 ## Custom nodes
 
-**Nodes → Custom nodes** and the Models environment panel open the shared custom-source review flow. Resolve a Hub URL or repository ID to an exact commit, stage a local Python folder or pinned remote source, inspect files and dependencies, then explicitly enable the exact code. Enabled nodes join normal search and typed suggestions in Creator and Developer. Review reload after editing the installed folder; affected caches are released without removing unrelated models. Automatic memory accepts approved data nodes and operations using connected reviewed model components; unmanaged custom resource use requires Custom memory. Staging/inspection never imports submitted Python or installs dependencies. The backend custom-node guide linked below includes a repository-relative, step-by-step Prompt Prefix example and a model-free test workflow.
+**Nodes → Add custom node** opens Local, Hugging Face and Git. Intentional Add/Load
+validates and enables trusted code in one action; revisions are pinned internally.
+Drop a structured Python node file on the canvas to import and insert it. Files
+and packages in backend `custom/` appear automatically without executing; use
+Manage nodes to Load, Reload or Disable them. The permanent **Custom nodes**
+category lists loaded and detected sources. Dependencies are not auto-installed.
+Python runs with backend permissions, not in a sandbox. Automatic memory accepts
+declared data nodes and connected supported components; unmanaged custom models
+require Custom memory. See the backend custom-node guide for contracts and examples.
 
 Approved Modular blocks that omit model ports receive a **Models** input when
 their Python contract requires components. Connect **Load Models → Pipeline
@@ -391,15 +392,15 @@ memory policy, and connect its Pipeline Components output to the custom block.
 
 ## Interface Map
 
-| Area       | Purpose                                                                                                   |
-| ---------- | --------------------------------------------------------------------------------------------------------- |
-| Top bar    | Connection state, New, Creator/Developer, Memory, Run mode, Run/Stop, Export, model manager, and settings |
-| Left rail  | Nodes, templates, generated/imported Gallery media, models, and backend workflow files                    |
-| Canvas     | Visual graph editing, connections, node actions, and workflow tabs                                        |
-| Studio     | Guided task, model, prompt, input, generation, and graph controls                                         |
-| Queue      | Current and recent task state, progress, cancellation, and failures                                       |
-| Setup      | Backend runtime, capability metadata, model/cache diagnostics, and installation status                    |
-| Run as app | Expert-only simplified controls for graphs with a usable output surface                                   |
+| Area       | Purpose                                                                                |
+| ---------- | -------------------------------------------------------------------------------------- |
+| Top bar    | Connection state, New, Memory, Run mode, Run/Stop, Export, model manager, and settings |
+| Left rail  | Nodes, templates, generated/imported Gallery media, models, and backend workflow files |
+| Canvas     | Visual graph editing, connections, node actions, and workflow tabs                     |
+| Studio     | Guided task, model, prompt, input, generation, and graph controls                      |
+| Queue      | Current and recent task state, progress, cancellation, and failures                    |
+| Setup      | Backend runtime, capability metadata, model/cache diagnostics, and installation status |
+| Run as app | Expert-only simplified controls for graphs with a usable output surface                |
 
 Workflow tabs are stored locally in the browser. Each tab preserves its visual graph, viewport, Studio form, graph binding, and template/Gallery provenance where available.
 
@@ -610,7 +611,7 @@ switching. You can cancel while the destination loads. A newer graph edit or
 workflow change cancels the pending switch; connected outputs are checked against
 the actual restored interface before applying.
 
-These controls use the same saved canvas graph in Creator and Developer. Existing Blocks
+These controls use the same saved canvas graph. Existing Blocks
 keep their current structure and composition inspector. A graph of generic nodes can
 still require runtime installation, model files, conditioning or resource setup;
 authoring support alone does not qualify model execution.

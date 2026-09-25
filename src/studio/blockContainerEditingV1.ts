@@ -160,7 +160,7 @@ export function setBlockSharedOperationInputV2(
   return found ? setBlockFieldValuesV1(instance, expanded, value) : null;
 }
 
-function setBlockFieldValuesV1(
+export function setBlockFieldValuesV1(
   instance: BlockInstanceV2,
   targets: Array<{ nodeId: string; fieldId: string }>,
   value: BlockJsonValue | undefined,

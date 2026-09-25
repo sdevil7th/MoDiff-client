@@ -2,6 +2,19 @@ import config from '../../app.config';
 import { requestJson } from '../utils/requestJson';
 
 export type ExtensionSource = { kind: 'local' | 'git' | 'hub'; source: string; name: string; revision?: string };
+export type ExtensionImport = ExtensionSource | { kind: 'file'; name: string; content: string };
+
+export function extensionName(source: string): string {
+  const leaf = source.trim().replace(/\/$/u, '').split(/[\\/]/u).pop() ?? '';
+  const safe = leaf.replace(/\.(?:py|git)$/iu, '').replace(/[^A-Za-z0-9_]/gu, '_');
+  return (/^[A-Za-z]/u.test(safe) ? safe : `Node_${safe}`).slice(0, 64);
+}
+
+export async function pythonFileImport(file: File): Promise<ExtensionImport> {
+  if (!/\.py$/iu.test(file.name) || file.size > 2 * 1024 * 1024)
+    throw new Error('Choose a Python node file (.py), at most 2 MiB.');
+  return { kind: 'file', name: extensionName(file.name), content: await file.text() };
+}
 export type ResolvedExtensionSource = { kind: 'hub'; source: string; requestedRevision: string; revision: string };
 export type ExtensionInfo = {
   name: string;

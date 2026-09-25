@@ -288,7 +288,6 @@ function nodeBrowsePath(node: NodeData, operation: NodeSurfaceCategory) {
   return [modality, role];
 }
 
-export function nodeGroupForCatalogEntry(entry: NodeCatalogEntry, _expertMode: boolean) {
-  void _expertMode;
+export function nodeGroupForCatalogEntry(entry: NodeCatalogEntry) {
   return entry.groupPath[0] ?? 'Data & Utilities';
 }

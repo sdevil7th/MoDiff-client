@@ -13,7 +13,18 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // ceiling covers that data. Deferred UI and individual chunk limits do not grow.
 // Authored-default provenance and bounded inactive-draft validation add less
 // than 1 KiB to the shared graph chunk. Keep the increase explicitly bounded.
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 439 * 1024;
+// Workflow tab pointer/keyboard reordering stays in the existing eager tab bar.
+// Its dependency-free interaction adds about 1.6 KiB compressed overall; the
+// measured largest startup chunk is 439.6 KiB. Bound it at 440 KiB.
+// Unified editor, custom-source actions and typed socket guidance measure
+// 440.9 KiB after keeping media adaptation on demand. No new dependencies.
+// Visual stage grouping measures 443.6 KiB after keeping model/task replacement
+// deferred via the shared operationScope helper. No new dependencies.
+// Encoding-node correction, including transient stage summaries: 446.1 KiB.
+// Keep the editor lazy (eager loading measured 458.3 KiB); no new dependencies.
+// Shared ordinary Guidance presentation adds <1 KiB; metadata editing remains
+// deferred. Keep the bounded startup chunk at 448 KiB (no new dependency).
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 448 * 1024;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -55,7 +66,18 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 439 * 1024;
 // the compact memory toggle and hover guidance bring the final shell to 626241
 // bytes. Bound the reviewed UI addition without changing either chunk ceiling.
 // Image-prototyping preservation: measured startup 612.1 KiB, no new dependency.
-const MAX_STARTUP_GZIP_BYTES = 613 * 1024;
+// Tab reordering, accessible feedback and order-preserving recovery measure
+// 628458 startup bytes (613.7 KiB). Allow 614 KiB; deferred/total caps stay fixed.
+// Developer-first node UX measures 629759 bytes (+1301); retain a bounded
+// 616 KiB startup graph rather than eagerly loading the attachment planner.
+// Visual grouping adds 2748 compressed startup bytes (632507 total); keep the
+// increase bounded at 618 KiB. The replacement planner remains on demand.
+// Dedicated encoding renderer + summary routing: 620.3 KiB measured.
+// Required media starters and ordinary Guidance: 621.2 KiB measured.
+// Explicit Guidance removal persistence and shared schema validation add 449
+// compressed startup bytes (636542 -> 636991). Bound the added metadata path
+// with 256 bytes above the prior total ceiling; individual/deferred caps stay fixed.
+const MAX_STARTUP_GZIP_BYTES = 622 * 1024 + 256;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -134,7 +156,16 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // at 238 KiB + 256 bytes; the 64 KiB per-chunk ceiling remains unchanged.
 // Lossless cross-model inactive-stage/wire restoration measures 239.1 KiB.
 // Keep the planner deferred and its individual 64 KiB chunk limit unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 240 * 1024;
+// Unified custom-source forms and media-role attachment measure 240.6 KiB.
+// Keep the per-deferred-chunk ceiling unchanged.
+// Group controls and retained deferred model replacement measure 247212 bytes.
+// On-demand encoding editor and its inspection surface: 242.8 KiB measured.
+// Direct encoding input/output preparation and registry-loaded route selection
+// measure 250289 deferred bytes (244.4 KiB). Keep the existing startup and
+// per-chunk limits; allocate one bounded KiB for this added connection behavior.
+// Atomic backend-defined Guidance controls and contextual inspector actions:
+// 247.4 KiB measured; retain the independent 64 KiB per-chunk limit.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -6,7 +6,7 @@ import type { CustomConnection, CustomNodeType } from '../stores/useFlowStore';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
-import { matchingNodeHandleForDrop, nodeConnectionSemanticsAreCompatible } from './nodeConnectionMatching';
+import { matchingNodeHandleForInsertion, nodeConnectionSemanticsAreCompatible } from './nodeConnectionMatching';
 import { useFlowStore } from '../stores/useFlowStore';
 import {
   captureWorkflowOperationContext,
@@ -14,6 +14,7 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
+import { isOptionalEncodingHandle } from './encodingOptionalInput';
 
 export type NodeSearchFactory = (position: CustomNodeType['position']) => CustomNodeType | Promise<CustomNodeType>;
 
@@ -89,6 +90,9 @@ type UseWorkflowConnectionsOptions = {
   setParam: SetParam;
   updateNodeInternals: (id: string) => void;
   connectionScopeIsValid?: (connection: Connection) => boolean;
+  onMediaDrop?: (source: { nodeId: string; handleId: string }, targetId: string) => Promise<boolean>;
+  onEncodingConnect: (connection: Connection, pendingNode?: CustomNodeType, signal?: AbortSignal) => Promise<void>;
+  onConnectionError: (error: unknown) => void;
 };
 
 function pointerPosition(event: MouseEvent | TouchEvent) {
@@ -120,6 +124,9 @@ export function useWorkflowConnections({
   setParam,
   updateNodeInternals,
   connectionScopeIsValid,
+  onMediaDrop,
+  onEncodingConnect,
+  onConnectionError,
 }: UseWorkflowConnectionsOptions) {
   const [anchorPosition, setAnchorPosition] = useState<{ top: number; left: number } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -145,7 +152,7 @@ export function useWorkflowConnections({
   }, []);
 
   const handleNodeSearchSelect = useCallback(
-    async (createNode: NodeSearchFactory, signal: AbortSignal) => {
+    async (createNode: NodeSearchFactory, signal: AbortSignal, allowUnverified: boolean) => {
       if (!anchorPosition || !searchContextRef.current) return;
       const context = searchContextRef.current;
       const dropHandle = dropHandleRef.current;
@@ -156,12 +163,17 @@ export function useWorkflowConnections({
         const newNode = await createNode(position);
         if (signal.aborted) return;
         assertWorkflowOperationContext(context, { includeForm: false });
+        const currentOrigin = dropHandle && useFlowStore.getState().nodes.find((node) => node.id === dropHandle.nodeId);
         const matchingHandle = dropHandle
-          ? matchingNodeHandleForDrop(
+          ? matchingNodeHandleForInsertion(
               newNode.data,
-              dropHandle.dataType,
-              dropHandle.handleType,
-              dropHandle.handleType ? { node: dropHandle.node, handleId: dropHandle.handleId } : null,
+              {
+                dataType: dropHandle.dataType,
+                handleType: dropHandle.handleType,
+                origin: { node: dropHandle.node, handleId: dropHandle.handleId },
+                allowUnverified,
+              },
+              currentOrigin ? { node: currentOrigin.data, handleId: dropHandle.handleId } : null,
             )
           : undefined;
         if (dropHandle && !matchingHandle) throw new Error('This node no longer has a compatible port.');
@@ -186,6 +198,15 @@ export function useWorkflowConnections({
                 };
         }
         const wasEmpty = useFlowStore.getState().nodes.length === 0;
+        if (
+          connection &&
+          (isOptionalEncodingHandle(connection.targetHandle) || isOptionalEncodingHandle(connection.sourceHandle))
+        ) {
+          await onEncodingConnect(connection, newNode, signal);
+          if (signal.aborted) return;
+          committed = true;
+          return;
+        }
         useFlowStore.getState().addNodeWithConnection(newNode, connection);
         if (wasEmpty && useStudioStore.getState().graphBinding) useStudioStore.getState().detachManagedGraph();
         prepareWorkflowForManualInsertion();
@@ -194,30 +215,53 @@ export function useWorkflowConnections({
         if (committed && searchContextRef.current === context) dropHandleRef.current = null;
       }
     },
-    [anchorPosition, screenToFlowPosition, edgeType],
+    [anchorPosition, screenToFlowPosition, edgeType, onEncodingConnect],
   );
 
-  const handleIsValidConnection = useCallback(
+  const connectionError = useCallback(
     (conn: Connection) => {
       if (!conn.sourceHandle || !conn.targetHandle) {
-        return false;
+        return 'Cannot connect: an input or output socket is missing.';
       }
 
       if (conn.source === conn.target) {
-        return false;
+        return 'Cannot connect a node to itself: this would create a dependency loop.';
+      }
+      const seen = new Set<string>();
+      const pending = [conn.target];
+      const edges = useFlowStore.getState().edges;
+      while (pending.length) {
+        const id = pending.pop()!;
+        if (id === conn.source) {
+          const nodes = useFlowStore.getState().nodes;
+          const label = (nodeId: string) => {
+            const node = nodes.find((node) => node.id === nodeId);
+            return node?.data.label || node?.data.action || nodeId;
+          };
+          return `Cannot connect: this would create a dependency loop. "${label(conn.source)}" already depends on "${label(conn.target)}".`;
+        }
+        if (seen.has(id)) continue;
+        seen.add(id);
+        for (const edge of edges) if (edge.source === id) pending.push(edge.target);
       }
 
       if (connectionScopeIsValid && !connectionScopeIsValid(conn)) {
-        return false;
+        return 'Cannot connect these sockets across this node boundary.';
       }
 
       const sourceType = getParam(conn.source, conn.sourceHandle, 'type') || 'default';
       const targetType = getParam(conn.target, conn.targetHandle, 'type') || 'default';
-      if (!connectionTypesAreCompatible(sourceType, targetType)) return false;
-      return graphConnectionSemanticsAreCompatible(conn.source, conn.sourceHandle, conn.target, conn.targetHandle);
+      if (!connectionTypesAreCompatible(sourceType, targetType))
+        return `Cannot connect: output type ${[sourceType].flat().join(' / ')} is incompatible with input type ${[targetType].flat().join(' / ')}.`;
+      if (!graphConnectionSemanticsAreCompatible(conn.source, conn.sourceHandle, conn.target, conn.targetHandle))
+        return 'Cannot connect: these sockets have incompatible model or operation requirements.';
+      return null;
     },
     [connectionScopeIsValid, getParam],
   );
+
+  // Hover validation stays silent. Explain rejection only when the user drops.
+  const handleIsValidConnection = useCallback((conn: Connection) => connectionError(conn) === null, [connectionError]);
 
   const handleMouseMove = useCallback(
     (event: MouseEvent | TouchEvent) => {
@@ -289,7 +333,7 @@ export function useWorkflowConnections({
 
   const handleDropOnField = useCallback(
     (event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
-      if (!conn.fromNode?.id || !conn.fromHandle?.id) {
+      if (!conn.fromNode?.id || !conn.fromHandle?.id || conn.fromHandle.type !== 'source') {
         return false;
       }
 
@@ -299,6 +343,21 @@ export function useWorkflowConnections({
       if (!target || !fieldKey || !nodeId) {
         return false;
       }
+      if (
+        getParam(nodeId, fieldKey, 'display') === 'output' ||
+        getParam(nodeId, fieldKey, 'hidden') ||
+        getParam(nodeId, fieldKey, 'disabled')
+      )
+        return false;
+      if (
+        !handleIsValidConnection({
+          source: conn.fromNode.id,
+          sourceHandle: conn.fromHandle.id,
+          target: nodeId,
+          targetHandle: fieldKey,
+        })
+      )
+        return false;
 
       const targetIsInput = getParam(nodeId, fieldKey, 'isInput');
       if (targetIsInput) {
@@ -338,7 +397,7 @@ export function useWorkflowConnections({
       });
       return true;
     },
-    [connectionScopeIsValid, onConnect, edgeType, getParam, setParam, updateNodeInternals],
+    [connectionScopeIsValid, handleIsValidConnection, onConnect, edgeType, getParam, setParam, updateNodeInternals],
   );
 
   const handleConnectEnd = useCallback(
@@ -353,18 +412,42 @@ export function useWorkflowConnections({
         return;
       }
 
+      if (conn.fromHandle && conn.toHandle && conn.fromNode && conn.toNode) {
+        if (conn.fromHandle.type === conn.toHandle.type) {
+          onConnectionError(new Error('Cannot connect: connect an output socket to an input socket.'));
+          return;
+        }
+        const forward = conn.fromHandle.type === 'source';
+        const reason = connectionError({
+          source: forward ? conn.fromNode.id : conn.toNode.id,
+          sourceHandle: (forward ? conn.fromHandle.id : conn.toHandle.id) ?? null,
+          target: forward ? conn.toNode.id : conn.fromNode.id,
+          targetHandle: (forward ? conn.toHandle.id : conn.fromHandle.id) ?? null,
+        });
+        onConnectionError(new Error(reason ?? 'Cannot connect: this socket is unavailable.'));
+        return;
+      }
+
       if (conn.toHandle === null && handleDropOnPane(event, conn)) {
         return;
       }
 
-      handleDropOnField(event, conn);
+      if (handleDropOnField(event, conn)) return;
+      if (conn.fromHandle?.type === 'source' && conn.fromHandle.id && conn.fromNode?.id) {
+        const targetId = (event.target as HTMLElement).closest('.react-flow__node')?.getAttribute('data-id');
+        if (targetId) onMediaDrop?.({ nodeId: conn.fromNode.id, handleId: conn.fromHandle.id }, targetId);
+      }
     },
-    [handleDropOnPane, handleDropOnField, handleMouseMove],
+    [handleDropOnPane, handleDropOnField, handleMouseMove, onMediaDrop, connectionError, onConnectionError],
   );
 
   const handleConnect = useCallback(
     (conn: Connection) => {
-      if (connectionScopeIsValid && !connectionScopeIsValid(conn)) {
+      if (!handleIsValidConnection(conn)) {
+        return;
+      }
+      if (isOptionalEncodingHandle(conn.targetHandle) || isOptionalEncodingHandle(conn.sourceHandle)) {
+        void onEncodingConnect(conn).catch(onConnectionError);
         return;
       }
       onConnect({
@@ -372,7 +455,7 @@ export function useWorkflowConnections({
         edgeType,
       });
     },
-    [connectionScopeIsValid, onConnect, edgeType],
+    [handleIsValidConnection, onConnect, edgeType, onEncodingConnect, onConnectionError],
   );
 
   const closeNodeSearchDialog = useCallback(() => {

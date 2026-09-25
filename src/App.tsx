@@ -106,7 +106,6 @@ export default function App() {
   useWorkflowBackendSync();
 
   const {
-    studioViewMode,
     isLeftPanelOpen,
     isRightPanelOpen,
     leftPanelWidth,
@@ -534,7 +533,7 @@ export default function App() {
           <WorkflowTabsBar />
           <div className="relative min-h-0 flex-1">
             <Workflow />
-            {workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && studioViewMode === 'expert' && (
+            {workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && (
               <Suspense fallback={null}>
                 <DeveloperWorkflowLauncher />
               </Suspense>
@@ -563,12 +562,7 @@ export default function App() {
       <Suspense fallback={null}>
         {runIssuesDialogOpen ? <RunIssuesDialog /> : null}
         {graphFixDialogOpen ? <GraphFixDialog /> : null}
-        {templateBrowserOpen ||
-        (workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && studioViewMode === 'auto') ? (
-          <TemplateBrowserDialog
-            entry={workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && studioViewMode === 'auto'}
-          />
-        ) : null}
+        {templateBrowserOpen ? <TemplateBrowserDialog entry={false} /> : null}
         {galleryLibraryOpen ? <GalleryLibraryDialog /> : null}
         {mediaViewerOpener ? <MediaViewerDialog /> : null}
         {mediaExportOpener ? <MediaExportDialog /> : null}

@@ -231,6 +231,7 @@ type StudioActions = {
   ) => string;
   switchWorkflowTab: (id: string) => void;
   closeWorkflowTab: (id: string) => void;
+  moveWorkflowTab: (id: string, targetId: string, placement: 'before' | 'after') => void;
   renameWorkflowTab: (id: string, title: string) => void;
   mergeBackendWorkflow: (tab: WorkflowTab, options?: { acknowledgement?: boolean }) => void;
   removeBackendWorkflow: (id: string) => void;
@@ -733,7 +734,8 @@ export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkfl
     if (left.dirty !== right.dirty) return left.dirty ? -1 : 1;
     return right.updatedAt - left.updatedAt;
   });
-  return ranked.slice(0, MAX_LOCAL_WORKFLOW_TABS);
+  const retained = new Set(ranked.slice(0, MAX_LOCAL_WORKFLOW_TABS));
+  return tabs.filter((tab) => retained.has(tab)).slice(0, MAX_LOCAL_WORKFLOW_TABS);
 }
 
 function normalizePersistedStudioState(
@@ -2853,6 +2855,18 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         });
       },
 
+      moveWorkflowTab: (id, targetId, placement) => {
+        set((state) => {
+          const source = state.workflowTabs.find((tab) => tab.id === id);
+          if (!source || id === targetId) return state;
+          const tabs = state.workflowTabs.filter((tab) => tab.id !== id);
+          const targetIndex = tabs.findIndex((tab) => tab.id === targetId);
+          if (targetIndex < 0) return state;
+          tabs.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, source);
+          if (tabs.every((tab, index) => tab === state.workflowTabs[index])) return state;
+          return { workflowTabs: tabs };
+        });
+      },
       renameWorkflowTab: (id, title) => {
         const trimmed = title.trim();
         if (!trimmed) return;

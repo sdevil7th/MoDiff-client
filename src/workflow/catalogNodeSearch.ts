@@ -33,6 +33,7 @@ export function catalogNodeSearchEntries(
   view: NodeCatalogView,
   dataType?: string | string[],
   handleType?: HandleDirection,
+  allowUnverified = false,
 ) {
   return filterHuggingFaceCatalogSections(sections, search, view)
     .flatMap(({ entries }) => entries)
@@ -60,7 +61,7 @@ export function catalogNodeSearchEntries(
           return false;
         }
       }
-      return Boolean(node && matchingNodeHandleForDrop(node, dataType, handleType));
+      return Boolean(node && matchingNodeHandleForDrop(node, dataType, handleType, undefined, allowUnverified));
     });
 }
 

@@ -1,168 +1,157 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ExtensionSource, ResolvedExtensionSource } from '../studio/customExtensions';
-import { resolveExtensionSource } from '../studio/extensionSourceResolution';
+import { useRef, useState } from 'react';
+import { FolderOpen, GitBranch, CloudDownload } from 'lucide-react';
+import {
+  extensionName,
+  pythonFileImport,
+  type ExtensionImport,
+  type ExtensionSource,
+} from '../studio/customExtensions';
+import { useNodesStore } from '../stores/useNodeStore';
 import { formatRequestError } from '../utils/requestJson';
-import { DetailLine } from '../ui/DetailLine';
-import { ModiffButton, ModiffFieldShell, ModiffInput, ModiffSelect } from '../ui';
+import { ModiffButton, ModiffFieldShell, ModiffInput, ModiffDisclosure, ModiffFileInput } from '../ui';
+
+const choices = [
+  { value: 'local', label: 'Local', Icon: FolderOpen },
+  { value: 'hub', label: 'Hugging Face', Icon: CloudDownload },
+  { value: 'git', label: 'Git', Icon: GitBranch },
+] as const;
 
 export default function ExtensionSourceForm({
   initialKind,
   busy,
-  onStage,
+  onAdd,
 }: {
   initialKind: ExtensionSource['kind'];
   busy: boolean;
-  onStage: (source: ExtensionSource) => void;
+  onAdd: (source: ExtensionImport) => Promise<void>;
 }) {
   const [kind, setKind] = useState(initialKind);
   const [source, setSource] = useState('');
   const [name, setName] = useState('');
   const [revision, setRevision] = useState('');
-  const [resolved, setResolved] = useState<
-    (ResolvedExtensionSource & { requestSource: string; requestRevision: string }) | null
-  >(null);
-  const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pending = useRef<AbortController | null>(null);
-  useEffect(() => {
-    pending.current?.abort();
-    pending.current = null;
-    setResolving(false);
-    setResolved(null);
-    setError(null);
-    return () => {
-      pending.current?.abort();
-    };
-  }, [kind, source, revision, busy]);
-
-  async function resolve() {
-    if (busy || pending.current) return;
-    const controller = new AbortController();
-    pending.current = controller;
-    setResolving(true);
-    setResolved(null);
-    setError(null);
-    try {
-      const result = await resolveExtensionSource(source.trim(), revision, controller.signal);
-      if (!controller.signal.aborted) setResolved({ ...result, requestSource: source, requestRevision: revision });
-    } catch (failure) {
-      if (!controller.signal.aborted) setError(formatRequestError(failure, 'Could not resolve this source.'));
-    } finally {
-      if (pending.current === controller) {
-        pending.current = null;
-        setResolving(false);
-      }
-    }
-  }
-
-  const current = resolved?.requestSource === source && resolved?.requestRevision === revision ? resolved : null;
-  const exact = /^[a-f0-9]{40}$/u.test(revision);
-  const pinned =
-    kind === 'hub'
-      ? (current ?? (exact && !source.includes('://') ? { source: source.trim(), revision } : null))
-      : null;
+  const root = useNodesStore((state) => state.customModuleRoot);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const resolvedName = name.trim() || extensionName(source);
   return (
-    <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
-      <ModiffFieldShell label="Source type">
-        <ModiffSelect
-          aria-label="Extension source type"
-          value={kind}
-          disabled={busy}
-          options={[
-            { value: 'local', label: 'Local Python folder' },
-            { value: 'hub', label: 'Hugging Face Modular block' },
-            { value: 'git', label: 'Git at exact commit' },
-          ]}
-          onValueChange={(value) => {
-            if (value === 'local' || value === 'hub' || value === 'git') setKind(value);
-          }}
-        />
-      </ModiffFieldShell>
-      <ModiffInput
-        aria-label="Extension source"
-        placeholder={
-          kind === 'local'
-            ? 'Backend folder path'
-            : kind === 'git'
-              ? 'HTTPS Git URL'
-              : 'Hugging Face URL or owner/repository'
-        }
-        value={source}
-        disabled={busy}
-        onChange={(e) => setSource(e.target.value)}
-      />
-      <ModiffInput
-        aria-label="Extension module name"
-        placeholder="Module name, e.g. PromptTools"
-        value={name}
-        disabled={busy}
-        onChange={(e) => setName(e.target.value)}
-      />
-      {kind !== 'local' ? (
-        <ModiffInput
-          aria-label="Extension exact revision"
-          placeholder={kind === 'hub' ? 'Branch, tag or commit (default: main)' : '40-character commit SHA'}
-          value={revision}
-          disabled={busy}
-          onChange={(e) => setRevision(e.target.value)}
-        />
+    <div className="grid gap-4" data-testid="extension-source-form">
+      <div className="grid grid-cols-3 gap-2" role="group" aria-label="Source type">
+        {choices.map(({ value, label, Icon }) => (
+          <ModiffButton
+            key={value}
+            disabled={busy}
+            aria-pressed={kind === value}
+            className="aria-pressed:border-hf-yellow aria-pressed:bg-hf-yellow/10 aria-pressed:text-hf-yellow"
+            icon={<Icon size={16} />}
+            onClick={() => {
+              setKind(value);
+              setSource('');
+              setRevision('');
+              setError(null);
+            }}
+          >
+            {label}
+            {kind === value ? ' ✓' : ''}
+          </ModiffButton>
+        ))}
+      </div>
+      {kind === 'local' ? (
+        <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3">
+          <p className="text-sm">
+            Drop a Python node onto the canvas, or place a node file/package in your custom folder.
+          </p>
+          <p className="break-all font-mono text-xs text-modiff-subtle-text">{root ?? 'custom/ on the backend'}</p>
+          <p className="text-xs text-modiff-subtle-text">
+            New sources appear automatically in Custom nodes. Choose Load to enable them.
+          </p>
+          <ModiffFileInput
+            ref={fileInput}
+            accept=".py"
+            aria-label="Choose Python node file"
+            className="hidden"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file)
+                void pythonFileImport(file)
+                  .then(onAdd)
+                  .catch((failure: unknown) => setError(formatRequestError(failure, 'Node import failed.')));
+            }}
+          />
+          <ModiffButton disabled={busy} onClick={() => fileInput.current?.click()}>
+            Choose Python file
+          </ModiffButton>
+        </div>
+      ) : (
+        <ModiffFieldShell label={kind === 'hub' ? 'Hugging Face repository' : 'Git repository URL'}>
+          <ModiffInput
+            aria-label="Extension source"
+            value={source}
+            disabled={busy}
+            placeholder={kind === 'hub' ? 'owner/repository' : 'https://host/owner/repository.git'}
+            onChange={(event) => setSource(event.target.value)}
+          />
+        </ModiffFieldShell>
+      )}
+      <ModiffDisclosure label="Advanced options" panelClassName="grid gap-3 pt-2">
+        {kind === 'local' ? (
+          <ModiffFieldShell label="Copy an existing backend folder or Python file">
+            <ModiffInput
+              aria-label="Extension source"
+              value={source}
+              disabled={busy}
+              onChange={(event) => setSource(event.target.value)}
+            />
+          </ModiffFieldShell>
+        ) : (
+          <ModiffFieldShell label="Branch, tag or commit (optional)">
+            <ModiffInput
+              aria-label="Extension revision"
+              value={revision}
+              disabled={busy}
+              placeholder="Repository default"
+              onChange={(event) => setRevision(event.target.value)}
+            />
+          </ModiffFieldShell>
+        )}
+        <ModiffFieldShell label="Package name (optional)">
+          <ModiffInput
+            aria-label="Extension module name"
+            value={name}
+            placeholder={source ? resolvedName : 'Derived from source'}
+            disabled={busy}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </ModiffFieldShell>
+      </ModiffDisclosure>
+      {error ? (
+        <p role="alert" className="text-sm text-modiff-red">
+          Node import failed
+          <br />
+          {error}
+        </p>
       ) : null}
-      {kind === 'hub' ? (
-        <>
-          <div className="flex flex-wrap gap-2">
-            <ModiffButton disabled={busy || resolving || !source.trim()} onClick={() => void resolve()}>
-              {resolving ? 'Resolving revision…' : 'Resolve revision'}
-            </ModiffButton>
-            {resolving ? (
-              <ModiffButton
-                onClick={() => {
-                  pending.current?.abort();
-                  pending.current = null;
-                  setResolving(false);
-                }}
-              >
-                Cancel resolution
-              </ModiffButton>
-            ) : null}
-          </div>
-          {current ? (
-            <div role="status" className="break-all text-xs text-modiff-subtle-text">
-              Resolved {current.source} · {current.requestedRevision} → {current.revision}. Stage this exact commit to
-              inspect its source.
-            </div>
-          ) : null}
-          {error ? (
-            <p role="alert" className="text-xs text-modiff-red">
-              {error}
-            </p>
-          ) : null}
-        </>
-      ) : null}
+      <p className="text-xs text-modiff-subtle-text">
+        Only add code you trust. Python nodes run with backend permissions. Dependencies are never installed
+        automatically.
+      </p>
       <ModiffButton
-        disabled={
-          busy ||
-          resolving ||
-          !source.trim() ||
-          !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(name) ||
-          (kind === 'git' && !exact) ||
-          (kind === 'hub' && !pinned)
-        }
+        tone="primary"
+        fullWidth
+        loading={busy}
+        disabled={busy || !source.trim() || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(resolvedName)}
         onClick={() =>
-          onStage({
+          void onAdd({
             kind,
-            name,
-            source: pinned?.source ?? source.trim(),
-            ...(kind !== 'local' ? { revision: pinned?.revision ?? revision } : {}),
+            source: source.trim(),
+            name: resolvedName,
+            ...(revision.trim() ? { revision: revision.trim() } : {}),
           })
         }
       >
-        Stage source
+        Add node
       </ModiffButton>
-      <DetailLine tone="muted">
-        {kind === 'local'
-          ? 'Staging copies this folder. Edit the installed path shown in the review after staging.'
-          : 'Revision lookup reads metadata only. Staging downloads code and metadata at the exact commit; it does not install packages or model weights.'}
-      </DetailLine>
     </div>
   );
 }

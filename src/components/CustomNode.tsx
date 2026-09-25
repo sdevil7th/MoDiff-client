@@ -113,7 +113,15 @@ function contextMenuAnchor(event: MouseEvent<HTMLDivElement>): { mouseX: number;
   return { mouseX: anchor.left, mouseY: anchor.top };
 }
 
-const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
+type NodeSurface = {
+  controls: ReactNode;
+  connectors: ReactNode;
+  actions?: ReactNode;
+  setSize: (width: number, height: number) => void;
+  testId?: string;
+};
+
+const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurface }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
   const label = nodeDisplayLabel(node.data);
@@ -283,8 +291,11 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const onResizeStart = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
       beginHistoryTransaction('Resize node');
-      const initialWidth = nodeRef.current?.clientWidth || node.width || 0;
-      const initialHeight = nodeRef.current?.clientHeight || node.height || 0;
+      const initialWidth = nodeRef.current?.offsetWidth || node.width || 0;
+      const initialHeight = nodeRef.current?.offsetHeight || node.height || 0;
+      const body = nodeRef.current?.querySelector<HTMLElement>('[data-testid^="node-scroll-body-"]');
+      // Keep the fixed header/status/socket trays and a usable scrolling viewport.
+      const minimumHeight = Math.max(160, initialHeight - (body?.clientHeight ?? initialHeight) + 96);
       const startX = event.clientX;
       const startY = event.clientY;
       const zoomLevel = reactFlowStore.getState().transform[2];
@@ -294,8 +305,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           minimumNodeWidth,
           Math.min(MAX_NODE_WIDTH, initialWidth + Math.round((moveEvent.clientX - startX) / zoomLevel)),
         );
-        const newHeight = Math.max(160, initialHeight + Math.round((moveEvent.clientY - startY) / zoomLevel));
-        setNodeSize(node.id, newWidth, newHeight);
+        const newHeight = Math.max(minimumHeight, initialHeight + Math.round((moveEvent.clientY - startY) / zoomLevel));
+        if (node.surface) node.surface.setSize(newWidth, newHeight);
+        else setNodeSize(node.id, newWidth, newHeight);
         scheduleNodeLayoutSync();
       };
 
@@ -315,6 +327,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       node.id,
       node.width,
       node.height,
+      node.surface,
       minimumNodeWidth,
       reactFlowStore,
       scheduleNodeLayoutSync,
@@ -335,7 +348,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       ref={nodeRef}
       id={node.id}
       parentNodeId={node.parentId}
-      testId={`graph-node-action-${node.data.action}`}
+      testId={node.surface?.testId ?? `graph-node-action-${node.data.action}`}
       className={cx(
         normalizeDataType(`${node.data.module}_${node.data.action}`),
         normalizeDataType(node.data.module),
@@ -356,6 +369,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           {recentChangeLabel && <span className="block truncate text-xs text-hf-yellow">{recentChangeLabel}</span>}
         </div>
         <div className="nodrag flex items-center gap-1">
+          {node.surface?.actions}
           {validationMessage && (
             <>
               <ModiffIconButton
@@ -419,21 +433,23 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             data-testid={`node-scroll-body-${node.id}`}
           >
             <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-              <NodeContent
-                nodeId={node.id}
-                params={node.data.params}
-                updateStore={handleUpdateStore}
-                updateFieldActionStore={
-                  node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
-                    ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
-                    : undefined
-                }
-                module={node.data.module || ''}
-                action={node.data.action || ''}
-                mode="controls"
-                executionStatus={node.data.executionStatus}
-                progressMessage={node.data.progressMessage}
-              />
+              {node.surface?.controls ?? (
+                <NodeContent
+                  nodeId={node.id}
+                  params={node.data.params}
+                  updateStore={handleUpdateStore}
+                  updateFieldActionStore={
+                    node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+                      ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+                      : undefined
+                  }
+                  module={node.data.module || ''}
+                  action={node.data.action || ''}
+                  mode="controls"
+                  executionStatus={node.data.executionStatus}
+                  progressMessage={node.data.progressMessage}
+                />
+              )}
             </ErrorBoundary>
           </div>
 
@@ -513,22 +529,24 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
         </>
       )}
       <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-        <NodeContent
-          nodeId={node.id}
-          params={node.data.params}
-          updateStore={handleUpdateStore}
-          updateFieldActionStore={
-            node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
-              ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
-              : undefined
-          }
-          module={node.data.module || ''}
-          action={node.data.action || ''}
-          mode="connectors"
-          compactConnectors={isCollapsed}
-          executionStatus={node.data.executionStatus}
-          progressMessage={node.data.progressMessage}
-        />
+        {node.surface?.connectors ?? (
+          <NodeContent
+            nodeId={node.id}
+            params={node.data.params}
+            updateStore={handleUpdateStore}
+            updateFieldActionStore={
+              node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+                ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+                : undefined
+            }
+            module={node.data.module || ''}
+            action={node.data.action || ''}
+            mode="connectors"
+            compactConnectors={isCollapsed}
+            executionStatus={node.data.executionStatus}
+            progressMessage={node.data.progressMessage}
+          />
+        )}
       </ErrorBoundary>
       {contextMenu && (
         <NodeContextMenu position={contextMenu} onClose={closeContextMenu}>

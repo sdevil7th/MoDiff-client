@@ -61,7 +61,6 @@ import { getDownloadPercent, hasHfDownloadFailed, isHfDownloadActive } from '../
 import { buildOutputWorkflowPackage, buildWorkflowPackage } from '../studio/workflowPackage';
 import { cx } from '../utils/classNames';
 import type { StudioResourceMode } from '../studio/types';
-import { restoreWorkspaceView, workspaceModeForView } from '../studio/workspaceMode';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
 import { useGraphFixModule } from '../studio/useGraphFixModule';
@@ -75,7 +74,6 @@ import {
   ModiffMenuSeparator,
   ModiffMenuSurface,
   ModiffMenuTrigger,
-  ModiffRadioGroup,
   ModiffTooltip,
 } from '../ui';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
@@ -223,14 +221,12 @@ function TopBar() {
     setRightPanelOpen,
     executeButtonIndex,
     runningState,
-    studioViewMode,
     setExecuteButtonIndex,
     setGalleryLibraryOpen,
     setModelManagerOpener,
     setTemplateBrowserOpen,
     setRunningState,
     setSettingsOpener,
-    setStudioViewMode,
   } = useSettingsStore();
   const { sid, isConnected, connect, disconnect } = useWebsocketStore();
   const { currentTask, taskCount, fetchSupervisorTasks } = useTaskStore();
@@ -728,54 +724,38 @@ function TopBar() {
             >
               Open Gallery
             </ModiffMenuAction>
-            {studioViewMode === 'expert' && (
-              <>
-                <ModiffMenuSeparator />
-                <ModiffMenuAction
-                  onClick={handleRawWorkflowExportClick}
-                  data-testid="topbar-export-raw-workflow"
-                  icon={<FileJson2 size={16} />}
-                >
-                  Workflow JSON
-                </ModiffMenuAction>
-                <ModiffMenuAction
-                  disabled={!sid}
-                  onClick={handleApiExportClick}
-                  data-testid="topbar-export-api-graph"
-                  title="Executable backend API graph JSON"
-                  icon={<FileJson2 size={16} />}
-                >
-                  API graph JSON
-                </ModiffMenuAction>
-                <ModiffMenuAction
-                  disabled={!sid}
-                  onClick={() => setServiceExportOpen(true)}
-                  data-testid="topbar-export-service"
-                  icon={<Package size={16} />}
-                >
-                  Service package
-                </ModiffMenuAction>
-              </>
-            )}
+            <>
+              <ModiffMenuSeparator />
+              <ModiffMenuAction
+                onClick={handleRawWorkflowExportClick}
+                data-testid="topbar-export-raw-workflow"
+                icon={<FileJson2 size={16} />}
+              >
+                Workflow JSON
+              </ModiffMenuAction>
+              <ModiffMenuAction
+                disabled={!sid}
+                onClick={handleApiExportClick}
+                data-testid="topbar-export-api-graph"
+                title="Executable backend API graph JSON"
+                icon={<FileJson2 size={16} />}
+              >
+                API graph JSON
+              </ModiffMenuAction>
+              <ModiffMenuAction
+                disabled={!sid}
+                onClick={() => setServiceExportOpen(true)}
+                data-testid="topbar-export-service"
+                icon={<Package size={16} />}
+              >
+                Service package
+              </ModiffMenuAction>
+            </>
           </ModiffMenuSurface>
         </ModiffMenuRoot>
       </div>
 
       <div className="flex flex-none items-center gap-2">
-        <ModiffRadioGroup
-          aria-label="Workspace"
-          data-testid="topbar-workspace"
-          variant="segmented"
-          value={workspaceModeForView(studioViewMode)}
-          onValueChange={(value) => setStudioViewMode(restoreWorkspaceView(value, studioViewMode))}
-          options={[
-            { value: 'creator', label: <span title="Build and run visual workflows">Creator</span> },
-            {
-              value: 'developer',
-              label: <span title="Develop and test nodes and Diffusers workflows">Developer</span>,
-            },
-          ]}
-        />
         <ModiffTooltip
           content={
             <div className="max-w-72 space-y-1">

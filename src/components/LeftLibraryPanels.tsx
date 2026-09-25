@@ -706,7 +706,6 @@ export function ModelsLibraryPanel() {
   const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const form = useStudioStore((state) => state.form);
   const activeTemplateId = useStudioStore((state) => state.activeTemplateId);
   const graphBinding = useStudioStore((state) => state.graphBinding);
@@ -732,9 +731,9 @@ export function ModelsLibraryPanel() {
     () =>
       getCatalogModelProfiles({
         currentModelType: hasWorkflowModelContext ? form.modelType : null,
-        includeWorkflowOnly: studioViewMode === 'expert',
+        includeWorkflowOnly: true,
       }),
-    [form.modelType, hasWorkflowModelContext, studioViewMode],
+    [form.modelType, hasWorkflowModelContext],
   );
   const supportedPlanForms = useMemo(
     () => supportedProfiles.map((profile) => getFormDefaultsForModel(profile.modelType)),
@@ -780,10 +779,7 @@ export function ModelsLibraryPanel() {
     () => groupedItems(missingSupportedProfiles, (profile) => supportedModelGroup(profile.surfaceCategory)),
     [missingSupportedProfiles],
   );
-  const visibleInstalledGroups = useMemo(
-    () => (studioViewMode === 'expert' ? installedGroups : installedGroups.filter(([group]) => group !== 'Components')),
-    [installedGroups, studioViewMode],
-  );
+  const visibleInstalledGroups = installedGroups;
   const workflowRequirements =
     hasWorkflowModelContext && workflowProfile
       ? getStudioWorkflowArtifactRequirements({
@@ -986,7 +982,7 @@ export function ModelsLibraryPanel() {
                   </ModiffButton>
                   {isOpen ? (
                     <div className="grid gap-1 border-t border-modiff-border p-1">
-                      {items.slice(0, studioViewMode === 'expert' ? items.length : 6).map(({ item, source }) => (
+                      {items.map(({ item, source }) => (
                         <ModiffButton
                           align="left"
                           fullWidth
@@ -1005,17 +1001,6 @@ export function ModelsLibraryPanel() {
                           <span className="shrink-0 text-xs font-semibold text-modiff-subtle-text">{source}</span>
                         </ModiffButton>
                       ))}
-                      {studioViewMode !== 'expert' && items.length > 6 ? (
-                        <ModiffButton
-                          align="left"
-                          className="h-auto min-h-0 bg-modiff-bg p-2 text-xs text-modiff-subtle-text"
-                          fullWidth
-                          onClick={() => setModelManagerOpener({ nodeId: null, fieldKey: null })}
-                          tone="secondary"
-                        >
-                          View {items.length - 6} more {group.toLowerCase()} artifacts
-                        </ModiffButton>
-                      ) : null}
                     </div>
                   ) : null}
                 </div>

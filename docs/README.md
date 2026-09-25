@@ -4,6 +4,9 @@ This directory contains durable user, operator, and contributor documentation fo
 
 ## Start Here
 
+[Developer-first node authoring](developer-first-node-ux.md) covers the unified
+editor, custom imports, matching sockets and supported image/audio attachments.
+
 | Guide                                           | Audience            | What it covers                                                                                |
 | ----------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
 | [Project README](../README.md)                  | Everyone            | Project scope, prerequisites, quick start, first workflow, validation, and support boundaries |
@@ -35,9 +38,8 @@ model-change preservation, custom nodes, UX fixes and integrated qualification.
 It records agreed scope and planned work, not completed implementation.
 
 The [Creator / Developer workspaces plan](creator-developer-workspaces-plan.md)
-records the earlier implementation plan: audience-specific starting points,
-one editable graph, the Developer Workflows modal, and model/modification tests.
-Its unchecked milestones are planned work, not current support claims.
+is historical. Its mode switch and multi-step import UX are superseded by the
+developer-first editor; retained test evidence is not a new support claim.
 
 The [generic Diffusers workbench plan](generic-diffusers-workbench-plan.md)
 defines the staged Auto/Expert authoring redesign, compatibility requirements,

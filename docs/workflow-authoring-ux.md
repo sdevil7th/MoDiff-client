@@ -1,15 +1,15 @@
 # Workflow authoring and model selection
 
-Creator opens Templates. Developer opens Workflows. Both use the same editable
+The developer-first editor opens Workflows and also offers Templates. It uses one editable
 nodes, Blocks, execution path and independent memory policy.
 
 ## Start a workflow
 
-In Developer, search for an action or filter by Image, Audio, Video, 3D, or Text &
+In Workflows, search for an action or filter by Image, Audio, Video, 3D, or Text &
 Utilities. Click a task once to create connected nodes. Select the model on the
 loader and edit the prompt or parameters on the graph. Creating a graph does not
-load models or install packages. Custom node source review remains available at
-the bottom of the chooser and through Nodes → Custom nodes.
+load models or install packages. Custom nodes are available through
+**Nodes → Add custom node**, or by dropping a structured Python file on the canvas.
 
 The backend resolves a task against published execution profiles. It prefers the
 last explicitly selected compatible model when its exact artifacts and runtime
@@ -26,6 +26,20 @@ Encode Prompt, Denoise and Decode Latents. Tasks can need additional image, mask
 conditioning or audio operations. Whole-pipeline routes expose Generate/Edit
 operations instead; those nodes do not claim independently replaceable denoising.
 Qwen-Image 2.1 uses its supported whole-pipeline route at the reviewed Diffusers pin.
+
+## Arrange workflow tabs
+
+Drag a tab label left or right to reorder open workflows. The accent marker
+shows the drop position; hold near either edge to scroll a crowded tab strip.
+Escape or releasing outside the strip cancels. Dragging does not switch the
+active workflow, edit its graph, or interrupt a run. Close and New tab remain
+separate actions.
+
+With a tab focused, use Alt+Shift+Left/Right to move it; ordinary arrow keys
+still move focus, and Enter selects it. Order is retained on refresh in this
+browser. The existing recovery limit remains 12 tabs: active, unsaved and recent
+workflows are retained in their arranged relative order. Save important workflows
+to the backend library; browser recovery is not a backup or cross-device tab sync.
 
 ## Change the model
 
@@ -57,8 +71,9 @@ under the row's disclosure. An explicit successful selection is remembered per t
 **Restore model defaults** resets unconnected creative controls using the selected
 profile's starter. Model ownership, memory settings, media and custom branches
 remain intact; Undo restores the prior graph. Public Block model controls resolve
-the owning internal loader before using the existing atomic Block transaction. Imported custom sources still require explicit review
-and approval; opening a picker or choosing Developer does not enable code.
+the owning internal loader before using the existing atomic Block transaction.
+Intentional Add/Load/Reload enables validated custom code; opening a picker or
+discovering a file does not. Only load trusted Python.
 
 ## Names, examples and library
 
@@ -79,7 +94,7 @@ values. Full creator-example coverage and all legacy insertion paths remain trac
 work; the presence of a sample does not qualify a model's output.
 
 The sidebar offers **Start**, **My workflows**, **Example workflows** and
-**Recovery drafts**. Start uses the same task browser as the Developer launcher;
+**Recovery drafts**. Start uses the same task browser as the Workflows launcher;
 it creates a separate tab without replacing the current graph. Open workflow
 shows My workflows. Lists remain bounded and paginated.
 

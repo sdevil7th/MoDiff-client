@@ -1,4 +1,5 @@
 import { operationOwnsModel } from '../workflow/operationContracts';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import { lazy, Suspense, useState } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -7,6 +8,8 @@ import { operationAuthoring } from '../workflow/operationAuthoring';
 import { workflowChoices } from '../workflow/workflowChoices';
 import { ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import OperationGraphControls from './OperationGraphControls';
+import { visualOperationGroup } from '../workflow/visualOperationGroups';
+const VisualStageControls = lazy(() => import('./VisualStageControls'));
 const OperationModelPicker = lazy(() => import('./OperationModelPicker'));
 
 const LegacyOperationOwnerControls = lazy(() => import('./LegacyOperationOwnerControls'));
@@ -15,6 +18,13 @@ const BlockModelTaskControls = lazy(() => import('./BlockModelTaskControls'));
 
 /** Local target choices never change library browsing or the authored graph. */
 export default function OperationOwnerControls({ node }: { node: CustomNodeType }) {
+  if (isFocusedStageNode(node.data.blockInstanceV2)) return null;
+  if (visualOperationGroup(node))
+    return (
+      <Suspense fallback={null}>
+        <VisualStageControls node={node} />
+      </Suspense>
+    );
   if (node.data.blockInstanceV2) return <BlockOwnerChoices node={node} />;
   if (node.data.userBlockSnapshot || node.data.userBlockId)
     return (
@@ -34,13 +44,18 @@ export default function OperationOwnerControls({ node }: { node: CustomNodeType 
   )
     return null;
   return (
-    <OwnerChoices
-      key={`${node.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
-      ownerId={node.data.blockProjectionNodeId ?? node.id}
-      blockId={node.data.blockProjectionOwnerId}
-      pipelineClass={hint.operation.pipelineClass}
-      currentTask={hint.operation.task}
-    />
+    <>
+      <Suspense fallback={null}>
+        <VisualStageControls node={node} />
+      </Suspense>
+      <OwnerChoices
+        key={`${node.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
+        ownerId={node.data.blockProjectionNodeId ?? node.id}
+        blockId={node.data.blockProjectionOwnerId}
+        pipelineClass={hint.operation.pipelineClass}
+        currentTask={hint.operation.task}
+      />
+    </>
   );
 }
 
@@ -102,6 +117,9 @@ export function BlockOwnerChoices({
         pipelineClass={hint.operation.pipelineClass}
         currentTask={hint.operation.task}
       />
+      <Suspense fallback={null}>
+        <VisualStageControls node={{ ...loader, data: { ...loader.data, blockProjectionOwnerId: ownerBlockId } }} />
+      </Suspense>
     </div>
   );
 }

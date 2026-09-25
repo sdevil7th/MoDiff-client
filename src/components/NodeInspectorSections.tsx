@@ -2,9 +2,11 @@ import { operationOwnsModel } from '../workflow/operationContracts';
 import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { ModiffTabs, StatusLine } from '../ui';
+import { isFocusedGuidance } from '../workflow/encodingNodePresentation';
 
 const NodeInspectionDetails = lazy(() => import('./NodeInspectionDetails'));
 const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
+const GuidanceNodeControls = lazy(() => import('./GuidanceNodeControls'));
 
 export type NodeInspectorSection = 'parameters' | 'interface' | 'implementation' | 'docs' | 'run';
 const sections: { value: NodeInspectorSection; label: string }[] = [
@@ -40,7 +42,13 @@ export default function NodeInspectorSections({ node, children }: { node: Custom
                 <OperationOwnerControls node={node} />
               </Suspense>
             ) : null}
-            {children}
+            {isFocusedGuidance(node.data.blockInstanceV2) ? (
+              <Suspense fallback={<StatusLine>Loading guidance controls…</StatusLine>}>
+                <GuidanceNodeControls instance={node.data.blockInstanceV2!} />
+              </Suspense>
+            ) : (
+              children
+            )}
           </div>
         ) : (
           <Suspense fallback={<StatusLine>Loading node details…</StatusLine>}>

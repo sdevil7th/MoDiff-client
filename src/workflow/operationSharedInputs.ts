@@ -62,7 +62,6 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
   if (
     !root ||
     (root.parentId && !owner) ||
-    root.data.blockProjectionOwnerId !== owner ||
     root.data.blockInstanceV2 ||
     !operationOwnsModel(rootOperation) ||
     !rootOperation.binding ||
@@ -77,8 +76,7 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
   const candidates = nodes.filter((n) => {
     const op = n.data.operationAuthoring?.operation;
     return (
-      (!n.parentId || Boolean(owner)) &&
-      n.data.blockProjectionOwnerId === owner &&
+      (!n.parentId || Boolean(n.data.blockProjectionOwnerId)) &&
       !n.data.blockInstanceV2 &&
       op &&
       Array.isArray(op.ports) &&

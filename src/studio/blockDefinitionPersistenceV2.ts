@@ -146,6 +146,9 @@ export function reusableBlockDefinitionFromSubtreeV2(
     // Filtering a subtree can leave gaps in the source control order. Keep
     // relative order, but give the independent definition a contiguous order.
     controls: savedControls.map((control, order) => ({ ...control, order })),
+    ...(instance.presentation.removedControlBindings?.some((b) => included.has(b.nodeId))
+      ? { removedControlBindings: instance.presentation.removedControlBindings.filter((b) => included.has(b.nodeId)) }
+      : {}),
     ...(current.suggestedInputs
       ? {
           suggestedInputs: current.suggestedInputs
@@ -253,6 +256,9 @@ export function reusableBlockDefinitionFromInstanceV2(
     ...(current.description ? { description: current.description } : {}),
     source: choice === 'new' ? userSourceWithDirectParent(current) : current.source,
     graph: instance.effectiveGraph,
+    ...(instance.presentation.removedControlBindings?.length
+      ? { removedControlBindings: structuredClone(instance.presentation.removedControlBindings) }
+      : {}),
     boundary: {
       mode: 'explicit',
       inputs: effectiveInterface.boundary.inputs,

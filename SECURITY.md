@@ -40,4 +40,4 @@ The supported default is a trusted single user with both processes bound to `127
 
 Read [Privacy and security](docs/privacy-and-security.md) for stored data, network behavior, third-party code trust, cleanup, and safe diagnostic sharing.
 
-Custom nodes require explicit approval of the inspected source/dependency hash before Python imports or custom browser assets are enabled. Staging and source refresh do not authorize code. Reload cannot undo arbitrary Python side effects; restart after changing trusted code when necessary. Workflow imports and Auto/Expert preferences do not grant source trust.
+Intentional Add/Load/Reload authorizes custom code in one action and binds its source/dependency hash before enabling it. Discovery and source refresh do not authorize code. Python runs with backend permissions, not in a sandbox. Reload cannot undo arbitrary Python side effects; restart when necessary. Workflow imports and memory preferences never grant source trust.

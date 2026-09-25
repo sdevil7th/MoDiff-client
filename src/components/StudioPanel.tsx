@@ -121,7 +121,6 @@ export default function StudioPanel() {
   const setLightboxOpener = useSettingsStore((state) => state.setLightboxOpener);
   const setTemplateBrowserOpen = useSettingsStore((state) => state.setTemplateBrowserOpen);
   const setGalleryLibraryOpen = useSettingsStore((state) => state.setGalleryLibraryOpen);
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const showRunIssues = useRunIssueStore((state) => state.showIssues);
   const { sid, isConnected } = useWebsocketStore(
     useShallow((state) => ({
@@ -230,7 +229,7 @@ export default function StudioPanel() {
     !isPerceptionMode &&
     !isSpeechMode &&
     STUDIO_MODEL_PROFILES[form.modelType].supportsPrompt !== false;
-  const expertAuthoringMode = studioViewMode === 'expert';
+
   const selectedModelName = getStudioModelDisplayName(STUDIO_MODEL_PROFILES[form.modelType]);
   const selectedModelRuntimeLabel = getStudioModelRuntimeLabel(STUDIO_MODEL_PROFILES[form.modelType], form);
   const selectedModelArtifactNote = getStudioModelArtifactNote(STUDIO_MODEL_PROFILES[form.modelType]);
@@ -290,7 +289,7 @@ export default function StudioPanel() {
     workflowCanvasHydrated &&
     !templateGraphPreparing &&
     ((!graphBinding && graphInspection.nodeCount > 0) || Boolean(graphDivergence));
-  const showExactNodeInspector = customGraphMode || studioViewMode === 'expert';
+
   const customGraphModelText =
     graphInspection.modelRefs.length > 0
       ? `${new Set(graphInspection.modelRefs.map((reference) => `${reference.kind}:${reference.value}`)).size} model refs`
@@ -312,7 +311,7 @@ export default function StudioPanel() {
   const emptyWorkflow =
     workflowCanvasHydrated && !templateGraphPreparing && !activeTemplateId && graphNodes.length === 0;
   const selectedGraphNodes = useMemo(() => graphNodes.filter((node) => node.selected), [graphNodes]);
-  const inspectExactNode = showExactNodeInspector || selectedGraphNodes.length > 0;
+  const inspectExactNode = true;
   const graphInputCandidates = useMemo(
     () => (inspectExactNode ? graphParamInputCandidates(graphNodes, pinnedGraphInputIds) : []),
     [graphNodes, inspectExactNode, pinnedGraphInputIds],
@@ -673,7 +672,7 @@ export default function StudioPanel() {
         <StudioCommandPalette
           isWorking={isWorking}
           runBlocked={runControlsBlocked}
-          expertMode={expertAuthoringMode}
+          expertMode={true}
           hasManagedForm={showFullStudioForm}
           hasGalleryItems={activeWorkflowOutputs.length > 0}
           hasComparePair={activeWorkflowOutputs.length > 1}
@@ -1039,7 +1038,7 @@ export default function StudioPanel() {
             </div>
           )}
 
-          <StudioSection id="advanced-generation" title={expertAuthoringMode ? 'Advanced generation' : 'Generation'}>
+          <StudioSection id="advanced-generation" title={'Advanced generation'}>
             <section>
               <SectionHeader
                 title={
@@ -1290,7 +1289,7 @@ export default function StudioPanel() {
                           onChange={(value) => updateAndSync({ conditioningScale: value })}
                         />
                       </ModiffFieldShell>
-                      {expertAuthoringMode ? (
+                      {
                         <>
                           <ModiffFieldShell label={`Guidance 2: ${form.guidanceScale2}`}>
                             <StudioSlider
@@ -1329,7 +1328,7 @@ export default function StudioPanel() {
                             onChange={(value) => updateAndSync({ attentionKwargsJson: value })}
                           />
                         </>
-                      ) : null}
+                      }
                     </>
                   )}
                   {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
@@ -1482,7 +1481,7 @@ export default function StudioPanel() {
                   onChange={(value) => updateAndSync({ lyrics: value })}
                   multiline
                 />
-                <div className={cx('grid gap-2', expertAuthoringMode && 'grid-cols-2')}>
+                <div className={cx('grid gap-2', 'grid-cols-2')}>
                   <ModiffFieldShell label={`Duration ${form.audioDuration}s`}>
                     <StudioSlider
                       value={form.audioDuration}
@@ -1492,7 +1491,7 @@ export default function StudioPanel() {
                       onChange={(value) => updateAndSync({ audioDuration: value })}
                     />
                   </ModiffFieldShell>
-                  {expertAuthoringMode ? (
+                  {
                     <ModiffFieldShell label={`Shift ${form.shift}`}>
                       <StudioSlider
                         value={form.shift}
@@ -1502,7 +1501,7 @@ export default function StudioPanel() {
                         onChange={(value) => updateAndSync({ shift: value })}
                       />
                     </ModiffFieldShell>
-                  ) : null}
+                  }
                 </div>
                 {form.mode === 'audio_continuation' && (
                   <ModiffFieldShell label={`Continuation length ${form.extensionDuration}s`}>
@@ -1617,7 +1616,7 @@ export default function StudioPanel() {
             </StudioSection>
           )}
 
-          {expertAuthoringMode && (
+          {
             <StudioSection id="runtime" title="Runtime">
               <section className="grid gap-2" data-testid="studio-expert-runtime-controls">
                 <SectionHeader title="Custom runtime settings" />
@@ -1684,7 +1683,7 @@ export default function StudioPanel() {
                 </div>
               </section>
             </StudioSection>
-          )}
+          }
 
           {(showImageTray || form.mode === 'image_to_video' || form.mode === 'reference_to_video') && (
             <StudioSection
@@ -1781,13 +1780,13 @@ export default function StudioPanel() {
             </StudioSection>
           )}
 
-          {expertAuthoringMode ? (
+          {
             <p className="border-t border-modiff-border pt-3 text-xs text-modiff-subtle-text">
               {graphBinding
                 ? 'Studio is linked to graph nodes. Workflow edits remain visible on the canvas.'
                 : 'Custom graph mode: add nodes, connect an output, or start from a template.'}
             </p>
-          ) : null}
+          }
         </>
       )}
       <TemplateUsageTermsDialog

@@ -4,7 +4,7 @@ import { nodeDisplayLabel } from '../workflow/nodePresentation';
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { NodeData, useNodesStore } from '../stores/useNodeStore';
 
-import { ModiffPopover, ModiffSearchInput } from '../ui';
+import { ModiffCheckbox, ModiffPopover, ModiffSearchInput } from '../ui';
 import { GraphControlButton } from '../ui/GraphControls';
 import NodeDiscoveryFilters from './NodeDiscoveryFilters';
 import OperationDiscoveryFields from './OperationDiscoveryFields';
@@ -53,7 +53,7 @@ type SearchEntry = {
 interface NodeSearchDialogProps {
   anchorPosition: { top: number; left: number } | null;
   onClose: () => void;
-  onSelect: (createNode: NodeSearchFactory, signal: AbortSignal) => Promise<void>;
+  onSelect: (createNode: NodeSearchFactory, signal: AbortSignal, allowUnverified: boolean) => Promise<void>;
   nodes: Record<string, NodeData>;
   dataType?: string | string[];
   handleType?: 'source' | 'target' | null | undefined;
@@ -81,6 +81,7 @@ const NodeSearchDialog = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [builtInOpen, setBuiltInOpen] = useState(true);
   const [customOpen, setCustomOpen] = useState(true);
+  const [allowUnverified, setAllowUnverified] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const blocks = useUserBlockStore((state) => state.blocks);
   const definitions = useUserBlockStore((state) => state.blockDefinitionsV2);
@@ -113,9 +114,18 @@ const NodeSearchDialog = ({
   const catalogEntries = useMemo(
     () =>
       catalogContext
-        ? catalogNodeSearchEntries(catalogSections, catalogContext, interfaces, searchQuery, view, dataType, handleType)
+        ? catalogNodeSearchEntries(
+            catalogSections,
+            catalogContext,
+            interfaces,
+            searchQuery,
+            view,
+            dataType,
+            handleType,
+            allowUnverified,
+          )
         : [],
-    [catalogSections, catalogContext, interfaces, searchQuery, view, dataType, handleType],
+    [catalogSections, catalogContext, interfaces, searchQuery, view, dataType, handleType, allowUnverified],
   );
 
   useEffect(() => {
@@ -150,25 +160,35 @@ const NodeSearchDialog = ({
   );
   const filteredNodes = useMemo<SearchEntry[]>(() => {
     const entries = [
-      ...operationSearchEntries(operations, pipeline, task, dataType, handleType, searchQuery, nodes, origin).map(
-        (operation) => ({
-          key: `operation:${operation.operationId}`,
-          label: operationLabel(operation),
-          operation,
-          node: nodes[operation.nodeKey],
+      ...operationSearchEntries(
+        operations,
+        pipeline,
+        task,
+        dataType,
+        handleType,
+        searchQuery,
+        nodes,
+        origin,
+        allowUnverified,
+      ).map((operation) => ({
+        key: `operation:${operation.operationId}`,
+        label: operationLabel(operation),
+        operation,
+        node: nodes[operation.nodeKey],
+      })),
+      ...connectionSearchEntries(catalogNodes, dataType, handleType, searchQuery, view, origin, allowUnverified).map(
+        ([key, node]) => ({
+          key,
+          node,
+          label: nodeDisplayLabel(node),
         }),
       ),
-      ...connectionSearchEntries(catalogNodes, dataType, handleType, searchQuery, view, origin).map(([key, node]) => ({
-        key,
-        node,
-        label: nodeDisplayLabel(node),
-      })),
       ...catalogEntries.map((catalog) => ({ key: `catalog:${catalog.id}`, label: catalog.label, catalog })),
       ...savedEntries
         .filter(
           ({ block, node }) =>
             savedBlockMatchesSearch(block, searchQuery) &&
-            (!handleType || matchingNodeHandleForDrop(node, dataType, handleType, origin)),
+            (!handleType || matchingNodeHandleForDrop(node, dataType, handleType, origin, allowUnverified)),
         )
         .map((entry) => ({ ...entry, label: entry.node.label })),
     ];
@@ -186,6 +206,7 @@ const NodeSearchDialog = ({
     nodes,
     catalogEntries,
     origin,
+    allowUnverified,
   ]);
 
   const { builtInEntries, customEntries } = useMemo(() => {
@@ -257,7 +278,7 @@ const NodeSearchDialog = ({
         } else return;
         if (request.signal.aborted || useNodeDiscoveryStore.getState().selection !== selection) return;
         assertWorkflowOperationContext(context, { includeForm: false });
-        await onSelect(createNode, request.signal);
+        await onSelect(createNode, request.signal, allowUnverified);
         if (request.signal.aborted) return;
         handleClose();
       } catch (error) {
@@ -270,7 +291,7 @@ const NodeSearchDialog = ({
         }
       }
     },
-    [resolve, onSelect, handleClose, dataType, handleType, catalogContext],
+    [resolve, onSelect, handleClose, dataType, handleType, catalogContext, allowUnverified],
   );
 
   const handleKeyDown = useCallback(
@@ -428,6 +449,11 @@ const NodeSearchDialog = ({
 
       {handleType ? (
         <div className="shrink-0 px-3 pb-2 text-xs text-modiff-subtle-text">
+          <ModiffCheckbox
+            checked={allowUnverified}
+            onCheckedChange={setAllowUnverified}
+            label="Show unverified matches (generic or missing types)"
+          />
           <p>
             {handleType === 'source' ? 'Nodes with matching input port types' : 'Nodes with matching output port types'}
           </p>

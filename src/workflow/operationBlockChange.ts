@@ -146,7 +146,7 @@ export function planBlockOperationChange(
   blockId: string,
   loaderId: string,
   starter: OperationStarter,
-  options: { replaceModel?: boolean; restoreDefaults?: boolean } = {},
+  options: { replaceModel?: boolean; restoreDefaults?: boolean; preserveValues?: boolean } = {},
 ): OperationChangePlan {
   const root = graph.nodes.find((node) => node.id === blockId);
   const original = root?.data.blockInstanceV2;

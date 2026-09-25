@@ -3,6 +3,7 @@ import { useFlowStore } from '../stores/useFlowStore';
 import { captureWorkflowOperationContext, useStudioStore } from '../stores/useStudioStore';
 import { ModiffDialog } from '../ui';
 import { GraphNodeInputs } from './GraphNodeInputs';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
 /** A contextual view of the same controls used in the side panel, in either workspace. */
 export default function NodeInspectorDialog({ nodeId, onClose }: { nodeId: string; onClose: () => void }) {
@@ -16,7 +17,15 @@ export default function NodeInspectorDialog({ nodeId, onClose }: { nodeId: strin
   }, [valid, onClose]);
   if (!valid || !node) return null;
   return (
-    <ModiffDialog open title={node.data.blockInstanceV2 ? 'Block inspector' : 'Node inspector'} onClose={onClose}>
+    <ModiffDialog
+      open
+      title={
+        node.data.blockInstanceV2 && !isFocusedStageNode(node.data.blockInstanceV2)
+          ? 'Block inspector'
+          : 'Node inspector'
+      }
+      onClose={onClose}
+    >
       <GraphNodeInputs
         nodes={[node]}
         selectedNodes={[node]}

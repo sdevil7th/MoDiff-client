@@ -117,23 +117,6 @@ function parseGraphList(value: unknown) {
   return value.map(parseGraphEntry);
 }
 
-const MODIFF_EXAMPLE_ROOTS = new Set(['modiff', 'modular_diffusers']);
-
-function mergeMoDiffExampleRoots(graphs: GraphData[]) {
-  const exampleRoots = graphs.filter((node) => node.isDir && MODIFF_EXAMPLE_ROOTS.has(node.name));
-  if (exampleRoots.length === 0) return graphs;
-
-  const mergedRoot: GraphData = {
-    isDir: true,
-    path: 'modiff_examples',
-    name: 'MoDiff Examples',
-    children: exampleRoots.flatMap((node) => node.children ?? []),
-  };
-  const firstIndex = graphs.findIndex((node) => node.isDir && MODIFF_EXAMPLE_ROOTS.has(node.name));
-  const rest = graphs.filter((node) => !(node.isDir && MODIFF_EXAMPLE_ROOTS.has(node.name)));
-  return [...rest.slice(0, Math.max(firstIndex, 0)), mergedRoot, ...rest.slice(Math.max(firstIndex, 0))];
-}
-
 function workflowTestId(value: string) {
   return value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -153,7 +136,6 @@ function GraphList() {
   const [tierFilter, setTierFilter] = useState('all');
   const [readinessFilter, setReadinessFilter] = useState('all');
   const edgeType = useSettingsStore((state) => state.edgeType);
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setAlertOpener = useSettingsStore((state) => state.setAlertOpener);
@@ -208,10 +190,7 @@ function GraphList() {
     });
   };
 
-  const visibleGraphs = useMemo(
-    () => (studioViewMode === 'expert' ? graphs : mergeMoDiffExampleRoots(graphs)),
-    [graphs, studioViewMode],
-  );
+  const visibleGraphs = graphs;
 
   const allWorkflowFiles = useMemo(() => {
     const getAllFiles = (nodes: GraphData[]): GraphData[] => {

@@ -1,4 +1,6 @@
 import { remapOperationAuthoring, sharedOperationInput } from '../workflow/operationSharedInputs';
+import { planVisualSharedInput } from '../workflow/visualOperationGroups';
+import { isFocusedStageNode, isFocusedGuidance } from '../workflow/encodingNodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
@@ -151,7 +153,8 @@ import {
   type BlockPresentationPatchV2,
 } from '../studio/blockRuntimeV2';
 
-export type CustomNodeType = Node<NodeData, NodeData['type']>;
+// `encoding` is a canvas renderer; persisted stage contracts keep their canonical identity.
+export type CustomNodeType = Node<NodeData, NodeData['type'] | 'encoding'>;
 export interface CustomConnection extends Connection {
   edgeType?: 'default' | 'smoothstep' | 'straight' | 'step' | string;
 }
@@ -644,8 +647,16 @@ function projectBlockInstanceV2(
   const projection = materializeBlockProjectionV2(root);
   const [canonicalRoot, ...projectedChildren] = projection.nodes;
   if (!canonicalRoot) throw new Error(`Could not project Block V2 root ${id}.`);
+  const encodingSummaries =
+    current.data.blockInstanceV2?.effectiveGraph.graphHash === instance.effectiveGraph.graphHash &&
+    deepEqual(current.data.blockInstanceV2.values, instance.values)
+      ? current.data.uiState?.encodingSummaries
+      : undefined;
   const projectedRoot = {
     ...canonicalRoot,
+    ...(encodingSummaries
+      ? { data: { ...canonicalRoot.data, uiState: { ...canonicalRoot.data.uiState, encodingSummaries } } }
+      : {}),
     ...(current.selected === undefined ? {} : { selected: current.selected }),
     ...(current.zIndex === undefined ? {} : { zIndex: current.zIndex }),
   };
@@ -657,6 +668,18 @@ function projectBlockInstanceV2(
       return [
         projectedRoot,
         ...projectedChildren.map((child) => {
+          const receipt = encodingSummaries?.[child.id];
+          if (receipt && child.data.params.encode_summary)
+            child = {
+              ...child,
+              data: {
+                ...child.data,
+                params: {
+                  ...child.data.params,
+                  encode_summary: { ...child.data.params.encode_summary, value: receipt.value },
+                },
+              },
+            };
           const previous = previousById.get(child.id);
           return previous?.selected === undefined ? child : { ...child, selected: previous.selected };
         }),
@@ -1645,6 +1668,13 @@ export const useFlowStore = create<FlowStore>()(
         value: NodeParams[K],
         key?: K,
       ) => {
+        if (key === undefined || key === 'value') {
+          const sharedGraph = planVisualSharedInput(get(), id, param, value);
+          if (sharedGraph) {
+            get().withHistory('Edit shared stage parameter', () => get().replaceGraph(sharedGraph));
+            return;
+          }
+        }
         const node = get().nodes.find((candidate) => candidate.id === id);
         const blockOwnerId = node?.data.blockProjectionOwnerId;
         const blockSemanticNodeId = node?.data.blockProjectionNodeId;
@@ -1939,6 +1969,11 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       setBlockInstanceValueV2: (id, logicalId, value) => {
+        const sharedGraph = planVisualSharedInput(get(), id, logicalId, value);
+        if (sharedGraph) {
+          get().withHistory('Edit shared stage parameter', () => get().replaceGraph(sharedGraph));
+          return;
+        }
         get().withHistory('Edit block parameter', () => {
           set((state) => {
             const graph = updateBlockInstanceV2(state, id, (instance) => {
@@ -2287,7 +2322,10 @@ export const useFlowStore = create<FlowStore>()(
                 `Cannot remove ${impacted.length} connected Block port${impacted.length === 1 ? '' : 's'}. Disconnect the affected edge${impacted.length === 1 ? '' : 's'} first.`,
               );
             const graph = updateBlockInstanceV2(state, id, (instance) =>
-              replaceBlockEffectiveInterfaceV2(instance, value, { preserveOmittedMirrors: false }),
+              replaceBlockEffectiveInterfaceV2(instance, value, {
+                preserveOmittedMirrors: false,
+                rememberRemovedControls: isFocusedGuidance(instance),
+              }),
             );
             return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
           });
@@ -2296,6 +2334,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       toggleUserBlockExpanded: (id) => {
+        if (isFocusedStageNode(get().nodes.find((node) => node.id === id)?.data.blockInstanceV2)) return;
         get().withHistory('Toggle block expansion', () => {
           set((state) => {
             const block = state.nodes.find((node) => node.id === id && node.data.type === 'block');

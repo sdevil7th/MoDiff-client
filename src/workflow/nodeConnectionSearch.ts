@@ -38,11 +38,14 @@ export function connectionSearchEntries(
   search = '',
   view: NodeCatalogView = 'all',
   origin?: ConnectionSearchOrigin | null,
+  allowUnverified = false,
 ): [string, NodeData][] {
   return nodeCatalogEntries(registry)
     .filter((entry) => nodeCatalogEntryMatchesView(entry, view))
     .filter((entry) => nodeCatalogEntryMatchesSearch(entry, search))
-    .filter((entry) => !handleType || matchingNodeHandleForDrop(entry.node, dataType, handleType, origin))
+    .filter(
+      (entry) => !handleType || matchingNodeHandleForDrop(entry.node, dataType, handleType, origin, allowUnverified),
+    )
     .map((entry) => [entry.key, entry.node]);
 }
 
@@ -101,6 +104,7 @@ export function operationSearchEntries(
   search = '',
   registry: Record<string, NodeData> = {},
   origin?: ConnectionSearchOrigin | null,
+  allowUnverified = false,
 ) {
   const aliases = new Map(
     nodeCatalogEntries(registry).map((entry) => [
@@ -123,6 +127,10 @@ export function operationSearchEntries(
         op.ports.some(
           (port) =>
             !port.hidden &&
+            (allowUnverified ||
+              (connectionTypes(dataType).length > 0 &&
+                connectionTypes(port.types).length > 0 &&
+                ![...connectionTypes(dataType), ...connectionTypes(port.types)].includes('any'))) &&
             (handleType === 'source'
               ? port.direction === 'input' && connectionTypesAreCompatible(dataType, port.types)
               : port.direction === 'output' && connectionTypesAreCompatible(port.types, dataType)),
@@ -132,7 +140,7 @@ export function operationSearchEntries(
       (op) =>
         !handleType ||
         !registry[op.nodeKey] ||
-        matchingNodeHandleForDrop(registry[op.nodeKey]!, dataType, handleType, origin),
+        matchingNodeHandleForDrop(registry[op.nodeKey]!, dataType, handleType, origin, allowUnverified),
     );
 }
 

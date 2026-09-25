@@ -171,6 +171,24 @@ test('a genuine remote update still refreshes an unchanged clean document', () =
   assert.equal(retained.dirty, false);
 });
 
+test('late save acknowledgements and remote refresh retain user tab ordering', () => {
+  const saved = workflowTab({ dirty: false, prompt: 'Saved' });
+  const other = { ...saved, id: 'other-tab' };
+  studio.useStudioStore.setState({ workflowTabs: [saved, other], activeWorkflowTabId: null });
+  studio.useStudioStore.getState().moveWorkflowTab(other.id, saved.id, 'before');
+  for (const acknowledgement of [true, false]) {
+    studio.useStudioStore
+      .getState()
+      .mergeBackendWorkflow({ ...saved, backendRevision: acknowledgement ? 8 : 9 }, { acknowledgement });
+    const tabs = studio.useStudioStore.getState().workflowTabs;
+    assert.deepEqual(
+      tabs.map((tab) => tab.id),
+      [other.id, saved.id],
+    );
+    assert.equal(tabs[0], other);
+  }
+});
+
 test('own websocket acknowledgement requires the exact nonempty session client id', () => {
   sessionStorage.setItem('modiff-workflow-client-id', 'this-browser');
   assert.equal(sync.isOwnWorkflowAcknowledgement({ clientId: 'this-browser' }), true);

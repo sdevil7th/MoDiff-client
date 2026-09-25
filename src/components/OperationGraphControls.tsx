@@ -21,6 +21,7 @@ import {
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { commitOperationGraph } from '../workflow/operationGraphTransaction';
 import NodeInspectorDialog from './NodeInspectorDialog';
+import { groupNewOperationGraph } from '../workflow/visualOperationGroups';
 
 type Preview = {
   starter: OperationStarter;
@@ -126,7 +127,7 @@ export default function OperationGraphControls({
         const x = flow.nodes.length
           ? Math.max(...flow.nodes.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 360))) + 100
           : 80;
-        const draft = createOperationStarter(preview.starter, { x, y: 120 });
+        const draft = groupNewOperationGraph(createOperationStarter(preview.starter, { x, y: 120 }));
         prepareWorkflowForManualInsertion();
         commitOperationGraph(
           { nodes: [...flow.nodes, ...draft.nodes], edges: [...flow.edges, ...draft.edges] },

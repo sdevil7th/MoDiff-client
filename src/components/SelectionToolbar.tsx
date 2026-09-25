@@ -1,4 +1,5 @@
 import { moveBlockSelectionPreparedV2, topLevelBlockSelectionV2 } from '../studio/blockSelectionMovesV2';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import {
   forwardRef,
   lazy,
@@ -170,7 +171,8 @@ export function SelectionToolbar({
     !singleProjectedModular && singleNode?.data.type !== 'group' && singleNode?.data.type !== 'loop'
       ? singleNode
       : null;
-  const isUserBlock = singleActionNode?.data.type === 'block';
+  const isEncodingNode = isFocusedStageNode(singleActionNode?.data.blockInstanceV2);
+  const isUserBlock = !isEncodingNode && singleActionNode?.data.type === 'block';
   const isHuggingFaceCluster = singleActionNode?.data.huggingFaceClusterRole === 'root';
   const isCompositeNode = Boolean(isUserBlock || isHuggingFaceCluster);
   const isCompositeExpanded =
@@ -188,7 +190,7 @@ export function SelectionToolbar({
   const validationMessage =
     singleActionNode?.data.uiState?.validationMessage || singleActionNode?.data.uiState?.errorMessage;
   const showSingleNodeActions = Boolean(singleActionNode);
-  const showCollapseToggle = singleActionNode?.data.type === 'custom' || isCompositeNode;
+  const showCollapseToggle = !isEncodingNode && (singleActionNode?.data.type === 'custom' || isCompositeNode);
   const showCreateBlock =
     selectedActionNodes.length > 0 &&
     !singleProjectedModular &&
@@ -486,7 +488,7 @@ export function SelectionToolbar({
 
       {singleNode ? (
         <ToolbarActionButton
-          label={singleNode.data.blockInstanceV2 ? 'Inspect Block' : 'Inspect node'}
+          label={singleNode.data.blockInstanceV2 && !isEncodingNode ? 'Inspect Block' : 'Inspect node'}
           onClick={() => setInspectNodeId(singleNode.id)}
           data-testid="selection-toolbar-inspect-node"
         >
@@ -505,7 +507,7 @@ export function SelectionToolbar({
             <Files size={16} />
           </ToolbarActionButton>
           <ToolbarActionButton
-            label={singleActionNode?.data.blockInstanceV2 ? 'Run Block' : 'Run from node'}
+            label={singleActionNode?.data.blockInstanceV2 && !isEncodingNode ? 'Run Block' : 'Run from node'}
             onClick={() => {
               void handleRunFromNode();
             }}

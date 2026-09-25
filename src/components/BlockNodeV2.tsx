@@ -31,6 +31,7 @@ import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
+import { visualOperationGroup } from '../workflow/visualOperationGroups';
 
 const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
 const BlockDetailDialogV2 = lazy(() => import('./BlockDetailDialogV2'));
@@ -464,14 +465,38 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
                 />
               </ModiffFieldShell>
             ) : null}
-            <NodeContent
-              nodeId={node.id}
-              params={view.controlParams}
-              updateStore={updateStore}
-              module={view.source.library ?? view.source.provider ?? 'MoDiff'}
-              action="BlockV2"
-              mode="controls"
-            />
+            {visualOperationGroup({ ...node, position: view.position }) === 'inputs' ? (
+              [...new Set(instance!.effectiveInterface.controls.map((control) => control.group ?? 'Settings'))].map(
+                (group) => (
+                  <section key={group} aria-label={`${group} encoding controls`} className="mb-3">
+                    <h4 className="mb-2 text-sm font-semibold text-modiff-subtle-text">{group}</h4>
+                    <NodeContent
+                      nodeId={node.id}
+                      params={Object.fromEntries(
+                        Object.entries(view.controlParams).filter(
+                          ([id]) =>
+                            (instance!.effectiveInterface.controls.find((control) => control.controlId === id)?.group ??
+                              'Settings') === group,
+                        ),
+                      )}
+                      updateStore={updateStore}
+                      module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+                      action="BlockV2"
+                      mode="controls"
+                    />
+                  </section>
+                ),
+              )
+            ) : (
+              <NodeContent
+                nodeId={node.id}
+                params={view.controlParams}
+                updateStore={updateStore}
+                module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+                action="BlockV2"
+                mode="controls"
+              />
+            )}
             {view.previewViews.map((preview) => (
               <div
                 key={preview.previewId}

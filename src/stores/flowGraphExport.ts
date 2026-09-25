@@ -1,11 +1,12 @@
 import { sharedOperationInput, assertSharedOperationInput } from '../workflow/operationSharedInputs';
-import { type Edge, getIncomers, getOutgoers, type Node } from '@xyflow/react';
+import { type Edge, getIncomers, getOutgoers } from '@xyflow/react';
 import type { ApiGraphExport, NodeParamValue } from '../types/api';
 import { studioOffloadPlanConflict } from '../studio/deviceOffload';
-import type { NodeData, NodeParams } from './useNodeStore';
+import type { NodeParams } from './useNodeStore';
+import type { CustomNodeType } from './useFlowStore';
 import { lowerReviewedLoopConnectionsV2 } from '../studio/reviewedLoopConnectionsV2';
 
-export type FlowGraphNode = Node<NodeData, NodeData['type']>;
+export type FlowGraphNode = CustomNodeType;
 
 type SetNodeParam = <K extends keyof NodeParams = 'value'>(
   id: string,
@@ -222,14 +223,14 @@ export function buildApiGraphExport({
           ? sharedOperationInput(filteredExecutableNodes, edges, node.id, paramName)
           : null;
       if (shared) assertSharedOperationInput(shared, edges);
+      const fieldValue = paramData.value ?? paramData.default;
       const randomField =
         paramData.display === 'random'
           ? randomizeSeeds
             ? resolveRandomFieldValue(node, paramName, paramData, setParam, sharedRandomValues, shared?.key)
             : {
                 isRandom: false,
-                value:
-                  isRecord(paramData.value) && 'value' in paramData.value ? paramData.value.value : paramData.value,
+                value: isRecord(fieldValue) && 'value' in fieldValue ? fieldValue.value : fieldValue,
               }
           : null;
       // The executable graph contains values, not the full registry schema.

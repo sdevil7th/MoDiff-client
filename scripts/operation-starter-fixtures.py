@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import re
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -33,13 +34,21 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
             ("FluxKontextModularPipeline", "edit_image"),
             ("AnimaModularPipeline", "text_to_image"),
             ("StableAudioPipeline", "text_to_audio"),
+            ("AceStepPipeline", "text_to_audio"),
+            ("AceStepPipeline", "audio_variation"),
             ("SpandrelImageUpscaleV1", "image_upscale"),
             ("StableDiffusionXLModularPipeline", "text_to_image"),
             ("StableDiffusionXLModularPipeline", "image_to_image"),
             ("StableDiffusionXLModularPipeline", "inpaint"),
             ("QwenImageEditPlusModularPipeline", "multi_image_reference_edit"),
         )
-        if "--all-models" in sys.argv:
+        if "--image-audio" in sys.argv:
+            selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
+                                 and operation_owns_model(c)
+                                 and not ("video" in c["task"] or c["task"] == "flf2v"
+                                          or "3d" in c["task"] or c["task"].startswith("character_"))
+                                 and re.search(r"image|inpaint|outpaint|controlnet|ip_adapter|depth|layer_decomposition|audio|speech|music", c["task"])})
+        elif "--all-models" in sys.argv:
             selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
                                  and operation_owns_model(c)})
         elif "--all" in sys.argv:

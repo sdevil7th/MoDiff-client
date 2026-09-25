@@ -37,6 +37,8 @@ import { useGraphFixStore } from '../stores/useGraphFixStore';
 import CustomNode from './CustomNode';
 import AnyNode from './AnyNode';
 import BlockNode from './BlockNode';
+import EncodingNode from './EncodingNodeRenderer';
+import { isFocusedImageEncoding, isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import ProjectedBlockNodeV2 from './ProjectedBlockNodeV2';
 import { expandedBlockV2AtPosition } from '../studio/blockDropTargetsV2';
 
@@ -59,7 +61,7 @@ import {
 import { useGraphFixModule } from '../studio/useGraphFixModule';
 import { rejectedBlockDragPresentationPatchV2 } from '../studio/blockRuntimeV2';
 import { connectionColor, decorateConnectionEdges } from '../theme/connectionTypes';
-import { ModiffDialog, ModiffIconButton, ModiffPopover } from '../ui';
+import { ModiffDialog, ModiffIconButton, ModiffPopover, ModiffSelect } from '../ui';
 import { GraphConnectionSurface } from '../ui/GraphConnectionSurface';
 import type { PendingBlock } from './CreateUserBlockDialog';
 import { executionProgressFrom } from '../studio/executionProgress';
@@ -78,6 +80,19 @@ const AlertDialog = lazy(() => import('./AlertDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
 const LightboxDialog = lazy(() => import('./LightboxDialog'));
 const NodeSearchDialog = lazy(() => import('./NodeSearchDialog'));
+const MediaAttachmentDialog = lazy(() => import('./MediaAttachmentDialog'));
+function onConnectionError(error: unknown) {
+  enqueueSnackbar(error instanceof Error ? error.message : 'Could not connect these nodes.', {
+    variant: 'error',
+    autoHideDuration: 5200,
+  });
+}
+async function onEncodingConnect(
+  ...args: Parameters<typeof import('../workflow/connectEncodingNode').connectEncodingNode>
+) {
+  const { connectEncodingNode } = await import('../workflow/connectEncodingNode');
+  await connectEncodingNode(...args);
+}
 const CreateUserBlockDialog = lazy(() => import('./CreateUserBlockDialog'));
 const LegacyHuggingFaceClusterNode = lazy(() => import('./HuggingFaceClusterNode'));
 const GroupNode = lazy(() => import('./GroupNode'));
@@ -141,6 +156,7 @@ const nodeTypes = {
   loop: LoopNodeRenderer,
   group: GroupNodeRenderer,
   block: BlockNode,
+  encoding: EncodingNode,
   cluster: HuggingFaceClusterNode,
 };
 
@@ -262,6 +278,9 @@ function Workflow() {
     [graphFix.module, graphFixPreviewCandidate, nodes, nodesRegistry],
   );
   const exactVisibleNodes = [...nodes, ...graphFixPreview.nodes];
+  const canvasNodes = exactVisibleNodes.map((node) =>
+    isFocusedStageNode(node.data.blockInstanceV2) ? { ...node, type: 'encoding' as const } : node,
+  );
   // Mount on first selection, then retain dialog/menu state when focus changes.
   // An untouched empty graph does not need selection-only action code.
   const [selectionToolsRequested, setSelectionToolsRequested] = useState(false);
@@ -408,10 +427,7 @@ function Workflow() {
       try {
         onConnect(connection);
       } catch (error) {
-        enqueueSnackbar(error instanceof Error ? error.message : 'Could not connect these nodes.', {
-          variant: 'error',
-          autoHideDuration: 5200,
-        });
+        onConnectionError(error);
       }
     },
     [onConnect],
@@ -421,13 +437,52 @@ function Workflow() {
     edges,
     onNodesChange,
   });
-  const { handleDragOver, handleDrop } = useWorkflowDrop({
+  const { handleDragOver, handleDrop, customImportChoice, selectCustomImport, dismissCustomImport } = useWorkflowDrop({
     addNode,
     createWorkflowTab,
     edgeType,
     nodesRegistry,
     screenToFlowPosition,
   });
+  const [mediaDrop, setMediaDrop] = useState<{
+    owners: CustomNodeType[];
+    source: { nodeId: string; handleId: string };
+    tabId: string | null;
+  } | null>(null);
+  const onMediaDrop = useCallback(
+    async (source: { nodeId: string; handleId: string }, targetId: string) => {
+      const context = captureWorkflowOperationContext();
+      const state = useFlowStore.getState();
+      // Encoding sockets have their own exact endpoint path. Dropping on the
+      // encoding body or an invalid socket must not launch a role wizard either.
+      if (isFocusedImageEncoding(state.nodes.find((node) => node.id === targetId)?.data.blockInstanceV2)) return false;
+      const type = getConnectionParam(source.nodeId, source.handleId, 'type');
+      const kind = (Array.isArray(type) ? type : [type]).find((item) => item === 'image' || item === 'audio');
+      if (kind !== 'image' && kind !== 'audio') return false;
+      try {
+        const { mediaAttachmentOwners, executableMediaOperations } = await import('../workflow/mediaAttachment');
+        assertWorkflowOperationContext(context, { includeForm: false });
+        const owners = mediaAttachmentOwners(
+          state.toObject(),
+          targetId,
+          executableMediaOperations(
+            useNodesStore.getState().operationContracts,
+            useNodesStore.getState().pipelineSupport,
+          ),
+          kind,
+        );
+        if (!owners.length || source.nodeId === targetId) return false;
+        setMediaDrop({ owners, source, tabId: activeWorkflowTabId });
+        return true;
+      } catch (error) {
+        enqueueSnackbar(error instanceof Error ? error.message : 'Could not prepare this media attachment.', {
+          variant: 'error',
+        });
+        return false;
+      }
+    },
+    [getConnectionParam, activeWorkflowTabId],
+  );
   const {
     anchorPosition,
     closeNodeSearchDialog,
@@ -451,6 +506,9 @@ function Workflow() {
     setParam,
     updateNodeInternals,
     connectionScopeIsValid,
+    onMediaDrop,
+    onEncodingConnect,
+    onConnectionError,
   });
   const connectionLineColor = connectionColor(connectionDataType);
 
@@ -1109,7 +1167,7 @@ function Workflow() {
         nodeTypes={nodeTypes}
         nodes={
           blockDragTarget
-            ? exactVisibleNodes.map((node) =>
+            ? canvasNodes.map((node) =>
                 node.id === blockDragTarget
                   ? {
                       ...node,
@@ -1117,7 +1175,7 @@ function Workflow() {
                     }
                   : node,
               )
-            : exactVisibleNodes
+            : canvasNodes
         }
         edges={exactVisibleEdges}
         defaultViewport={defaultViewport}
@@ -1203,6 +1261,24 @@ function Workflow() {
           </ModiffIconButton>
         </Panel>
       </ReactFlow>
+      {customImportChoice ? (
+        <ModiffDialog open onClose={dismissCustomImport} title="Choose an imported node" panelClassName="max-w-lg">
+          <p className="mb-3 text-sm text-modiff-subtle-text">
+            The package is enabled. Choose a node to place here; all its nodes remain in Custom nodes.
+          </p>
+          <ModiffSelect
+            aria-label="Imported node"
+            value=""
+            onValueChange={(key) => {
+              if (key) selectCustomImport(key);
+            }}
+            options={[
+              { value: '', label: 'Select a node', disabled: true },
+              ...customImportChoice.keys.map((key) => ({ value: key, label: nodesRegistry[key]?.label ?? key })),
+            ]}
+          />
+        </ModiffDialog>
+      ) : null}
       {canvasSuspended && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-modiff-compact border border-modiff-border bg-modiff-panel px-3 py-2 text-sm font-semibold text-modiff-text shadow-modiff-node">
@@ -1255,6 +1331,15 @@ function Workflow() {
             dataType={nodeSearchDataType}
             handleType={nodeSearchHandleType}
             origin={nodeSearchOrigin}
+          />
+        </Suspense>
+      ) : null}
+      {mediaDrop && mediaDrop.tabId === activeWorkflowTabId ? (
+        <Suspense fallback={null}>
+          <MediaAttachmentDialog
+            owners={mediaDrop.owners}
+            source={mediaDrop.source}
+            onClose={() => setMediaDrop(null)}
           />
         </Suspense>
       ) : null}

@@ -148,7 +148,6 @@ const NodeContent = memo(function NodeContent({
   const autoFieldOverrides = useStudioStore((state) => state.autoFieldOverrides);
   const resetAutoFieldOverride = useStudioStore((state) => state.resetAutoFieldOverride);
   const studioResourceMode = studioForm.resourceMode;
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const studioGraphBinding = useStudioStore((state) => state.graphBinding);
   const graphNode = useFlowStore((state) => state.nodes.find((node) => node.id === nodeId));
   const connectionNotes = useFlowStore(
@@ -344,7 +343,7 @@ const NodeContent = memo(function NodeContent({
   const orderedMainFields = orderedFieldElements(mainFields);
   const orderedAdvancedFields = orderedFieldElements(advancedFields);
   const orderedInternalFields = orderedFieldElements(renderFields.filter(({ surface }) => surface === 'hidden'));
-  const autoPresentation = studioViewMode === 'auto';
+  const collapseAdvanced = true;
   const encodeImageSummary =
     /ModularDiffusers/.test(module) && action === 'ImageEncode' ? (
       <EncodeImageSummary
@@ -361,20 +360,20 @@ const NodeContent = memo(function NodeContent({
       {resolutionNotice}
       {orderedMainFields}
       {orderedInternalFields.length > 0 && (
-        <div className={autoPresentation ? 'hidden' : 'contents'}>{orderedInternalFields}</div>
+        <div className={collapseAdvanced ? 'hidden' : 'contents'}>{orderedInternalFields}</div>
       )}
       {orderedAdvancedFields.length > 0 ? (
         <ModiffDisclosure
           label="Advanced"
-          data-testid={autoPresentation ? `node-advanced-controls-${nodeId}` : undefined}
-          collapsible={autoPresentation}
+          data-testid={collapseAdvanced ? `node-advanced-controls-${nodeId}` : undefined}
+          collapsible={collapseAdvanced}
           unmount={false}
           className={
-            autoPresentation ? 'rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40' : 'contents'
+            collapseAdvanced ? 'rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40' : 'contents'
           }
           buttonClassName="min-h-7 text-xs"
           panelClassName={
-            autoPresentation ? 'grid min-w-0 grid-cols-1 gap-2 border-t border-modiff-border-subtle p-2' : 'contents'
+            collapseAdvanced ? 'grid min-w-0 grid-cols-1 gap-2 border-t border-modiff-border-subtle p-2' : 'contents'
           }
         >
           {orderedAdvancedFields}

@@ -1011,6 +1011,13 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
 
       const node = useFlowStore.getState().nodes.find((n) => n.id === message.node);
       if (!node) {
+        if (message.node.startsWith('guidance-schema-')) {
+          void import('../workflow/guidanceNodeFields').then(({ receiveGuidanceDefinition }) => {
+            if (shouldApplyWorkflowCanvasMutation(message, context))
+              receiveGuidanceDefinition(message.node!, message.params);
+          });
+          return;
+        }
         console.warn('The node is no longer in the graph');
         return;
       }
