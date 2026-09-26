@@ -1,3 +1,4 @@
+import { hasInlineScalarControl } from './inlineScalarControl';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
@@ -23,7 +24,7 @@ export function graphNodeControlParams(node: CustomNodeType): Record<string, Nod
       .filter(([key, param]) => {
         const display = param.isInput ? 'input' : param.display || '';
         return (
-          display !== 'input' &&
+          (display !== 'input' || hasInlineScalarControl(param)) &&
           display !== 'output' &&
           !previewDisplays.has(display) &&
           !param.hidden &&

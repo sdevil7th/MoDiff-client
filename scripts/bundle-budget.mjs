@@ -27,7 +27,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Required connected-loader readiness (including historical required pickers)
 // measures 458906 bytes after sharing diagnostics. Allow 256 additional bytes;
 // no dependencies or deferred limits change.
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 448 * 1024 + 256;
+// Required-input preflight, leaf-graph cycle checks and connectable scalar editors
+// add shared correctness logic: measured largest startup chunk 450.1 KiB.
+// Keep native creation deferred and bound the chunk at 450.25 KiB.
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 256;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -82,7 +85,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 448 * 1024 + 256;
 // with 256 bytes above the prior total ceiling; individual/deferred caps stay fixed.
 // The same readiness fix measures 637211 bytes total startup. Allow another
 // bounded 128 bytes above the previous ceiling, not an unbounded budget reset.
-const MAX_STARTUP_GZIP_BYTES = 622 * 1024 + 384;
+// The same authoring fixes measure 624.2 KiB startup with no new dependencies.
+// Allow 624.5 KiB; individual deferred-chunk ceilings stay fixed.
+const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 512;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -170,7 +175,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // per-chunk limits; allocate one bounded KiB for this added connection behavior.
 // Atomic backend-defined Guidance controls and contextual inspector actions:
 // 247.4 KiB measured; retain the independent 64 KiB per-chunk limit.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024;
+// Deferred native Block creation and explicit-interface preservation measure
+// 248.1 KiB combined. Allow 512 bytes beyond the previous deferred ceiling.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

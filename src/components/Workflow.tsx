@@ -1,3 +1,4 @@
+import { formatRequestError } from '../utils/requestJson';
 import { revealWorkspaceForGraphEditing } from '../studio/workspaceVisibility';
 import { blockSelectionDropTargetV2, moveBlockSelectionPreparedV2 } from '../studio/blockSelectionMovesV2';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
@@ -49,8 +50,6 @@ import { useWorkflowConnections, workflowConnectionParam } from '../workflow/use
 import { useWorkflowDrop } from '../workflow/useWorkflowDrop';
 import { enqueueSnackbar } from '../ui/snackbar';
 import {
-  createUserBlockNode,
-  createUserBlockFromSelection,
   expandedUserBlockAtPosition,
   isUserBlockExpandedInstance,
   runtimeProgressTarget,
@@ -1010,19 +1009,27 @@ function Workflow() {
     userBlocks,
   );
 
-  const handleCreateBlockFromSelection = useCallback(() => {
-    const result = createUserBlockFromSelection({ nodes, edges }, undefined, userBlocks);
-    if (!result.ok) {
-      enqueueSnackbar(result.reason, { variant: 'error', autoHideDuration: 2400 });
-      return;
+  const handleCreateBlockFromSelection = useCallback(async () => {
+    const context = captureWorkflowOperationContext();
+    try {
+      const { createUserBlockDraftV2 } = await import('../studio/userBlockCreationV2');
+      assertWorkflowOperationContext(context);
+      const result = createUserBlockDraftV2({ nodes, edges }, userBlocks);
+      if (!result.ok) {
+        enqueueSnackbar(result.reason, { variant: 'error', autoHideDuration: 2400 });
+        return;
+      }
+      setPendingBlock({
+        result,
+        name: result.block.name,
+        inputLabels: Object.fromEntries(result.block.inputs.map((port) => [port.id, port.label])),
+        outputLabels: Object.fromEntries(result.block.outputs.map((port) => [port.id, port.label])),
+        exposedParamIds: new Set(result.block.exposedParams.map((input) => input.id)),
+      });
+    } catch (error) {
+      if (isWorkflowOperationCancelled(error)) return;
+      enqueueSnackbar(formatRequestError(error, 'Could not prepare the Block.'), { variant: 'error' });
     }
-    setPendingBlock({
-      result,
-      name: result.block.name,
-      inputLabels: Object.fromEntries(result.block.inputs.map((port) => [port.id, port.label])),
-      outputLabels: Object.fromEntries(result.block.outputs.map((port) => [port.id, port.label])),
-      exposedParamIds: new Set(result.block.exposedParams.map((input) => input.id)),
-    });
   }, [edges, nodes, userBlocks]);
 
   const handleConfirmBlockCreation = useCallback(async () => {
@@ -1048,27 +1055,21 @@ function Workflow() {
         pendingBlock.exposedParamIds.has(input.id),
       ),
     };
-    const replacementNode = createUserBlockNode(
-      block,
-      pendingBlock.result.blockNode.position,
-      pendingBlock.result.blockNode.id,
-    );
-    const replacementNodes = pendingBlock.result.nodes.map((node) =>
-      node.id === replacementNode.id ? replacementNode : node,
-    );
     try {
-      const saved = await saveUserBlock(block);
+      const { prepareUserBlockCreationV2 } = await import('../studio/userBlockCreationV2');
       assertWorkflowOperationContext(context);
-      const savedNode = createUserBlockNode(saved, replacementNode.position, replacementNode.id);
-      const nextNodes = replacementNodes.map((node) => (node.id === savedNode.id ? savedNode : node));
+      const prepared = prepareUserBlockCreationV2(pendingBlock.result, block);
+      await useUserBlockStore.getState().saveBlockDefinitionV2(prepared.definition);
+      assertWorkflowOperationContext(context);
+      const nextNodes = prepared.graph.nodes;
       withHistory('Create user block', () => {
         useFlowStore.getState().replaceGraph({
           nodes: nextNodes,
-          edges: pendingBlock.result.edges,
+          edges: prepared.graph.edges,
         });
       });
       updateHandleConnectionStatus();
-      updateSignalValues(pendingBlock.result.edges);
+      updateSignalValues(prepared.graph.edges);
       saveActiveWorkflowTab(true);
       setPendingBlock(null);
       // Replacing several selected nodes with one collapsed block can reduce
@@ -1090,17 +1091,15 @@ function Workflow() {
       enqueueSnackbar('Block created', { variant: 'success', autoHideDuration: 1800 });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
-      // saveUserBlock already reports the concrete backend error.
+      enqueueSnackbar(formatRequestError(error, 'Could not create the Block.'), {
+        variant: 'error',
+        autoHideDuration: 7000,
+      });
+      setPendingBlock((current) =>
+        current ? { ...current, error: formatRequestError(error, 'Could not create the Block.') } : current,
+      );
     }
-  }, [
-    pendingBlock,
-    fitView,
-    saveActiveWorkflowTab,
-    saveUserBlock,
-    updateHandleConnectionStatus,
-    updateSignalValues,
-    withHistory,
-  ]);
+  }, [pendingBlock, fitView, saveActiveWorkflowTab, updateHandleConnectionStatus, updateSignalValues, withHistory]);
 
   useEffect(() => {
     if (!userBlocksLoaded) {

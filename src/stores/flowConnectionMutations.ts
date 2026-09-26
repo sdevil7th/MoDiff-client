@@ -1,3 +1,4 @@
+import { hasInlineScalarControl } from '../studio/inlineScalarControl';
 import { applyEdgeChanges, type Connection, type Edge, type EdgeChange } from '@xyflow/react';
 import { nanoid } from 'nanoid';
 import {
@@ -354,7 +355,7 @@ export function handleEdgesChange(changes: EdgeChange<Edge>[], set: FlowStoreSet
       }
 
       const targetParam = nodeConnectorParam(node, edge.targetHandle);
-      if (!isBlockRootV2Node(node) && targetParam?.isInput) {
+      if (!isBlockRootV2Node(node) && targetParam?.isInput && !hasInlineScalarControl(targetParam)) {
         get().setParam(node.id, edge.targetHandle, false, 'isInput');
       }
 
@@ -772,7 +773,7 @@ export function refreshHandleConnectionStatus(get: FlowStoreGet) {
     Object.keys(params)
       .filter((key) => {
         const param = params[key];
-        return param?.display === 'input' || param?.display === 'output';
+        return param?.isInput || param?.display === 'input' || param?.display === 'output';
       })
       .forEach((key) => {
         const param = params[key];
@@ -781,7 +782,7 @@ export function refreshHandleConnectionStatus(get: FlowStoreGet) {
         }
 
         let isConnected = false;
-        if (param.display === 'input') {
+        if (param.isInput || param.display === 'input') {
           isConnected = edges.some((edge) => edge.target === node.id && edge.targetHandle === key);
         } else if (param.display === 'output') {
           isConnected = edges.some((edge) => edge.source === node.id && edge.sourceHandle === key);

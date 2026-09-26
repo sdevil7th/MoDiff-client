@@ -2267,3 +2267,66 @@ test('task model preferences are bounded advisory identities and tolerate corrup
   for (let i = 0; i < 80; i++) preferences.rememberTaskModel(`task_${i}`, `profile_${i}`);
   assert.equal(Object.keys(JSON.parse(localStorage.getItem('modiff.task-models'))).length, 64);
 });
+
+test('model changes retire unused derived outputs but preserve connected and configured outputs', async () => {
+  const { schema, runtime, instance, draft } = await derivedOperationBlock();
+  const raw = structuredClone(instance.definitionSnapshot);
+  const denoise = raw.graph.nodes.find((n) => n.data.action === 'Denoise');
+  denoise.data.params.route_state_out = { type: 'modular_route_state', display: 'output' };
+  raw.boundary.outputs.push({
+    portId: 'route',
+    label: 'Route State',
+    valueType: 'modular_route_state',
+    required: false,
+    binding: { nodeId: denoise.nodeId, fieldOrPortId: 'route_state_out' },
+  });
+  raw.graph.graphHash = schema.blockGraphHashV2(raw.graph);
+  raw.contentHash = schema.blockDefinitionContentHashV2(raw);
+  const base = schema.createBlockInstanceV2(raw, {
+    instanceId: instance.instanceId,
+    position: instance.presentation.position,
+    size: instance.presentation.size,
+  });
+  const { planBlockOperationChange } = await server.ssrLoadModule('/src/workflow/operationBlockChange.ts');
+  const graph = { nodes: [runtime.createBlockRootNodeV2(base)], edges: [] };
+  const before = structuredClone(graph);
+  const plan = planBlockOperationChange(graph, base.instanceId, draft.nodes[0].id, seededStarter(true));
+  assert.deepEqual(plan.graph.nodes[0].data.blockInstanceV2.effectiveInterface.boundary.outputs, []);
+  assert.match(plan.changes.join(' '), /output Route State/);
+  assert.deepEqual(graph, before);
+  const sink = {
+    id: 'sink',
+    type: 'custom',
+    position: { x: 600, y: 0 },
+    data: { module: 'test', action: 'sink', params: { state: { type: 'modular_route_state', display: 'input' } } },
+  };
+  assert.throws(
+    () =>
+      planBlockOperationChange(
+        {
+          nodes: [...graph.nodes, sink],
+          edges: [
+            { id: 'outside', source: base.instanceId, sourceHandle: 'route', target: 'sink', targetHandle: 'state' },
+          ],
+        },
+        base.instanceId,
+        draft.nodes[0].id,
+        seededStarter(true),
+      ),
+    /missing|incompatible/,
+  );
+  const explicit = runtime.replaceBlockEffectiveInterfaceV2(base, {
+    boundary: { ...base.effectiveInterface.boundary, mode: 'explicit', derivation: undefined },
+    controls: base.effectiveInterface.controls,
+  });
+  assert.throws(
+    () =>
+      planBlockOperationChange(
+        { nodes: [runtime.createBlockRootNodeV2(explicit)], edges: [] },
+        base.instanceId,
+        draft.nodes[0].id,
+        seededStarter(true),
+      ),
+    /missing|incompatible/,
+  );
+});

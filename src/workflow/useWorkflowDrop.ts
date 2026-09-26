@@ -1,3 +1,4 @@
+import { collisionFreeInsertPosition } from './insertionPosition';
 import { type Edge, type Viewport } from '@xyflow/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -107,7 +108,12 @@ export function useWorkflowDrop({
       const flow = useFlowStore.getState();
       const target = expandedBlockV2AtPosition(flow.nodes, position);
       if (target) insertNodeAtBlockTargetV2({ ...node, selected: true }, target, flow, addNode);
-      else addNode({ ...node, selected: true });
+      else
+        addNode({
+          ...node,
+          position: collisionFreeInsertPosition(position, flow.nodes, { width: 360, height: 420 }),
+          selected: true,
+        });
     },
     [addNode],
   );
@@ -459,7 +465,17 @@ export function useWorkflowDrop({
         }
         return;
       }
-      addNode(expandedUserBlock ? placeNodeInsideExpandedUserBlock(newNode, expandedUserBlock, position) : newNode);
+      addNode(
+        expandedUserBlock
+          ? placeNodeInsideExpandedUserBlock(newNode, expandedUserBlock, position)
+          : {
+              ...newNode,
+              position: collisionFreeInsertPosition(position, flow.nodes, {
+                width: newNode.width ?? 360,
+                height: newNode.height ?? 420,
+              }),
+            },
+      );
       if (expandedUserBlock) {
         globalThis.queueMicrotask(() => {
           useFlowStore.getState().fitUserBlockToChildren(expandedUserBlock.id);
