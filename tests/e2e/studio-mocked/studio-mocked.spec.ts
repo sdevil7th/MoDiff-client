@@ -27691,6 +27691,10 @@ for (const workspace of ['expert'] as const) {
           ]);
           const draft = authoring.createOperationStarter(starter, { x: 80, y: 100 });
           const loader = draft.nodes.find((n) => n.data.action === 'ModelsLoader')!;
+          // This fixture checks media wiring/export on any host, including CPU
+          // CI. GPU offload is unrelated and cannot execute on a CPU device.
+          loader.data.params.offload_mode!.value = 'none';
+          loader.data.params.auto_offload!.value = false;
           const registry = useNodesStore.getState().nodesRegistry;
           const preview = factory.createNodeFromRegistry('modules.Image.Preview', registry, { x: 1850, y: 100 })!;
           const decode = draft.nodes.find(
@@ -28463,6 +28467,7 @@ test('Restore model defaults resets the prompt through the same undoable graph t
   const defaultPrompt = await prompt.inputValue();
   await prompt.fill('An intentionally edited prompt before an explicit reset');
   await prompt.blur();
+  await waitForOperationGraphToSettle(page);
   await page
     .locator(`.react-flow__node[data-id="${loader.id}"]`)
     .getByRole('button', { name: 'Restore model defaults', exact: true })
